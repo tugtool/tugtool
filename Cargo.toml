@@ -48,7 +48,7 @@ wait-timeout = "0.2"
 
 # Cross-platform: user dirs, executable discovery
 dirs = "6"
-which = "7"
+which = "8"
 
 # Logging: structured logging with JSON output
 tracing = "0.1"
