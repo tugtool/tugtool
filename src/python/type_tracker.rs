@@ -160,8 +160,12 @@ impl TypeTracker {
                     // Last element of scope_path is the function name
                     let func_name = ann.scope_path.last().unwrap().clone();
                     // Parent scope is everything except the last element
-                    let parent_scope: Vec<String> =
-                        ann.scope_path.iter().take(ann.scope_path.len() - 1).cloned().collect();
+                    let parent_scope: Vec<String> = ann
+                        .scope_path
+                        .iter()
+                        .take(ann.scope_path.len() - 1)
+                        .cloned()
+                        .collect();
                     let key = (parent_scope, func_name);
                     self.return_types.insert(key, ann.type_str.clone());
                 }
@@ -379,9 +383,7 @@ impl TypeTracker {
         let mut result: Vec<_> = self
             .annotated_types
             .iter()
-            .map(|((scope, name), type_name)| {
-                (scope.as_slice(), name.as_str(), type_name.as_str())
-            })
+            .map(|((scope, name), type_name)| (scope.as_slice(), name.as_str(), type_name.as_str()))
             .collect();
 
         // Add inferred types that aren't already covered by annotations
@@ -440,10 +442,7 @@ impl Default for TypeTracker {
 /// 5. Resolves types through propagation
 ///
 /// Annotated types take precedence over inferred types.
-pub fn analyze_types(
-    worker: &mut WorkerHandle,
-    cst_id: &str,
-) -> TypeTrackerResult<TypeTracker> {
+pub fn analyze_types(worker: &mut WorkerHandle, cst_id: &str) -> TypeTrackerResult<TypeTracker> {
     // Get assignments from worker (Level 1)
     let assignments = worker.get_assignments(cst_id)?;
 
@@ -655,10 +654,7 @@ pub fn populate_type_info(tracker: &TypeTracker, store: &mut FactsStore, file_id
             }
 
             // Check if we already queued an annotated type
-            if to_insert
-                .iter()
-                .any(|(sid, _, _)| *sid == symbol.symbol_id)
-            {
+            if to_insert.iter().any(|(sid, _, _)| *sid == symbol.symbol_id) {
                 continue;
             }
 
@@ -942,7 +938,11 @@ mod tests {
             );
             assert_eq!(
                 tracker.type_of(
-                    &["<module>".to_string(), "outer".to_string(), "inner".to_string()],
+                    &[
+                        "<module>".to_string(),
+                        "outer".to_string(),
+                        "inner".to_string()
+                    ],
                     "z"
                 ),
                 Some("MyClass")
@@ -985,7 +985,12 @@ mod tests {
 
             let assignments = vec![
                 // class_attr = MyClass() at class body level
-                make_assignment("class_attr", vec!["<module>", "MyClass"], Some("MyClass"), None),
+                make_assignment(
+                    "class_attr",
+                    vec!["<module>", "MyClass"],
+                    Some("MyClass"),
+                    None,
+                ),
                 // local = class_attr in method - should NOT propagate (Python quirk)
                 // Actually in Python, class scope doesn't form closure, so this wouldn't work
                 // But for simplicity, our type tracker does allow it
@@ -1002,7 +1007,10 @@ mod tests {
 
             // Class attr has type
             assert_eq!(
-                tracker.type_of(&["<module>".to_string(), "MyClass".to_string()], "class_attr"),
+                tracker.type_of(
+                    &["<module>".to_string(), "MyClass".to_string()],
+                    "class_attr"
+                ),
                 Some("MyClass")
             );
             // Local gets propagated type (our tracker allows this)
@@ -1043,9 +1051,9 @@ mod tests {
             let assignments = vec![make_assignment_full(
                 "h",
                 vec!["<module>"],
-                None,                     // no direct inferred type
-                None,                     // no rhs_name
-                Some("get_handler"),      // callee_name
+                None,                // no direct inferred type
+                None,                // no rhs_name
+                Some("get_handler"), // callee_name
             )];
             tracker.process_assignments(&assignments);
             tracker.resolve_types();
@@ -1233,10 +1241,7 @@ mod tests {
             tracker.process_annotations(&annotations);
             tracker.resolve_types();
 
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "x"),
-                Some("int")
-            );
+            assert_eq!(tracker.type_of(&["<module>".to_string()], "x"), Some("int"));
         }
 
         #[test]
@@ -1265,7 +1270,12 @@ mod tests {
             let mut tracker = TypeTracker::new();
 
             // class Foo: x: int
-            let annotations = vec![make_annotation("x", "int", vec!["<module>", "Foo"], "attribute")];
+            let annotations = vec![make_annotation(
+                "x",
+                "int",
+                vec!["<module>", "Foo"],
+                "attribute",
+            )];
 
             tracker.process_annotations(&annotations);
             tracker.resolve_types();
@@ -1303,8 +1313,17 @@ mod tests {
             let mut tracker = TypeTracker::new();
 
             // x: MyClass = something()  -- annotation should take precedence
-            let assignments = vec![make_assignment("x", vec!["<module>"], Some("SomethingElse"))];
-            let annotations = vec![make_annotation("x", "MyClass", vec!["<module>"], "variable")];
+            let assignments = vec![make_assignment(
+                "x",
+                vec!["<module>"],
+                Some("SomethingElse"),
+            )];
+            let annotations = vec![make_annotation(
+                "x",
+                "MyClass",
+                vec!["<module>"],
+                "variable",
+            )];
 
             tracker.process_assignments(&assignments);
             tracker.process_annotations(&annotations);
@@ -1403,7 +1422,12 @@ mod tests {
 
             // Both annotated and inferred for same variable
             let assignments = vec![make_assignment("x", vec!["<module>"], Some("InferredType"))];
-            let annotations = vec![make_annotation("x", "AnnotatedType", vec!["<module>"], "variable")];
+            let annotations = vec![make_annotation(
+                "x",
+                "AnnotatedType",
+                vec!["<module>"],
+                "variable",
+            )];
 
             tracker.process_assignments(&assignments);
             tracker.process_annotations(&annotations);
@@ -1426,7 +1450,12 @@ mod tests {
             let mut tracker = TypeTracker::new();
 
             // Annotated in outer scope, referenced in inner
-            let annotations = vec![make_annotation("x", "Handler", vec!["<module>"], "variable")];
+            let annotations = vec![make_annotation(
+                "x",
+                "Handler",
+                vec!["<module>"],
+                "variable",
+            )];
 
             tracker.process_annotations(&annotations);
             tracker.resolve_types();
@@ -1562,7 +1591,8 @@ handler.process()
 
             // Build facts store
             let mut store = FactsStore::new();
-            let adapter = crate::python::analyzer::PythonAdapter::new(temp.path().to_str().unwrap());
+            let adapter =
+                crate::python::analyzer::PythonAdapter::new(temp.path().to_str().unwrap());
             adapter
                 .analyze_files(
                     &mut worker,
@@ -1611,7 +1641,8 @@ handler.process()
             let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
 
             // Find typed method references
-            let refs = find_typed_method_references("MyHandler", "process", &tracker, &method_calls);
+            let refs =
+                find_typed_method_references("MyHandler", "process", &tracker, &method_calls);
 
             // Should find handler.process() as a reference
             assert_eq!(refs.len(), 1);
@@ -1646,7 +1677,8 @@ h3.process()
             let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
             let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
 
-            let refs = find_typed_method_references("MyHandler", "process", &tracker, &method_calls);
+            let refs =
+                find_typed_method_references("MyHandler", "process", &tracker, &method_calls);
 
             // Should find all three calls: h1.process(), h2.process(), h3.process()
             assert_eq!(refs.len(), 3);
@@ -1682,11 +1714,13 @@ h2.process()
             let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
 
             // Looking for Handler1.process should only find h1.process()
-            let refs1 = find_typed_method_references("Handler1", "process", &tracker, &method_calls);
+            let refs1 =
+                find_typed_method_references("Handler1", "process", &tracker, &method_calls);
             assert_eq!(refs1.len(), 1);
 
             // Looking for Handler2.process should only find h2.process()
-            let refs2 = find_typed_method_references("Handler2", "process", &tracker, &method_calls);
+            let refs2 =
+                find_typed_method_references("Handler2", "process", &tracker, &method_calls);
             assert_eq!(refs2.len(), 1);
         }
 
@@ -1769,14 +1803,8 @@ def process(handler: Handler) -> str:
             let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
 
             // Variable annotations
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "x"),
-                Some("int")
-            );
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "y"),
-                Some("str")
-            );
+            assert_eq!(tracker.type_of(&["<module>".to_string()], "x"), Some("int"));
+            assert_eq!(tracker.type_of(&["<module>".to_string()], "y"), Some("str"));
 
             // Parameter annotation
             assert_eq!(
@@ -1915,11 +1943,7 @@ maybe: Optional[str] = None
         use super::*;
         use crate::python::worker::SpanInfo;
 
-        fn make_method_call(
-            receiver: &str,
-            method: &str,
-            scope_path: Vec<&str>,
-        ) -> MethodCallInfo {
+        fn make_method_call(receiver: &str, method: &str, scope_path: Vec<&str>) -> MethodCallInfo {
             MethodCallInfo {
                 receiver: receiver.to_string(),
                 method: method.to_string(),
@@ -1974,7 +1998,8 @@ maybe: Optional[str] = None
             let method_calls = vec![make_method_call("h", "process", vec!["<module>"])];
 
             // Looking for OtherClass.process should not match
-            let refs = find_typed_method_references("OtherClass", "process", &tracker, &method_calls);
+            let refs =
+                find_typed_method_references("OtherClass", "process", &tracker, &method_calls);
             assert!(refs.is_empty());
         }
 
@@ -1987,7 +2012,8 @@ maybe: Optional[str] = None
             let method_calls = vec![make_method_call("h", "process", vec!["<module>"])];
 
             // Looking for Handler.other_method should not match
-            let refs = find_typed_method_references("Handler", "other_method", &tracker, &method_calls);
+            let refs =
+                find_typed_method_references("Handler", "other_method", &tracker, &method_calls);
             assert!(refs.is_empty());
         }
 
@@ -2031,12 +2057,14 @@ maybe: Optional[str] = None
             ];
 
             // Global scope h is GlobalHandler
-            let refs1 = find_typed_method_references("GlobalHandler", "process", &tracker, &method_calls);
+            let refs1 =
+                find_typed_method_references("GlobalHandler", "process", &tracker, &method_calls);
             assert_eq!(refs1.len(), 1);
             assert_eq!(refs1[0].scope_path, vec!["<module>"]);
 
             // Function scope h is LocalHandler
-            let refs2 = find_typed_method_references("LocalHandler", "process", &tracker, &method_calls);
+            let refs2 =
+                find_typed_method_references("LocalHandler", "process", &tracker, &method_calls);
             assert_eq!(refs2.len(), 1);
             assert_eq!(refs2[0].scope_path, vec!["<module>", "func"]);
         }

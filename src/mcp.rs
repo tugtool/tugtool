@@ -48,8 +48,8 @@ use tokio::sync::Mutex;
 
 use crate::cli::{run_analyze_impact, run_rename};
 use crate::error::TugError;
-use crate::python::verification::VerificationMode;
 use crate::output::SnapshotResponse;
+use crate::python::verification::VerificationMode;
 use crate::session::{Session, SessionOptions};
 use crate::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
@@ -254,8 +254,8 @@ impl TugServer {
 
         if need_new_session {
             // Open new session for the target workspace
-            let new_session = Session::open(&target_path, SessionOptions::default()).map_err(
-                |e| {
+            let new_session =
+                Session::open(&target_path, SessionOptions::default()).map_err(|e| {
                     McpError::internal_error(
                         "Failed to open session",
                         Some(serde_json::json!({
@@ -263,8 +263,7 @@ impl TugServer {
                             "error": e.to_string()
                         })),
                     )
-                },
-            )?;
+                })?;
 
             *session_guard = Some(new_session);
             *workspace_guard = Some(target_path);
@@ -324,12 +323,13 @@ impl TugServer {
 
         // Create new snapshot
         let config = SnapshotConfig::for_language(Language::Python);
-        let snapshot = WorkspaceSnapshot::create(session.workspace_root(), &config).map_err(|e| {
-            McpError::internal_error(
-                "Failed to create snapshot",
-                Some(serde_json::json!({ "error": e.to_string() })),
-            )
-        })?;
+        let snapshot =
+            WorkspaceSnapshot::create(session.workspace_root(), &config).map_err(|e| {
+                McpError::internal_error(
+                    "Failed to create snapshot",
+                    Some(serde_json::json!({ "error": e.to_string() })),
+                )
+            })?;
 
         // Save snapshot
         session.save_snapshot(&snapshot).map_err(|e| {
@@ -374,8 +374,8 @@ impl TugServer {
         let at = format!("{}:{}:{}", params.file, params.line, params.column);
 
         // Run analysis - TugError converts to McpError via From impl
-        let json = run_analyze_impact(session, None, &at, &params.new_name)
-            .map_err(McpError::from)?;
+        let json =
+            run_analyze_impact(session, None, &at, &params.new_name).map_err(McpError::from)?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
@@ -417,8 +417,15 @@ impl TugServer {
         };
 
         // Run rename - TugError converts to McpError via From impl
-        let json = run_rename(session, None, &at, &params.new_name, verify_mode, params.apply)
-            .map_err(McpError::from)?;
+        let json = run_rename(
+            session,
+            None,
+            &at,
+            &params.new_name,
+            verify_mode,
+            params.apply,
+        )
+        .map_err(McpError::from)?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
@@ -1002,7 +1009,9 @@ impl ServerHandler for TugServer {
                 "workspace://last_patch" => self.read_last_patch_resource(&uri).await,
                 _ => Err(McpError::resource_not_found(
                     format!("Unknown resource: {}", uri),
-                    Some(serde_json::json!({ "available": ["workspace://files", "workspace://symbols", "workspace://references", "workspace://last_patch"] })),
+                    Some(
+                        serde_json::json!({ "available": ["workspace://files", "workspace://symbols", "workspace://references", "workspace://last_patch"] }),
+                    ),
                 )),
             }
         }
@@ -1610,7 +1619,10 @@ mod tests {
             let text2 = extract_text_from_result(&result2).expect("Expected text content");
             let json2: serde_json::Value = serde_json::from_str(&text2).unwrap();
             let count2 = json2["file_count"].as_u64().unwrap();
-            assert_eq!(count1, count2, "Without force_refresh, should use cached snapshot");
+            assert_eq!(
+                count1, count2,
+                "Without force_refresh, should use cached snapshot"
+            );
 
             // With force_refresh, should rescan and see the new file
             let params3 = Parameters(SnapshotParams {
@@ -1621,7 +1633,12 @@ mod tests {
             let text3 = extract_text_from_result(&result3).expect("Expected text content");
             let json3: serde_json::Value = serde_json::from_str(&text3).unwrap();
             let count3 = json3["file_count"].as_u64().unwrap();
-            assert!(count3 > count1, "With force_refresh, should see new file (got {} vs {})", count3, count1);
+            assert!(
+                count3 > count1,
+                "With force_refresh, should see new file (got {} vs {})",
+                count3,
+                count1
+            );
         });
     }
 
@@ -1718,7 +1735,11 @@ if __name__ == "__main__":
             });
 
             let result = server.tug_analyze_impact(params).await;
-            assert!(result.is_ok(), "analyze_impact should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "analyze_impact should succeed: {:?}",
+                result.err()
+            );
 
             let call_result = result.unwrap();
             let text = extract_text_from_result(&call_result).expect("Expected text content");
@@ -1726,8 +1747,14 @@ if __name__ == "__main__":
 
             // Verify response structure
             assert_eq!(json["status"], "ok", "Response status should be 'ok'");
-            assert!(json["symbol"].is_object(), "Response should have symbol info");
-            assert!(json["references"].is_array(), "Response should have references array");
+            assert!(
+                json["symbol"].is_object(),
+                "Response should have symbol info"
+            );
+            assert!(
+                json["references"].is_array(),
+                "Response should have references array"
+            );
 
             // Verify symbol info
             let symbol = &json["symbol"];
@@ -1736,7 +1763,10 @@ if __name__ == "__main__":
 
             // Verify references (should find the definition and the call in main)
             let refs = json["references"].as_array().unwrap();
-            assert!(refs.len() >= 2, "Should find at least 2 references (definition + call)");
+            assert!(
+                refs.len() >= 2,
+                "Should find at least 2 references (definition + call)"
+            );
         });
     }
 
@@ -1763,7 +1793,11 @@ if __name__ == "__main__":
             });
 
             let result = server.tug_rename_symbol(params).await;
-            assert!(result.is_ok(), "rename_symbol should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "rename_symbol should succeed: {:?}",
+                result.err()
+            );
 
             let call_result = result.unwrap();
             let text = extract_text_from_result(&call_result).expect("Expected text content");
@@ -1771,9 +1805,15 @@ if __name__ == "__main__":
 
             // Verify response structure
             assert_eq!(json["status"], "ok", "Response status should be 'ok'");
-            assert!(json["patch"].is_object(), "Response should have patch object");
+            assert!(
+                json["patch"].is_object(),
+                "Response should have patch object"
+            );
             // For dry runs, 'applied' field is absent (not false)
-            assert!(json["applied"].is_null(), "applied should be absent for dry run");
+            assert!(
+                json["applied"].is_null(),
+                "applied should be absent for dry run"
+            );
         });
 
         // Verify file was NOT modified
@@ -1812,7 +1852,11 @@ if __name__ == "__main__":
             });
 
             let result = server.tug_rename_symbol(params).await;
-            assert!(result.is_ok(), "rename_symbol should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "rename_symbol should succeed: {:?}",
+                result.err()
+            );
 
             let call_result = result.unwrap();
             let text = extract_text_from_result(&call_result).expect("Expected text content");
@@ -1899,9 +1943,7 @@ if __name__ == "__main__":
             assert_eq!(read_result.contents.len(), 1);
 
             // Verify it's JSON with files array
-            if let ResourceContents::TextResourceContents { text, .. } =
-                &read_result.contents[0]
-            {
+            if let ResourceContents::TextResourceContents { text, .. } = &read_result.contents[0] {
                 let json: serde_json::Value = serde_json::from_str(text).unwrap();
                 assert!(json["files"].is_array());
                 assert!(json["count"].is_u64());
@@ -1943,9 +1985,7 @@ if __name__ == "__main__":
             assert!(result.is_ok());
 
             let read_result = result.unwrap();
-            if let ResourceContents::TextResourceContents { text, .. } =
-                &read_result.contents[0]
-            {
+            if let ResourceContents::TextResourceContents { text, .. } = &read_result.contents[0] {
                 let json: serde_json::Value = serde_json::from_str(text).unwrap();
                 assert!(json["references"].is_array());
             } else {
@@ -1966,9 +2006,7 @@ if __name__ == "__main__":
             assert!(result.is_ok());
 
             let read_result = result.unwrap();
-            if let ResourceContents::TextResourceContents { text, .. } =
-                &read_result.contents[0]
-            {
+            if let ResourceContents::TextResourceContents { text, .. } = &read_result.contents[0] {
                 let json: serde_json::Value = serde_json::from_str(text).unwrap();
                 assert!(json["symbols"].is_array());
                 assert!(json["note"].is_string());
@@ -1990,9 +2028,7 @@ if __name__ == "__main__":
             assert!(result.is_ok());
 
             let read_result = result.unwrap();
-            if let ResourceContents::TextResourceContents { text, .. } =
-                &read_result.contents[0]
-            {
+            if let ResourceContents::TextResourceContents { text, .. } = &read_result.contents[0] {
                 let json: serde_json::Value = serde_json::from_str(text).unwrap();
                 assert!(json["patch"].is_null());
             } else {
@@ -2021,7 +2057,7 @@ if __name__ == "__main__":
 
     mod error_conversion_tests {
         use super::*;
-        use crate::error::{TugError, OutputErrorCode};
+        use crate::error::{OutputErrorCode, TugError};
         use crate::output::Location;
 
         /// Helper to extract error data from McpError
@@ -2225,8 +2261,7 @@ if __name__ == "__main__":
 
             for err in errors {
                 let mcp_err = McpError::from(err);
-                let data = get_error_data(&mcp_err)
-                    .expect("All MCP errors should have data");
+                let data = get_error_data(&mcp_err).expect("All MCP errors should have data");
                 assert!(
                     data.get("tug_code").is_some(),
                     "Error should include tug_code: {:?}",
@@ -2287,7 +2322,10 @@ if __name__ == "__main__":
                     workspace_path: Some(workspace.path().to_str().unwrap().to_string()),
                 });
                 let result3 = server.tug_verify(params3).await;
-                assert!(result3.is_ok(), "Verify should succeed with existing session");
+                assert!(
+                    result3.is_ok(),
+                    "Verify should succeed with existing session"
+                );
             });
         }
 

@@ -65,20 +65,22 @@ pub fn find_symbol_at_location(
     files: &[(String, String)],
 ) -> LookupResult<FactsSymbol> {
     // Find the file
-    let file = store
-        .file_by_path(&location.file)
-        .ok_or_else(|| LookupError::File(FileError::NotFound {
+    let file = store.file_by_path(&location.file).ok_or_else(|| {
+        LookupError::File(FileError::NotFound {
             path: location.file.clone(),
-        }))?;
+        })
+    })?;
 
     // Get file content to compute byte offset
     let content = files
         .iter()
         .find(|(p, _)| p == &location.file)
         .map(|(_, c)| c.as_str())
-        .ok_or_else(|| LookupError::File(FileError::NotFound {
-            path: location.file.clone(),
-        }))?;
+        .ok_or_else(|| {
+            LookupError::File(FileError::NotFound {
+                path: location.file.clone(),
+            })
+        })?;
 
     // Convert line:col to byte offset
     let byte_offset = position_to_byte_offset_str(content, location.line, location.col);

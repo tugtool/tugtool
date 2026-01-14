@@ -298,7 +298,11 @@ fn golden_run_success_verified() {
 #[test]
 fn golden_snapshot_success() {
     // Snapshot doesn't require Python/libcst
-    let result = run_golden_test(&["snapshot"], "snapshot_success.json", Some("rename_function"));
+    let result = run_golden_test(
+        &["snapshot"],
+        "snapshot_success.json",
+        Some("rename_function"),
+    );
 
     if let Err(e) = result {
         panic!("Golden test failed: {}", e);

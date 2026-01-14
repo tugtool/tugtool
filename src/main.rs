@@ -26,16 +26,14 @@ use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use tugtool::cli::{run_analyze_impact, run_rename};
-use tugtool::error::{TugError, OutputErrorCode};
+use tugtool::error::{OutputErrorCode, TugError};
 use tugtool::output::{
     emit_response, ErrorInfo, ErrorResponse, SnapshotResponse, VerifyResponse, SCHEMA_VERSION,
 };
 use tugtool::python::bootstrap::{
     ensure_managed_venv, validate_managed_venv, BootstrapError, VenvLocation,
 };
-use tugtool::python::env::{
-    check_libcst, managed_venv_dir, resolve_python, ResolutionOptions,
-};
+use tugtool::python::env::{check_libcst, managed_venv_dir, resolve_python, ResolutionOptions};
 use tugtool::python::verification::VerificationMode;
 use tugtool::session::{Session, SessionOptions};
 use tugtool::testcmd::{resolve_test_command, TemplateVars};
@@ -388,8 +386,7 @@ fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
     );
 
     // Output response JSON
-    emit_response(&response, &mut io::stdout())
-        .map_err(|e| TugError::internal(e.to_string()))?;
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
     let _ = io::stdout().flush();
 
     Ok(())
@@ -441,12 +438,9 @@ fn execute_run(
                     Some(python_path.to_string_lossy().to_string()),
                     Some(session.workspace_root().to_string_lossy().to_string()),
                 );
-                let _test_cmd = resolve_test_command(
-                    test_command.as_deref(),
-                    session.workspace_root(),
-                    &vars,
-                )
-                .map_err(|e| TugError::internal(e.to_string()))?;
+                let _test_cmd =
+                    resolve_test_command(test_command.as_deref(), session.workspace_root(), &vars)
+                        .map_err(|e| TugError::internal(e.to_string()))?;
                 // TODO: Pass test command to run_rename when tests verification is implemented
             }
 
@@ -561,9 +555,7 @@ fn execute_verify(
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .output()
-                    .map_err(|e| {
-                        TugError::internal(format!("Failed to run test command: {}", e))
-                    })?
+                    .map_err(|e| TugError::internal(format!("Failed to run test command: {}", e)))?
             } else {
                 // No test command found, just return syntax success
                 syntax_output
@@ -595,8 +587,7 @@ fn execute_verify(
         });
     }
 
-    emit_response(&response, &mut io::stdout())
-        .map_err(|e| TugError::internal(e.to_string()))?;
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
     let _ = io::stdout().flush();
 
     Ok(())
@@ -665,14 +656,14 @@ fn execute_toolchain(
 }
 
 /// Execute Python toolchain command.
-fn execute_python_toolchain(
-    global: &GlobalArgs,
-    action: ToolchainAction,
-) -> Result<(), TugError> {
+fn execute_python_toolchain(global: &GlobalArgs, action: ToolchainAction) -> Result<(), TugError> {
     let session = open_session(global)?;
 
     match action {
-        ToolchainAction::Setup { recreate, global: use_global } => {
+        ToolchainAction::Setup {
+            recreate,
+            global: use_global,
+        } => {
             let location = if use_global {
                 VenvLocation::Global
             } else {
@@ -706,8 +697,8 @@ fn execute_python_toolchain(
             match resolve_python(session.session_dir(), &options) {
                 Ok(env) => {
                     let venv_dir = managed_venv_dir(session.session_dir());
-                    let is_managed = env.config.is_managed_venv
-                        || env.interpreter().starts_with(&venv_dir);
+                    let is_managed =
+                        env.config.is_managed_venv || env.interpreter().starts_with(&venv_dir);
 
                     let response = serde_json::json!({
                         "status": "ok",
@@ -780,24 +771,12 @@ fn execute_python_toolchain(
 /// Convert BootstrapError to TugError.
 fn bootstrap_error_to_tug_error(e: BootstrapError) -> TugError {
     match e {
-        BootstrapError::NoPythonFound => {
-            TugError::internal(e.to_string())
-        }
-        BootstrapError::PythonTooOld { .. } => {
-            TugError::internal(e.to_string())
-        }
-        BootstrapError::VenvCreationFailed { .. } => {
-            TugError::internal(e.to_string())
-        }
-        BootstrapError::LibcstInstallFailed { .. } => {
-            TugError::internal(e.to_string())
-        }
-        BootstrapError::VenvInvalid { .. } => {
-            TugError::internal(e.to_string())
-        }
-        BootstrapError::Io(io_err) => {
-            TugError::internal(format!("IO error: {}", io_err))
-        }
+        BootstrapError::NoPythonFound => TugError::internal(e.to_string()),
+        BootstrapError::PythonTooOld { .. } => TugError::internal(e.to_string()),
+        BootstrapError::VenvCreationFailed { .. } => TugError::internal(e.to_string()),
+        BootstrapError::LibcstInstallFailed { .. } => TugError::internal(e.to_string()),
+        BootstrapError::VenvInvalid { .. } => TugError::internal(e.to_string()),
+        BootstrapError::Io(io_err) => TugError::internal(format!("IO error: {}", io_err)),
     }
 }
 
@@ -859,10 +838,8 @@ fn resolve_toolchain(
     let resolved_path = match lang {
         "python" => {
             let options = ResolutionOptions::default().require_libcst();
-            let python_env =
-                resolve_python(session.session_dir(), &options).map_err(|e| {
-                    TugError::internal(format!("Python resolution failed: {}", e))
-                })?;
+            let python_env = resolve_python(session.session_dir(), &options)
+                .map_err(|e| TugError::internal(format!("Python resolution failed: {}", e)))?;
             python_env.interpreter().to_path_buf()
         }
         "rust" => {
@@ -1523,29 +1500,14 @@ mod tests {
 
         #[test]
         fn parse_session_dir_flag() {
-            let args = [
-                "tug",
-                "--session-dir",
-                "/tmp/session",
-                "session",
-                "status",
-            ];
+            let args = ["tug", "--session-dir", "/tmp/session", "session", "status"];
             let cli = Cli::try_parse_from(args).unwrap();
-            assert_eq!(
-                cli.global.session_dir,
-                Some(PathBuf::from("/tmp/session"))
-            );
+            assert_eq!(cli.global.session_dir, Some(PathBuf::from("/tmp/session")));
         }
 
         #[test]
         fn parse_session_name_flag() {
-            let args = [
-                "tug",
-                "--session-name",
-                "my-session",
-                "session",
-                "status",
-            ];
+            let args = ["tug", "--session-name", "my-session", "session", "status"];
             let cli = Cli::try_parse_from(args).unwrap();
             assert_eq!(cli.global.session_name, Some("my-session".to_string()));
         }
@@ -1821,7 +1783,7 @@ mod tests {
     }
 
     mod exit_code_mapping {
-        use tugtool::error::{TugError, OutputErrorCode};
+        use tugtool::error::{OutputErrorCode, TugError};
 
         #[test]
         fn symbol_not_found_maps_to_exit_code_3() {
@@ -1956,8 +1918,14 @@ mod tests {
                     .map(|(_, p)| p.clone())
             };
 
-            assert_eq!(find_override("python"), Some(PathBuf::from("/usr/bin/python3")));
-            assert_eq!(find_override("rust"), Some(PathBuf::from("/usr/bin/rust-analyzer")));
+            assert_eq!(
+                find_override("python"),
+                Some(PathBuf::from("/usr/bin/python3"))
+            );
+            assert_eq!(
+                find_override("rust"),
+                Some(PathBuf::from("/usr/bin/rust-analyzer"))
+            );
             assert!(find_override("typescript").is_none());
         }
 

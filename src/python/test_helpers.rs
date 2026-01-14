@@ -35,9 +35,8 @@ pub fn require_python_with_libcst() -> PathBuf {
     });
 
     // Create the python subdirectory that resolve_python expects
-    std::fs::create_dir_all(temp_session.path().join("python")).unwrap_or_else(|e| {
-        panic!("Failed to create python config dir: {}", e)
-    });
+    std::fs::create_dir_all(temp_session.path().join("python"))
+        .unwrap_or_else(|e| panic!("Failed to create python config dir: {}", e));
 
     let options = ResolutionOptions::default().require_libcst();
 

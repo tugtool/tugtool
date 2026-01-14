@@ -304,11 +304,16 @@ impl PythonRenameOp {
             let method_name = &symbol.name;
             for (path, content) in &files {
                 // Get file analysis with method calls
-                let parse_resp = worker.parse(path, content).map_err(|e| RenameError::AnalyzerError {
-                    message: e.to_string(),
-                })?;
-                let combined = worker.get_analysis(&parse_resp.cst_id).map_err(|e| RenameError::AnalyzerError {
-                    message: e.to_string(),
+                let parse_resp =
+                    worker
+                        .parse(path, content)
+                        .map_err(|e| RenameError::AnalyzerError {
+                            message: e.to_string(),
+                        })?;
+                let combined = worker.get_analysis(&parse_resp.cst_id).map_err(|e| {
+                    RenameError::AnalyzerError {
+                        message: e.to_string(),
+                    }
                 })?;
 
                 // For each method call with matching name, check if we should include it
@@ -319,10 +324,14 @@ impl PythonRenameOp {
                             let file = store.file_by_path(path);
                             if let Some(f) = file {
                                 let file_id = f.file_id;
-                                let sp = crate::patch::Span::new(span.start as u64, span.end as u64);
+                                let sp =
+                                    crate::patch::Span::new(span.start as u64, span.end as u64);
                                 // Only add if not already present (untyped call)
                                 let key = (file_id, sp.start, sp.end);
-                                if !all_edits.iter().any(|(fid, s, _)| (*fid, s.start, s.end) == key) {
+                                if !all_edits
+                                    .iter()
+                                    .any(|(fid, s, _)| (*fid, s.start, s.end) == key)
+                                {
                                     all_edits.push((file_id, sp, ReferenceKind::Call));
                                 }
                             }
@@ -334,9 +343,7 @@ impl PythonRenameOp {
 
         // Deduplicate edits by (file_id, span)
         let mut seen_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
-        all_edits.retain(|(file_id, span, _)| {
-            seen_spans.insert((*file_id, span.start, span.end))
-        });
+        all_edits.retain(|(file_id, span, _)| seen_spans.insert((*file_id, span.start, span.end)));
 
         // Build reference info
         let mut references = Vec::new();
@@ -377,7 +384,8 @@ impl PythonRenameOp {
 
         // Collect dynamic pattern warnings (preserved as structured per Spec S11)
         let file_paths: Vec<PathBuf> = files.iter().map(|(p, _)| PathBuf::from(p)).collect();
-        let warnings = collect_dynamic_warnings(&mut worker, &file_paths, &symbol.name, DynamicMode::Safe)?;
+        let warnings =
+            collect_dynamic_warnings(&mut worker, &file_paths, &symbol.name, DynamicMode::Safe)?;
 
         // Generate snapshot ID
         let snapshot_id = generate_snapshot_id();
@@ -456,11 +464,16 @@ impl PythonRenameOp {
         if !override_ids.is_empty() {
             let method_name = &symbol.name;
             for (path, content) in &files {
-                let parse_resp = worker.parse(path, content).map_err(|e| RenameError::AnalyzerError {
-                    message: e.to_string(),
-                })?;
-                let combined = worker.get_analysis(&parse_resp.cst_id).map_err(|e| RenameError::AnalyzerError {
-                    message: e.to_string(),
+                let parse_resp =
+                    worker
+                        .parse(path, content)
+                        .map_err(|e| RenameError::AnalyzerError {
+                            message: e.to_string(),
+                        })?;
+                let combined = worker.get_analysis(&parse_resp.cst_id).map_err(|e| {
+                    RenameError::AnalyzerError {
+                        message: e.to_string(),
+                    }
                 })?;
 
                 for method_call in &combined.method_calls {
@@ -471,7 +484,10 @@ impl PythonRenameOp {
                                 let file_id = f.file_id;
                                 let sp = Span::new(span.start as u64, span.end as u64);
                                 let key = (file_id, sp.start, sp.end);
-                                if !all_edits.iter().any(|(fid, s)| (*fid, s.start, s.end) == key) {
+                                if !all_edits
+                                    .iter()
+                                    .any(|(fid, s)| (*fid, s.start, s.end) == key)
+                                {
                                     all_edits.push((file_id, sp));
                                 }
                             }
@@ -609,7 +625,8 @@ impl PythonRenameOp {
 
         // Collect dynamic pattern warnings (preserved as structured per Spec S11)
         let file_paths: Vec<PathBuf> = files.iter().map(|(p, _)| PathBuf::from(p)).collect();
-        let warnings = collect_dynamic_warnings(&mut worker, &file_paths, &old_name, DynamicMode::Safe)?;
+        let warnings =
+            collect_dynamic_warnings(&mut worker, &file_paths, &old_name, DynamicMode::Safe)?;
 
         // Generate snapshot and undo token
         let snapshot_id = generate_snapshot_id();

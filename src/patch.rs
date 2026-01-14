@@ -374,9 +374,9 @@ impl Anchor {
 
                     // Check if this match overlaps with a previous match
                     // If so, skip it (keep only the first of overlapping matches)
-                    let overlaps_existing = matches.iter().any(|existing: &Span| {
-                        found_span.overlaps(existing)
-                    });
+                    let overlaps_existing = matches
+                        .iter()
+                        .any(|existing: &Span| found_span.overlaps(existing));
 
                     if !overlaps_existing {
                         matches.push(found_span);
@@ -796,9 +796,7 @@ impl PatchSet {
                             });
                         }
                     } else {
-                        conflicts.push(Conflict::FileMissing {
-                            file_id: *file_id,
-                        });
+                        conflicts.push(Conflict::FileMissing { file_id: *file_id });
                     }
                 }
                 Precondition::NoOverlaps => {
@@ -1945,7 +1943,9 @@ mod tests {
 
             // Both old and new text don't end with newline, so marker should appear
             assert!(
-                materialized.unified_diff.contains("\\ No newline at end of file"),
+                materialized
+                    .unified_diff
+                    .contains("\\ No newline at end of file"),
                 "Should have 'No newline at end of file' marker, got: {}",
                 materialized.unified_diff
             );
@@ -1993,10 +1993,10 @@ mod tests {
 
             let anchor = Anchor::span_with_context(
                 Span::new(2, 4), // approximate location
-                "aa",           // prefix
-                "",             // no suffix
-                None,           // no hash
-                10,             // search window
+                "aa",            // prefix
+                "",              // no suffix
+                None,            // no hash
+                10,              // search window
             );
 
             match anchor.resolve(&content) {
@@ -2153,7 +2153,9 @@ mod tests {
                 ApplyResult::Failed { conflicts } => {
                     assert_eq!(conflicts.len(), 1);
                     match &conflicts[0] {
-                        Conflict::FileMissing { file_id: missing_id } => {
+                        Conflict::FileMissing {
+                            file_id: missing_id,
+                        } => {
                             assert_eq!(missing_id, &file_id);
                         }
                         other => panic!("Expected FileMissing, got {:?}", other),

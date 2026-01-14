@@ -31,7 +31,6 @@ pub enum VerificationMode {
     TypeCheck,
 }
 
-
 /// Status of verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -193,7 +192,10 @@ pub fn run_verification(
 }
 
 /// Run compileall syntax check.
-pub fn run_compileall(python_path: &Path, target_dir: &Path) -> VerificationResultType<VerificationCheck> {
+pub fn run_compileall(
+    python_path: &Path,
+    target_dir: &Path,
+) -> VerificationResultType<VerificationCheck> {
     let start = Instant::now();
     let output = Command::new(python_path)
         .args(["-m", "compileall", "-q", "."])
@@ -230,7 +232,10 @@ pub fn run_compileall(python_path: &Path, target_dir: &Path) -> VerificationResu
 /// Run pytest (for VerificationMode::Tests).
 ///
 /// Returns None if pytest is not available.
-pub fn run_pytest(python_path: &Path, target_dir: &Path) -> VerificationResultType<Option<VerificationCheck>> {
+pub fn run_pytest(
+    python_path: &Path,
+    target_dir: &Path,
+) -> VerificationResultType<Option<VerificationCheck>> {
     // Check if pytest is available
     let check = Command::new(python_path)
         .args(["-m", "pytest", "--version"])
@@ -280,7 +285,10 @@ pub fn run_pytest(python_path: &Path, target_dir: &Path) -> VerificationResultTy
 /// Run mypy (for VerificationMode::TypeCheck).
 ///
 /// Returns None if mypy is not available.
-pub fn run_mypy(python_path: &Path, target_dir: &Path) -> VerificationResultType<Option<VerificationCheck>> {
+pub fn run_mypy(
+    python_path: &Path,
+    target_dir: &Path,
+) -> VerificationResultType<Option<VerificationCheck>> {
     // Check if mypy is available
     let check = Command::new(python_path)
         .args(["-m", "mypy", "--version"])

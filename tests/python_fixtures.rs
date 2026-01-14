@@ -19,8 +19,8 @@ use tempfile::TempDir;
 
 use tugtool::output::Location;
 use tugtool::python::rename::{PythonRenameOp, RenameOutput};
-use tugtool::python::verification::VerificationMode;
 use tugtool::python::require_python_with_libcst;
+use tugtool::python::verification::VerificationMode;
 
 // ============================================================================
 // Manifest Types
@@ -172,7 +172,11 @@ fn load_golden_json(test_case: &TestCase) -> Option<GoldenJson> {
 
     // Golden paths in manifest are relative to fixtures/python/
     let golden_path = if json_path_str.starts_with("../golden/") {
-        golden_dir().join(json_path_str.strip_prefix("../golden/python/").unwrap_or(json_path_str))
+        golden_dir().join(
+            json_path_str
+                .strip_prefix("../golden/python/")
+                .unwrap_or(json_path_str),
+        )
     } else {
         golden_dir().join(json_path_str)
     };
@@ -266,7 +270,6 @@ fn verify_golden_match(result: &RenameOutput, golden: &GoldenJson) -> Result<(),
 }
 
 fn run_test_case(test_case: &TestCase, python: &Path) -> Result<RenameOutput, String> {
-
     // Create temporary workspace
     let workspace = TempDir::new().map_err(|e| format!("Failed to create temp dir: {}", e))?;
     let session = TempDir::new().map_err(|e| format!("Failed to create session dir: {}", e))?;
@@ -716,7 +719,10 @@ fn edge_case_large_files() {
     // Should succeed without timeout or memory issues
     assert!(result.is_ok(), "Large file rename failed: {:?}", result);
     let output = result.unwrap();
-    assert!(output.summary.edits_count >= 2, "Should find definition and call");
+    assert!(
+        output.summary.edits_count >= 2,
+        "Should find definition and call"
+    );
 }
 
 /// Test handling of Unicode identifiers in Python.
@@ -1054,9 +1060,10 @@ fn fixture_edge_cases_dynamic_attr_warnings() {
     // If no warnings, that's OK - the test primarily validates the operation succeeds.
     if !impact.warnings.is_empty() {
         // Check for expected warning codes (now structured DynamicWarning objects)
-        let has_expected_code = impact.warnings.iter().any(|w| {
-            w.code == "W001" || w.code == "W003" || w.code == "W004"
-        });
+        let has_expected_code = impact
+            .warnings
+            .iter()
+            .any(|w| w.code == "W001" || w.code == "W003" || w.code == "W004");
         assert!(
             has_expected_code,
             "Should have dynamic pattern warnings with codes W001/W003/W004: {:?}",

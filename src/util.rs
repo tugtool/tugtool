@@ -81,7 +81,11 @@ mod tests {
     #[test]
     fn generate_undo_token_format() {
         let token = generate_undo_token();
-        assert!(token.starts_with("undo_"), "Should start with undo_: {}", token);
+        assert!(
+            token.starts_with("undo_"),
+            "Should start with undo_: {}",
+            token
+        );
         assert_eq!(token.len(), 21, "Should be 21 chars: {}", token); // "undo_" + 16 hex
     }
 

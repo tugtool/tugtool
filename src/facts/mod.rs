@@ -120,7 +120,6 @@ pub enum Language {
     Unknown,
 }
 
-
 /// Kind of module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,7 +133,6 @@ pub enum ModuleKind {
     /// Namespace package (no __init__.py).
     Namespace,
 }
-
 
 /// Kind of symbol definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -152,7 +150,6 @@ pub enum SymbolKind {
     Constant,
     TypeAlias,
 }
-
 
 impl SymbolKind {
     /// Convert to spec-compliant output kind string.
@@ -199,7 +196,6 @@ pub enum ReferenceKind {
     Write,
 }
 
-
 impl ReferenceKind {
     /// Convert to spec-compliant output kind string.
     ///
@@ -239,7 +235,6 @@ pub enum ScopeKind {
     Lambda,
 }
 
-
 /// Source of type information for a symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -253,7 +248,6 @@ pub enum TypeSource {
     #[default]
     Unknown,
 }
-
 
 // ============================================================================
 // Facts Tables
@@ -554,7 +548,10 @@ pub struct InheritanceInfo {
 impl InheritanceInfo {
     /// Create a new inheritance relationship.
     pub fn new(child_id: SymbolId, parent_id: SymbolId) -> Self {
-        InheritanceInfo { child_id, parent_id }
+        InheritanceInfo {
+            child_id,
+            parent_id,
+        }
     }
 }
 
@@ -896,8 +893,7 @@ impl FactsStore {
         self.scopes_by_file
             .get(&file_id)
             .map(|ids| {
-                let mut scopes: Vec<_> =
-                    ids.iter().filter_map(|id| self.scopes.get(id)).collect();
+                let mut scopes: Vec<_> = ids.iter().filter_map(|id| self.scopes.get(id)).collect();
                 scopes.sort_by_key(|s| s.scope_id);
                 scopes
             })
@@ -918,7 +914,9 @@ impl FactsStore {
             .collect();
 
         // Return the innermost (smallest span) scope
-        containing.into_iter().min_by_key(|s| s.span.end - s.span.start)
+        containing
+            .into_iter()
+            .min_by_key(|s| s.span.end - s.span.start)
     }
 
     /// Get all child classes of a class.
@@ -935,10 +933,7 @@ impl FactsStore {
     ///
     /// Returns the symbol IDs of classes that the given class directly inherits from.
     pub fn parents_of_class(&self, symbol_id: SymbolId) -> Vec<SymbolId> {
-        self.parents_of
-            .get(&symbol_id)
-            .cloned()
-            .unwrap_or_default()
+        self.parents_of.get(&symbol_id).cloned().unwrap_or_default()
     }
 
     // ========================================================================
@@ -1627,15 +1622,23 @@ mod tests {
 
             // Create module scope (parent)
             let module_scope_id = store.next_scope_id();
-            let module_scope =
-                ScopeInfo::new(module_scope_id, file_id, Span::new(0, 200), ScopeKind::Module);
+            let module_scope = ScopeInfo::new(
+                module_scope_id,
+                file_id,
+                Span::new(0, 200),
+                ScopeKind::Module,
+            );
             store.insert_scope(module_scope);
 
             // Create function scope (child)
             let func_scope_id = store.next_scope_id();
-            let func_scope =
-                ScopeInfo::new(func_scope_id, file_id, Span::new(10, 100), ScopeKind::Function)
-                    .with_parent(module_scope_id);
+            let func_scope = ScopeInfo::new(
+                func_scope_id,
+                file_id,
+                Span::new(10, 100),
+                ScopeKind::Function,
+            )
+            .with_parent(module_scope_id);
             store.insert_scope(func_scope);
 
             // Create nested class scope (grandchild)
@@ -1667,7 +1670,8 @@ mod tests {
             store.insert_scope(scope1);
 
             let scope2_id = store.next_scope_id();
-            let scope2 = ScopeInfo::new(scope2_id, file_id, Span::new(10, 100), ScopeKind::Function);
+            let scope2 =
+                ScopeInfo::new(scope2_id, file_id, Span::new(10, 100), ScopeKind::Function);
             store.insert_scope(scope2);
 
             let scope3_id = store.next_scope_id();
@@ -1748,12 +1752,17 @@ mod tests {
 
         #[test]
         fn scope_contains_position() {
-            let scope = ScopeInfo::new(ScopeId::new(0), FileId::new(0), Span::new(10, 50), ScopeKind::Function);
+            let scope = ScopeInfo::new(
+                ScopeId::new(0),
+                FileId::new(0),
+                Span::new(10, 50),
+                ScopeKind::Function,
+            );
 
-            assert!(!scope.contains_position(9));  // before
-            assert!(scope.contains_position(10));  // at start (inclusive)
-            assert!(scope.contains_position(30));  // middle
-            assert!(scope.contains_position(49));  // just before end
+            assert!(!scope.contains_position(9)); // before
+            assert!(scope.contains_position(10)); // at start (inclusive)
+            assert!(scope.contains_position(30)); // middle
+            assert!(scope.contains_position(49)); // just before end
             assert!(!scope.contains_position(50)); // at end (exclusive)
             assert!(!scope.contains_position(51)); // after
         }
@@ -1840,14 +1849,29 @@ mod tests {
 
             // Add scopes to file1
             let scope1_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(scope1_id, file1_id, Span::new(0, 100), ScopeKind::Module));
+            store.insert_scope(ScopeInfo::new(
+                scope1_id,
+                file1_id,
+                Span::new(0, 100),
+                ScopeKind::Module,
+            ));
 
             let scope2_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(scope2_id, file1_id, Span::new(10, 50), ScopeKind::Function));
+            store.insert_scope(ScopeInfo::new(
+                scope2_id,
+                file1_id,
+                Span::new(10, 50),
+                ScopeKind::Function,
+            ));
 
             // Add scopes to file2
             let scope3_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(scope3_id, file2_id, Span::new(0, 200), ScopeKind::Module));
+            store.insert_scope(ScopeInfo::new(
+                scope3_id,
+                file2_id,
+                Span::new(0, 200),
+                ScopeKind::Module,
+            ));
 
             // Verify scopes_in_file returns only scopes for that file
             assert_eq!(store.scopes_in_file(file1_id).len(), 2);
@@ -1871,10 +1895,20 @@ mod tests {
             // Two scopes of equal size (pathological case)
             // In reality this shouldn't happen, but we should handle it deterministically
             let scope1_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(scope1_id, file_id, Span::new(10, 50), ScopeKind::Function));
+            store.insert_scope(ScopeInfo::new(
+                scope1_id,
+                file_id,
+                Span::new(10, 50),
+                ScopeKind::Function,
+            ));
 
             let scope2_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(scope2_id, file_id, Span::new(10, 50), ScopeKind::Lambda));
+            store.insert_scope(ScopeInfo::new(
+                scope2_id,
+                file_id,
+                Span::new(10, 50),
+                ScopeKind::Lambda,
+            ));
 
             // Both contain position 30 and have equal size - should return one deterministically
             let result = store.scope_at_position(file_id, 30);
@@ -1890,13 +1924,28 @@ mod tests {
 
             // Insert scopes in non-sequential order by span
             let id1 = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(id1, file_id, Span::new(100, 200), ScopeKind::Function));
+            store.insert_scope(ScopeInfo::new(
+                id1,
+                file_id,
+                Span::new(100, 200),
+                ScopeKind::Function,
+            ));
 
             let id2 = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(id2, file_id, Span::new(0, 300), ScopeKind::Module));
+            store.insert_scope(ScopeInfo::new(
+                id2,
+                file_id,
+                Span::new(0, 300),
+                ScopeKind::Module,
+            ));
 
             let id3 = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(id3, file_id, Span::new(50, 80), ScopeKind::Lambda));
+            store.insert_scope(ScopeInfo::new(
+                id3,
+                file_id,
+                Span::new(50, 80),
+                ScopeKind::Lambda,
+            ));
 
             // Multiple iterations should return same order (by ScopeId due to BTreeMap)
             let iter1: Vec<_> = store.scopes().map(|s| s.scope_id).collect();
@@ -1954,23 +2003,41 @@ mod tests {
             //       Comprehension: 30-700
             //         Lambda: 40-600
             let module_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(module_id, file_id, Span::new(0, 1000), ScopeKind::Module));
+            store.insert_scope(ScopeInfo::new(
+                module_id,
+                file_id,
+                Span::new(0, 1000),
+                ScopeKind::Module,
+            ));
 
             let class_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(class_id, file_id, Span::new(10, 900), ScopeKind::Class)
-                .with_parent(module_id));
+            store.insert_scope(
+                ScopeInfo::new(class_id, file_id, Span::new(10, 900), ScopeKind::Class)
+                    .with_parent(module_id),
+            );
 
             let func_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(func_id, file_id, Span::new(20, 800), ScopeKind::Function)
-                .with_parent(class_id));
+            store.insert_scope(
+                ScopeInfo::new(func_id, file_id, Span::new(20, 800), ScopeKind::Function)
+                    .with_parent(class_id),
+            );
 
             let comp_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(comp_id, file_id, Span::new(30, 700), ScopeKind::Comprehension)
-                .with_parent(func_id));
+            store.insert_scope(
+                ScopeInfo::new(
+                    comp_id,
+                    file_id,
+                    Span::new(30, 700),
+                    ScopeKind::Comprehension,
+                )
+                .with_parent(func_id),
+            );
 
             let lambda_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(lambda_id, file_id, Span::new(40, 600), ScopeKind::Lambda)
-                .with_parent(comp_id));
+            store.insert_scope(
+                ScopeInfo::new(lambda_id, file_id, Span::new(40, 600), ScopeKind::Lambda)
+                    .with_parent(comp_id),
+            );
 
             // Position 50 is in all 5 scopes - should return innermost (lambda)
             let innermost = store.scope_at_position(file_id, 50).unwrap();
@@ -2369,15 +2436,33 @@ mod tests {
             store.insert_file(file);
 
             let parent_id = store.next_symbol_id();
-            let parent = Symbol::new(parent_id, SymbolKind::Class, "Base", file_id, Span::new(0, 30));
+            let parent = Symbol::new(
+                parent_id,
+                SymbolKind::Class,
+                "Base",
+                file_id,
+                Span::new(0, 30),
+            );
             store.insert_symbol(parent);
 
             let child1_id = store.next_symbol_id();
-            let child1 = Symbol::new(child1_id, SymbolKind::Class, "Child1", file_id, Span::new(40, 70));
+            let child1 = Symbol::new(
+                child1_id,
+                SymbolKind::Class,
+                "Child1",
+                file_id,
+                Span::new(40, 70),
+            );
             store.insert_symbol(child1);
 
             let child2_id = store.next_symbol_id();
-            let child2 = Symbol::new(child2_id, SymbolKind::Class, "Child2", file_id, Span::new(80, 110));
+            let child2 = Symbol::new(
+                child2_id,
+                SymbolKind::Class,
+                "Child2",
+                file_id,
+                Span::new(80, 110),
+            );
             store.insert_symbol(child2);
 
             store.insert_inheritance(InheritanceInfo::new(child1_id, parent_id));
@@ -2395,11 +2480,23 @@ mod tests {
             store.insert_file(file);
 
             let parent_id = store.next_symbol_id();
-            let parent = Symbol::new(parent_id, SymbolKind::Class, "Base", file_id, Span::new(0, 30));
+            let parent = Symbol::new(
+                parent_id,
+                SymbolKind::Class,
+                "Base",
+                file_id,
+                Span::new(0, 30),
+            );
             store.insert_symbol(parent);
 
             let child_id = store.next_symbol_id();
-            let child = Symbol::new(child_id, SymbolKind::Class, "Child", file_id, Span::new(40, 70));
+            let child = Symbol::new(
+                child_id,
+                SymbolKind::Class,
+                "Child",
+                file_id,
+                Span::new(40, 70),
+            );
             store.insert_symbol(child);
 
             store.insert_inheritance(InheritanceInfo::new(child_id, parent_id));
@@ -2452,16 +2549,40 @@ mod tests {
             //     \ /
             //      D
             let a_id = store.next_symbol_id();
-            store.insert_symbol(Symbol::new(a_id, SymbolKind::Class, "A", file_id, Span::new(0, 10)));
+            store.insert_symbol(Symbol::new(
+                a_id,
+                SymbolKind::Class,
+                "A",
+                file_id,
+                Span::new(0, 10),
+            ));
 
             let b_id = store.next_symbol_id();
-            store.insert_symbol(Symbol::new(b_id, SymbolKind::Class, "B", file_id, Span::new(20, 30)));
+            store.insert_symbol(Symbol::new(
+                b_id,
+                SymbolKind::Class,
+                "B",
+                file_id,
+                Span::new(20, 30),
+            ));
 
             let c_id = store.next_symbol_id();
-            store.insert_symbol(Symbol::new(c_id, SymbolKind::Class, "C", file_id, Span::new(40, 50)));
+            store.insert_symbol(Symbol::new(
+                c_id,
+                SymbolKind::Class,
+                "C",
+                file_id,
+                Span::new(40, 50),
+            ));
 
             let d_id = store.next_symbol_id();
-            store.insert_symbol(Symbol::new(d_id, SymbolKind::Class, "D", file_id, Span::new(60, 70)));
+            store.insert_symbol(Symbol::new(
+                d_id,
+                SymbolKind::Class,
+                "D",
+                file_id,
+                Span::new(60, 70),
+            ));
 
             // B and C inherit from A
             store.insert_inheritance(InheritanceInfo::new(b_id, a_id));
@@ -2544,7 +2665,12 @@ mod tests {
 
             // Add scopes
             let scope_id = store.next_scope_id();
-            store.insert_scope(ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Module));
+            store.insert_scope(ScopeInfo::new(
+                scope_id,
+                file_id,
+                Span::new(0, 100),
+                ScopeKind::Module,
+            ));
 
             // Add symbols and types
             let sym = test_symbol(&mut store, "x", file_id, 10);
@@ -2554,9 +2680,21 @@ mod tests {
 
             // Add inheritance
             let parent_id = store.next_symbol_id();
-            store.insert_symbol(Symbol::new(parent_id, SymbolKind::Class, "Parent", file_id, Span::new(20, 40)));
+            store.insert_symbol(Symbol::new(
+                parent_id,
+                SymbolKind::Class,
+                "Parent",
+                file_id,
+                Span::new(20, 40),
+            ));
             let child_id = store.next_symbol_id();
-            store.insert_symbol(Symbol::new(child_id, SymbolKind::Class, "Child", file_id, Span::new(50, 70)));
+            store.insert_symbol(Symbol::new(
+                child_id,
+                SymbolKind::Class,
+                "Child",
+                file_id,
+                Span::new(50, 70),
+            ));
             store.insert_inheritance(InheritanceInfo::new(child_id, parent_id));
 
             // Verify data exists

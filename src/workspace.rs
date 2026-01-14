@@ -154,7 +154,6 @@ pub enum SnapshotMode {
     SandboxCopy,
 }
 
-
 impl fmt::Display for SnapshotMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

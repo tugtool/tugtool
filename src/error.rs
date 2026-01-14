@@ -177,7 +177,9 @@ impl From<RenameError> for TugError {
                         container: None,
                     })
                     .collect();
-                TugError::AmbiguousSymbol { candidates: symbols }
+                TugError::AmbiguousSymbol {
+                    candidates: symbols,
+                }
             }
             RenameError::InvalidName(validation_err) => {
                 // Extract name and reason from ValidationError
@@ -239,7 +241,9 @@ impl From<RenameError> for TugError {
                                 container: None,
                             })
                             .collect();
-                        TugError::AmbiguousSymbol { candidates: symbols }
+                        TugError::AmbiguousSymbol {
+                            candidates: symbols,
+                        }
                     }
                     LookupError::File(file_err) => TugError::FileNotFound {
                         path: file_err.to_string(),
@@ -276,15 +280,13 @@ impl From<SessionError> for TugError {
             SessionError::WorkspaceNotFound { expected } => TugError::FileNotFound {
                 path: expected.to_string_lossy().into_owned(),
             },
-            SessionError::ConcurrentModification { expected, actual } => {
-                TugError::ApplyError {
-                    message: format!(
-                        "session was modified concurrently (expected {}, found {})",
-                        expected, actual
-                    ),
-                    file: None,
-                }
-            }
+            SessionError::ConcurrentModification { expected, actual } => TugError::ApplyError {
+                message: format!(
+                    "session was modified concurrently (expected {}, found {})",
+                    expected, actual
+                ),
+                file: None,
+            },
             SessionError::SessionCorrupt { path, reason } => TugError::SessionError {
                 message: format!("session corrupt at {}: {}", path.display(), reason),
             },
@@ -376,7 +378,10 @@ mod tests {
         #[test]
         fn symbol_not_found_maps_to_resolution_error() {
             let err = TugError::symbol_not_found("test.py", 42, 8);
-            assert_eq!(OutputErrorCode::from(&err), OutputErrorCode::ResolutionError);
+            assert_eq!(
+                OutputErrorCode::from(&err),
+                OutputErrorCode::ResolutionError
+            );
             assert_eq!(err.error_code().code(), 3);
         }
 
@@ -414,13 +419,19 @@ mod tests {
         #[test]
         fn ambiguous_symbol_maps_to_resolution_error() {
             let err = TugError::AmbiguousSymbol { candidates: vec![] };
-            assert_eq!(OutputErrorCode::from(&err), OutputErrorCode::ResolutionError);
+            assert_eq!(
+                OutputErrorCode::from(&err),
+                OutputErrorCode::ResolutionError
+            );
         }
 
         #[test]
         fn file_not_found_maps_to_resolution_error() {
             let err = TugError::file_not_found("missing.py");
-            assert_eq!(OutputErrorCode::from(&err), OutputErrorCode::ResolutionError);
+            assert_eq!(
+                OutputErrorCode::from(&err),
+                OutputErrorCode::ResolutionError
+            );
         }
 
         #[test]

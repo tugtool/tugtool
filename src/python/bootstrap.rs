@@ -110,40 +110,50 @@ pub struct BootstrapResult {
 #[derive(Debug, Error)]
 pub enum BootstrapError {
     /// No suitable Python 3.9+ found.
-    #[error("no suitable Python 3.9+ found\n\n\
+    #[error(
+        "no suitable Python 3.9+ found\n\n\
              Remediation:\n  \
              - Install Python 3.9+ via your package manager\n  \
-             - Or: curl -LsSf https://astral.sh/uv/install.sh | sh && uv python install 3.11")]
+             - Or: curl -LsSf https://astral.sh/uv/install.sh | sh && uv python install 3.11"
+    )]
     NoPythonFound,
 
     /// Python found but version too old.
-    #[error("Python at {path} is version {version}, but 3.9+ is required\n\n\
+    #[error(
+        "Python at {path} is version {version}, but 3.9+ is required\n\n\
              Remediation:\n  \
              - Install Python 3.9+ via your package manager\n  \
-             - Or set $TUG_PYTHON to a newer Python")]
+             - Or set $TUG_PYTHON to a newer Python"
+    )]
     PythonTooOld { path: PathBuf, version: String },
 
     /// Failed to create virtual environment.
-    #[error("failed to create virtual environment at {path}: {reason}\n\n\
+    #[error(
+        "failed to create virtual environment at {path}: {reason}\n\n\
              Remediation:\n  \
              - Check write permissions for {path}\n  \
              - Try: tug python setup --global (uses ~/.tug/venv)\n  \
-             - Or: set $TUG_PYTHON to an existing Python with libcst")]
+             - Or: set $TUG_PYTHON to an existing Python with libcst"
+    )]
     VenvCreationFailed { path: PathBuf, reason: String },
 
     /// Failed to install libcst.
-    #[error("failed to install libcst: {reason}\n\n\
+    #[error(
+        "failed to install libcst: {reason}\n\n\
              Remediation:\n  \
              - Check network connectivity\n  \
              - Try: pip install libcst (then set $TUG_PYTHON)\n  \
-             - Or: tug python setup --recreate")]
+             - Or: tug python setup --recreate"
+    )]
     LibcstInstallFailed { reason: String },
 
     /// Venv exists but is corrupted or invalid.
-    #[error("managed venv at {path} is invalid: {reason}\n\n\
+    #[error(
+        "managed venv at {path} is invalid: {reason}\n\n\
              Remediation:\n  \
              - Run: tug python setup --recreate\n  \
-             - Or: rm -rf {path} && tug python setup")]
+             - Or: rm -rf {path} && tug python setup"
+    )]
     VenvInvalid { path: PathBuf, reason: String },
 
     /// IO error.
@@ -468,9 +478,8 @@ pub fn validate_managed_venv(venv_dir: &Path) -> Result<bool, BootstrapError> {
     }
 
     // Check libcst is importable
-    let (libcst_available, _) = check_libcst(&python_path).map_err(|e| BootstrapError::Io(
-        std::io::Error::other(e.to_string()),
-    ))?;
+    let (libcst_available, _) = check_libcst(&python_path)
+        .map_err(|e| BootstrapError::Io(std::io::Error::other(e.to_string())))?;
 
     Ok(libcst_available)
 }
@@ -498,7 +507,8 @@ fn get_existing_venv_info(location: &VenvLocation) -> Result<BootstrapResult, Bo
     let libcst_version = libcst_version.unwrap_or_else(|| "unknown".to_string());
 
     // Try to determine base Python (may not be available for existing venvs)
-    let base_python_path = detect_base_python(&venv_dir).unwrap_or_else(|| PathBuf::from("unknown"));
+    let base_python_path =
+        detect_base_python(&venv_dir).unwrap_or_else(|| PathBuf::from("unknown"));
 
     Ok(BootstrapResult {
         python_path,
@@ -563,10 +573,7 @@ mod tests {
         let session_dir = PathBuf::from("/workspace/.tug");
         let location = VenvLocation::Workspace(session_dir);
 
-        assert_eq!(
-            location.venv_dir(),
-            PathBuf::from("/workspace/.tug/venv")
-        );
+        assert_eq!(location.venv_dir(), PathBuf::from("/workspace/.tug/venv"));
 
         #[cfg(windows)]
         assert_eq!(
@@ -707,7 +714,10 @@ mod tests {
                 assert!(result.python_path.exists(), "Python should exist");
                 assert!(result.venv_path.exists(), "Venv should exist");
                 assert!(result.created_fresh, "Should be freshly created");
-                assert!(!result.libcst_version.is_empty(), "Should have libcst version");
+                assert!(
+                    !result.libcst_version.is_empty(),
+                    "Should have libcst version"
+                );
 
                 // Calling again should return existing venv
                 let result2 = ensure_managed_venv(location.clone(), false).unwrap();

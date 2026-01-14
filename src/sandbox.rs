@@ -953,9 +953,14 @@ impl RefactorReport {
                         .unwrap_or_else(|| format!("file_{}", file_id.0));
 
                     // Count edits for this file and calculate bytes from actual edits
-                    let file_edits: Vec<_> =
-                        patch.edits.iter().filter(|e| e.file_id == *file_id).collect();
-                    report.per_file_edits.insert(file_path.clone(), file_edits.len());
+                    let file_edits: Vec<_> = patch
+                        .edits
+                        .iter()
+                        .filter(|e| e.file_id == *file_id)
+                        .collect();
+                    report
+                        .per_file_edits
+                        .insert(file_path.clone(), file_edits.len());
 
                     for edit in file_edits {
                         let span_len = edit.anchor.span().len() as usize;
@@ -1532,14 +1537,12 @@ mod tests {
 
             // Check original_root content
             let original_root =
-                fs::read_to_string(sandbox.sandbox_root().join(".tug_meta/original_root"))
-                    .unwrap();
+                fs::read_to_string(sandbox.sandbox_root().join(".tug_meta/original_root")).unwrap();
             assert!(original_root.contains(workspace.path().to_str().unwrap()));
 
             // Check file_manifest content
             let manifest =
-                fs::read_to_string(sandbox.sandbox_root().join(".tug_meta/file_manifest"))
-                    .unwrap();
+                fs::read_to_string(sandbox.sandbox_root().join(".tug_meta/file_manifest")).unwrap();
             assert!(manifest.contains("src/main.py"));
         }
     }
@@ -1767,7 +1770,10 @@ mod tests {
 
             let report = RefactorReport::from_apply_result(&result, &patch, &original_contents);
 
-            assert_eq!(report.bytes_deleted, 5, "Replace should count span as deleted");
+            assert_eq!(
+                report.bytes_deleted, 5,
+                "Replace should count span as deleted"
+            );
             assert_eq!(
                 report.bytes_inserted, 14,
                 "Replace should count replacement text as inserted"

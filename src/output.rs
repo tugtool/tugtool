@@ -27,7 +27,7 @@ use std::io::{self, Write};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::error::{TugError, OutputErrorCode};
+use crate::error::{OutputErrorCode, TugError};
 
 // Re-export types from patch module for convenience
 pub use crate::patch::{MaterializedPatch as Patch, OutputEdit as Edit, Span};
@@ -485,19 +485,22 @@ impl ErrorInfo {
                         })
                     })
                     .collect();
-                (Some(serde_json::json!({ "candidates": candidates_json })), None)
+                (
+                    Some(serde_json::json!({ "candidates": candidates_json })),
+                    None,
+                )
             }
             TugError::InvalidArguments { details, .. } => (details.clone(), None),
-            TugError::FileNotFound { path } => {
-                (Some(serde_json::json!({ "path": path })), None)
-            }
+            TugError::FileNotFound { path } => (Some(serde_json::json!({ "path": path })), None),
             TugError::ApplyError { file, .. } => {
-                let details = file
-                    .as_ref()
-                    .map(|f| serde_json::json!({ "file": f }));
+                let details = file.as_ref().map(|f| serde_json::json!({ "file": f }));
                 (details, None)
             }
-            TugError::VerificationFailed { mode, output, exit_code } => {
+            TugError::VerificationFailed {
+                mode,
+                output,
+                exit_code,
+            } => {
                 let details = serde_json::json!({
                     "mode": mode,
                     "output": output,
@@ -859,11 +862,9 @@ where
 {
     // Create a copy with sorted edits
     let mut sorted_edits = patch.edits.clone();
-    sorted_edits.sort_by(|a, b| {
-        match a.file.cmp(&b.file) {
-            std::cmp::Ordering::Equal => a.span.start.cmp(&b.span.start),
-            other => other,
-        }
+    sorted_edits.sort_by(|a, b| match a.file.cmp(&b.file) {
+        std::cmp::Ordering::Equal => a.span.start.cmp(&b.span.start),
+        other => other,
     });
 
     let sorted_patch = Patch {
@@ -890,7 +891,10 @@ pub fn emit_response<T: Serialize>(response: &T, writer: &mut impl Write) -> io:
 }
 
 /// Emit a response as compact JSON (single line) to a writer.
-pub fn emit_response_compact<T: Serialize>(response: &T, writer: &mut impl Write) -> io::Result<()> {
+pub fn emit_response_compact<T: Serialize>(
+    response: &T,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     let json = serde_json::to_string(response)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     writeln!(writer, "{}", json)
@@ -1205,7 +1209,10 @@ mod tests {
 
             assert_eq!(parsed["status"], "error");
             assert_eq!(parsed["error"]["code"], 3); // ResolutionError
-            assert!(parsed["error"]["message"].as_str().unwrap().contains("no symbol found"));
+            assert!(parsed["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("no symbol found"));
         }
     }
 
@@ -1303,9 +1310,10 @@ mod tests {
 
         #[test]
         fn verification_passed() {
-            let v = Verification::passed("syntax", vec![
-                VerificationCheck::passed("compileall", Some(150)),
-            ]);
+            let v = Verification::passed(
+                "syntax",
+                vec![VerificationCheck::passed("compileall", Some(150))],
+            );
             let json = serde_json::to_string(&v).unwrap();
             assert!(json.contains("\"status\":\"passed\""));
             assert!(json.contains("\"mode\":\"syntax\""));
@@ -1313,9 +1321,13 @@ mod tests {
 
         #[test]
         fn verification_failed() {
-            let v = Verification::failed("syntax", vec![
-                VerificationCheck::failed("compileall", "SyntaxError: invalid syntax"),
-            ]);
+            let v = Verification::failed(
+                "syntax",
+                vec![VerificationCheck::failed(
+                    "compileall",
+                    "SyntaxError: invalid syntax",
+                )],
+            );
             let json = serde_json::to_string(&v).unwrap();
             assert!(json.contains("\"status\":\"failed\""));
         }

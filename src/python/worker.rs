@@ -738,13 +738,8 @@ impl WorkerHandle {
 
         let response = self.send_request("get_class_inheritance", params)?;
 
-        let classes: Vec<ClassInheritanceInfo> = serde_json::from_value(
-            response
-                .data
-                .get("classes")
-                .cloned()
-                .unwrap_or_default(),
-        )?;
+        let classes: Vec<ClassInheritanceInfo> =
+            serde_json::from_value(response.data.get("classes").cloned().unwrap_or_default())?;
 
         Ok(classes)
     }
@@ -812,13 +807,25 @@ impl WorkerHandle {
                 response.data.get("scopes").cloned().unwrap_or_default(),
             )?,
             assignments: serde_json::from_value(
-                response.data.get("assignments").cloned().unwrap_or_default(),
+                response
+                    .data
+                    .get("assignments")
+                    .cloned()
+                    .unwrap_or_default(),
             )?,
             method_calls: serde_json::from_value(
-                response.data.get("method_calls").cloned().unwrap_or_default(),
+                response
+                    .data
+                    .get("method_calls")
+                    .cloned()
+                    .unwrap_or_default(),
             )?,
             annotations: serde_json::from_value(
-                response.data.get("annotations").cloned().unwrap_or_default(),
+                response
+                    .data
+                    .get("annotations")
+                    .cloned()
+                    .unwrap_or_default(),
             )?,
             dynamic_patterns: serde_json::from_value(
                 response
@@ -1268,12 +1275,12 @@ mod tests {
         let parse_response = handle
             .parse("test.py", "def foo():\n    pass\n\nfoo()\nfoo()\n")
             .unwrap();
-        let all_refs = handle
-            .get_references(&parse_response.cst_id)
-            .unwrap();
+        let all_refs = handle.get_references(&parse_response.cst_id).unwrap();
 
         // Should find definition + 2 calls for "foo"
-        let foo_refs = all_refs.get("foo").expect("Should have references to 'foo'");
+        let foo_refs = all_refs
+            .get("foo")
+            .expect("Should have references to 'foo'");
         assert!(
             foo_refs.len() >= 3,
             "Expected at least 3 references to 'foo', got {}",
@@ -1396,7 +1403,10 @@ def use_handler():
             .iter()
             .find(|a| a.target == "handler")
             .expect("handler assignment should exist");
-        assert_eq!(handler_assignment.inferred_type, Some("MyHandler".to_string()));
+        assert_eq!(
+            handler_assignment.inferred_type,
+            Some("MyHandler".to_string())
+        );
 
         // Check method calls
         assert!(!analysis.method_calls.is_empty());
@@ -1422,11 +1432,20 @@ def use_handler():
         let combined = handle.get_analysis(&parse_response.cst_id).unwrap();
 
         // Verify we got data for all categories
-        assert!(!combined.bindings.is_empty(), "bindings should not be empty");
-        assert!(!combined.references.is_empty(), "references should not be empty");
+        assert!(
+            !combined.bindings.is_empty(),
+            "bindings should not be empty"
+        );
+        assert!(
+            !combined.references.is_empty(),
+            "references should not be empty"
+        );
         // imports may be empty for simple code
         assert!(!combined.scopes.is_empty(), "scopes should not be empty");
-        assert!(!combined.assignments.is_empty(), "assignments should not be empty");
+        assert!(
+            !combined.assignments.is_empty(),
+            "assignments should not be empty"
+        );
         // method_calls may be empty for simple code
     }
 

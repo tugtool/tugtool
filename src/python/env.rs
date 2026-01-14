@@ -84,7 +84,11 @@ impl ResolutionStep {
     }
 
     /// Create a step where Python was found but libcst was missing.
-    pub fn libcst_missing(source: impl Into<String>, path: PathBuf, version: impl Into<String>) -> Self {
+    pub fn libcst_missing(
+        source: impl Into<String>,
+        path: PathBuf,
+        version: impl Into<String>,
+    ) -> Self {
         ResolutionStep {
             source: source.into(),
             found: Some(path),
@@ -216,10 +220,16 @@ fn format_python_not_found_error(searched: &[String], trace: &Option<ResolutionT
 
 /// Format the "libcst not available" error with actionable remediation.
 fn format_libcst_not_available_error(python_path: &Path) -> String {
-    let mut msg = format!("libcst not installed in Python at {}\n\n", python_path.display());
+    let mut msg = format!(
+        "libcst not installed in Python at {}\n\n",
+        python_path.display()
+    );
 
     msg.push_str("Remediation:\n");
-    msg.push_str(&format!("  {} -m pip install libcst\n\n", python_path.display()));
+    msg.push_str(&format!(
+        "  {} -m pip install libcst\n\n",
+        python_path.display()
+    ));
     msg.push_str("Or let tug manage its own environment:\n");
     msg.push_str("  tug toolchain python setup\n");
 
@@ -536,7 +546,10 @@ pub(crate) const VENV_BIN_DIR: &str = "bin";
 pub fn managed_venv_python_path(session_dir: &Path) -> PathBuf {
     #[cfg(windows)]
     {
-        session_dir.join("venv").join(VENV_BIN_DIR).join("python.exe")
+        session_dir
+            .join("venv")
+            .join(VENV_BIN_DIR)
+            .join("python.exe")
     }
     #[cfg(not(windows))]
     {
@@ -828,13 +841,14 @@ fn try_validate_python(
         ResolutionSource::Path
     };
 
-    validate_and_create_env(path.to_path_buf(), resolution_source, session_dir, options)
-        .map_err(|e| ResolutionStep {
+    validate_and_create_env(path.to_path_buf(), resolution_source, session_dir, options).map_err(
+        |e| ResolutionStep {
             source: source.to_string(),
             found: Some(path.to_path_buf()),
             version: Some(version_str),
             failure_reason: Some(e.to_string()),
-        })
+        },
+    )
 }
 
 /// Validate Python interpreter and create environment.
@@ -1156,20 +1170,14 @@ mod tests {
     #[test]
     fn test_resolution_source_display() {
         assert_eq!(ResolutionSource::CliFlag.to_string(), "--python flag");
-        assert_eq!(
-            ResolutionSource::EnvTugPython.to_string(),
-            "$TUG_PYTHON"
-        );
+        assert_eq!(ResolutionSource::EnvTugPython.to_string(), "$TUG_PYTHON");
         assert_eq!(
             ResolutionSource::SessionConfig.to_string(),
             "session config"
         );
         assert_eq!(ResolutionSource::VirtualEnv.to_string(), "$VIRTUAL_ENV");
         assert_eq!(ResolutionSource::CondaPrefix.to_string(), "$CONDA_PREFIX");
-        assert_eq!(
-            ResolutionSource::ManagedVenv.to_string(),
-            ".tug/venv"
-        );
+        assert_eq!(ResolutionSource::ManagedVenv.to_string(), ".tug/venv");
         assert_eq!(ResolutionSource::Path.to_string(), "$PATH");
     }
 
@@ -1327,11 +1335,8 @@ mod tests {
 
     #[test]
     fn test_resolution_step_display_version_too_old() {
-        let step = ResolutionStep::version_too_old(
-            "$PATH",
-            PathBuf::from("/usr/bin/python3"),
-            "3.8.10",
-        );
+        let step =
+            ResolutionStep::version_too_old("$PATH", PathBuf::from("/usr/bin/python3"), "3.8.10");
         let display = step.to_string();
         assert!(display.contains("$PATH"));
         assert!(display.contains("/usr/bin/python3"));

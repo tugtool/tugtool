@@ -72,10 +72,7 @@ pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, St
         }
         if rel_path.components().any(|c| {
             let name = c.as_os_str().to_string_lossy();
-            name == "__pycache__"
-                || name == "node_modules"
-                || name == "venv"
-                || name == "target"
+            name == "__pycache__" || name == "node_modules" || name == "venv" || name == "target"
         }) {
             continue;
         }

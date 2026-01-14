@@ -345,7 +345,11 @@ pub fn format_warnings(warnings: &[DynamicWarning]) -> String {
     for warning in warnings {
         output.push_str(&format!(
             "  {} at {}:{}:{}: {}\n",
-            warning.code, warning.location.file, warning.location.line, warning.location.col, warning.pattern
+            warning.code,
+            warning.location.file,
+            warning.location.line,
+            warning.location.col,
+            warning.pattern
         ));
         output.push_str(&format!("    → {}\n", warning.suggestion));
     }
@@ -381,7 +385,10 @@ mod tests {
     #[test]
     fn test_warning_code_strings() {
         assert_eq!(DynamicWarningCode::DynamicAttributeAccess.as_str(), "W001");
-        assert_eq!(DynamicWarningCode::DynamicGlobalLocalAccess.as_str(), "W002");
+        assert_eq!(
+            DynamicWarningCode::DynamicGlobalLocalAccess.as_str(),
+            "W002"
+        );
         assert_eq!(DynamicWarningCode::DynamicCodeExecution.as_str(), "W003");
         assert_eq!(DynamicWarningCode::CustomAttributeProtocol.as_str(), "W004");
     }
@@ -394,7 +401,8 @@ mod tests {
             Some("getattr(obj, \"method\")"),
         )];
 
-        let warnings = analyze_dynamic_patterns(&patterns, "test.py", Some("method"), DynamicMode::Safe);
+        let warnings =
+            analyze_dynamic_patterns(&patterns, "test.py", Some("method"), DynamicMode::Safe);
 
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].code, "W001");
@@ -433,11 +441,7 @@ mod tests {
 
     #[test]
     fn test_analyze_locals_pattern() {
-        let patterns = vec![make_pattern(
-            "locals",
-            Some("x"),
-            Some("locals()[\"x\"]"),
-        )];
+        let patterns = vec![make_pattern("locals", Some("x"), Some("locals()[\"x\"]"))];
 
         let warnings = analyze_dynamic_patterns(&patterns, "test.py", None, DynamicMode::Safe);
 
@@ -496,12 +500,20 @@ mod tests {
     #[test]
     fn test_aggressive_mode_matching() {
         let patterns = vec![
-            make_pattern("getattr", Some("process"), Some("getattr(obj, \"process\")")),
+            make_pattern(
+                "getattr",
+                Some("process"),
+                Some("getattr(obj, \"process\")"),
+            ),
             make_pattern("getattr", Some("other"), Some("getattr(obj, \"other\")")),
         ];
 
-        let warnings =
-            analyze_dynamic_patterns(&patterns, "test.py", Some("process"), DynamicMode::Aggressive);
+        let warnings = analyze_dynamic_patterns(
+            &patterns,
+            "test.py",
+            Some("process"),
+            DynamicMode::Aggressive,
+        );
 
         assert_eq!(warnings.len(), 2);
         // First pattern matches the symbol
@@ -542,8 +554,16 @@ mod tests {
     #[test]
     fn test_get_aggressive_rename_patterns() {
         let patterns = vec![
-            make_pattern("getattr", Some("process"), Some("getattr(obj, \"process\")")),
-            make_pattern("setattr", Some("process"), Some("setattr(obj, \"process\", v)")),
+            make_pattern(
+                "getattr",
+                Some("process"),
+                Some("getattr(obj, \"process\")"),
+            ),
+            make_pattern(
+                "setattr",
+                Some("process"),
+                Some("setattr(obj, \"process\", v)"),
+            ),
             make_pattern("getattr", Some("other"), Some("getattr(obj, \"other\")")),
         ];
 
@@ -583,7 +603,10 @@ mod tests {
             scope_path: vec!["<module>".to_string(), "MyClass".to_string()],
             literal_name: Some("method".to_string()),
             pattern_text: Some("getattr(self, \"method\")".to_string()),
-            span: Some(SpanInfo { start: 100, end: 123 }),
+            span: Some(SpanInfo {
+                start: 100,
+                end: 123,
+            }),
             line: Some(10),
             col: Some(5),
         }];

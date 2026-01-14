@@ -111,11 +111,10 @@ impl TemplateVars {
 ///
 /// Returns `InvalidJson` if the input is not a valid JSON array of strings.
 pub fn parse_test_command(json_str: &str) -> TestCommandResult<Vec<String>> {
-    let args: Vec<String> = serde_json::from_str(json_str).map_err(|e| {
-        TestCommandError::InvalidJson {
+    let args: Vec<String> =
+        serde_json::from_str(json_str).map_err(|e| TestCommandError::InvalidJson {
             message: format!("expected JSON array of strings: {}", e),
-        }
-    })?;
+        })?;
 
     if args.is_empty() {
         return Err(TestCommandError::InvalidJson {
@@ -135,7 +134,10 @@ pub fn parse_test_command(json_str: &str) -> TestCommandResult<Vec<String>> {
 /// # Errors
 ///
 /// Returns `MissingVariable` if a template variable is used but not provided.
-pub fn expand_template_vars(args: &[String], vars: &TemplateVars) -> TestCommandResult<Vec<String>> {
+pub fn expand_template_vars(
+    args: &[String],
+    vars: &TemplateVars,
+) -> TestCommandResult<Vec<String>> {
     args.iter()
         .map(|arg| expand_single_var(arg, vars))
         .collect()
@@ -145,16 +147,22 @@ fn expand_single_var(s: &str, vars: &TemplateVars) -> TestCommandResult<String> 
     let mut result = s.to_string();
 
     if result.contains("{python}") {
-        let python = vars.python.as_ref().ok_or_else(|| TestCommandError::MissingVariable {
-            variable: "python".to_string(),
-        })?;
+        let python = vars
+            .python
+            .as_ref()
+            .ok_or_else(|| TestCommandError::MissingVariable {
+                variable: "python".to_string(),
+            })?;
         result = result.replace("{python}", python);
     }
 
     if result.contains("{workspace}") {
-        let workspace = vars.workspace.as_ref().ok_or_else(|| TestCommandError::MissingVariable {
-            variable: "workspace".to_string(),
-        })?;
+        let workspace =
+            vars.workspace
+                .as_ref()
+                .ok_or_else(|| TestCommandError::MissingVariable {
+                    variable: "workspace".to_string(),
+                })?;
         result = result.replace("{workspace}", workspace);
     }
 
@@ -172,7 +180,9 @@ fn expand_single_var(s: &str, vars: &TemplateVars) -> TestCommandResult<String> 
 /// 6. Nothing found → None
 ///
 /// Returns the detected test command and its source, or None if not found.
-pub fn detect_test_runner(workspace_root: &Path) -> TestCommandResult<Option<(Vec<String>, TestCommandSource)>> {
+pub fn detect_test_runner(
+    workspace_root: &Path,
+) -> TestCommandResult<Option<(Vec<String>, TestCommandSource)>> {
     // Check pyproject.toml
     let pyproject_path = workspace_root.join("pyproject.toml");
     if pyproject_path.exists() {
@@ -331,10 +341,7 @@ mod tests {
         #[test]
         fn parses_valid_json_array() {
             let result = parse_test_command(r#"["{python}", "-m", "pytest", "-x"]"#).unwrap();
-            assert_eq!(
-                result,
-                vec!["{python}", "-m", "pytest", "-x"]
-            );
+            assert_eq!(result, vec!["{python}", "-m", "pytest", "-x"]);
         }
 
         #[test]
@@ -354,7 +361,10 @@ mod tests {
         fn rejects_invalid_json() {
             let result = parse_test_command("not json");
             assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("invalid test command JSON"));
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("invalid test command JSON"));
         }
 
         #[test]
@@ -375,7 +385,11 @@ mod tests {
 
         #[test]
         fn expands_python_variable() {
-            let args = vec!["{python}".to_string(), "-m".to_string(), "pytest".to_string()];
+            let args = vec![
+                "{python}".to_string(),
+                "-m".to_string(),
+                "pytest".to_string(),
+            ];
             let vars = TemplateVars::new(Some("/usr/bin/python3".to_string()), None);
 
             let result = expand_template_vars(&args, &vars).unwrap();
@@ -384,7 +398,11 @@ mod tests {
 
         #[test]
         fn expands_workspace_variable() {
-            let args = vec!["test".to_string(), "--cwd".to_string(), "{workspace}".to_string()];
+            let args = vec![
+                "test".to_string(),
+                "--cwd".to_string(),
+                "{workspace}".to_string(),
+            ];
             let vars = TemplateVars::new(None, Some("/home/user/project".to_string()));
 
             let result = expand_template_vars(&args, &vars).unwrap();
@@ -595,12 +613,9 @@ testpaths = ["tests"]
                 Some(workspace.path().to_string_lossy().to_string()),
             );
 
-            let result = resolve_test_command(
-                Some(r#"["custom", "test"]"#),
-                workspace.path(),
-                &vars,
-            )
-            .unwrap();
+            let result =
+                resolve_test_command(Some(r#"["custom", "test"]"#), workspace.path(), &vars)
+                    .unwrap();
 
             assert!(result.is_some());
             let cmd = result.unwrap();
@@ -613,10 +628,7 @@ testpaths = ["tests"]
             let workspace = create_workspace();
             std::fs::write(workspace.path().join("pytest.ini"), "[pytest]\n").unwrap();
 
-            let vars = TemplateVars::new(
-                Some("/usr/bin/python3".to_string()),
-                None,
-            );
+            let vars = TemplateVars::new(Some("/usr/bin/python3".to_string()), None);
 
             let result = resolve_test_command(None, workspace.path(), &vars).unwrap();
 
@@ -642,12 +654,27 @@ testpaths = ["tests"]
 
         #[test]
         fn display_all_sources() {
-            assert_eq!(format!("{}", TestCommandSource::CliFlag), "--test-command flag");
-            assert_eq!(format!("{}", TestCommandSource::PyprojectTug), "pyproject.toml [tool.tug]");
-            assert_eq!(format!("{}", TestCommandSource::PyprojectPytest), "pyproject.toml [tool.pytest]");
+            assert_eq!(
+                format!("{}", TestCommandSource::CliFlag),
+                "--test-command flag"
+            );
+            assert_eq!(
+                format!("{}", TestCommandSource::PyprojectTug),
+                "pyproject.toml [tool.tug]"
+            );
+            assert_eq!(
+                format!("{}", TestCommandSource::PyprojectPytest),
+                "pyproject.toml [tool.pytest]"
+            );
             assert_eq!(format!("{}", TestCommandSource::PytestIni), "pytest.ini");
-            assert_eq!(format!("{}", TestCommandSource::SetupCfgPytest), "setup.cfg [pytest]");
-            assert_eq!(format!("{}", TestCommandSource::DefaultPytest), "default (tests/ directory)");
+            assert_eq!(
+                format!("{}", TestCommandSource::SetupCfgPytest),
+                "setup.cfg [pytest]"
+            );
+            assert_eq!(
+                format!("{}", TestCommandSource::DefaultPytest),
+                "default (tests/ directory)"
+            );
         }
     }
 }

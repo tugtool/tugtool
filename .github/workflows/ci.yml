@@ -39,6 +39,12 @@ jobs:
         run: echo "TUG_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> $GITHUB_ENV
         shell: bash
 
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-features -- -D warnings
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
@@ -47,12 +53,6 @@ jobs:
 
       - name: Test
         run: cargo nextest run --all-features
-
-      - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
-
-      - name: Format check
-        run: cargo fmt --check
 
   python:
     name: Python Tests

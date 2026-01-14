@@ -356,10 +356,8 @@ impl ImportResolver {
 
                     for imported_name in &import.names {
                         // The local name is either the alias or the original name
-                        let local_name = imported_name
-                            .alias
-                            .as_ref()
-                            .unwrap_or(&imported_name.name);
+                        let local_name =
+                            imported_name.alias.as_ref().unwrap_or(&imported_name.name);
 
                         // The qualified name is module_path.name
                         let qualified_name =
@@ -1069,7 +1067,9 @@ impl PythonAdapter {
                 // For each base class, try to resolve it and create inheritance link
                 for base_name in &class_info.bases {
                     // First, try import-aware resolution
-                    let base_id = if let Some(resolved_file) = import_resolver.resolved_file(base_name) {
+                    let base_id = if let Some(resolved_file) =
+                        import_resolver.resolved_file(base_name)
+                    {
                         // Base class was imported from a specific file - prefer that file
                         let target_file_id = store.file_by_path(resolved_file).map(|f| f.file_id);
 
@@ -1206,7 +1206,11 @@ impl PythonAdapter {
     /// must also be renamed to maintain the inheritance contract.
     ///
     /// Returns the SymbolIds of override methods (not including the original).
-    pub fn find_override_methods(&self, store: &FactsStore, method_symbol: &Symbol) -> Vec<SymbolId> {
+    pub fn find_override_methods(
+        &self,
+        store: &FactsStore,
+        method_symbol: &Symbol,
+    ) -> Vec<SymbolId> {
         let mut overrides = Vec::new();
 
         // Get the container class (the method's parent)
