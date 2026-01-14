@@ -28,6 +28,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install libcst
+        run: pip install libcst
+
+      - name: Set TUG_PYTHON
+        run: echo "TUG_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> $GITHUB_ENV
+        shell: bash
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
