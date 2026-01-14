@@ -1,0 +1,79 @@
+{
+  "status": "ok",
+  "schema_version": "1",
+  "operation": "analyze_impact",
+  "symbol": "process",
+  "warnings": [
+    {
+      "code": "W001",
+      "message": "Dynamic attribute access may reference renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 55,
+        "col": 14
+      },
+      "pattern": "getattr(handler, \"process\")"
+    },
+    {
+      "code": "W004",
+      "message": "Custom attribute protocol may intercept renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 16,
+        "col": 5
+      },
+      "pattern": "def __getattr__(...)"
+    },
+    {
+      "code": "W004",
+      "message": "Custom attribute protocol may intercept renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 20,
+        "col": 5
+      },
+      "pattern": "def __setattr__(...)"
+    },
+    {
+      "code": "W002",
+      "message": "Dynamic global/local access may reference renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 39,
+        "col": 12
+      },
+      "pattern": "globals()[\"DynamicHandler\"]"
+    },
+    {
+      "code": "W002",
+      "message": "Dynamic global/local access may reference renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 45,
+        "col": 12
+      },
+      "pattern": "locals()[\"process\"]"
+    },
+    {
+      "code": "W003",
+      "message": "Dynamic code execution may reference renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 51,
+        "col": 5
+      },
+      "pattern": "exec(...)"
+    },
+    {
+      "code": "W003",
+      "message": "Dynamic code execution may reference renamed symbol",
+      "location": {
+        "file": "dynamic_attr.py",
+        "line": 52,
+        "col": 12
+      },
+      "pattern": "eval(...)"
+    }
+  ],
+  "note": "Contains dynamic patterns that cannot be statically analyzed. Manual review recommended."
+}

@@ -1,0 +1,20 @@
+[build]
+target-dir = "target"
+# Use all 16 cores for parallel compilation
+jobs = 16
+
+# macOS linking can be extremely slow with Apple ld for large crates/workspaces.
+# If `ld64.lld` is available (e.g. `brew install llvm`), we use it; otherwise we
+# fall back to `clang` so contributors without lld are not broken.
+[target.aarch64-apple-darwin]
+linker = ".cargo/clang-lld.sh"
+
+[target.x86_64-apple-darwin]
+linker = ".cargo/clang-lld.sh"
+
+[alias]
+b = "build"
+c = "check"
+t = "test"
+r = "run"
+br = "build --release"

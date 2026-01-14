@@ -1,0 +1,46 @@
+--- a/inheritance.py
++++ b/inheritance.py
+@@ -6,10 +6,10 @@ class BaseHandler:
+
+     def handle(self, request):
+         """Handle a request."""
+-        return self.process_request(request)
++        return self.handle_request(request)
+
+-    def process_request(self, request):
++    def handle_request(self, request):
+         """Process the request - to be overridden."""
+         return {"status": "base", "request": request}
+
+@@ -17,7 +17,7 @@ class BaseHandler:
+ class JsonHandler(BaseHandler):
+     """Handler for JSON requests."""
+
+-    def process_request(self, request):
++    def handle_request(self, request):
+         """Process JSON request."""
+         import json
+         return {"status": "json", "data": json.dumps(request)}
+@@ -26,7 +26,7 @@ class JsonHandler(BaseHandler):
+ class XmlHandler(BaseHandler):
+     """Handler for XML requests."""
+
+-    def process_request(self, request):
++    def handle_request(self, request):
+         """Process XML request."""
+         return {"status": "xml", "data": f"<request>{request}</request>"}
+
+@@ -34,12 +34,12 @@ class XmlHandler(BaseHandler):
+ def dispatch(handler: BaseHandler, request):
+     """Dispatch a request to a handler."""
+-    return handler.process_request(request)
++    return handler.handle_request(request)
+
+
+ def main():
+     handlers = [BaseHandler(), JsonHandler(), XmlHandler()]
+     for handler in handlers:
+-        result = handler.process_request({"key": "value"})
++        result = handler.handle_request({"key": "value"})
+         print(result)
+

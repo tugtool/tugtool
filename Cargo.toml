@@ -1,0 +1,95 @@
+[package]
+name = "tugtool"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ken Kocienda"]
+license = "MIT"
+description = "AI-native code transformation engine for verified, deterministic refactors"
+repository = "https://github.com/tugtool/tugtool"
+readme = "README.md"
+keywords = ["refactoring", "code-transformation", "ai", "mcp", "cli"]
+categories = ["development-tools", "command-line-utilities"]
+
+[lib]
+name = "tugtool"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tug"
+path = "src/main.rs"
+
+[dependencies]
+# Core: serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Core: error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# CLI: argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Async: LSP client, MCP server plumbing
+tokio = { version = "1", features = ["full"] }
+
+# Hashing: content hashing for anchors/snapshots
+sha2 = "0.10"
+hex = "0.4"
+
+# Timestamps: ISO 8601 formatting
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+# Files: sandbox temp dirs, directory traversal, pattern matching
+tempfile = "3"
+walkdir = "2"
+globset = "0.4"
+
+# Process: child process wait with timeout (no polling)
+wait-timeout = "0.2"
+
+# Cross-platform: user dirs, executable discovery
+directories = "6"
+dirs = "6"
+which = "7"
+
+# Logging: structured logging with JSON output
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Platform-specific: Unix process management
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# MCP server support (optional)
+rmcp = { version = "0.12", features = ["server", "transport-io"], optional = true }
+schemars = { version = "1", optional = true }
+
+[features]
+default = ["mcp"]
+mcp = ["rmcp", "schemars"]
+
+[dev-dependencies]
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+collapsible_if = "allow"
+
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
+
+[profile.dev]
+debug = 1
+incremental = true
+codegen-units = 256
+lto = false
+panic = "unwind"
+
+[profile.test]
+debug = 1
+incremental = true
+lto = false

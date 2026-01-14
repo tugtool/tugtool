@@ -1,0 +1,44 @@
+{
+  "impact": {
+    "edits_estimated": 2,
+    "files_affected": 1,
+    "references_count": 2
+  },
+  "references": [
+    {
+      "kind": "definition",
+      "location": {
+        "byte_end": 16,
+        "byte_start": 4,
+        "col": 5,
+        "file": "input.py",
+        "line": 1
+      }
+    },
+    {
+      "kind": "call",
+      "location": {
+        "byte_end": 237,
+        "byte_start": 225,
+        "col": 14,
+        "file": "input.py",
+        "line": 11
+      }
+    }
+  ],
+  "schema_version": "1",
+  "status": "ok",
+  "symbol": {
+    "id": "sym_0",
+    "kind": "function",
+    "location": {
+      "byte_end": 16,
+      "byte_start": 4,
+      "col": 5,
+      "file": "input.py",
+      "line": 1
+    },
+    "name": "process_data"
+  },
+  "warnings": []
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Expected warnings for dynamic attribute patterns when renaming 'process'",
+  "operation": "analyze_impact",
+  "target": "process",
+  "expected_warnings": [
+    {
+      "code": "W001",
+      "pattern": "getattr(handler, \"process\")",
+      "description": "Dynamic attribute access may reference renamed symbol"
+    },
+    {
+      "code": "W004",
+      "pattern": "def __getattr__(...)",
+      "description": "Custom attribute protocol may intercept renamed symbol"
+    },
+    {
+      "code": "W004",
+      "pattern": "def __setattr__(...)",
+      "description": "Custom attribute protocol may intercept renamed symbol"
+    },
+    {
+      "code": "W003",
+      "pattern": "exec(...)",
+      "description": "Dynamic code execution may reference renamed symbol"
+    },
+    {
+      "code": "W003",
+      "pattern": "eval(...)",
+      "description": "Dynamic code execution may reference renamed symbol"
+    }
+  ],
+  "note": "File should NOT be renamed due to dynamic patterns. User must review manually."
+}

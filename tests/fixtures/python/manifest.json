@@ -1,0 +1,231 @@
+{
+  "version": "1",
+  "description": "Python test fixtures for tug rename operations",
+  "test_cases": [
+    {
+      "id": "simple_rename_function",
+      "description": "Rename a function and its call site in a single file",
+      "workspace": "simple",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "rename_function.py:1:5",
+        "to": "transform_data"
+      },
+      "expected": {
+        "files_affected": 1,
+        "edits_count": 2,
+        "verification": "passed"
+      },
+      "golden": {
+        "patch": "../golden/python/simple_rename_function.patch",
+        "json": "../golden/python/simple_rename_function.json"
+      }
+    },
+    {
+      "id": "simple_rename_class",
+      "description": "Rename a class and its constructor calls",
+      "workspace": "simple",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "rename_class.py:1:7",
+        "to": "ItemProcessor"
+      },
+      "expected": {
+        "files_affected": 1,
+        "edits_count": 2,
+        "verification": "passed"
+      }
+    },
+    {
+      "id": "cross_file_rename",
+      "description": "Rename a function across multiple files with imports",
+      "workspace": "cross_file",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "utils.py:4:5",
+        "to": "compute_total"
+      },
+      "expected": {
+        "files_affected": 2,
+        "edits_count": 4,
+        "verification": "passed"
+      },
+      "golden": {
+        "patch": "../golden/python/cross_file_rename.patch"
+      }
+    },
+    {
+      "id": "scoping_shadowing",
+      "description": "Rename only the correct symbol when names are shadowed",
+      "workspace": "scoping",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "shadowing.py:5:1",
+        "to": "module_value"
+      },
+      "expected": {
+        "files_affected": 1,
+        "description": "Only renames the module-level 'value', not shadowed locals"
+      }
+    },
+    {
+      "id": "scoping_global_nonlocal",
+      "description": "Handle global and nonlocal declarations correctly",
+      "workspace": "scoping",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "global_nonlocal.py:5:1",
+        "to": "global_counter"
+      },
+      "expected": {
+        "files_affected": 1,
+        "description": "Renames counter everywhere including global declarations"
+      }
+    },
+    {
+      "id": "imports_helper_rename",
+      "description": "Rename a function that is imported elsewhere",
+      "workspace": "imports",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "base.py:4:5",
+        "to": "double_value"
+      },
+      "expected": {
+        "files_affected": 2,
+        "description": "Updates definition, import statement, and all usages"
+      }
+    },
+    {
+      "id": "classes_method_rename",
+      "description": "Rename a method and all its call sites within a class",
+      "workspace": "classes",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "method_rename.py:10:9",
+        "to": "transform"
+      },
+      "expected": {
+        "files_affected": 1,
+        "edits_count": 3,
+        "verification": "passed"
+      },
+      "golden": {
+        "patch": "../golden/python/classes/method_rename.patch",
+        "json": "../golden/python/classes/method_rename.json"
+      }
+    },
+    {
+      "id": "classes_inheritance",
+      "description": "Rename a method in parent class and propagate to child overrides",
+      "workspace": "classes",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "inheritance.py:11:9",
+        "to": "handle_request"
+      },
+      "expected": {
+        "files_affected": 1,
+        "edits_count": 6,
+        "verification": "passed",
+        "description": "Renames method in parent, children, and all call sites"
+      },
+      "golden": {
+        "patch": "../golden/python/classes/inheritance.patch",
+        "json": "../golden/python/classes/inheritance.json"
+      }
+    },
+    {
+      "id": "classes_class_attribute",
+      "description": "Rename a class attribute and all its references",
+      "workspace": "classes",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "class_attribute.py:8:5",
+        "to": "default_wait_time"
+      },
+      "expected": {
+        "files_affected": 1,
+        "verification": "passed",
+        "description": "Updates class attribute and all references including cls. and ClassName."
+      }
+    },
+    {
+      "id": "classes_dunder_methods",
+      "description": "Rename a regular method in a class with dunder methods",
+      "workspace": "classes",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "dunder_methods.py:23:9",
+        "to": "length"
+      },
+      "expected": {
+        "files_affected": 1,
+        "verification": "passed",
+        "description": "Renames magnitude to length, dunder methods unchanged"
+      }
+    },
+    {
+      "id": "edge_cases_dynamic_attr",
+      "description": "Detect dynamic patterns and produce warnings instead of renaming",
+      "workspace": "edge_cases",
+      "operation": "analyze_impact",
+      "args": {
+        "at": "dynamic_attr.py:8:9",
+        "to": "handler"
+      },
+      "expected": {
+        "outcome": "warning",
+        "description": "Produces warnings for getattr, setattr, __getattr__, eval, exec patterns"
+      },
+      "golden": {
+        "json": "../golden/python/edge_cases/dynamic_attr.json"
+      }
+    },
+    {
+      "id": "edge_cases_string_reference",
+      "description": "String literals containing symbol name should NOT be renamed",
+      "workspace": "edge_cases",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "string_reference.py:8:5",
+        "to": "compute_sum"
+      },
+      "expected": {
+        "files_affected": 1,
+        "verification": "passed",
+        "description": "Only code references renamed, string literals preserved"
+      }
+    },
+    {
+      "id": "edge_cases_comment_reference",
+      "description": "Comments containing symbol name should NOT be renamed",
+      "workspace": "edge_cases",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "comment_reference.py:10:5",
+        "to": "check_input"
+      },
+      "expected": {
+        "files_affected": 1,
+        "verification": "passed",
+        "description": "Only code references renamed, comments and docstrings preserved"
+      }
+    },
+    {
+      "id": "edge_cases_decorator",
+      "description": "Rename a decorator function used on multiple targets",
+      "workspace": "edge_cases",
+      "operation": "rename_symbol",
+      "args": {
+        "at": "decorator.py:12:5",
+        "to": "trace_calls"
+      },
+      "expected": {
+        "files_affected": 1,
+        "verification": "passed",
+        "description": "Renames decorator definition and all @decorator usages"
+      }
+    }
+  ]
+}

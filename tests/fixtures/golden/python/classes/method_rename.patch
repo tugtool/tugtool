@@ -1,0 +1,26 @@
+--- a/method_rename.py
++++ b/method_rename.py
+@@ -8,7 +8,7 @@ class DataProcessor:
+     def __init__(self, data):
+         self.data = data
+
+-    def process(self):
++    def transform(self):
+         """Process the data and return results."""
+         return [x * 2 for x in self.data]
+
+@@ -16,12 +16,12 @@ class DataProcessor:
+     def summarize(self):
+         """Summarize the processed data."""
+-        processed = self.process()
++        processed = self.transform()
+         return sum(processed)
+
+
+ def main():
+     processor = DataProcessor([1, 2, 3, 4, 5])
+-    result = processor.process()
++    result = processor.transform()
+     summary = processor.summarize()
+     print(f"Processed: {result}, Summary: {summary}")
+
