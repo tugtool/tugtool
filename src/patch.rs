@@ -706,7 +706,7 @@ impl PatchSet {
 
                     if span_i.overlaps(&span_j) {
                         conflicts.push(Conflict::OverlappingSpans {
-                            file_id: file_id.clone(),
+                            file_id: *file_id,
                             edit1_span: span_i,
                             edit2_span: span_j,
                         });
@@ -797,7 +797,7 @@ impl PatchSet {
                         }
                     } else {
                         conflicts.push(Conflict::FileMissing {
-                            file_id: file_id.clone(),
+                            file_id: *file_id,
                         });
                     }
                 }
@@ -815,7 +815,7 @@ impl PatchSet {
                 Some(c) => c,
                 None => {
                     conflicts.push(Conflict::FileMissing {
-                        file_id: edit.file_id.clone(),
+                        file_id: edit.file_id,
                     });
                     continue;
                 }
@@ -823,7 +823,7 @@ impl PatchSet {
 
             match edit.anchor.resolve(content) {
                 AnchorResolution::Resolved(span) => {
-                    resolved_edits.push((edit.file_id.clone(), span, edit));
+                    resolved_edits.push((edit.file_id, span, edit));
                 }
                 AnchorResolution::HashMismatch {
                     span,
@@ -831,7 +831,7 @@ impl PatchSet {
                     actual,
                 } => {
                     conflicts.push(Conflict::AnchorHashMismatch {
-                        file_id: edit.file_id.clone(),
+                        file_id: edit.file_id,
                         span,
                         expected,
                         actual,
@@ -839,20 +839,20 @@ impl PatchSet {
                 }
                 AnchorResolution::NotFound { .. } => {
                     conflicts.push(Conflict::AnchorNotFound {
-                        file_id: edit.file_id.clone(),
+                        file_id: edit.file_id,
                         anchor: edit.anchor.clone(),
                     });
                 }
                 AnchorResolution::Ambiguous { matches } => {
                     conflicts.push(Conflict::AnchorAmbiguous {
-                        file_id: edit.file_id.clone(),
+                        file_id: edit.file_id,
                         anchor: edit.anchor.clone(),
                         match_count: matches.len(),
                     });
                 }
                 AnchorResolution::OutOfBounds { span, file_len } => {
                     conflicts.push(Conflict::SpanOutOfBounds {
-                        file_id: edit.file_id.clone(),
+                        file_id: edit.file_id,
                         span,
                         file_len,
                     });

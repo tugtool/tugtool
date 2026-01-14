@@ -607,8 +607,8 @@ fn execute_clean(global: &GlobalArgs, workers: bool, cache: bool) -> Result<(), 
     let session = open_session(global)?;
 
     // If neither flag is set, clean both
-    let clean_workers = workers || (!workers && !cache);
-    let clean_cache = cache || (!workers && !cache);
+    let clean_workers = workers || !cache;
+    let clean_cache = cache || !workers;
 
     if clean_workers {
         session

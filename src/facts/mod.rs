@@ -112,23 +112,22 @@ impl std::fmt::Display for ScopeId {
 /// Programming language of a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Language {
     Python,
     Rust,
+    #[default]
     Unknown,
 }
 
-impl Default for Language {
-    fn default() -> Self {
-        Language::Unknown
-    }
-}
 
 /// Kind of module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ModuleKind {
     /// Regular module (single file).
+    #[default]
     File,
     /// Package module (__init__.py or mod.rs).
     Package,
@@ -136,19 +135,16 @@ pub enum ModuleKind {
     Namespace,
 }
 
-impl Default for ModuleKind {
-    fn default() -> Self {
-        ModuleKind::File
-    }
-}
 
 /// Kind of symbol definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum SymbolKind {
     Function,
     Class,
     Method,
+    #[default]
     Variable,
     Parameter,
     Module,
@@ -157,11 +153,6 @@ pub enum SymbolKind {
     TypeAlias,
 }
 
-impl Default for SymbolKind {
-    fn default() -> Self {
-        SymbolKind::Variable
-    }
-}
 
 impl SymbolKind {
     /// Convert to spec-compliant output kind string.
@@ -189,12 +180,14 @@ impl SymbolKind {
 /// Kind of reference to a symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ReferenceKind {
     /// The definition site itself.
     Definition,
     /// A call to a function/method.
     Call,
     /// A simple name reference (read).
+    #[default]
     Reference,
     /// An import statement.
     Import,
@@ -206,11 +199,6 @@ pub enum ReferenceKind {
     Write,
 }
 
-impl Default for ReferenceKind {
-    fn default() -> Self {
-        ReferenceKind::Reference
-    }
-}
 
 impl ReferenceKind {
     /// Convert to spec-compliant output kind string.
@@ -236,8 +224,10 @@ impl ReferenceKind {
 /// Kind of scope in the code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ScopeKind {
     /// Module-level scope.
+    #[default]
     Module,
     /// Class body scope.
     Class,
@@ -249,29 +239,21 @@ pub enum ScopeKind {
     Lambda,
 }
 
-impl Default for ScopeKind {
-    fn default() -> Self {
-        ScopeKind::Module
-    }
-}
 
 /// Source of type information for a symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum TypeSource {
     /// Type inferred from assignment (e.g., `x = MyClass()`).
     Inferred,
     /// Type from explicit annotation (e.g., `x: MyClass`).
     Annotated,
     /// Type is unknown.
+    #[default]
     Unknown,
 }
 
-impl Default for TypeSource {
-    fn default() -> Self {
-        TypeSource::Unknown
-    }
-}
 
 // ============================================================================
 // Facts Tables

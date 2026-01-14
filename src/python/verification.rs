@@ -18,10 +18,12 @@ use thiserror::Error;
 /// Verification mode for Python operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum VerificationMode {
     /// No verification.
     None,
     /// Syntax check only (compileall).
+    #[default]
     Syntax,
     /// Syntax + run tests.
     Tests,
@@ -29,11 +31,6 @@ pub enum VerificationMode {
     TypeCheck,
 }
 
-impl Default for VerificationMode {
-    fn default() -> Self {
-        VerificationMode::Syntax
-    }
-}
 
 /// Status of verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

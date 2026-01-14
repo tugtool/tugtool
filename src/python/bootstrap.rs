@@ -469,7 +469,7 @@ pub fn validate_managed_venv(venv_dir: &Path) -> Result<bool, BootstrapError> {
 
     // Check libcst is importable
     let (libcst_available, _) = check_libcst(&python_path).map_err(|e| BootstrapError::Io(
-        std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        std::io::Error::other(e.to_string()),
     ))?;
 
     Ok(libcst_available)

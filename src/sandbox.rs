@@ -151,8 +151,7 @@ fn should_exclude(path: &Path) -> bool {
 
             // Check excluded patterns
             for pattern in EXCLUDE_PATTERNS {
-                if pattern.starts_with('*') {
-                    let suffix = &pattern[1..];
+                if let Some(suffix) = pattern.strip_prefix('*') {
                     if name_str.ends_with(suffix) {
                         return true;
                     }
@@ -322,7 +321,7 @@ impl SandboxHandle {
 
             let relative_path = source_path
                 .strip_prefix(&self.original_root)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
 
             let dest_path = self.workspace_dir.join(relative_path);
 
@@ -946,7 +945,7 @@ impl RefactorReport {
             ApplyResult::Success { modified_files } => {
                 report.files_changed = modified_files.len();
 
-                for (file_id, _new_content) in modified_files {
+                for file_id in modified_files.keys() {
                     let file_path = patch
                         .file_paths
                         .get(file_id)

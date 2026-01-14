@@ -266,13 +266,13 @@ impl PythonRenameOp {
         // Add the target symbol's definition
         all_edits.push((
             symbol.decl_file_id,
-            symbol.decl_span.clone(),
+            symbol.decl_span,
             ReferenceKind::Definition,
         ));
 
         // Add references to the target symbol
         for reference in store.refs_of_symbol(symbol.symbol_id) {
-            all_edits.push((reference.file_id, reference.span.clone(), reference.ref_kind));
+            all_edits.push((reference.file_id, reference.span, reference.ref_kind));
         }
 
         // For methods, also collect override methods and their references
@@ -283,13 +283,13 @@ impl PythonRenameOp {
             if let Some(override_sym) = store.symbol(*override_id) {
                 all_edits.push((
                     override_sym.decl_file_id,
-                    override_sym.decl_span.clone(),
+                    override_sym.decl_span,
                     ReferenceKind::Definition,
                 ));
             }
             // Add all references to the override method
             for reference in store.refs_of_symbol(*override_id) {
-                all_edits.push((reference.file_id, reference.span.clone(), reference.ref_kind));
+                all_edits.push((reference.file_id, reference.span, reference.ref_kind));
             }
         }
 
@@ -432,11 +432,11 @@ impl PythonRenameOp {
         let mut all_edits: Vec<(FileId, Span)> = Vec::new();
 
         // Add the target symbol's definition
-        all_edits.push((symbol.decl_file_id, symbol.decl_span.clone()));
+        all_edits.push((symbol.decl_file_id, symbol.decl_span));
 
         // Add references to the target symbol
         for reference in store.refs_of_symbol(symbol.symbol_id) {
-            all_edits.push((reference.file_id, reference.span.clone()));
+            all_edits.push((reference.file_id, reference.span));
         }
 
         // For methods, also collect override methods and their references
@@ -444,11 +444,11 @@ impl PythonRenameOp {
         for override_id in &override_ids {
             // Add the override method's definition
             if let Some(override_sym) = store.symbol(*override_id) {
-                all_edits.push((override_sym.decl_file_id, override_sym.decl_span.clone()));
+                all_edits.push((override_sym.decl_file_id, override_sym.decl_span));
             }
             // Add all references to the override method
             for reference in store.refs_of_symbol(*override_id) {
-                all_edits.push((reference.file_id, reference.span.clone()));
+                all_edits.push((reference.file_id, reference.span));
             }
         }
 
@@ -496,7 +496,7 @@ impl PythonRenameOp {
             edits_by_file
                 .entry(file.path.clone())
                 .or_default()
-                .push((span.clone(), new_name));
+                .push((*span, new_name));
         }
 
         // Create sandbox

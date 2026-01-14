@@ -131,6 +131,7 @@ impl FileInfo {
 /// Mode for creating and operating on workspace snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum SnapshotMode {
     /// Operate directly on the working tree.
     ///
@@ -149,15 +150,10 @@ pub enum SnapshotMode {
     /// 4. Only if verification passes: emit patches back to real workspace
     ///
     /// This is the recommended mode for verification per [D05].
+    #[default]
     SandboxCopy,
 }
 
-impl Default for SnapshotMode {
-    fn default() -> Self {
-        // SandboxCopy is the safe default per [D05]
-        SnapshotMode::SandboxCopy
-    }
-}
 
 impl fmt::Display for SnapshotMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -248,9 +244,8 @@ fn should_exclude(path: &Path) -> bool {
         if let std::path::Component::Normal(name) = component {
             let name_str = name.to_string_lossy();
             for pattern in DEFAULT_EXCLUDE_DIRS {
-                if pattern.starts_with('*') {
+                if let Some(suffix) = pattern.strip_prefix('*') {
                     // Simple suffix match for patterns like "*.egg-info"
-                    let suffix = &pattern[1..];
                     if name_str.ends_with(suffix) {
                         return true;
                     }
@@ -344,7 +339,7 @@ impl WorkspaceSnapshot {
             let full_path = entry.path();
             let relative_path = full_path
                 .strip_prefix(&workspace_root)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                .map_err(io::Error::other)?;
 
             // Convert to forward slashes for consistency
             let relative_str = relative_path

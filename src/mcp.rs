@@ -27,8 +27,6 @@
 //! - `resources/read` - Reads resource content (not implemented)
 //! - `shutdown` - Clean shutdown
 
-#![cfg(feature = "mcp")]
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -904,6 +902,7 @@ impl ServerHandler for TugServer {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn list_resources(
         &self,
         _request: Option<PaginatedRequestParam>,

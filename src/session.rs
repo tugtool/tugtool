@@ -1277,12 +1277,10 @@ fn calculate_dir_size(dir: &Path) -> io::Result<u64> {
         return Ok(0);
     }
 
-    for entry in walkdir::WalkDir::new(dir).follow_links(false) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() {
-                if let Ok(metadata) = entry.metadata() {
-                    size += metadata.len();
-                }
+    for entry in walkdir::WalkDir::new(dir).follow_links(false).into_iter().flatten() {
+        if entry.file_type().is_file() {
+            if let Ok(metadata) = entry.metadata() {
+                size += metadata.len();
             }
         }
     }

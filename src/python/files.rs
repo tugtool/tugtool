@@ -80,7 +80,7 @@ pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, St
             continue;
         }
 
-        if path.extension().map_or(false, |ext| ext == "py") {
+        if path.extension().is_some_and(|ext| ext == "py") {
             let rel_path_str = rel_path.to_string_lossy().to_string();
             let content = fs::read_to_string(path)?;
             files.push((rel_path_str, content));

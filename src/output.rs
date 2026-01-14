@@ -166,6 +166,7 @@ impl SymbolInfo {
     ///
     /// This is the primary constructor used during rename analysis.
     /// The `container` field is populated when the symbol is a method inside a class.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_facts(
         symbol_id: &str,
         name: &str,
