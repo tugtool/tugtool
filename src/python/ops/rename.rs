@@ -727,33 +727,12 @@ mod tests {
     #[cfg(test)]
     mod integration_tests {
         use super::*;
+        use crate::python::test_helpers::require_python_with_libcst;
         use tempfile::TempDir;
-
-        fn find_python() -> Option<PathBuf> {
-            which::which("python3")
-                .or_else(|_| which::which("python"))
-                .ok()
-        }
-
-        fn has_libcst() -> bool {
-            if let Some(python) = find_python() {
-                let output = std::process::Command::new(&python)
-                    .args(["-c", "import libcst"])
-                    .output();
-                output.map(|o| o.status.success()).unwrap_or(false)
-            } else {
-                false
-            }
-        }
 
         #[test]
         fn rename_resolves_correct_symbol() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let workspace = TempDir::new().unwrap();
             let session = TempDir::new().unwrap();
 
@@ -780,12 +759,7 @@ mod tests {
 
         #[test]
         fn rename_generates_correct_patchset() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let workspace = TempDir::new().unwrap();
             let session = TempDir::new().unwrap();
 
@@ -821,12 +795,7 @@ mod tests {
 
         #[test]
         fn rename_end_to_end_with_apply() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let workspace = TempDir::new().unwrap();
             let session = TempDir::new().unwrap();
 

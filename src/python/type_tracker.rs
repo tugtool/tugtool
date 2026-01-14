@@ -1441,34 +1441,13 @@ mod tests {
 
     mod integration_tests {
         use super::*;
+        use crate::python::test_helpers::require_python_with_libcst;
         use crate::python::worker::spawn_worker;
         use tempfile::TempDir;
 
-        fn find_python() -> Option<std::path::PathBuf> {
-            which::which("python3")
-                .or_else(|_| which::which("python"))
-                .ok()
-        }
-
-        fn has_libcst() -> bool {
-            if let Some(python) = find_python() {
-                let output = std::process::Command::new(&python)
-                    .args(["-c", "import libcst"])
-                    .output();
-                output.map(|o| o.status.success()).unwrap_or(false)
-            } else {
-                false
-            }
-        }
-
         #[test]
         fn analyze_types_integration() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1496,12 +1475,7 @@ handler.process()
 
         #[test]
         fn analyze_types_with_propagation() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1537,12 +1511,7 @@ z = y
 
         #[test]
         fn analyze_types_in_function() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1571,12 +1540,7 @@ def process():
 
         #[test]
         fn method_resolution_test() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1625,12 +1589,7 @@ handler.process()
 
         #[test]
         fn find_typed_method_references_integration() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1662,12 +1621,7 @@ handler.process()
 
         #[test]
         fn find_multiple_typed_method_references() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1700,12 +1654,7 @@ h3.process()
 
         #[test]
         fn method_reference_only_matches_correct_type() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1743,12 +1692,7 @@ h2.process()
 
         #[test]
         fn method_reference_in_function_scope() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1777,12 +1721,7 @@ def use_service():
 
         #[test]
         fn method_reference_with_variable_propagation() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1811,12 +1750,7 @@ connection.connect()
 
         #[test]
         fn analyze_types_with_annotations() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1853,12 +1787,7 @@ def process(handler: Handler) -> str:
 
         #[test]
         fn annotated_method_resolution() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1886,12 +1815,7 @@ def use_handler(h: Handler):
 
         #[test]
         fn self_parameter_from_class() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1923,12 +1847,7 @@ class MyClass:
 
         #[test]
         fn annotation_precedence_integration() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -1959,12 +1878,7 @@ x: Handler = SubHandler()
 
         #[test]
         fn generic_annotation_integration() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();

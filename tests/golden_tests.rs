@@ -206,9 +206,7 @@ fn run_golden_test(
 
 #[test]
 fn golden_analyze_impact_success() {
-    if require_python_with_libcst().is_none() {
-        return;
-    }
+    let _python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -230,9 +228,7 @@ fn golden_analyze_impact_success() {
 
 #[test]
 fn golden_run_success_dry() {
-    if require_python_with_libcst().is_none() {
-        return;
-    }
+    let _python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -254,9 +250,7 @@ fn golden_run_success_dry() {
 
 #[test]
 fn golden_run_success_applied() {
-    if require_python_with_libcst().is_none() {
-        return;
-    }
+    let _python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -279,9 +273,7 @@ fn golden_run_success_applied() {
 
 #[test]
 fn golden_run_success_verified() {
-    if require_python_with_libcst().is_none() {
-        return;
-    }
+    let _python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -354,9 +346,7 @@ fn golden_error_invalid_arguments() {
 
 #[test]
 fn golden_error_symbol_not_found() {
-    if require_python_with_libcst().is_none() {
-        return;
-    }
+    let _python = require_python_with_libcst();
 
     // Symbol at non-existent location
     let result = run_golden_test(
@@ -379,9 +369,7 @@ fn golden_error_symbol_not_found() {
 
 #[test]
 fn golden_error_invalid_name() {
-    if require_python_with_libcst().is_none() {
-        return;
-    }
+    let _python = require_python_with_libcst();
 
     // Invalid Python identifier
     let result = run_golden_test(

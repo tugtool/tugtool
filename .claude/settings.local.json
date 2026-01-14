@@ -202,7 +202,10 @@
       "Bash(test:*)",
       "Bash(target/debug/tug:*)",
       "Bash(target/release/tug:*)",
-      "Bash(cargo publish:*)"
+      "Bash(cargo publish:*)",
+      "Bash(for dep in anyhow sha2 hex chrono globset wait-timeout directories dirs which tracing libc)",
+      "Bash(do)",
+      "Bash(for dep in walkdir tempfile wait_timeout glob)"
     ],
     "deny": [],
     "ask": []

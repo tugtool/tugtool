@@ -1189,13 +1189,8 @@ fn format_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::python::test_helpers::require_python_with_libcst;
     use tempfile::TempDir;
-
-    // Note: Tests that require Python/libcst use runtime checks and early return
-    // rather than #[ignore] because:
-    // 1. We want to run them when dependencies ARE available
-    // 2. #[ignore] would unconditionally skip, missing CI environments with Python
-    // 3. Runtime checks provide clear skip messages for debugging
 
     /// Create a test session directory.
     fn create_test_session() -> TempDir {
@@ -1203,13 +1198,6 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("python")).unwrap();
         std::fs::create_dir_all(temp.path().join("workers")).unwrap();
         temp
-    }
-
-    /// Find Python 3 on the system.
-    fn find_python() -> Option<PathBuf> {
-        which::which("python3")
-            .or_else(|_| which::which("python"))
-            .ok()
     }
 
     #[test]
@@ -1225,22 +1213,7 @@ mod tests {
 
     #[test]
     fn test_worker_spawn_and_ready() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        // Check if libcst is available
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let result = spawn_worker(&python_path, temp.path());
 
@@ -1254,21 +1227,7 @@ mod tests {
 
     #[test]
     fn test_worker_parse() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1281,21 +1240,7 @@ mod tests {
 
     #[test]
     fn test_worker_get_bindings() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1316,21 +1261,7 @@ mod tests {
 
     #[test]
     fn test_worker_get_references() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1352,21 +1283,7 @@ mod tests {
 
     #[test]
     fn test_worker_rewrite_batch() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1387,21 +1304,7 @@ mod tests {
 
     #[test]
     fn test_worker_respawn_on_crash() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1421,21 +1324,7 @@ mod tests {
 
     #[test]
     fn test_worker_shutdown() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
         assert!(handle.is_running());
@@ -1453,21 +1342,7 @@ mod tests {
 
     #[test]
     fn test_worker_pid_storage() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let _handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1486,21 +1361,7 @@ mod tests {
 
     #[test]
     fn test_worker_get_analysis_combined() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1550,21 +1411,7 @@ def use_handler():
     #[test]
     fn test_get_analysis_reduces_ipc_overhead() {
         // This test verifies that get_analysis returns the same data as individual calls
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1585,21 +1432,7 @@ def use_handler():
 
     #[test]
     fn test_get_dynamic_patterns_getattr() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1623,21 +1456,7 @@ setattr(obj, "value", 42)
 
     #[test]
     fn test_get_dynamic_patterns_globals_locals() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1661,21 +1480,7 @@ def foo():
 
     #[test]
     fn test_get_dynamic_patterns_eval_exec() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1698,21 +1503,7 @@ exec("print('hello')")
 
     #[test]
     fn test_get_dynamic_patterns_dunder_getattr() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 
@@ -1736,21 +1527,7 @@ class Dynamic:
 
     #[test]
     fn test_get_analysis_includes_dynamic_patterns() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        let output = std::process::Command::new(&python_path)
-            .args(["-c", "import libcst"])
-            .output()
-            .unwrap();
-
-        if !output.status.success() {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let python_path = require_python_with_libcst();
         let temp = create_test_session();
         let mut handle = spawn_worker(&python_path, temp.path()).unwrap();
 

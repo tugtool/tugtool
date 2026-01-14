@@ -341,9 +341,7 @@ fn run_test_case(test_case: &TestCase, python: &Path) -> Result<RenameOutput, St
 
 #[test]
 fn fixture_simple_rename_function() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -359,9 +357,7 @@ fn fixture_simple_rename_function() {
 
 #[test]
 fn fixture_simple_rename_class() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -377,9 +373,7 @@ fn fixture_simple_rename_class() {
 
 #[test]
 fn fixture_cross_file_rename() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -395,9 +389,7 @@ fn fixture_cross_file_rename() {
 
 #[test]
 fn fixture_scoping_shadowing() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -413,9 +405,7 @@ fn fixture_scoping_shadowing() {
 
 #[test]
 fn fixture_scoping_global_nonlocal() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -431,9 +421,7 @@ fn fixture_scoping_global_nonlocal() {
 
 #[test]
 fn fixture_imports_helper_rename() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -450,9 +438,7 @@ fn fixture_imports_helper_rename() {
 /// Run all fixture tests and report results.
 #[test]
 fn fixture_all_tests() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let mut results: HashMap<String, Result<(), String>> = HashMap::new();
@@ -489,9 +475,7 @@ fn fixture_all_tests() {
 /// the verification step will detect and report it.
 #[test]
 fn fixture_verification_catches_syntax_errors() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     // Create a workspace with valid Python
     let workspace = TempDir::new().expect("Failed to create temp dir");
@@ -575,9 +559,7 @@ def use_it():
 /// and not extra context or reformatting.
 #[test]
 fn fixture_golden_patch_is_minimal() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -621,9 +603,7 @@ fn edge_case_concurrent_worker_access() {
     use std::sync::Arc;
     use std::thread;
 
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     // Create shared workspace and session
     let workspace = TempDir::new().expect("Failed to create temp dir");
@@ -691,9 +671,7 @@ fn edge_case_concurrent_worker_access() {
 /// in seconds, not minutes.
 #[test]
 fn edge_case_large_files() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let workspace = TempDir::new().expect("Failed to create temp dir");
     let session = TempDir::new().expect("Failed to create session dir");
@@ -746,9 +724,7 @@ fn edge_case_large_files() {
 /// Python 3 supports Unicode identifiers (PEP 3131).
 #[test]
 fn edge_case_unicode_identifiers() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let workspace = TempDir::new().expect("Failed to create temp dir");
     let session = TempDir::new().expect("Failed to create session dir");
@@ -794,9 +770,7 @@ result = calculate_value()
 /// Test handling of decorators during rename.
 #[test]
 fn edge_case_decorator_handling() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let workspace = TempDir::new().expect("Failed to create temp dir");
     let session = TempDir::new().expect("Failed to create session dir");
@@ -854,9 +828,7 @@ decorated = my_decorator(target_function)
 /// Test handling of type annotation references.
 #[test]
 fn edge_case_type_annotation_references() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let workspace = TempDir::new().expect("Failed to create temp dir");
     let session = TempDir::new().expect("Failed to create session dir");
@@ -929,9 +901,7 @@ optional_proc: Optional[DataProcessor] = None
 
 #[test]
 fn fixture_classes_method_rename() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -947,9 +917,7 @@ fn fixture_classes_method_rename() {
 
 #[test]
 fn fixture_classes_inheritance() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -965,9 +933,7 @@ fn fixture_classes_inheritance() {
 
 #[test]
 fn fixture_classes_class_attribute() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -983,9 +949,7 @@ fn fixture_classes_class_attribute() {
 
 #[test]
 fn fixture_classes_dunder_methods() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -1005,9 +969,7 @@ fn fixture_classes_dunder_methods() {
 
 #[test]
 fn fixture_edge_cases_string_reference() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -1023,9 +985,7 @@ fn fixture_edge_cases_string_reference() {
 
 #[test]
 fn fixture_edge_cases_comment_reference() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -1041,9 +1001,7 @@ fn fixture_edge_cases_comment_reference() {
 
 #[test]
 fn fixture_edge_cases_decorator() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let manifest = load_manifest();
     let test_case = manifest
@@ -1063,9 +1021,7 @@ fn fixture_edge_cases_decorator() {
 /// to verify warnings are generated for dynamic patterns.
 #[test]
 fn fixture_edge_cases_dynamic_attr_warnings() {
-    let Some(python) = require_python_with_libcst() else {
-        return;
-    };
+    let python = require_python_with_libcst();
 
     let workspace = TempDir::new().expect("Failed to create temp dir");
     let session = TempDir::new().expect("Failed to create session dir");

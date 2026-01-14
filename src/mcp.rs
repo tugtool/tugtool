@@ -1046,6 +1046,7 @@ pub async fn run_mcp_server() -> Result<(), TugError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::python::test_helpers::require_python_with_libcst;
     use tempfile::TempDir;
 
     #[test]
@@ -1673,22 +1674,6 @@ mod tests {
     // Analyze Impact and Rename Symbol Tests
     // ========================================================================
 
-    /// Find Python 3 on the system.
-    fn find_python() -> Option<std::path::PathBuf> {
-        which::which("python3")
-            .or_else(|_| which::which("python"))
-            .ok()
-    }
-
-    /// Check if libcst is available for the given Python.
-    fn has_libcst(python: &std::path::Path) -> bool {
-        std::process::Command::new(python)
-            .args(["-c", "import libcst"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
     /// Create a test workspace with the simple rename fixture.
     fn create_rename_test_workspace() -> TempDir {
         let temp = TempDir::new().unwrap();
@@ -1719,16 +1704,7 @@ if __name__ == "__main__":
 
     #[test]
     fn analyze_impact_returns_valid_response() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        if !has_libcst(&python_path) {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let _python = require_python_with_libcst();
         let workspace = create_rename_test_workspace();
         let server = TugServer::new();
 
@@ -1767,16 +1743,7 @@ if __name__ == "__main__":
 
     #[test]
     fn rename_symbol_dry_run_returns_patch_without_modifying_files() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        if !has_libcst(&python_path) {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let _python = require_python_with_libcst();
         let workspace = create_rename_test_workspace();
         let server = TugServer::new();
 
@@ -1821,16 +1788,7 @@ if __name__ == "__main__":
 
     #[test]
     fn rename_symbol_apply_modifies_files() {
-        let Some(python_path) = find_python() else {
-            eprintln!("Skipping test: Python not found");
-            return;
-        };
-
-        if !has_libcst(&python_path) {
-            eprintln!("Skipping test: libcst not available");
-            return;
-        }
-
+        let _python = require_python_with_libcst();
         let workspace = create_rename_test_workspace();
         let server = TugServer::new();
 

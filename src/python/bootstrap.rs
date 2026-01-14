@@ -696,11 +696,7 @@ mod tests {
     #[test]
     fn test_ensure_managed_venv_creates_venv() {
         // This test requires Python to be installed and creates a real venv
-        // Skip if no suitable Python available
-        if find_base_python().is_err() {
-            eprintln!("Skipping test: no suitable Python found");
-            return;
-        }
+        find_base_python().expect("Python 3.9+ is required to run tests");
 
         let temp = TempDir::new().unwrap();
         let session_dir = temp.path().to_path_buf();
@@ -727,11 +723,7 @@ mod tests {
 
     #[test]
     fn test_ensure_managed_venv_recreate() {
-        // Skip if no suitable Python available
-        if find_base_python().is_err() {
-            eprintln!("Skipping test: no suitable Python found");
-            return;
-        }
+        find_base_python().expect("Python 3.9+ is required to run tests");
 
         let temp = TempDir::new().unwrap();
         let session_dir = temp.path().to_path_buf();

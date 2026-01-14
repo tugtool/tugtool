@@ -2108,34 +2108,13 @@ mod tests {
     #[cfg(test)]
     mod integration_tests {
         use super::*;
+        use crate::python::test_helpers::require_python_with_libcst;
         use crate::python::worker::spawn_worker;
         use tempfile::TempDir;
 
-        fn find_python() -> Option<std::path::PathBuf> {
-            which::which("python3")
-                .or_else(|_| which::which("python"))
-                .ok()
-        }
-
-        fn has_libcst() -> bool {
-            if let Some(python) = find_python() {
-                let output = std::process::Command::new(&python)
-                    .args(["-c", "import libcst"])
-                    .output();
-                output.map(|o| o.status.success()).unwrap_or(false)
-            } else {
-                false
-            }
-        }
-
         #[test]
         fn analyze_simple_file() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -2168,12 +2147,7 @@ foo()
 
         #[test]
         fn analyze_class_with_method() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -2203,12 +2177,7 @@ class MyClass:
 
         #[test]
         fn analyze_imports() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -2246,12 +2215,7 @@ from typing import *
 
         #[test]
         fn adapter_populates_facts_store() {
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -2290,12 +2254,7 @@ from typing import *
         fn libcst_rewrite_preserves_formatting() {
             use crate::python::worker::{RewriteRequest, SpanInfo};
 
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -2358,12 +2317,7 @@ class MyClass:
         fn libcst_rewrite_batch_multiple_names() {
             use crate::python::worker::{RewriteRequest, SpanInfo};
 
-            if !has_libcst() {
-                eprintln!("Skipping test: libcst not available");
-                return;
-            }
-
-            let python = find_python().unwrap();
+            let python = require_python_with_libcst();
             let temp = TempDir::new().unwrap();
             std::fs::create_dir_all(temp.path().join("python")).unwrap();
             std::fs::create_dir_all(temp.path().join("workers")).unwrap();
@@ -2372,7 +2326,7 @@ class MyClass:
 
             // Source with multiple references to same name
             let content = "def foo():\n    pass\n\nfoo()\nfoo()\n";
-            //                 ^4-7                ^24-27 ^32-35
+            //                 ^4-7                ^21-24 ^27-30
 
             let parse_result = worker.parse("test.py", content).unwrap();
 
@@ -2383,11 +2337,11 @@ class MyClass:
                     new_name: "bar".to_string(),
                 },
                 RewriteRequest {
-                    span: SpanInfo { start: 24, end: 27 }, // first foo()
+                    span: SpanInfo { start: 21, end: 24 }, // first foo()
                     new_name: "bar".to_string(),
                 },
                 RewriteRequest {
-                    span: SpanInfo { start: 32, end: 35 }, // second foo()
+                    span: SpanInfo { start: 27, end: 30 }, // second foo()
                     new_name: "bar".to_string(),
                 },
             ];
