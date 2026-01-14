@@ -1752,7 +1752,7 @@ if __name__ == "__main__":
             // Verify response structure
             assert_eq!(json["status"], "ok", "Response status should be 'ok'");
             assert!(json["symbol"].is_object(), "Response should have symbol info");
-            assert!(json["refs"].is_array(), "Response should have refs array");
+            assert!(json["references"].is_array(), "Response should have references array");
 
             // Verify symbol info
             let symbol = &json["symbol"];
@@ -1760,7 +1760,7 @@ if __name__ == "__main__":
             assert_eq!(symbol["kind"], "function");
 
             // Verify references (should find the definition and the call in main)
-            let refs = json["refs"].as_array().unwrap();
+            let refs = json["references"].as_array().unwrap();
             assert!(refs.len() >= 2, "Should find at least 2 references (definition + call)");
         });
     }
@@ -1805,9 +1805,9 @@ if __name__ == "__main__":
 
             // Verify response structure
             assert_eq!(json["status"], "ok", "Response status should be 'ok'");
-            assert!(json["patch"].is_object() || json["patch"].is_string(), "Response should have patch");
-            assert!(json["applied"].is_boolean(), "Response should have applied flag");
-            assert_eq!(json["applied"], false, "applied should be false for dry run");
+            assert!(json["patch"].is_object(), "Response should have patch object");
+            // For dry runs, 'applied' field is absent (not false)
+            assert!(json["applied"].is_null(), "applied should be absent for dry run");
         });
 
         // Verify file was NOT modified

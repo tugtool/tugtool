@@ -160,6 +160,12 @@ pub struct RenameOutput {
     pub warnings: Vec<DynamicWarning>,
     /// Undo token.
     pub undo_token: String,
+    /// Whether changes were applied (present when --apply used).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied: Option<bool>,
+    /// Files that were modified (present when --apply used).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files_written: Option<Vec<String>>,
 }
 
 /// Rename summary.
@@ -569,7 +575,8 @@ impl PythonRenameOp {
         }
 
         // Apply to real workspace if requested
-        if apply {
+        let files_written = if apply {
+            let mut written = Vec::new();
             for (path, edits) in &edits_by_file {
                 let file_path = self.ctx.workspace_root.join(path);
                 let content = fs::read_to_string(&file_path)?;
@@ -590,8 +597,12 @@ impl PythonRenameOp {
                 }
 
                 fs::write(&file_path, &new_content)?;
+                written.push(path.clone());
             }
-        }
+            Some(written)
+        } else {
+            None
+        };
 
         // Generate unified diff
         let unified_diff = generate_unified_diff(&edit_infos);
@@ -621,6 +632,8 @@ impl PythonRenameOp {
             verification,
             warnings,
             undo_token,
+            applied: if apply { Some(true) } else { None },
+            files_written,
         })
     }
 

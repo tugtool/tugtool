@@ -1,4 +1,8 @@
 {
+  "applied": true,
+  "files_written": [
+    "input.py"
+  ],
   "patch": {
     "edits": [
       {
