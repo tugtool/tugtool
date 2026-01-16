@@ -1,8 +1,10 @@
 # tugtool
 
-Code refactoring for AI agents.
+Code refactoring for AI assistants
 
-Tugtool is an AI-native code transformation engine that provides verified, deterministic, minimal-diff refactors across Python codebases. Unlike simple find-and-replace, tug understands code semantics: it parses your code, builds a symbol graph, and ensures that all references to a symbol are updated correctly.
+Ever see your AI use grep for code "analysis" or sed/awk to do a complex refactor? It sees your software as text and not as code! Ewww!
+
+Tug aims to do better with language modules that understand code and how to change it. It fills the gap in your AI coding experience with an agent-callable refactor tool that delivers correct, deterministic, minimal-diff, verified, multi-file code rewrites. It makes it easier for you to change your software and focus on making great projects.
 
 ## Features
 
