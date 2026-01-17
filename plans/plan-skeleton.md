@@ -74,7 +74,7 @@ This skeleton uses `X.Y` placeholders. When writing a real plan, replace them wi
 | `X` | Major phase number | `1`, `2`, `3` |
 | `Y` | Minor phase number (usually `0`) | `1.0`, `2.0` |
 | `X.Y.N` | Numbered section within phase | `1.0.1`, `1.0.2` |
-| `X.Y.N.M` | Subsection for deep dives | `1.0.1.1`, `1.0.2.3` |
+| `X.Y.N.M` | Subsection within a numbered section | `1.0.1.1`, `1.0.2.3` |
 
 **Standard section numbers:**
 - `X.Y.0` — Design Decisions (always `.0`)
@@ -85,7 +85,7 @@ This skeleton uses `X.Y` placeholders. When writing a real plan, replace them wi
 - `X.Y.5` — Execution Steps
 - `X.Y.6` — Deliverables and Checkpoints
 
-**Deep dives** use `X.Y.0.N` subsections (e.g., `1.0.0.1 Refactoring Operations Analysis`, `1.0.0.2 Type Inference Roadmap`).
+**Deep dives** are just numbered sections within the phase, typically starting at `X.Y.1` *after* `X.Y.0 Design Decisions` (e.g., `1.0.1 Refactoring Operations Analysis`, `1.0.2 Type Inference Roadmap`). Use `X.Y.N.M` for deep-dive subsections when needed.
 
 ---
 
@@ -173,7 +173,7 @@ Every step must include a `**References:**` line that cites the plan artifacts i
 Rules:
 - Cite **decisions** by ID: `[D05] ...`
 - Cite **open questions** by ID when the step resolves/de-risks them: `[Q03] ...`
-- Cite **specs/lists/tables/risks/milestones/concepts** by label: `Spec S15`, `List L03`, `Tables T27-T28`, `Risk R02`, `Milestone M01`, `Concept C01`, etc.
+- Cite **specs/lists/tables/risks/milestones/concepts/diagrams** by label: `Spec S15`, `List L03`, `Tables T27-T28`, `Risk R02`, `Milestone M01`, `Concept C01`, `Diagram Diag01`, etc.
 - Cite **anchors** for deep links in parentheses using `#anchor` tokens (keep them stable).
 - **Do not cite line numbers.** If you find yourself writing "lines 5–10", add an anchor and cite that instead.
 - Prefer **rich, exhaustive citations**. Avoid `N/A` unless the step is truly refactor-only.
@@ -404,7 +404,7 @@ For each command, define success and error response schemas:
 
 ###### Command: `<command-name>` {#cmd-command-name}
 
-**Spec SNN: <command-name> Response Schema** {#sNN-command-response}
+**Spec S01: <command-name> Response Schema** {#s01-command-response}
 
 **Success response:**
 
@@ -424,7 +424,7 @@ For each command, define success and error response schemas:
 
 > List all error codes by category. This table is the contract for error handling.
 
-**Table TNN: Error Codes** {#tNN-error-codes}
+**Table T01: Error Codes** {#t01-error-codes}
 
 ###### <Category> Errors (exit code N)
 
