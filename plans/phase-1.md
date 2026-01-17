@@ -1,13 +1,13 @@
-## Phase 26: Extract tug — An AI-Native Code Transformation Engine
+## Phase 1: Create tug — An AI-Native Code Transformation Engine
 
-**Purpose:** Extract a new project called **tug** from Arbors: a toolset that LLM coding agents can call to **query code semantically** and execute **verified, deterministic, minimal-diff refactors** (replacing brittle `sed`/regex workflows).
+**Purpose:** Establish an initial plan to build **tug**: an agent-callable refactoring kernel that can **query code semantically** and execute **verified, deterministic, minimal-diff refactors** (replacing brittle `sed`/regex workflows).
 
 **Strategy:**
-1. Execute the refactoring kernel vision in this repo on the `tug` branch.
-2. Strip Arbors down to essentials needed for code refactoring.
-3. Rename everything to `tug`.
-4. Extract to a new standalone `tug` repo.
-5. Switch back to Arbors mainline (which goes into code freeze).
+1. Execute the refactoring-kernel vision in this repo on the `tug` branch.
+2. Strip the existing codebase down to essentials needed for code refactoring.
+3. Standardize naming around `tug` throughout the implementation.
+4. Optionally extract to a new standalone `tug` repo once the kernel is stable.
+5. Stabilize the pre-tug line (if it must remain) and focus ongoing development on `tug`.
 
 **Scope:**
 1. Establish a **refactoring kernel**: code-facts model, query/planning, Patch IR, transactional apply, and verification hooks.
@@ -20,7 +20,7 @@
 - Building a full IDE or editor UI.
 - Writing a new compiler/typechecker/parser for any language.
 - "Universal AST for all languages" as v1.
-- Preserving any Arbors JSON/columnar analytics functionality.
+- Preserving any Legacy JSON/columnar analytics functionality.
 
 **Dependencies / prerequisites:**
 - Python adapter prerequisites: LibCST available to perform lossless rewrites (no Node/TypeScript analyzer dependencies).
@@ -40,18 +40,18 @@
 
 ---
 
-### 26.0 Design Decisions
+### 1.0 Design Decisions
 
 #### [D01] tug: a refactoring kernel for AI coding agents (DECIDED)
 
-**Decision:** tug is an **agent-callable refactoring kernel** ("autopilot for code evolution") built by extracting and refocusing Arbors.
+**Decision:** tug is an **agent-callable refactoring kernel** ("autopilot for code evolution") built by refocusing this codebase into a dedicated refactoring kernel.
 
 **Rationale:**
 - LLM agents currently fall back to `sed`/regex/diffs for multi-file edits and fail due to lack of semantics (partial renames, import breakage, scope/shadowing issues).
 - The opportunity is to insert a deterministic execution layer between "intent" (LLM) and "edits" (patches).
 
 **Implications:**
-- "Query → Filter → Transform → Materialize" pattern from Arbors carries forward, but the **domain becomes code facts + patches**, not JSON nodes.
+- "Query → Filter → Transform → Materialize" pattern from Legacy carries forward, but the **domain becomes code facts + patches**, not JSON nodes.
 - Correctness depends on language semantics from existing analyzers (e.g., rust-analyzer for Rust), not reimplementing compilers.
 
 ---
@@ -99,9 +99,9 @@
 - This is a new project; there's no backward compatibility burden.
 
 **Implications:**
-- Arbors crates will be deleted, not deprecated.
+- Legacy crates will be deleted, not deprecated.
 - Only patterns (not code paths) carry forward.
-- Tag the Arbors repo before extraction for reference.
+- Tag the Legacy repo before any repo split for reference.
 
 ---
 
@@ -405,7 +405,7 @@ Where `refactors.json` contains multiple operations to apply atomically.
 
 ---
 
-### 26.0.1 Refactoring Operations Analysis
+### 1.0.1 Refactoring Operations Analysis
 
 This section analyzes each refactoring operation to understand what knowledge is required and where we hit walls without full type inference.
 
@@ -580,7 +580,7 @@ Without type information, we cannot reliably determine which `do_thing` method t
 
 ---
 
-### 26.0.2 Python Type Inference Roadmap
+### 1.0.2 Python Type Inference Roadmap
 
 This section defines the incremental path to reducing the "type inference wall" for method-level refactors.
 
@@ -832,7 +832,7 @@ Levels 3-6 are "make it better over time" — each adds coverage incrementally.
 
 ---
 
-### 26.0.3 Complete Agent Integration Flow
+### 1.0.3 Complete Agent Integration Flow
 
 This section documents the exact end-to-end flow of how an AI coding agent interacts with `tug`.
 
@@ -1081,7 +1081,7 @@ Exit code: 3. Agent retries with `--symbol-id S42`.
 
 ---
 
-### 26.0.4 LibCST Worker Protocol
+### 1.0.4 LibCST Worker Protocol
 
 This section specifies the IPC protocol between the Rust `tug` process and the Python LibCST worker.
 
@@ -1410,7 +1410,7 @@ CLI                                     Worker
 
 ---
 
-### 26.0.5 Session Management
+### 1.0.5 Session Management
 
 This section specifies how `tug` manages persistent state across CLI invocations.
 
@@ -1655,7 +1655,7 @@ tug --fresh analyze-impact ...   # delete session, then run command
 
 ---
 
-### 26.0.6 rust-analyzer Integration
+### 1.0.6 rust-analyzer Integration
 
 This section specifies how `tug` integrates with rust-analyzer (RA) for Rust refactoring operations.
 
@@ -1998,7 +1998,7 @@ Log warning when skipping files.
 
 ---
 
-### 26.0.7 JSON Output Schema
+### 1.0.7 JSON Output Schema
 
 This section defines the exact JSON schema for all CLI and MCP outputs. These schemas are the **agent contract** — changes require versioning.
 
@@ -2423,7 +2423,7 @@ To ensure deterministic output:
 
 ---
 
-### 26.0.8 Test Fixtures
+### 1.0.8 Test Fixtures
 
 This section defines the sample code structure for testing refactoring operations.
 
@@ -2855,7 +2855,7 @@ tug_UPDATE_GOLDEN=1 cargo nextest run -p tug fixtures
 
 ---
 
-### 26.0.9 Configuration Schema {#config-schema}
+### 1.0.9 Configuration Schema {#config-schema}
 
 This section defines the `[tool.tug]` configuration in `pyproject.toml` and equivalent CLI flags.
 
@@ -2938,7 +2938,7 @@ cache_facts = true                          # Cache Facts store to disk (default
 
 ---
 
-### 26.0.10 MCP Tool Input Schemas {#mcp-schemas}
+### 1.0.10 MCP Tool Input Schemas {#mcp-schemas}
 
 This section defines the JSON Schema for each MCP tool's input, ensuring contract stability.
 
@@ -3241,7 +3241,7 @@ This section defines the JSON Schema for each MCP tool's input, ensuring contrac
 
 ---
 
-### 26.0.11 Cross-Platform Support {#cross-platform}
+### 1.0.11 Cross-Platform Support {#cross-platform}
 
 tug targets **macOS, Linux, and Windows** from day one. Platform abstraction is easier at the start than retrofitting later.
 
@@ -3333,14 +3333,14 @@ which = "6"              # Cross-platform executable discovery
 
 #### Testing Strategy
 
-- **CI runs on all three platforms:** macOS, Ubuntu, Windows (see 26.0.13)
+- **CI runs on all three platforms:** macOS, Ubuntu, Windows (see 1.0.13)
 - **Path tests:** Verify paths work with both `/` and `\` inputs
 - **Temp directory tests:** Verify cleanup works on all platforms
 - **Line ending tests:** Verify patches preserve original line endings
 
 ---
 
-### 26.0.12 Logging and Tracing {#logging-tracing}
+### 1.0.12 Logging and Tracing {#logging-tracing}
 
 tug uses the `tracing` crate for structured logging, compatible with `RUST_LOG` environment variable.
 
@@ -3451,7 +3451,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 ---
 
-### 26.0.13 CI/CD Pipeline {#cicd-pipeline}
+### 1.0.13 CI/CD Pipeline {#cicd-pipeline}
 
 GitHub Actions workflow for tug.
 
@@ -3616,9 +3616,9 @@ cross-check:
 
 ---
 
-### 26.1 Specification
+### 1.1 Specification
 
-#### 26.1.1 Inputs and Outputs (Data Model)
+#### 1.1.1 Inputs and Outputs (Data Model)
 
 **Inputs:**
 - A **workspace** (directory tree) containing source code (initially: Python + Rust projects).
@@ -3645,7 +3645,7 @@ cross-check:
 
 ---
 
-#### 26.1.2 Terminology and Naming
+#### 1.1.2 Terminology and Naming
 
 - **WorkspaceSnapshot**: immutable view of files + hashes used as the basis for planning and applying changes.
 - **Facts**: semantic program data (Symbols/References/Imports/Calls/Scopes/Types) produced by language adapters.
@@ -3656,7 +3656,7 @@ cross-check:
 
 ---
 
-#### 26.1.3 Supported Features (Exhaustive)
+#### 1.1.3 Supported Features (Exhaustive)
 
 **Supported (v1 kernel):**
 - Workspace snapshots (file inventory + hashing; optional temp-workspace apply).
@@ -3686,7 +3686,7 @@ cross-check:
 
 ---
 
-#### 26.1.4 Modes / Policies
+#### 1.1.4 Modes / Policies
 
 | Mode/Policy | Applies to | Behavior | Result |
 |------------|------------|----------|--------|
@@ -3699,7 +3699,7 @@ cross-check:
 
 ---
 
-#### 26.1.5 Semantics (Normative Rules)
+#### 1.1.5 Semantics (Normative Rules)
 
 - **Evaluation order**:
   - Query results are ordered deterministically (primary: file path; then span start; then stable IDs).
@@ -3718,7 +3718,7 @@ cross-check:
 
 ---
 
-#### 26.1.6 Error and Warning Model
+#### 1.1.6 Error and Warning Model
 
 **Error fields (required):**
 - `code`: stable enum/string code (`AmbiguousSymbol`, `UnsupportedOperation`, `AnchorMismatch`, `VerificationFailed`, ...)
@@ -3737,7 +3737,7 @@ cross-check:
 
 ---
 
-#### 26.1.7 Public API Surface
+#### 1.1.7 Public API Surface
 
 **Rust (conceptual; final types live under `tug`):**
 
@@ -3778,7 +3778,7 @@ impl WorkspaceSession {
 
 ---
 
-#### 26.1.8 Internal Architecture
+#### 1.1.8 Internal Architecture
 
 - **Single source of truth**:
   - Facts store + PatchSet generated from a specific WorkspaceSnapshot.
@@ -3796,9 +3796,9 @@ impl WorkspaceSession {
 
 ---
 
-### 26.2 Definitive Symbol Inventory
+### 1.2 Definitive Symbol Inventory
 
-#### 26.2.1 New crate
+#### 1.2.1 New crate
 
 | Crate | Purpose |
 |-------|---------|
@@ -3806,10 +3806,10 @@ impl WorkspaceSession {
 
 Notes:
 - tug is a **single crate** (no tug sub-crates) for v1.
-- While implementing on this Arbors `tug` branch, create `tug` as a **temporary workspace member** at `crates/tug/` so we can build and test without rewriting/deleting the existing Arbors workspace root early. In Step 6.2 we move it to repo root for the standalone `tug` repo layout (Option A).
-- Extracted from Arbors; does not depend on any Arbors crates.
+- While implementing on this repo's `tug` branch, create `tug` as a **temporary workspace member** at `crates/tug/` so we can build and test without rewriting/deleting the existing workspace root early. In Step 6.2 we move it to repo root for the standalone `tug` repo layout (Option A).
+- Designed to stand alone; does not depend on any legacy crates.
 
-#### 26.2.2 New files
+#### 1.2.2 New files
 
 | File | Purpose |
 |------|---------|
@@ -3818,16 +3818,16 @@ Notes:
 | `src/patch.rs` | Patch IR (Edit, Anchor, PatchSet) |
 | `src/workspace.rs` | WorkspaceSnapshot + file inventory |
 | `src/sandbox.rs` | SandboxCopy subsystem (temp dir, copy, cleanup) |
-| `src/session.rs` | Session management (26.0.5: lifecycle, locking, config) |
+| `src/session.rs` | Session management (1.0.5: lifecycle, locking, config) |
 | `src/facts/mod.rs` | Facts model: FactsStore with symbols, refs, scopes, types |
 | `src/cli.rs` | CLI front door |
 | `src/mcp.rs` | MCP server front door |
-| `src/output.rs` | JSON output types and serialization (26.0.7) |
-| `src/error.rs` | tugError enum and error code constants (26.0.7) |
+| `src/output.rs` | JSON output types and serialization (1.0.7) |
+| `src/error.rs` | tugError enum and error code constants (1.0.7) |
 | `src/python/mod.rs` | Python adapter module |
 | `src/python/env.rs` | Python environment resolution (Step 3.1) |
 | `src/python/worker.rs` | LibCST worker manager (spawn, communicate, shutdown) |
-| `src/python/libcst_worker.py` | Embedded Python worker script (26.0.4 protocol) |
+| `src/python/libcst_worker.py` | Embedded Python worker script (1.0.4 protocol) |
 | `src/python/analyzer/mod.rs` | Python analyzer module root |
 | `src/python/analyzer/scope.rs` | Scope and binding resolution (Step 3.4) |
 | `src/python/analyzer/type_tracker.rs` | Assignment type tracking (Step 5.2) |
@@ -3844,23 +3844,23 @@ Notes:
 | `src/rust/lsp.rs` | LSP JSON-RPC transport (Content-Length framing) |
 | `src/rust/init.rs` | LSP initialization handshake |
 | `src/rust/ops.rs` | LSP operations (prepareRename, rename, references, definition) |
-| `src/rust/convert.rs` | WorkspaceEdit → PatchSet conversion (26.0.6) |
+| `src/rust/convert.rs` | WorkspaceEdit → PatchSet conversion (1.0.6) |
 | `src/rust/error.rs` | Rust adapter errors (UnsupportedInMacro, etc.) |
 | `src/rust/session.rs` | Rust adapter session integration |
 | `src/rust/rename.rs` | rename_symbol orchestration |
 | `src/rust/verify.rs` | Rust verification (cargo check/test) |
-| `tests/fixtures/` | Test fixture directory (26.0.8) |
+| `tests/fixtures/` | Test fixture directory (1.0.8) |
 | `tests/fixtures/python/` | Python fixtures (simple, cross_file, imports, scoping) |
 | `tests/fixtures/rust/` | Rust fixtures (simple, cross_module, macros) |
 | `tests/fixtures/golden/` | Expected outputs (patches, JSON) |
 | `docs/AGENT_API.md` | Agent integration contract (CLI + MCP) |
 
-#### 26.2.3 Symbols to add
+#### 1.2.3 Symbols to add
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `Session` | struct | `tug` | manages session lifecycle, locking, config (26.0.5) |
-| `tugError` | enum | `tug::error` | error codes from 26.0.7 (E1xxx–E5xxx) |
+| `Session` | struct | `tug` | manages session lifecycle, locking, config (1.0.5) |
+| `tugError` | enum | `tug::error` | error codes from 1.0.7 (E1xxx–E5xxx) |
 | `WorkspaceSession` | struct | `tug` | owns snapshot lifecycle and caches |
 | `WorkspaceSnapshot` | struct | `tug` | immutable file inventory + hashes |
 | `SandboxHandle` | struct | `tug` | manages temp dir lifecycle for verification |
@@ -3868,15 +3868,15 @@ Notes:
 | `QueryPlan` | enum/IR | `tug` | declarative query IR |
 | `PatchSet` | struct | `tug` | anchored edits + apply |
 | `RefactorOp` | enum | `tug` | semantic refactor primitives |
-| `WorkerHandle` | struct | `tug::python` | manages LibCST worker subprocess (26.0.4) |
+| `WorkerHandle` | struct | `tug::python` | manages LibCST worker subprocess (1.0.4) |
 | `PythonAdapter` | struct/trait impl | `tug::python` | LibCST analyzer + rewrite |
-| `LspClient` | struct | `tug::rust` | JSON-RPC transport over stdio (26.0.6) |
+| `LspClient` | struct | `tug::rust` | JSON-RPC transport over stdio (1.0.6) |
 | `RaClient` | struct | `tug::rust` | rust-analyzer client (spawn, init, operations) |
 | `RustAdapter` | struct/trait impl | `tug::rust` | rust-analyzer edits |
 
 ---
 
-### 26.3 Documentation Plan
+### 1.3 Documentation Plan
 
 - [ ] Create `README.md` stating purpose: AI-native code transformation engine.
 - [ ] Add `docs/AGENT_API.md` describing:
@@ -3891,9 +3891,9 @@ Notes:
 
 ---
 
-### 26.4 Test Plan Concepts
+### 1.4 Test Plan Concepts
 
-> See **26.0.8 Test Fixtures** for fixture directory structure, manifest format, and golden file conventions.
+> See **1.0.8 Test Fixtures** for fixture directory structure, manifest format, and golden file conventions.
 
 #### Test Categories
 
@@ -3902,7 +3902,7 @@ Notes:
   - Query engine determinism (stable ordering)
   - Facts normalization and indexing
   - Error code mapping is exhaustive
-  - JSON output serialization matches 26.0.7
+  - JSON output serialization matches 1.0.7
 
 - **Integration tests**:
   - Python adapter end-to-end on fixture repos: rename → organize imports → verify
@@ -3910,8 +3910,8 @@ Notes:
   - Cross-file refactoring across module boundaries
   - Worker process lifecycle (spawn, communicate, cleanup)
 
-- **Golden / contract tests** (per 26.0.8):
-  - Output JSON schema for CLI/MCP responses (26.0.7, 26.0.10)
+- **Golden / contract tests** (per 1.0.8):
+  - Output JSON schema for CLI/MCP responses (1.0.7, 1.0.10)
   - Deterministic patch output for fixed fixtures
   - Each fixture in `manifest.json` produces expected `golden/*.patch` and `golden/*.json`
   - MCP tool outputs match CLI outputs exactly
@@ -3923,7 +3923,7 @@ Notes:
 
 #### Fixture-Based Test Runner
 
-Tests use the manifest-driven runner from 26.0.8:
+Tests use the manifest-driven runner from 1.0.8:
 
 ```bash
 # Run all fixture tests
@@ -3956,22 +3956,22 @@ The fixture runner:
 
 ---
 
-### 26.5 Execution Steps
+### 1.5 Execution Steps
 
 > **Execution philosophy:** Steps 1–2 establish foundation. Step 3 is the **vertical spike** — a complete end-to-end Python refactor working before we build out the full engine. Step 4 exposes it to agents. Steps 5–7 extend coverage. Step 6 extracts.
 
 ---
 
-#### Step 0: Prepare for extraction
+#### Step 0: Prepare for tug bootstrap
 
-**Commit:** `chore: prepare tug extraction from arbors`
+**Commit:** `chore: prepare tug bootstrap in existing repo`
 
 **References:** Strategy section (lines 5–10)
 
 **Tasks:**
 - [x] Create `tug` branch (done).
-- [x] Tag current Arbors mainline state: `git tag pre-pivot` (done).
-- [x] Document the extraction plan in this file (done).
+- [x] Tag current Legacy mainline state: `git tag pre-pivot` (done).
+- [x] Document the tug bootstrap plan in this file (done).
 
 **Checkpoint:**
 - [x] Branch exists, tag exists.
@@ -3982,13 +3982,13 @@ The fixture runner:
 
 **Commit:** `feat(tug): add crate skeleton`
 
-**References:** 26.2.1 New crate, 26.2.2 New files
+**References:** 1.2.1 New crate, 1.2.2 New files
 
 **Tasks:**
-- [x] Create `crates/tug/` as a new **workspace member** (temporary while implementing inside the existing Arbors workspace).
+- [x] Create `crates/tug/` as a new **workspace member** (temporary while implementing inside the existing Legacy workspace).
   - [x] Add `crates/tug` to the root workspace members.
   - [x] Treat `crates/tug/` as the future tug repo root; all file paths below are **relative to the tug crate root**.
-  - [ ] In Step 6.2, move `crates/tug/` contents to repo root (Option A) after deleting Arbors.
+  - [ ] In Step 6.2, move `crates/tug/` contents to repo root (Option A) after deleting Legacy.
 - [x] Create `crates/tug/Cargo.toml` for the `tug` crate.
 - [x] Create `crates/tug/src/lib.rs` with minimal placeholder modules.
 - [x] Create placeholder module files under `crates/tug/src/`: `patch.rs`, `workspace.rs`, `sandbox.rs`, `session.rs`, `facts/mod.rs`, `cli.rs`, `mcp.rs`, `output.rs`, `error.rs`, `python/mod.rs`, `rust/mod.rs`.
@@ -3998,8 +3998,8 @@ The fixture runner:
   - **Async:** `tokio` (LSP client; MCP server async plumbing)
   - **Hashing:** `sha2` (content hashing for anchors/snapshots)
   - **Files:** `tempfile` (sandbox temp dirs), `walkdir` (directory traversal), `globset` (pattern matching)
-  - **Cross-platform (26.0.11):** `directories` (user dirs), `fs2` (file locking), `which` (executable discovery)
-  - **Logging (26.0.12):** `tracing`, `tracing-subscriber` with `env-filter` and `json` features
+  - **Cross-platform (1.0.11):** `directories` (user dirs), `fs2` (file locking), `which` (executable discovery)
+  - **Logging (1.0.12):** `tracing`, `tracing-subscriber` with `env-filter` and `json` features
   - **IPC:** `std::process` (worker/LSP spawning)
 
 **Tests:**
@@ -4020,7 +4020,7 @@ The fixture runner:
 
 **Commit:** `feat(tug): patch IR types and atomic apply`
 
-**References:** [D12] Undo mechanism: agent's responsibility via git, 26.1.2 Terminology (PatchSet, Edit, Anchor), 26.1.5 Semantics (anchoring, transactions, ordering), 26.2.2 New files (patch.rs), 26.2.3 Symbols (PatchSet)
+**References:** [D12] Undo mechanism: agent's responsibility via git, 1.1.2 Terminology (PatchSet, Edit, Anchor), 1.1.5 Semantics (anchoring, transactions, ordering), 1.2.2 New files (patch.rs), 1.2.3 Symbols (PatchSet)
 
 **Tasks:**
 - [x] Define **Patch IR v1** (normative spec + Rust types) with explicit safety invariants:
@@ -4095,7 +4095,7 @@ The fixture runner:
 
 **Commit:** `feat(tug): workspace snapshot with file inventory`
 
-**References:** [D05] Verification always uses SandboxCopy mode, 26.1.2 Terminology (WorkspaceSnapshot), 26.2.2 New files (workspace.rs), 26.2.3 Symbols (WorkspaceSnapshot)
+**References:** [D05] Verification always uses SandboxCopy mode, 1.1.2 Terminology (WorkspaceSnapshot), 1.2.2 New files (workspace.rs), 1.2.3 Symbols (WorkspaceSnapshot)
 
 **Tasks:**
 - [x] Define **Workspace Snapshot v1** (normative spec) to support safe refactor transactions:
@@ -4132,7 +4132,7 @@ The fixture runner:
 
 **Commit:** `feat(tug): sandbox copy for verification isolation`
 
-**References:** [D05] Verification always uses SandboxCopy mode, 26.0.11 Cross-Platform Support (#cross-platform, #platform-strategy, #platform-considerations, Tables T27-T28), 26.2.2 New files (sandbox.rs), 26.2.3 Symbols (SandboxHandle)
+**References:** [D05] Verification always uses SandboxCopy mode, 1.0.11 Cross-Platform Support (#cross-platform, #platform-strategy, #platform-considerations, Tables T27-T28), 1.2.2 New files (sandbox.rs), 1.2.3 Symbols (SandboxHandle)
 
 **Tasks:**
 - [x] Implement **SandboxCopy subsystem** (verification isolation):
@@ -4238,10 +4238,10 @@ The fixture runner:
 
 **Commit:** `feat(tug): session management with OCC`
 
-**References:** 26.0.5 Session Management (#why-sessions, #session-dir-structure, #session-lifecycle, #worker-process-mgmt, #config-precedence, #session-errors, Spec S15, Tables T21-T25), 26.0.9 Configuration Schema (#config-schema), 26.2.2 New files (session.rs), 26.2.3 Symbols (Session)
+**References:** 1.0.5 Session Management (#why-sessions, #session-dir-structure, #session-lifecycle, #worker-process-mgmt, #config-precedence, #session-errors, Spec S15, Tables T21-T25), 1.0.9 Configuration Schema (#config-schema), 1.2.2 New files (session.rs), 1.2.3 Symbols (Session)
 
 **Tasks:**
-- [x] Implement **Session Management** per 26.0.5:
+- [x] Implement **Session Management** per 1.0.5:
   - [x] **Session directory structure:**
     - [x] Create `.tug/` on first CLI call (or `--session-dir`)
     - [x] Write `session.json` with metadata (version, created_at, workspace_root, workspace_root_hash)
@@ -4485,11 +4485,11 @@ After completing Steps 2.1–2.4, you will have:
 
 **Commit:** `feat(tug): python environment resolution`
 
-**References:** [D10] Python environment resolution (Table T03: Python Resolution Order, List L03: Session Persistence Rules), 26.0.5 Session Management (Spec S15: Session Directory Layout), 26.0.11 Cross-Platform Support (Table T27: Platform Abstraction Guidelines)
+**References:** [D10] Python environment resolution (Table T03: Python Resolution Order, List L03: Session Persistence Rules), 1.0.5 Session Management (Spec S15: Session Directory Layout), 1.0.11 Cross-Platform Support (Table T27: Platform Abstraction Guidelines)
 
 **Tasks:**
 
-- [x] **Implement resolution order** per 26.0 "Python environment resolution":
+- [x] **Implement resolution order** per 1.0 "Python environment resolution":
   1. Explicit `--python` flag
   2. `$VIRTUAL_ENV/bin/python`
   3. `$CONDA_PREFIX/bin/python`
@@ -4521,16 +4521,16 @@ After completing Steps 2.1–2.4, you will have:
 
 **Commit:** `feat(tug): libcst worker with json-lines protocol`
 
-**References:** 26.0.4 LibCST Worker Protocol (#why-worker, #protocol-format, #worker-operations, #worker-impl-notes, Table T17, Spec S13, Table T18, Spec S14, Operations: #op-ready, #op-parse, #op-get-bindings, #op-get-refs, #op-get-imports, #op-get-scopes, #op-rewrite-batch, #op-release, #op-shutdown), 26.0.5 Session Management (#worker-process-mgmt, Table T23), 26.2.2 New files (worker.rs, libcst_worker.py)
+**References:** 1.0.4 LibCST Worker Protocol (#why-worker, #protocol-format, #worker-operations, #worker-impl-notes, Table T17, Spec S13, Table T18, Spec S14, Operations: #op-ready, #op-parse, #op-get-bindings, #op-get-refs, #op-get-imports, #op-get-scopes, #op-rewrite-batch, #op-release, #op-shutdown), 1.0.5 Session Management (#worker-process-mgmt, Table T23), 1.2.2 New files (worker.rs, libcst_worker.py)
 
 **Tasks:**
 
-> **Implements:** 26.0.4 LibCST Worker Protocol
+> **Implements:** 1.0.4 LibCST Worker Protocol
 
 - [x] **Write `libcst_worker.py`** (embedded in Rust binary via `include_str!`):
   - [x] JSON-lines protocol over stdin/stdout
   - [x] Send `{"status": "ready", ...}` on startup
-  - [x] Implement operations per 26.0.4:
+  - [x] Implement operations per 1.0.4:
     - [x] `parse` — parse file, return `cst_id`, maintain LRU cache (100 files)
     - [x] `get_bindings` — extract all name bindings from CST
     - [x] `get_references` — find all references to a name
@@ -4540,7 +4540,7 @@ After completing Steps 2.1–2.4, you will have:
     - [x] `rewrite_batch` — multiple rewrites (reverse offset order)
     - [x] `release` — evict CST from cache
     - [x] `shutdown` — graceful exit
-  - [x] Error handling: return structured error responses per 26.0.4
+  - [x] Error handling: return structured error responses per 1.0.4
 
 - [x] **Rust worker manager** (`src/python/worker.rs`):
   - [x] `spawn_worker(python_path, session_dir) → WorkerHandle`
@@ -4575,7 +4575,7 @@ After completing Steps 2.1–2.4, you will have:
 
 **Commit:** `feat(tug): minimal facts schema for rename`
 
-**References:** 26.1.2 Terminology (Facts, WorkspaceSnapshot), 26.1.3 Supported Features (Facts store tables), 26.2.2 New files (facts.rs), 26.2.3 Symbols (FactsStore)
+**References:** 1.1.2 Terminology (Facts, WorkspaceSnapshot), 1.1.3 Supported Features (Facts store tables), 1.2.2 New files (facts.rs), 1.2.3 Symbols (FactsStore)
 
 **Tasks:**
 - [x] Define **minimal Facts tables** (just enough for `rename_symbol`):
@@ -4612,7 +4612,7 @@ After completing Steps 2.1–2.4, you will have:
 
 **Commit:** `feat(tug): python analyzer with scope and binding resolution`
 
-**References:** [D06] Build our own Python analyzer (Table T01: Python Analyzer Phases, List L01: Core Analyzer Requirements, List L02: Python Edge Cases), 26.0.2 Python Type Inference Roadmap (#dynamic-nature, #inference-levels, #level-0, Spec S04), 26.0.1 Refactoring Operations (#fundamental-wall), 26.2.2 New files (analyzer.rs), 26.2.3 Symbols (PythonAdapter)
+**References:** [D06] Build our own Python analyzer (Table T01: Python Analyzer Phases, List L01: Core Analyzer Requirements, List L02: Python Edge Cases), 1.0.2 Python Type Inference Roadmap (#dynamic-nature, #inference-levels, #level-0, Spec S04), 1.0.1 Refactoring Operations (#fundamental-wall), 1.2.2 New files (analyzer.rs), 1.2.3 Symbols (PythonAdapter)
 
 **Tasks:**
 - [x] **Document Python binding semantics** in `docs/internal/PYTHON_BINDING_SPEC.md`
@@ -4669,7 +4669,7 @@ After completing Steps 2.1–2.4, you will have:
 
 **Commit:** `feat(tug): rename_symbol with verification`
 
-**References:** 26.0.1 Refactoring Operations Analysis (#op-rename, List L04, Table T05), [D08] Verification default (Table T02, Spec S01), 26.0.3 Complete Agent Integration Flow (#rename-scenario, #agent-contract, #critical-path, Spec S12, Lists L14-L15, Table T16), 26.0.4 LibCST Worker (#seq-rename-python), 26.0.7 JSON Output Schema (List L18, Specs S16-S18)
+**References:** 1.0.1 Refactoring Operations Analysis (#op-rename, List L04, Table T05), [D08] Verification default (Table T02, Spec S01), 1.0.3 Complete Agent Integration Flow (#rename-scenario, #agent-contract, #critical-path, Spec S12, Lists L14-L15, Table T16), 1.0.4 LibCST Worker (#seq-rename-python), 1.0.7 JSON Output Schema (List L18, Specs S16-S18)
 
 **Tasks:**
 - [x] **Implement `rename_symbol` operation:**
@@ -4711,11 +4711,11 @@ After completing Steps 2.1–2.4, you will have:
 
 **Commit:** `test(tug): python fixtures and golden tests`
 
-**References:** 26.0.8 Test Fixtures (#fixture-dir-structure, #python-fixtures, #fixture-py-rename-fn, Spec S19), 26.4 Test Plan Concepts (fixture-based runner, golden tests)
+**References:** 1.0.8 Test Fixtures (#fixture-dir-structure, #python-fixtures, #fixture-py-rename-fn, Spec S19), 1.4 Test Plan Concepts (fixture-based runner, golden tests)
 
 **Tasks:**
 
-> **Implements:** 26.0.8 Test Fixtures (Python section)
+> **Implements:** 1.0.8 Test Fixtures (Python section)
 
 - [x] **Create `tests/fixtures/python/` directory structure:**
   - [x] `simple/` — single-file basics
@@ -4966,7 +4966,7 @@ After completing Steps 3.1–3.7, you have:
 **Pre-implementation Audit Notes:**
 - Files `output.rs`, `error.rs`, `mcp.rs` exist but are empty stubs
 - Existing `cli.rs` has working functions but bypasses Session infrastructure
-- Types in `rename.rs` overlap with 26.0.7 spec but need reconciliation
+- Types in `rename.rs` overlap with 1.0.7 spec but need reconciliation
 - `PythonRenameOp::with_session()` added in Step 3.7 must be used
 
 ---
@@ -4975,13 +4975,13 @@ After completing Steps 3.1–3.7, you have:
 
 **Commit:** `feat(tug): json output types with deterministic serialization`
 
-**References:** 26.0.7 JSON Output Schema (#json-design-principles, #json-common-types, #type-location, #type-span, #type-symbol, #type-reference, #type-edit, #type-warning, #type-error, #response-envelope, #cmd-analyze-impact, #cmd-run, #error-codes, List L18, Specs S16-S18, Table T26), 26.1.6 Error and Warning Model, 26.2.2 New files (output.rs, error.rs), Step 3.7 (existing types in rename.rs)
+**References:** 1.0.7 JSON Output Schema (#json-design-principles, #json-common-types, #type-location, #type-span, #type-symbol, #type-reference, #type-edit, #type-warning, #type-error, #response-envelope, #cmd-analyze-impact, #cmd-run, #error-codes, List L18, Specs S16-S18, Table T26), 1.1.6 Error and Warning Model, 1.2.2 New files (output.rs, error.rs), Step 3.7 (existing types in rename.rs)
 
 ---
 
 ###### Step 4.1a: Type consolidation decision
 
-**Issue:** Types already exist in `rename.rs` (Location, SymbolInfo, ReferenceInfo, RenameOutput) that overlap with 26.0.7 spec types.
+**Issue:** Types already exist in `rename.rs` (Location, SymbolInfo, ReferenceInfo, RenameOutput) that overlap with 1.0.7 spec types.
 
 **Decision Required (choose one):**
 - [APPROVED] **Option A: Migrate existing types** — Move types from `rename.rs` to `output.rs`, update all call sites
@@ -4990,7 +4990,7 @@ After completing Steps 3.1–3.7, you have:
 - [x] Document decision with rationale in code comments
 
 **Existing type differences to reconcile:**
-| Internal Type (rename.rs) | Output Type (26.0.7) | Differences |
+| Internal Type (rename.rs) | Output Type (1.0.7) | Differences |
 |---------------------------|----------------------|-------------|
 | `Location { file, line, col, byte_offset? }` | `Location { file, line, col, byte_start?, byte_end? }` | byte_offset vs byte_start/byte_end |
 | `SymbolInfo { id, name, kind, location }` | `Symbol { id, name, kind, location, container? }` | Missing container field |
@@ -5003,7 +5003,7 @@ After completing Steps 3.1–3.7, you have:
 - [x] Ensure all existing tests pass after migration (241 tests pass)
 
 **Implementation Notes:**
-- Created `output.rs` with `Location`, `Symbol`, `Reference`, `Warning` types per 26.0.7 spec
+- Created `output.rs` with `Location`, `Symbol`, `Reference`, `Warning` types per 1.0.7 spec
 - Migrated from `byte_offset` to `byte_start`/`byte_end` fields in `Location`
 - Added `container` field to `Symbol` for methods in classes
 - Created helper functions `symbol_from_facts()` and `reference_from_facts()` in `rename.rs`
@@ -5130,7 +5130,7 @@ A code-architect audit reviewed the error types for long-term viability across P
 **File:** `src/output.rs` (exists as stub, needs implementation)
 
 **Tasks:**
-- [x] **Populate `src/output.rs`** with types matching 26.0.7:
+- [x] **Populate `src/output.rs`** with types matching 1.0.7:
   - [x] `Location` struct: `file`, `line`, `col`, `byte_start?`, `byte_end?` (naming per 4.1a strategy)
   - [x] `Span` struct: `start`, `end` (byte offsets) — re-exported from patch.rs
   - [x] `SymbolInfo` struct: `id`, `name`, `kind`, `location`, `container?` (naming per 4.1a strategy)
@@ -5194,7 +5194,7 @@ A code-architect audit reviewed the error types for long-term viability across P
 - [x] `cargo nextest run -p tug error` — all error module tests pass (26 tests)
 - [x] `cargo nextest run -p tug output` — all output module tests pass (29 tests)
 - [x] All existing `rename.rs` tests still pass (296 total tests pass)
-- [x] Verify JSON output matches 26.0.7 examples exactly:
+- [x] Verify JSON output matches 1.0.7 examples exactly:
   ```json
   // Location example - verified in test: location_to_json_matches_spec_exactly
   {"file":"test.py","line":42,"col":8}
@@ -5211,7 +5211,7 @@ A code-architect audit reviewed the error types for long-term viability across P
 
 **Commit:** `feat(tug): complete cli with session management`
 
-**References:** [D03] One kernel, multiple front doors, [D08] Verification default (Table T02, Spec S01), [D10] Python resolution (Table T03), [D11] Test runner detection (Table T04, Spec S02), 26.0.3 Complete Agent Integration Flow (#prerequisites, #error-scenarios, #err-verification, #err-snapshot, #err-ambiguous, #agent-contract, Spec S12, List L15), 26.0.5 Session Management (#config-precedence, Spec S15, Table T24), 26.0.9 Configuration Schema (#config-schema), 26.1.4 Modes/Policies, 26.2.2 New files (cli.rs), Step 2 (Session), Step 3.7 (PythonRenameOp::with_session)
+**References:** [D03] One kernel, multiple front doors, [D08] Verification default (Table T02, Spec S01), [D10] Python resolution (Table T03), [D11] Test runner detection (Table T04, Spec S02), 1.0.3 Complete Agent Integration Flow (#prerequisites, #error-scenarios, #err-verification, #err-snapshot, #err-ambiguous, #agent-contract, Spec S12, List L15), 1.0.5 Session Management (#config-precedence, Spec S15, Table T24), 1.0.9 Configuration Schema (#config-schema), 1.1.4 Modes/Policies, 1.2.2 New files (cli.rs), Step 2 (Session), Step 3.7 (PythonRenameOp::with_session)
 
 ---
 
@@ -5493,7 +5493,7 @@ CLI call → load cached toolchain → do work (no re-resolution)
 
 **Commit:** `feat(tug): mcp server with tool and resource handlers`
 
-**References:** [D03] One kernel, multiple front doors, 26.0.3 Complete Agent Integration Flow (#error-scenarios, #agent-contract, Spec S12, List L15, Table T16), 26.0.10 MCP Tool Input Schemas (#mcp-schemas), 26.1.7 Public API Surface, 26.2.2 New files (mcp.rs), JSON-RPC 2.0 Specification
+**References:** [D03] One kernel, multiple front doors, 1.0.3 Complete Agent Integration Flow (#error-scenarios, #agent-contract, Spec S12, List L15, Table T16), 1.0.10 MCP Tool Input Schemas (#mcp-schemas), 1.1.7 Public API Surface, 1.2.2 New files (mcp.rs), JSON-RPC 2.0 Specification
 
 **Implementation Specification:** See `plans/rmcp-0.12-specification.md` for verified API patterns.
 
@@ -5708,7 +5708,7 @@ async fn tug_snapshot(
 - Implementation: Calls same logic as CLI `snapshot` command
 
 **`tug_analyze_impact`**
-- Params struct (per 26.0.10):
+- Params struct (per 1.0.10):
   ```rust
   #[derive(Debug, Deserialize, JsonSchema)]
   pub struct AnalyzeImpactParams {
@@ -6029,9 +6029,9 @@ For testing:
 
 **Unit tests (call server methods directly):**
 - [x] unit: `tools/list` returns all expected tool names (via `tool_router.list_all()`)
-- [x] unit: `tug_snapshot` tool schema matches 26.0.10 (param struct tests)
-- [x] unit: `tug_analyze_impact` tool schema matches 26.0.10 (param struct tests)
-- [x] unit: `tug_rename_symbol` tool schema matches 26.0.10 (param struct tests)
+- [x] unit: `tug_snapshot` tool schema matches 1.0.10 (param struct tests)
+- [x] unit: `tug_analyze_impact` tool schema matches 1.0.10 (param struct tests)
+- [x] unit: `tug_rename_symbol` tool schema matches 1.0.10 (param struct tests)
 - [x] unit: `tug_snapshot` returns valid `SnapshotResponse`
 - [x] unit: `tug_analyze_impact` returns valid `AnalyzeImpactResponse` (requires Python/libcst)
 - [x] unit: `tug_rename_symbol` with `apply: false` returns patch, does NOT modify files (requires Python/libcst)
@@ -6083,7 +6083,7 @@ Use the MCP Inspector for interactive testing.
 
 **Commit:** `feat(tug): bulletproof Python environment resolution and bootstrap`
 
-**References:** 26.0.4 Python Integration (Spec S13: Python Adapter), Step 3.1 Python environment resolution
+**References:** 1.0.4 Python Integration (Spec S13: Python Adapter), Step 3.1 Python environment resolution
 
 ---
 
@@ -6527,7 +6527,7 @@ Python is the first implementation; adding Rust/TypeScript later follows the sam
 
 **Commit:** `test(tug): golden tests for output schema stability`
 
-**References:** 26.0.7 JSON Output Schema (Spec S16: Response Envelope Format, Spec S17: analyze-impact Response Schema, Spec S18: run Response Schema, Table T26: Error Codes), 26.4 Test Plan Concepts (golden/contract tests), Step 3.6 fixtures
+**References:** 1.0.7 JSON Output Schema (Spec S16: Response Envelope Format, Spec S17: analyze-impact Response Schema, Spec S18: run Response Schema, Table T26: Error Codes), 1.4 Test Plan Concepts (golden/contract tests), Step 3.6 fixtures
 
 ---
 
@@ -6692,7 +6692,7 @@ tests/golden/
 
 **Commit:** `docs(tug): agent api and playbook documentation`
 
-**References:** 26.0.3 Complete Agent Integration Flow (Spec S12: Agent Contract, List L14: Agent Prerequisites, List L15: Agent Workflow, List L16: Output Format, List L17: When NOT to Use), 26.0.7 JSON Output Schema (List L18: JSON Output Design Principles, Table T26: Error Codes), 26.3 Documentation Plan
+**References:** 1.0.3 Complete Agent Integration Flow (Spec S12: Agent Contract, List L14: Agent Prerequisites, List L15: Agent Workflow, List L16: Output Format, List L17: When NOT to Use), 1.0.7 JSON Output Schema (List L18: JSON Output Design Principles, Table T26: Error Codes), 1.3 Documentation Plan
 
 ---
 
@@ -6709,7 +6709,7 @@ tests/golden/
   | `snapshot` | Create workspace snapshot | `tug snapshot` |
   | `analyze-impact` | Analyze refactoring impact | `tug analyze-impact rename-symbol --at file:1:5 --to bar` |
   | ... | ... | ... |
-- [x] **JSON Output Schema** — Reference to 26.0.7 or inline definitions
+- [x] **JSON Output Schema** — Reference to 1.0.7 or inline definitions
 - [x] **Error Codes** — Table matching Table T26:
   | Code | Name | Description | Recovery |
   |------|------|-------------|----------|
@@ -6840,7 +6840,7 @@ tests/golden/
 
 **Commit:** `feat(tug): type and scope tables for analyzer levels 1-2`
 
-**References:** 26.1.2 Terminology, 26.1.8 Internal Architecture, 26.2.3 Symbols
+**References:** 1.1.2 Terminology, 1.1.8 Internal Architecture, 1.2.3 Symbols
 
 **Tasks:**
 - [x] **`ScopeInfo` struct** (in `src/facts/mod.rs` or `src/facts/scope.rs`):
@@ -6881,7 +6881,7 @@ tests/golden/
 
 **Commit:** `feat(tug): python analyzer level 1 with assignment type tracking`
 
-**References:** 26.0.2 Python Type Inference Roadmap (#level-1, #impl-priority, Spec S05, Table T15: P0), 26.1.3 Supported Features
+**References:** 1.0.2 Python Type Inference Roadmap (#level-1, #impl-priority, Spec S05, Table T15: P0), 1.1.3 Supported Features
 
 **Tasks:**
 - [x] **Assignment type detection** (`src/python/type_tracker.rs`):
@@ -6926,7 +6926,7 @@ tests/golden/
 
 **Commit:** `feat(tug): python analyzer level 2 with type annotation support`
 
-**References:** 26.0.2 Python Type Inference Roadmap (#level-2, #impl-priority, Spec S06, Table T15: P1), 26.1.3 Supported Features
+**References:** 1.0.2 Python Type Inference Roadmap (#level-2, #impl-priority, Spec S06, Table T15: P1), 1.1.3 Supported Features
 
 **Tasks:**
 - [x] **Parse type annotations** (`src/python/libcst_worker.py:AnnotationVisitor`, `src/python/type_tracker.rs`):
@@ -6972,7 +6972,7 @@ tests/golden/
 
 **Commit:** `feat(tug): dynamic pattern detection with warnings`
 
-**References:** 26.0.2 Python Type Inference Roadmap (#handling-irreducible, List L11: Dynamic Pattern Detection, Table T14: Dynamic Pattern Response Strategy, Spec S11: DynamicReference Warning Format, List L12: Aggressive Mode Heuristics), 26.1.6 Error and Warning Model
+**References:** 1.0.2 Python Type Inference Roadmap (#handling-irreducible, List L11: Dynamic Pattern Detection, Table T14: Dynamic Pattern Response Strategy, Spec S11: DynamicReference Warning Format, List L12: Aggressive Mode Heuristics), 1.1.6 Error and Warning Model
 
 **Tasks:**
 - [x] **Detect dynamic patterns** (`src/python/dynamic.rs`):
@@ -7019,7 +7019,7 @@ tests/golden/
 
 **Note:** The existing stubs are sufficient for the v1 milestone. Full implementation is deferred until there is demonstrated user demand for these operations.
 
-**References:** 26.0.1 Refactoring Operations Analysis (#ops-summary, #op-organize-imports, #op-move, #op-change-sig, Lists L05-L06 L10, Tables T06-T07 T11-T12), 26.1.3 Supported Features (wedge refactors), 26.1.7 Public API Surface
+**References:** 1.0.1 Refactoring Operations Analysis (#ops-summary, #op-organize-imports, #op-move, #op-change-sig, Lists L05-L06 L10, Tables T06-T07 T11-T12), 1.1.3 Supported Features (wedge refactors), 1.1.7 Public API Surface
 
 **Deferred Tasks (for future implementation):**
 - [ ] **`organize_imports`** (`src/python/ops/organize_imports.rs`):
@@ -7045,7 +7045,7 @@ tests/golden/
 
 **Commit:** `test(tug): fixtures for classes, inheritance, and edge cases`
 
-**References:** 26.0.8 Test Fixtures (Spec S19: Test Fixture Directory Layout, python/classes/, python/edge_cases/), 26.4 Test Plan Concepts (golden tests, fixture-based runner)
+**References:** 1.0.8 Test Fixtures (Spec S19: Test Fixture Directory Layout, python/classes/, python/edge_cases/), 1.4 Test Plan Concepts (golden tests, fixture-based runner)
 
 **Tasks:**
 - [x] **Create `tests/fixtures/python/classes/` directory:**
@@ -7288,7 +7288,7 @@ impl PythonExtractFunctionOp {
 
 **Commit:** `feat(tug): return type propagation, method call indexing, import-aware inheritance`
 
-**References:** 26.0.2 Python Type Inference Roadmap (#level-3, Spec S07), Step 5.2, Step 5.3
+**References:** 1.0.2 Python Type Inference Roadmap (#level-3, Spec S07), Step 5.2, Step 5.3
 
 **Tasks:**
 
@@ -7332,7 +7332,7 @@ impl PythonExtractFunctionOp {
 - [x] `cargo nextest run -p tug type_tracker` (47 return type tests pass)
 - [x] `cargo nextest run -p tug analyzer` (40 analyzer tests pass: 6 index tests + 10 import resolver tests + existing)
 - [x] `cargo nextest run -p tug` (638 tests pass, no regressions)
-- [x] `cargo nextest run -p arbors` (2293 tests pass)
+- [x] `cargo nextest run -p legacy` (2293 tests pass)
 
 **Known Limitations (Step 5.8):**
 
@@ -7380,7 +7380,7 @@ impl PythonExtractFunctionOp {
 - #level-5 (Spec S09): isinstance() Narrowing (P3)
 - #level-6 (Spec S10): Standard Library Stubs (P4)
 
-*Refactoring operations (per 26.0.1):*
+*Refactoring operations (per 1.0.1):*
 - #op-extract-fn: Extract Function
 - #op-inline-fn: Inline Function
 - #op-extract-var: Extract Variable
@@ -7401,870 +7401,7 @@ impl PythonExtractFunctionOp {
 
 ---
 
-#### Step PRE-6: Rename diffwrite to tug
-
-**Commit:** `refactor: rename diffwrite to tug`
-
-**Goal:** Comprehensively rename the crate from `diffwrite` to `tug` throughout the entire codebase, including directory names, crate names, binary names, documentation, and all references.
-
-**Tasks:**
-- [x] **Update workspace configuration:**
-  - [x] Update `Cargo.toml` workspace members from `diffwrite` to `tug`
-- [x] **Rename crate:**
-  - [x] Update `crates/diffwrite/Cargo.toml` package name to `tug`
-  - [x] Update binary name from `diffwrite` to `tug`
-  - [x] Rename `src/bin/diffwrite.rs` to `src/bin/tug.rs`
-- [x] **Rename directory:**
-  - [x] Move `crates/diffwrite/` to `crates/tug/`
-- [x] **Update all source code:**
-  - [x] Update all `use diffwrite::` imports to `use tug::`
-  - [x] Update all doc comments referencing diffwrite
-  - [x] Update error messages mentioning diffwrite
-  - [x] Update module-level documentation
-  - [x] Rename `DiffwriteError` to `TugError`
-  - [x] Update MCP tool names (`diffwrite_*` → `tug_*`)
-  - [x] Update environment variables (`DIFFWRITE_*` → `TUG_*`)
-- [x] **Update documentation:**
-  - [x] Update `README.md` (all references)
-  - [x] Update `docs/AGENT_API.md` (all references)
-  - [x] Update `docs/AGENT_PLAYBOOK.md` (all references)
-  - [x] Update `docs/internal/PYTHON_BINDING_SPEC.md` (all references)
-- [x] **Update configuration files:**
-  - [x] Update `.gitignore` (`.diffwrite/` → `.tug/`)
-  - [x] Update `.claude/settings.local.json` (crate references and env vars)
-- [x] **Update test fixtures:**
-  - [x] Rename all `.diffwrite/` directories in test fixtures to `.tug/`
-  - [x] Update `tests/fixtures/python/manifest.json` references
-  - [x] Update all test JSON files
-  - [x] Rename `crates/tug/.diffwrite/` to `crates/tug/.tug/`
-- [x] **Update plan documentation:**
-  - [x] Update this plan file (Step 6 references to diffwrite)
-
-**Tests:**
-- [x] Build succeeds: `cargo build -p tug`
-- [x] All tests pass: `cargo nextest run -p tug` (638 tests passing)
-- [x] Binary runs: `cargo run -p tug -- --help`
-- [x] No remaining "diffwrite" references: `grep -rni diffwrite` shows 0 results
-
-**Checkpoints:**
-- [x] `cargo build -p tug` builds successfully
-- [x] `cargo nextest run -p tug` shows 638 passing tests
-- [x] `grep -rni diffwrite` (case-insensitive) shows 0 instances
-
-**Commit after all checkpoints pass.**
-
----
-
-#### Step 6: Delete Arbors, finalize tugtool, extract to new repo
-
-> **Goal:** Complete the extraction by deleting Arbors code, finalizing tugtool as a standalone project with CI/CD, and setting up the new repository.
->
-> **Naming convention:**
-> - **Package/crate name:** `tugtool` (what you `cargo install`)
-> - **Library name:** `tugtool` (what you `use tugtool::*`)
-> - **Binary name:** `tug` (what you run)
-> - **GitHub organization:** `tugtool`
-> - **Repository:** `tugtool/tugtool`
-> - **Domain:** `tugtool.dev`
-
----
-
-##### Step 6.1: Delete all Arbors code
-
-**Commit:** `chore: delete all arbors code`
-
-**References:** [D04] Delete mismatched JSON-engine components completely
-
-**Tasks:**
-- [x] **Tag the repo before deletion:**
-  - [x] `git tag arbors-final-before-tug`
-  - [ ] `git push origin arbors-final-before-tug` (user to push)
-  - [x] Document tag in README for historical reference
-- [x] **Delete all Arbors crates:**
-  - [x] `rm -rf crates/arbors-base`
-  - [x] `rm -rf crates/arbors-cli`
-  - [x] `rm -rf crates/arbors-expr`
-  - [x] `rm -rf crates/arbors-io`
-  - [x] `rm -rf crates/arbors-planner`
-  - [x] `rm -rf crates/arbors-query`
-  - [x] `rm -rf crates/arbors-schema`
-  - [x] `rm -rf crates/arbors-storage`
-  - [x] `rm -rf crates/arbors-types`
-  - [x] `rm -rf crates/arbors-validate`
-  - [x] `rm -rf crates/arbors`
-- [x] **Delete Arbors Python bindings:**
-  - [x] `rm -rf python/` (old PyO3 bindings)
-- [x] **Delete supporting directories:**
-  - [x] `rm -rf forks/` (redb fork)
-  - [x] `rm -rf examples/`
-  - [x] `rm -rf benchmarks/`
-  - [x] `rm -rf datasets/`
-  - [x] `rm -rf docs/` (old Arbors docs — keep tug docs)
-- [x] **Delete old config files:**
-  - [x] `rm -rf .github/workflows/` (old CI)
-  - [x] `rm Justfile` (old build commands)
-  - [x] `rm CLAUDE.md` (old instructions)
-  - [x] Remove old workspace `Cargo.toml`
-- [x] **Verify only tug remains:**
-  - [x] `ls -la` shows only tug source
-  - [x] No orphaned files
-
-**Tests:**
-- [x] Manual: `find . -name "*.rs" | head` shows only tug files
-- [x] Manual: no Arbors imports or references remain
-
-**Checkpoint:**
-- [x] Only tug source remains
-- [x] `git status` shows expected deletions
-- [x] No broken symlinks or orphaned files
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 6.2: Restructure as standalone tugtool
-
-**Commit:** `chore: restructure as standalone tugtool project`
-
-**References:** 26.0.12 Logging and Tracing (#logging-tracing), 26.0.11 Cross-Platform Support (#cross-platform, #platform-strategy, #platform-considerations, Tables T27-T28), 26.2.1 New crate, 26.2.2 New files
-
-**Tasks:**
-- [x] **Verify project structure:**
-  ```
-  .
-  ├── Cargo.toml          # tugtool manifest (not workspace)
-  ├── Cargo.lock
-  ├── src/
-  │   ├── lib.rs          # library root
-  │   ├── main.rs         # CLI binary
-  │   ├── error.rs
-  │   ├── patch/
-  │   ├── facts/
-  │   ├── snapshot/
-  │   ├── session/
-  │   ├── cli.rs
-  │   ├── mcp.rs
-  │   ├── output.rs
-  │   ├── python/
-  │   └── rust/
-  ├── docs/
-  │   ├── AGENT_API.md
-  │   ├── AGENT_PLAYBOOK.md
-  │   └── internal/
-  ├── tests/
-  │   ├── fixtures/
-  │   └── golden/
-  └── README.md
-  ```
-- [x] **Create `Cargo.toml`** (standalone, not workspace):
-  - [x] `[package]` with name = "tugtool", version = "0.1.0"
-  - [x] `[[bin]]` with name = "tug" for CLI binary
-  - [x] `[lib]` with name = "tugtool" for library
-  - [x] All dependencies from previous steps
-  - [x] repository = "https://github.com/tugtool/tugtool"
-- [x] **Create `README.md`:**
-  - [x] Project description: "AI-native code transformation engine"
-  - [x] Quick start examples (CLI, MCP)
-  - [x] Link to AGENT_API.md
-  - [x] Installation instructions (`cargo install tugtool`)
-  - [x] License badge
-- [x] **Create `CLAUDE.md`:**
-  - [x] Development instructions for tugtool
-  - [x] Build commands
-  - [x] Test commands
-  - [x] Architecture overview
-- [x] **Create `LICENSE`:**
-  - [x] MIT (decided)
-- [x] **Create `CHANGELOG.md`:**
-  - [x] Start with `## [0.1.0] - 2025-01-14`
-  - [x] Initial release notes
-- [x] **Create `.gitignore`:**
-  - [x] `/target/`
-  - [x] `/.tug/`
-  - [x] `*.pyc`, `__pycache__/`
-
-**Tests:**
-- [x] `cargo build` succeeds
-- [x] `cargo nextest run` passes all tests (638 passing)
-- [ ] `cargo doc --open` generates documentation (not run)
-
-**Checkpoint:**
-- [x] `cargo build` succeeds
-- [x] `cargo nextest run` passes
-- [x] README.md exists and is complete
-- [x] CLAUDE.md exists with dev instructions
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 6.3: CI/CD setup
-
-**Commit:** `ci: add github actions workflows for ci and release`
-
-**References:** 26.0.13 CI/CD Pipeline (#cicd-pipeline)
-
-**Tasks:**
-- [x] **Create `.github/workflows/ci.yml`:**
-  ```yaml
-  name: CI
-  on: [push, pull_request]
-  jobs:
-    test:
-      strategy:
-        matrix:
-          os: [ubuntu-latest, macos-latest, windows-latest]
-          rust: [stable, beta]
-      runs-on: ${{ matrix.os }}
-      steps:
-        - uses: actions/checkout@v4
-        - uses: dtolnay/rust-toolchain@master
-          with:
-            toolchain: ${{ matrix.rust }}
-            components: rustfmt, clippy
-        - uses: Swatinem/rust-cache@v2
-        - name: Build
-          run: cargo build --all-features
-        - name: Test
-          run: cargo nextest run --all-features
-        - name: Clippy
-          run: cargo clippy --all-features -- -D warnings
-        - name: Format
-          run: cargo fmt --check
-    python:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: actions/setup-python@v5
-          with:
-            python-version: '3.11'
-        - run: pip install libcst pytest
-        - run: python -m compileall -q tests/fixtures/python/
-  ```
-- [x] **Create `.github/workflows/release.yml`:**
-  ```yaml
-  name: Release
-  on:
-    push:
-      tags: ['v*']
-  jobs:
-    build:
-      strategy:
-        matrix:
-          include:
-            - os: ubuntu-latest
-              target: x86_64-unknown-linux-gnu
-            - os: macos-latest
-              target: x86_64-apple-darwin
-            - os: macos-latest
-              target: aarch64-apple-darwin
-            - os: windows-latest
-              target: x86_64-pc-windows-msvc
-      runs-on: ${{ matrix.os }}
-      steps:
-        - uses: actions/checkout@v4
-        - uses: dtolnay/rust-toolchain@stable
-          with:
-            targets: ${{ matrix.target }}
-        - run: cargo build --release --target ${{ matrix.target }}
-        - uses: actions/upload-artifact@v4
-          with:
-            name: tug-${{ matrix.target }}
-            path: target/${{ matrix.target }}/release/tug*
-    release:
-      needs: build
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/download-artifact@v4
-        - uses: softprops/action-gh-release@v1
-          with:
-            files: tug-*/tug*
-  ```
-- [x] **Create `Justfile`:**
-  ```just
-  default:
-      @just --list
-
-  # Development
-  build:
-      cargo build
-
-  test:
-      cargo nextest run
-
-  test-all:
-      cargo nextest run --all-features
-
-  # Quality
-  fmt:
-      cargo fmt
-
-  lint:
-      cargo clippy --all-features -- -D warnings
-
-  # CI (runs all checks)
-  ci: fmt lint test
-
-  # Release
-  build-release:
-      cargo build --release
-  ```
-- [x] **Create `.github/dependabot.yml`:**
-  - [x] Auto-update Cargo dependencies
-  - [x] Auto-update GitHub Actions
-
-**Tests:**
-- [ ] Manual: push to test branch, verify CI runs (user to test)
-- [ ] Manual: all matrix jobs pass (user to test)
-
-**Checkpoint:**
-- [x] `.github/workflows/ci.yml` exists
-- [x] `.github/workflows/release.yml` exists
-- [x] `Justfile` exists with all commands
-- [ ] Push to branch triggers CI (user to test)
-- [ ] All CI jobs pass (user to test)
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 6.4: Extract to new repository
-
-**Commit:** N/A (this is a repository operation, not a code commit)
-
-**References:** Strategy section
-
-**Tasks:**
-- [ ] **New GitHub repository:**
-  - [ ] Organization: https://github.com/tugtool
-  - [ ] Repository: https://github.com/tugtool/tugtool
-  - [ ] Create repo if not exists (fresh/empty)
-- [ ] **Prepare for extraction:**
-  - [ ] Ensure all commits are clean
-  - [ ] Verify no Arbors code remains
-  - [ ] Verify all tests pass
-  - [ ] Verify Cargo.toml has correct settings:
-    - [ ] `name = "tugtool"` (package)
-    - [ ] `[[bin]] name = "tug"` (binary)
-    - [ ] `[lib] name = "tugtool"` (library)
-    - [ ] `repository = "https://github.com/tugtool/tugtool"`
-- [ ] **Fresh history** (a clean start):
-  - [ ] `git init` in new directory
-  - [ ] Copy all files (excluding `.git/`)
-  - [ ] `git add .`
-  - [ ] `git commit -m "Initial commit: tugtool v0.1.0"`
-  - [ ] `git remote add origin https://github.com/tugtool/tugtool.git`
-  - [ ] `git push -u origin main`
-- [ ] **Verify new repository:**
-  - [ ] Clone fresh: `git clone https://github.com/tugtool/tugtool.git`
-  - [ ] `cargo build` succeeds (produces `tug` binary)
-  - [ ] `cargo nextest run` passes
-  - [ ] CI runs on push
-
-**Tests:**
-- [ ] Manual: fresh clone builds successfully
-- [ ] Manual: `target/debug/tug --version` outputs `tug 0.1.0`
-- [ ] Manual: all tests pass in new repo
-- [ ] Manual: CI triggers and passes
-
-**Checkpoint:**
-- [ ] New repository exists at https://github.com/tugtool/tugtool
-- [ ] Fresh clone builds and tests pass
-- [ ] CI is green on main branch
-- [ ] README displays correctly on GitHub
-- [ ] crates.io publish will work: `cargo publish --dry-run`
-
-**No commit (repository operation).**
-
----
-
-##### Step 6.5: Archive Arbors repository
-
-**Commit:** `docs: archive arbors repository with pointer to tugtool`
-
-**References:** Strategy section
-
-**Tasks:**
-- [ ] **Switch to Arbors main branch:**
-  - [ ] `git checkout main`
-  - [ ] `git pull origin main`
-- [ ] **Update README.md with archive notice:**
-  ```markdown
-  # Arbors (Archived)
-
-  > **Note:** This repository is archived. Active development continues at
-  > [tugtool](https://github.com/tugtool/tugtool) — an AI-native code
-  > transformation engine extracted from this project.
-
-  ## Historical Reference
-
-  The final Arbors release is tagged as `arbors-final-before-tug`.
-
-  ## What was Arbors?
-
-  Arbors was a schema-driven, in-memory computation engine for JSON and
-  structured hierarchical data. The project evolved into tugtool, which
-  focuses specifically on AI-agent-driven code refactoring.
-
-  Install: `cargo install tugtool`
-  Run: `tug --help`
-  ```
-- [ ] **Archive the repository** (GitHub settings):
-  - [ ] Go to Settings → General → Danger Zone
-  - [ ] Click "Archive this repository"
-  - [ ] Confirm archival
-- [ ] **Verify archive status:**
-  - [ ] Repository shows "This repository has been archived" banner
-  - [ ] No new issues/PRs can be created
-  - [ ] Code is still readable
-
-**Tests:**
-- [ ] Manual: README shows archive notice
-- [ ] Manual: repository is archived on GitHub
-
-**Checkpoint:**
-- [ ] Arbors README updated with archive notice
-- [ ] Repository is archived on GitHub
-- [ ] tugtool link in README works
-
-**Commit after checkpoint passes (before archival).**
-
----
-
-##### Step 6 Summary
-
-**Deliverable:** tugtool extracted to standalone repository with CI/CD, Arbors repository archived with pointer to new project.
-
-**Naming recap:**
-- Package: `tugtool` (`cargo install tugtool`)
-- Binary: `tug` (`tug --help`)
-- Library: `tugtool` (`use tugtool::*`)
-- Repo: `github.com/tugtool/tugtool`
-- Domain: `tugtool.dev`
-
-**Final Checkpoint:**
-- [ ] New `tugtool/tugtool` repo exists and builds
-- [ ] `cargo install tugtool` would work (dry-run passes)
-- [ ] Binary is named `tug` and outputs `tug 0.1.0`
-- [ ] CI passes on new repo (all matrix: Ubuntu/macOS/Windows × stable/beta)
-- [ ] Release workflow is configured
-- [ ] Arbors repo is archived with pointer to tugtool
-- [ ] Tag `arbors-final-before-tug` exists for historical reference
-
-**Project extraction complete.**
-
----
-
-#### Step 7: Rust adapter (rust-analyzer)
-
-> **Goal:** Implement Rust language support via rust-analyzer LSP integration, enabling rename_symbol with verification via `cargo check`.
-
----
-
-##### Step 7.1: rust-analyzer discovery and spawning
-
-**Commit:** `feat(tug): rust-analyzer discovery and process spawning`
-
-**References:** [D14] Use rust-analyzer for Rust, 26.0.6 rust-analyzer Integration (#ra-feasibility, #ra-architecture, #ra-spawning, Table T20), 26.0.5 Session Management (#worker-process-mgmt, Table T23), 26.0.11 Cross-Platform Support (#cross-platform, Table T27)
-
-**Tasks:**
-- [ ] **Create `src/rust/mod.rs`** — Rust adapter module root
-- [ ] **Create `src/rust/discovery.rs`** — RA discovery logic:
-  - [ ] `--rust-analyzer /path/to/ra` CLI flag (highest priority)
-  - [ ] `$tug_RA_PATH` environment variable
-  - [ ] `rust-analyzer` from `$PATH` (use `which` crate)
-  - [ ] Return `RustAnalyzerNotFound` error if not found
-- [ ] **Create `src/rust/spawn.rs`** — process spawning:
-  - [ ] Spawn `rust-analyzer --stdio`
-  - [ ] Capture stdin/stdout handles for JSON-RPC
-  - [ ] Store PID in `.tug/workers/rust_analyzer.pid`
-  - [ ] Handle spawn failures gracefully
-- [ ] **Version check:**
-  - [ ] Query RA version after initialization (`experimental/serverStatus` or init result)
-  - [ ] Warn if version is older than baseline (2024-01-01)
-  - [ ] Store version in session metadata
-
-**Tests:**
-- [ ] unit: discovery order is correct (flag → env → PATH)
-- [ ] unit: spawn creates PID file
-- [ ] unit: version check parses version string
-- [ ] unit: `RustAnalyzerNotFound` when RA not available
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::discovery`
-- [ ] `cargo nextest run -p tug rust::spawn`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.2: LSP client implementation
-
-**Commit:** `feat(tug): lsp client with json-rpc transport`
-
-**References:** 26.0.6 rust-analyzer Integration (#ra-architecture, #ra-init-sequence, Table T19)
-
-**Tasks:**
-- [ ] **Create `src/rust/lsp.rs`** — JSON-RPC transport:
-  - [ ] Content-Length header framing (LSP wire format)
-  - [ ] `send_request(method, params) -> id`
-  - [ ] `receive_response(id) -> result`
-  - [ ] Request/response correlation via incrementing `id`
-  - [ ] Notification handling (no `id` field)
-  - [ ] Async read/write over stdin/stdout (tokio)
-- [ ] **Create `src/rust/init.rs`** — initialization handshake:
-  - [ ] Send `initialize` request with capabilities per 26.0.6
-  - [ ] Wait for `initialize` result
-  - [ ] Send `initialized` notification
-  - [ ] Wait for indexing completion (`$/progress` notifications)
-  - [ ] Timeout: 5 minutes for initial index (configurable)
-  - [ ] Handle initialization failure gracefully
-- [ ] **Document synchronization:**
-  - [ ] `textDocument/didOpen` before operations
-  - [ ] Track open documents in `HashSet<PathBuf>` to avoid redundant opens
-  - [ ] `textDocument/didClose` on session cleanup
-
-**Tests:**
-- [ ] unit: Content-Length framing encodes/decodes correctly
-- [ ] unit: request/response correlation matches IDs
-- [ ] unit: notification handling (no response expected)
-- [ ] unit: initialization handshake completes successfully (mock)
-- [ ] unit: timeout triggers after configured duration
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::lsp`
-- [ ] `cargo nextest run -p tug rust::init`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.3: LSP operations
-
-**Commit:** `feat(tug): lsp operations for rename and references`
-
-**References:** 26.0.6 rust-analyzer Integration (#ra-lsp-ops)
-
-**Tasks:**
-- [ ] **Create `src/rust/ops.rs`** — LSP operation wrappers:
-- [ ] **`textDocument/prepareRename`:**
-  - [ ] Call before rename to validate position
-  - [ ] Return early error if rename not possible (macro, etc.)
-  - [ ] Parse response for valid rename range
-- [ ] **`textDocument/rename`:**
-  - [ ] Send request with position (line, character) and new name
-  - [ ] Receive `WorkspaceEdit` response
-  - [ ] Handle error responses (macro issues, invalid position)
-- [ ] **`textDocument/references`:**
-  - [ ] For `analyze-impact` — show affected locations without edits
-  - [ ] Return `Vec<Location>` sorted by file/position
-  - [ ] Include definition: true/false parameter
-- [ ] **`textDocument/definition`:**
-  - [ ] Resolve `--at path:line:col` to symbol identity
-  - [ ] Handle multiple definitions (return first or error)
-- [ ] **Position conversion helpers:**
-  - [ ] `(line, col)` to LSP Position (0-indexed line, UTF-16 character)
-  - [ ] File path to `file://` URI
-
-**Tests:**
-- [ ] unit: prepareRename returns valid range
-- [ ] unit: prepareRename returns error for macro position
-- [ ] unit: rename returns WorkspaceEdit
-- [ ] unit: references returns sorted locations
-- [ ] unit: definition resolves to location
-- [ ] unit: position conversion handles UTF-16 correctly
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::ops`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.4: WorkspaceEdit to PatchSet conversion
-
-**Commit:** `feat(tug): workspace edit to patchset conversion`
-
-**References:** 26.0.6 rust-analyzer Integration (WorkspaceEdit to PatchSet conversion), 26.1.2 Terminology (Patch IR, PatchSet), 26.1.5 Semantics (anchoring, deterministic ordering)
-
-**Tasks:**
-- [ ] **Create `src/rust/convert.rs`** — conversion logic:
-- [ ] **URI to path conversion:**
-  - [ ] Parse `file://` URIs (handle URL encoding)
-  - [ ] Resolve to workspace-relative paths
-  - [ ] Handle Windows paths (`file:///C:/...`)
-- [ ] **Line/column to byte offset:**
-  - [ ] Read file content into memory
-  - [ ] Count bytes to line (0-indexed in LSP)
-  - [ ] **Handle UTF-16 code units** (LSP uses UTF-16, Rust/tug uses UTF-8)
-  - [ ] Create `Span { start, end }` in byte offsets
-- [ ] **Anchor creation:**
-  - [ ] Use `Anchor::SpanExact` with hash of old content
-  - [ ] Compute `expected_before_hash` from file bytes at span
-- [ ] **Build PatchSet:**
-  - [ ] Convert each `TextEdit` in `WorkspaceEdit` to `Edit`
-  - [ ] Group edits by file
-  - [ ] Handle `documentChanges` vs `changes` format
-- [ ] **Deterministic ordering:**
-  - [ ] Sort edits by `(file_path, span.start)`
-  - [ ] Ensure reproducible PatchSet output
-- [ ] **File filtering:**
-  - [ ] Skip edits in `target/**` (generated)
-  - [ ] Skip edits outside workspace root
-  - [ ] Skip edits in `$CARGO_HOME` (dependencies)
-  - [ ] Log warning for skipped files
-
-**Tests:**
-- [ ] unit: URI parsing handles `file://` correctly
-- [ ] unit: URI parsing handles Windows paths
-- [ ] unit: UTF-16 to UTF-8 offset conversion (ASCII)
-- [ ] unit: UTF-16 to UTF-8 offset conversion (emoji, CJK)
-- [ ] unit: PatchSet edits are sorted correctly
-- [ ] unit: target/ files are filtered out
-- [ ] unit: files outside workspace are filtered
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::convert`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.5: Error handling
-
-**Commit:** `feat(tug): rust adapter error handling`
-
-**References:** 26.0.6 rust-analyzer Integration (rust-analyzer limitations, macro handling), 26.1.6 Error and Warning Model, 26.0.7 JSON Output Schema (Table T26: Error Codes)
-
-**Tasks:**
-- [ ] **Create `src/rust/error.rs`** — Rust-specific errors:
-- [ ] **Error types:**
-  - [ ] `UnsupportedInMacro { location, macro_name? }` — rename in macro expansion
-  - [ ] `RustAnalyzerTimeout { operation, duration }` — operation timeout
-  - [ ] `RustAnalyzerCrashed { exit_code?, signal? }` — RA process died
-  - [ ] `NotCargoProject { path }` — no Cargo.toml found
-  - [ ] `IndexingTimeout { duration }` — initial indexing took too long
-  - [ ] `RustAnalyzerNotFound` — RA not installed
-- [ ] **Error mapping** from RA responses:
-  - [ ] Parse LSP error codes and messages
-  - [ ] Detect macro-related failures from error text
-  - [ ] Map to appropriate error type
-- [ ] **Macro detection:**
-  - [ ] Parse RA error messages for "cannot rename" + "macro"
-  - [ ] Return structured error with suggestion: "Symbol is defined in macro expansion"
-- [ ] **Crash recovery:**
-  - [ ] Detect broken pipe / unexpected EOF on stdin/stdout
-  - [ ] Mark session as needing RA restart
-  - [ ] Respawn RA on next operation
-
-**Tests:**
-- [ ] unit: UnsupportedInMacro error has correct fields
-- [ ] unit: error mapping parses RA error messages
-- [ ] unit: macro detection identifies macro errors
-- [ ] unit: crash detection identifies broken pipe
-- [ ] unit: all error types serialize to JSON correctly
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::error`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.6: Session integration
-
-**Commit:** `feat(tug): rust adapter session integration`
-
-**References:** 26.0.6 rust-analyzer Integration (warm session model), 26.0.5 Session Management (Table T23: Worker Lifecycle in Session, Spec S15: Session Directory Layout)
-
-**Tasks:**
-- [ ] **Create `src/rust/session.rs`** — session management:
-- [ ] **v1: Cold start model:**
-  - [ ] Spawn RA fresh per CLI invocation
-  - [ ] RA index cached in `target/` — faster on subsequent runs
-  - [ ] Document higher latency vs Python in help text
-- [ ] **Worker tracking:**
-  - [ ] Store PID in `.tug/workers/rust_analyzer.pid`
-  - [ ] Clean up on `tug clean --workers`
-  - [ ] Orphan detection at session start (check if PID is running)
-  - [ ] Kill orphaned RA processes
-- [ ] **Shutdown handling:**
-  - [ ] Send `shutdown` request before exit
-  - [ ] Wait for `shutdown` response
-  - [ ] Send `exit` notification
-  - [ ] Kill process if graceful shutdown fails
-- [ ] **Future (v1+): Daemon mode** (document only):
-  - [ ] Add TODO comment: `tug daemon start` keeps RA warm
-  - [ ] Document architecture for CLI connecting via Unix socket
-
-**Tests:**
-- [ ] unit: session creates PID file on start
-- [ ] unit: session removes PID file on clean shutdown
-- [ ] unit: orphan detection identifies stale PID
-- [ ] unit: clean --workers kills RA process
-- [ ] unit: shutdown sends correct LSP messages
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::session`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.7: rename_symbol end-to-end
-
-**Commit:** `feat(tug): rust rename_symbol end-to-end implementation`
-
-**References:** 26.0.6 rust-analyzer Integration (#seq-rename-rust), 26.0.1 Refactoring Operations Analysis (#op-rename, List L04, Table T05), 26.1.7 Public API Surface
-
-**Tasks:**
-- [ ] **Create `src/rust/rename.rs`** — rename orchestration:
-- [ ] **Input validation:**
-  - [ ] Parse `--at path:line:col` to file path and position
-  - [ ] Validate file exists and is `.rs` file
-  - [ ] Validate new name is valid Rust identifier
-- [ ] **Pipeline implementation:**
-  1. Initialize RA session (or reuse warm session)
-  2. Open document with `textDocument/didOpen`
-  3. Optionally resolve position via `textDocument/definition`
-  4. Call `textDocument/prepareRename` to validate
-  5. Call `textDocument/rename` to get `WorkspaceEdit`
-  6. Convert `WorkspaceEdit` → `PatchSet`
-  7. Return `AnalyzeImpactResponse` or `RunResponse`
-- [ ] **Apply mode:**
-  - [ ] If `--apply`: apply patch to workspace (via sandbox or direct)
-  - [ ] Return `RunResponse` with `applied: true`
-- [ ] **CLI integration:**
-  - [ ] `tug analyze-impact rename-symbol --at src/lib.rs:5:4 --to new_name`
-  - [ ] `tug run rename-symbol --at src/lib.rs:5:4 --to new_name [--apply] [--verify]`
-
-**Tests:**
-- [ ] unit: input validation rejects invalid paths
-- [ ] unit: input validation rejects invalid Rust identifiers
-- [ ] unit: pipeline calls LSP operations in correct order
-- [ ] integration: rename_symbol produces correct PatchSet
-- [ ] integration: rename_symbol with --apply modifies files
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::rename`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.8: Verification
-
-**Commit:** `feat(tug): rust verification with cargo check`
-
-**References:** [D08] Verification default (Table T02: Default Verification Pipeline), [D05] Verification always uses SandboxCopy mode, 26.1.4 Modes/Policies
-
-**Tasks:**
-- [ ] **Create `src/rust/verify.rs`** — verification logic:
-- [ ] **Default verification: `cargo check`**
-  - [ ] Run `cargo check` in sandbox directory
-  - [ ] Catches type errors, borrow issues, trait bounds
-  - [ ] Faster than full build
-  - [ ] Parse stderr for errors
-- [ ] **Optional: `cargo test`** with `--verify tests`
-  - [ ] Run `cargo test` in sandbox
-  - [ ] Parse test output for failures
-- [ ] **Optional: `cargo clippy`** with `--verify typecheck`
-  - [ ] Run `cargo clippy` in sandbox
-  - [ ] Treat warnings as errors
-- [ ] **Sandbox setup for Rust:**
-  - [ ] Copy `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`
-  - [ ] Copy `src/**/*.rs`
-  - [ ] Copy `.cargo/config.toml` if present
-  - [ ] **Skip `target/`** — large, regenerated by cargo
-  - [ ] Set `CARGO_TARGET_DIR` to sandbox target
-- [ ] **Verification result parsing:**
-  - [ ] Parse cargo JSON output (`--message-format=json`)
-  - [ ] Extract error locations and messages
-  - [ ] Return structured `VerificationResult`
-
-**Tests:**
-- [ ] unit: sandbox copies correct files
-- [ ] unit: sandbox skips target/
-- [ ] unit: cargo check failure is detected
-- [ ] unit: cargo test failure is detected
-- [ ] unit: verification result parsing extracts errors
-- [ ] integration: verify passes on valid rename
-- [ ] integration: verify fails on invalid rename
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug rust::verify`
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7.9: Rust test fixtures
-
-**Commit:** `test(tug): rust fixtures and golden tests`
-
-**References:** 26.0.8 Test Fixtures (Spec S19: Test Fixture Directory Layout, Rust fixture structure), 26.4 Test Plan Concepts (golden tests, fixture-based runner)
-
-**Tasks:**
-- [ ] **Create `tests/fixtures/rust/` directory structure:**
-  - [ ] `simple/` — single-file Cargo project
-  - [ ] `cross_module/` — multi-module refactors
-  - [ ] `use_statements/` — import/use scenarios
-  - [ ] `traits/` — trait method rename
-  - [ ] `macros/` — macro edge cases (expect errors)
-- [ ] **Create `tests/fixtures/rust/simple/`:**
-  - [ ] `Cargo.toml` — minimal manifest
-  - [ ] `src/lib.rs` — function, struct, field to rename
-- [ ] **Create `tests/fixtures/rust/cross_module/`:**
-  - [ ] `Cargo.toml`
-  - [ ] `src/lib.rs` — re-exports
-  - [ ] `src/utils.rs` — utility functions
-  - [ ] `src/models.rs` — data structures
-- [ ] **Create `tests/fixtures/rust/macros/`:**
-  - [ ] `Cargo.toml`
-  - [ ] `src/lib.rs` — macro-defined symbol (expect UnsupportedInMacro error)
-- [ ] **Create golden files:**
-  - [ ] `tests/golden/rust/simple_rename_function.patch`
-  - [ ] `tests/golden/rust/simple_rename_function.json`
-  - [ ] `tests/golden/rust/simple_rename_struct.patch`
-  - [ ] `tests/golden/rust/cross_module_rename.patch`
-  - [ ] `tests/golden/rust/macros_error.json`
-- [ ] **Create `tests/fixtures/rust/manifest.json`:**
-  - [ ] List all test cases with: fixture path, target location, new name, expected result
-- [ ] **Validate all fixtures:**
-  - [ ] Each fixture `cargo check` passes before rename
-
-**Tests:**
-- [ ] fixture: `simple_rename_function` — matches golden patch
-- [ ] fixture: `simple_rename_struct` — matches golden patch
-- [ ] fixture: `cross_module_rename` — matches golden patch
-- [ ] fixture: `macros_error` — returns UnsupportedInMacro
-- [ ] golden: all outputs are deterministic (stable ordering)
-
-**Checkpoint:**
-- [ ] `cargo nextest run -p tug fixtures::rust`
-- [ ] All Rust golden tests pass
-- [ ] Each fixture `cargo check` passes
-
-**Commit after checkpoint passes.**
-
----
-
-##### Step 7 Summary
-
-**Deliverable:** Full Rust language support via rust-analyzer integration, with rename_symbol, verification via `cargo check`, and comprehensive test fixtures.
-
-**Final Checkpoint:**
-- [ ] `cargo nextest run -p tug rust`
-- [ ] `cargo nextest run -p tug fixtures::rust`
-- [ ] All Rust golden tests pass
-- [ ] Manual: `tug run rename-symbol --at tests/fixtures/rust/simple/src/lib.rs:1:8 --to transform_data --apply --verify typecheck` works end-to-end
-- [ ] Manual: macro rename returns `UnsupportedInMacro` error
-
-**Commit after all checkpoints pass.**
-
----
-
-### 26.6 Deliverables and Checkpoints
+### 1.6 Deliverables and Checkpoints
 
 **Deliverable:** tug is a standalone project providing an **agent-callable refactor kernel** (CLI + MCP) with snapshotting, facts queries, anchored patch application, verification hooks, and a wedge of Python+Rust refactors that eliminate `sed`-style editing for common tasks.
 
