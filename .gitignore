@@ -32,3 +32,6 @@ Thumbs.db
 
 # Tug session artifacts
 **/.tug/
+
+# generated commit message
+git-commit-message.txt
