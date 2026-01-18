@@ -5,11 +5,15 @@
 
 use std::path::PathBuf;
 
-use crate::python::env::{resolve_python, ResolutionOptions};
+use crate::python::env::{check_libcst, resolve_python, ResolutionOptions, VENV_BIN_DIR};
 
 /// Get Python with libcst, or panic with instructions.
 ///
 /// This function is the ONLY entry point for tests that require Python with libcst.
+///
+/// Resolution order:
+/// 1. Project's managed venv at `CARGO_MANIFEST_DIR/.tug/venv` (set up by `tug toolchain python setup`)
+/// 2. Standard resolution via `resolve_python` (checks `$TUG_PYTHON`, `$VIRTUAL_ENV`, etc.)
 ///
 /// # Panics
 ///
@@ -25,7 +29,21 @@ use crate::python::env::{resolve_python, ResolutionOptions};
 /// }
 /// ```
 pub fn require_python_with_libcst() -> PathBuf {
-    // Try to resolve Python with libcst
+    // First, check the project's managed venv (created by `tug toolchain python setup`)
+    // This uses CARGO_MANIFEST_DIR which is set at compile time to the package root
+    let project_venv_python = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(".tug")
+        .join("venv")
+        .join(VENV_BIN_DIR)
+        .join("python");
+
+    if project_venv_python.exists() {
+        if let Ok((true, _)) = check_libcst(&project_venv_python) {
+            return project_venv_python;
+        }
+    }
+
+    // Fall back to standard resolution
     let temp_session = tempfile::tempdir().unwrap_or_else(|e| {
         panic!(
             "Failed to create temp directory for Python resolution: {}\n\n\

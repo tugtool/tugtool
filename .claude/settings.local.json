@@ -205,7 +205,8 @@
       "Bash(cargo publish:*)",
       "Bash(for dep in anyhow sha2 hex chrono globset wait-timeout directories dirs which tracing libc)",
       "Bash(do)",
-      "Bash(for dep in walkdir tempfile wait_timeout glob)"
+      "Bash(for dep in walkdir tempfile wait_timeout glob)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []

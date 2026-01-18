@@ -623,6 +623,8 @@ pub fn resolve_python_fresh(
     trace.add(ResolutionStep::not_set("--python flag"));
 
     // 2. $TUG_PYTHON environment variable
+    // IMPORTANT: Do NOT canonicalize the path - it might be a venv symlink that
+    // needs to be executed directly to find venv site-packages.
     if let Ok(path_str) = std::env::var("TUG_PYTHON") {
         let path = PathBuf::from(&path_str);
         if !path.exists() {
@@ -632,18 +634,51 @@ pub fn resolve_python_fresh(
                 version: None,
                 failure_reason: Some("path does not exist".to_string()),
             });
-        } else if let Ok(canonical) = path.canonicalize() {
-            if !is_executable(&canonical) {
-                trace.add(ResolutionStep {
-                    source: "$TUG_PYTHON".to_string(),
-                    found: Some(canonical),
-                    version: None,
-                    failure_reason: Some("not executable".to_string()),
-                });
-            } else {
-                match try_validate_python(&canonical, session_dir, options) {
-                    Ok(env) => return Ok(env),
-                    Err(step) => trace.add(step),
+        } else if !is_executable(&path) {
+            trace.add(ResolutionStep {
+                source: "$TUG_PYTHON".to_string(),
+                found: Some(path),
+                version: None,
+                failure_reason: Some("not executable".to_string()),
+            });
+        } else {
+            // Validate using the original path (not canonicalized) so venv paths work
+            match check_libcst(&path) {
+                Ok((true, libcst_version)) => {
+                    let version =
+                        get_python_version(&path).unwrap_or_else(|_| PythonVersion::new(3, 12, 0));
+                    let version_str = version.to_string();
+
+                    let config = PythonConfig {
+                        schema_version: PYTHON_CONFIG_SCHEMA_VERSION,
+                        interpreter_path: path,
+                        version: version_str,
+                        parsed_version: version,
+                        libcst_available: true,
+                        libcst_version,
+                        resolved_at: format_timestamp(SystemTime::now()),
+                        resolution_source: ResolutionSource::EnvTugPython,
+                        is_managed_venv: false,
+                        base_python_path: None,
+                    };
+
+                    return Ok(PythonEnv { config });
+                }
+                Ok((false, _)) => {
+                    trace.add(ResolutionStep {
+                        source: "$TUG_PYTHON".to_string(),
+                        found: Some(path.clone()),
+                        version: get_python_version(&path).ok().map(|v| v.to_string()),
+                        failure_reason: Some("libcst not installed".to_string()),
+                    });
+                }
+                Err(e) => {
+                    trace.add(ResolutionStep {
+                        source: "$TUG_PYTHON".to_string(),
+                        found: Some(path),
+                        version: None,
+                        failure_reason: Some(format!("validation failed: {}", e)),
+                    });
                 }
             }
         }
@@ -703,6 +738,82 @@ pub fn resolve_python_fresh(
         }
     } else {
         trace.add(ResolutionStep::not_set("$CONDA_PREFIX"));
+    }
+
+    // Test-only: Check project's managed venv at CARGO_MANIFEST_DIR/.tug/venv
+    // This allows tests to find the venv created by `tug toolchain python setup`
+    // even when running with temp session directories.
+    // IMPORTANT: Do NOT canonicalize the path - the venv's python symlink must be
+    // used directly so that Python finds the venv's site-packages.
+    #[cfg(test)]
+    {
+        let project_venv_python = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(".tug")
+            .join("venv")
+            .join(VENV_BIN_DIR)
+            .join(if cfg!(windows) {
+                "python.exe"
+            } else {
+                "python"
+            });
+
+        if project_venv_python.exists() && is_executable(&project_venv_python) {
+            // Check libcst directly without going through try_validate_python
+            // to avoid source name detection issues with the symlink
+            match check_libcst(&project_venv_python) {
+                Ok((true, libcst_version)) => {
+                    // Get Python version
+                    let version = get_python_version(&project_venv_python)
+                        .unwrap_or_else(|_| PythonVersion::new(3, 12, 0));
+                    let version_str = version.to_string();
+
+                    let config = PythonConfig {
+                        schema_version: PYTHON_CONFIG_SCHEMA_VERSION,
+                        interpreter_path: project_venv_python,
+                        version: version_str,
+                        parsed_version: version,
+                        libcst_available: true,
+                        libcst_version,
+                        resolved_at: format_timestamp(SystemTime::now()),
+                        resolution_source: ResolutionSource::ManagedVenv,
+                        is_managed_venv: true,
+                        base_python_path: None,
+                    };
+
+                    return Ok(PythonEnv { config });
+                }
+                Ok((false, _)) => {
+                    trace.add(ResolutionStep {
+                        source: "project .tug/venv (test)".to_string(),
+                        found: Some(project_venv_python.clone()),
+                        version: None,
+                        failure_reason: Some("libcst not installed".to_string()),
+                    });
+                }
+                Err(_) => {
+                    trace.add(ResolutionStep {
+                        source: "project .tug/venv (test)".to_string(),
+                        found: Some(project_venv_python.clone()),
+                        version: None,
+                        failure_reason: Some("failed to check libcst".to_string()),
+                    });
+                }
+            }
+        } else if project_venv_python.exists() {
+            trace.add(ResolutionStep {
+                source: "project .tug/venv (test)".to_string(),
+                found: Some(project_venv_python),
+                version: None,
+                failure_reason: Some("not executable".to_string()),
+            });
+        } else {
+            trace.add(ResolutionStep {
+                source: "project .tug/venv (test)".to_string(),
+                found: None,
+                version: None,
+                failure_reason: Some(format!("not found (run: tug toolchain python setup)")),
+            });
+        }
     }
 
     // 5. Managed venv at .tug/venv

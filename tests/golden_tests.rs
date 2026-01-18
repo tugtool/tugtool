@@ -128,10 +128,12 @@ fn compare_json(expected: &Value, actual: &Value) -> Result<(), String> {
 /// - `command_args`: CLI arguments to run
 /// - `golden_file`: Name of golden file in output_schema/
 /// - `fixture_name`: Optional fixture directory to copy to temp workspace
+/// - `python_path`: Path to Python interpreter with libcst
 fn run_golden_test(
     command_args: &[&str],
     golden_file: &str,
     fixture_name: Option<&str>,
+    python_path: &std::path::Path,
 ) -> Result<(), String> {
     // Create temp workspace
     let workspace = TempDir::new().map_err(|e| format!("Failed to create temp dir: {}", e))?;
@@ -162,6 +164,7 @@ fn run_golden_test(
 
     let mut cmd = Command::new(&binary);
     cmd.current_dir(workspace.path());
+    cmd.env("TUG_PYTHON", python_path);
     cmd.args(["--workspace", workspace.path().to_str().unwrap()]);
     cmd.args(["--fresh"]); // Start fresh session
     cmd.args(command_args);
@@ -206,7 +209,7 @@ fn run_golden_test(
 
 #[test]
 fn golden_analyze_impact_success() {
-    let _python = require_python_with_libcst();
+    let python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -219,6 +222,7 @@ fn golden_analyze_impact_success() {
         ],
         "analyze_impact_success.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -228,7 +232,7 @@ fn golden_analyze_impact_success() {
 
 #[test]
 fn golden_run_success_dry() {
-    let _python = require_python_with_libcst();
+    let python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -241,6 +245,7 @@ fn golden_run_success_dry() {
         ],
         "run_success_dry.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -250,7 +255,7 @@ fn golden_run_success_dry() {
 
 #[test]
 fn golden_run_success_applied() {
-    let _python = require_python_with_libcst();
+    let python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -264,6 +269,7 @@ fn golden_run_success_applied() {
         ],
         "run_success_applied.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -273,7 +279,7 @@ fn golden_run_success_applied() {
 
 #[test]
 fn golden_run_success_verified() {
-    let _python = require_python_with_libcst();
+    let python = require_python_with_libcst();
 
     let result = run_golden_test(
         &[
@@ -288,6 +294,7 @@ fn golden_run_success_verified() {
         ],
         "run_success_verified.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -297,11 +304,13 @@ fn golden_run_success_verified() {
 
 #[test]
 fn golden_snapshot_success() {
-    // Snapshot doesn't require Python/libcst
+    let python = require_python_with_libcst();
+
     let result = run_golden_test(
         &["snapshot"],
         "snapshot_success.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -311,11 +320,13 @@ fn golden_snapshot_success() {
 
 #[test]
 fn golden_session_status() {
-    // Session status doesn't require Python/libcst
+    let python = require_python_with_libcst();
+
     let result = run_golden_test(
         &["session", "status"],
         "session_status.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -329,6 +340,8 @@ fn golden_session_status() {
 
 #[test]
 fn golden_error_invalid_arguments() {
+    let python = require_python_with_libcst();
+
     // Invalid location format
     let result = run_golden_test(
         &[
@@ -341,6 +354,7 @@ fn golden_error_invalid_arguments() {
         ],
         "error_invalid_arguments.json",
         None,
+        &python,
     );
 
     if let Err(e) = result {
@@ -350,7 +364,7 @@ fn golden_error_invalid_arguments() {
 
 #[test]
 fn golden_error_symbol_not_found() {
-    let _python = require_python_with_libcst();
+    let python = require_python_with_libcst();
 
     // Symbol at non-existent location
     let result = run_golden_test(
@@ -364,6 +378,7 @@ fn golden_error_symbol_not_found() {
         ],
         "error_symbol_not_found.json",
         Some("symbol_not_found"),
+        &python,
     );
 
     if let Err(e) = result {
@@ -373,7 +388,7 @@ fn golden_error_symbol_not_found() {
 
 #[test]
 fn golden_error_invalid_name() {
-    let _python = require_python_with_libcst();
+    let python = require_python_with_libcst();
 
     // Invalid Python identifier
     let result = run_golden_test(
@@ -387,6 +402,7 @@ fn golden_error_invalid_name() {
         ],
         "error_invalid_name.json",
         Some("rename_function"),
+        &python,
     );
 
     if let Err(e) = result {
