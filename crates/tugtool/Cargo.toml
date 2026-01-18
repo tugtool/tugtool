@@ -1,11 +1,70 @@
+# Temporarily standalone during migration (Step 5)
+# Will rejoin workspace in Step 6 when root [package] is removed
+[workspace]
+
 [package]
-name = "tugtool-main"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+name = "tugtool"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ken Kocienda"]
+license = "MIT"
+description = "AI-native code transformation engine for verified, deterministic refactors"
+repository = "https://github.com/tugtool/tugtool"
+readme = "../../README.md"
+keywords = ["refactoring", "code-transformation", "ai", "mcp", "cli"]
+categories = ["development-tools", "command-line-utilities"]
+
+[lib]
+name = "tugtool"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tug"
+path = "src/main.rs"
 
 [dependencies]
+# Workspace crates
+tugtool-core = { path = "../tugtool-core" }
+tugtool-python = { path = "../tugtool-python", optional = true }
+tugtool-rust = { path = "../tugtool-rust", optional = true }
 
-[lints]
-workspace = true
+# Core: serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Core: error handling
+thiserror = "2.0"
+
+# Timestamps: ISO 8601 formatting
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+# CLI: argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Async: MCP server plumbing
+tokio = { version = "1", features = ["full"] }
+
+# Logging: structured logging with JSON output
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# MCP server support (optional)
+rmcp = { version = "0.12", features = ["server", "transport-io"], optional = true }
+schemars = { version = "1", optional = true }
+
+[features]
+default = ["python", "mcp"]
+python = ["dep:tugtool-python"]
+rust = ["dep:tugtool-rust"]
+mcp = ["dep:rmcp", "dep:schemars"]
+full = ["python", "rust", "mcp"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+collapsible_if = "allow"

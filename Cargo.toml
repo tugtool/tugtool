@@ -7,8 +7,10 @@ members = [
     "crates/tugtool-core",
     "crates/tugtool-python",
     "crates/tugtool-rust",
-    # NOTE: Do NOT include "crates/tugtool" yet - root IS the tugtool package during migration
 ]
+# Exclude crates/tugtool during Step 5 due to name conflict with root package
+# This is resolved in Step 6 when root [package] section is removed
+exclude = ["crates/tugtool"]
 
 [workspace.package]
 version = "0.1.0"
