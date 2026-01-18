@@ -152,6 +152,53 @@ impl From<TugError> for OutputErrorCode {
 }
 
 // ============================================================================
+// Bridge: SessionError -> TugError
+// ============================================================================
+
+impl From<crate::session::SessionError> for TugError {
+    fn from(err: crate::session::SessionError) -> Self {
+        use crate::session::SessionError;
+        match err {
+            SessionError::SessionNotWritable { path } => TugError::SessionError {
+                message: format!("session directory not writable: {}", path.display()),
+            },
+            SessionError::WorkspaceNotFound { expected } => TugError::FileNotFound {
+                path: expected.to_string_lossy().into_owned(),
+            },
+            SessionError::ConcurrentModification { expected, actual } => TugError::ApplyError {
+                message: format!(
+                    "session was modified concurrently (expected {}, found {})",
+                    expected, actual
+                ),
+                file: None,
+            },
+            SessionError::SessionCorrupt { path, reason } => TugError::SessionError {
+                message: format!("session corrupt at {}: {}", path.display(), reason),
+            },
+            SessionError::CacheCorrupt { path } => TugError::SessionError {
+                message: format!("cache corrupt: {}", path.display()),
+            },
+            SessionError::Io(io_err) => TugError::InternalError {
+                message: format!("IO error: {}", io_err),
+            },
+            SessionError::Json(json_err) => TugError::InternalError {
+                message: format!("JSON error: {}", json_err),
+            },
+            SessionError::WorkspaceRootMismatch {
+                session_root,
+                current_root,
+            } => TugError::SessionError {
+                message: format!(
+                    "workspace root mismatch: session bound to {}, now at {}",
+                    session_root.display(),
+                    current_root.display()
+                ),
+            },
+        }
+    }
+}
+
+// ============================================================================
 // Convenience Constructors
 // ============================================================================
 

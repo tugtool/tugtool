@@ -1189,29 +1189,40 @@ thiserror = "2.0"
 - Updated root `src/lib.rs` re-exports
 
 **Tasks:**
-- [ ] Copy `src/workspace.rs` to `crates/tugtool-core/src/workspace.rs`
-- [ ] Copy `src/session.rs` to `crates/tugtool-core/src/session.rs`
-- [ ] Add `pub mod workspace; pub mod session;` to core lib.rs
-- [ ] Add dependencies: `walkdir`, `chrono`
-- [ ] Update imports for workspace and session modules (use `crate::` for core-internal refs)
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{workspace, session};`
-- [ ] Delete or convert `src/workspace.rs` and `src/session.rs` to re-export wrappers
-- [ ] Verify BOTH crates compile and all tests pass
+- [x] Copy `src/workspace.rs` to `crates/tugtool-core/src/workspace.rs`
+- [x] Copy `src/session.rs` to `crates/tugtool-core/src/session.rs`
+- [x] Add `pub mod workspace; pub mod session;` to core lib.rs
+- [x] Add dependencies: `walkdir`, `chrono`
+- [x] Update imports for workspace and session modules (use `crate::` for core-internal refs)
+- [x] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{workspace, session};`
+- [x] Delete or convert `src/workspace.rs` and `src/session.rs` to re-export wrappers
+- [x] Verify BOTH crates compile and all tests pass
+
+**Note:** During implementation, we also:
+- Added `libc` as a unix-only dependency for process checking functions
+- Added `tempfile` as a dev-dependency for tests
+- Moved `impl From<SessionError> for TugError` from `src/error_bridges.rs` to `crates/tugtool-core/src/error.rs` since both types are now in the same crate
+- Removed SessionError bridge tests from `error_bridges.rs`
 
 **Core dependencies update:**
 ```toml
-walkdir = "2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
-serde_json = "1.0"
+walkdir = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
 ```
 
 **Tests:**
-- [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run --workspace` - all tests pass
+- [x] `cargo check -p tugtool-core`
+- [x] `cargo nextest run --workspace` - all 643 tests pass
 
 **Checkpoint:**
-- [ ] Core crate compiles
-- [ ] `cargo nextest run --workspace` - **all tests still pass**
+- [x] Core crate compiles
+- [x] `cargo nextest run --workspace` - **all 643 tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/workspace.rs src/session.rs src/lib.rs`

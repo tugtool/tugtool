@@ -1149,11 +1149,15 @@ dependencies = [
 name = "tugtool-core"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "hex",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]

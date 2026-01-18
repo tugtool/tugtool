@@ -9,15 +9,15 @@ pub use tugtool_core::error;
 pub use tugtool_core::facts;
 pub use tugtool_core::output;
 pub use tugtool_core::patch;
+pub use tugtool_core::session;
 pub use tugtool_core::text;
 pub use tugtool_core::types;
 pub use tugtool_core::util;
+pub use tugtool_core::workspace;
 
 // Core infrastructure - still in root (will migrate in future steps)
 pub mod sandbox;
-pub mod session;
 pub mod testcmd;
-pub mod workspace;
 
 // Front doors for agents
 pub mod cli;
@@ -29,5 +29,5 @@ pub mod python;
 pub mod rust;
 
 // Error bridges - converts language-specific errors to TugError
-// (must be after python and session modules for From impls to work)
+// (must be after python module for From impls to work)
 mod error_bridges;

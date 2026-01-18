@@ -7,11 +7,19 @@ license.workspace = true
 description = "Core infrastructure for tugtool: patch IR, facts, session, workspace, sandbox"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
-hex = "0.4"
 thiserror = "2.0"
+walkdir = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

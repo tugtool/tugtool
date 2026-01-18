@@ -4,15 +4,16 @@
 //! language-specific error types to the unified `TugError` type.
 //!
 //! These bridges live in the root crate rather than `tugtool-core` because
-//! they depend on language-specific types (Python, session, etc.) that
-//! are not part of core.
+//! they depend on language-specific types (Python, etc.) that are not part of core.
+//!
+//! Note: SessionError bridges are now in tugtool-core since both SessionError
+//! and TugError are in the same crate after the workspace migration.
 
 use tugtool_core::error::{Location, SymbolInfo, TugError};
 
 use crate::python::rename::RenameError;
 use crate::python::verification::VerificationStatus;
 use crate::python::worker::WorkerError;
-use crate::session::SessionError;
 
 // ============================================================================
 // Bridge: RenameError -> TugError
@@ -127,51 +128,6 @@ impl From<WorkerError> for TugError {
     }
 }
 
-// ============================================================================
-// Bridge: SessionError -> TugError
-// ============================================================================
-
-impl From<SessionError> for TugError {
-    fn from(err: SessionError) -> Self {
-        match err {
-            SessionError::SessionNotWritable { path } => TugError::SessionError {
-                message: format!("session directory not writable: {}", path.display()),
-            },
-            SessionError::WorkspaceNotFound { expected } => TugError::FileNotFound {
-                path: expected.to_string_lossy().into_owned(),
-            },
-            SessionError::ConcurrentModification { expected, actual } => TugError::ApplyError {
-                message: format!(
-                    "session was modified concurrently (expected {}, found {})",
-                    expected, actual
-                ),
-                file: None,
-            },
-            SessionError::SessionCorrupt { path, reason } => TugError::SessionError {
-                message: format!("session corrupt at {}: {}", path.display(), reason),
-            },
-            SessionError::CacheCorrupt { path } => TugError::SessionError {
-                message: format!("cache corrupt: {}", path.display()),
-            },
-            SessionError::Io(io_err) => TugError::InternalError {
-                message: format!("IO error: {}", io_err),
-            },
-            SessionError::Json(json_err) => TugError::InternalError {
-                message: format!("JSON error: {}", json_err),
-            },
-            SessionError::WorkspaceRootMismatch {
-                session_root,
-                current_root,
-            } => TugError::SessionError {
-                message: format!(
-                    "workspace root mismatch: session bound to {}, now at {}",
-                    session_root.display(),
-                    current_root.display()
-                ),
-            },
-        }
-    }
-}
 
 // ============================================================================
 // Tests
@@ -180,7 +136,6 @@ impl From<SessionError> for TugError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tugtool_core::error::OutputErrorCode;
 
     mod rename_error_conversion {
@@ -270,69 +225,6 @@ mod tests {
                     assert_eq!(candidates[1].name, "bar");
                 }
                 _ => panic!("expected AmbiguousSymbol"),
-            }
-        }
-    }
-
-    mod session_error_conversion {
-        use super::*;
-
-        #[test]
-        fn workspace_not_found_converts() {
-            let session_err = SessionError::WorkspaceNotFound {
-                expected: PathBuf::from("/home/user/project"),
-            };
-            let err = TugError::from(session_err);
-            match err {
-                TugError::FileNotFound { path } => {
-                    assert!(path.contains("project"));
-                }
-                _ => panic!("expected FileNotFound"),
-            }
-        }
-
-        #[test]
-        fn session_corrupt_converts() {
-            let session_err = SessionError::SessionCorrupt {
-                path: PathBuf::from("/tmp/session"),
-                reason: "invalid JSON".to_string(),
-            };
-            let err = TugError::from(session_err);
-            match err {
-                TugError::SessionError { message } => {
-                    assert!(message.contains("corrupt"));
-                    assert!(message.contains("invalid JSON"));
-                }
-                _ => panic!("expected SessionError"),
-            }
-        }
-
-        #[test]
-        fn concurrent_modification_converts_to_apply_error() {
-            let session_err = SessionError::ConcurrentModification {
-                expected: "abc123".to_string(),
-                actual: "def456".to_string(),
-            };
-            let err = TugError::from(session_err);
-            match err {
-                TugError::ApplyError { message, file } => {
-                    assert!(message.contains("modified concurrently"));
-                    assert!(file.is_none());
-                }
-                _ => panic!("expected ApplyError"),
-            }
-        }
-
-        #[test]
-        fn io_error_converts_to_internal() {
-            let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-            let session_err = SessionError::Io(io_err);
-            let err = TugError::from(session_err);
-            match err {
-                TugError::InternalError { message } => {
-                    assert!(message.contains("IO error"));
-                }
-                _ => panic!("expected InternalError"),
             }
         }
     }

@@ -15,6 +15,8 @@ pub mod error;
 pub mod facts;
 pub mod output;
 pub mod patch;
+pub mod session;
 pub mod text;
 pub mod types;
 pub mod util;
+pub mod workspace;
