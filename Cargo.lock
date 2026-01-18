@@ -1165,6 +1165,14 @@ dependencies = [
 [[package]]
 name = "tugtool-python"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tugtool-core",
+]
 
 [[package]]
 name = "tugtool-rust"

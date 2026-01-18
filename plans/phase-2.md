@@ -1316,9 +1316,9 @@ After completing Steps 2.1-2.6, you will have:
 - Basic lib.rs structure
 
 **Tasks:**
-- [ ] Configure Cargo.toml with tugtool-core dependency
-- [ ] Set up lib.rs module structure matching python/ layout
-- [ ] Verify crate compiles (empty modules)
+- [x] Configure Cargo.toml with tugtool-core dependency
+- [x] Set up lib.rs module structure matching python/ layout
+- [x] Verify crate compiles (empty modules)
 
 **Python crate Cargo.toml:**
 ```toml
@@ -1342,7 +1342,7 @@ workspace = true
 ```
 
 **Checkpoint:**
-- [ ] `cargo check -p tugtool-python` succeeds
+- [x] `cargo check -p tugtool-python` succeeds
 
 **Rollback:**
 - `git checkout -- crates/tugtool-python/`
