@@ -25,9 +25,8 @@ pub mod cli;
 pub mod mcp;
 
 // Language adapters
-pub mod python;
+pub use tugtool_python as python;
 pub mod rust;
 
-// Error bridges - converts language-specific errors to TugError
-// (must be after python module for From impls to work)
-mod error_bridges;
+// Note: Error bridges (From<RenameError> for TugError, etc.) are now
+// in tugtool-python to satisfy Rust's orphan rules.

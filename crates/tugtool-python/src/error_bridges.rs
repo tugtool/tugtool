@@ -1,19 +1,16 @@
-//! Error bridge implementations for language-specific errors.
+//! Error bridge implementations for Python-specific errors.
 //!
 //! This module provides `impl From<X> for TugError` conversions from
-//! language-specific error types to the unified `TugError` type.
+//! Python-specific error types to the unified `TugError` type.
 //!
-//! These bridges live in the root crate rather than `tugtool-core` because
-//! they depend on language-specific types (Python, etc.) that are not part of core.
-//!
-//! Note: SessionError bridges are now in tugtool-core since both SessionError
-//! and TugError are in the same crate after the workspace migration.
+//! These bridges live in tugtool-python because they depend on types
+//! defined in this crate (RenameError, WorkerError, etc.).
 
 use tugtool_core::error::{Location, SymbolInfo, TugError};
 
-use crate::python::rename::RenameError;
-use crate::python::verification::VerificationStatus;
-use crate::python::worker::WorkerError;
+use crate::ops::rename::RenameError;
+use crate::verification::VerificationStatus;
+use crate::worker::WorkerError;
 
 // ============================================================================
 // Bridge: RenameError -> TugError
@@ -86,7 +83,7 @@ impl From<RenameError> for TugError {
             },
             RenameError::Lookup(lookup_err) => {
                 // LookupError variants map to TugError variants
-                use crate::python::lookup::LookupError;
+                use crate::lookup::LookupError;
                 match lookup_err {
                     LookupError::SymbolNotFound { file, line, col } => {
                         TugError::SymbolNotFound { file, line, col }
@@ -161,7 +158,7 @@ mod tests {
 
         #[test]
         fn file_not_found_converts() {
-            use crate::python::files::FileError;
+            use crate::files::FileError;
             let rename_err = RenameError::File(FileError::NotFound {
                 path: "missing.py".to_string(),
             });
@@ -176,7 +173,7 @@ mod tests {
 
         #[test]
         fn invalid_name_converts() {
-            use crate::python::validation::ValidationError;
+            use crate::validation::ValidationError;
             let validation_err = ValidationError::InvalidName {
                 name: "123".to_string(),
                 reason: "cannot start with digit".to_string(),

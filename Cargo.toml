@@ -48,6 +48,7 @@ path = "src/main.rs"
 [dependencies]
 # Workspace crates
 tugtool-core = { path = "crates/tugtool-core" }
+tugtool-python = { path = "crates/tugtool-python" }
 
 # Core: serialization
 serde = { version = "1.0", features = ["derive"] }

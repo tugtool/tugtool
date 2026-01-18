@@ -1140,6 +1140,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tugtool-core",
+ "tugtool-python",
  "wait-timeout",
  "walkdir",
  "which",
@@ -1166,12 +1167,16 @@ dependencies = [
 name = "tugtool-python"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "dirs",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "tracing",
  "tugtool-core",
+ "walkdir",
+ "which",
 ]
 
 [[package]]

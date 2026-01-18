@@ -1723,7 +1723,9 @@ if __name__ == "__main__":
 
     #[test]
     fn analyze_impact_returns_valid_response() {
-        let _python = require_python_with_libcst();
+        let python = require_python_with_libcst();
+        // Set TUG_PYTHON so the MCP server can find it during resolution
+        std::env::set_var("TUG_PYTHON", &python);
         let workspace = create_rename_test_workspace();
         let server = TugServer::new();
 
@@ -1775,7 +1777,9 @@ if __name__ == "__main__":
 
     #[test]
     fn rename_symbol_dry_run_returns_patch_without_modifying_files() {
-        let _python = require_python_with_libcst();
+        let python = require_python_with_libcst();
+        // Set TUG_PYTHON so the MCP server can find it during resolution
+        std::env::set_var("TUG_PYTHON", &python);
         let workspace = create_rename_test_workspace();
         let server = TugServer::new();
 
@@ -1830,7 +1834,9 @@ if __name__ == "__main__":
 
     #[test]
     fn rename_symbol_apply_modifies_files() {
-        let _python = require_python_with_libcst();
+        let python = require_python_with_libcst();
+        // Set TUG_PYTHON so the MCP server can find it during resolution
+        std::env::set_var("TUG_PYTHON", &python);
         let workspace = create_rename_test_workspace();
         let server = TugServer::new();
 
