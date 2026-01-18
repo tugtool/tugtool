@@ -7,6 +7,7 @@ license.workspace = true
 description = "Rust language support for tugtool (placeholder)"
 
 [dependencies]
+tugtool-core = { path = "../tugtool-core" }
 
 [lints]
 workspace = true

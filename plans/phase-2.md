@@ -1415,10 +1415,10 @@ use tugtool_core::patch::{FileId, Span};
 - `crates/tugtool-rust/src/lib.rs` with placeholder
 
 **Tasks:**
-- [ ] Configure Cargo.toml with tugtool-core dependency
-- [ ] Create lib.rs with placeholder comment
-- [ ] Move `src/rust/mod.rs` content (if any) to lib.rs
-- [ ] Verify crate compiles
+- [x] Configure Cargo.toml with tugtool-core dependency
+- [x] Create lib.rs with placeholder comment
+- [x] Move `src/rust/mod.rs` content (if any) to lib.rs
+- [x] Verify crate compiles
 
 **Rust crate lib.rs:**
 ```rust
@@ -1448,7 +1448,7 @@ impl Default for RustAdapter {
 ```
 
 **Checkpoint:**
-- [ ] `cargo check -p tugtool-rust` succeeds
+- [x] `cargo check -p tugtool-rust` succeeds
 
 **Rollback:**
 - `git checkout -- crates/tugtool-rust/`
