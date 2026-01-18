@@ -24,6 +24,15 @@ The current tugtool-python architecture spawns a Python worker process (`libcst_
 
 LibCST already has a production-grade Rust core (16,400 lines) with a complete tokenizer, full PEG parser, 248 CST node types, and round-trip codegen. The only missing piece is visitor/transformer infrastructure, which exists only in the Python layer. By adapting LibCST's Rust core and building native visitors, we can eliminate all Python dependencies for refactoring operations while dramatically improving performance.
 
+#### Guiding Principles (Grounding for Future Refactorings) {#guiding-principles}
+
+This phase is explicitly **not** a “do-the-minimum-to-make-rename-work” effort. The goal is to build a **durable Rust foundation** for a growing set of Python refactorings, which implies:
+
+- **Own the core model:** a stable, Rust-native CST + traversal + transformation model (even if it diverges from LibCST Python APIs)
+- **Round-trip fidelity is foundational:** lossless parsing/codegen remains a non-negotiable invariant
+- **Spans + identity are first-class:** deterministic node identity plus precise byte spans power refactorings and diagnostics
+- **Python dependency is temporary and test-only:** Python worker is allowed only as a transitional comparison tool during Phase 3
+
 #### Strategy {#strategy}
 
 - Vendor LibCST's Rust parser (`native/libcst/`) into a new `tugtool-cst` crate
@@ -31,7 +40,7 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 - Build visitor/transformer infrastructure (`Visitor<'a>`, `Transformer<'a>` traits)
 - Port Python visitors to Rust in priority order (P0 for rename, P1/P2 for extended analysis)
 - Integrate via feature flags (`native-cst` default, `python-worker` fallback)
-- Verify equivalence through parallel testing before making native path the default
+- Verify correctness via parallel testing before making native path the default (equivalence is “behavioral stability”, not byte-for-byte JSON identity)
 
 #### Stakeholders / Primary Customers {#stakeholders}
 
@@ -42,10 +51,12 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `cargo build -p tugtool-python` produces binary with no Python dependencies (verify: `ldd` shows no libpython)
-- Rename operations produce identical output to Python-based path (verify: diff golden files)
+- Rename operations produce correct, stable results and preserve formatting (verify: existing rename integration tests + new native golden suite)
+- FactsStore behavior remains stable for rename-driven workflows (verify: rename affects the same set of symbols/references and passes verification)
 - Performance improvement: 10x faster for large files (verify: benchmark suite)
 - All existing integration tests pass with native backend (verify: `cargo nextest run`)
 - Zero Python subprocess spawned when using native backend (verify: `strace` shows no fork/exec to Python)
+- Default CI path runs without Python installed (Python allowed only for opt-in equivalence tests during Phase 3)
 
 #### Scope {#scope}
 
@@ -77,7 +88,7 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 - Must maintain backward compatibility with existing CLI and MCP interfaces
 - Feature flag must allow fallback to Python worker for edge cases
 - Memory usage must remain acceptable (no more than 2x increase for large files)
-- Must handle all Python 3.8-3.12 syntax
+- Must parse and round-trip the syntax supported by the vendored `adapt-libcst` snapshot at Phase start; expand syntax coverage over time as tugtool-owned work (do not assume “3.8–3.12” without measured confirmation)
 
 #### Assumptions {#assumptions}
 
@@ -103,7 +114,9 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 
 **Plan to resolve:** Analyze memory usage vs. performance tradeoffs during Phase 3.2
 
-**Resolution:** DECIDED - Option A (positions in nodes). Rationale: Refactoring needs accurate spans for every rename. The memory overhead is acceptable for the performance gain of not recomputing positions. See [D03].
+**Resolution:** DECIDED - Option C (NodeId → Span table). Rationale: We need spans for many node kinds now and for future refactorings, but we do not want to reshape all vendored node structs. A side table keyed by stable NodeId provides full coverage with low structural intrusion.
+
+Span representation uses `tugtool_core::patch::Span` (u64 offsets). See [D03] and [D07].
 
 ---
 
@@ -137,6 +150,16 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 **Plan to resolve:** Evaluate maintenance requirements
 
 **Resolution:** DECIDED - Option A (Git subtree). Rationale: We need significant modifications to remove PyO3 and add visitor traits. A vendored copy gives complete control and avoids the complexity of maintaining a public fork. See [D01].
+
+---
+
+#### [Q04] Node identity strategy (DECIDED) {#q04-node-identity}
+
+**Question:** What is the stable “node identity” mechanism used to key side tables (spans, metadata) during traversal and transforms?
+
+**Why it matters:** Future refactorings will need to attach analysis results to nodes deterministically, correlate diagnostics to spans, and maintain stable relationships across passes.
+
+**Resolution:** DECIDED - explicit `NodeId(u32)` assigned deterministically during CST inflation/construction. See [D07].
 
 ---
 
@@ -214,20 +237,20 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 
 ---
 
-#### [D03] Store Positions in CST Nodes (DECIDED) {#d03-positions-in-nodes}
+#### [D03] Spans via `SpanTable` (DECIDED) {#d03-positions-in-nodes}
 
-**Decision:** Add `span: Option<Span>` field to CST node types that represent named entities.
+**Decision:** Use `tugtool_core::patch::Span` (u64 byte offsets) and store spans in a side table keyed by `NodeId` (`SpanTable`).
 
 **Rationale:**
 - Refactoring needs accurate byte spans for every rename operation
-- On-demand computation would require re-traversal or token lookups
-- Memory overhead (~16 bytes per node) is acceptable for performance gain
-- Option type handles nodes where position may not be computable
+- On-demand computation would require re-traversal or token lookups and invites subtle bugs
+- Side table gives full coverage without reshaping all node structs
+- Using the existing core `Span` avoids conversion seams and keeps patch/edit code consistent
 
 **Implications:**
-- Must modify node struct definitions in expression.rs, statement.rs, etc.
-- Must update inflate implementations to populate span fields
-- Span struct defined as `{ start: usize, end: usize }` (byte offsets)
+- Define `NodeId` + `SpanTable` in `tugtool-cst` and thread it through inflate/traversal
+- Provide helpers like `span_of(NodeId) -> Option<Span>` and convenience accessors for common nodes
+- All spans are byte offsets into UTF-8 source, represented as `tugtool_core::patch::Span` (u64)
 
 ---
 
@@ -279,6 +302,41 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 - Must study Python visitor order carefully
 - Write order-sensitive tests
 - Document traversal order in walk function comments
+
+---
+
+#### [D07] Stable Node Identity via `NodeId` (DECIDED) {#d07-nodeid}
+
+**Decision:** Introduce `NodeId(u32)` assigned deterministically during CST inflation/construction, and use it as the key for side tables (spans, future metadata).
+
+**Rationale:**
+- Pointer identity is brittle (allocation strategy changes, non-determinism across passes)
+- Structural hashing is expensive and unstable under edits
+- Explicit ids give a durable foundation for analysis, diagnostics, and future transform pipelines
+
+**Implications:**
+- Add `NodeId` plumbing to the inflate pipeline (or a post-inflate id assignment pass)
+- Create `SpanTable` keyed by NodeId
+- Ensure id assignment order is deterministic (e.g., pre-order traversal)
+
+---
+
+#### [D08] Python Version Abstraction from Day One (DECIDED) {#d08-version-abstraction}
+
+**Decision:** Introduce `PythonVersion` and `ParseOptions` types in Step 2, threading version through the parse API even though version-specific validation is deferred.
+
+**Rationale:**
+- Python syntax evolves across versions (match statements in 3.10, walrus scoping changes in 3.9, etc.)
+- Adding version abstraction later would require API changes across the crate boundary
+- Version-aware feature queries (e.g., `has_match_statements()`) enable future version-specific analysis without redesign
+- `Permissive` mode (default) accepts all syntax the grammar handles, preserving backward compatibility
+
+**Implications:**
+- `version.rs` module added in Step 2
+- `parse_module_with_options(text, ParseOptions)` is the primary API; `parse_module(text)` is a convenience wrapper
+- Visitors can accept `PythonVersion` in constructors for version-aware scoping/analysis
+- Version validation (rejecting syntax not in target version) is explicitly deferred to future work
+- `PythonVersion` must be safe to extend and must not rely on “magic values” (avoid `0.0` sentinels); do not depend on version ordering for semantics
 
 ---
 
@@ -387,7 +445,7 @@ Target Architecture:
 
 **Key invariants:**
 - Round-trip: `parse(code).codegen() == code` for all valid Python
-- Spans are byte offsets into the original source
+- Spans are byte offsets into the original source (`tugtool_core::patch::Span`, u64)
 - Visitors see nodes in deterministic, documented order
 
 ---
@@ -395,7 +453,10 @@ Target Architecture:
 #### 3.0.1.2 Terminology and Naming {#terminology}
 
 - **CST (Concrete Syntax Tree):** Syntax tree preserving all whitespace and formatting
-- **Span:** Byte offset range `{ start: usize, end: usize }` in source
+- **Span:** Byte offset range `tugtool_core::patch::Span { start: u64, end: u64 }` in source
+- **NodeId:** Stable identifier for a CST node (`NodeId(u32)`) used to key span tables and future metadata
+- **PythonVersion:** Target Python language version `{ major: u8, minor: u8 }` for syntax parsing and version-aware analysis
+- **ParseOptions:** Configuration for parsing including target `PythonVersion` and encoding hints
 - **Scope:** Lexical scope in Python (module, class, function, lambda, comprehension)
 - **Binding:** A name definition (function, class, variable, parameter, import)
 - **Reference:** A name usage (read, call, attribute access)
@@ -406,10 +467,10 @@ Target Architecture:
 #### 3.0.1.3 Supported Features (Exhaustive) {#supported-features}
 
 - **Supported:**
-  - Python 3.8 through 3.12 syntax
+  - Baseline syntax supported by the vendored `adapt-libcst` snapshot (measured via round-trip suite)
   - All expression types including walrus operator (`:=`)
   - All statement types including match statements (3.10+)
-  - F-strings and t-strings
+  - F-strings (as supported by snapshot)
   - Type annotations including PEP 604 union syntax (`X | Y`)
   - Async functions and comprehensions
   - Decorators with arguments
@@ -457,10 +518,24 @@ pub trait Visitor<'a> {
 
 /// Transformer that can modify CST nodes
 pub trait Transformer<'a> {
-    type Output;
-    fn transform_module(&mut self, node: Module<'a>) -> Self::Output;
-    fn transform_name(&mut self, node: Name<'a>) -> Self::Output;
-    // ... for all node types
+    // NOTE: The real API must be typed by node category, not a single Output type.
+    // Some contexts allow removal/flattening (e.g., statement lists), mirroring LibCST's
+    // RemovalSentinel / FlattenSentinel concepts.
+}
+
+/// Generic transform result for list-like contexts (e.g., statements)
+pub enum Transform<T> {
+    Keep(T),
+    Remove,
+    Flatten(Vec<T>),
+}
+
+pub trait TypedTransformer<'a> {
+    fn transform_module(&mut self, node: Module<'a>) -> Module<'a>;
+    fn transform_statement(&mut self, node: Statement<'a>) -> Transform<Statement<'a>>;
+    fn transform_expression(&mut self, node: Expression<'a>) -> Expression<'a>;
+    fn transform_name(&mut self, node: Name<'a>) -> Name<'a>;
+    // ... typed transform_* methods for all node types
 }
 ```
 
@@ -482,7 +557,7 @@ pub trait Transformer<'a> {
 **Error fields (required):**
 - `message`: Human-readable error description
 - `location`: `{ line: usize, column: usize }` (1-based)
-- `span`: `{ start: usize, end: usize }` (byte offsets)
+- `span`: `tugtool_core::patch::Span { start: u64, end: u64 }` (byte offsets)
 
 **Warning fields (required):**
 - `message`: Human-readable warning description
@@ -500,8 +575,36 @@ pub trait Transformer<'a> {
 **Rust:**
 
 ```rust
-// Parsing
-pub fn parse_module(text: &str, encoding: Option<&str>) -> Result<Module, ParserError>;
+// Python version abstraction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PythonVersion {
+    /// Accept all syntax the grammar handles; no version validation.
+    Permissive,
+    /// A specific target language version (e.g., 3.10).
+    V { major: u8, minor: u8 },
+}
+
+impl PythonVersion {
+    pub const V3_8: Self = Self::V { major: 3, minor: 8 };
+    pub const V3_9: Self = Self::V { major: 3, minor: 9 };
+    pub const V3_10: Self = Self::V { major: 3, minor: 10 };
+    pub const V3_11: Self = Self::V { major: 3, minor: 11 };
+    pub const V3_12: Self = Self::V { major: 3, minor: 12 };
+
+    /// Feature queries for version-aware analysis (validation deferred).
+    pub fn has_match_statements(self) -> bool;
+    pub fn has_walrus_in_comprehension_iterable(self) -> bool;
+    // ... add feature queries as needed
+}
+
+pub struct ParseOptions {
+    pub version: PythonVersion,
+    pub encoding: Option<String>,
+}
+
+// Parsing (version-aware)
+pub fn parse_module_with_options(text: &str, options: ParseOptions) -> Result<Module, ParserError>;
+pub fn parse_module(text: &str) -> Result<Module, ParserError>; // uses PythonVersion::Permissive
 pub fn parse_statement(text: &str) -> Result<Statement, ParserError>;
 pub fn parse_expression(text: &str) -> Result<Expression, ParserError>;
 pub fn tokenize(text: &str) -> Result<Vec<Token>, TokenError>;
@@ -516,11 +619,11 @@ pub trait Codegen {
 
 // Visitor infrastructure
 pub trait Visitor<'a> { /* see S01 */ }
-pub trait Transformer<'a> { /* see S01 */ }
+pub trait TypedTransformer<'a> { /* see S01 */ }
 pub fn walk_module<'a, V: Visitor<'a>>(visitor: &mut V, module: &Module<'a>);
 // ... walk_* for all node types
 
-// Analysis collectors
+// Analysis collectors (version-aware constructors)
 pub struct ScopeCollector<'a>;
 pub struct BindingCollector<'a>;
 pub struct ReferenceCollector<'a>;
@@ -578,6 +681,7 @@ pub struct RenameTransformer<'a>;
 | `crates/tugtool-cst-derive/src/inflate.rs` | Inflate derive implementation |
 | `crates/tugtool-cst/Cargo.toml` | Crate manifest |
 | `crates/tugtool-cst/src/lib.rs` | Crate entry point |
+| `crates/tugtool-cst/src/version.rs` | Python version abstraction and feature queries |
 | `crates/tugtool-cst/src/nodes/mod.rs` | Node type re-exports |
 | `crates/tugtool-cst/src/nodes/expression.rs` | Expression node types |
 | `crates/tugtool-cst/src/nodes/statement.rs` | Statement node types |
@@ -609,7 +713,11 @@ pub struct RenameTransformer<'a>;
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `Span` | struct | `tugtool-cst/src/nodes/traits.rs` | `{ start: usize, end: usize }` |
+| `PythonVersion` | struct | `tugtool-cst/src/version.rs` | `{ major: u8, minor: u8 }` with version constants and feature queries |
+| `ParseOptions` | struct | `tugtool-cst/src/version.rs` | Configuration for parsing: version + encoding |
+| `Span` | type | `tugtool-cst` | Use `tugtool_core::patch::Span` (u64 byte offsets) |
+| `NodeId` | struct | `tugtool-cst/src/nodes/traits.rs` | `pub struct NodeId(pub u32)` |
+| `SpanTable` | struct | `tugtool-cst/src/nodes/traits.rs` | `NodeId -> Span` mapping for all nodes |
 | `VisitResult` | enum | `tugtool-cst/src/visitor/traits.rs` | Continue, SkipChildren, Stop |
 | `Visitor<'a>` | trait | `tugtool-cst/src/visitor/traits.rs` | Immutable visitor |
 | `Transformer<'a>` | trait | `tugtool-cst/src/visitor/traits.rs` | Mutable transformer |
@@ -634,9 +742,11 @@ pub struct RenameTransformer<'a>;
 
 - [ ] Update CLAUDE.md with tugtool-cst crate documentation
 - [ ] Add rustdoc comments to all public types and functions
+- [ ] Document `PythonVersion` abstraction and `PERMISSIVE` mode semantics
 - [ ] Document visitor traversal order guarantees
 - [ ] Document feature flag usage (`native-cst` vs `python-worker`)
 - [ ] Add examples in `tugtool-cst/examples/` for common visitor patterns
+- [ ] Add examples showing version-aware parsing (`parse_example.rs`)
 
 ---
 
@@ -649,7 +759,7 @@ pub struct RenameTransformer<'a>;
 | **Unit** | Test individual visitors/walkers in isolation | Each collector, transformer |
 | **Integration** | Test end-to-end rename operations | CLI rename commands |
 | **Golden / Contract** | Compare output against known-good snapshots | All analysis outputs |
-| **Equivalence** | Compare Rust vs Python backend outputs | During migration |
+| **Equivalence (opt-in)** | Compare Rust vs Python backend outputs | During migration only; may require Python |
 | **Round-trip** | Verify parse -> codegen == original | Parser correctness |
 | **Benchmark** | Measure performance improvement | Performance validation |
 
@@ -692,6 +802,10 @@ crates/tugtool-cst/tests/fixtures/
 - **Minimal:** Just enough code to exercise the scenario
 - **Documented:** Comments explaining what aspect is being tested
 - **Valid:** All fixtures must pass `python -m py_compile`
+
+**Python in tests policy (Phase 3):**
+- Python is permitted **only** for opt-in equivalence tests and fixture validation (`py_compile`) during the migration window.
+- Default CI should not require Python once the native backend is integrated and the default features exclude `python-worker`.
 
 ##### Golden Test Workflow {#golden-workflow}
 
@@ -749,33 +863,46 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 
 #### Step 2: Expose Clean Public API {#step-2}
 
-**Commit:** `feat(cst): expose public parsing API`
+**Commit:** `feat(cst): expose public parsing API with version abstraction`
 
-**References:** [D02] Remove PyO3, Spec S01, (#public-api, #inputs-outputs)
+**References:** [D02] Remove PyO3, [D08] Version abstraction, Spec S01, (#public-api, #inputs-outputs, #terminology)
 
 **Artifacts:**
+- `tugtool-cst/src/version.rs` with `PythonVersion` and `ParseOptions`
 - Updated `tugtool-cst/src/lib.rs` with public exports
 - API documentation
 
 **Tasks:**
+- [ ] Create `version.rs` with `PythonVersion` struct
+- [ ] Define `PythonVersion` as an enum with `Permissive` and `V { major, minor }` variants
+- [ ] Add version constants: `V3_8`, `V3_9`, `V3_10`, `V3_11`, `V3_12`
+- [ ] Add feature query methods: `has_match_statements()`, `has_walrus_in_comprehension_iterable()`, etc.
+- [ ] Create `ParseOptions` struct with `version` and `encoding` fields
+- [ ] Add `parse_module_with_options` function accepting `ParseOptions`
+- [ ] Keep `parse_module` as convenience wrapper using `PythonVersion::Permissive`
 - [ ] Define public API surface in lib.rs
-- [ ] Re-export `parse_module`, `parse_statement`, `parse_expression`, `tokenize`
+- [ ] Re-export `PythonVersion`, `ParseOptions`, parsing functions
 - [ ] Re-export `prettify_error` for error formatting
 - [ ] Re-export all node types from nodes module
 - [ ] Re-export `Codegen`, `CodegenState` for code generation
-- [ ] Add rustdoc comments to all public items
-- [ ] Create `tugtool-cst/examples/parse_example.rs`
+- [ ] Add rustdoc comments to all public items (document that version validation is deferred)
+- [ ] Create `tugtool-cst/examples/parse_example.rs` showing version-aware parsing
 
 **Tests:**
+- [ ] Unit: `PythonVersion` constants exist and are stable (`V3_8`, `V3_9`, etc.)
+- [ ] Unit: `PythonVersion::Permissive` does not perform version validation
+- [ ] Unit: `parse_module_with_options` accepts version parameter
+- [ ] Unit: Same code parses identically regardless of version (for now—validation deferred)
 - [ ] Unit: Example code compiles and runs
 - [ ] Integration: Parse various Python files successfully
 
 **Checkpoint:**
-- [ ] `cargo doc -p tugtool-cst --open` shows clean API documentation
+- [ ] `cargo doc -p tugtool-cst --open` shows clean API documentation including `PythonVersion`
 - [ ] `cargo run --example parse_example` succeeds
+- [ ] `cargo test -p tugtool-cst version` passes
 
 **Rollback:**
-- Revert lib.rs changes
+- Revert lib.rs and version.rs changes
 
 **Commit after all checkpoints pass.**
 
@@ -852,31 +979,30 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 
 ##### Step 3.3: Position Tracking {#step-3-3}
 
-**Commit:** `feat(cst): add Span position tracking to CST nodes`
+**Commit:** `feat(cst): add NodeId + SpanTable position tracking`
 
-**References:** [D03] Positions in nodes, (#d03-positions-in-nodes, #terminology)
+**References:** [D03] Spans via SpanTable, [D07] NodeId, (#d03-positions-in-nodes, #d07-nodeid, #terminology)
 
 **Artifacts:**
-- Updated node definitions with `span: Option<Span>` fields
-- Updated inflate implementations
+- `tugtool-cst/src/nodes/traits.rs`: `NodeId`, `SpanTable`
+- Updated inflate implementations to assign NodeIds deterministically and record spans
 
 **Tasks:**
-- [ ] Define `Span` struct in traits.rs
-- [ ] Add `span: Option<Span>` to `Name` node
-- [ ] Add `span: Option<Span>` to `FunctionDef` (for name position)
-- [ ] Add `span: Option<Span>` to `ClassDef` (for name position)
-- [ ] Add `span: Option<Span>` to `Param` node
-- [ ] Update inflate implementations to populate spans from tokens
-- [ ] Add span accessor methods to relevant nodes
+- [ ] Adopt `tugtool_core::patch::Span` as the canonical span type (no local `Span` struct)
+- [ ] Define `NodeId(u32)` and a `SpanTable` keyed by NodeId
+- [ ] Assign a deterministic NodeId to each CST node during inflate (pre-order traversal)
+- [ ] Record spans in `SpanTable` for nodes with meaningful source ranges (at minimum: identifiers, def names, params, import aliases, attributes)
+- [ ] Provide helpers (e.g., `node_id() -> NodeId` for concrete nodes and `span_of(NodeId) -> Option<Span>` on the table)
+- [ ] Document id assignment determinism and span semantics (byte offsets into UTF-8 source)
 
 **Tests:**
-- [ ] Unit: Span struct works correctly
-- [ ] Unit: Parse simple code and verify spans are populated
-- [ ] Integration: Spans match expected byte offsets
+- [ ] Unit: NodeId assignment is deterministic for a fixture
+- [ ] Unit: Parse simple code and verify spans are populated in SpanTable
+- [ ] Integration: Spans match expected byte offsets for representative constructs
 
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst span` passes
-- [ ] Parsed `Name` nodes have accurate spans
+- [ ] SpanTable reports accurate spans for identifier nodes
 
 **Rollback:**
 - Revert node definition changes
@@ -890,7 +1016,7 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 After completing Steps 3.1-3.3, you will have:
 - Complete `Visitor<'a>` and `Transformer<'a>` trait definitions
 - Walk functions for all ~248 CST node types
-- Position (span) tracking for named entities
+- Position (span) tracking via `SpanTable` keyed by `NodeId`
 
 **Final Step 3 Checkpoint:**
 - [ ] `cargo test -p tugtool-cst visitor` passes all visitor infrastructure tests
@@ -1328,7 +1454,7 @@ After completing Steps 5.1-5.4, you will have:
 
 ##### Step 8.2: Visitor Equivalence Tests {#step-8-2}
 
-**Commit:** `test(python): add visitor equivalence tests`
+**Commit:** `test(python): add opt-in visitor equivalence tests (python-worker)`
 
 **References:** (#test-categories)
 
@@ -1343,6 +1469,7 @@ After completing Steps 5.1-5.4, you will have:
 - [ ] Test all P1 collectors vs Python counterparts
 - [ ] Test DynamicPatternDetector vs Python
 - [ ] Test RenameTransformer vs Python rewrite_batch
+- [ ] Gate these tests behind a feature / cfg so they are not required in default CI
 
 **Tests:**
 - [ ] Equivalence: All collectors match Python output
@@ -1477,16 +1604,18 @@ After completing Steps 8.1-8.4, you will have:
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] `cargo build -p tugtool-python` produces binary with no Python dependencies (verify: `ldd` output)
-- [ ] Rename operations produce identical output to Python-based path (verify: diff all golden files)
+- [ ] Rename operations produce correct, stable results and preserve formatting (verify: integration tests + native golden suite)
+- [ ] FactsStore behavior used by rename is stable (verify: same logical symbol/reference set for representative fixtures)
 - [ ] Performance improvement >= 10x for 10KB+ Python files (verify: benchmark suite)
 - [ ] All existing integration tests pass with native backend (verify: `cargo nextest run`)
 - [ ] No Python subprocess spawned when using native backend (verify: strace/dtruss)
+- [ ] Default CI path runs with no Python installed (equivalence tests are opt-in during migration)
 
 **Acceptance tests:**
 - [ ] Golden: All golden file tests pass
 - [ ] Integration: End-to-end rename on real codebase succeeds
 - [ ] Benchmark: parse_module 10x faster than Python worker for large files
-- [ ] Unit: All visitor collectors match Python output exactly
+- [ ] Opt-in: equivalence suite passes when `python-worker` backend is enabled (temporary migration aid)
 
 ---
 
