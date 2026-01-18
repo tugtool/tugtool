@@ -9,6 +9,7 @@
 //! - Text utilities and diff generation
 
 pub mod diff;
+pub mod facts;
 pub mod patch;
 pub mod text;
 pub mod util;

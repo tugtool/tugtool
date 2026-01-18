@@ -1112,20 +1112,20 @@ serde_json = "1.0"
 - Updated root `src/lib.rs` re-exports
 
 **Tasks:**
-- [ ] Copy `src/facts/mod.rs` to `crates/tugtool-core/src/facts/mod.rs`
-- [ ] Add `pub mod facts;` to core lib.rs
-- [ ] Update imports in core: `use crate::patch::{ContentHash, FileId, Span}`
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::facts;`
-- [ ] Delete or convert `src/facts/` to re-export wrapper
-- [ ] Verify BOTH crates compile and all tests pass
+- [x] Copy `src/facts/mod.rs` to `crates/tugtool-core/src/facts/mod.rs`
+- [x] Add `pub mod facts;` to core lib.rs
+- [x] Update imports in core: `use crate::patch::{ContentHash, FileId, Span}`
+- [x] Update root `src/lib.rs` to re-export: `pub use tugtool_core::facts;`
+- [x] Delete or convert `src/facts/` to re-export wrapper
+- [x] Verify BOTH crates compile and all tests pass
 
 **Tests:**
-- [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run --workspace` - all tests pass
+- [x] `cargo check -p tugtool-core`
+- [x] `cargo nextest run --workspace` - all 639 tests pass
 
 **Checkpoint:**
-- [ ] Core crate compiles
-- [ ] `cargo nextest run --workspace` - **all tests still pass**
+- [x] Core crate compiles
+- [x] `cargo nextest run --workspace` - **all 639 tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/facts/ src/lib.rs`

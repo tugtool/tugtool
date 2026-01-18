@@ -5,6 +5,7 @@
 
 // Core infrastructure - re-exported from tugtool-core
 pub use tugtool_core::diff;
+pub use tugtool_core::facts;
 pub use tugtool_core::patch;
 pub use tugtool_core::text;
 pub use tugtool_core::util;
@@ -16,9 +17,6 @@ pub mod sandbox;
 pub mod session;
 pub mod testcmd;
 pub mod workspace;
-
-// Facts model and query engine
-pub mod facts;
 
 // Front doors for agents
 pub mod cli;
