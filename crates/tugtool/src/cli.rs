@@ -18,15 +18,31 @@
 //!
 //! All functions return `Result<T, TugError>`. The `TugError` type
 //! provides stable error codes for JSON output and proper error categorization.
+//!
+//! ## Feature Flags
+//!
+//! Language-specific operations require the corresponding feature flag:
+//! - `python` - Python rename operations (default)
+//! - `rust` - Rust operations (placeholder, not yet implemented)
 
+#[cfg(feature = "python")]
 use std::path::PathBuf;
 
 use tugtool_core::error::TugError;
+#[cfg(feature = "python")]
 use tugtool_core::output::Location;
+#[cfg(feature = "python")]
 use tugtool_core::session::Session;
+#[cfg(feature = "python")]
 use tugtool_python::env::{resolve_python, ResolutionOptions};
+#[cfg(feature = "python")]
 use tugtool_python::rename::PythonRenameOp;
+#[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
+
+// ============================================================================
+// Python Language Support (Feature-Gated)
+// ============================================================================
 
 /// Run analyze-impact for rename-symbol.
 ///
@@ -40,6 +56,11 @@ use tugtool_python::verification::VerificationMode;
 /// # Returns
 ///
 /// JSON string containing the analysis result.
+///
+/// # Feature Requirements
+///
+/// Requires the `python` feature flag.
+#[cfg(feature = "python")]
 pub fn run_analyze_impact(
     session: &Session,
     python_path: Option<PathBuf>,
@@ -83,6 +104,11 @@ pub fn run_analyze_impact(
 /// # Returns
 ///
 /// JSON string containing the rename result.
+///
+/// # Feature Requirements
+///
+/// Requires the `python` feature flag.
+#[cfg(feature = "python")]
 pub fn run_rename(
     session: &Session,
     python_path: Option<PathBuf>,
@@ -115,13 +141,14 @@ pub fn run_rename(
 }
 
 // ============================================================================
-// Helper Functions
+// Helper Functions (Feature-Gated)
 // ============================================================================
 
 /// Resolve Python interpreter path.
 ///
 /// If an explicit path is provided, use it directly.
 /// Otherwise, auto-resolve using the session's python directory.
+#[cfg(feature = "python")]
 fn resolve_python_path(
     session: &Session,
     explicit_path: Option<PathBuf>,
@@ -139,10 +166,27 @@ fn resolve_python_path(
 }
 
 // ============================================================================
-// Tests
+// Feature-Not-Available Stubs
 // ============================================================================
 
-#[cfg(test)]
+/// Returns an error indicating Python support is not compiled in.
+///
+/// This function is only available when the `python` feature is disabled,
+/// providing a graceful error message to users.
+#[cfg(not(feature = "python"))]
+pub fn python_not_available() -> TugError {
+    TugError::invalid_args(
+        "Python support not compiled in.\n\n\
+         To enable: cargo install tugtool --features python"
+            .to_string(),
+    )
+}
+
+// ============================================================================
+// Tests (Feature-Gated)
+// ============================================================================
+
+#[cfg(all(test, feature = "python"))]
 mod tests {
     use super::*;
     use tugtool_core::session::SessionOptions;

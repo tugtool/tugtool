@@ -1600,11 +1600,11 @@ workspace = true
 - Updated `mcp.rs` with feature-gated tools
 
 **Tasks:**
-- [ ] Add `#[cfg(feature = "python")]` guards to Python-specific CLI code
-- [ ] Add `#[cfg(feature = "rust")]` guards to Rust-specific CLI code
-- [ ] Update MCP tool registration with feature guards
-- [ ] Verify build with default features
-- [ ] Verify build with `--no-default-features`
+- [x] Add `#[cfg(feature = "python")]` guards to Python-specific CLI code
+- [x] Add `#[cfg(feature = "rust")]` guards to Rust-specific CLI code
+- [x] Update MCP tool registration with feature guards
+- [x] Verify build with default features
+- [x] Verify build with `--no-default-features`
 
 **Conditional compilation pattern:**
 ```rust
@@ -1630,16 +1630,16 @@ pub fn run_rename(args: &RenameArgs) -> Result<(), TugError> {
 ```
 
 **Tests:**
-- [ ] `cargo build -p tugtool` (default features)
-- [ ] `cargo build -p tugtool --no-default-features`
-- [ ] `cargo build -p tugtool --features python`
-- [ ] `cargo build -p tugtool --features mcp` (MCP without Python - verifies no accidental Python imports)
-- [ ] `cargo build -p tugtool --features full`
+- [x] `cargo build -p tugtool` (default features)
+- [x] `cargo build -p tugtool --no-default-features`
+- [x] `cargo build -p tugtool --features python`
+- [x] `cargo build -p tugtool --features mcp` (MCP without Python - verifies no accidental Python imports)
+- [x] `cargo build -p tugtool --features full`
 
 **Checkpoint:**
-- [ ] All feature combinations compile (including `--features mcp` alone)
-- [ ] `cargo run -p tugtool -- --help` works
-- [ ] MCP-only build has no Python dependencies (verify with `--features mcp` compile)
+- [x] All feature combinations compile (including `--features mcp` alone)
+- [x] `cargo run -p tugtool -- --help` works
+- [x] MCP-only build has no Python dependencies (verify with `--features mcp` compile)
   - Violation: any `use tugtool_python::` or dependency edge to `tugtool-python` without `#[cfg(feature = "python")]` guard
 
 **Rollback:**

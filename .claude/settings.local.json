@@ -214,7 +214,8 @@
       "Bash(else)",
       "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool status)",
       "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool diff Cargo.toml)",
-      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool log --oneline -5)"
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool log --oneline -5)",
+      "Bash(cargo metadata:*)"
     ],
     "deny": [],
     "ask": []

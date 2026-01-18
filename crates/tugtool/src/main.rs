@@ -21,23 +21,35 @@
 
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::{Command as ProcessCommand, ExitCode, Stdio};
+#[cfg(feature = "python")]
+use std::process::{Command as ProcessCommand, Stdio};
+use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use tugtool::cli::{run_analyze_impact, run_rename};
+// Core imports (always available)
 use tugtool_core::error::{OutputErrorCode, TugError};
-use tugtool_core::output::{
-    emit_response, ErrorInfo, ErrorResponse, SnapshotResponse, VerifyResponse, SCHEMA_VERSION,
-};
+use tugtool_core::output::{emit_response, ErrorInfo, ErrorResponse, SnapshotResponse};
+#[cfg(feature = "python")]
+use tugtool_core::output::VerifyResponse;
+use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::session::{Session, SessionOptions};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
+
+// Python feature-gated imports
+#[cfg(feature = "python")]
+use tugtool::cli::{run_analyze_impact, run_rename};
+#[cfg(feature = "python")]
 use tugtool_python::bootstrap::{
     ensure_managed_venv, validate_managed_venv, BootstrapError, VenvLocation,
 };
+#[cfg(feature = "python")]
 use tugtool_python::env::{check_libcst, managed_venv_dir, resolve_python, ResolutionOptions};
+#[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
+// Test command resolution (used by Python verification)
+#[cfg(feature = "python")]
 use tugtool::testcmd::{resolve_test_command, TemplateVars};
 
 // ============================================================================
@@ -246,6 +258,7 @@ enum VerifyMode {
     Typecheck,
 }
 
+#[cfg(feature = "python")]
 impl From<VerifyMode> for VerificationMode {
     fn from(mode: VerifyMode) -> Self {
         match mode {
@@ -394,6 +407,7 @@ fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
 }
 
 /// Execute analyze-impact command.
+#[cfg(feature = "python")]
 fn execute_analyze_impact(global: &GlobalArgs, refactor: RefactorOp) -> Result<(), TugError> {
     let mut session = open_session(global)?;
 
@@ -419,7 +433,14 @@ fn execute_analyze_impact(global: &GlobalArgs, refactor: RefactorOp) -> Result<(
     }
 }
 
+/// Execute analyze-impact command (Python not available).
+#[cfg(not(feature = "python"))]
+fn execute_analyze_impact(_global: &GlobalArgs, _refactor: RefactorOp) -> Result<(), TugError> {
+    Err(tugtool::cli::python_not_available())
+}
+
 /// Execute run command.
+#[cfg(feature = "python")]
 fn execute_run(
     global: &GlobalArgs,
     refactor: RefactorOp,
@@ -464,6 +485,18 @@ fn execute_run(
     }
 }
 
+/// Execute run command (Python not available).
+#[cfg(not(feature = "python"))]
+fn execute_run(
+    _global: &GlobalArgs,
+    _refactor: RefactorOp,
+    _apply: bool,
+    _verify: VerifyMode,
+    _test_command: Option<String>,
+) -> Result<(), TugError> {
+    Err(tugtool::cli::python_not_available())
+}
+
 /// Execute session command.
 fn execute_session(global: &GlobalArgs, action: SessionAction) -> Result<(), TugError> {
     match action {
@@ -481,6 +514,7 @@ fn execute_session(global: &GlobalArgs, action: SessionAction) -> Result<(), Tug
 /// Execute verify command.
 ///
 /// Runs verification on the current workspace state using the specified mode.
+#[cfg(feature = "python")]
 fn execute_verify(
     global: &GlobalArgs,
     mode: VerifyMode,
@@ -594,6 +628,16 @@ fn execute_verify(
     Ok(())
 }
 
+/// Execute verify command (Python not available).
+#[cfg(not(feature = "python"))]
+fn execute_verify(
+    _global: &GlobalArgs,
+    _mode: VerifyMode,
+    _test_command: Option<String>,
+) -> Result<(), TugError> {
+    Err(tugtool::cli::python_not_available())
+}
+
 /// Execute clean command.
 fn execute_clean(global: &GlobalArgs, workers: bool, cache: bool) -> Result<(), TugError> {
     let session = open_session(global)?;
@@ -642,6 +686,7 @@ fn execute_mcp() -> Result<(), TugError> {
 /// Execute toolchain command.
 ///
 /// Dispatches to language-specific toolchain handlers.
+#[cfg(feature = "python")]
 fn execute_toolchain(
     global: &GlobalArgs,
     lang: &str,
@@ -656,7 +701,25 @@ fn execute_toolchain(
     }
 }
 
+/// Execute toolchain command (Python not available).
+#[cfg(not(feature = "python"))]
+fn execute_toolchain(
+    _global: &GlobalArgs,
+    lang: &str,
+    _action: ToolchainAction,
+) -> Result<(), TugError> {
+    match lang {
+        "python" => Err(tugtool::cli::python_not_available()),
+        _ => Err(TugError::invalid_args(format!(
+            "Unknown language '{}'. No languages compiled in.\n\n\
+             To enable Python: cargo install tugtool --features python",
+            lang
+        ))),
+    }
+}
+
 /// Execute Python toolchain command.
+#[cfg(feature = "python")]
 fn execute_python_toolchain(global: &GlobalArgs, action: ToolchainAction) -> Result<(), TugError> {
     let session = open_session(global)?;
 
@@ -770,6 +833,7 @@ fn execute_python_toolchain(global: &GlobalArgs, action: ToolchainAction) -> Res
 }
 
 /// Convert BootstrapError to TugError.
+#[cfg(feature = "python")]
 fn bootstrap_error_to_tug_error(e: BootstrapError) -> TugError {
     match e {
         BootstrapError::NoPythonFound => TugError::internal(e.to_string()),
@@ -817,6 +881,7 @@ fn open_session(global: &GlobalArgs) -> Result<Session, TugError> {
 /// 3. Auto-resolve - language-specific resolution, result is cached
 ///
 /// Returns the resolved toolchain path.
+#[cfg(feature = "python")]
 fn resolve_toolchain(
     session: &mut Session,
     lang: &str,
@@ -1583,6 +1648,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "python")]
     mod verify_mode_conversion {
         use super::*;
 
@@ -1845,6 +1911,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "python")]
     mod toolchain_resolution {
         use super::*;
         use tempfile::TempDir;

@@ -33,7 +33,7 @@ use std::sync::Arc;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        Annotated, CallToolResult, Content, ErrorCode, Implementation, ListResourcesResult,
+        Annotated, CallToolResult, Content, Implementation, ListResourcesResult,
         PaginatedRequestParam, ProtocolVersion, RawResource, ReadResourceRequestParam,
         ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
     },
@@ -42,15 +42,22 @@ use rmcp::{
     transport::stdio,
     ErrorData as McpError, ServerHandler, ServiceExt,
 };
+#[cfg(feature = "python")]
+use rmcp::model::ErrorCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
-use crate::cli::{run_analyze_impact, run_rename};
+// Core imports (always available)
 use tugtool_core::error::TugError;
 use tugtool_core::output::SnapshotResponse;
 use tugtool_core::session::{Session, SessionOptions};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
+
+// Python feature-gated imports
+#[cfg(feature = "python")]
+use crate::cli::{run_analyze_impact, run_rename};
+#[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
 // ============================================================================
@@ -355,79 +362,107 @@ impl TugServer {
     }
 
     // ========================================================================
-    // Analyze Impact Tool
+    // Analyze Impact Tool (Requires Python Feature)
     // ========================================================================
 
     /// Analyze the impact of renaming a symbol.
     ///
     /// Identifies all references to the symbol at the given location and reports
     /// what would change if the symbol were renamed.
+    ///
+    /// Requires the `python` feature flag to be enabled.
     #[tool(description = "Analyze impact of renaming a symbol")]
     async fn tug_analyze_impact(
         &self,
         Parameters(params): Parameters<AnalyzeImpactParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session_guard = self.get_session(params.workspace_path.as_deref()).await?;
-        let session = session_guard.as_ref().unwrap();
+        #[cfg(not(feature = "python"))]
+        {
+            let _ = params; // Suppress unused warning
+            return Err(McpError::internal_error(
+                "Python support not compiled in. To enable: cargo install tugtool --features python",
+                Some(serde_json::json!({ "tug_code": 2 })),
+            ));
+        }
 
-        // Build location string in CLI format: "file:line:col"
-        let at = format!("{}:{}:{}", params.file, params.line, params.column);
+        #[cfg(feature = "python")]
+        {
+            let session_guard = self.get_session(params.workspace_path.as_deref()).await?;
+            let session = session_guard.as_ref().unwrap();
 
-        // Run analysis - TugError converts to McpError via From impl
-        let json =
-            run_analyze_impact(session, None, &at, &params.new_name).map_err(tug_error_to_mcp)?;
+            // Build location string in CLI format: "file:line:col"
+            let at = format!("{}:{}:{}", params.file, params.line, params.column);
 
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+            // Run analysis - TugError converts to McpError via From impl
+            let json = run_analyze_impact(session, None, &at, &params.new_name)
+                .map_err(tug_error_to_mcp)?;
+
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        }
     }
 
     // ========================================================================
-    // Rename Symbol Tool
+    // Rename Symbol Tool (Requires Python Feature)
     // ========================================================================
 
     /// Rename a symbol and optionally apply changes.
     ///
     /// Generates a patch for renaming the symbol at the given location. If `apply`
     /// is true, writes changes to disk. Otherwise returns the patch for review.
+    ///
+    /// Requires the `python` feature flag to be enabled.
     #[tool(description = "Rename a symbol and optionally apply changes")]
     async fn tug_rename_symbol(
         &self,
         Parameters(params): Parameters<RenameSymbolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session_guard = self.get_session(params.workspace_path.as_deref()).await?;
-        let session = session_guard.as_ref().unwrap();
+        #[cfg(not(feature = "python"))]
+        {
+            let _ = params; // Suppress unused warning
+            return Err(McpError::internal_error(
+                "Python support not compiled in. To enable: cargo install tugtool --features python",
+                Some(serde_json::json!({ "tug_code": 2 })),
+            ));
+        }
 
-        // Build location string in CLI format: "file:line:col"
-        let at = format!("{}:{}:{}", params.file, params.line, params.column);
+        #[cfg(feature = "python")]
+        {
+            let session_guard = self.get_session(params.workspace_path.as_deref()).await?;
+            let session = session_guard.as_ref().unwrap();
 
-        // Parse verification mode
-        let verify_mode = match params.verify.to_lowercase().as_str() {
-            "none" => VerificationMode::None,
-            "syntax" => VerificationMode::Syntax,
-            "tests" => VerificationMode::Tests,
-            "typecheck" => VerificationMode::TypeCheck,
-            _ => {
-                return Err(McpError::invalid_params(
-                    "Invalid verify mode",
-                    Some(serde_json::json!({
-                        "mode": params.verify,
-                        "valid_modes": ["none", "syntax", "tests", "typecheck"]
-                    })),
-                ));
-            }
-        };
+            // Build location string in CLI format: "file:line:col"
+            let at = format!("{}:{}:{}", params.file, params.line, params.column);
 
-        // Run rename - TugError converts to McpError via From impl
-        let json = run_rename(
-            session,
-            None,
-            &at,
-            &params.new_name,
-            verify_mode,
-            params.apply,
-        )
-        .map_err(tug_error_to_mcp)?;
+            // Parse verification mode
+            let verify_mode = match params.verify.to_lowercase().as_str() {
+                "none" => VerificationMode::None,
+                "syntax" => VerificationMode::Syntax,
+                "tests" => VerificationMode::Tests,
+                "typecheck" => VerificationMode::TypeCheck,
+                _ => {
+                    return Err(McpError::invalid_params(
+                        "Invalid verify mode",
+                        Some(serde_json::json!({
+                            "mode": params.verify,
+                            "valid_modes": ["none", "syntax", "tests", "typecheck"]
+                        })),
+                    ));
+                }
+            };
 
-        Ok(CallToolResult::success(vec![Content::text(json)]))
+            // Run rename - TugError converts to McpError via From impl
+            let json = run_rename(
+                session,
+                None,
+                &at,
+                &params.new_name,
+                verify_mode,
+                params.apply,
+            )
+            .map_err(tug_error_to_mcp)?;
+
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        }
     }
 
     // ========================================================================
@@ -721,12 +756,13 @@ fn parse_query_params(query: Option<&str>) -> std::collections::HashMap<String, 
 }
 
 // ============================================================================
-// Error Conversions
+// Error Conversions (Feature-Gated)
 // ============================================================================
 
 /// Custom JSON-RPC error codes for tug operations.
 ///
 /// These codes are in the reserved range -32000 to -32099 for server-defined errors.
+#[cfg(feature = "python")]
 mod error_codes {
     /// Symbol resolution error (symbol not found, ambiguous).
     pub const RESOLUTION_ERROR: i32 = -32000;
@@ -743,6 +779,7 @@ mod error_codes {
 /// This is a helper function instead of `impl From<TugError> for McpError` because
 /// both types are from external crates (after the workspace migration), making
 /// a blanket From impl impossible due to Rust's orphan rules.
+#[cfg(feature = "python")]
 fn tug_error_to_mcp(err: TugError) -> McpError {
     let tug_code = err.error_code().code();
 
