@@ -1101,6 +1101,142 @@ fn generate_unified_diff(
 }
 
 // ============================================================================
+// Preview Result
+// ============================================================================
+
+/// Result of previewing a PatchSet (without applying).
+#[derive(Debug, Clone)]
+pub struct PreviewResult {
+    /// Resolved spans for each edit.
+    pub resolved_edits: Vec<ResolvedEdit>,
+    /// Conflicts detected during preview.
+    pub conflicts: Vec<Conflict>,
+    /// Whether the preview is valid (no conflicts).
+    pub is_valid: bool,
+}
+
+/// An edit with its anchor resolved.
+#[derive(Debug, Clone)]
+pub struct ResolvedEdit {
+    /// The original edit.
+    pub edit_id: u32,
+    /// The file ID.
+    pub file_id: FileId,
+    /// The resolved span.
+    pub resolved_span: Span,
+    /// The file path.
+    pub file_path: String,
+}
+
+impl PatchSet {
+    /// Preview this PatchSet without applying it.
+    ///
+    /// Resolves all anchors and reports any conflicts.
+    #[must_use]
+    pub fn preview(&self, file_contents: &HashMap<FileId, Vec<u8>>) -> PreviewResult {
+        let mut resolved_edits = Vec::new();
+        let mut conflicts = Vec::new();
+
+        // Resolve all anchors
+        for edit in &self.edits {
+            let content = match file_contents.get(&edit.file_id) {
+                Some(c) => c,
+                None => {
+                    conflicts.push(Conflict::PreconditionFailed {
+                        precondition: Precondition::FileHashMatches {
+                            file_id: edit.file_id,
+                            content_hash: ContentHash::from_hex_unchecked(""),
+                        },
+                        reason: format!("File {:?} not found", edit.file_id),
+                    });
+                    continue;
+                }
+            };
+
+            let file_path = self
+                .file_paths
+                .get(&edit.file_id)
+                .cloned()
+                .unwrap_or_else(|| format!("file_{}", edit.file_id.0));
+
+            match edit.anchor.resolve(content) {
+                AnchorResolution::Resolved(span) => {
+                    resolved_edits.push(ResolvedEdit {
+                        edit_id: edit.id,
+                        file_id: edit.file_id,
+                        resolved_span: span,
+                        file_path,
+                    });
+                }
+                AnchorResolution::HashMismatch {
+                    span,
+                    expected,
+                    actual,
+                } => {
+                    conflicts.push(Conflict::AnchorHashMismatch {
+                        file_id: edit.file_id,
+                        span,
+                        expected,
+                        actual,
+                    });
+                }
+                AnchorResolution::NotFound { .. } => {
+                    conflicts.push(Conflict::AnchorNotFound {
+                        file_id: edit.file_id,
+                        anchor: edit.anchor.clone(),
+                    });
+                }
+                AnchorResolution::Ambiguous { matches } => {
+                    conflicts.push(Conflict::AnchorAmbiguous {
+                        file_id: edit.file_id,
+                        anchor: edit.anchor.clone(),
+                        match_count: matches.len(),
+                    });
+                }
+                AnchorResolution::OutOfBounds { span, file_len } => {
+                    conflicts.push(Conflict::SpanOutOfBounds {
+                        file_id: edit.file_id,
+                        span,
+                        file_len,
+                    });
+                }
+            }
+        }
+
+        // Check for overlapping spans among resolved edits
+        let mut edits_by_file: HashMap<FileId, Vec<&ResolvedEdit>> = HashMap::new();
+        for edit in &resolved_edits {
+            edits_by_file.entry(edit.file_id).or_default().push(edit);
+        }
+
+        for (file_id, file_edits) in edits_by_file {
+            for i in 0..file_edits.len() {
+                for j in (i + 1)..file_edits.len() {
+                    if file_edits[i]
+                        .resolved_span
+                        .overlaps(&file_edits[j].resolved_span)
+                    {
+                        conflicts.push(Conflict::OverlappingSpans {
+                            file_id,
+                            edit1_span: file_edits[i].resolved_span,
+                            edit2_span: file_edits[j].resolved_span,
+                        });
+                    }
+                }
+            }
+        }
+
+        let is_valid = conflicts.is_empty();
+
+        PreviewResult {
+            resolved_edits,
+            conflicts,
+            is_valid,
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

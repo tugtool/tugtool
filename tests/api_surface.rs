@@ -21,8 +21,8 @@
 // patch module - foundation types for edit/diff operations
 use tugtool::patch::{
     Anchor, AnchorResolution, ApplyContext, ApplyResult, Conflict, ContentHash, Edit, EditKind,
-    EditLabels, FileId, MaterializedPatch, OutputEdit, PatchSet, Precondition, Span,
-    WorkspaceSnapshotId,
+    EditLabels, FileId, MaterializedPatch, OutputEdit, PatchSet, Precondition, PreviewResult,
+    ResolvedEdit, Span, WorkspaceSnapshotId,
 };
 
 // facts module - symbol and reference tracking
@@ -58,8 +58,8 @@ use tugtool::workspace::{
 
 // sandbox module - sandboxed file operations
 use tugtool::sandbox::{
-    PreviewResult, RefactorError, RefactorReport, RefactorWarning, ResolvedEdit, SandboxConfig,
-    SandboxHandle, SymlinkCheck, VerificationResult, WarningLocation,
+    RefactorError, RefactorReport, RefactorWarning, SandboxConfig, SandboxHandle, SymlinkCheck,
+    VerificationResult, WarningLocation,
 };
 
 // text module - text position utilities

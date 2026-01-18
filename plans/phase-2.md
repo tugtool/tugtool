@@ -57,7 +57,7 @@ git checkout HEAD~1 -- Cargo.lock
 rm -rf crates/
 
 # Verify tests pass again
-cargo nextest run  # Should show 639 tests
+cargo nextest run --workspace  # Should show 639 tests
 ```
 
 ---
@@ -86,7 +86,7 @@ A workspace structure with separate crates addresses all these concerns while ma
 - **No functional changes**: This is purely a structural refactor; behavior remains identical
 - **Virtual workspace as END STATE**: Convert to virtual workspace only in Step 6 after all code is migrated
 
-> **CRITICAL INVARIANT**: `cargo nextest run` must pass at every checkpoint. If tests fail after a step, do NOT proceed - fix the issue first.
+> **CRITICAL INVARIANT**: `cargo nextest run --workspace` must pass at every checkpoint. If tests fail after a step, do NOT proceed - fix the issue first. **Always use `--workspace`** to ensure tests in all crates are included - without it, tests in newly created crates won't run!
 
 ### Stakeholders / Primary Customers {#stakeholders}
 
@@ -96,7 +96,7 @@ A workspace structure with separate crates addresses all these concerns while ma
 
 ### Success Criteria (Measurable) {#success-criteria}
 
-- All existing tests pass (`cargo nextest run`)
+- All existing tests pass (`cargo nextest run --workspace`)
 - Clean incremental builds after touching only language-specific code
 - `cargo build --no-default-features` produces a working binary (core only)
 - `cargo build --features python` includes Python support
@@ -778,8 +778,8 @@ pub use tugtool_rust as rust;
 ### Verification Commands {#test-verification}
 
 ```bash
-# Run all tests (from workspace root)
-cargo nextest run
+# Run all tests (from workspace root) - ALWAYS use --workspace during migration!
+cargo nextest run --workspace
 
 # Run only core tests
 cargo nextest run -p tugtool-core
@@ -788,7 +788,7 @@ cargo nextest run -p tugtool-core
 cargo nextest run -p tugtool-python
 
 # Run with specific features
-cargo nextest run --no-default-features --features python
+cargo nextest run --workspace --no-default-features --features python
 ```
 
 ---
@@ -808,7 +808,7 @@ cargo nextest run --no-default-features --features python
 - `tests/api_surface.rs` - compile-time API contract
 
 **Tasks:**
-- [x] Run `cargo nextest run` and record pass/fail counts
+- [x] Run `cargo nextest run --workspace` and record pass/fail counts
 - [x] Run `cargo build --timings` and save HTML report
 - [x] Run `cargo clippy` and fix any warnings
 - [x] Create `tests/api_surface.rs` with imports of all current public types (see [D11])
@@ -842,7 +842,7 @@ fn api_surface_compiles() {
 - [x] `tests/api_surface.rs` compiles with `--features full`
 
 **Checkpoint:**
-- [x] `cargo nextest run` - all tests pass
+- [x] `cargo nextest run --workspace` - all tests pass
 - [x] `cargo clippy -- -D warnings` - no warnings
 - [x] `cargo fmt --check` - no formatting issues
 - [x] `tests/api_surface.rs` exists and compiles with `cargo test -p tugtool --features full -- api_surface`
@@ -943,11 +943,11 @@ lto = false
 ```
 
 **Tests:**
-- [x] `cargo nextest run` - ALL 639 TESTS STILL PASS (critical!)
+- [x] `cargo nextest run --workspace` - ALL 639 TESTS STILL PASS (critical!)
 - [x] `cargo check -p tugtool-core` succeeds (empty crate compiles)
 
 **Checkpoint:**
-- [x] `cargo nextest run` - **all existing tests pass** (this is the critical checkpoint!)
+- [x] `cargo nextest run --workspace` - **all existing tests pass** (this is the critical checkpoint!)
 - [x] `cargo clippy -- -D warnings` - no warnings
 - [x] All four crate directories exist with Cargo.toml and src/lib.rs
 - [x] Root Cargo.toml has both `[workspace]` AND `[package]` sections
@@ -1014,28 +1014,28 @@ After Step 2 completes:
 - Updated root `src/lib.rs` to re-export from tugtool-core
 
 **Tasks:**
-- [ ] Add `tugtool-core` as a dependency in root `Cargo.toml`:
+- [x] Add `tugtool-core` as a dependency in root `Cargo.toml`:
       ```toml
       [dependencies]
       tugtool-core = { path = "crates/tugtool-core" }
       ```
-- [ ] Add dependencies to `crates/tugtool-core/Cargo.toml`: `serde`, `sha2`, `hex`
-- [ ] Copy `src/patch.rs` to `crates/tugtool-core/src/patch.rs`
-- [ ] Copy `src/text.rs` to `crates/tugtool-core/src/text.rs`
-- [ ] Update `crates/tugtool-core/src/lib.rs`:
+- [x] Add dependencies to `crates/tugtool-core/Cargo.toml`: `serde`, `sha2`, `hex`
+- [x] Copy `src/patch.rs` to `crates/tugtool-core/src/patch.rs`
+- [x] Copy `src/text.rs` to `crates/tugtool-core/src/text.rs`
+- [x] Update `crates/tugtool-core/src/lib.rs`:
       ```rust
       pub mod patch;
       pub mod text;
       ```
-- [ ] Verify `crate::` imports in both files resolve correctly (no changes needed - they now refer to tugtool-core)
-- [ ] Update root `src/lib.rs` to re-export:
+- [x] Verify `crate::` imports in both files resolve correctly (no changes needed - they now refer to tugtool-core)
+- [x] Update root `src/lib.rs` to re-export:
       ```rust
       pub use tugtool_core::patch;
       pub use tugtool_core::text;
       ```
-- [ ] Delete `src/patch.rs` and `src/text.rs`
-- [ ] Verify BOTH core crate AND root package compile
-- [ ] Verify all tests pass
+- [x] Delete `src/patch.rs` and `src/text.rs`
+- [x] Verify BOTH core crate AND root package compile
+- [x] Verify all tests pass
 
 **Dependencies for tugtool-core/Cargo.toml:**
 ```toml
@@ -1043,17 +1043,20 @@ After Step 2 completes:
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 hex = "0.4"
+
+[dev-dependencies]
+serde_json = "1.0"
 ```
 
 **Tests:**
-- [ ] `cargo check -p tugtool-core` succeeds
-- [ ] `cargo nextest run` - all tests pass (critical!)
+- [x] `cargo check -p tugtool-core` succeeds
+- [x] `cargo nextest run --workspace` - all 639 tests pass (critical! use --workspace to include crate tests)
 
 **Checkpoint:**
-- [ ] `cargo check -p tugtool-core` compiles without errors
-- [ ] `cargo nextest run` - **all tests still pass** (do not skip this!)
-- [ ] `use tugtool::patch::Span` still works (API compatibility)
-- [ ] `use tugtool::text::byte_offset_to_position` still works (API compatibility)
+- [x] `cargo check -p tugtool-core` compiles without errors
+- [x] `cargo nextest run --workspace` - **all 639 tests still pass** (use --workspace!)
+- [x] `use tugtool::patch::Span` still works (API compatibility)
+- [x] `use tugtool::text::byte_offset_to_position` still works (API compatibility)
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/patch.rs src/text.rs src/lib.rs Cargo.toml`
@@ -1084,11 +1087,11 @@ hex = "0.4"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `cargo nextest run --workspace` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/util.rs src/diff.rs src/lib.rs`
@@ -1118,11 +1121,11 @@ hex = "0.4"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `cargo nextest run --workspace` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/facts/ src/lib.rs`
@@ -1159,11 +1162,11 @@ thiserror = "2.0"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `cargo nextest run --workspace` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/error.rs src/output.rs src/lib.rs`
@@ -1202,11 +1205,11 @@ serde_json = "1.0"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `cargo nextest run --workspace` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/workspace.rs src/session.rs src/lib.rs`
@@ -1247,11 +1250,11 @@ libc = "0.2"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] `cargo nextest run` - **all tests still pass** (including sandbox tests)
+- [ ] `cargo nextest run --workspace` - **all tests still pass** (including sandbox tests)
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/sandbox.rs src/lib.rs`
@@ -1271,7 +1274,7 @@ After completing Steps 2.1-2.6, you will have:
 - Clean dependency boundaries
 
 **Final Step 2 Checkpoint:**
-- [ ] `cargo nextest run` - **all tests pass** (not just core tests!)
+- [ ] `cargo nextest run --workspace` - **all tests pass** (not just core tests!)
 - [ ] `cargo test -p tugtool-core` - core tests pass independently
 - [ ] `cargo clippy -p tugtool-core -- -D warnings` - no warnings
 - [ ] `cargo clippy -- -D warnings` - no warnings on root package
@@ -1367,11 +1370,11 @@ use tugtool_core::patch::{FileId, Span};
 
 **Tests:**
 - [ ] `cargo check -p tugtool-python`
-- [ ] `cargo nextest run` - **all tests pass** (not just Python crate tests!)
+- [ ] `cargo nextest run --workspace` - **all tests pass** (not just Python crate tests!)
 
 **Checkpoint:**
 - [ ] Python crate compiles
-- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `cargo nextest run --workspace` - **all tests still pass**
 - [ ] `use tugtool::python::*` still works (API compatibility)
 
 **Rollback:**
@@ -1524,11 +1527,11 @@ workspace = true
 
 **Tests:**
 - [ ] `cargo check -p tugtool` (the crates/tugtool package)
-- [ ] `cargo nextest run` - all tests still pass (against root package)
+- [ ] `cargo nextest run --workspace` - all tests still pass (against root package)
 
 **Checkpoint:**
 - [ ] `crates/tugtool` compiles: `cargo build -p tugtool`
-- [ ] Root package still works: `cargo nextest run` - **all tests pass**
+- [ ] Root package still works: `cargo nextest run --workspace` - **all tests pass**
 - [ ] Binary works from new location: `cargo run -p tugtool -- --help`
 
 **Rollback:**
@@ -1557,7 +1560,7 @@ workspace = true
 **Checkpoint:**
 - [ ] `cargo check -p tugtool` (the crates/tugtool package)
 - [ ] `cargo doc -p tugtool` - documentation builds
-- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `cargo nextest run --workspace` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool/src/lib.rs`
@@ -1703,7 +1706,7 @@ lto = false
 
 **Checkpoint:**
 - [ ] `cargo build` succeeds from workspace root
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 - [ ] `src/` directory no longer exists
 - [ ] Root Cargo.toml has NO `[package]` section
 
@@ -1781,14 +1784,14 @@ cargo build --no-default-features --features python
 - Build timing comparison
 
 **Tasks:**
-- [ ] Run full test suite: `cargo nextest run`
+- [ ] Run full test suite: `cargo nextest run --workspace`
 - [ ] Run clippy: `cargo clippy --workspace -- -D warnings`
 - [ ] Run fmt: `cargo fmt --all --check`
 - [ ] Compare build times with baseline from Step 0
 - [ ] Verify `cargo install --path crates/tugtool` works
 
 **Checkpoint:**
-- [ ] `cargo nextest run` - all tests pass
+- [ ] `cargo nextest run --workspace` - all tests pass
 - [ ] `cargo clippy --workspace -- -D warnings` - no warnings
 - [ ] `cargo fmt --all --check` - no formatting issues
 - [ ] Build times similar or improved vs baseline
@@ -1808,7 +1811,7 @@ cargo build --no-default-features --features python
 - [ ] Root Cargo.toml is a **virtual workspace** (no `[package]` section)
 - [ ] `src/` directory no longer exists
 - [ ] All 4 crates compile independently (`cargo check -p <crate>`)
-- [ ] Full test suite passes (`cargo nextest run`)
+- [ ] Full test suite passes (`cargo nextest run --workspace`)
 - [ ] `cargo build -p tugtool --no-default-features` produces working binary
 - [ ] `cargo build -p tugtool --features python` includes Python support
 - [ ] CLAUDE.md updated with new structure
@@ -1865,7 +1868,7 @@ cargo build --no-default-features --features python
 | Virtual workspace | Root Cargo.toml has no `[package]` section |
 | src/ removed | `! -d src` (directory does not exist) |
 | Workspace compiles | `cargo build --workspace` |
-| All tests pass | `cargo nextest run` (must show 639 tests) |
+| All tests pass | `cargo nextest run --workspace` (must show 639 tests) |
 | Features work | `cargo build -p tugtool --no-default-features --features python` |
 | No regressions | Compare test counts and build times with baseline |
 | API preserved | `tests/api_surface.rs` compiles |

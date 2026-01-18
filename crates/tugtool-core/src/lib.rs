@@ -7,3 +7,6 @@
 //! - Workspace snapshots
 //! - Sandboxed file operations
 //! - Text utilities and diff generation
+
+pub mod patch;
+pub mod text;
