@@ -990,17 +990,28 @@ After Step 2 completes:
 - Original files in `src/` may be deleted OR kept as thin re-export wrappers (decide per substep)
 - All tests continue to pass
 
-#### Step 2.1: Move patch.rs to tugtool-core {#step-2-1}
+#### Step 2.1: Move patch.rs and text.rs to tugtool-core {#step-2-1}
 
-**Commit:** `refactor(core): move patch module to tugtool-core`
+**Commit:** `refactor(core): move patch and text modules to tugtool-core`
 
 **References:** [D02] Core crate, Table T03, Diagram Diag01, (#module-deps)
 
+> **Why these modules move together:**
+>
+> `patch.rs` and `text.rs` have a mutual dependency that requires them to migrate as a unit:
+> - `patch.rs` imports `crate::text::byte_offset_to_position` (used in `materialize()`)
+> - `text.rs` imports `crate::patch::Span` (used in span utilities)
+>
+> Moving them separately would create either a broken build or messy inter-crate dependencies.
+> By moving both together, the `crate::` imports resolve correctly within `tugtool-core`.
+
 **Artifacts:**
 - `crates/tugtool-core/src/patch.rs` with full implementation
+- `crates/tugtool-core/src/text.rs` with full implementation
 - Updated `crates/tugtool-core/Cargo.toml` with required dependencies
-- Updated root `src/patch.rs` to re-export from tugtool-core (OR deleted with lib.rs updated)
+- Updated `crates/tugtool-core/src/lib.rs` with module exports
 - Updated root `Cargo.toml` with `tugtool-core` dependency
+- Updated root `src/lib.rs` to re-export from tugtool-core
 
 **Tasks:**
 - [ ] Add `tugtool-core` as a dependency in root `Cargo.toml`:
@@ -1008,12 +1019,21 @@ After Step 2 completes:
       [dependencies]
       tugtool-core = { path = "crates/tugtool-core" }
       ```
+- [ ] Add dependencies to `crates/tugtool-core/Cargo.toml`: `serde`, `sha2`, `hex`
 - [ ] Copy `src/patch.rs` to `crates/tugtool-core/src/patch.rs`
-- [ ] Add `pub mod patch;` to core lib.rs
-- [ ] Add dependencies to core Cargo.toml: `serde`, `sha2`, `hex`
-- [ ] Update imports in `crates/tugtool-core/src/patch.rs` (remove `crate::` prefix for now)
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::patch;`
-- [ ] Either delete `src/patch.rs` OR replace with: `pub use tugtool_core::patch::*;`
+- [ ] Copy `src/text.rs` to `crates/tugtool-core/src/text.rs`
+- [ ] Update `crates/tugtool-core/src/lib.rs`:
+      ```rust
+      pub mod patch;
+      pub mod text;
+      ```
+- [ ] Verify `crate::` imports in both files resolve correctly (no changes needed - they now refer to tugtool-core)
+- [ ] Update root `src/lib.rs` to re-export:
+      ```rust
+      pub use tugtool_core::patch;
+      pub use tugtool_core::text;
+      ```
+- [ ] Delete `src/patch.rs` and `src/text.rs`
 - [ ] Verify BOTH core crate AND root package compile
 - [ ] Verify all tests pass
 
@@ -1033,49 +1053,16 @@ hex = "0.4"
 - [ ] `cargo check -p tugtool-core` compiles without errors
 - [ ] `cargo nextest run` - **all tests still pass** (do not skip this!)
 - [ ] `use tugtool::patch::Span` still works (API compatibility)
+- [ ] `use tugtool::text::byte_offset_to_position` still works (API compatibility)
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/ src/patch.rs src/lib.rs Cargo.toml`
+- `git checkout -- crates/tugtool-core/ src/patch.rs src/text.rs src/lib.rs Cargo.toml`
 
 **Commit after all checkpoints pass.**
 
 ---
 
-#### Step 2.2: Move text.rs to tugtool-core {#step-2-2}
-
-**Commit:** `refactor(core): move text module to tugtool-core`
-
-**References:** [D02] Core crate, Table T03, (#module-deps)
-
-**Artifacts:**
-- `crates/tugtool-core/src/text.rs`
-- Updated core lib.rs exports
-- Updated root `src/lib.rs` to re-export from tugtool-core
-
-**Tasks:**
-- [ ] Copy `src/text.rs` to `crates/tugtool-core/src/text.rs`
-- [ ] Add `pub mod text;` to core lib.rs
-- [ ] Update imports in core: `use crate::patch::Span` (now internal to core)
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::text;`
-- [ ] Delete or convert `src/text.rs` to re-export wrapper
-- [ ] Verify BOTH crates compile and all tests pass
-
-**Tests:**
-- [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run` - all tests pass
-
-**Checkpoint:**
-- [ ] Core crate compiles
-- [ ] `cargo nextest run` - **all tests still pass**
-
-**Rollback:**
-- `git checkout -- crates/tugtool-core/ src/text.rs src/lib.rs`
-
-**Commit after all checkpoints pass.**
-
----
-
-#### Step 2.3: Move util.rs, diff.rs to tugtool-core {#step-2-3}
+#### Step 2.2: Move util.rs, diff.rs to tugtool-core {#step-2-2}
 
 **Commit:** `refactor(core): move util and diff modules to tugtool-core`
 
@@ -1110,7 +1097,7 @@ hex = "0.4"
 
 ---
 
-#### Step 2.4: Move facts/ to tugtool-core {#step-2-4}
+#### Step 2.3: Move facts/ to tugtool-core {#step-2-3}
 
 **Commit:** `refactor(core): move facts module to tugtool-core`
 
@@ -1144,7 +1131,7 @@ hex = "0.4"
 
 ---
 
-#### Step 2.5: Move error.rs and output.rs to tugtool-core {#step-2-5}
+#### Step 2.4: Move error.rs and output.rs to tugtool-core {#step-2-4}
 
 **Commit:** `refactor(core): move error and output modules to tugtool-core`
 
@@ -1185,7 +1172,7 @@ thiserror = "2.0"
 
 ---
 
-#### Step 2.6: Move workspace.rs and session.rs to tugtool-core {#step-2-6}
+#### Step 2.5: Move workspace.rs and session.rs to tugtool-core {#step-2-5}
 
 **Commit:** `refactor(core): move workspace and session modules to tugtool-core`
 
@@ -1228,7 +1215,7 @@ serde_json = "1.0"
 
 ---
 
-#### Step 2.7: Move sandbox.rs to tugtool-core {#step-2-7}
+#### Step 2.6: Move sandbox.rs to tugtool-core {#step-2-6}
 
 **Commit:** `refactor(core): move sandbox module to tugtool-core`
 
@@ -1275,7 +1262,7 @@ libc = "0.2"
 
 #### Step 2 Summary {#step-2-summary}
 
-After completing Steps 2.1-2.7, you will have:
+After completing Steps 2.1-2.6, you will have:
 - Complete `tugtool-core` crate with all shared infrastructure
 - All core modules migrated: patch, facts, error, output, session, workspace, sandbox, text, diff, util
 - Root `src/lib.rs` re-exports everything from `tugtool-core`

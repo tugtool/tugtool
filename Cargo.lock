@@ -1139,6 +1139,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "tugtool-core",
  "wait-timeout",
  "walkdir",
  "which",
