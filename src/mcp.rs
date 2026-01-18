@@ -375,7 +375,7 @@ impl TugServer {
 
         // Run analysis - TugError converts to McpError via From impl
         let json =
-            run_analyze_impact(session, None, &at, &params.new_name).map_err(McpError::from)?;
+            run_analyze_impact(session, None, &at, &params.new_name).map_err(tug_error_to_mcp)?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
@@ -425,7 +425,7 @@ impl TugServer {
             verify_mode,
             params.apply,
         )
-        .map_err(McpError::from)?;
+        .map_err(tug_error_to_mcp)?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
@@ -738,138 +738,141 @@ mod error_codes {
     pub const VERIFICATION_FAILED: i32 = -32003;
 }
 
-impl From<TugError> for McpError {
-    fn from(err: TugError) -> Self {
-        let tug_code = err.error_code().code();
+/// Convert a TugError to an McpError.
+///
+/// This is a helper function instead of `impl From<TugError> for McpError` because
+/// both types are from external crates (after the workspace migration), making
+/// a blanket From impl impossible due to Rust's orphan rules.
+fn tug_error_to_mcp(err: TugError) -> McpError {
+    let tug_code = err.error_code().code();
 
-        match &err {
-            TugError::InvalidArguments { message, details } => {
-                let mut data = serde_json::json!({
-                    "tug_code": tug_code,
-                });
-                if let Some(d) = details {
-                    data["details"] = d.clone();
-                }
-                McpError::invalid_params(message.clone(), Some(data))
+    match &err {
+        TugError::InvalidArguments { message, details } => {
+            let mut data = serde_json::json!({
+                "tug_code": tug_code,
+            });
+            if let Some(d) = details {
+                data["details"] = d.clone();
             }
+            McpError::invalid_params(message.clone(), Some(data))
+        }
 
-            TugError::InvalidIdentifier { name, reason } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "name": name,
-                    "reason": reason,
-                });
-                McpError::invalid_params(err.to_string(), Some(data))
-            }
+        TugError::InvalidIdentifier { name, reason } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "name": name,
+                "reason": reason,
+            });
+            McpError::invalid_params(err.to_string(), Some(data))
+        }
 
-            TugError::SymbolNotFound { file, line, col } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "file": file,
-                    "line": line,
-                    "col": col,
-                });
-                McpError::new(
-                    ErrorCode(error_codes::RESOLUTION_ERROR),
-                    err.to_string(),
-                    Some(data),
-                )
-            }
+        TugError::SymbolNotFound { file, line, col } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "file": file,
+                "line": line,
+                "col": col,
+            });
+            McpError::new(
+                ErrorCode(error_codes::RESOLUTION_ERROR),
+                err.to_string(),
+                Some(data),
+            )
+        }
 
-            TugError::AmbiguousSymbol { candidates } => {
-                let candidates_info: Vec<_> = candidates
-                    .iter()
-                    .map(|c| {
-                        serde_json::json!({
-                            "name": c.name,
-                            "kind": c.kind,
-                            "location": {
-                                "file": c.location.file,
-                                "line": c.location.line,
-                                "col": c.location.col
-                            }
-                        })
+        TugError::AmbiguousSymbol { candidates } => {
+            let candidates_info: Vec<_> = candidates
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "name": c.name,
+                        "kind": c.kind,
+                        "location": {
+                            "file": c.location.file,
+                            "line": c.location.line,
+                            "col": c.location.col
+                        }
                     })
-                    .collect();
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "candidates": candidates_info,
-                });
-                McpError::new(
-                    ErrorCode(error_codes::RESOLUTION_ERROR),
-                    err.to_string(),
-                    Some(data),
-                )
-            }
+                })
+                .collect();
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "candidates": candidates_info,
+            });
+            McpError::new(
+                ErrorCode(error_codes::RESOLUTION_ERROR),
+                err.to_string(),
+                Some(data),
+            )
+        }
 
-            TugError::FileNotFound { path } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "path": path,
-                });
-                McpError::new(
-                    ErrorCode(error_codes::RESOURCE_NOT_FOUND),
-                    err.to_string(),
-                    Some(data),
-                )
-            }
+        TugError::FileNotFound { path } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "path": path,
+            });
+            McpError::new(
+                ErrorCode(error_codes::RESOURCE_NOT_FOUND),
+                err.to_string(),
+                Some(data),
+            )
+        }
 
-            TugError::ApplyError { message, file } => {
-                let mut data = serde_json::json!({
-                    "tug_code": tug_code,
-                });
-                if let Some(f) = file {
-                    data["file"] = serde_json::json!(f);
-                }
-                data["message"] = serde_json::json!(message);
-                McpError::new(
-                    ErrorCode(error_codes::APPLY_ERROR),
-                    err.to_string(),
-                    Some(data),
-                )
+        TugError::ApplyError { message, file } => {
+            let mut data = serde_json::json!({
+                "tug_code": tug_code,
+            });
+            if let Some(f) = file {
+                data["file"] = serde_json::json!(f);
             }
+            data["message"] = serde_json::json!(message);
+            McpError::new(
+                ErrorCode(error_codes::APPLY_ERROR),
+                err.to_string(),
+                Some(data),
+            )
+        }
 
-            TugError::VerificationFailed {
-                mode,
-                output,
-                exit_code,
-            } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "mode": mode,
-                    "output": output,
-                    "exit_code": exit_code,
-                });
-                McpError::new(
-                    ErrorCode(error_codes::VERIFICATION_FAILED),
-                    err.to_string(),
-                    Some(data),
-                )
-            }
+        TugError::VerificationFailed {
+            mode,
+            output,
+            exit_code,
+        } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "mode": mode,
+                "output": output,
+                "exit_code": exit_code,
+            });
+            McpError::new(
+                ErrorCode(error_codes::VERIFICATION_FAILED),
+                err.to_string(),
+                Some(data),
+            )
+        }
 
-            TugError::WorkerError { message } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "message": message,
-                });
-                McpError::internal_error(err.to_string(), Some(data))
-            }
+        TugError::WorkerError { message } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "message": message,
+            });
+            McpError::internal_error(err.to_string(), Some(data))
+        }
 
-            TugError::InternalError { message } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "message": message,
-                });
-                McpError::internal_error(err.to_string(), Some(data))
-            }
+        TugError::InternalError { message } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "message": message,
+            });
+            McpError::internal_error(err.to_string(), Some(data))
+        }
 
-            TugError::SessionError { message } => {
-                let data = serde_json::json!({
-                    "tug_code": tug_code,
-                    "message": message,
-                });
-                McpError::internal_error(err.to_string(), Some(data))
-            }
+        TugError::SessionError { message } => {
+            let data = serde_json::json!({
+                "tug_code": tug_code,
+                "message": message,
+            });
+            McpError::internal_error(err.to_string(), Some(data))
         }
     }
 }
@@ -2068,7 +2071,7 @@ if __name__ == "__main__":
         #[test]
         fn invalid_arguments_converts_to_invalid_params() {
             let err = TugError::invalid_args("missing required field");
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check error code is invalid_params (-32602)
             assert_eq!(mcp_err.code.0, -32602);
@@ -2081,7 +2084,7 @@ if __name__ == "__main__":
         #[test]
         fn symbol_not_found_converts_with_location_info() {
             let err = TugError::symbol_not_found("src/main.py", 42, 8);
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check custom error code -32000 (RESOLUTION_ERROR)
             assert_eq!(mcp_err.code.0, -32000);
@@ -2097,7 +2100,7 @@ if __name__ == "__main__":
         #[test]
         fn file_not_found_converts_to_resource_not_found() {
             let err = TugError::file_not_found("missing.py");
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check custom error code -32001 (RESOURCE_NOT_FOUND)
             assert_eq!(mcp_err.code.0, -32001);
@@ -2114,7 +2117,7 @@ if __name__ == "__main__":
                 message: "snapshot mismatch".to_string(),
                 file: Some("test.py".to_string()),
             };
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check custom error code -32002 (APPLY_ERROR)
             assert_eq!(mcp_err.code.0, -32002);
@@ -2132,7 +2135,7 @@ if __name__ == "__main__":
                 output: "SyntaxError: invalid syntax".to_string(),
                 exit_code: 1,
             };
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check custom error code -32003 (VERIFICATION_FAILED)
             assert_eq!(mcp_err.code.0, -32003);
@@ -2148,7 +2151,7 @@ if __name__ == "__main__":
         #[test]
         fn internal_error_converts_to_internal_error() {
             let err = TugError::internal("unexpected state");
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check error code is internal_error (-32603)
             assert_eq!(mcp_err.code.0, -32603);
@@ -2164,7 +2167,7 @@ if __name__ == "__main__":
                 name: "123abc".to_string(),
                 reason: "cannot start with digit".to_string(),
             };
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check error code is invalid_params (-32602)
             assert_eq!(mcp_err.code.0, -32602);
@@ -2198,7 +2201,7 @@ if __name__ == "__main__":
                     },
                 ],
             };
-            let mcp_err = McpError::from(err);
+            let mcp_err = tug_error_to_mcp(err);
 
             // Check custom error code -32000 (RESOLUTION_ERROR)
             assert_eq!(mcp_err.code.0, -32000);
@@ -2260,7 +2263,7 @@ if __name__ == "__main__":
             ];
 
             for err in errors {
-                let mcp_err = McpError::from(err);
+                let mcp_err = tug_error_to_mcp(err);
                 let data = get_error_data(&mcp_err).expect("All MCP errors should have data");
                 assert!(
                     data.get("tug_code").is_some(),

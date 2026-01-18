@@ -3,13 +3,18 @@
 //! This crate provides language-agnostic infrastructure:
 //! - Patch IR for representing code transformations
 //! - Facts store for symbol and reference tracking
+//! - Error types and error codes
+//! - JSON output types for CLI/MCP responses
 //! - Session management
 //! - Workspace snapshots
 //! - Sandboxed file operations
 //! - Text utilities and diff generation
 
 pub mod diff;
+pub mod error;
 pub mod facts;
+pub mod output;
 pub mod patch;
 pub mod text;
+pub mod types;
 pub mod util;

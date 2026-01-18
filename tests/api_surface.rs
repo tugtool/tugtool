@@ -68,6 +68,9 @@ use tugtool::text;
 // diff module - unified diff generation
 use tugtool::diff;
 
+// types module - common types shared between error and output
+use tugtool::types::{Location as TypesLocation, SymbolInfo as TypesSymbolInfo};
+
 // util module - general utilities
 use tugtool::util;
 
@@ -117,6 +120,8 @@ fn api_surface_compiles() {
     let _ = std::any::type_name::<Session>();
     let _ = std::any::type_name::<WorkspaceSnapshot>();
     let _ = std::any::type_name::<SandboxConfig>();
+    let _ = std::any::type_name::<TypesLocation>();
+    let _ = std::any::type_name::<TypesSymbolInfo>();
 }
 
 #[test]

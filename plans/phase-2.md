@@ -1146,14 +1146,16 @@ serde_json = "1.0"
 - Updated root `src/lib.rs` re-exports
 
 **Tasks:**
-- [ ] Copy `src/error.rs` to `crates/tugtool-core/src/error.rs`
-- [ ] Copy `src/output.rs` to `crates/tugtool-core/src/output.rs`
-- [ ] Add `pub mod error; pub mod output;` to core lib.rs
-- [ ] Add `thiserror` to core dependencies
-- [ ] Update output.rs imports for patch and facts (use `crate::` for core-internal refs)
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{error, output};`
-- [ ] Delete or convert `src/error.rs` and `src/output.rs` to re-export wrappers
-- [ ] Verify BOTH crates compile and all tests pass
+- [x] Copy `src/error.rs` to `crates/tugtool-core/src/error.rs`
+- [x] Copy `src/output.rs` to `crates/tugtool-core/src/output.rs`
+- [x] Add `pub mod error; pub mod output;` to core lib.rs
+- [x] Add `thiserror` to core dependencies
+- [x] Update output.rs imports for patch and facts (use `crate::` for core-internal refs)
+- [x] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{error, output};`
+- [x] Delete or convert `src/error.rs` and `src/output.rs` to re-export wrappers
+- [x] Verify BOTH crates compile and all tests pass
+
+**Note:** During implementation, we created a new `types.rs` module in tugtool-core to hold shared types (`Location`, `SymbolInfo`) used by both error and output modules, avoiding circular dependencies. The `error_bridges.rs` module was created in the root crate to hold Python-specific error conversions (`From<RenameError>`, `From<WorkerError>`, `From<SessionError>`) that depend on language-specific types.
 
 **Core dependencies update:**
 ```toml
@@ -1161,12 +1163,12 @@ thiserror = "2.0"
 ```
 
 **Tests:**
-- [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run --workspace` - all tests pass
+- [x] `cargo check -p tugtool-core`
+- [x] `cargo nextest run --workspace` - all 647 tests pass
 
 **Checkpoint:**
-- [ ] Core crate compiles
-- [ ] `cargo nextest run --workspace` - **all tests still pass**
+- [x] Core crate compiles
+- [x] `cargo nextest run --workspace` - **all 647 tests pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/error.rs src/output.rs src/lib.rs`

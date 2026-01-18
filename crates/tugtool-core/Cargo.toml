@@ -8,11 +8,10 @@ description = "Core infrastructure for tugtool: patch IR, facts, session, worksp
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 sha2 = "0.10"
 hex = "0.4"
-
-[dev-dependencies]
-serde_json = "1.0"
+thiserror = "2.0"
 
 [lints]
 workspace = true
