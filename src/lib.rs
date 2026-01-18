@@ -4,17 +4,17 @@
 //! deterministic, minimal-diff refactors across Python and Rust codebases.
 
 // Core infrastructure - re-exported from tugtool-core
+pub use tugtool_core::diff;
 pub use tugtool_core::patch;
 pub use tugtool_core::text;
+pub use tugtool_core::util;
 
 // Core infrastructure - still in root (will migrate in future steps)
-pub mod diff;
 pub mod error;
 pub mod output;
 pub mod sandbox;
 pub mod session;
 pub mod testcmd;
-pub mod util;
 pub mod workspace;
 
 // Facts model and query engine

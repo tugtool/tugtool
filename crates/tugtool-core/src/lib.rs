@@ -8,5 +8,7 @@
 //! - Sandboxed file operations
 //! - Text utilities and diff generation
 
+pub mod diff;
 pub mod patch;
 pub mod text;
+pub mod util;

@@ -1077,21 +1077,21 @@ serde_json = "1.0"
 - Updated root `src/lib.rs` re-exports
 
 **Tasks:**
-- [ ] Copy `src/util.rs` to `crates/tugtool-core/src/util.rs`
-- [ ] Copy `src/diff.rs` to `crates/tugtool-core/src/diff.rs`
-- [ ] Add `pub mod util; pub mod diff;` to core lib.rs
-- [ ] Update diff.rs imports to use `crate::patch::OutputEdit`
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{util, diff};`
-- [ ] Delete or convert `src/util.rs` and `src/diff.rs` to re-export wrappers
-- [ ] Verify BOTH crates compile and all tests pass
+- [x] Copy `src/util.rs` to `crates/tugtool-core/src/util.rs`
+- [x] Copy `src/diff.rs` to `crates/tugtool-core/src/diff.rs`
+- [x] Add `pub mod util; pub mod diff;` to core lib.rs
+- [x] Update diff.rs imports to use `crate::patch::OutputEdit`
+- [x] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{util, diff};`
+- [x] Delete or convert `src/util.rs` and `src/diff.rs` to re-export wrappers
+- [x] Verify BOTH crates compile and all tests pass
 
 **Tests:**
-- [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run --workspace` - all tests pass
+- [x] `cargo check -p tugtool-core`
+- [x] `cargo nextest run --workspace` - all 639 tests pass
 
 **Checkpoint:**
-- [ ] Core crate compiles
-- [ ] `cargo nextest run --workspace` - **all tests still pass**
+- [x] Core crate compiles
+- [x] `cargo nextest run --workspace` - **all 639 tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/util.rs src/diff.rs src/lib.rs`
