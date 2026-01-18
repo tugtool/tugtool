@@ -6,7 +6,7 @@
 //! 3. Run verification (tests, type checking)
 //! 4. Only if verification passes: emit patches back to real workspace
 //!
-//! Per [D05], verification always uses SandboxCopy mode.
+//! Per \[D05\], verification always uses SandboxCopy mode.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

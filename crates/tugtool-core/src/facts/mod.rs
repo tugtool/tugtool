@@ -509,7 +509,7 @@ impl ScopeInfo {
 pub struct TypeInfo {
     /// The symbol this type information applies to.
     pub symbol_id: SymbolId,
-    /// String representation of the type (e.g., "MyClass", "List[int]").
+    /// String representation of the type (e.g., "MyClass", "List\[int\]").
     pub type_repr: String,
     /// Source of this type information.
     pub source: TypeSource,

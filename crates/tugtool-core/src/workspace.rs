@@ -149,7 +149,7 @@ pub enum SnapshotMode {
     /// 3. Run verification (tests, type checking)
     /// 4. Only if verification passes: emit patches back to real workspace
     ///
-    /// This is the recommended mode for verification per [D05].
+    /// This is the recommended mode for verification per \[D05\].
     #[default]
     SandboxCopy,
 }

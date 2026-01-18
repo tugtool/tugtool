@@ -9,6 +9,7 @@ pub use tugtool_core::error;
 pub use tugtool_core::facts;
 pub use tugtool_core::output;
 pub use tugtool_core::patch;
+pub use tugtool_core::sandbox;
 pub use tugtool_core::session;
 pub use tugtool_core::text;
 pub use tugtool_core::types;
@@ -16,7 +17,6 @@ pub use tugtool_core::util;
 pub use tugtool_core::workspace;
 
 // Core infrastructure - still in root (will migrate in future steps)
-pub mod sandbox;
 pub mod testcmd;
 
 // Front doors for agents

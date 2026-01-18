@@ -1242,14 +1242,14 @@ tempfile = "3"
 - Updated root `src/lib.rs` re-exports
 
 **Tasks:**
-- [ ] Copy `src/sandbox.rs` to `crates/tugtool-core/src/sandbox.rs`
-- [ ] Add `pub mod sandbox;` to core lib.rs
-- [ ] Add dependencies: `tempfile`, `tracing`, `wait-timeout`
-- [ ] Add target-specific dependency: `libc` (unix)
-- [ ] Update imports for sandbox module (use `crate::` for core-internal refs)
-- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::sandbox;`
-- [ ] Delete or convert `src/sandbox.rs` to re-export wrapper
-- [ ] Verify BOTH crates compile and all tests pass
+- [x] Copy `src/sandbox.rs` to `crates/tugtool-core/src/sandbox.rs`
+- [x] Add `pub mod sandbox;` to core lib.rs
+- [x] Add dependencies: `tempfile`, `tracing`, `wait-timeout`
+- [x] Add target-specific dependency: `libc` (unix) - already added in Step 2.5
+- [x] Update imports for sandbox module (use `crate::` for core-internal refs) - no changes needed, already uses crate::patch and crate::workspace
+- [x] Update root `src/lib.rs` to re-export: `pub use tugtool_core::sandbox;`
+- [x] Delete or convert `src/sandbox.rs` to re-export wrapper
+- [x] Verify BOTH crates compile and all tests pass
 
 **Core dependencies update:**
 ```toml
@@ -1262,12 +1262,19 @@ libc = "0.2"
 ```
 
 **Tests:**
-- [ ] `cargo check -p tugtool-core`
-- [ ] `cargo nextest run --workspace` - all tests pass
+- [x] `cargo check -p tugtool-core`
+- [x] `cargo nextest run --workspace` - all 643 tests pass
 
 **Checkpoint:**
-- [ ] Core crate compiles
-- [ ] `cargo nextest run --workspace` - **all tests still pass** (including sandbox tests)
+- [x] Core crate compiles
+- [x] `cargo nextest run --workspace` - **all 643 tests still pass** (including sandbox tests)
+
+**Note:** During implementation, we also:
+- Fixed several rustdoc warnings that were treated as errors due to `-D warnings`:
+  - Escaped `[D05]` references in doc comments with `\[D05\]`
+  - Escaped `List[int]` in type documentation with `List\[int\]`
+  - Wrapped `<id>` in backticks to prevent HTML tag interpretation
+  - Wrapped `<name>` in backticks to prevent HTML tag interpretation
 
 **Rollback:**
 - `git checkout -- crates/tugtool-core/ src/sandbox.rs src/lib.rs`
@@ -1287,12 +1294,12 @@ After completing Steps 2.1-2.6, you will have:
 - Clean dependency boundaries
 
 **Final Step 2 Checkpoint:**
-- [ ] `cargo nextest run --workspace` - **all tests pass** (not just core tests!)
-- [ ] `cargo test -p tugtool-core` - core tests pass independently
-- [ ] `cargo clippy -p tugtool-core -- -D warnings` - no warnings
-- [ ] `cargo clippy -- -D warnings` - no warnings on root package
-- [ ] Core crate can be used as dependency (verify with `cargo doc -p tugtool-core`)
-- [ ] `tests/api_surface.rs` still compiles (API contract preserved)
+- [x] `cargo nextest run --workspace` - **all 643 tests pass** (not just core tests!)
+- [x] `cargo test -p tugtool-core` - core tests pass independently
+- [x] `cargo clippy -p tugtool-core -- -D warnings` - no warnings
+- [x] `cargo clippy -- -D warnings` - no warnings on root package
+- [x] Core crate can be used as dependency (verify with `cargo doc -p tugtool-core`)
+- [x] `tests/api_surface.rs` still compiles (API contract preserved)
 
 ---
 
@@ -1848,10 +1855,10 @@ cargo build --no-default-features --features python
 - [x] Empty crate skeletons exist in `crates/`
 
 **Milestone M01: Core crate complete (Step 2)** {#m01-core-complete}
-- [ ] tugtool-core contains all shared infrastructure
-- [ ] Root `src/lib.rs` re-exports from tugtool-core
-- [ ] **All 639 tests still pass** (critical!)
-- [ ] Core crate tests pass independently
+- [x] tugtool-core contains all shared infrastructure
+- [x] Root `src/lib.rs` re-exports from tugtool-core
+- [x] **All 643 tests still pass** (critical!)
+- [x] Core crate tests pass independently
 
 **Milestone M02: Python crate complete (Step 3)** {#m02-python-complete}
 - [ ] tugtool-python contains all Python support

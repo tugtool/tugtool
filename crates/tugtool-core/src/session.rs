@@ -112,7 +112,7 @@ impl SessionVersion {
     /// - workers/*.pid (worker process state)
     ///
     /// Does NOT include (immutable or derived):
-    /// - Historical snapshots (snapshots/<id>.json)
+    /// - Historical snapshots (`snapshots/<id>.json`)
     /// - Facts cache (facts_cache/*)
     /// - Logs (logs/*)
     pub fn compute(session_dir: &Path) -> io::Result<Self> {
@@ -366,7 +366,7 @@ impl<T> ConfigValue<T> {
 pub struct SessionOptions {
     /// Path to session directory (default: .tug/).
     pub session_dir: Option<PathBuf>,
-    /// Named session (creates .tug/<name>/).
+    /// Named session (creates `.tug/<name>/`).
     pub session_name: Option<String>,
     /// Delete existing session and start fresh.
     pub fresh: bool,
