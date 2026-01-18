@@ -1,7 +1,7 @@
 //! Binary entry point for the tug CLI.
 //!
 //! This module provides the command-line interface for tug operations.
-//! It is the "front door" for LLM coding agents (per [D03] One kernel, multiple front doors).
+//! It is the "front door" for LLM coding agents (per \[D03\] One kernel, multiple front doors).
 //!
 //! ## Usage
 //!
@@ -68,7 +68,7 @@ struct GlobalArgs {
     #[arg(long, global = true)]
     session_dir: Option<PathBuf>,
 
-    /// Named session (creates .tug/<name>/).
+    /// Named session (creates `.tug/<name>/`).
     #[arg(long, global = true)]
     session_name: Option<String>,
 

@@ -1571,16 +1571,16 @@ workspace = true
 - `crates/tugtool/src/lib.rs` with all re-exports
 
 **Tasks:**
-- [ ] Create `crates/tugtool/src/lib.rs` with public re-exports from core
-- [ ] Add conditional re-exports for language crates
-- [ ] Add re-exports for cli, mcp, testcmd modules
-- [ ] Verify all previously-public types are accessible via `tugtool::*`
-- [ ] Update main.rs to use new module paths
+- [x] Create `crates/tugtool/src/lib.rs` with public re-exports from core
+- [x] Add conditional re-exports for language crates
+- [x] Add re-exports for cli, mcp, testcmd modules
+- [x] Verify all previously-public types are accessible via `tugtool::*`
+- [x] Update main.rs to use new module paths
 
 **Checkpoint:**
-- [ ] `cargo check -p tugtool` (the crates/tugtool package)
-- [ ] `cargo doc -p tugtool` - documentation builds
-- [ ] `cargo nextest run --workspace` - **all tests still pass**
+- [x] `cargo check -p tugtool` (the crates/tugtool package)
+- [x] `cargo doc -p tugtool` - documentation builds
+- [x] `cargo nextest run --workspace` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool/src/lib.rs`

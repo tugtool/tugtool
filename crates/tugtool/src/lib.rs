@@ -1,12 +1,47 @@
-//! Tugtool - AI-native code transformation engine.
+//! Tug: AI-native code transformation engine
 //!
-//! This crate provides the CLI binary and MCP server for tugtool.
+//! A refactoring kernel for LLM coding agents that provides verified,
+//! deterministic, minimal-diff refactors across Python and Rust codebases.
+//!
+//! ## Crate Structure
+//!
+//! This is the main tugtool crate that composes:
+//! - `tugtool-core` - Shared infrastructure (patch IR, facts, error types, etc.)
+//! - `tugtool-python` - Python language support (optional, feature-gated)
+//! - `tugtool-rust` - Rust language support (optional, feature-gated, placeholder)
 //!
 //! ## Modules
 //!
 //! - `cli` - CLI command implementations
 //! - `mcp` - Model Context Protocol server (feature-gated)
 //! - `testcmd` - Test command resolution
+//!
+//! ## Feature Flags
+//!
+//! - `python` - Enable Python language support (default)
+//! - `rust` - Enable Rust language support (placeholder)
+//! - `mcp` - Enable MCP server (default)
+//! - `full` - Enable all features
+
+// ============================================================================
+// Core Infrastructure - Re-exported from tugtool-core
+// ============================================================================
+
+pub use tugtool_core::diff;
+pub use tugtool_core::error;
+pub use tugtool_core::facts;
+pub use tugtool_core::output;
+pub use tugtool_core::patch;
+pub use tugtool_core::sandbox;
+pub use tugtool_core::session;
+pub use tugtool_core::text;
+pub use tugtool_core::types;
+pub use tugtool_core::util;
+pub use tugtool_core::workspace;
+
+// ============================================================================
+// CLI and Server Modules
+// ============================================================================
 
 pub mod cli;
 pub mod testcmd;
@@ -14,12 +49,12 @@ pub mod testcmd;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 
-// Re-export core types for convenience
-pub use tugtool_core::error::{OutputErrorCode, TugError};
-pub use tugtool_core::output::{ErrorInfo, ErrorResponse, Location, SnapshotResponse, VerifyResponse, SCHEMA_VERSION};
-pub use tugtool_core::session::{Session, SessionOptions};
-pub use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
+// ============================================================================
+// Language Adapters (Feature-Gated)
+// ============================================================================
 
-// Re-export Python types when feature is enabled
 #[cfg(feature = "python")]
-pub use tugtool_python;
+pub use tugtool_python as python;
+
+#[cfg(feature = "rust")]
+pub use tugtool_rust as rust;

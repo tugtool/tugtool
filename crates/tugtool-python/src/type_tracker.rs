@@ -62,7 +62,7 @@ pub type TypeTrackerResult<T> = Result<T, TypeTrackerError>;
 #[derive(Debug)]
 pub struct TypeTracker {
     /// Map from (scope_path, variable_name) to inferred type name (Level 1).
-    /// The scope_path is a tuple like ("<module>", "ClassName", "method_name").
+    /// The scope_path is a tuple like (`"<module>"`, `"ClassName"`, `"method_name"`).
     inferred_types: HashMap<(Vec<String>, String), String>,
 
     /// Map from (scope_path, variable_name) to annotated type name (Level 2).

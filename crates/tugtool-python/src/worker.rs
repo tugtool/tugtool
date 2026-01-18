@@ -213,7 +213,7 @@ pub struct ScopeSpanInfo {
 pub struct AssignmentInfo {
     /// Target variable name.
     pub target: String,
-    /// Scope path where assignment occurs (e.g., ["<module>", "MyClass", "method"]).
+    /// Scope path where assignment occurs (e.g., `["<module>", "MyClass", "method"]`).
     pub scope_path: Vec<String>,
     /// How the type was determined: "constructor", "variable", "function_call", or "unknown".
     pub type_source: String,
