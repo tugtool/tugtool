@@ -13,8 +13,8 @@ use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 use crate::files::{collect_python_files, FileError};
 
 // Re-export common types for operations
-pub use tugtool_core::output::Location;
 pub use crate::verification::{VerificationMode, VerificationResult};
+pub use tugtool_core::output::Location;
 
 // ============================================================================
 // Operation Context

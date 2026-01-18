@@ -141,7 +141,8 @@ pub fn symbol_to_info(
     file: &FactsFile,
     content: &str,
 ) -> tugtool_core::output::SymbolInfo {
-    let (line, col) = tugtool_core::text::byte_offset_to_position_str(content, symbol.decl_span.start);
+    let (line, col) =
+        tugtool_core::text::byte_offset_to_position_str(content, symbol.decl_span.start);
     tugtool_core::output::SymbolInfo::from_facts(
         &symbol.symbol_id.to_string(),
         &symbol.name,

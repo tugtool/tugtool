@@ -21,18 +21,18 @@
 
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::process::ExitCode;
 #[cfg(feature = "python")]
 use std::process::{Command as ProcessCommand, Stdio};
-use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
 // Core imports (always available)
 use tugtool_core::error::{OutputErrorCode, TugError};
-use tugtool_core::output::{emit_response, ErrorInfo, ErrorResponse, SnapshotResponse};
 #[cfg(feature = "python")]
 use tugtool_core::output::VerifyResponse;
 use tugtool_core::output::SCHEMA_VERSION;
+use tugtool_core::output::{emit_response, ErrorInfo, ErrorResponse, SnapshotResponse};
 use tugtool_core::session::{Session, SessionOptions};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 

@@ -216,7 +216,13 @@
       "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool diff Cargo.toml)",
       "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool log --oneline -5)",
       "Bash(cargo metadata:*)",
-      "Bash(/tmp/tug-install-test/bin/tug:*)"
+      "Bash(/tmp/tug-install-test/bin/tug:*)",
+      "Bash(/tmp/tug-test-install/bin/tug:*)",
+      "Bash(export TUG_PYTHON=/Users/kocienda/Mounts/u/src/tugtool/.venv/bin/python3)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python3:*)",
+      "Bash(export TUG_PYTHON=/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python3)",
+      "Bash(! grep -q \"^\\\\[package\\\\]\" /Users/kocienda/Mounts/u/src/tugtool/Cargo.toml)",
+      "Bash([ ! -d /Users/kocienda/Mounts/u/src/tugtool/src ])"
     ],
     "deny": [],
     "ask": []

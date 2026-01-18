@@ -30,6 +30,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "python")]
+use rmcp::model::ErrorCode;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
@@ -42,8 +44,6 @@ use rmcp::{
     transport::stdio,
     ErrorData as McpError, ServerHandler, ServiceExt,
 };
-#[cfg(feature = "python")]
-use rmcp::model::ErrorCode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tokio::sync::Mutex;
@@ -1094,8 +1094,8 @@ pub async fn run_mcp_server() -> Result<(), TugError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tugtool_python::test_helpers::require_python_with_libcst;
     use tempfile::TempDir;
+    use tugtool_python::test_helpers::require_python_with_libcst;
 
     #[test]
     fn server_creates_successfully() {

@@ -523,7 +523,8 @@ pub fn resolve_method_call(
     // Look for the method in the class
     let method_symbols = store.symbols_named(method_name);
     let method_in_class = method_symbols.iter().any(|s| {
-        (s.kind == tugtool_core::facts::SymbolKind::Method || s.kind == tugtool_core::facts::SymbolKind::Function)
+        (s.kind == tugtool_core::facts::SymbolKind::Method
+            || s.kind == tugtool_core::facts::SymbolKind::Function)
             && s.container_symbol_id == Some(class_symbol.symbol_id)
     });
 
@@ -1592,8 +1593,7 @@ handler.process()
 
             // Build facts store
             let mut store = FactsStore::new();
-            let adapter =
-                crate::analyzer::PythonAdapter::new(temp.path().to_str().unwrap());
+            let adapter = crate::analyzer::PythonAdapter::new(temp.path().to_str().unwrap());
             adapter
                 .analyze_files(
                     &mut worker,

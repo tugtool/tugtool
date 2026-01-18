@@ -125,7 +125,6 @@ impl From<WorkerError> for TugError {
     }
 }
 
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -234,6 +233,9 @@ mod tests {
             col: 1,
         };
         let err = TugError::from(rename_err);
-        assert_eq!(OutputErrorCode::from(&err), OutputErrorCode::ResolutionError);
+        assert_eq!(
+            OutputErrorCode::from(&err),
+            OutputErrorCode::ResolutionError
+        );
     }
 }

@@ -189,8 +189,8 @@ pub fn python_not_available() -> TugError {
 #[cfg(all(test, feature = "python"))]
 mod tests {
     use super::*;
-    use tugtool_core::session::SessionOptions;
     use tempfile::TempDir;
+    use tugtool_core::session::SessionOptions;
 
     fn create_test_workspace() -> TempDir {
         let temp = TempDir::new().unwrap();

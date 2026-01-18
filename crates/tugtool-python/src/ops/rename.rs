@@ -325,8 +325,10 @@ impl PythonRenameOp {
                             let file = store.file_by_path(path);
                             if let Some(f) = file {
                                 let file_id = f.file_id;
-                                let sp =
-                                    tugtool_core::patch::Span::new(span.start as u64, span.end as u64);
+                                let sp = tugtool_core::patch::Span::new(
+                                    span.start as u64,
+                                    span.end as u64,
+                                );
                                 // Only add if not already present (untyped call)
                                 let key = (file_id, sp.start, sp.end);
                                 if !all_edits
