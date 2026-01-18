@@ -1126,14 +1126,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
- "dirs",
- "hex",
- "libc",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1141,9 +1137,8 @@ dependencies = [
  "tracing-subscriber",
  "tugtool-core",
  "tugtool-python",
- "wait-timeout",
+ "tugtool-rust",
  "walkdir",
- "which",
 ]
 
 [[package]]

@@ -5,20 +5,20 @@ default:
 
 # Development
 build:
-    cargo build
+    cargo build --workspace
 
 test:
-    cargo nextest run
+    cargo nextest run --workspace
 
 test-all:
-    cargo nextest run --all-features
+    cargo nextest run --workspace --all-features
 
 # Quality
 fmt:
-    cargo fmt
+    cargo fmt --all
 
 lint:
-    cargo clippy --all-features -- -D warnings
+    cargo clippy --workspace --all-features -- -D warnings
 
 # CI (runs all checks)
 ci: fmt lint test
@@ -29,16 +29,20 @@ build-release:
 
 # Run the CLI
 run *ARGS:
-    cargo run -- {{ARGS}}
+    cargo run -p tugtool -- {{ARGS}}
 
 # Start MCP server
 mcp:
-    cargo run -- mcp
+    cargo run -p tugtool -- mcp
 
 # Update golden files (for intentional schema changes)
 update-golden:
-    TUG_UPDATE_GOLDEN=1 cargo nextest run golden
+    TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
 
 # Generate documentation
 doc:
-    cargo doc --open
+    cargo doc --workspace --open
+
+# Install locally
+install:
+    cargo install --path crates/tugtool

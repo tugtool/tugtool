@@ -1,16 +1,14 @@
-# Root Cargo.toml - HYBRID WORKSPACE
-# Has both [workspace] and [package] so src/ keeps compiling during migration
+# Root Cargo.toml - VIRTUAL WORKSPACE
+# All crates are now in crates/ directory
 
 [workspace]
 resolver = "2"
 members = [
+    "crates/tugtool",
     "crates/tugtool-core",
     "crates/tugtool-python",
     "crates/tugtool-rust",
 ]
-# Exclude crates/tugtool during Step 5 due to name conflict with root package
-# This is resolved in Step 6 when root [package] section is removed
-exclude = ["crates/tugtool"]
 
 [workspace.package]
 version = "0.1.0"
@@ -26,83 +24,8 @@ warnings = "deny"
 all = { level = "deny", priority = -1 }
 collapsible_if = "allow"
 
-# KEEP THE EXISTING [package] SECTION - this is what makes src/ compile!
-[package]
-name = "tugtool"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-description = "AI-native code transformation engine for verified, deterministic refactors"
-repository.workspace = true
-readme = "README.md"
-keywords = ["refactoring", "code-transformation", "ai", "mcp", "cli"]
-categories = ["development-tools", "command-line-utilities"]
-
-[lib]
-name = "tugtool"
-path = "src/lib.rs"
-
-[[bin]]
-name = "tug"
-path = "src/main.rs"
-
-[dependencies]
-# Workspace crates
-tugtool-core = { path = "crates/tugtool-core" }
-tugtool-python = { path = "crates/tugtool-python" }
-
-# Core: serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Core: error handling
-thiserror = "2.0"
-
-# CLI: argument parsing
-clap = { version = "4", features = ["derive"] }
-
-# Async: LSP client, MCP server plumbing
-tokio = { version = "1", features = ["full"] }
-
-# Hashing: content hashing for anchors/snapshots
-sha2 = "0.10"
-hex = "0.4"
-
-# Timestamps: ISO 8601 formatting
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-
-# Files: sandbox temp dirs, directory traversal
-tempfile = "3"
-walkdir = "2"
-
-# Process: child process wait with timeout (no polling)
-wait-timeout = "0.2"
-
-# Cross-platform: user dirs, executable discovery
-dirs = "6"
-which = "7"
-
-# Logging: structured logging with JSON output
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-# Platform-specific: Unix process management
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-# MCP server support (optional)
-rmcp = { version = "0.12", features = ["server", "transport-io"], optional = true }
-schemars = { version = "1", optional = true }
-
-[features]
-default = ["mcp"]
-mcp = ["rmcp", "schemars"]
-
-[dev-dependencies]
-
-[lints]
-workspace = true
+# NO [package] section - this is now a virtual workspace
+# NO [dependencies] section - dependencies are in individual crates
 
 [profile.release]
 lto = "thin"

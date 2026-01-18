@@ -6,43 +6,77 @@ Tugtool is an AI-native code transformation engine for verified, deterministic r
 
 ## Architecture
 
+Tugtool is organized as a Cargo workspace with the following crates:
+
 ```
-src/
-├── lib.rs          # Library root - re-exports public API
-├── main.rs         # CLI binary entry point
-├── cli.rs          # CLI command implementations
-├── mcp.rs          # Model Context Protocol server
-├── error.rs        # Error types (TugError)
-├── output.rs       # JSON output types and formatting
-├── session.rs      # Session management
-├── workspace.rs    # Workspace snapshots
-├── sandbox.rs      # Sandboxed file operations
-├── patch.rs        # Unified diff generation
-├── testcmd.rs      # Test command resolution
-├── facts/          # Symbol and reference tracking
-│   └── mod.rs      # FactsStore for semantic analysis
-├── python/         # Python language support
-│   ├── mod.rs      # Python module root
-│   ├── analyzer.rs # Semantic analysis
-│   ├── worker.rs   # LibCST worker process
-│   ├── ops/        # Refactoring operations
-│   │   └── rename.rs
-│   └── ...
-└── rust/           # Rust language support (future)
-    └── mod.rs
+crates/
+├── tugtool/          # Main binary and CLI (the "tug" command)
+│   ├── src/
+│   │   ├── lib.rs    # Library root - re-exports public API
+│   │   ├── main.rs   # CLI binary entry point
+│   │   ├── cli.rs    # CLI command implementations
+│   │   ├── mcp.rs    # Model Context Protocol server
+│   │   └── testcmd.rs # Test command resolution
+│   └── tests/        # Integration tests
+├── tugtool-core/     # Shared infrastructure
+│   └── src/
+│       ├── error.rs      # Error types (TugError)
+│       ├── output.rs     # JSON output types and formatting
+│       ├── session.rs    # Session management
+│       ├── workspace.rs  # Workspace snapshots
+│       ├── sandbox.rs    # Sandboxed file operations
+│       ├── patch.rs      # Unified diff generation
+│       ├── facts/        # Symbol and reference tracking
+│       └── ...
+├── tugtool-python/   # Python language support (feature-gated)
+│   └── src/
+│       ├── analyzer.rs   # Semantic analysis
+│       ├── worker.rs     # LibCST worker process
+│       ├── rename.rs     # Rename refactoring
+│       └── ...
+└── tugtool-rust/     # Rust language support (placeholder)
+```
+
+## Feature Flags
+
+The `tugtool` crate supports these feature flags:
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `python` | Yes | Python language support via LibCST |
+| `rust` | No | Rust language support (placeholder) |
+| `mcp` | Yes | Model Context Protocol server |
+| `full` | No | Enable all features |
+
+Build with specific features:
+```bash
+# Default features (python + mcp)
+cargo build -p tugtool
+
+# MCP only, no Python
+cargo build -p tugtool --no-default-features --features mcp
+
+# All features
+cargo build -p tugtool --features full
 ```
 
 ## Build Commands
 
 ```bash
-# Development build
+# Build all crates
 cargo build
+
+# Build specific crate
+cargo build -p tugtool-core
 
 # Release build
 cargo build --release
 
 # Run the CLI
-cargo run -- --help
+cargo run -p tugtool -- --help
+
+# Install locally
+cargo install --path crates/tugtool
 ```
 
 ## Test Commands
@@ -50,8 +84,11 @@ cargo run -- --help
 **IMPORTANT:** Use nextest for running tests (faster, parallel execution).
 
 ```bash
-# Run all tests
-cargo nextest run
+# Run all tests in workspace
+cargo nextest run --workspace
+
+# Run tests for specific crate
+cargo nextest run -p tugtool-python
 
 # Run specific test
 cargo nextest run test_name_substring
@@ -60,20 +97,23 @@ cargo nextest run test_name_substring
 cargo nextest run -- --nocapture
 
 # Update golden files (when making intentional schema changes)
-TUG_UPDATE_GOLDEN=1 cargo nextest run golden
+TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
 ```
 
 ## Quality Checks
 
 ```bash
 # Format code
-cargo fmt
+cargo fmt --all
 
 # Lint with clippy
-cargo clippy -- -D warnings
+cargo clippy --workspace -- -D warnings
 
 # Run all CI checks locally
 just ci
+
+# Generate documentation
+cargo doc --workspace --open
 ```
 
 ## Key Concepts
@@ -132,9 +172,10 @@ Tools exposed via MCP:
 
 ## Adding New Features
 
-1. **New refactoring operation**: Add to `src/python/ops/`
-2. **New CLI command**: Update `src/main.rs` and `src/cli.rs`
-3. **New MCP tool**: Update `src/mcp.rs`
-4. **New output type**: Update `src/output.rs`
+1. **New refactoring operation**: Add to `crates/tugtool-python/src/`
+2. **New CLI command**: Update `crates/tugtool/src/main.rs` and `crates/tugtool/src/cli.rs`
+3. **New MCP tool**: Update `crates/tugtool/src/mcp.rs`
+4. **New output type**: Update `crates/tugtool-core/src/output.rs`
+5. **New core infrastructure**: Add to `crates/tugtool-core/src/`
 
 Always add tests for new functionality.

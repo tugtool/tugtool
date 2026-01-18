@@ -6,19 +6,25 @@
 //! ## Running Tests
 //!
 //! ```bash
-//! cargo nextest run -p tug golden
+//! cargo nextest run -p tugtool golden
 //! ```
 //!
 //! ## Updating Golden Files
 //!
 //! When making intentional schema changes:
 //! ```bash
-//! TUG_UPDATE_GOLDEN=1 cargo nextest run -p tug golden
+//! TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
 //! git diff tests/golden/  # Review changes
 //! ```
 //!
 //! **CI Behavior:** Tests panic if libcst is unavailable in CI environments.
 //! **Local Behavior:** Tests skip gracefully if libcst is unavailable.
+//!
+//! ## Feature Requirements
+//!
+//! Requires the `python` feature flag.
+
+#![cfg(feature = "python")]
 
 use std::fs;
 use std::path::PathBuf;
@@ -50,8 +56,14 @@ fn golden_output_dir() -> PathBuf {
 }
 
 /// Path to the tug binary.
+///
+/// In a workspace, binaries are built in the workspace root's target directory,
+/// not in the individual crate's directory.
 fn tug_binary() -> PathBuf {
+    // CARGO_MANIFEST_DIR points to crates/tugtool, go up two levels to workspace root
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
         .join("target")
         .join("debug")
         .join("tug")

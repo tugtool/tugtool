@@ -7,9 +7,7 @@
 //! This catches accidental API breakage during refactoring (especially during
 //! the workspace migration in Phase 2).
 //!
-//! Run with: cargo test -- api_surface
-//!
-//! After workspace migration, run with: cargo test -p tugtool --features full -- api_surface
+//! Run with: cargo test -p tugtool --features full -- api_surface
 
 // Allow unused imports - this test is about compile-time verification, not runtime usage
 #![allow(unused_imports)]
@@ -75,13 +73,15 @@ use tugtool::types::{Location as TypesLocation, SymbolInfo as TypesSymbolInfo};
 use tugtool::util;
 
 // ============================================================================
-// Language Adapters
+// Language Adapters (Feature-Gated)
 // ============================================================================
 
-// Python language support (currently always available)
+// Python language support (feature-gated)
+#[cfg(feature = "python")]
 use tugtool::python;
 
-// Rust language support (currently placeholder)
+// Rust language support (feature-gated, placeholder)
+#[cfg(feature = "rust")]
 use tugtool::rust;
 
 // ============================================================================

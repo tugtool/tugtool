@@ -1,15 +1,12 @@
-# Temporarily standalone during migration (Step 5)
-# Will rejoin workspace in Step 6 when root [package] is removed
-[workspace]
-
+# Main tugtool crate - CLI binary and public API
 [package]
 name = "tugtool"
-version = "0.1.0"
-edition = "2021"
-authors = ["Ken Kocienda"]
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "AI-native code transformation engine for verified, deterministic refactors"
-repository = "https://github.com/tugtool/tugtool"
+repository.workspace = true
 readme = "../../README.md"
 keywords = ["refactoring", "code-transformation", "ai", "mcp", "cli"]
 categories = ["development-tools", "command-line-utilities"]
@@ -61,10 +58,7 @@ full = ["python", "rust", "mcp"]
 
 [dev-dependencies]
 tempfile = "3"
+walkdir = "2"
 
-[lints.rust]
-warnings = "deny"
-
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-collapsible_if = "allow"
+[lints]
+workspace = true

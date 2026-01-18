@@ -8,6 +8,12 @@
 //!
 //! **CI Behavior:** Tests panic if libcst is unavailable in CI environments.
 //! **Local Behavior:** Tests skip gracefully if libcst is unavailable.
+//!
+//! ## Feature Requirements
+//!
+//! Requires the `python` feature flag.
+
+#![cfg(feature = "python")]
 
 use std::collections::HashMap;
 use std::fs;

@@ -1671,13 +1671,13 @@ At this point:
 - `crates/tugtool` added to workspace members
 
 **Tasks:**
-- [ ] Add `"crates/tugtool"` to workspace members list
-- [ ] Remove `[package]` section from root Cargo.toml
-- [ ] Remove `[dependencies]` section from root Cargo.toml (dependencies are now in crates)
-- [ ] Remove `[[bin]]`, `[lib]`, `[features]` sections from root Cargo.toml
-- [ ] Delete `src/` directory entirely
-- [ ] Update `tests/` directory to use `crates/tugtool` as the test target (may need to move to `crates/tugtool/tests/`)
-- [ ] Update any hardcoded paths in tests
+- [x] Add `"crates/tugtool"` to workspace members list
+- [x] Remove `[package]` section from root Cargo.toml
+- [x] Remove `[dependencies]` section from root Cargo.toml (dependencies are now in crates)
+- [x] Remove `[[bin]]`, `[lib]`, `[features]` sections from root Cargo.toml
+- [x] Delete `src/` directory entirely
+- [x] Update `tests/` directory to use `crates/tugtool` as the test target (may need to move to `crates/tugtool/tests/`)
+- [x] Update any hardcoded paths in tests
 
 **Final root Cargo.toml (virtual workspace):**
 ```toml
@@ -1725,10 +1725,10 @@ lto = false
 ```
 
 **Checkpoint:**
-- [ ] `cargo build` succeeds from workspace root
-- [ ] `cargo nextest run --workspace` - all tests pass
-- [ ] `src/` directory no longer exists
-- [ ] Root Cargo.toml has NO `[package]` section
+- [x] `cargo build` succeeds from workspace root
+- [x] `cargo nextest run --workspace` - all tests pass
+- [x] `src/` directory no longer exists
+- [x] Root Cargo.toml has NO `[package]` section
 
 **Rollback:**
 - `git checkout HEAD~1 -- src/ Cargo.toml`
@@ -1750,13 +1750,13 @@ lto = false
 - Updated Justfile (if present)
 
 **Tasks:**
-- [ ] Update CLAUDE.md Architecture section with new structure
-- [ ] Update build commands to reference workspace
-- [ ] Document feature flags
-- [ ] Update any path references
-- [ ] Update `.github/workflows/*.yml` to use `-p tugtool` or `--workspace` as appropriate
-- [ ] Update `Justfile` commands (if present) for workspace structure
-- [ ] Verify `cargo install --path crates/tugtool` works (document in README)
+- [x] Update CLAUDE.md Architecture section with new structure
+- [x] Update build commands to reference workspace
+- [x] Document feature flags
+- [x] Update any path references
+- [x] Update `.github/workflows/*.yml` to use `-p tugtool` or `--workspace` as appropriate
+- [x] Update `Justfile` commands (if present) for workspace structure
+- [x] Verify `cargo install --path crates/tugtool` works (document in README)
 
 **CLAUDE.md updates:**
 ```markdown
@@ -1783,8 +1783,8 @@ cargo build --no-default-features --features python
 ```
 
 **Checkpoint:**
-- [ ] CLAUDE.md reflects new structure
-- [ ] `cargo doc --workspace` succeeds
+- [x] CLAUDE.md reflects new structure
+- [x] `cargo doc --workspace` succeeds
 
 **Rollback:**
 - `git checkout -- CLAUDE.md README.md`

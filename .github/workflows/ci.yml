@@ -40,19 +40,19 @@ jobs:
         shell: bash
 
       - name: Format check
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features -- -D warnings
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
       - name: Build
-        run: cargo build --all-features
+        run: cargo build --workspace --all-features
 
       - name: Test
-        run: cargo nextest run --all-features
+        run: cargo nextest run --workspace --all-features
 
   python:
     name: Python Tests
@@ -68,4 +68,4 @@ jobs:
         run: pip install libcst pytest
 
       - name: Check Python fixtures
-        run: python -m compileall -q tests/fixtures/python/
+        run: python -m compileall -q crates/tugtool/tests/fixtures/python/
