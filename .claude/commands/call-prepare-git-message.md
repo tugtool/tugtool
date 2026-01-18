@@ -1,1 +1,0 @@
-Use the prepare-git-message agent to prepare a message describing the outstanding code changes that are ready to commit.

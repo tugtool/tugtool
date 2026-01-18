@@ -206,7 +206,15 @@
       "Bash(for dep in anyhow sha2 hex chrono globset wait-timeout directories dirs which tracing libc)",
       "Bash(do)",
       "Bash(for dep in walkdir tempfile wait_timeout glob)",
-      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python:*)"
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python:*)",
+      "Bash(for crate in tugtool tugtool-core tugtool-python tugtool-rust)",
+      "Bash(if [[ -f \"/Users/kocienda/Mounts/u/src/tugtool/crates/$crate/Cargo.toml\" ]])",
+      "Bash([[ -f \"/Users/kocienda/Mounts/u/src/tugtool/crates/$crate/src/lib.rs\" ]])",
+      "Bash(then)",
+      "Bash(else)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool status)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool diff Cargo.toml)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool log --oneline -5)"
     ],
     "deny": [],
     "ask": []

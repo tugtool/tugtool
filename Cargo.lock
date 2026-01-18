@@ -1145,6 +1145,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tugtool-core"
+version = "0.1.0"
+
+[[package]]
+name = "tugtool-python"
+version = "0.1.0"
+
+[[package]]
+name = "tugtool-rust"
+version = "0.1.0"
+
+[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

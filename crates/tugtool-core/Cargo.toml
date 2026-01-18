@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+description = "Core infrastructure for tugtool: patch IR, facts, session, workspace, sandbox"
 
 [dependencies]
 

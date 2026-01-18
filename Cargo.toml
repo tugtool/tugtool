@@ -1,11 +1,38 @@
-[package]
-name = "tugtool"
+# Root Cargo.toml - HYBRID WORKSPACE
+# Has both [workspace] and [package] so src/ keeps compiling during migration
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/tugtool-core",
+    "crates/tugtool-python",
+    "crates/tugtool-rust",
+    # NOTE: Do NOT include "crates/tugtool" yet - root IS the tugtool package during migration
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 authors = ["Ken Kocienda"]
 license = "MIT"
-description = "AI-native code transformation engine for verified, deterministic refactors"
 repository = "https://github.com/tugtool/tugtool"
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+collapsible_if = "allow"
+
+# KEEP THE EXISTING [package] SECTION - this is what makes src/ compile!
+[package]
+name = "tugtool"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "AI-native code transformation engine for verified, deterministic refactors"
+repository.workspace = true
 readme = "README.md"
 keywords = ["refactoring", "code-transformation", "ai", "mcp", "cli"]
 categories = ["development-tools", "command-line-utilities"]
@@ -68,12 +95,8 @@ mcp = ["rmcp", "schemars"]
 
 [dev-dependencies]
 
-[lints.rust]
-warnings = "deny"
-
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-collapsible_if = "allow"
+[lints]
+workspace = true
 
 [profile.release]
 lto = "thin"

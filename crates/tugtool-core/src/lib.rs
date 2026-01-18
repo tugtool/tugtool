@@ -1,1 +1,9 @@
-//! Tugtool core infrastructure - shared types and utilities.
+//! Core infrastructure for tugtool.
+//!
+//! This crate provides language-agnostic infrastructure:
+//! - Patch IR for representing code transformations
+//! - Facts store for symbol and reference tracking
+//! - Session management
+//! - Workspace snapshots
+//! - Sandboxed file operations
+//! - Text utilities and diff generation

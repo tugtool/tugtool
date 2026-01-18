@@ -1,5 +1,5 @@
 [package]
-name = "tugtool"
+name = "tugtool-main"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

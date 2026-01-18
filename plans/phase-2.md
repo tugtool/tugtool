@@ -16,6 +16,52 @@
 
 ---
 
+## Plan Audit History {#plan-audit}
+
+### Audit 2026-01-17: Critical Flaw in Migration Strategy {#audit-2026-01-17}
+
+**Problem Identified:** The original Step 1 converted the root Cargo.toml to a virtual workspace (removing the `[package]` section) BEFORE migrating any code. This immediately orphaned the `src/` directory, breaking all 639 tests.
+
+**Root Cause:** The plan confused the **end state** (virtual workspace, [D07]) with the **migration strategy**. Decision [D07] correctly describes the final structure but was incorrectly implemented as the starting point of Step 1.
+
+**Contradiction:** The Strategy section promised "maintaining a working build at each step" but Step 1 as written immediately broke the build.
+
+**Symptoms:**
+- `cargo nextest run` shows "0 tests to run" after Step 1
+- Root `src/` code is orphaned (no package compiles it)
+- Empty crate skeletons in `crates/` don't help
+
+**Current State (as of audit):**
+- Git status shows Step 1 was partially executed with the WRONG approach
+- Root Cargo.toml is a virtual workspace (no `[package]`)
+- `crates/` exist with empty skeletons
+- All code still in `src/` but orphaned
+- **ACTION REQUIRED:** Revert to pre-Step-1 state and re-execute with corrected plan
+
+**Resolution Applied:**
+1. Updated [D07] to clarify it describes the END STATE, not the starting point
+2. Rewrote Step 1 to use a **hybrid workspace** (both `[workspace]` AND `[package]` sections)
+3. Updated all Step 2 substeps to require `cargo nextest run` at each checkpoint
+4. Rewrote Step 6.1 to handle the final conversion from hybrid to virtual workspace
+5. Added critical warnings throughout to prevent this mistake
+6. Added Milestone M00 to verify hybrid workspace is established correctly
+7. Added test count verification (639 tests) at all milestones
+
+**Key Insight:** Incremental migration requires maintaining the existing compilation path until the new path is ready. You cannot delete the old structure until the new structure can build everything.
+
+**Rollback Instructions (if Step 1 was already executed incorrectly):**
+```bash
+# Revert to state before Step 1
+git checkout HEAD~1 -- Cargo.toml
+git checkout HEAD~1 -- Cargo.lock
+rm -rf crates/
+
+# Verify tests pass again
+cargo nextest run  # Should show 639 tests
+```
+
+---
+
 ## Phase Overview {#phase-overview}
 
 ### Context {#context}
@@ -32,11 +78,15 @@ A workspace structure with separate crates addresses all these concerns while ma
 ### Strategy {#strategy}
 
 - **Incremental migration**: Move code in phases, maintaining a working build at each step
+- **Hybrid workspace during migration**: Root Cargo.toml has BOTH `[workspace]` AND `[package]` sections until Step 6
 - **Core-first approach**: Extract the shared infrastructure first (`tugtool-core`), then build language crates on top
 - **Preserve public API**: The `tugtool` crate re-exports everything users currently depend on
 - **Feature flags for languages**: Each language crate is an optional dependency, controlled by features
 - **Test migration alongside code**: Move tests with their corresponding modules to maintain coverage
 - **No functional changes**: This is purely a structural refactor; behavior remains identical
+- **Virtual workspace as END STATE**: Convert to virtual workspace only in Step 6 after all code is migrated
+
+> **CRITICAL INVARIANT**: `cargo nextest run` must pass at every checkpoint. If tests fail after a step, do NOT proceed - fix the issue first.
 
 ### Stakeholders / Primary Customers {#stakeholders}
 
@@ -226,9 +276,17 @@ A workspace structure with separate crates addresses all these concerns while ma
 - Use `version.workspace = true` in member Cargo.toml files
 - Bump all versions together on release
 
-### [D07] Virtual workspace (no root package) (DECIDED) {#d07-virtual-workspace}
+### [D07] Virtual workspace (no root package) - END STATE (DECIDED) {#d07-virtual-workspace}
 
-**Decision:** The root `Cargo.toml` is a **virtual workspace** with no `[package]` section. All crates live in `crates/`.
+**Decision:** The **final** root `Cargo.toml` is a **virtual workspace** with no `[package]` section. All crates live in `crates/`.
+
+**CRITICAL: Migration Path**
+This is the **end state**, not the starting point. The migration MUST use a **hybrid workspace** approach:
+
+1. **During migration:** Root Cargo.toml has BOTH `[workspace]` AND `[package]` sections. This keeps `src/` compiled and all tests running throughout migration.
+2. **After migration complete:** Remove `[package]` section from root, making it a pure virtual workspace.
+
+Converting to virtual workspace **before** migrating code would orphan `src/` and break all tests.
 
 **Rationale:**
 - Matches Rust ecosystem conventions (rustc, ripgrep, cargo itself)
@@ -750,11 +808,11 @@ cargo nextest run --no-default-features --features python
 - `tests/api_surface.rs` - compile-time API contract
 
 **Tasks:**
-- [ ] Run `cargo nextest run` and record pass/fail counts
-- [ ] Run `cargo build --timings` and save HTML report
-- [ ] Run `cargo clippy` and fix any warnings
-- [ ] Create `tests/api_surface.rs` with imports of all current public types (see [D11])
-- [ ] Ensure clean git status
+- [x] Run `cargo nextest run` and record pass/fail counts
+- [x] Run `cargo build --timings` and save HTML report
+- [x] Run `cargo clippy` and fix any warnings
+- [x] Create `tests/api_surface.rs` with imports of all current public types (see [D11])
+- [x] Ensure clean git status
 
 **API surface test template:**
 ```rust
@@ -780,14 +838,14 @@ fn api_surface_compiles() {
 ```
 
 **Tests:**
-- [ ] All existing tests pass
-- [ ] `tests/api_surface.rs` compiles with `--features full`
+- [x] All existing tests pass
+- [x] `tests/api_surface.rs` compiles with `--features full`
 
 **Checkpoint:**
-- [ ] `cargo nextest run` - all tests pass
-- [ ] `cargo clippy -- -D warnings` - no warnings
-- [ ] `cargo fmt --check` - no formatting issues
-- [ ] `tests/api_surface.rs` exists and compiles with `cargo test -p tugtool --features full -- api_surface`
+- [x] `cargo nextest run` - all tests pass
+- [x] `cargo clippy -- -D warnings` - no warnings
+- [x] `cargo fmt --check` - no formatting issues
+- [x] `tests/api_surface.rs` exists and compiles with `cargo test -p tugtool --features full -- api_surface`
 
 **Rollback:** N/A (no changes yet)
 
@@ -795,37 +853,47 @@ fn api_surface_compiles() {
 
 ---
 
-### Step 1: Create Workspace Structure {#step-1}
+### Step 1: Create Hybrid Workspace Structure {#step-1}
 
 **Commit:** `refactor: create cargo workspace structure with crates directory`
 
-**References:** [D01] Workspace structure, Table T01, List L01, (#target-structure)
+**References:** [D01] Workspace structure, [D07] Virtual workspace (end state), Table T01, List L01, (#target-structure)
+
+**CRITICAL: Hybrid Workspace Approach**
+
+This step creates a **hybrid workspace** where the root is BOTH a workspace AND a package.
+This keeps the existing `src/` code compiling and all 639 tests running throughout migration.
+
+**DO NOT** convert to a virtual workspace (removing `[package]`) until Step 6 after all code is migrated.
 
 **Artifacts:**
 - `crates/` directory with empty crate skeletons
-- Workspace Cargo.toml at root
+- **Hybrid** Workspace Cargo.toml at root (has BOTH `[workspace]` AND `[package]` sections)
 - Each crate has minimal Cargo.toml and empty lib.rs
+- Existing `src/` code continues to compile and run tests
 
 **Tasks:**
-- [ ] Create `crates/` directory
-- [ ] Create `crates/tugtool/` with minimal Cargo.toml
-- [ ] Create `crates/tugtool-core/` with minimal Cargo.toml
-- [ ] Create `crates/tugtool-python/` with minimal Cargo.toml
-- [ ] Create `crates/tugtool-rust/` with minimal Cargo.toml
-- [ ] Convert root Cargo.toml to workspace format with `[workspace]` section
-- [ ] Add workspace-level settings (resolver, lints, profile)
+- [x] Create `crates/` directory
+- [x] Create `crates/tugtool/` with minimal Cargo.toml (empty, for future main crate)
+- [x] Create `crates/tugtool-core/` with minimal Cargo.toml
+- [x] Create `crates/tugtool-python/` with minimal Cargo.toml
+- [x] Create `crates/tugtool-rust/` with minimal Cargo.toml
+- [x] Add `[workspace]` section to root Cargo.toml **WHILE KEEPING THE EXISTING `[package]` SECTION**
+- [x] Add workspace-level settings (resolver, lints, profile)
 
-**Cargo.toml structure:**
+**Cargo.toml structure (HYBRID - note both [workspace] AND [package]):**
 
 ```toml
-# Root Cargo.toml
+# Root Cargo.toml - HYBRID WORKSPACE
+# Has both [workspace] and [package] so src/ keeps compiling
+
 [workspace]
 resolver = "2"
 members = [
-    "crates/tugtool",
     "crates/tugtool-core",
     "crates/tugtool-python",
     "crates/tugtool-rust",
+    # NOTE: Do NOT include "crates/tugtool" yet - root IS the tugtool package during migration
 ]
 
 [workspace.package]
@@ -841,6 +909,21 @@ warnings = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 collapsible_if = "allow"
+
+# KEEP THE EXISTING [package] SECTION - this is what makes src/ compile!
+[package]
+name = "tugtool"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+# ... keep all existing package configuration ...
+
+# KEEP THE EXISTING [dependencies] - required for src/ to compile
+[dependencies]
+# ... all existing dependencies stay here ...
+
+# KEEP THE EXISTING [[bin]], [features], etc.
 
 [profile.release]
 lto = "thin"
@@ -860,11 +943,14 @@ lto = false
 ```
 
 **Tests:**
-- [ ] `cargo check` succeeds (empty crates compile)
+- [x] `cargo nextest run` - ALL 639 TESTS STILL PASS (critical!)
+- [x] `cargo check -p tugtool-core` succeeds (empty crate compiles)
 
 **Checkpoint:**
-- [ ] `cargo check` - workspace compiles
-- [ ] All four crate directories exist with Cargo.toml and src/lib.rs
+- [x] `cargo nextest run` - **all existing tests pass** (this is the critical checkpoint!)
+- [x] `cargo clippy -- -D warnings` - no warnings
+- [x] All four crate directories exist with Cargo.toml and src/lib.rs
+- [x] Root Cargo.toml has both `[workspace]` AND `[package]` sections
 
 **Rollback:**
 - Remove `crates/` directory
@@ -874,9 +960,35 @@ lto = false
 
 ---
 
+> **WARNING: Common Mistake**
+>
+> Do NOT remove the `[package]` section from root Cargo.toml during this step!
+> Doing so creates a "virtual workspace" which orphans `src/` and breaks all tests.
+> The conversion to virtual workspace happens in Step 6 AFTER all code is migrated.
+
+---
+
 ### Step 2: Extract tugtool-core {#step-2}
 
 This step is large and broken into substeps.
+
+**CRITICAL: Two-Phase Migration Per Module**
+
+For each module migration, you must:
+
+1. **Copy** the module to the target crate
+2. **Wire up imports** in the source crate to use the new location
+3. **Verify tests pass** before proceeding
+
+The root package (`src/lib.rs`) must be updated to re-export from `tugtool-core` so that:
+- External code using `tugtool::patch::*` continues to work
+- Internal code in `src/` can gradually migrate to `use tugtool_core::*`
+
+After Step 2 completes:
+- `tugtool-core` contains the migrated modules
+- Root `src/lib.rs` re-exports from `tugtool-core`
+- Original files in `src/` may be deleted OR kept as thin re-export wrappers (decide per substep)
+- All tests continue to pass
 
 #### Step 2.1: Move patch.rs to tugtool-core {#step-2-1}
 
@@ -887,13 +999,23 @@ This step is large and broken into substeps.
 **Artifacts:**
 - `crates/tugtool-core/src/patch.rs` with full implementation
 - Updated `crates/tugtool-core/Cargo.toml` with required dependencies
+- Updated root `src/patch.rs` to re-export from tugtool-core (OR deleted with lib.rs updated)
+- Updated root `Cargo.toml` with `tugtool-core` dependency
 
 **Tasks:**
+- [ ] Add `tugtool-core` as a dependency in root `Cargo.toml`:
+      ```toml
+      [dependencies]
+      tugtool-core = { path = "crates/tugtool-core" }
+      ```
 - [ ] Copy `src/patch.rs` to `crates/tugtool-core/src/patch.rs`
 - [ ] Add `pub mod patch;` to core lib.rs
 - [ ] Add dependencies to core Cargo.toml: `serde`, `sha2`, `hex`
-- [ ] Update imports in patch.rs (remove `crate::` prefix for now)
-- [ ] Verify core crate compiles
+- [ ] Update imports in `crates/tugtool-core/src/patch.rs` (remove `crate::` prefix for now)
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::patch;`
+- [ ] Either delete `src/patch.rs` OR replace with: `pub use tugtool_core::patch::*;`
+- [ ] Verify BOTH core crate AND root package compile
+- [ ] Verify all tests pass
 
 **Dependencies for tugtool-core/Cargo.toml:**
 ```toml
@@ -905,12 +1027,15 @@ hex = "0.4"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core` succeeds
+- [ ] `cargo nextest run` - all tests pass (critical!)
 
 **Checkpoint:**
 - [ ] `cargo check -p tugtool-core` compiles without errors
+- [ ] `cargo nextest run` - **all tests still pass** (do not skip this!)
+- [ ] `use tugtool::patch::Span` still works (API compatibility)
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/patch.rs src/lib.rs Cargo.toml`
 
 **Commit after all checkpoints pass.**
 
@@ -925,23 +1050,26 @@ hex = "0.4"
 **Artifacts:**
 - `crates/tugtool-core/src/text.rs`
 - Updated core lib.rs exports
+- Updated root `src/lib.rs` to re-export from tugtool-core
 
 **Tasks:**
 - [ ] Copy `src/text.rs` to `crates/tugtool-core/src/text.rs`
 - [ ] Add `pub mod text;` to core lib.rs
-- [ ] Update imports: `use crate::patch::Span` (now internal to core)
-- [ ] Verify core crate compiles
+- [ ] Update imports in core: `use crate::patch::Span` (now internal to core)
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::text;`
+- [ ] Delete or convert `src/text.rs` to re-export wrapper
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo test -p tugtool-core text::`
+- [ ] `cargo nextest run` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] Text module tests pass
+- [ ] `cargo nextest run` - **all tests still pass**
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/text.rs src/lib.rs`
 
 **Commit after all checkpoints pass.**
 
@@ -956,24 +1084,27 @@ hex = "0.4"
 **Artifacts:**
 - `crates/tugtool-core/src/util.rs`
 - `crates/tugtool-core/src/diff.rs`
+- Updated root `src/lib.rs` re-exports
 
 **Tasks:**
 - [ ] Copy `src/util.rs` to `crates/tugtool-core/src/util.rs`
 - [ ] Copy `src/diff.rs` to `crates/tugtool-core/src/diff.rs`
 - [ ] Add `pub mod util; pub mod diff;` to core lib.rs
 - [ ] Update diff.rs imports to use `crate::patch::OutputEdit`
-- [ ] Verify core crate compiles
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{util, diff};`
+- [ ] Delete or convert `src/util.rs` and `src/diff.rs` to re-export wrappers
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo test -p tugtool-core`
+- [ ] `cargo nextest run` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] All core tests pass
+- [ ] `cargo nextest run` - **all tests still pass**
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/util.rs src/diff.rs src/lib.rs`
 
 **Commit after all checkpoints pass.**
 
@@ -988,23 +1119,26 @@ hex = "0.4"
 **Artifacts:**
 - `crates/tugtool-core/src/facts/mod.rs`
 - Updated core lib.rs
+- Updated root `src/lib.rs` re-exports
 
 **Tasks:**
 - [ ] Copy `src/facts/mod.rs` to `crates/tugtool-core/src/facts/mod.rs`
 - [ ] Add `pub mod facts;` to core lib.rs
-- [ ] Update imports: `use crate::patch::{ContentHash, FileId, Span}`
-- [ ] Verify core crate compiles
+- [ ] Update imports in core: `use crate::patch::{ContentHash, FileId, Span}`
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::facts;`
+- [ ] Delete or convert `src/facts/` to re-export wrapper
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo test -p tugtool-core facts::`
+- [ ] `cargo nextest run` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] Facts module tests pass
+- [ ] `cargo nextest run` - **all tests still pass**
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/facts/ src/lib.rs`
 
 **Commit after all checkpoints pass.**
 
@@ -1019,14 +1153,17 @@ hex = "0.4"
 **Artifacts:**
 - `crates/tugtool-core/src/error.rs`
 - `crates/tugtool-core/src/output.rs`
+- Updated root `src/lib.rs` re-exports
 
 **Tasks:**
 - [ ] Copy `src/error.rs` to `crates/tugtool-core/src/error.rs`
 - [ ] Copy `src/output.rs` to `crates/tugtool-core/src/output.rs`
 - [ ] Add `pub mod error; pub mod output;` to core lib.rs
 - [ ] Add `thiserror` to core dependencies
-- [ ] Update output.rs imports for patch and facts
-- [ ] Verify core crate compiles
+- [ ] Update output.rs imports for patch and facts (use `crate::` for core-internal refs)
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{error, output};`
+- [ ] Delete or convert `src/error.rs` and `src/output.rs` to re-export wrappers
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Core dependencies update:**
 ```toml
@@ -1035,14 +1172,14 @@ thiserror = "2.0"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo test -p tugtool-core`
+- [ ] `cargo nextest run` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] All core tests pass
+- [ ] `cargo nextest run` - **all tests still pass**
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/error.rs src/output.rs src/lib.rs`
 
 **Commit after all checkpoints pass.**
 
@@ -1057,14 +1194,17 @@ thiserror = "2.0"
 **Artifacts:**
 - `crates/tugtool-core/src/workspace.rs`
 - `crates/tugtool-core/src/session.rs`
+- Updated root `src/lib.rs` re-exports
 
 **Tasks:**
 - [ ] Copy `src/workspace.rs` to `crates/tugtool-core/src/workspace.rs`
 - [ ] Copy `src/session.rs` to `crates/tugtool-core/src/session.rs`
 - [ ] Add `pub mod workspace; pub mod session;` to core lib.rs
 - [ ] Add dependencies: `walkdir`, `chrono`
-- [ ] Update imports for workspace and session modules
-- [ ] Verify core crate compiles
+- [ ] Update imports for workspace and session modules (use `crate::` for core-internal refs)
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::{workspace, session};`
+- [ ] Delete or convert `src/workspace.rs` and `src/session.rs` to re-export wrappers
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Core dependencies update:**
 ```toml
@@ -1075,14 +1215,14 @@ serde_json = "1.0"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo test -p tugtool-core`
+- [ ] `cargo nextest run` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] All core tests pass
+- [ ] `cargo nextest run` - **all tests still pass**
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/workspace.rs src/session.rs src/lib.rs`
 
 **Commit after all checkpoints pass.**
 
@@ -1096,14 +1236,17 @@ serde_json = "1.0"
 
 **Artifacts:**
 - `crates/tugtool-core/src/sandbox.rs`
+- Updated root `src/lib.rs` re-exports
 
 **Tasks:**
 - [ ] Copy `src/sandbox.rs` to `crates/tugtool-core/src/sandbox.rs`
 - [ ] Add `pub mod sandbox;` to core lib.rs
 - [ ] Add dependencies: `tempfile`, `tracing`, `wait-timeout`
 - [ ] Add target-specific dependency: `libc` (unix)
-- [ ] Update imports for sandbox module
-- [ ] Verify core crate compiles
+- [ ] Update imports for sandbox module (use `crate::` for core-internal refs)
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_core::sandbox;`
+- [ ] Delete or convert `src/sandbox.rs` to re-export wrapper
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Core dependencies update:**
 ```toml
@@ -1117,14 +1260,14 @@ libc = "0.2"
 
 **Tests:**
 - [ ] `cargo check -p tugtool-core`
-- [ ] `cargo test -p tugtool-core`
+- [ ] `cargo nextest run` - all tests pass
 
 **Checkpoint:**
 - [ ] Core crate compiles
-- [ ] All core tests pass (including sandbox tests)
+- [ ] `cargo nextest run` - **all tests still pass** (including sandbox tests)
 
 **Rollback:**
-- `git checkout -- crates/tugtool-core/`
+- `git checkout -- crates/tugtool-core/ src/sandbox.rs src/lib.rs`
 
 **Commit after all checkpoints pass.**
 
@@ -1135,13 +1278,18 @@ libc = "0.2"
 After completing Steps 2.1-2.7, you will have:
 - Complete `tugtool-core` crate with all shared infrastructure
 - All core modules migrated: patch, facts, error, output, session, workspace, sandbox, text, diff, util
-- All core tests passing
+- Root `src/lib.rs` re-exports everything from `tugtool-core`
+- Original module files in `src/` either deleted or converted to re-export wrappers
+- **All 639 tests still passing** (critical!)
 - Clean dependency boundaries
 
 **Final Step 2 Checkpoint:**
-- [ ] `cargo test -p tugtool-core` - all tests pass
+- [ ] `cargo nextest run` - **all tests pass** (not just core tests!)
+- [ ] `cargo test -p tugtool-core` - core tests pass independently
 - [ ] `cargo clippy -p tugtool-core -- -D warnings` - no warnings
+- [ ] `cargo clippy -- -D warnings` - no warnings on root package
 - [ ] Core crate can be used as dependency (verify with `cargo doc -p tugtool-core`)
+- [ ] `tests/api_surface.rs` still compiles (API contract preserved)
 
 ---
 
@@ -1202,13 +1350,22 @@ workspace = true
 **Artifacts:**
 - All files from `src/python/` moved to `crates/tugtool-python/src/`
 - Updated imports throughout
+- Root `src/lib.rs` updated to re-export from `tugtool-python`
+- Root `Cargo.toml` updated with `tugtool-python` dependency
 
 **Tasks:**
+- [ ] Add `tugtool-python` as a dependency in root `Cargo.toml`:
+      ```toml
+      [dependencies]
+      tugtool-python = { path = "crates/tugtool-python" }
+      ```
 - [ ] Copy all files from `src/python/` to `crates/tugtool-python/src/`
-- [ ] Update lib.rs to export all public items
+- [ ] Update lib.rs in tugtool-python to export all public items
 - [ ] Update imports: `use crate::` -> `use tugtool_core::`
 - [ ] Fix any module path references
-- [ ] Verify crate compiles
+- [ ] Update root `src/lib.rs` to re-export: `pub use tugtool_python as python;`
+- [ ] Delete `src/python/` directory (or convert mod.rs to re-export wrapper)
+- [ ] Verify BOTH crates compile and all tests pass
 
 **Import pattern changes:**
 ```rust
@@ -1223,14 +1380,15 @@ use tugtool_core::patch::{FileId, Span};
 
 **Tests:**
 - [ ] `cargo check -p tugtool-python`
-- [ ] `cargo test -p tugtool-python`
+- [ ] `cargo nextest run` - **all tests pass** (not just Python crate tests!)
 
 **Checkpoint:**
 - [ ] Python crate compiles
-- [ ] All Python tests pass
+- [ ] `cargo nextest run` - **all tests still pass**
+- [ ] `use tugtool::python::*` still works (API compatibility)
 
 **Rollback:**
-- `git checkout -- crates/tugtool-python/`
+- `git checkout -- crates/tugtool-python/ src/python/ src/lib.rs Cargo.toml`
 
 **Commit after all checkpoints pass.**
 
@@ -1291,6 +1449,20 @@ impl Default for RustAdapter {
 
 ### Step 5: Refactor main tugtool crate {#step-5}
 
+**CRITICAL: Transitioning the Binary**
+
+This step moves CLI/MCP code to `crates/tugtool/`. At this point:
+- Core infrastructure is in `tugtool-core`
+- Python support is in `tugtool-python`
+- The root still has `src/main.rs`, `src/cli.rs`, etc.
+
+After this step:
+- `crates/tugtool/` becomes the main binary crate
+- Root `src/` only has re-export lib.rs (will be removed in Step 6)
+- All tests still pass
+
+**Important:** During this step, we temporarily have TWO places that can build the `tug` binary (root and `crates/tugtool`). This is resolved in Step 6 when we convert to virtual workspace.
+
 #### Step 5.1: Move CLI files to main crate {#step-5-1}
 
 **Commit:** `refactor: move main, cli, mcp, testcmd to tugtool crate`
@@ -1302,14 +1474,17 @@ impl Default for RustAdapter {
 - `crates/tugtool/src/cli.rs`
 - `crates/tugtool/src/mcp.rs`
 - `crates/tugtool/src/testcmd.rs`
+- Updated `crates/tugtool/Cargo.toml` with all dependencies
 
 **Tasks:**
 - [ ] Copy `src/main.rs` to `crates/tugtool/src/main.rs`
 - [ ] Copy `src/cli.rs` to `crates/tugtool/src/cli.rs`
 - [ ] Copy `src/mcp.rs` to `crates/tugtool/src/mcp.rs`
 - [ ] Copy `src/testcmd.rs` to `crates/tugtool/src/testcmd.rs`
-- [ ] Update Cargo.toml with dependencies and features
-- [ ] Update imports in all files
+- [ ] Update `crates/tugtool/Cargo.toml` with dependencies and features (see below)
+- [ ] Update imports in all moved files to use `tugtool_core::` and `tugtool_python::`
+- [ ] Verify `crates/tugtool` compiles independently
+- [ ] Verify root package still compiles (tests still run against root)
 
 **Main crate Cargo.toml:**
 ```toml
@@ -1361,10 +1536,13 @@ workspace = true
 ```
 
 **Tests:**
-- [ ] `cargo check -p tugtool`
+- [ ] `cargo check -p tugtool` (the crates/tugtool package)
+- [ ] `cargo nextest run` - all tests still pass (against root package)
 
 **Checkpoint:**
-- [ ] Main crate compiles
+- [ ] `crates/tugtool` compiles: `cargo build -p tugtool`
+- [ ] Root package still works: `cargo nextest run` - **all tests pass**
+- [ ] Binary works from new location: `cargo run -p tugtool -- --help`
 
 **Rollback:**
 - `git checkout -- crates/tugtool/`
@@ -1383,14 +1561,16 @@ workspace = true
 - `crates/tugtool/src/lib.rs` with all re-exports
 
 **Tasks:**
-- [ ] Create lib.rs with public re-exports from core
+- [ ] Create `crates/tugtool/src/lib.rs` with public re-exports from core
 - [ ] Add conditional re-exports for language crates
-- [ ] Verify all previously-public types are accessible
+- [ ] Add re-exports for cli, mcp, testcmd modules
+- [ ] Verify all previously-public types are accessible via `tugtool::*`
 - [ ] Update main.rs to use new module paths
 
 **Checkpoint:**
-- [ ] `cargo check -p tugtool`
+- [ ] `cargo check -p tugtool` (the crates/tugtool package)
 - [ ] `cargo doc -p tugtool` - documentation builds
+- [ ] `cargo nextest run` - **all tests still pass**
 
 **Rollback:**
 - `git checkout -- crates/tugtool/src/lib.rs`
@@ -1461,30 +1641,87 @@ pub fn run_rename(args: &RenameArgs) -> Result<(), TugError> {
 
 ### Step 6: Clean up and finalize {#step-6}
 
-#### Step 6.1: Remove old src/ files {#step-6-1}
+**CRITICAL: This step converts from hybrid to virtual workspace**
 
-**Commit:** `refactor: remove migrated files from old src/ location`
+At this point:
+- All code has been migrated to `crates/`
+- `crates/tugtool/` is the new main binary crate with all CLI/MCP code
+- Root `src/` is no longer needed
+- We can now safely convert to a virtual workspace
 
-**References:** Table T03, (#success-criteria)
+#### Step 6.1: Convert to virtual workspace and remove old src/ {#step-6-1}
+
+**Commit:** `refactor: convert to virtual workspace, remove old src/`
+
+**References:** [D07] Virtual workspace, Table T03, (#success-criteria)
 
 **Artifacts:**
-- Old `src/` directory removed (or contains only README pointing to new location)
+- Virtual workspace Cargo.toml (no `[package]` section)
+- Old `src/` directory removed
+- `crates/tugtool` added to workspace members
 
 **Tasks:**
-- [ ] Delete `src/patch.rs`, `src/facts/`, `src/error.rs`, etc.
-- [ ] Delete `src/python/`
-- [ ] Delete `src/rust/`
-- [ ] Delete `src/main.rs`, `src/cli.rs`, `src/mcp.rs`, `src/testcmd.rs`
-- [ ] Delete `src/lib.rs`
-- [ ] Keep `src/` directory with README if desired
+- [ ] Add `"crates/tugtool"` to workspace members list
+- [ ] Remove `[package]` section from root Cargo.toml
+- [ ] Remove `[dependencies]` section from root Cargo.toml (dependencies are now in crates)
+- [ ] Remove `[[bin]]`, `[lib]`, `[features]` sections from root Cargo.toml
+- [ ] Delete `src/` directory entirely
+- [ ] Update `tests/` directory to use `crates/tugtool` as the test target (may need to move to `crates/tugtool/tests/`)
 - [ ] Update any hardcoded paths in tests
+
+**Final root Cargo.toml (virtual workspace):**
+```toml
+[workspace]
+resolver = "2"
+members = [
+    "crates/tugtool",        # NOW INCLUDED
+    "crates/tugtool-core",
+    "crates/tugtool-python",
+    "crates/tugtool-rust",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Ken Kocienda"]
+license = "MIT"
+repository = "https://github.com/tugtool/tugtool"
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+collapsible_if = "allow"
+
+# NO [package] section - this is now a virtual workspace
+# NO [dependencies] section - dependencies are in individual crates
+
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
+
+[profile.dev]
+debug = 1
+incremental = true
+codegen-units = 256
+lto = false
+panic = "unwind"
+
+[profile.test]
+debug = 1
+incremental = true
+lto = false
+```
 
 **Checkpoint:**
 - [ ] `cargo build` succeeds from workspace root
 - [ ] `cargo nextest run` - all tests pass
+- [ ] `src/` directory no longer exists
+- [ ] Root Cargo.toml has NO `[package]` section
 
 **Rollback:**
-- `git checkout HEAD~1 -- src/`
+- `git checkout HEAD~1 -- src/ Cargo.toml`
 
 **Commit after all checkpoints pass.**
 
@@ -1581,10 +1818,12 @@ cargo build --no-default-features --features python
 
 ### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
+- [ ] Root Cargo.toml is a **virtual workspace** (no `[package]` section)
+- [ ] `src/` directory no longer exists
 - [ ] All 4 crates compile independently (`cargo check -p <crate>`)
 - [ ] Full test suite passes (`cargo nextest run`)
-- [ ] `cargo build --no-default-features` produces working binary
-- [ ] `cargo build --features python` includes Python support
+- [ ] `cargo build -p tugtool --no-default-features` produces working binary
+- [ ] `cargo build -p tugtool --features python` includes Python support
 - [ ] CLAUDE.md updated with new structure
 - [ ] CLI and JSON output unchanged from pre-migration behavior
 - [ ] `tests/api_surface.rs` compiles (public API contract preserved)
@@ -1595,20 +1834,37 @@ cargo build --no-default-features --features python
 - [ ] Golden test: JSON output schemas unchanged
 - [ ] API surface test: All public re-exports accessible
 
+**CRITICAL: Test count verification**
+- [ ] Final test count matches baseline from Step 0 (639 tests)
+
 ### Milestones (Within Phase) {#milestones}
 
-**Milestone M01: Core crate complete** {#m01-core-complete}
+**Milestone M00: Hybrid workspace established (Step 1)** {#m00-hybrid-workspace}
+- [x] Root Cargo.toml has BOTH `[workspace]` AND `[package]` sections
+- [x] All 639 tests still pass
+- [x] Empty crate skeletons exist in `crates/`
+
+**Milestone M01: Core crate complete (Step 2)** {#m01-core-complete}
 - [ ] tugtool-core contains all shared infrastructure
+- [ ] Root `src/lib.rs` re-exports from tugtool-core
+- [ ] **All 639 tests still pass** (critical!)
 - [ ] Core crate tests pass independently
 
-**Milestone M02: Python crate complete** {#m02-python-complete}
+**Milestone M02: Python crate complete (Step 3)** {#m02-python-complete}
 - [ ] tugtool-python contains all Python support
+- [ ] Root `src/lib.rs` re-exports from tugtool-python
+- [ ] **All 639 tests still pass** (critical!)
 - [ ] Python crate tests pass independently
 
-**Milestone M03: Workspace integrated** {#m03-workspace-integrated}
-- [ ] Main tugtool crate composes all pieces
+**Milestone M03: Workspace integrated (Step 5)** {#m03-workspace-integrated}
+- [ ] Main tugtool crate in `crates/tugtool/` composes all pieces
 - [ ] Feature flags work correctly
-- [ ] Full test suite passes
+- [ ] **All 639 tests still pass** (critical!)
+
+**Milestone M04: Virtual workspace complete (Step 6)** {#m04-virtual-workspace}
+- [ ] Root Cargo.toml has NO `[package]` section
+- [ ] `src/` directory removed
+- [ ] **All 639 tests still pass** (critical!)
 
 ### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -1619,9 +1875,14 @@ cargo build --no-default-features --features python
 
 | Checkpoint | Verification |
 |------------|--------------|
+| Virtual workspace | Root Cargo.toml has no `[package]` section |
+| src/ removed | `! -d src` (directory does not exist) |
 | Workspace compiles | `cargo build --workspace` |
-| All tests pass | `cargo nextest run` |
-| Features work | `cargo build --no-default-features --features python` |
+| All tests pass | `cargo nextest run` (must show 639 tests) |
+| Features work | `cargo build -p tugtool --no-default-features --features python` |
 | No regressions | Compare test counts and build times with baseline |
+| API preserved | `tests/api_surface.rs` compiles |
+
+**CRITICAL: If test count drops below baseline at any step, STOP and investigate before proceeding.**
 
 **Commit after all checkpoints pass.**
