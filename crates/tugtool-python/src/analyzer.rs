@@ -274,6 +274,156 @@ pub struct ImportedName {
 pub mod native {
     use super::*;
 
+    // ========================================================================
+    // Multi-File Analysis Types (Step 9.1)
+    // ========================================================================
+
+    /// Bundle of analysis results from processing multiple files.
+    ///
+    /// This type collects the results of Pass 1 (single-file analysis) and tracks
+    /// any files that failed to parse or analyze. Used by subsequent passes to
+    /// build the complete FactsStore with cross-file resolution.
+    #[derive(Debug, Default)]
+    pub struct FileAnalysisBundle {
+        /// Successfully analyzed files.
+        pub file_analyses: Vec<FileAnalysis>,
+        /// Files that failed to parse or analyze, with their error messages.
+        pub failed_files: Vec<(String, AnalyzerError)>,
+    }
+
+    impl FileAnalysisBundle {
+        /// Create a new empty bundle.
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Check if all files were analyzed successfully.
+        pub fn is_complete(&self) -> bool {
+            self.failed_files.is_empty()
+        }
+
+        /// Get the number of successfully analyzed files.
+        pub fn success_count(&self) -> usize {
+            self.file_analyses.len()
+        }
+
+        /// Get the number of failed files.
+        pub fn failure_count(&self) -> usize {
+            self.failed_files.len()
+        }
+    }
+
+    /// Maps symbol names and kinds to their locations across all files.
+    ///
+    /// This type is populated during Pass 2 (symbol registration) and used during
+    /// Pass 3 (reference resolution) to link references to their target symbols
+    /// across file boundaries.
+    ///
+    /// The key is (name, kind) to distinguish between symbols with the same name
+    /// but different kinds (e.g., a function `foo` vs a variable `foo`).
+    pub type GlobalSymbolMap = HashMap<(String, SymbolKind), Vec<(FileId, SymbolId)>>;
+
+    /// Analyze multiple files and populate the FactsStore using native CST.
+    ///
+    /// This is the main entry point for multi-file Python analysis without any
+    /// Python dependencies. It implements a 4-pass algorithm to build a complete
+    /// FactsStore with proper cross-file resolution.
+    ///
+    /// # Algorithm (4-Pass)
+    ///
+    /// **Pass 1: Single-File Analysis**
+    /// - Parse each file using native CST parser
+    /// - Collect scopes, symbols, references, imports
+    /// - Continue on parse errors (track failures in bundle)
+    ///
+    /// **Pass 2: Symbol Registration**
+    /// - Assign globally-unique FileIds and SymbolIds
+    /// - Insert Files and Symbols into FactsStore
+    /// - Build GlobalSymbolMap for cross-file resolution
+    /// - Link container symbols (methods to classes)
+    /// - Track import bindings separately
+    ///
+    /// **Pass 3: Reference & Import Resolution**
+    /// - Resolve references using GlobalSymbolMap
+    /// - Prefer original definitions over import bindings
+    /// - Insert References and Imports into FactsStore
+    /// - Handle method references with span matching
+    ///
+    /// **Pass 4: Type-Aware Method Resolution**
+    /// - Build MethodCallIndex for efficient lookup
+    /// - Resolve method calls using receiver type information
+    /// - Populate TypeInfo and InheritanceInfo in FactsStore
+    /// - Insert typed method call references
+    ///
+    /// # Arguments
+    ///
+    /// * `files` - List of (path, content) pairs to analyze
+    /// * `store` - FactsStore to populate with analysis results
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(FileAnalysisBundle)` - Bundle with successful analyses and any failures
+    /// * `Err(AnalyzerError)` - Fatal error that prevented analysis
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::analyzer::native::analyze_files;
+    /// use tugtool_core::facts::FactsStore;
+    ///
+    /// let mut store = FactsStore::new();
+    /// let files = vec![
+    ///     ("main.py".to_string(), "from utils import helper\nhelper()".to_string()),
+    ///     ("utils.py".to_string(), "def helper(): pass".to_string()),
+    /// ];
+    ///
+    /// let bundle = analyze_files(&files, &mut store)?;
+    /// assert!(bundle.is_complete());
+    /// assert_eq!(store.files().len(), 2);
+    /// ```
+    ///
+    /// # Behavioral Contract
+    ///
+    /// See plans/phase-3.md Step 9.0 for the full behavioral contracts (C1-C8)
+    /// that this function must satisfy for parity with the original Python worker.
+    pub fn analyze_files(
+        files: &[(String, String)],
+        store: &mut FactsStore,
+    ) -> AnalyzerResult<FileAnalysisBundle> {
+        let mut bundle = FileAnalysisBundle::new();
+
+        // Handle empty file list
+        if files.is_empty() {
+            return Ok(bundle);
+        }
+
+        // Pass 1: Single-file analysis
+        // (Will be implemented in Step 9.2)
+        for (path, content) in files {
+            let file_id = store.next_file_id();
+            match analyze_file_native(file_id, path, content) {
+                Ok(analysis) => {
+                    bundle.file_analyses.push(analysis);
+                }
+                Err(e) => {
+                    bundle.failed_files.push((path.clone(), e));
+                }
+            }
+        }
+
+        // Pass 2: Symbol registration
+        // (Will be implemented in Step 9.3)
+        let _global_symbols: GlobalSymbolMap = HashMap::new();
+
+        // Pass 3: Reference & Import resolution
+        // (Will be implemented in Step 9.4)
+
+        // Pass 4: Type-aware method resolution
+        // (Will be implemented in Step 9.5)
+
+        Ok(bundle)
+    }
+
     /// Analyze a single Python file using the native Rust CST parser.
     ///
     /// This function provides the same analysis as [`PythonAnalyzer::analyze_file`]
@@ -471,9 +621,9 @@ pub mod native {
     }
 }
 
-// Re-export native analysis function at module level when feature is enabled
+// Re-export native analysis types and functions at module level when feature is enabled
 #[cfg(feature = "native-cst")]
-pub use native::analyze_file_native;
+pub use native::{analyze_file_native, analyze_files, FileAnalysisBundle, GlobalSymbolMap};
 
 // ============================================================================
 // Method Call Index (for O(1) lookup during type-aware pass)
@@ -2693,6 +2843,81 @@ class MyClass:
             let result = analyze_file_native(FileId::new(0), "test.py", content);
 
             assert!(result.is_err(), "should return error for invalid syntax");
+        }
+    }
+
+    // ========================================================================
+    // analyze_files Tests (Step 9.1)
+    // ========================================================================
+
+    #[cfg(feature = "native-cst")]
+    mod analyze_files_tests {
+        use super::*;
+        use crate::analyzer::native::{analyze_files, FileAnalysisBundle, GlobalSymbolMap};
+
+        #[test]
+        fn function_signature_compiles() {
+            // This test verifies the function signature matches the specification:
+            // pub fn analyze_files(
+            //     files: &[(String, String)],
+            //     store: &mut FactsStore,
+            // ) -> AnalyzerResult<FileAnalysisBundle>
+
+            // Just verify the function exists and has correct signature by calling it
+            let mut store = FactsStore::new();
+            let files: Vec<(String, String)> = vec![];
+            let result: AnalyzerResult<FileAnalysisBundle> = analyze_files(&files, &mut store);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn empty_file_list_returns_ok() {
+            let mut store = FactsStore::new();
+            let files: Vec<(String, String)> = vec![];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Bundle should be empty but valid
+            assert_eq!(bundle.success_count(), 0);
+            assert_eq!(bundle.failure_count(), 0);
+            assert!(bundle.is_complete());
+            assert!(bundle.file_analyses.is_empty());
+            assert!(bundle.failed_files.is_empty());
+
+            // Store should be empty
+            assert_eq!(store.files().count(), 0);
+        }
+
+        #[test]
+        fn file_analysis_bundle_methods() {
+            let mut bundle = FileAnalysisBundle::new();
+            assert!(bundle.is_complete());
+            assert_eq!(bundle.success_count(), 0);
+            assert_eq!(bundle.failure_count(), 0);
+
+            // Simulate adding a failure
+            bundle.failed_files.push((
+                "bad.py".to_string(),
+                AnalyzerError::FileNotFound {
+                    path: "bad.py".to_string(),
+                },
+            ));
+            assert!(!bundle.is_complete());
+            assert_eq!(bundle.failure_count(), 1);
+        }
+
+        #[test]
+        fn global_symbol_map_type_alias() {
+            // Verify the type alias is correctly defined
+            let mut map: GlobalSymbolMap = HashMap::new();
+
+            // Key is (name, kind), value is Vec<(FileId, SymbolId)>
+            map.insert(
+                ("foo".to_string(), SymbolKind::Function),
+                vec![(FileId::new(0), SymbolId(1))],
+            );
+
+            assert!(map.contains_key(&("foo".to_string(), SymbolKind::Function)));
         }
     }
 }

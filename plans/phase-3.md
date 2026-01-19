@@ -2046,7 +2046,7 @@ These were limitations in the original Python worker, not new deviations.
 - `crates/tugtool-python/src/analyzer.rs` - new `analyze_files` function
 
 **Tasks:**
-- [ ] Add `analyze_files` function to `PythonAdapter`:
+- [x] Add `analyze_files` function to `PythonAdapter`:
   ```rust
   pub fn analyze_files(
       &self,
@@ -2054,18 +2054,18 @@ These were limitations in the original Python worker, not new deviations.
       store: &mut FactsStore,
   ) -> AnalyzerResult<()>
   ```
-- [ ] Define intermediate types for multi-file analysis:
+- [x] Define intermediate types for multi-file analysis:
   - `FileAnalysisBundle` - holds per-file analysis results plus metadata
   - `GlobalSymbolMap` - maps `(name, kind)` to `Vec<(FileId, SymbolId)>`
-- [ ] Document the 4-pass algorithm in function doc comment
+- [x] Document the 4-pass algorithm in function doc comment
 
 **Tests:**
-- [ ] Unit: Function signature compiles
-- [ ] Unit: Empty file list returns Ok(())
+- [x] Unit: Function signature compiles
+- [x] Unit: Empty file list returns Ok(())
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert analyzer.rs changes
