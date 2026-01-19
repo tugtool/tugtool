@@ -148,6 +148,8 @@ impl From<CstScopeInfo> for ScopeInfo {
             name: cst_scope.name,
             parent: cst_scope.parent,
             span,
+            globals: cst_scope.globals,
+            nonlocals: cst_scope.nonlocals,
         }
     }
 }

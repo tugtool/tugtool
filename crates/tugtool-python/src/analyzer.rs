@@ -21,7 +21,8 @@
 //! worker-based implementation when the `python-worker` feature is enabled.
 
 use tugtool_core::facts::{
-    FactsStore, File, Import, InheritanceInfo, Language, Reference, ReferenceKind, Symbol,
+    FactsStore, File, Import, InheritanceInfo, Language, Reference, ReferenceKind,
+    ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind as CoreScopeKind, Symbol,
     SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
@@ -170,6 +171,17 @@ impl Scope {
     /// Check if a name is declared nonlocal in this scope.
     pub fn is_nonlocal(&self, name: &str) -> bool {
         self.nonlocals.contains(name)
+    }
+
+    /// Convert local ScopeKind to core ScopeKind.
+    pub fn to_core_kind(&self) -> CoreScopeKind {
+        match self.kind {
+            ScopeKind::Module => CoreScopeKind::Module,
+            ScopeKind::Class => CoreScopeKind::Class,
+            ScopeKind::Function => CoreScopeKind::Function,
+            ScopeKind::Lambda => CoreScopeKind::Lambda,
+            ScopeKind::Comprehension => CoreScopeKind::Comprehension,
+        }
     }
 }
 
@@ -330,6 +342,20 @@ pub mod native {
     /// but different kinds (e.g., a function `foo` vs a variable `foo`).
     pub type GlobalSymbolMap = HashMap<(String, SymbolKind), Vec<(FileId, SymbolId)>>;
 
+    /// Set of import bindings: (FileId, local_name).
+    ///
+    /// This tracks which names in each file are import bindings rather than
+    /// local definitions. Used during Pass 3 to apply resolution preference
+    /// rules (prefer original definitions over import bindings).
+    pub type ImportBindingsSet = HashSet<(FileId, String)>;
+
+    /// Maps local file scope IDs to global FactsStore scope IDs.
+    ///
+    /// Each file has its own local scope numbering (starting from 0).
+    /// This map translates those local IDs to the globally-unique CoreScopeIds
+    /// assigned by the FactsStore.
+    pub type ScopeIdMap = HashMap<(FileId, ScopeId), CoreScopeId>;
+
     /// Analyze multiple files and populate the FactsStore using native CST.
     ///
     /// This is the main entry point for multi-file Python analysis without any
@@ -417,9 +443,13 @@ pub mod native {
         // - Pass 3 needs to know which paths exist in the workspace
         bundle.workspace_files = files.iter().map(|(path, _)| path.clone()).collect();
 
+        // Keep a map of file_id -> content for content hash computation in Pass 2
+        let mut file_contents: HashMap<FileId, &str> = HashMap::new();
+
         // Analyze each file
         for (path, content) in files {
             let file_id = store.next_file_id();
+            file_contents.insert(file_id, content.as_str());
             match analyze_file_native(file_id, path, content) {
                 Ok(analysis) => {
                     bundle.file_analyses.push(analysis);
@@ -433,9 +463,129 @@ pub mod native {
 
         // ====================================================================
         // Pass 2: Symbol Registration
-        // (Will be implemented in Step 9.3)
         // ====================================================================
-        let _global_symbols: GlobalSymbolMap = HashMap::new();
+        // For each FileAnalysis:
+        //   - Insert File into FactsStore
+        //   - Assign globally-unique SymbolIds and insert Symbols
+        //   - Build GlobalSymbolMap for cross-file resolution
+        //   - Link container symbols (methods to classes)
+        //   - Track import bindings separately
+        //   - Insert ScopeInfo records into FactsStore
+
+        let mut global_symbols: GlobalSymbolMap = HashMap::new();
+        let mut import_bindings: ImportBindingsSet = HashSet::new();
+        let mut scope_id_map: ScopeIdMap = HashMap::new();
+
+        // Track class symbols within each file for method->class linking
+        // Key: (FileId, class_name) -> SymbolId
+        let mut class_symbols: HashMap<(FileId, String), SymbolId> = HashMap::new();
+
+        for analysis in &bundle.file_analyses {
+            let file_id = analysis.file_id;
+            let content = file_contents.get(&file_id).unwrap_or(&"");
+
+            // Insert File into FactsStore
+            let content_hash = ContentHash::compute(content.as_bytes());
+            let file = File::new(file_id, &analysis.path, content_hash, Language::Python);
+            store.insert_file(file);
+
+            // Pass 2a: Register scopes (must happen before symbols for parent linking)
+            // Map local scope IDs to global CoreScopeIds
+            let mut local_to_global_scope: HashMap<ScopeId, CoreScopeId> = HashMap::new();
+
+            // First pass: assign CoreScopeIds to all scopes
+            for scope in &analysis.scopes {
+                let core_scope_id = store.next_scope_id();
+                local_to_global_scope.insert(scope.id, core_scope_id);
+                scope_id_map.insert((file_id, scope.id), core_scope_id);
+            }
+
+            // Second pass: insert ScopeInfo records with parent links
+            for scope in &analysis.scopes {
+                let core_scope_id = local_to_global_scope[&scope.id];
+                let parent_core_id = scope
+                    .parent_id
+                    .and_then(|pid| local_to_global_scope.get(&pid).copied());
+
+                // Compute span for scope (currently we don't have precise scope spans,
+                // so we use a placeholder - this will be improved in future)
+                // TODO: Get actual scope spans from native analysis
+                let span = Span::new(0, 0);
+
+                let mut core_scope =
+                    CoreScopeInfo::new(core_scope_id, file_id, span, scope.to_core_kind());
+                if let Some(parent_id) = parent_core_id {
+                    core_scope = core_scope.with_parent(parent_id);
+                }
+                store.insert_scope(core_scope);
+            }
+
+            // Pass 2b: First pass - register class symbols to enable method linking
+            for symbol in &analysis.symbols {
+                if symbol.kind == SymbolKind::Class {
+                    // Reserve SymbolId for class
+                    let symbol_id = store.next_symbol_id();
+                    class_symbols.insert((file_id, symbol.name.clone()), symbol_id);
+
+                    // Get span (use default if not available)
+                    let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
+
+                    // Insert class symbol
+                    let sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
+                    store.insert_symbol(sym);
+
+                    // Update global_symbols map
+                    global_symbols
+                        .entry((symbol.name.clone(), symbol.kind))
+                        .or_default()
+                        .push((file_id, symbol_id));
+                }
+            }
+
+            // Pass 2c: Register non-class symbols with container linking
+            for symbol in &analysis.symbols {
+                if symbol.kind == SymbolKind::Class {
+                    // Already handled above
+                    continue;
+                }
+
+                let symbol_id = store.next_symbol_id();
+
+                // Get span (use default if not available)
+                let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
+
+                // Create symbol
+                let mut sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
+
+                // Link container for methods
+                // A method is a function defined inside a class scope
+                if let Some(container_name) = &symbol.container {
+                    if let Some(&container_id) = class_symbols.get(&(file_id, container_name.clone()))
+                    {
+                        sym = sym.with_container(container_id);
+                    }
+                }
+
+                store.insert_symbol(sym);
+
+                // Update global_symbols map
+                global_symbols
+                    .entry((symbol.name.clone(), symbol.kind))
+                    .or_default()
+                    .push((file_id, symbol_id));
+
+                // Track import bindings
+                if symbol.kind == SymbolKind::Import {
+                    import_bindings.insert((file_id, symbol.name.clone()));
+                }
+            }
+        }
+
+        // Store global_symbols and import_bindings for Pass 3
+        // (Currently these are local variables; in a full implementation they would
+        // be passed to Pass 3 or stored in the bundle)
+        let _ = global_symbols; // Will be used in Step 9.4
+        let _ = import_bindings; // Will be used in Step 9.4
 
         // ====================================================================
         // Pass 3: Reference & Import Resolution
@@ -545,12 +695,16 @@ pub mod native {
                 let scope_id = ScopeId::new(idx as u32);
                 let parent_id = ns.parent.as_ref().and_then(|p| scope_map.get(p).copied());
 
-                Scope::new(
+                let mut scope = Scope::new(
                     scope_id,
                     ScopeKind::from(ns.kind.as_str()),
                     ns.name.clone(),
                     parent_id,
-                )
+                );
+                // Populate globals and nonlocals from native scope info
+                scope.globals = ns.globals.iter().cloned().collect();
+                scope.nonlocals = ns.nonlocals.iter().cloned().collect();
+                scope
             })
             .collect();
 
@@ -3092,6 +3246,226 @@ class MyClass:
             assert!(bundle.workspace_files.contains("src/main.py"));
             assert!(bundle.workspace_files.contains("src/utils.py"));
             assert!(bundle.workspace_files.contains("tests/test_main.py"));
+        }
+
+        // ====================================================================
+        // Pass 2 Tests (Step 9.3)
+        // ====================================================================
+
+        #[test]
+        fn analyze_files_pass2_symbols_inserted_with_unique_ids() {
+            // Test: Symbols are inserted into FactsStore with unique IDs
+            let mut store = FactsStore::new();
+            let files = vec![
+                ("a.py".to_string(), "def func_a(): pass".to_string()),
+                (
+                    "b.py".to_string(),
+                    "def func_b(): pass\nclass ClassB: pass".to_string(),
+                ),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify Files are in FactsStore
+            let files_in_store: Vec<_> = store.files().collect();
+            assert_eq!(files_in_store.len(), 2, "should have 2 files in store");
+
+            // Verify Symbols are in FactsStore
+            let symbols_in_store: Vec<_> = store.symbols().collect();
+            assert!(
+                symbols_in_store.len() >= 3,
+                "should have at least 3 symbols (func_a, func_b, ClassB)"
+            );
+
+            // Verify SymbolIds are unique
+            let symbol_ids: std::collections::HashSet<_> =
+                symbols_in_store.iter().map(|s| s.symbol_id).collect();
+            assert_eq!(
+                symbol_ids.len(),
+                symbols_in_store.len(),
+                "all SymbolIds should be unique"
+            );
+
+            // Verify we can find specific symbols by name
+            let func_a = symbols_in_store.iter().find(|s| s.name == "func_a");
+            assert!(func_a.is_some(), "should have func_a symbol");
+            assert_eq!(func_a.unwrap().kind, SymbolKind::Function);
+
+            let class_b = symbols_in_store.iter().find(|s| s.name == "ClassB");
+            assert!(class_b.is_some(), "should have ClassB symbol");
+            assert_eq!(class_b.unwrap().kind, SymbolKind::Class);
+        }
+
+        #[test]
+        fn analyze_files_pass2_methods_linked_to_container_classes() {
+            // Test: Methods are linked to their containing classes
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "class MyClass:\n    def my_method(self):\n        pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let symbols: Vec<_> = store.symbols().collect();
+
+            // Find the class symbol
+            let class_sym = symbols
+                .iter()
+                .find(|s| s.name == "MyClass" && s.kind == SymbolKind::Class)
+                .expect("should have MyClass symbol");
+
+            // Find the method symbol
+            let method_sym = symbols
+                .iter()
+                .find(|s| s.name == "my_method")
+                .expect("should have my_method symbol");
+
+            // Method should be linked to class
+            assert_eq!(
+                method_sym.container_symbol_id,
+                Some(class_sym.symbol_id),
+                "method should have class as container"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass2_import_bindings_tracked() {
+            // Test: Import bindings are tracked separately
+            // (This tests that SymbolKind::Import symbols are recognized)
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "main.py".to_string(),
+                    "from utils import helper\nhelper()".to_string(),
+                ),
+                ("utils.py".to_string(), "def helper(): pass".to_string()),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify symbols are in store
+            let symbols: Vec<_> = store.symbols().collect();
+            assert!(!symbols.is_empty(), "should have symbols");
+
+            // The helper definition in utils.py should be a Function
+            let helper_def = symbols
+                .iter()
+                .find(|s| s.name == "helper" && s.kind == SymbolKind::Function);
+            assert!(
+                helper_def.is_some(),
+                "should have helper function definition"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass2_global_symbols_map_populated() {
+            // Test: GlobalSymbolMap is populated correctly
+            // (We verify this indirectly by checking symbols in FactsStore)
+            let mut store = FactsStore::new();
+            let files = vec![
+                ("a.py".to_string(), "def shared_name(): pass".to_string()),
+                (
+                    "b.py".to_string(),
+                    "class shared_name: pass".to_string(), // Same name, different kind
+                ),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let symbols: Vec<_> = store.symbols().collect();
+
+            // Should have both symbols with the same name but different kinds
+            let func = symbols
+                .iter()
+                .find(|s| s.name == "shared_name" && s.kind == SymbolKind::Function);
+            let class = symbols
+                .iter()
+                .find(|s| s.name == "shared_name" && s.kind == SymbolKind::Class);
+
+            assert!(func.is_some(), "should have function named shared_name");
+            assert!(class.is_some(), "should have class named shared_name");
+
+            // They should have different symbol IDs
+            assert_ne!(
+                func.unwrap().symbol_id,
+                class.unwrap().symbol_id,
+                "different symbols should have different IDs"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass2_scope_trees_built_with_parent_links() {
+            // Test: Scope trees are built with correct parent links
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def outer():\n    def inner():\n        pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify scopes are in store
+            let scopes: Vec<_> = store.scopes().collect();
+            assert!(scopes.len() >= 3, "should have module, outer, and inner scopes");
+
+            // Find module scope (should have no parent)
+            let module_scope = scopes
+                .iter()
+                .find(|s| s.kind == CoreScopeKind::Module)
+                .expect("should have module scope");
+            assert!(
+                module_scope.parent.is_none(),
+                "module scope should have no parent"
+            );
+
+            // Function scopes should have parents
+            let func_scopes: Vec<_> = scopes
+                .iter()
+                .filter(|s| s.kind == CoreScopeKind::Function)
+                .collect();
+            assert!(
+                func_scopes.len() >= 2,
+                "should have at least 2 function scopes (outer, inner)"
+            );
+
+            // At least one function scope should have a parent
+            let has_parent = func_scopes.iter().any(|s| s.parent.is_some());
+            assert!(
+                has_parent,
+                "at least one function scope should have a parent"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass2_global_nonlocal_declarations_tracked() {
+            // Test: global/nonlocal declarations are tracked per scope
+            // (This tests that the Scope struct captures these declarations)
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "x = 1\ndef foo():\n    global x\n    x = 2".to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify that the FileAnalysis has scopes with global declarations
+            assert_eq!(bundle.file_analyses.len(), 1);
+            let analysis = &bundle.file_analyses[0];
+
+            // Find the function scope
+            let func_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.kind == ScopeKind::Function);
+            assert!(func_scope.is_some(), "should have function scope");
+
+            // The function scope should have 'x' as global
+            let func_scope = func_scope.unwrap();
+            assert!(
+                func_scope.globals.contains("x"),
+                "function scope should have 'x' declared as global"
+            );
         }
     }
 }

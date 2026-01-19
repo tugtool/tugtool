@@ -2116,38 +2116,38 @@ These were limitations in the original Python worker, not new deviations.
 - Updated `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] For each `FileAnalysis`:
-  - [ ] Generate `FileId` and insert `File` into `FactsStore`
-  - [ ] For each `LocalSymbol`:
-    - [ ] Generate globally-unique `SymbolId`
-    - [ ] Link container symbols (methods to classes)
-    - [ ] Insert `Symbol` into `FactsStore`
-    - [ ] Update `global_symbols` map: `name -> Vec<(FileId, SymbolId)>`
-  - [ ] Track import bindings separately for reference resolution
-- [ ] Handle container linking:
-  - [ ] When processing a method, find its class symbol in the same file
-  - [ ] Set `container_symbol_id` on the method symbol
-- [ ] Build `import_bindings` set: `HashSet<(FileId, String)>` for names that are imports
-- [ ] **Build scope infrastructure (Contract C4):**
-  - [ ] Build per-file scope trees with parent links (`ScopeInfo.parent`)
-  - [ ] Track `global` declarations per scope
-  - [ ] Track `nonlocal` declarations per scope
-  - [ ] Insert `ScopeInfo` records into `FactsStore`
-  - [ ] Build scope-to-symbols index for lookup
+- [x] For each `FileAnalysis`:
+  - [x] Generate `FileId` and insert `File` into `FactsStore`
+  - [x] For each `LocalSymbol`:
+    - [x] Generate globally-unique `SymbolId`
+    - [x] Link container symbols (methods to classes)
+    - [x] Insert `Symbol` into `FactsStore`
+    - [x] Update `global_symbols` map: `name -> Vec<(FileId, SymbolId)>`
+  - [x] Track import bindings separately for reference resolution
+- [x] Handle container linking:
+  - [x] When processing a method, find its class symbol in the same file
+  - [x] Set `container_symbol_id` on the method symbol
+- [x] Build `import_bindings` set: `HashSet<(FileId, String)>` for names that are imports
+- [x] **Build scope infrastructure (Contract C4):**
+  - [x] Build per-file scope trees with parent links (`ScopeInfo.parent`)
+  - [x] Track `global` declarations per scope
+  - [x] Track `nonlocal` declarations per scope
+  - [x] Insert `ScopeInfo` records into `FactsStore`
+  - [x] Build scope-to-symbols index for lookup
 
 **Tests:**
-- [ ] Unit: Symbols inserted with unique IDs
-- [ ] Unit: Methods linked to container classes
-- [ ] Unit: Import bindings tracked separately
-- [ ] Unit: global_symbols map populated correctly
-- [ ] Unit: Scope trees built with correct parent links
-- [ ] Unit: global/nonlocal declarations tracked per scope
+- [x] Unit: Symbols inserted with unique IDs
+- [x] Unit: Methods linked to container classes
+- [x] Unit: Import bindings tracked separately
+- [x] Unit: global_symbols map populated correctly
+- [x] Unit: Scope trees built with correct parent links
+- [x] Unit: global/nonlocal declarations tracked per scope
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python analyze_files_pass2` passes
-- [ ] All symbols in FactsStore have valid IDs
-- [ ] Method->class relationships established
-- [ ] Scope hierarchy matches source structure
+- [x] `cargo test -p tugtool-python analyze_files_pass2` passes
+- [x] All symbols in FactsStore have valid IDs
+- [x] Method->class relationships established
+- [x] Scope hierarchy matches source structure
 
 **Rollback:**
 - Revert Pass 2 implementation

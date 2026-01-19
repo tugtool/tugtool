@@ -193,6 +193,12 @@ pub struct ScopeInfo {
     pub parent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<ScopeSpanInfo>,
+    /// Names declared as `global` in this scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub globals: Vec<String>,
+    /// Names declared as `nonlocal` in this scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nonlocals: Vec<String>,
 }
 
 /// Scope span information.

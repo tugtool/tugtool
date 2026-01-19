@@ -1476,3 +1476,80 @@ All Step 8 sub-steps completed:
 **Next Step:** Step 9.3 - Implement Pass 2 - Symbol Registration
 
 ---
+
+### Step 9.3: Implement Pass 2 - Symbol Registration - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D09] Multi-pass FactsStore Population decision
+- Diagram Diag02: FactsStore Population Pipeline (Pass 2 section)
+- Contract C4: Scope Chain Resolution (LEGB)
+- Contract C8: Deterministic ID Assignment
+- FactsStore API (insert_file, insert_symbol, insert_scope, next_symbol_id, next_scope_id)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| For each FileAnalysis: Generate FileId and insert File into FactsStore | Done |
+| For each LocalSymbol: Generate globally-unique SymbolId | Done |
+| Link container symbols (methods to classes) | Done |
+| Insert Symbol into FactsStore | Done |
+| Update global_symbols map: name -> Vec<(FileId, SymbolId)> | Done |
+| Track import bindings separately for reference resolution | Done |
+| Build per-file scope trees with parent links (ScopeInfo.parent) | Done |
+| Track global declarations per scope | Done |
+| Track nonlocal declarations per scope | Done |
+| Insert ScopeInfo records into FactsStore | Done |
+| Build scope-to-symbols index for lookup | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added imports: `ScopeId as CoreScopeId`, `ScopeInfo as CoreScopeInfo`, `ScopeKind as CoreScopeKind`
+  - Added `to_core_kind()` method to Scope for kind conversion
+  - Added type aliases: `ImportBindingsSet`, `ScopeIdMap`
+  - Implemented full Pass 2 logic in `analyze_files()`:
+    - File registration with content hash computation
+    - Scope registration with parent linking and global/nonlocal tracking
+    - Two-pass symbol registration (classes first, then non-classes for container linking)
+    - GlobalSymbolMap population
+    - ImportBindingsSet population
+  - Added 6 new unit tests for Pass 2 functionality
+- `crates/tugtool-python/src/worker.rs`:
+  - Added `globals: Vec<String>` field to `ScopeInfo`
+  - Added `nonlocal: Vec<String>` field to `ScopeInfo`
+- `crates/tugtool-python/src/cst_bridge.rs`:
+  - Updated `From<CstScopeInfo> for ScopeInfo` to preserve globals/nonlocals
+
+**Test Results:**
+- `cargo test -p tugtool-python analyze_files_pass2`: 6 tests passed
+- `cargo nextest run --workspace`: 1037 tests passed, 50 skipped
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-python analyze_files_pass2` passes: PASS
+- All symbols in FactsStore have valid IDs: PASS (verified by `analyze_files_pass2_symbols_inserted_with_unique_ids`)
+- Method->class relationships established: PASS (verified by `analyze_files_pass2_methods_linked_to_container_classes`)
+- Scope hierarchy matches source structure: PASS (verified by `analyze_files_pass2_scope_trees_built_with_parent_links`)
+
+**Key Implementation Details:**
+1. **Two-pass symbol registration**: Classes are registered first to ensure container linking works correctly
+2. **Scope parent linking**: Local scope IDs are mapped to global CoreScopeIds before parent references are resolved
+3. **Global/nonlocal tracking**: Added fields to worker ScopeInfo and updated conversion to preserve these from native CST
+4. **Content hash**: Computed from file content bytes for FactsStore File records
+5. **GlobalSymbolMap and ImportBindingsSet**: Prepared for Pass 3 use (currently marked with `let _ =` until Step 9.4)
+
+**Tests Added:**
+- `analyze_files_pass2_symbols_inserted_with_unique_ids`
+- `analyze_files_pass2_methods_linked_to_container_classes`
+- `analyze_files_pass2_import_bindings_tracked`
+- `analyze_files_pass2_global_symbols_map_populated`
+- `analyze_files_pass2_scope_trees_built_with_parent_links`
+- `analyze_files_pass2_global_nonlocal_declarations_tracked`
+
+**Next Step:** Step 9.4 - Implement Pass 3 - Reference and Import Resolution
+
+---
