@@ -60,6 +60,7 @@
 mod binding;
 mod dispatch;
 mod reference;
+mod rename;
 mod scope;
 mod span_collector;
 mod traits;
@@ -67,6 +68,10 @@ mod traits;
 pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;
 pub use reference::{ReferenceCollector, ReferenceInfo, ReferenceKind};
+pub use rename::{
+    sort_requests_by_start, sort_requests_by_start_reverse, spans_overlap, RenameError,
+    RenameRequest, RenameResult, RenameTransformer,
+};
 pub use scope::{ScopeCollector, ScopeInfo, ScopeKind};
 pub use span_collector::SpanCollector;
 pub use traits::{Transform, Transformer, VisitResult, Visitor};

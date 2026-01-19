@@ -727,3 +727,80 @@ Ready for Step 4 (Port P0 Visitors): ScopeCollector, BindingCollector, Reference
 **Note:** The "Golden: Compare output to Python visitor" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
 
 ---
+
+### Step 4.4: RenameTransformer - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Table T01: Python to Rust Visitor Mapping
+- Table T02: IPC Operations to Port
+- Python rewrite_batch implementation in libcst_worker.py (lines 2060-2112)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `RenameRequest` struct (span, new_name) | Done |
+| Implement `RenameTransformer<'a>` struct | Done |
+| Implement batch rename logic (apply from end to start) | Done |
+| Handle overlapping spans (error or merge) | Done |
+| Implement `apply()` method returning transformed source | Done |
+| Ensure UTF-8 byte offset handling is correct | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/rename.rs` (~560 lines)
+  - `RenameRequest` struct with span and new_name fields
+  - `RenameError` enum with SpanOutOfBounds, OverlappingSpans, EmptyRequests variants
+  - `RenameTransformer` that applies batch renames from end to start
+  - Helper functions: `spans_overlap`, `sort_requests_by_start`, `sort_requests_by_start_reverse`
+  - 23 unit tests covering all scenarios
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added rename module and exports
+- `crates/tugtool-cst/src/lib.rs` - Added RenameError, RenameRequest, RenameResult, RenameTransformer exports
+
+**Test Results:**
+- `cargo test -p tugtool-cst rename`: 23 tests passed
+- `cargo nextest run --workspace`: 808 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst rename` passes: PASS
+- `cargo nextest run --workspace` passes: PASS (808 tests)
+
+**Key Implementation Details:**
+1. RenameTransformer takes source text and a list of RenameRequest items
+2. Requests are sorted by span start in reverse order (end to start)
+3. Renames are applied from end to start to preserve span validity as text lengths change
+4. Overlapping spans are detected and return an error (not merged)
+5. Span bounds are validated against source length
+6. UTF-8 byte offsets are handled correctly (tested with Chinese characters, emoji)
+7. `apply_unchecked()` method provided for performance when caller has pre-validated
+
+**Note:** The "Golden: Compare output to Python rewrite_batch" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
+
+---
+
+### Step 4 Summary - COMPLETE
+
+All P0 visitors have been implemented:
+
+| Visitor | Status | Tests |
+|---------|--------|-------|
+| ScopeCollector | Complete | 12 tests |
+| BindingCollector | Complete | 24 tests |
+| ReferenceCollector | Complete | 17 tests |
+| RenameTransformer | Complete | 23 tests |
+
+**Total P0 visitor tests:** 76 tests
+**Total workspace tests:** 808 tests
+
+The native Rust implementation provides all the core functionality needed for rename operations:
+- Scope hierarchy extraction with global/nonlocal tracking
+- Name binding collection with kind classification
+- Name reference collection with context-aware kind detection
+- Batch rename application with span validation
+
+**Next Step:** Step 5 - Integrate with tugtool-python (feature flags, cst_bridge, analyzer integration)
+
+---

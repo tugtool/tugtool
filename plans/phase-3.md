@@ -1167,24 +1167,24 @@ After completing Steps 3.1-3.3, you will have:
 - `tugtool-cst/src/visitor/rename.rs`
 
 **Tasks:**
-- [ ] Define `RenameRequest` struct (span, new_name)
-- [ ] Implement `RenameTransformer<'a>` struct
-- [ ] Implement batch rename logic (apply from end to start)
-- [ ] Handle overlapping spans (error or merge)
-- [ ] Implement `apply()` method returning transformed source
-- [ ] Ensure UTF-8 byte offset handling is correct
+- [x] Define `RenameRequest` struct (span, new_name)
+- [x] Implement `RenameTransformer<'a>` struct
+- [x] Implement batch rename logic (apply from end to start)
+- [x] Handle overlapping spans (error or merge)
+- [x] Implement `apply()` method returning transformed source
+- [x] Ensure UTF-8 byte offset handling is correct
 
 **Tests:**
-- [ ] Unit: Single rename applied correctly
-- [ ] Unit: Multiple renames in same file
-- [ ] Unit: Renames don't corrupt surrounding code
-- [ ] Unit: UTF-8 names handled correctly
+- [x] Unit: Single rename applied correctly
+- [x] Unit: Multiple renames in same file
+- [x] Unit: Renames don't corrupt surrounding code
+- [x] Unit: UTF-8 names handled correctly
 - [ ] Golden: Compare output to Python rewrite_batch
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst rename` passes
+- [x] `cargo test -p tugtool-cst rename` passes
 - [ ] Rename output identical to Python for test cases
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove rename.rs
@@ -1203,7 +1203,7 @@ After completing Steps 4.1-4.4, you will have:
 
 **Final Step 4 Checkpoint:**
 - [ ] All P0 visitors pass equivalence tests against Python backend
-- [ ] Basic rename refactoring works end-to-end in isolation
+- [x] Basic rename refactoring works end-to-end in isolation
 
 ---
 
