@@ -153,6 +153,22 @@ The log file preserves a historical record of all implementation work, which is 
 - Documenting implementation decisions
 - Onboarding new contributors
 
+## MANDATORY FINAL STEP - DO NOT SKIP
+
+**BEFORE reporting completion to the user, you MUST append a completion summary to `plans/plan-implementation-log.md`.**
+
+This is NOT optional. This is NOT "if you have time." This MUST happen for EVERY step you implement.
+
+Failure to append to the log means the step is NOT complete, regardless of whether the code works.
+
+Checklist before saying "done":
+1. ✅ Code implemented
+2. ✅ Tests pass
+3. ✅ Plan file checkboxes updated
+4. ✅ **Log entry appended to `plans/plan-implementation-log.md`** ← THIS ONE. DO IT.
+
+---
+
 ## Critical Reminders
 
 - **NEVER USE GIT** - No `git add`, `git commit`, `git push`, or any git commands. You implement code; the user commits.

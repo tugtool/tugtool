@@ -2245,34 +2245,34 @@ These were limitations in the original Python worker, not new deviations.
 - Integration with `type_tracker.rs`
 
 **Tasks:**
-- [ ] Build `MethodCallIndex` for efficient lookup:
-  - [ ] Index all method calls by method name
-  - [ ] Store receiver, receiver_type, scope_path, span
-- [ ] For each `FileAnalysis`:
-  - [ ] Build `TypeTracker` from assignments and annotations
-  - [ ] Populate `TypeInfo` in `FactsStore` for typed variables
-  - [ ] Build `InheritanceInfo` from class_inheritance data:
-    - [ ] Use `ImportResolver` for import-aware base class resolution
-    - [ ] Insert parent->child relationships into store
-- [ ] For each class method symbol:
-  - [ ] Look up matching calls in `MethodCallIndex` by method name
-  - [ ] Filter by receiver type (must match container class)
-  - [ ] Check for duplicates (don't create if reference already exists)
-  - [ ] Insert typed method call references
-- [ ] Optimization: O(M * C_match) instead of O(M * F * C)
+- [x] Build `MethodCallIndex` for efficient lookup:
+  - [x] Index all method calls by method name
+  - [x] Store receiver, receiver_type, scope_path, span
+- [x] For each `FileAnalysis`:
+  - [x] Build `TypeTracker` from assignments and annotations
+  - [x] Populate `TypeInfo` in `FactsStore` for typed variables
+  - [x] Build `InheritanceInfo` from class_inheritance data:
+    - [x] Use `FileImportResolver` for import-aware base class resolution
+    - [x] Insert parent->child relationships into store
+- [x] For each class method symbol:
+  - [x] Look up matching calls in `MethodCallIndex` by method name
+  - [x] Filter by receiver type (must match container class)
+  - [x] Check for duplicates (don't create if reference already exists)
+  - [x] Insert typed method call references
+- [x] Optimization: O(M * C_match) instead of O(M * F * C)
 
 **Tests:**
-- [ ] Unit: TypeInfo populated for constructor calls
-- [ ] Unit: InheritanceInfo created for class hierarchies
-- [ ] Unit: Method calls resolved to correct class methods
-- [ ] Unit: Receiver type filtering works correctly
-- [ ] Integration: Type-aware rename works across files
+- [x] Unit: TypeInfo populated for constructor calls
+- [x] Unit: InheritanceInfo created for class hierarchies
+- [x] Unit: Method calls resolved to correct class methods
+- [x] Unit: Receiver type filtering works correctly
+- [x] Integration: Type-aware rename works across files
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python analyze_files_pass4` passes
-- [ ] TypeInfo in store for all typed variables
-- [ ] InheritanceInfo establishes class hierarchies
-- [ ] Method calls linked to correct class methods
+- [x] `cargo test -p tugtool-python analyze_files_pass4` passes
+- [x] TypeInfo in store for all typed variables
+- [x] InheritanceInfo establishes class hierarchies
+- [x] Method calls linked to correct class methods
 
 **Rollback:**
 - Revert Pass 4 implementation

@@ -1636,3 +1636,73 @@ All Step 8 sub-steps completed:
 **Next Step:** Step 9.5 - Implement Pass 4 - Type-Aware Method Resolution
 
 ---
+
+### Step 9.5: Implement Pass 4 - Type-Aware Method Resolution - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D09] Multi-pass FactsStore Population decision
+- Diagram Diag02: FactsStore Population Pipeline (Pass 4 section)
+- Contract C5: Type Inference Levels
+- Contract C6: Inheritance and Override Resolution
+- Existing type_tracker.rs implementation
+- CST visitor modules: method_call.rs, inheritance.rs, type_inference.rs, annotation.rs
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Build MethodCallIndex for efficient lookup | Done |
+| Index all method calls by method name | Done |
+| Store receiver, receiver_type, scope_path, span | Done |
+| Build TypeTracker from assignments and annotations | Done |
+| Populate TypeInfo in FactsStore for typed variables | Done |
+| Build InheritanceInfo from class_inheritance data | Done |
+| Use FileImportResolver for import-aware base class resolution | Done |
+| Insert parent->child relationships into store | Done |
+| Look up matching calls in MethodCallIndex by method name | Done |
+| Filter by receiver type (must match container class) | Done |
+| Check for duplicates (don't create if reference already exists) | Done |
+| Insert typed method call references | Done |
+| Optimization: O(M * C_match) instead of O(M * F * C) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `MethodCallIndex` struct for O(1) method call lookup by name
+  - Added `IndexedMethodCall` struct to store method call data with resolved receiver type
+  - Implemented Pass 4a: Re-analyze files to get P1 data (assignments, annotations, class_inheritance, method_calls)
+  - Implemented Pass 4b: Populate TypeInfo in FactsStore using TypeTracker
+  - Implemented Pass 4c: Build InheritanceInfo from class_inheritance with cross-file import resolution
+  - Implemented Pass 4d: Insert typed method call references filtered by receiver type
+  - Added 6 unit tests for Pass 4 functionality
+- `plans/phase-3.md`:
+  - Updated all Step 9.5 checkboxes to complete
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1060 tests passed, 50 skipped
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-python analyze_files_pass4` passes: PASS
+- TypeInfo in store for all typed variables: PASS
+- InheritanceInfo establishes class hierarchies: PASS
+- Method calls linked to correct class methods: PASS
+
+**Key Decisions/Notes:**
+1. Pass 4 re-parses files to get P1 data since FileAnalysis doesn't currently store it. This could be optimized later by caching P1 data in Pass 1.
+2. Used `FileImportResolver` (not `ImportResolver`) for cross-file inheritance resolution to properly resolve imports against workspace_files.
+3. TypeTracker processes both assignments (constructor calls) and annotations (parameter/return types) per Contract C5.
+4. Self/cls method calls are resolved by checking if the receiver is "self"/"cls" and the scope_path contains the class name.
+5. Duplicate reference prevention ensures we don't create redundant references for the same call site.
+
+**Tests Added:**
+- `analyze_files_pass4_type_info_populated` - TypeInfo from constructor calls
+- `analyze_files_pass4_inheritance_info_populated` - InheritanceInfo for class hierarchies
+- `analyze_files_pass4_typed_method_calls_resolved` - Method calls resolved to correct class methods
+- `analyze_files_pass4_self_method_calls_resolved` - Self method call resolution
+- `analyze_files_pass4_cross_file_inheritance` - Cross-file inheritance via imports
+- `analyze_files_pass4_annotated_parameter_type_resolution` - Method calls on annotated parameters
+
+**Next Step:** Step 9.6 - Wire analyze_files into Rename Operations
+
+---

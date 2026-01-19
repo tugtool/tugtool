@@ -28,7 +28,7 @@ use tugtool_core::facts::{
 use tugtool_core::patch::{ContentHash, FileId, Span};
 use tugtool_core::text::position_to_byte_offset_str;
 
-use crate::type_tracker::{analyze_types_from_analysis, populate_type_info};
+use crate::type_tracker::{analyze_types_from_analysis, populate_type_info, TypeTracker};
 use crate::worker::{BindingInfo, ImportInfo, ScopeInfo, WorkerHandle};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -711,8 +711,276 @@ pub mod native {
 
         // ====================================================================
         // Pass 4: Type-Aware Method Resolution
-        // (Will be implemented in Step 9.5)
         // ====================================================================
+        // Build TypeTrackers per file, populate TypeInfo and InheritanceInfo,
+        // build MethodCallIndex, and insert typed method call references.
+        //
+        // Per Contract C5 (Type Inference Levels):
+        // - Level 1: Constructor calls (x = MyClass()) and variable propagation
+        // - Level 2: Annotations (def f(x: Foo), x: int)
+        // - Level 3: Return types (h = get_handler() where get_handler() -> Handler)
+        //
+        // Per Contract C6 (Inheritance and Override Resolution):
+        // - Build parent/child relationships from class_inheritance data
+        // - Renaming Base.method affects Child.method if it's an override
+
+        // We need to re-analyze files to get P1 data (assignments, annotations,
+        // class_inheritance, method_calls). This is necessary because the
+        // FileAnalysis struct doesn't currently include P1 data.
+        //
+        // Note: This could be optimized by storing P1 data in Pass 1, but for now
+        // we re-analyze to keep the implementation simple and correct.
+
+        // Build MethodCallIndex for O(1) lookup by method name
+        let mut method_call_index = MethodCallIndex::new();
+
+        // Store TypeTrackers per file for type resolution
+        let mut type_trackers: HashMap<FileId, TypeTracker> = HashMap::new();
+
+        // Collect all class inheritance info across files for building InheritanceInfo
+        let mut all_class_inheritance: Vec<(FileId, tugtool_cst::ClassInheritanceInfo)> = Vec::new();
+
+        // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
+        for (path, content) in files {
+            // Skip files that failed analysis in Pass 1
+            if bundle.failed_files.iter().any(|(p, _)| p == path) {
+                continue;
+            }
+
+            // Get the FileId for this path
+            let file_id = match file_path_to_id.get(path) {
+                Some(&id) => id,
+                None => continue,
+            };
+
+            // Re-parse to get P1 data
+            let native_result = match cst_bridge::parse_and_analyze(content) {
+                Ok(result) => result,
+                Err(_) => continue, // Skip if re-parse fails (shouldn't happen)
+            };
+
+            // Build TypeTracker from assignments and annotations
+            let mut tracker = TypeTracker::new();
+
+            // Convert CST AssignmentInfo to worker AssignmentInfo for TypeTracker
+            let worker_assignments: Vec<crate::worker::AssignmentInfo> = native_result
+                .assignments
+                .iter()
+                .map(|a| crate::worker::AssignmentInfo {
+                    target: a.target.clone(),
+                    scope_path: a.scope_path.clone(),
+                    type_source: a.type_source.as_str().to_string(),
+                    inferred_type: a.inferred_type.clone(),
+                    rhs_name: a.rhs_name.clone(),
+                    callee_name: a.callee_name.clone(),
+                    span: a
+                        .span
+                        .as_ref()
+                        .map(|s| crate::worker::SpanInfo {
+                            start: s.start as usize,
+                            end: s.end as usize,
+                        }),
+                    line: a.line,
+                    col: a.col,
+                })
+                .collect();
+
+            // Convert CST AnnotationInfo to worker AnnotationInfo for TypeTracker
+            let worker_annotations: Vec<crate::worker::AnnotationInfo> = native_result
+                .annotations
+                .iter()
+                .map(|a| crate::worker::AnnotationInfo {
+                    name: a.name.clone(),
+                    annotation_kind: a.annotation_kind.as_str().to_string(),
+                    source_kind: a.source_kind.as_str().to_string(),
+                    type_str: a.type_str.clone(),
+                    scope_path: a.scope_path.clone(),
+                    span: a
+                        .span
+                        .as_ref()
+                        .map(|s| crate::worker::SpanInfo {
+                            start: s.start as usize,
+                            end: s.end as usize,
+                        }),
+                    line: a.line,
+                    col: a.col,
+                })
+                .collect();
+
+            tracker.process_assignments(&worker_assignments);
+            tracker.process_annotations(&worker_annotations);
+            tracker.resolve_types();
+
+            type_trackers.insert(file_id, tracker);
+
+            // Build MethodCallIndex from method calls
+            // First, get the FileAnalysis to access scope information
+            let analysis = bundle
+                .file_analyses
+                .iter()
+                .find(|a| a.file_id == file_id);
+
+            for mc in &native_result.method_calls {
+                // Resolve receiver type using TypeTracker
+                let receiver_type = type_trackers
+                    .get(&file_id)
+                    .and_then(|tracker| tracker.type_of(&mc.scope_path, &mc.receiver))
+                    .map(String::from);
+
+                let indexed_call = IndexedMethodCall {
+                    file_id,
+                    receiver: mc.receiver.clone(),
+                    receiver_type,
+                    scope_path: mc.scope_path.clone(),
+                    method_span: mc
+                        .method_span
+                        .as_ref()
+                        .map(|s| Span::new(s.start, s.end))
+                        .unwrap_or_else(|| Span::new(0, 0)),
+                };
+
+                method_call_index.add(mc.method.clone(), indexed_call);
+            }
+
+            // Collect class inheritance info
+            for ci in native_result.class_inheritance {
+                all_class_inheritance.push((file_id, ci));
+            }
+
+            // Mark analysis as used to suppress warning
+            let _ = analysis;
+        }
+
+        // Pass 4b: Populate TypeInfo in FactsStore for typed variables
+        for (&file_id, tracker) in &type_trackers {
+            crate::type_tracker::populate_type_info(tracker, store, file_id);
+        }
+
+        // Pass 4c: Build InheritanceInfo from class_inheritance data
+        // Create a map of (file_id, class_name) -> SymbolId for resolving inheritance
+        // Use owned strings to avoid borrow issues
+        let class_name_to_symbol: HashMap<(FileId, String), SymbolId> = store
+            .symbols()
+            .filter(|s| s.kind == SymbolKind::Class)
+            .map(|s| ((s.decl_file_id, s.name.clone()), s.symbol_id))
+            .collect();
+
+        // Collect inheritance relationships first (to avoid borrow issues)
+        let mut inheritance_to_insert: Vec<tugtool_core::facts::InheritanceInfo> = Vec::new();
+
+        for (file_id, ci) in &all_class_inheritance {
+            // Find the child class symbol
+            let child_id = match class_name_to_symbol.get(&(*file_id, ci.name.clone())) {
+                Some(&id) => id,
+                None => continue,
+            };
+
+            // For each base class, try to resolve it to a symbol
+            for base_name in &ci.bases {
+                // Try to find the base class in the same file first
+                if let Some(&parent_id) =
+                    class_name_to_symbol.get(&(*file_id, base_name.clone()))
+                {
+                    inheritance_to_insert.push(tugtool_core::facts::InheritanceInfo::new(
+                        child_id, parent_id,
+                    ));
+                    continue;
+                }
+
+                // Try to resolve via imports
+                // Find the FileAnalysis for this file to get import info
+                if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id)
+                {
+                    // Use FileImportResolver which resolves imports against workspace_files
+                    let import_resolver = FileImportResolver::from_imports(
+                        &analysis.imports,
+                        &bundle.workspace_files,
+                    );
+
+                    if let Some((qualified_name, resolved_file)) =
+                        import_resolver.resolve(base_name)
+                    {
+                        // If we have a resolved file, look for the class there
+                        if let Some(resolved_path) = resolved_file {
+                            if let Some(&target_file_id) = file_path_to_id.get(resolved_path) {
+                                // Extract the actual class name from the qualified path
+                                let target_class_name =
+                                    qualified_name.rsplit('.').next().unwrap_or(base_name);
+                                if let Some(&parent_id) = class_name_to_symbol
+                                    .get(&(target_file_id, target_class_name.to_string()))
+                                {
+                                    inheritance_to_insert.push(
+                                        tugtool_core::facts::InheritanceInfo::new(
+                                            child_id, parent_id,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now insert all collected inheritance relationships
+        for inheritance in inheritance_to_insert {
+            store.insert_inheritance(inheritance);
+        }
+
+        // Pass 4d: Insert typed method call references
+        // For each class method, look up matching calls in MethodCallIndex
+        // and filter by receiver type
+
+        // Collect class method symbols: (method_name, class_name, symbol_id, file_id)
+        let class_methods: Vec<(String, String, SymbolId, FileId)> = store
+            .symbols()
+            .filter(|s| {
+                // A method is a function with a container (the class)
+                (s.kind == SymbolKind::Function || s.kind == SymbolKind::Method)
+                    && s.container_symbol_id.is_some()
+            })
+            .filter_map(|s| {
+                // Get the container class name
+                let container_id = s.container_symbol_id?;
+                let container = store.symbol(container_id)?;
+                Some((
+                    s.name.clone(),
+                    container.name.clone(),
+                    s.symbol_id,
+                    s.decl_file_id,
+                ))
+            })
+            .collect();
+
+        for (method_name, class_name, method_symbol_id, _method_file_id) in class_methods {
+            // Look up all calls to this method name
+            let matching_calls = method_call_index.get(&method_name);
+
+            for call in matching_calls {
+                // Check if the receiver type matches the class
+                let type_matches = call.receiver_type.as_deref() == Some(&class_name);
+
+                // Also check if receiver is "self" or "cls" and we're in a method of this class
+                let is_self_call = (call.receiver == "self" || call.receiver == "cls")
+                    && call
+                        .scope_path
+                        .iter()
+                        .any(|s| s == &class_name);
+
+                if type_matches || is_self_call {
+                    // Insert a reference from this call site to the method
+                    let ref_id = store.next_reference_id();
+                    let reference = Reference::new(
+                        ref_id,
+                        method_symbol_id,
+                        call.file_id,
+                        call.method_span,
+                        ReferenceKind::Call,
+                    );
+                    store.insert_reference(reference);
+                }
+            }
+        }
 
         Ok(bundle)
     }
@@ -4489,6 +4757,219 @@ class MyClass:
 
             let resolved = resolve_module_to_file("utils", &workspace_files);
             assert_eq!(resolved, Some("utils.py".to_string()), "should prefer utils.py over utils/__init__.py");
+        }
+
+        // ====================================================================
+        // Pass 4 Tests: Type-Aware Method Resolution (Step 9.5)
+        // ====================================================================
+
+        #[test]
+        fn analyze_files_pass4_type_info_populated() {
+            // Test: TypeInfo is populated from constructor calls and annotations
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    def process(self):
+        pass
+
+h = Handler()
+"#.to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have type info for 'h' variable
+            let symbols: Vec<_> = store.symbols().collect();
+            let h_symbol = symbols.iter().find(|s| s.name == "h" && s.kind == SymbolKind::Variable);
+
+            assert!(h_symbol.is_some(), "should have h symbol");
+
+            let h_id = h_symbol.unwrap().symbol_id;
+            let type_info = store.type_of_symbol(h_id);
+
+            // Type info should be populated from constructor call
+            assert!(type_info.is_some(), "should have type info for h");
+            assert_eq!(type_info.unwrap().type_repr, "Handler", "h should have type Handler");
+        }
+
+        #[test]
+        fn analyze_files_pass4_inheritance_info_populated() {
+            // Test: InheritanceInfo is populated for class hierarchies
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Base:
+    def method(self):
+        pass
+
+class Child(Base):
+    pass
+"#.to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find class symbols
+            let symbols: Vec<_> = store.symbols().collect();
+            let base_sym = symbols.iter().find(|s| s.name == "Base" && s.kind == SymbolKind::Class);
+            let child_sym = symbols.iter().find(|s| s.name == "Child" && s.kind == SymbolKind::Class);
+
+            assert!(base_sym.is_some(), "should have Base class");
+            assert!(child_sym.is_some(), "should have Child class");
+
+            let base_id = base_sym.unwrap().symbol_id;
+            let child_id = child_sym.unwrap().symbol_id;
+
+            // Check inheritance relationships
+            let children = store.children_of_class(base_id);
+            let parents = store.parents_of_class(child_id);
+
+            assert!(children.contains(&child_id), "Base should have Child as child");
+            assert!(parents.contains(&base_id), "Child should have Base as parent");
+        }
+
+        #[test]
+        fn analyze_files_pass4_typed_method_calls_resolved() {
+            // Test: Method calls on typed receivers are resolved to method symbols
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    def process(self):
+        pass
+
+h = Handler()
+h.process()
+"#.to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the process method symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let process_sym = symbols.iter().find(|s| s.name == "process" && s.kind == SymbolKind::Function);
+
+            assert!(process_sym.is_some(), "should have process method");
+
+            let process_id = process_sym.unwrap().symbol_id;
+
+            // Check that there's a Call reference to the process method
+            let refs: Vec<_> = store.references().filter(|r| r.symbol_id == process_id).collect();
+
+            assert!(
+                refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
+                "should have Call reference to process method from h.process()"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass4_self_method_calls_resolved() {
+            // Test: self.method() calls within class are resolved
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    def process(self):
+        self.helper()
+
+    def helper(self):
+        pass
+"#.to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the helper method symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let helper_sym = symbols.iter().find(|s| s.name == "helper" && s.kind == SymbolKind::Function);
+
+            assert!(helper_sym.is_some(), "should have helper method");
+
+            let helper_id = helper_sym.unwrap().symbol_id;
+
+            // Check that there's a Call reference to helper from self.helper()
+            let refs: Vec<_> = store.references().filter(|r| r.symbol_id == helper_id).collect();
+
+            assert!(
+                refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
+                "should have Call reference to helper method from self.helper()"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass4_cross_file_inheritance() {
+            // Test: Inheritance across files via imports is resolved
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "base.py".to_string(),
+                    "class Base:\n    def method(self): pass".to_string(),
+                ),
+                (
+                    "child.py".to_string(),
+                    "from base import Base\nclass Child(Base): pass".to_string(),
+                ),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find class symbols
+            let symbols: Vec<_> = store.symbols().collect();
+            let base_sym = symbols.iter().find(|s| s.name == "Base" && s.kind == SymbolKind::Class);
+            let child_sym = symbols.iter().find(|s| s.name == "Child" && s.kind == SymbolKind::Class);
+
+            assert!(base_sym.is_some(), "should have Base class");
+            assert!(child_sym.is_some(), "should have Child class");
+
+            let base_id = base_sym.unwrap().symbol_id;
+            let child_id = child_sym.unwrap().symbol_id;
+
+            // Check inheritance is resolved across files
+            let children = store.children_of_class(base_id);
+            let parents = store.parents_of_class(child_id);
+
+            assert!(children.contains(&child_id), "Base should have Child as child (cross-file)");
+            assert!(parents.contains(&base_id), "Child should have Base as parent (cross-file)");
+        }
+
+        #[test]
+        fn analyze_files_pass4_annotated_parameter_type_resolution() {
+            // Test: Method calls on annotated parameters are resolved
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    def process(self):
+        pass
+
+def call_handler(h: Handler):
+    h.process()
+"#.to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the process method symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let process_sym = symbols.iter().find(|s| s.name == "process" && s.kind == SymbolKind::Function);
+
+            assert!(process_sym.is_some(), "should have process method");
+
+            let process_id = process_sym.unwrap().symbol_id;
+
+            // Check that there's a Call reference to process from the annotated h.process()
+            let refs: Vec<_> = store.references().filter(|r| r.symbol_id == process_id).collect();
+
+            assert!(
+                refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
+                "should have Call reference to process method from annotated parameter"
+            );
         }
     }
 }
