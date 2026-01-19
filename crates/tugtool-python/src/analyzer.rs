@@ -7,7 +7,18 @@
 //! - Reference resolution via scope chain
 //! - Import resolution for workspace files
 //!
-//! The analyzer uses the LibCST worker for parsing and CST operations.
+//! # Backends
+//!
+//! The analyzer supports two backends:
+//!
+//! - **Native CST** (`native-cst` feature, default): Uses tugtool-cst for pure Rust
+//!   analysis with zero Python dependencies.
+//! - **Python Worker** (`python-worker` feature): Uses LibCST via Python subprocess
+//!   for analysis.
+//!
+//! When the `native-cst` feature is enabled, use [`analyze_file_native`] for
+//! zero-dependency analysis. The [`PythonAnalyzer`] struct provides the Python
+//! worker-based implementation when the `python-worker` feature is enabled.
 
 use tugtool_core::facts::{
     FactsStore, File, Import, InheritanceInfo, Language, Reference, ReferenceKind, Symbol,
@@ -20,6 +31,10 @@ use crate::type_tracker::{analyze_types_from_analysis, populate_type_info};
 use crate::worker::{BindingInfo, ImportInfo, ScopeInfo, WorkerHandle};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
+
+// Native CST bridge for feature-gated analysis
+#[cfg(feature = "native-cst")]
+use crate::cst_bridge;
 
 // ============================================================================
 // Error Types
@@ -47,6 +62,11 @@ pub enum AnalyzerError {
     /// Import resolution failed.
     #[error("could not resolve import: {module_path}")]
     ImportNotResolved { module_path: String },
+
+    /// Native CST analysis error.
+    #[cfg(feature = "native-cst")]
+    #[error("native CST error: {0}")]
+    NativeCst(#[from] crate::cst_bridge::CstBridgeError),
 
     /// IO error.
     #[error("IO error: {0}")]
@@ -241,6 +261,219 @@ pub struct ImportedName {
     pub name: String,
     pub alias: Option<String>,
 }
+
+// ============================================================================
+// Native Analysis (feature-gated)
+// ============================================================================
+
+/// Native CST-based file analysis using pure Rust.
+///
+/// This module provides zero-Python-dependency analysis when the `native-cst`
+/// feature is enabled. It uses tugtool-cst for parsing and analysis.
+#[cfg(feature = "native-cst")]
+pub mod native {
+    use super::*;
+
+    /// Analyze a single Python file using the native Rust CST parser.
+    ///
+    /// This function provides the same analysis as [`PythonAnalyzer::analyze_file`]
+    /// but uses the native Rust CST parser instead of the Python worker subprocess.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_id` - Unique identifier for the file
+    /// * `path` - File path (used for error messages)
+    /// * `content` - Python source code to analyze
+    ///
+    /// # Returns
+    ///
+    /// A [`FileAnalysis`] containing scopes, symbols, references, and imports.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::analyzer::native::analyze_file_native;
+    /// use tugtool_core::patch::FileId;
+    ///
+    /// let content = "def foo():\n    x = 1\n    return x";
+    /// let analysis = analyze_file_native(FileId::new(0), "test.py", content)?;
+    ///
+    /// assert!(!analysis.scopes.is_empty());
+    /// assert!(!analysis.symbols.is_empty());
+    /// ```
+    pub fn analyze_file_native(
+        file_id: FileId,
+        path: &str,
+        content: &str,
+    ) -> AnalyzerResult<FileAnalysis> {
+        // Parse and analyze using native CST
+        let native_result = cst_bridge::parse_and_analyze(content)?;
+
+        // Build scope structure from native scopes
+        let (scopes, _scope_map) = build_scopes_from_native(&native_result.scopes);
+
+        // Convert bindings to local symbols
+        let symbols = collect_symbols_from_native(&native_result.bindings, &scopes);
+
+        // Convert references
+        let mut references = Vec::new();
+        for (name, native_refs) in native_result.references {
+            for native_ref in native_refs {
+                references.push(LocalReference {
+                    name: name.clone(),
+                    kind: reference_kind_from_str(&native_ref.kind),
+                    span: native_ref
+                        .span
+                        .as_ref()
+                        .map(|s| Span::new(s.start as u64, s.end as u64)),
+                    line: native_ref.line,
+                    col: native_ref.col,
+                    scope_id: ScopeId(0), // Will be resolved during scope analysis
+                    resolved_symbol: Some(name.clone()), // Same-name reference
+                });
+            }
+        }
+
+        // Note: Native analysis doesn't yet support imports
+        // This will be addressed when ImportCollector is ported (P1 visitor)
+        let imports = Vec::new();
+
+        Ok(FileAnalysis {
+            file_id,
+            path: path.to_string(),
+            cst_id: String::new(), // No CST ID for native analysis
+            scopes,
+            symbols,
+            references,
+            imports,
+        })
+    }
+
+    /// Build scope structure from native scope info.
+    fn build_scopes_from_native(
+        native_scopes: &[ScopeInfo],
+    ) -> (Vec<Scope>, HashMap<String, ScopeId>) {
+        let mut scope_map = HashMap::new();
+
+        // Pass 1: Assign ScopeIds to all scopes
+        for (idx, ns) in native_scopes.iter().enumerate() {
+            let scope_id = ScopeId::new(idx as u32);
+            scope_map.insert(ns.id.clone(), scope_id);
+        }
+
+        // Pass 2: Create scopes with parent references
+        let scopes: Vec<Scope> = native_scopes
+            .iter()
+            .enumerate()
+            .map(|(idx, ns)| {
+                let scope_id = ScopeId::new(idx as u32);
+                let parent_id = ns.parent.as_ref().and_then(|p| scope_map.get(p).copied());
+
+                Scope::new(
+                    scope_id,
+                    ScopeKind::from(ns.kind.as_str()),
+                    ns.name.clone(),
+                    parent_id,
+                )
+            })
+            .collect();
+
+        (scopes, scope_map)
+    }
+
+    /// Collect symbols from native bindings.
+    fn collect_symbols_from_native(
+        bindings: &[BindingInfo],
+        scopes: &[Scope],
+    ) -> Vec<LocalSymbol> {
+        let mut symbols = Vec::new();
+
+        for binding in bindings {
+            let kind = symbol_kind_from_str(&binding.kind);
+
+            // Determine scope from scope_path
+            let scope_id = find_scope_for_path(&binding.scope_path, scopes).unwrap_or(ScopeId(0));
+
+            // Determine container for methods
+            let container = if binding.scope_path.len() >= 2 {
+                let path_without_module: Vec<_> = binding
+                    .scope_path
+                    .iter()
+                    .filter(|s| *s != "<module>")
+                    .collect();
+
+                if !path_without_module.is_empty() {
+                    let last_name = path_without_module.last().unwrap();
+                    let is_class = scopes.iter().any(|s| {
+                        s.kind == ScopeKind::Class && s.name.as_deref() == Some(last_name.as_str())
+                    });
+                    if is_class {
+                        Some((*last_name).clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            symbols.push(LocalSymbol {
+                name: binding.name.clone(),
+                kind,
+                scope_id,
+                span: binding
+                    .span
+                    .as_ref()
+                    .map(|s| Span::new(s.start as u64, s.end as u64)),
+                line: binding.line,
+                col: binding.col,
+                container,
+            });
+        }
+
+        symbols
+    }
+
+    /// Find the scope that matches a scope_path.
+    fn find_scope_for_path(scope_path: &[String], scopes: &[Scope]) -> Option<ScopeId> {
+        if scope_path.is_empty() {
+            return Some(ScopeId(0)); // Module scope
+        }
+
+        // Walk through the scope_path and find matching scopes
+        // The scope_path is like ["<module>", "ClassName", "method_name"]
+
+        let mut current_parent: Option<ScopeId> = None;
+
+        for name in scope_path {
+            // Find a scope with this name and matching parent
+            let found = scopes.iter().find(|s| {
+                let name_matches = if name == "<module>" {
+                    s.kind == ScopeKind::Module
+                } else {
+                    s.name.as_deref() == Some(name.as_str())
+                };
+                let parent_matches = s.parent_id == current_parent;
+                name_matches && parent_matches
+            });
+
+            if let Some(scope) = found {
+                current_parent = Some(scope.id);
+            } else {
+                // Scope path doesn't match - return module scope as fallback
+                return scopes.first().map(|s| s.id);
+            }
+        }
+
+        current_parent
+    }
+}
+
+// Re-export native analysis function at module level when feature is enabled
+#[cfg(feature = "native-cst")]
+pub use native::analyze_file_native;
 
 // ============================================================================
 // Method Call Index (for O(1) lookup during type-aware pass)
@@ -2359,6 +2592,107 @@ class MyClass:
             assert!(!new_content.contains("foo"));
             assert_eq!(new_content.matches("bar").count(), 3);
             assert_eq!(new_content, "def bar():\n    pass\n\nbar()\nbar()\n");
+        }
+    }
+
+    #[cfg(feature = "native-cst")]
+    mod native_analysis_tests {
+        use super::*;
+
+        #[test]
+        fn analyze_simple_function() {
+            let content = "def foo():\n    x = 1\n    return x";
+            let result = analyze_file_native(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Check scopes
+            assert!(result.scopes.len() >= 2, "should have module and function scopes");
+            let module_scope = result.scopes.iter().find(|s| s.kind == ScopeKind::Module);
+            assert!(module_scope.is_some(), "should have module scope");
+
+            let fn_scope = result.scopes.iter().find(|s| s.kind == ScopeKind::Function);
+            assert!(fn_scope.is_some(), "should have function scope");
+            assert_eq!(fn_scope.unwrap().name.as_deref(), Some("foo"));
+
+            // Check symbols
+            let foo_symbol = result.symbols.iter().find(|s| s.name == "foo");
+            assert!(foo_symbol.is_some(), "should have foo symbol");
+            assert_eq!(foo_symbol.unwrap().kind, SymbolKind::Function);
+
+            let x_symbol = result.symbols.iter().find(|s| s.name == "x");
+            assert!(x_symbol.is_some(), "should have x symbol");
+            assert_eq!(x_symbol.unwrap().kind, SymbolKind::Variable);
+
+            // Check references
+            assert!(!result.references.is_empty(), "should have references");
+        }
+
+        #[test]
+        fn analyze_class_with_method() {
+            let content = "class MyClass:\n    def method(self):\n        pass";
+            let result = analyze_file_native(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Check scopes
+            let class_scope = result.scopes.iter().find(|s| s.kind == ScopeKind::Class);
+            assert!(class_scope.is_some(), "should have class scope");
+            assert_eq!(class_scope.unwrap().name.as_deref(), Some("MyClass"));
+
+            // Check symbols
+            let class_symbol = result.symbols.iter().find(|s| s.name == "MyClass");
+            assert!(class_symbol.is_some(), "should have MyClass symbol");
+            assert_eq!(class_symbol.unwrap().kind, SymbolKind::Class);
+
+            let method_symbol = result.symbols.iter().find(|s| s.name == "method");
+            assert!(method_symbol.is_some(), "should have method symbol");
+            assert_eq!(method_symbol.unwrap().kind, SymbolKind::Function);
+        }
+
+        #[test]
+        fn analyze_nested_scopes() {
+            let content = "def outer():\n    def inner():\n        x = 1\n    inner()";
+            let result = analyze_file_native(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Should have at least 3 scopes: module, outer, inner
+            assert!(result.scopes.len() >= 3, "should have module, outer, and inner scopes");
+
+            // Check function scopes
+            let outer_fn = result.symbols.iter().find(|s| s.name == "outer");
+            assert!(outer_fn.is_some(), "should have outer function");
+
+            let inner_fn = result.symbols.iter().find(|s| s.name == "inner");
+            assert!(inner_fn.is_some(), "should have inner function");
+        }
+
+        #[test]
+        fn analyze_comprehension() {
+            let content = "[x * 2 for x in range(10)]";
+            let result = analyze_file_native(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Comprehensions create their own scope
+            let comp_scope = result.scopes.iter().find(|s| s.kind == ScopeKind::Comprehension);
+            assert!(comp_scope.is_some(), "should have comprehension scope");
+        }
+
+        #[test]
+        fn analyze_returns_valid_file_analysis() {
+            let content = "x = 1";
+            let result = analyze_file_native(FileId::new(42), "my_file.py", content)
+                .expect("should analyze successfully");
+
+            assert_eq!(result.file_id, FileId::new(42));
+            assert_eq!(result.path, "my_file.py");
+            assert!(!result.scopes.is_empty());
+        }
+
+        #[test]
+        fn analyze_parse_error_returns_error() {
+            let content = "def foo(\n";  // Invalid syntax
+            let result = analyze_file_native(FileId::new(0), "test.py", content);
+
+            assert!(result.is_err(), "should return error for invalid syntax");
         }
     }
 }

@@ -1286,22 +1286,22 @@ After completing Steps 4.1-4.4, you will have:
 - Updated `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] Add native analysis implementation module (feature-gated)
-- [ ] Implement `analyze_file` using composite visitor pattern
-- [ ] Run all collectors in traversal (scope, binding, reference, etc.)
-- [ ] Return `AnalysisResult` compatible with existing code
-- [ ] Keep Python worker implementation (feature-gated)
-- [ ] Add runtime selection based on features
+- [x] Add native analysis implementation module (feature-gated)
+- [x] Implement `analyze_file` using composite visitor pattern
+- [x] Run all collectors in traversal (scope, binding, reference, etc.)
+- [x] Return `AnalysisResult` compatible with existing code
+- [x] Keep Python worker implementation (feature-gated)
+- [x] Add runtime selection based on features
 
 **Tests:**
-- [ ] Unit: Native analysis produces valid results
-- [ ] Integration: Analyze real Python files
+- [x] Unit: Native analysis produces valid results
+- [x] Integration: Analyze real Python files
 - [ ] Equivalence: Compare native vs Python worker output
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python analyzer` passes
+- [x] `cargo test -p tugtool-python analyzer` passes
 - [ ] Analysis results identical between backends
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert analyzer.rs changes

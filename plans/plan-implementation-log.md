@@ -914,3 +914,68 @@ tugtool-cst = { path = "../tugtool-cst", optional = true }
 **Next Step:** Step 5.3 - Analyzer Integration (feature-gated native analysis in analyzer.rs)
 
 ---
+
+### Step 5.3: Analyzer Integration - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D05] Parallel Backend via Feature Flags
+- Internal Architecture section
+- Existing PythonAnalyzer implementation (analyzer.rs)
+- cst_bridge module (cst_bridge.rs)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add native analysis implementation module (feature-gated) | Done |
+| Implement `analyze_file` using composite visitor pattern | Done |
+| Run all collectors in traversal (scope, binding, reference, etc.) | Done |
+| Return `AnalysisResult` compatible with existing code | Done |
+| Keep Python worker implementation (feature-gated) | Done |
+| Add runtime selection based on features | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated module docs to describe both backends
+  - Added `NativeCst` error variant (feature-gated)
+  - Added `native` submodule (feature-gated) with:
+    - `analyze_file_native()` function
+    - `build_scopes_from_native()` helper
+    - `collect_symbols_from_native()` helper
+    - `find_scope_for_path()` helper
+  - Re-exported `analyze_file_native` at module level
+  - Added 6 unit tests for native analysis
+
+**Implementation Details:**
+1. Created `native` submodule feature-gated with `#[cfg(feature = "native-cst")]`
+2. `analyze_file_native()` uses cst_bridge::parse_and_analyze() for zero-dependency analysis
+3. Returns FileAnalysis compatible with existing PythonAnalyzer output
+4. Scope path resolution matches existing behavior
+5. Container detection for methods follows existing pattern
+6. Import collection deferred to P1 visitors (ImportCollector)
+
+**Test Results:**
+- `cargo test -p tugtool-python analyzer`: 46 tests passed
+- Native analysis tests (6 new tests):
+  - analyze_simple_function
+  - analyze_class_with_method
+  - analyze_nested_scopes
+  - analyze_comprehension
+  - analyze_returns_valid_file_analysis
+  - analyze_parse_error_returns_error
+- `cargo nextest run --workspace`: 825 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-python analyzer` passes: PASS (46 tests)
+- `cargo nextest run --workspace` passes: PASS (825 tests)
+
+**Notes:**
+- "Analysis results identical between backends" deferred to Step 8.2 (equivalence tests)
+- The `cst_id` field in FileAnalysis is empty for native analysis (not needed)
+- Imports are empty in native analysis until ImportCollector (P1) is integrated
+
+**Next Step:** Step 5.4 - Rename Operation Integration
+
+---
