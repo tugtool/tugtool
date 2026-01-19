@@ -58,7 +58,9 @@
 //! ```
 
 mod dispatch;
+mod span_collector;
 mod traits;
 
 pub use dispatch::*;
+pub use span_collector::SpanCollector;
 pub use traits::{Transform, Transformer, VisitResult, Visitor};

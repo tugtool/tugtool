@@ -1544,6 +1544,7 @@ dependencies = [
  "rayon",
  "regex",
  "thiserror",
+ "tugtool-core",
  "tugtool-cst-derive",
 ]
 

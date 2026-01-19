@@ -48,7 +48,9 @@ mod codegen;
 pub use codegen::{Codegen, CodegenState};
 
 pub(crate) mod traits;
-pub use traits::{Inflate, ParenthesizedNode, WithComma, WithLeadingLines};
+pub use traits::{
+    Inflate, NodeId, NodeIdGenerator, ParenthesizedNode, Span, SpanTable, WithComma, WithLeadingLines,
+};
 
 pub(crate) mod inflate_helpers;
 

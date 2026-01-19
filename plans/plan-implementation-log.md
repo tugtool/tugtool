@@ -489,3 +489,68 @@ The visitor infrastructure is now ready for Step 3.2 (Walk Functions) which will
 The walk infrastructure is now ready for Step 3.3 (Position Tracking) which will add NodeId and SpanTable support.
 
 ---
+
+### Step 3.3: Position Tracking - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D03] Spans via SpanTable
+- [D07] NodeId
+- Terminology section (lines 456-464)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Adopt `tugtool_core::patch::Span` as canonical span type | Done |
+| Define `NodeId(u32)` and `SpanTable` keyed by NodeId | Done |
+| Assign deterministic NodeId to CST nodes during traversal | Done |
+| Record spans in SpanTable for meaningful nodes | Done |
+| Provide helpers (`span_of(NodeId)`) | Done |
+| Document id assignment determinism and span semantics | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/span_collector.rs` (~610 lines)
+  - `SpanCollector` struct that traverses a parsed CST and collects spans
+  - Uses cursor-based approach to find positions in source for repeated identifiers
+  - Records spans for: Name, Integer, Float, SimpleString, FunctionDef, ClassDef, Attribute, ImportAlias, AsName, Param
+
+**Files Modified:**
+- `crates/tugtool-cst/Cargo.toml` - Added `tugtool-core` dependency to access `Span` type
+- `crates/tugtool-cst/src/nodes/traits.rs` - Added:
+  - `NodeId(u32)` struct with Display impl
+  - `SpanTable` struct with HashMap<NodeId, Span>
+  - `NodeIdGenerator` for sequential NodeId assignment
+  - Re-exported `Span` from `tugtool_core::patch::Span`
+  - Comprehensive documentation for id assignment and span semantics
+- `crates/tugtool-cst/src/nodes/mod.rs` - Added exports for `NodeId`, `NodeIdGenerator`, `Span`, `SpanTable`
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added span_collector module and `SpanCollector` export
+- `plans/phase-3.md` - Checked off all Step 3.3 tasks and checkpoints
+
+**Test Results:**
+- `cargo test -p tugtool-cst span`: 8 tests passed
+- `cargo nextest run --workspace`: 732 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst span` passes: PASS
+- SpanTable reports accurate spans for identifier nodes: PASS
+- `cargo nextest run --workspace` passes: PASS (732 tests)
+
+**Key Design Decisions:**
+1. Used a post-parse SpanCollector visitor rather than modifying the inflate process (less invasive)
+2. NodeIds are assigned in pre-order traversal order (parent before children, left-to-right)
+3. Cursor-based span finding ensures correct spans for repeated identifiers by advancing through source
+4. Spans are byte offsets into UTF-8 source (using `tugtool_core::patch::Span` with u64)
+5. Only nodes with meaningful source ranges have spans recorded (identifiers, def names, params, literals, etc.)
+
+**Milestone M02: Visitor Infrastructure Complete - ACHIEVED**
+
+The visitor infrastructure (Step 3) is now complete:
+- Visitor/Transformer traits defined (Step 3.1)
+- Walk functions for all ~248 node types (Step 3.2)
+- Position tracking via SpanTable keyed by NodeId (Step 3.3)
+
+Ready for Step 4 (Port P0 Visitors): ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer.
+
+---

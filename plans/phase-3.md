@@ -990,22 +990,22 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 - Updated inflate implementations to assign NodeIds deterministically and record spans
 
 **Tasks:**
-- [ ] Adopt `tugtool_core::patch::Span` as the canonical span type (no local `Span` struct)
-- [ ] Define `NodeId(u32)` and a `SpanTable` keyed by NodeId
-- [ ] Assign a deterministic NodeId to each CST node during inflate (pre-order traversal)
-- [ ] Record spans in `SpanTable` for nodes with meaningful source ranges (at minimum: identifiers, def names, params, import aliases, attributes)
-- [ ] Provide helpers (e.g., `node_id() -> NodeId` for concrete nodes and `span_of(NodeId) -> Option<Span>` on the table)
-- [ ] Document id assignment determinism and span semantics (byte offsets into UTF-8 source)
+- [x] Adopt `tugtool_core::patch::Span` as the canonical span type (no local `Span` struct)
+- [x] Define `NodeId(u32)` and a `SpanTable` keyed by NodeId
+- [x] Assign a deterministic NodeId to each CST node during inflate (pre-order traversal)
+- [x] Record spans in `SpanTable` for nodes with meaningful source ranges (at minimum: identifiers, def names, params, import aliases, attributes)
+- [x] Provide helpers (e.g., `node_id() -> NodeId` for concrete nodes and `span_of(NodeId) -> Option<Span>` on the table)
+- [x] Document id assignment determinism and span semantics (byte offsets into UTF-8 source)
 
 **Tests:**
-- [ ] Unit: NodeId assignment is deterministic for a fixture
-- [ ] Unit: Parse simple code and verify spans are populated in SpanTable
-- [ ] Integration: Spans match expected byte offsets for representative constructs
+- [x] Unit: NodeId assignment is deterministic for a fixture
+- [x] Unit: Parse simple code and verify spans are populated in SpanTable
+- [x] Integration: Spans match expected byte offsets for representative constructs
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst span` passes
-- [ ] SpanTable reports accurate spans for identifier nodes
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo test -p tugtool-cst span` passes
+- [x] SpanTable reports accurate spans for identifier nodes
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert node definition changes
@@ -1022,7 +1022,7 @@ After completing Steps 3.1-3.3, you will have:
 - Position (span) tracking via `SpanTable` keyed by `NodeId`
 
 **Final Step 3 Checkpoint:**
-- [ ] `cargo test -p tugtool-cst visitor` passes all visitor infrastructure tests
+- [x] `cargo test -p tugtool-cst visitor` passes all visitor infrastructure tests
 
 ---
 
@@ -1644,9 +1644,9 @@ After completing Steps 8.1-8.4, you will have:
 - [ ] Round-trip tests pass
 
 **Milestone M02: Visitor Infrastructure Complete** {#m02-visitor-infrastructure}
-- [ ] Visitor/Transformer traits defined
-- [ ] Walk functions for all node types
-- [ ] Position tracking working
+- [x] Visitor/Transformer traits defined
+- [x] Walk functions for all node types
+- [x] Position tracking working
 
 **Milestone M03: P0 Visitors Complete** {#m03-p0-visitors}
 - [ ] ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer

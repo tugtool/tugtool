@@ -24,6 +24,7 @@ annotate-snippets = "0.11"
 regex = "1.11"
 memchr = "2.7"
 tugtool-cst-derive = { path = "../tugtool-cst-derive" }
+tugtool-core = { path = "../tugtool-core" }
 
 [dev-dependencies]
 criterion = { version = "0.6", features = ["html_reports"] }
