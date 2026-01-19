@@ -223,7 +223,12 @@
       "Bash(export TUG_PYTHON=/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python3)",
       "Bash(! grep -q \"^\\\\[package\\\\]\" /Users/kocienda/Mounts/u/src/tugtool/Cargo.toml)",
       "Bash([ ! -d /Users/kocienda/Mounts/u/src/tugtool/src ])",
-      "Bash(cargo expand:*)"
+      "Bash(cargo expand:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug/python/.venv/bin/python:*)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool diff crates/tugtool-cst/Cargo.toml)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool log -3 --oneline)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool add crates/tugtool-cst/benches/ crates/tugtool-cst/Cargo.toml plans/phase-3.md)",
+      "Bash(git -C /Users/kocienda/Mounts/u/src/tugtool commit -m \"$\\(cat <<''EOF''\ntest\\(cst\\): add performance benchmarks\n\nAdd criterion-based benchmark suite for tugtool-cst measuring:\n- Parsing performance \\(simple functions, classes, comprehensions, fixtures\\)\n- Analysis performance \\(scope, binding, reference, full analysis\\)\n- Rename operation performance \\(single and batch\\)\n- Codegen and round-trip performance\n\nBenchmark results show 18-19x improvement over Python LibCST for full\nanalysis workloads, significantly exceeding the 10x target.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ],
     "deny": [],
     "ask": []
