@@ -57,6 +57,8 @@
 //! }
 //! ```
 
+mod dispatch;
 mod traits;
 
+pub use dispatch::*;
 pub use traits::{Transform, Transformer, VisitResult, Visitor};

@@ -31,7 +31,7 @@ use crate::nodes::{
     // Strings
     SimpleString, ConcatenatedString, FormattedString, FormattedStringContent,
     FormattedStringExpression, FormattedStringText, TemplatedString, TemplatedStringContent,
-    TemplatedStringExpression,
+    TemplatedStringExpression, TemplatedStringText,
     // Literals
     Integer, Float, Imaginary, Ellipsis,
     // Function-related
@@ -403,6 +403,7 @@ pub trait Visitor<'a> {
         templated_string: TemplatedString<'a>,
         templated_string_content: TemplatedStringContent<'a>,
         templated_string_expression: TemplatedStringExpression<'a>,
+        templated_string_text: TemplatedStringText<'a>,
     }
 
     // Numeric literals
@@ -672,6 +673,7 @@ pub trait Transformer<'a> {
         templated_string: TemplatedString<'a>,
         templated_string_content: TemplatedStringContent<'a>,
         templated_string_expression: TemplatedStringExpression<'a>,
+        templated_string_text: TemplatedStringText<'a>,
     }
 
     // Numeric literals

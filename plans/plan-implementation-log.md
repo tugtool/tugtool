@@ -427,3 +427,65 @@ Added `#[cfg(feature = "python")]` and `#[cfg(feature = "rust")]` guards to lang
 The visitor infrastructure is now ready for Step 3.2 (Walk Functions) which will implement the actual traversal logic.
 
 ---
+
+### Step 3.2: Walk Functions - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D06] Traversal order
+- Semantics section (lines 544-551)
+- Existing node types in `nodes/mod.rs`, `statement.rs`, `expression.rs`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `walk_module` | Done |
+| Implement `walk_statement` with match on Statement variants | Done |
+| Implement `walk_compound_statement` for FunctionDef, ClassDef, If, For, etc. | Done |
+| Implement `walk_simple_statement` for Assign, Return, Import, etc. | Done |
+| Implement `walk_expression` with match on Expression variants | Done |
+| Implement ~50 walk functions for all compound node types | Done (~80 walk functions total) |
+| Verify visit/leave order matches Python LibCST | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/dispatch.rs` - Main walk functions file (~2800 lines)
+  - Contains 80+ walk functions for all CST node types
+  - Comprehensive test module with traversal tests
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added dispatch module export
+- `crates/tugtool-cst/src/visitor/traits.rs` - Added `templated_string_text` visitor methods
+- `crates/tugtool-cst/src/nodes/mod.rs` - Added `TemplatedStringText` to exports
+- `crates/tugtool-cst/src/lib.rs` - Re-exported all walk functions
+- `plans/phase-3.md` - Checked off all Step 3.2 tasks and checkpoints
+
+**Test Results:**
+- `cargo test -p tugtool-cst walk`: 9 tests passed
+- `cargo nextest run -p tugtool-cst`: 80 tests passed
+- `cargo nextest run --workspace`: 724 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst walk` passes: PASS
+- Traversal order documented in dispatch.rs: PASS (documented in module header)
+
+**Key Implementation Details:**
+1. Walk functions follow the visitor pattern with pre-order `visit_*` and post-order `leave_*` calls
+2. `VisitResult::Stop` halts traversal immediately (no `leave_*` called)
+3. `VisitResult::SkipChildren` skips children but still calls `leave_*`
+4. Children are visited in source order (left-to-right, top-to-bottom)
+5. Fixed several issues during implementation:
+   - `MatchPattern` enum doesn't have `List`/`Tuple` variants (uses `Sequence` which contains them)
+   - `MatchSequence` is an enum with `MatchList`/`MatchTuple` variants
+   - `NamedExpr.target` is `Box<Expression>`, not `Name`
+   - Added missing `TemplatedStringText` exports and visitor methods
+
+**Key Design Decisions:**
+1. Created comprehensive walk functions for all ~80 node types
+2. Used consistent pattern: visit → walk children (if Continue) → leave
+3. Added test module in dispatch.rs with `NodeCounter` visitor and traversal order tests
+
+The walk infrastructure is now ready for Step 3.3 (Position Tracking) which will add NodeId and SpanTable support.
+
+---

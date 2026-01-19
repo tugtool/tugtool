@@ -955,22 +955,22 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 - `tugtool-cst/src/visitor/dispatch.rs`
 
 **Tasks:**
-- [ ] Implement `walk_module`
-- [ ] Implement `walk_statement` with match on Statement variants
-- [ ] Implement `walk_compound_statement` for FunctionDef, ClassDef, If, For, etc.
-- [ ] Implement `walk_simple_statement` for Assign, Return, Import, etc.
-- [ ] Implement `walk_expression` with match on Expression variants
-- [ ] Implement ~50 walk functions for all compound node types
-- [ ] Verify visit/leave order matches Python LibCST
+- [x] Implement `walk_module`
+- [x] Implement `walk_statement` with match on Statement variants
+- [x] Implement `walk_compound_statement` for FunctionDef, ClassDef, If, For, etc.
+- [x] Implement `walk_simple_statement` for Assign, Return, Import, etc.
+- [x] Implement `walk_expression` with match on Expression variants
+- [x] Implement ~50 walk functions for all compound node types
+- [x] Verify visit/leave order matches Python LibCST
 
 **Tests:**
-- [ ] Unit: Walk functions compile
-- [ ] Unit: Simple traversal test visits nodes in expected order
-- [ ] Integration: Walk entire Python file without errors
+- [x] Unit: Walk functions compile
+- [x] Unit: Simple traversal test visits nodes in expected order
+- [x] Integration: Walk entire Python file without errors
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst walk` passes
-- [ ] Traversal order documented in dispatch.rs
+- [x] `cargo test -p tugtool-cst walk` passes
+- [x] Traversal order documented in dispatch.rs
 
 **Rollback:**
 - Remove dispatch.rs

@@ -32,7 +32,7 @@ pub use expression::{
     NameOrAttribute, NamedExpr, Param, ParamSlash, ParamStar, Parameters, RightCurlyBrace,
     RightParen, RightSquareBracket, Set, SetComp, SimpleString, Slice, StarArg, StarredDictElement,
     StarredElement, String, Subscript, SubscriptElement, TemplatedString, TemplatedStringContent,
-    TemplatedStringExpression, Tuple, UnaryOperation, Yield, YieldValue,
+    TemplatedStringExpression, TemplatedStringText, Tuple, UnaryOperation, Yield, YieldValue,
 };
 
 pub(crate) mod op;

@@ -62,6 +62,29 @@ pub use version::{ParseOptions, PythonVersion};
 /// Visitor and transformer infrastructure for CST traversal.
 pub mod visitor;
 pub use visitor::{Transform, Transformer, VisitResult, Visitor};
+// Re-export walk functions for CST traversal
+pub use visitor::{
+    walk_annotation, walk_arg, walk_as_name, walk_assert, walk_assign, walk_assign_target,
+    walk_attribute, walk_aug_assign, walk_await, walk_binary_operation, walk_boolean_operation,
+    walk_break, walk_call, walk_class_def, walk_comparison, walk_comp_for, walk_comp_if,
+    walk_concatenated_string, walk_continue, walk_decorator, walk_del, walk_dict, walk_dict_comp,
+    walk_dict_element, walk_element, walk_ellipsis, walk_except_handler, walk_except_star_handler,
+    walk_expression, walk_finally, walk_float, walk_for, walk_formatted_string,
+    walk_formatted_string_content, walk_formatted_string_expression, walk_formatted_string_text,
+    walk_function_def, walk_generator_exp, walk_global, walk_if, walk_if_exp, walk_imaginary,
+    walk_import, walk_import_alias, walk_import_from, walk_index, walk_integer, walk_lambda,
+    walk_list, walk_list_comp, walk_match, walk_match_as, walk_match_case, walk_match_class,
+    walk_match_list, walk_match_mapping, walk_match_mapping_element, walk_match_or,
+    walk_match_pattern, walk_match_sequence, walk_match_sequence_element, walk_match_singleton,
+    walk_match_star, walk_match_tuple, walk_match_value, walk_module, walk_name, walk_named_expr,
+    walk_nonlocal, walk_param, walk_parameters, walk_param_star, walk_pass, walk_raise,
+    walk_return, walk_set, walk_set_comp, walk_simple_statement_line, walk_simple_string,
+    walk_slice, walk_small_statement, walk_starred_dict_element, walk_starred_element,
+    walk_statement, walk_subscript, walk_suite, walk_templated_string_text, walk_try,
+    walk_try_star, walk_tuple, walk_type_alias, walk_type_param, walk_type_parameters,
+    walk_type_var, walk_type_var_tuple, walk_unary_operation, walk_while, walk_with,
+    walk_with_item, walk_yield,
+};
 
 /// Tokenizer for Python source code.
 pub mod tokenizer;
