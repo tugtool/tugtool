@@ -1443,20 +1443,20 @@ After completing Steps 5.1-5.4, you will have:
 - Test fixtures in `tests/fixtures/python/`
 
 **Tasks:**
-- [ ] Create test fixtures for all major Python constructs
-- [ ] Test simple functions, classes, methods
-- [ ] Test complex expressions (comprehensions, f-strings)
-- [ ] Test all statement types
-- [ ] Test decorators and annotations
-- [ ] Test async constructs
-- [ ] Verify parse -> codegen == original for all fixtures
+- [x] Create test fixtures for all major Python constructs
+- [x] Test simple functions, classes, methods
+- [x] Test complex expressions (comprehensions, f-strings)
+- [x] Test all statement types
+- [x] Test decorators and annotations
+- [x] Test async constructs
+- [x] Verify parse -> codegen == original for all fixtures
 
 **Tests:**
-- [ ] Golden: ~50 round-trip test cases
+- [x] Golden: ~50 round-trip test cases
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-cst roundtrip` passes
-- [ ] No round-trip failures
+- [x] `cargo nextest run -p tugtool-cst roundtrip` passes
+- [x] No round-trip failures
 
 **Rollback:**
 - Remove failing fixtures (investigate root cause)
