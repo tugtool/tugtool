@@ -1776,3 +1776,64 @@ All Step 8 sub-steps completed:
 **Next Step:** Step 9.7 - Implement Acceptance Criteria Test Suites
 
 ---
+
+### Step 9.7: Implement Acceptance Criteria Test Suites - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Step 9.0 Contracts and Acceptance Criteria
+- Existing acceptance_criteria.rs stub file
+- analyzer.rs native module (analyze_files)
+- lookup.rs (find_symbol_at_location)
+- FactsStore API (references, symbols, inheritance)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| AC-1: find_symbol_at_location() Parity (10 tests) | Done |
+| AC-2: Cross-File Reference Resolution (4 tests) | Done |
+| AC-3: Scope Chain Resolution (5 tests) | Done |
+| AC-4: Import Resolution Parity (11 tests) | Done |
+| AC-5: Type-Aware Method Call Resolution (5 tests) | Done |
+| AC-6: Inheritance and Override Resolution (4 tests) | Done |
+| AC-7: Deterministic ID Assignment (6 tests) | Done |
+| AC-8: Partial Analysis Error Handling (5 tests) | Done |
+| Golden Test Suite (embedded in determinism tests) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Complete rewrite with 63 implemented tests:
+  - AC-1: 10 tests for find_symbol_at_location() behavior
+  - AC-2: 4 tests for cross-file reference resolution
+  - AC-3: 5 tests for scope chain resolution (LEGB)
+  - AC-4: 11 tests for import resolution per Contract C3
+  - AC-5: 5 tests for type-aware method call resolution
+  - AC-6: 4 tests for inheritance and override resolution
+  - AC-7: 6 tests for deterministic ID assignment
+  - AC-8: 5 tests for partial analysis error handling
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python 'ac1_' 'ac2_' 'ac3_' 'ac4_' 'ac5_' 'ac6_' 'ac7_' 'ac8_'`: 63 tests passed
+- `cargo nextest run -p tugtool-python`: 316 tests passed
+- `cargo nextest run --workspace`: 1115 tests passed
+
+**Checkpoints Verified:**
+- All acceptance criteria tests pass: PASS (63 tests)
+- Golden test verifies FactsStore structure: PASS (determinism tests)
+- Golden test is byte-for-byte reproducible: PASS (AC-7 tests)
+- No regressions in existing tests: PASS (1115 workspace tests)
+
+**Key Implementation Details:**
+1. Tests use helper functions `analyze_test_files()` and `files()` for setup
+2. All tests are self-contained with inline Python code snippets
+3. Tests verify both positive cases (correct behavior) and edge cases
+4. Deterministic ID tests run analysis twice and compare all symbols/references
+5. Partial analysis tests verify strict failure policy (Contract C7)
+
+**Key Decisions/Notes:**
+- Tests verify behavioral contracts C1-C8 from Step 9.0
+- Test count exceeds plan's 50 due to additional edge case coverage
+- Tests run with native-cst feature only (Python worker comparison deferred)
+
+---

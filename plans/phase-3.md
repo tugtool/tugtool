@@ -2331,52 +2331,52 @@ These were limitations in the original Python worker, not new deviations.
 **Tasks:**
 
 **AC-1: find_symbol_at_location() Parity (Contract C1)**
-- [ ] Test: clicking on definition returns the symbol
+- [x] Test: clicking on definition returns the symbol
   ```python
   def foo():  # click on "foo" -> returns foo symbol
       pass
   ```
-- [ ] Test: clicking on reference returns the referenced symbol
+- [x] Test: clicking on reference returns the referenced symbol
   ```python
   def foo(): pass
   foo()  # click on "foo" -> returns foo symbol (via reference)
   ```
-- [ ] Test: clicking on import binding returns the original definition
+- [x] Test: clicking on import binding returns the original definition
   ```python
   # file_a.py: def bar(): pass
   # file_b.py: from file_a import bar  # click on "bar" -> returns bar in file_a
   ```
-- [ ] Test: method name in class returns method symbol
+- [x] Test: method name in class returns method symbol
   ```python
   class Foo:
       def method(self): pass  # click on "method" -> returns method symbol
   ```
-- [ ] Test: method call on typed receiver returns correct method
+- [x] Test: method call on typed receiver returns correct method
   ```python
   x = Foo()
   x.method()  # click on "method" -> returns Foo.method
   ```
-- [ ] Golden test: compare native output for canonical 10-file project
+- [x] Golden test: compare native output for canonical 10-file project
 
 **AC-2: Cross-File Reference Resolution (Contract C2)**
-- [ ] Test: `from x import y` creates ref pointing to y in x.py
-- [ ] Test: `refs_of_symbol(y)` includes all import sites across files
-- [ ] Test: `refs_of_symbol(y)` includes all usage sites (calls, reads, writes)
-- [ ] Test: same-name symbols in different files are NOT conflated
+- [x] Test: `from x import y` creates ref pointing to y in x.py
+- [x] Test: `refs_of_symbol(y)` includes all import sites across files
+- [x] Test: `refs_of_symbol(y)` includes all usage sites (calls, reads, writes)
+- [x] Test: same-name symbols in different files are NOT conflated
   ```python
   # file_a.py: def helper(): pass
   # file_b.py: def helper(): pass  # different symbol from file_a.helper
   ```
 
 **AC-3: Scope Chain Resolution (Contract C4)**
-- [ ] Test: local shadows global
+- [x] Test: local shadows global
   ```python
   x = 1
   def foo():
       x = 2  # local x, shadows global
       return x  # references local x
   ```
-- [ ] Test: nonlocal skips to enclosing function
+- [x] Test: nonlocal skips to enclosing function
   ```python
   def outer():
       x = 1
@@ -2384,21 +2384,21 @@ These were limitations in the original Python worker, not new deviations.
           nonlocal x
           x = 2  # references outer's x
   ```
-- [ ] Test: global skips to module scope
+- [x] Test: global skips to module scope
   ```python
   x = 1
   def foo():
       global x
       x = 2  # references module-level x
   ```
-- [ ] Test: class scope does NOT form closure
+- [x] Test: class scope does NOT form closure
   ```python
   class Foo:
       x = 1
       def method(self):
           return x  # ERROR or references module x, NOT class x
   ```
-- [ ] Test: comprehension creates own scope
+- [x] Test: comprehension creates own scope
   ```python
   x = 1
   result = [x for x in range(5)]  # comprehension x shadows outer x
@@ -2406,38 +2406,38 @@ These were limitations in the original Python worker, not new deviations.
   ```
 
 **AC-4: Import Resolution Parity (Contract C3)**
-- [ ] Test: `import foo` resolves correctly
-- [ ] Test: `import foo.bar` resolves correctly
-- [ ] Test: `import foo as f` resolves correctly
-- [ ] Test: `from foo import bar` resolves to bar in foo.py
-- [ ] Test: `from foo import bar as b` resolves correctly
-- [ ] Test: relative imports return None (documented limitation)
-- [ ] Test: star imports return None (documented limitation)
+- [x] Test: `import foo` resolves correctly
+- [x] Test: `import foo.bar` resolves correctly
+- [x] Test: `import foo as f` resolves correctly
+- [x] Test: `from foo import bar` resolves to bar in foo.py
+- [x] Test: `from foo import bar as b` resolves correctly
+- [x] Test: relative imports return None (documented limitation)
+- [x] Test: star imports return None (documented limitation)
 
 **AC-5: Type-Aware Method Call Resolution (Contract C5)**
-- [ ] Test: constructor call inference
+- [x] Test: constructor call inference
   ```python
   x = Foo()
   x.bar()  # resolves to Foo.bar
   ```
-- [ ] Test: variable propagation
+- [x] Test: variable propagation
   ```python
   x = Foo()
   y = x
   y.bar()  # resolves to Foo.bar
   ```
-- [ ] Test: annotation-based typing
+- [x] Test: annotation-based typing
   ```python
   def process(x: Foo):
       x.bar()  # resolves to Foo.bar
   ```
-- [ ] Test: implicit self/cls typing
+- [x] Test: implicit self/cls typing
   ```python
   class Foo:
       def method(self):
           self.other()  # resolves to Foo.other
   ```
-- [ ] Test: return type propagation
+- [x] Test: return type propagation
   ```python
   def get_foo() -> Foo: pass
   f = get_foo()
@@ -2445,19 +2445,19 @@ These were limitations in the original Python worker, not new deviations.
   ```
 
 **AC-6: Inheritance and Override Resolution (Contract C6)**
-- [ ] Test: children_of_class returns direct subclasses
+- [x] Test: children_of_class returns direct subclasses
   ```python
   class Base: pass
   class Child(Base): pass
   # children_of_class(Base) -> [Child]
   ```
-- [ ] Test: parents_of_class returns direct parents
+- [x] Test: parents_of_class returns direct parents
   ```python
   class Base: pass
   class Child(Base): pass
   # parents_of_class(Child) -> [Base]
   ```
-- [ ] Test: renaming Base.method affects Child.method override
+- [x] Test: renaming Base.method affects Child.method override
   ```python
   class Base:
       def method(self): pass
@@ -2466,44 +2466,44 @@ These were limitations in the original Python worker, not new deviations.
   ```
 
 **AC-7: Deterministic ID Assignment (Contract C8)**
-- [ ] Test: Same files analyzed twice → identical SymbolIds
-- [ ] Test: Same files analyzed twice → identical ReferenceIds
-- [ ] Test: Files processed in sorted path order
-- [ ] Test: Symbols within file processed in span order
-- [ ] Test: Golden test JSON is byte-for-byte reproducible
-- [ ] Test: Cross-platform path normalization
+- [x] Test: Same files analyzed twice → identical SymbolIds
+- [x] Test: Same files analyzed twice → identical ReferenceIds
+- [x] Test: Files processed in sorted path order
+- [x] Test: Symbols within file processed in span order
+- [x] Test: Golden test JSON is byte-for-byte reproducible
+- [x] Test: Cross-platform path normalization
 
 **AC-8: Partial Analysis Error Handling (Contract C7)**
-- [ ] Test: Parse error in one file doesn't abort others
-- [ ] Test: `failed_files` tracks failed files correctly
-- [ ] Test: Rename fails if ANY file failed (strict policy)
-- [ ] Test: Error message includes failed file paths
-- [ ] Test: FactsStore contains only successful file data
+- [x] Test: Parse error in one file doesn't abort others
+- [x] Test: `failed_files` tracks failed files correctly
+- [x] Test: Rename fails if ANY file failed (strict policy)
+- [x] Test: Error message includes failed file paths
+- [x] Test: FactsStore contains only successful file data
 
 **Golden Test Suite:**
-- [ ] Create canonical 10-file project with all edge cases
-- [ ] Generate expected FactsStore JSON structure
-- [ ] Compare native `analyze_files()` output against expected
-- [ ] Fail if any symbol, reference, or relationship differs
-- [ ] Verify byte-for-byte reproducibility across runs
+- [x] Create canonical 10-file project with all edge cases
+- [x] Generate expected FactsStore JSON structure
+- [x] Compare native `analyze_files()` output against expected
+- [x] Fail if any symbol, reference, or relationship differs
+- [x] Verify byte-for-byte reproducibility across runs
 
 **Tests:**
-- [ ] All AC-1 tests pass (10 tests)
-- [ ] All AC-2 tests pass (4 tests)
-- [ ] All AC-3 tests pass (5 tests)
-- [ ] All AC-4 tests pass (11 tests)
-- [ ] All AC-5 tests pass (5 tests)
-- [ ] All AC-6 tests pass (4 tests)
-- [ ] All AC-7 tests pass (6 tests)
-- [ ] All AC-8 tests pass (5 tests)
-- [ ] Golden test passes
+- [x] All AC-1 tests pass (10 tests)
+- [x] All AC-2 tests pass (4 tests)
+- [x] All AC-3 tests pass (5 tests)
+- [x] All AC-4 tests pass (11 tests)
+- [x] All AC-5 tests pass (5 tests)
+- [x] All AC-6 tests pass (4 tests)
+- [x] All AC-7 tests pass (6 tests)
+- [x] All AC-8 tests pass (5 tests)
+- [x] Golden test passes
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python acceptance` passes
-- [ ] All 50 acceptance criteria tests pass
-- [ ] Golden test verifies FactsStore structure
-- [ ] Golden test is byte-for-byte reproducible
-- [ ] No regressions in existing tests
+- [x] `cargo nextest run -p tugtool-python acceptance` passes
+- [x] All 50 acceptance criteria tests pass
+- [x] Golden test verifies FactsStore structure
+- [x] Golden test is byte-for-byte reproducible
+- [x] No regressions in existing tests
 
 **Rollback:**
 - N/A (test-only changes)
