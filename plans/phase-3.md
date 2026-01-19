@@ -1591,37 +1591,372 @@ After completing Steps 8.1-8.4, you will have:
 
 ---
 
-#### Step 9: Make Native CST Default {#step-9}
+#### Step 9: Remove Python Worker Implementation {#step-9}
 
-**Commit:** `feat(python): make native-cst the default backend`
+**Purpose:** Completely remove the Python worker subprocess code path, eliminating ~5,000 lines and all Python subprocess dependencies. The native CST implementation has proven feature-complete through comprehensive testing.
 
-**References:** [D05] Feature flags, (#success-criteria)
+##### Feature Parity Audit Results {#step-9-audit}
+
+| Capability | Python Worker | Native CST | Status |
+|------------|--------------|------------|--------|
+| **Parsing** | `parse` | `parse_module()` | ✓ Match |
+| **Bindings** | `get_bindings` (6 kinds) | `BindingCollector` (6 kinds) | ✓ Match |
+| **References** | `get_references` (5 kinds) | `ReferenceCollector` (5 kinds) | ✓ Match |
+| **Imports** | `get_imports` | `ImportCollector` | ✓ Match |
+| **Scopes** | `get_scopes` (global/nonlocal) | `ScopeCollector` (global/nonlocal) | ✓ Match |
+| **Type Inference L1** | `get_assignments` (4 sources) | `TypeInferenceCollector` (4 sources) | ✓ Match |
+| **Method Calls** | `get_method_calls` | `MethodCallCollector` | ✓ Match |
+| **Annotations** | `get_annotations` (6 kinds) | `AnnotationCollector` (6 kinds) | ✓ Match |
+| **Inheritance** | `get_class_inheritance` | `InheritanceCollector` | ✓ Match |
+| **Dynamic Patterns** | `get_dynamic_patterns` (8 types) | `DynamicPatternDetector` (8 types) | ✓ Match |
+| **Rename** | `rewrite_batch` | `RenameTransformer` | ✓ Match |
+
+**Evidence of Equivalence:**
+- 37 golden tests comparing native vs Python output → PASS
+- 20 visitor equivalence tests → PASS
+- 1023 total workspace tests → PASS
+- 18-19x performance improvement (exceeds 10x target)
+
+##### Key Insight: Shared Types {#step-9-types}
+
+The `worker.rs` file contains two distinct parts:
+1. **Data type definitions** (`BindingInfo`, `ScopeInfo`, `ReferenceInfo`, etc.) - KEEP
+2. **Worker subprocess code** (`WorkerHandle`, `spawn_worker`, etc.) - DELETE
+
+These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Extract types to new `types.rs` module, then delete subprocess machinery.
+
+##### Files to DELETE Entirely {#step-9-delete}
+
+| File | Lines | Reason |
+|------|-------|--------|
+| `tests/visitor_equivalence.rs` | ~423 | Only for comparing backends |
+| `src/libcst_worker.py` | ~2200 | Python worker subprocess script (78KB) |
+| `src/bootstrap.rs` | ~600 | venv/libcst installation |
+| `src/env.rs` | ~1200 | Python environment resolution |
+| `src/test_helpers.rs` | ~50 | `require_python_with_libcst()` helper |
+
+##### Files to RESTRUCTURE {#step-9-restructure}
+
+| File | Changes |
+|------|---------|
+| `src/worker.rs` | Extract types to `types.rs`, then DELETE remaining file |
+
+##### Files to SIMPLIFY {#step-9-simplify}
+
+| File | Changes |
+|------|---------|
+| `Cargo.toml` | Remove features, remove `which`/`dirs` deps |
+| `src/lib.rs` | Remove feature guards, remove module exports |
+| `src/analyzer.rs` | Remove worker code, promote native |
+| `src/ops/rename.rs` | Remove `PythonRenameOp`, promote native |
+| `src/cst_bridge.rs` | Update imports from `worker` → `types` |
+| `src/dynamic.rs` | Update imports |
+| `src/type_tracker.rs` | Update imports, simplify |
+| `src/error_bridges.rs` | Remove feature guards |
+
+---
+
+##### Step 9.1: Create types.rs Module {#step-9-1}
+
+**Commit:** `refactor(python): extract shared types to types.rs`
+
+**References:** (#step-9-types)
 
 **Artifacts:**
-- Updated `crates/tugtool-python/Cargo.toml`
-- Updated documentation
+- `crates/tugtool-python/src/types.rs`
 
 **Tasks:**
-- [ ] Change default feature from `python-worker` to `native-cst`
-- [ ] Update CLAUDE.md documentation
-- [ ] Update README with new architecture
-- [ ] Add deprecation notice for python-worker feature
-- [ ] Verify CI passes with new defaults
+- [ ] Create `src/types.rs` with types extracted from `worker.rs`:
+  - `SpanInfo`, `ScopeSpanInfo`
+  - `BindingInfo`, `ReferenceInfo`
+  - `ScopeInfo`, `ImportInfo`, `ImportedName`
+  - `AssignmentInfo`, `MethodCallInfo`
+  - `ClassInheritanceInfo`, `AnnotationInfo`
+  - `DynamicPatternInfo`, `AnalysisResult`
+- [ ] Keep serialization derives for JSON compatibility
+- [ ] Add module to `lib.rs`
 
 **Tests:**
-- [ ] Integration: All tests pass with new defaults
-- [ ] Golden: No golden file changes
+- [ ] Unit: All types compile and serialize correctly
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool` produces native-CST binary by default
-- [ ] `ldd` shows no libpython dependency
-- [ ] All CI checks pass
+- [ ] `cargo build -p tugtool-python` succeeds
 - [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
-- Revert default feature change
+- Delete `types.rs`, revert `lib.rs`
 
 **Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.2: Delete Python Worker Files {#step-9-2}
+
+**Commit:** `refactor(python): remove python worker subprocess code`
+
+**References:** (#step-9-delete)
+
+**Artifacts:**
+- Deleted: `tests/visitor_equivalence.rs`
+- Deleted: `src/libcst_worker.py`
+- Deleted: `src/bootstrap.rs`
+- Deleted: `src/env.rs`
+- Deleted: `src/test_helpers.rs`
+- Deleted: `src/worker.rs`
+
+**Tasks:**
+- [ ] Delete `tests/visitor_equivalence.rs`
+- [ ] Delete `src/libcst_worker.py`
+- [ ] Delete `src/bootstrap.rs`
+- [ ] Delete `src/env.rs`
+- [ ] Delete `src/test_helpers.rs`
+- [ ] Delete `src/worker.rs` (types already extracted)
+
+**Tests:**
+- [ ] Integration: Workspace still builds
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] No compilation errors from missing modules
+
+**Rollback:**
+- `git checkout` deleted files
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.3: Update Cargo.toml {#step-9-3}
+
+**Commit:** `refactor(python): remove feature flags and unused deps`
+
+**References:** [D05] Feature flags
+
+**Artifacts:**
+- Updated `crates/tugtool-python/Cargo.toml`
+
+**Tasks:**
+- [ ] Remove `python-worker` feature entirely
+- [ ] Remove `native-cst` feature (make always-on)
+- [ ] Remove `which` dependency
+- [ ] Remove `dirs` dependency
+- [ ] Make `tugtool-cst` a required (not optional) dependency
+
+**Tests:**
+- [ ] Integration: Build succeeds with simplified Cargo.toml
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo tree -p tugtool-python` shows no `which` or `dirs`
+
+**Rollback:**
+- Revert Cargo.toml changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.4: Simplify lib.rs {#step-9-4}
+
+**Commit:** `refactor(python): simplify lib.rs module exports`
+
+**References:** (#step-9-simplify)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/lib.rs`
+
+**Tasks:**
+- [ ] Remove all `#[cfg(feature = ...)]` guards
+- [ ] Remove: `worker`, `env`, `bootstrap`, `test_helpers` module exports
+- [ ] Add: `types` module export
+- [ ] Remove re-exports: `ensure_managed_venv`, `require_python_with_libcst`, etc.
+- [ ] Update module documentation
+
+**Tests:**
+- [ ] Integration: All dependent crates still compile
+
+**Checkpoint:**
+- [ ] `cargo build --workspace` succeeds
+- [ ] No unused import warnings
+
+**Rollback:**
+- Revert lib.rs changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.5: Update Imports Across Codebase {#step-9-5}
+
+**Commit:** `refactor(python): update imports to use types module`
+
+**References:** (#step-9-simplify)
+
+**Artifacts:**
+- Updated imports in multiple files
+
+**Tasks:**
+- [ ] `cst_bridge.rs`: `use crate::worker::...` → `use crate::types::...`
+- [ ] `dynamic.rs`: `use crate::worker::DynamicPatternInfo` → `use crate::types::DynamicPatternInfo`
+- [ ] `type_tracker.rs`: Update imports, remove `WorkerHandle` usage
+- [ ] Fix any remaining import errors
+
+**Tests:**
+- [ ] Integration: All files compile with new imports
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo clippy -p tugtool-python` passes
+
+**Rollback:**
+- Revert import changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.6: Simplify analyzer.rs {#step-9-6}
+
+**Commit:** `refactor(python): simplify analyzer to native-only`
+
+**References:** (#step-9-simplify)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] Remove all conditional compilation guards
+- [ ] Remove `PythonAnalyzer` struct (if worker-dependent)
+- [ ] Rename `analyze_file_native()` → `analyze_file()`
+- [ ] Remove worker-dependent tests
+- [ ] Update documentation
+
+**Tests:**
+- [ ] Unit: Analyzer tests pass
+- [ ] Integration: Rename operations work
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python` passes
+- [ ] No conditional compilation remains in analyzer.rs
+
+**Rollback:**
+- Revert analyzer.rs changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.7: Simplify ops/rename.rs {#step-9-7}
+
+**Commit:** `refactor(python): simplify rename to native-only`
+
+**References:** (#step-9-simplify)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/ops/rename.rs`
+
+**Tasks:**
+- [ ] Remove `PythonRenameOp` struct
+- [ ] Rename `native::run_native()` → `run()`
+- [ ] Rename `native::analyze_impact_native()` → `analyze_impact()`
+- [ ] Remove conditional compilation
+- [ ] Update documentation
+
+**Tests:**
+- [ ] Unit: Rename tests pass
+- [ ] Integration: End-to-end rename works
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python` passes
+- [ ] No conditional compilation remains in rename.rs
+
+**Rollback:**
+- Revert rename.rs changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.8: Clean Up Error Handling {#step-9-8}
+
+**Commit:** `refactor(python): simplify error handling`
+
+**References:** (#step-9-simplify)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/error_bridges.rs`
+
+**Tasks:**
+- [ ] Remove `#[cfg(feature = "native-cst")]` from error variants
+- [ ] Simplify or remove Python-specific error bridge code
+- [ ] Update any remaining error types
+
+**Tests:**
+- [ ] Unit: Error types compile and work correctly
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run --workspace` passes
+
+**Rollback:**
+- Revert error_bridges.rs changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.9: Update Documentation {#step-9-9}
+
+**Commit:** `docs: update for native-only Python architecture`
+
+**References:** (#success-criteria)
+
+**Artifacts:**
+- Updated `CLAUDE.md`
+- Updated crate documentation
+
+**Tasks:**
+- [ ] Update CLAUDE.md to remove Python worker references
+- [ ] Update tugtool-python crate-level documentation
+- [ ] Remove any references to `python-worker` feature
+- [ ] Document the native-only architecture
+
+**Tests:**
+- [ ] Golden: Documentation is accurate
+
+**Checkpoint:**
+- [ ] `cargo doc -p tugtool-python` succeeds
+- [ ] No broken doc links
+
+**Rollback:**
+- Revert documentation changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 9 Summary {#step-9-summary}
+
+After completing Steps 9.1-9.9, you will have:
+- Single, clean native Python architecture (no subprocess dependencies)
+- ~7,000+ lines of code removed (including 78KB Python script)
+- 6 files deleted entirely
+- 2 dependencies removed (`which`, `dirs`)
+- 2 feature flags removed (`native-cst`, `python-worker`)
+- Simplified codebase ready for future improvement
+
+**Final Step 9 Checkpoint:**
+- [ ] `cargo build -p tugtool-python` produces binary with zero Python dependencies
+- [ ] `cargo tree -p tugtool-python` shows no `which`, `dirs`, or conditional deps
+- [ ] `cargo nextest run --workspace` passes (all 1023+ tests)
+- [ ] `cargo bench -p tugtool-cst` still shows 18-19x improvement
+- [ ] No `#[cfg(feature = "native-cst")]` or `#[cfg(feature = "python-worker")]` in codebase
+
+**Estimated Code Reduction:**
+- Lines deleted: ~7,000+ (including 2,200-line Python script)
+- Files deleted: 6
+- Dependencies removed: 2
+- Feature flags removed: 2
 
 ---
 
@@ -1643,8 +1978,7 @@ After completing Steps 8.1-8.4, you will have:
 **Acceptance tests:**
 - [ ] Golden: All golden file tests pass
 - [ ] Integration: End-to-end rename on real codebase succeeds
-- [ ] Benchmark: parse_module 10x faster than Python worker for large files
-- [ ] Opt-in: equivalence suite passes when `python-worker` backend is enabled (temporary migration aid)
+- [ ] Benchmark: parse_module 10x faster than Python worker for large files (achieved: 18-19x)
 
 ---
 
@@ -1663,15 +1997,15 @@ After completing Steps 8.1-8.4, you will have:
 - [ ] ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer
 - [ ] Basic rename works in isolation
 
-**Milestone M04: Integration Complete** {#m04-integration}
-- [ ] tugtool-python uses native CST by default
+**Milestone M04: Native-Only Architecture Complete** {#m04-integration}
+- [ ] Python worker code completely removed
+- [ ] No feature flags remain
 - [ ] All tests pass
 
 ---
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Remove python-worker feature entirely (after deprecation period)
 - [ ] Add additional refactoring operations (extract function, etc.)
 - [ ] Level 2+ type inference
 - [ ] Incremental parsing for large files
@@ -1679,9 +2013,9 @@ After completing Steps 8.1-8.4, you will have:
 
 | Checkpoint | Verification |
 |------------|--------------|
-| No Python deps | `cargo tree -p tugtool-python` shows no pyo3 |
-| Identical output | `diff` native vs Python worker golden files |
-| 10x performance | `cargo bench` shows improvement |
-| Tests pass | `cargo nextest run --workspace` |
+| No Python deps | `cargo tree -p tugtool-python` shows no `which`, `dirs`, or pyo3 |
+| No feature flags | `grep -r "cfg(feature" crates/tugtool-python/src/` returns empty |
+| 10x+ performance | `cargo bench -p tugtool-cst` shows 18-19x improvement |
+| Tests pass | `cargo nextest run --workspace` (1023+ tests) |
 
 **Commit after all checkpoints pass.**
