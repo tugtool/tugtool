@@ -222,7 +222,8 @@
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python3:*)",
       "Bash(export TUG_PYTHON=/Users/kocienda/Mounts/u/src/tugtool/.tug/venv/bin/python3)",
       "Bash(! grep -q \"^\\\\[package\\\\]\" /Users/kocienda/Mounts/u/src/tugtool/Cargo.toml)",
-      "Bash([ ! -d /Users/kocienda/Mounts/u/src/tugtool/src ])"
+      "Bash([ ! -d /Users/kocienda/Mounts/u/src/tugtool/src ])",
+      "Bash(cargo expand:*)"
     ],
     "deny": [],
     "ask": []
