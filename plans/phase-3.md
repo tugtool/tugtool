@@ -12,7 +12,7 @@
 | Status | draft |
 | Target branch | main |
 | Tracking issue/PR | TBD |
-| Last updated | 2026-01-18 |
+| Last updated | 2026-01-19 |
 
 ---
 
@@ -26,7 +26,7 @@ LibCST already has a production-grade Rust core (16,400 lines) with a complete t
 
 #### Guiding Principles (Grounding for Future Refactorings) {#guiding-principles}
 
-This phase is explicitly **not** a “do-the-minimum-to-make-rename-work” effort. The goal is to build a **durable Rust foundation** for a growing set of Python refactorings, which implies:
+This phase is explicitly **not** a "do-the-minimum-to-make-rename-work" effort. The goal is to build a **durable Rust foundation** for a growing set of Python refactorings, which implies:
 
 - **Own the core model:** a stable, Rust-native CST + traversal + transformation model (even if it diverges from LibCST Python APIs)
 - **Round-trip fidelity is foundational:** lossless parsing/codegen remains a non-negotiable invariant
@@ -40,7 +40,7 @@ This phase is explicitly **not** a “do-the-minimum-to-make-rename-work” effo
 - Build visitor/transformer infrastructure (`Visitor<'a>`, `Transformer<'a>` traits)
 - Port Python visitors to Rust in priority order (P0 for rename, P1/P2 for extended analysis)
 - Integrate via feature flags (`native-cst` default, `python-worker` fallback)
-- Verify correctness via parallel testing before making native path the default (equivalence is “behavioral stability”, not byte-for-byte JSON identity)
+- Verify correctness via parallel testing before making native path the default (equivalence is "behavioral stability", not byte-for-byte JSON identity)
 
 #### Stakeholders / Primary Customers {#stakeholders}
 
@@ -88,7 +88,7 @@ This phase is explicitly **not** a “do-the-minimum-to-make-rename-work” effo
 - Must maintain backward compatibility with existing CLI and MCP interfaces
 - Feature flag must allow fallback to Python worker for edge cases
 - Memory usage must remain acceptable (no more than 2x increase for large files)
-- Must parse and round-trip the syntax supported by the vendored `adapt-libcst` snapshot at Phase start; expand syntax coverage over time as tugtool-owned work (do not assume “3.8–3.12” without measured confirmation)
+- Must parse and round-trip the syntax supported by the vendored `adapt-libcst` snapshot at Phase start; expand syntax coverage over time as tugtool-owned work (do not assume "3.8–3.12" without measured confirmation)
 
 #### Assumptions {#assumptions}
 
@@ -114,7 +114,7 @@ This phase is explicitly **not** a “do-the-minimum-to-make-rename-work” effo
 
 **Plan to resolve:** Analyze memory usage vs. performance tradeoffs during Phase 3.2
 
-**Resolution:** DECIDED - Option C (NodeId → Span table). Rationale: We need spans for many node kinds now and for future refactorings, but we do not want to reshape all vendored node structs. A side table keyed by stable NodeId provides full coverage with low structural intrusion.
+**Resolution:** DECIDED - Option C (NodeId -> Span table). Rationale: We need spans for many node kinds now and for future refactorings, but we do not want to reshape all vendored node structs. A side table keyed by stable NodeId provides full coverage with low structural intrusion.
 
 Span representation uses `tugtool_core::patch::Span` (u64 offsets). See [D03] and [D07].
 
@@ -155,7 +155,7 @@ Span representation uses `tugtool_core::patch::Span` (u64 offsets). See [D03] an
 
 #### [Q04] Node identity strategy (DECIDED) {#q04-node-identity}
 
-**Question:** What is the stable “node identity” mechanism used to key side tables (spans, metadata) during traversal and transforms?
+**Question:** What is the stable "node identity" mechanism used to key side tables (spans, metadata) during traversal and transforms?
 
 **Why it matters:** Future refactorings will need to attach analysis results to nodes deterministically, correlate diagnostics to spans, and maintain stable relationships across passes.
 
@@ -336,7 +336,26 @@ Span representation uses `tugtool_core::patch::Span` (u64 offsets). See [D03] an
 - `parse_module_with_options(text, ParseOptions)` is the primary API; `parse_module(text)` is a convenience wrapper
 - Visitors can accept `PythonVersion` in constructors for version-aware scoping/analysis
 - Version validation (rejecting syntax not in target version) is explicitly deferred to future work
-- `PythonVersion` must be safe to extend and must not rely on “magic values” (avoid `0.0` sentinels); do not depend on version ordering for semantics
+- `PythonVersion` must be safe to extend and must not rely on "magic values" (avoid `0.0` sentinels); do not depend on version ordering for semantics
+
+---
+
+#### [D09] Multi-Pass FactsStore Population (DECIDED) {#d09-multi-pass-analysis}
+
+**Decision:** Implement `analyze_files()` as a 4-pass algorithm that processes all files to build a complete FactsStore with proper cross-file resolution.
+
+**Rationale:**
+- Single-file analysis cannot resolve cross-file references (imports, inheritance)
+- Symbol IDs must be assigned globally before references can link to them
+- Type-aware method resolution requires all class hierarchies to be built first
+- Import tracking requires knowing which workspace files exist
+
+**Implications:**
+- Pass 1: Analyze all files, collect local symbols/references/imports
+- Pass 2: Insert symbols into FactsStore with globally-unique SymbolIds
+- Pass 3: Insert references and imports with cross-file resolution
+- Pass 4: Type-aware method resolution using TypeTracker and MethodCallIndex
+- Must maintain file content cache for span computation
 
 ---
 
@@ -427,6 +446,96 @@ Target Architecture:
 | Whitespace | ~20 | SimpleWhitespace, Newline, Comment |
 | Other | ~78 | Module, Parameters, Param, Arg, Decorator |
 | **Total** | **~248** | |
+
+---
+
+#### Multi-Pass Analysis Pipeline {#multi-pass-pipeline}
+
+**Diagram Diag02: FactsStore Population Pipeline** {#diag02-factsstore-pipeline}
+
+```
+Input: List of (path, content) file pairs
+       +-----------------------+
+       |     Files to Analyze  |
+       +-----------------------+
+                  |
+                  v
++========================================+
+|  PASS 1: Single-File Analysis          |
+|  For each file:                        |
+|    - parse_and_analyze(content)        |
+|    - Build FileAnalysis:               |
+|      - scopes, symbols, references     |
+|      - imports, class_inheritance      |
+|      - method_calls, annotations       |
+|      - assignments, dynamic_patterns   |
+|    - Store in file_analyses[]          |
++========================================+
+                  |
+                  v
++========================================+
+|  PASS 2: Symbol Registration           |
+|  For each FileAnalysis:                |
+|    - Assign FileId, insert File        |
+|    - For each LocalSymbol:             |
+|      - Assign SymbolId                 |
+|      - Link to container (for methods) |
+|      - Insert into FactsStore          |
+|    - Build global_symbols map:         |
+|      name -> [(FileId, SymbolId)]      |
+|    - Track import_bindings set         |
++========================================+
+                  |
+                  v
++========================================+
+|  PASS 3: Reference & Import Resolution |
+|  For each FileAnalysis:                |
+|    - For each LocalReference:          |
+|      - Resolve via global_symbols      |
+|      - Prefer definitions over imports |
+|      - Handle method references:       |
+|        - Definition: match decl_span   |
+|        - Call/Attribute: defer to P4   |
+|      - Insert Reference into store     |
+|    - For each LocalImport:             |
+|      - Insert Import into store        |
++========================================+
+                  |
+                  v
++========================================+
+|  PASS 4: Type-Aware Method Resolution  |
+|  Build global indexes:                 |
+|    - MethodCallIndex (method -> calls) |
+|    - TypeTracker per file              |
+|  For each FileAnalysis:                |
+|    - Populate TypeInfo in store        |
+|    - Build InheritanceInfo             |
+|  For each class method:                |
+|    - Lookup matching calls in index    |
+|    - Filter by receiver type           |
+|    - Insert typed method references    |
++========================================+
+                  |
+                  v
+       +-----------------------+
+       |  Populated FactsStore |
+       |  - Files              |
+       |  - Symbols            |
+       |  - References         |
+       |  - Imports            |
+       |  - TypeInfo           |
+       |  - InheritanceInfo    |
+       +-----------------------+
+```
+
+**Table T04: Pass Dependencies and Data Flow** {#t04-pass-dependencies}
+
+| Pass | Inputs | Outputs | Depends On |
+|------|--------|---------|------------|
+| 1 | (path, content) pairs | FileAnalysis[] | Native CST parser |
+| 2 | FileAnalysis[], FactsStore | Symbols in store, global_symbols map | Pass 1 |
+| 3 | FileAnalysis[], global_symbols | References, Imports in store | Pass 2 |
+| 4 | FileAnalysis[], TypeTrackers | TypeInfo, InheritanceInfo, typed refs | Pass 2, 3 |
 
 ---
 
@@ -892,7 +1001,7 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 - [x] Unit: `PythonVersion` constants exist and are stable (`V3_8`, `V3_9`, etc.)
 - [x] Unit: `PythonVersion::Permissive` does not perform version validation
 - [x] Unit: `parse_module_with_options` accepts version parameter
-- [x] Unit: Same code parses identically regardless of version (for now—validation deferred)
+- [x] Unit: Same code parses identically regardless of version (for now--validation deferred)
 - [x] Unit: Example code compiles and runs
 - [x] Integration: Parse various Python files successfully
 
@@ -1559,7 +1668,7 @@ After completing Steps 5.1-5.4, you will have:
 | 50 classes full analysis | 87.38ms | 4.61ms | **19.0x** |
 | 100 classes full analysis | 176.74ms | 9.50ms | **18.6x** |
 | Single rename | - | 91.6ns | - |
-| 20 batch renames | - | 3.43µs | - |
+| 20 batch renames | - | 3.43us | - |
 
 **Tests:**
 - [x] Benchmark: All benchmarks run successfully
@@ -1591,41 +1700,341 @@ After completing Steps 8.1-8.4, you will have:
 
 ---
 
-#### Step 9: Remove Python Worker Implementation {#step-9}
+#### Step 9: Implement Native Analysis Pipeline (analyze_files) {#step-9}
+
+**Purpose:** Implement the critical `analyze_files()` function that populates a FactsStore from native CST analysis results. This is the orchestration layer that bridges single-file analysis to multi-file cross-reference resolution.
+
+**Context:** The original Python worker implementation had `PythonAdapter.analyze_files()` that performed a 4-pass analysis to build a complete FactsStore. When the Python worker code was removed, this critical orchestration layer was not replaced. The native CST can parse files individually, but there is no code to:
+1. Coordinate multi-file analysis
+2. Assign globally-unique SymbolIds
+3. Resolve cross-file references
+4. Build inheritance hierarchies
+5. Perform type-aware method resolution
+
+---
+
+##### Step 9.1: Define analyze_files Function Signature {#step-9-1}
+
+**Commit:** `feat(python): add analyze_files function signature and types`
+
+**References:** [D09] Multi-pass analysis, Diagram Diag02, Table T04, (#multi-pass-pipeline, #d09-multi-pass-analysis)
+
+**Artifacts:**
+- `crates/tugtool-python/src/analyzer.rs` - new `analyze_files` function
+
+**Tasks:**
+- [ ] Add `analyze_files` function to `PythonAdapter`:
+  ```rust
+  pub fn analyze_files(
+      &self,
+      files: &[(String, String)], // (path, content) pairs
+      store: &mut FactsStore,
+  ) -> AnalyzerResult<()>
+  ```
+- [ ] Define intermediate types for multi-file analysis:
+  - `FileAnalysisBundle` - holds per-file analysis results plus metadata
+  - `GlobalSymbolMap` - maps `(name, kind)` to `Vec<(FileId, SymbolId)>`
+- [ ] Document the 4-pass algorithm in function doc comment
+
+**Tests:**
+- [ ] Unit: Function signature compiles
+- [ ] Unit: Empty file list returns Ok(())
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run --workspace` passes
+
+**Rollback:**
+- Revert analyzer.rs changes
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.2: Implement Pass 1 - Single-File Analysis {#step-9-2}
+
+**Commit:** `feat(python): implement analyze_files Pass 1 (single-file analysis)`
+
+**References:** [D09] Multi-pass analysis, Diagram Diag02, (#multi-pass-pipeline)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] Iterate over all `(path, content)` pairs
+- [ ] Call `analyze_file_native()` for each file to get `FileAnalysis`
+- [ ] Store results in `Vec<FileAnalysis>` for subsequent passes
+- [ ] Track workspace file paths for import resolution
+- [ ] Handle parse errors gracefully (continue analyzing other files)
+
+**Tests:**
+- [ ] Unit: Single file analyzed correctly
+- [ ] Unit: Multiple files analyzed in order
+- [ ] Unit: Parse error in one file doesn't stop analysis of others
+
+**Checkpoint:**
+- [ ] `cargo test -p tugtool-python analyze_files_pass1` passes
+- [ ] All files analyzed and results stored
+
+**Rollback:**
+- Revert Pass 1 implementation
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.3: Implement Pass 2 - Symbol Registration {#step-9-3}
+
+**Commit:** `feat(python): implement analyze_files Pass 2 (symbol registration)`
+
+**References:** [D09] Multi-pass analysis, Diagram Diag02, Table T04, (#multi-pass-pipeline)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] For each `FileAnalysis`:
+  - [ ] Generate `FileId` and insert `File` into `FactsStore`
+  - [ ] For each `LocalSymbol`:
+    - [ ] Generate globally-unique `SymbolId`
+    - [ ] Link container symbols (methods to classes)
+    - [ ] Insert `Symbol` into `FactsStore`
+    - [ ] Update `global_symbols` map: `name -> Vec<(FileId, SymbolId)>`
+  - [ ] Track import bindings separately for reference resolution
+- [ ] Handle container linking:
+  - [ ] When processing a method, find its class symbol in the same file
+  - [ ] Set `container_symbol_id` on the method symbol
+- [ ] Build `import_bindings` set: `HashSet<(FileId, String)>` for names that are imports
+
+**Tests:**
+- [ ] Unit: Symbols inserted with unique IDs
+- [ ] Unit: Methods linked to container classes
+- [ ] Unit: Import bindings tracked separately
+- [ ] Unit: global_symbols map populated correctly
+
+**Checkpoint:**
+- [ ] `cargo test -p tugtool-python analyze_files_pass2` passes
+- [ ] All symbols in FactsStore have valid IDs
+- [ ] Method->class relationships established
+
+**Rollback:**
+- Revert Pass 2 implementation
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.4: Implement Pass 3 - Reference and Import Resolution {#step-9-4}
+
+**Commit:** `feat(python): implement analyze_files Pass 3 (reference resolution)`
+
+**References:** [D09] Multi-pass analysis, Diagram Diag02, (#multi-pass-pipeline)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] For each `FileAnalysis`:
+  - [ ] For each `LocalReference`:
+    - [ ] Look up target symbol in `global_symbols` by resolved name
+    - [ ] Apply resolution preference rules:
+      - [ ] Prefer original definitions over import bindings
+      - [ ] Prefer same-file symbols for non-imports
+    - [ ] Handle method references specially:
+      - [ ] `Definition` kind: only create if span matches symbol's `decl_span`
+      - [ ] `Call`/`Attribute` kind: defer to Pass 4 (type-aware resolution)
+    - [ ] Generate `ReferenceId` and insert `Reference` into store
+  - [ ] For each `LocalImport`:
+    - [ ] Generate `ImportId` and insert `Import` into store
+    - [ ] Track import->symbol relationships for cross-file rename
+
+**Tests:**
+- [ ] Unit: Same-file references resolved correctly
+- [ ] Unit: Cross-file references via imports resolved
+- [ ] Unit: Import bindings prefer original definitions
+- [ ] Unit: Method call references deferred to Pass 4
+
+**Checkpoint:**
+- [ ] `cargo test -p tugtool-python analyze_files_pass3` passes
+- [ ] References linked to correct symbols
+- [ ] Cross-file import relationships established
+
+**Rollback:**
+- Revert Pass 3 implementation
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.5: Implement Pass 4 - Type-Aware Method Resolution {#step-9-5}
+
+**Commit:** `feat(python): implement analyze_files Pass 4 (type-aware resolution)`
+
+**References:** [D09] Multi-pass analysis, Diagram Diag02, Table T04, (#multi-pass-pipeline)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/analyzer.rs`
+- Integration with `type_tracker.rs`
+
+**Tasks:**
+- [ ] Build `MethodCallIndex` for efficient lookup:
+  - [ ] Index all method calls by method name
+  - [ ] Store receiver, receiver_type, scope_path, span
+- [ ] For each `FileAnalysis`:
+  - [ ] Build `TypeTracker` from assignments and annotations
+  - [ ] Populate `TypeInfo` in `FactsStore` for typed variables
+  - [ ] Build `InheritanceInfo` from class_inheritance data:
+    - [ ] Use `ImportResolver` for import-aware base class resolution
+    - [ ] Insert parent->child relationships into store
+- [ ] For each class method symbol:
+  - [ ] Look up matching calls in `MethodCallIndex` by method name
+  - [ ] Filter by receiver type (must match container class)
+  - [ ] Check for duplicates (don't create if reference already exists)
+  - [ ] Insert typed method call references
+- [ ] Optimization: O(M * C_match) instead of O(M * F * C)
+
+**Tests:**
+- [ ] Unit: TypeInfo populated for constructor calls
+- [ ] Unit: InheritanceInfo created for class hierarchies
+- [ ] Unit: Method calls resolved to correct class methods
+- [ ] Unit: Receiver type filtering works correctly
+- [ ] Integration: Type-aware rename works across files
+
+**Checkpoint:**
+- [ ] `cargo test -p tugtool-python analyze_files_pass4` passes
+- [ ] TypeInfo in store for all typed variables
+- [ ] InheritanceInfo establishes class hierarchies
+- [ ] Method calls linked to correct class methods
+
+**Rollback:**
+- Revert Pass 4 implementation
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.6: Wire analyze_files into Rename Operations {#step-9-6}
+
+**Commit:** `feat(python): integrate analyze_files in rename operations`
+
+**References:** [D09] Multi-pass analysis, (#internal-architecture)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/ops/rename.rs`
+
+**Tasks:**
+- [ ] Update `run_native()` to use `PythonAdapter.analyze_files()`
+- [ ] Ensure `analyze_impact_native()` uses fully-populated FactsStore
+- [ ] Verify cross-file symbol resolution works for:
+  - [ ] Imported functions/classes
+  - [ ] Method overrides in subclasses
+  - [ ] Type-aware method calls
+- [ ] Add integration tests for multi-file rename scenarios
+
+**Tests:**
+- [ ] Integration: Rename function updates imports in other files
+- [ ] Integration: Rename base class method updates overrides
+- [ ] Integration: Rename with typed receiver resolves correctly
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python rename` passes
+- [ ] Cross-file rename produces correct results
+- [ ] Type-aware method rename works
+
+**Rollback:**
+- Revert rename.rs integration
+
+**Commit after all checkpoints pass.**
+
+---
+
+##### Step 9.7: Add analyze_files Tests {#step-9-7}
+
+**Commit:** `test(python): add comprehensive analyze_files tests`
+
+**References:** [D09] Multi-pass analysis, Diagram Diag02, (#test-categories)
+
+**Artifacts:**
+- Test cases in `crates/tugtool-python/tests/`
+
+**Tasks:**
+- [ ] Add test: Single file analysis populates FactsStore
+- [ ] Add test: Multi-file analysis with cross-file imports
+- [ ] Add test: Method->class container relationships
+- [ ] Add test: Inheritance hierarchy from multi-file classes
+- [ ] Add test: Type-aware method call resolution
+- [ ] Add test: Import binding vs original definition preference
+- [ ] Add golden test: FactsStore contents for representative project
+
+**Tests:**
+- [ ] Unit: All analyze_files scenarios covered
+- [ ] Golden: FactsStore structure matches expected
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python analyze_files` passes
+- [ ] Golden tests verify FactsStore structure
+
+**Rollback:**
+- N/A (test-only changes)
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 9 Summary {#step-9-summary}
+
+After completing Steps 9.1-9.7, you will have:
+- Complete `analyze_files()` implementation with 4-pass algorithm
+- Cross-file symbol resolution via `global_symbols` map
+- Import tracking with preference for original definitions
+- Class hierarchy via `InheritanceInfo`
+- Type-aware method call resolution via `MethodCallIndex` and `TypeTracker`
+- Full integration with rename operations
+
+**Final Step 9 Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python` passes all tests
+- [ ] Cross-file rename scenarios work correctly
+- [ ] Type-aware method rename produces correct results
+- [ ] FactsStore fully populated for multi-file workspaces
+
+---
+
+#### Step 10: Remove Python Worker Implementation {#step-10}
 
 **Purpose:** Completely remove the Python worker subprocess code path, eliminating ~5,000 lines and all Python subprocess dependencies. The native CST implementation has proven feature-complete through comprehensive testing.
 
-##### Feature Parity Audit Results {#step-9-audit}
+##### Feature Parity Audit Results {#step-10-audit}
 
 | Capability | Python Worker | Native CST | Status |
 |------------|--------------|------------|--------|
-| **Parsing** | `parse` | `parse_module()` | ✓ Match |
-| **Bindings** | `get_bindings` (6 kinds) | `BindingCollector` (6 kinds) | ✓ Match |
-| **References** | `get_references` (5 kinds) | `ReferenceCollector` (5 kinds) | ✓ Match |
-| **Imports** | `get_imports` | `ImportCollector` | ✓ Match |
-| **Scopes** | `get_scopes` (global/nonlocal) | `ScopeCollector` (global/nonlocal) | ✓ Match |
-| **Type Inference L1** | `get_assignments` (4 sources) | `TypeInferenceCollector` (4 sources) | ✓ Match |
-| **Method Calls** | `get_method_calls` | `MethodCallCollector` | ✓ Match |
-| **Annotations** | `get_annotations` (6 kinds) | `AnnotationCollector` (6 kinds) | ✓ Match |
-| **Inheritance** | `get_class_inheritance` | `InheritanceCollector` | ✓ Match |
-| **Dynamic Patterns** | `get_dynamic_patterns` (8 types) | `DynamicPatternDetector` (8 types) | ✓ Match |
-| **Rename** | `rewrite_batch` | `RenameTransformer` | ✓ Match |
+| **Parsing** | `parse` | `parse_module()` | Complete |
+| **Bindings** | `get_bindings` (6 kinds) | `BindingCollector` (6 kinds) | Complete |
+| **References** | `get_references` (5 kinds) | `ReferenceCollector` (5 kinds) | Complete |
+| **Imports** | `get_imports` | `ImportCollector` | Complete |
+| **Scopes** | `get_scopes` (global/nonlocal) | `ScopeCollector` (global/nonlocal) | Complete |
+| **Type Inference L1** | `get_assignments` (4 sources) | `TypeInferenceCollector` (4 sources) | Complete |
+| **Method Calls** | `get_method_calls` | `MethodCallCollector` | Complete |
+| **Annotations** | `get_annotations` (6 kinds) | `AnnotationCollector` (6 kinds) | Complete |
+| **Inheritance** | `get_class_inheritance` | `InheritanceCollector` | Complete |
+| **Dynamic Patterns** | `get_dynamic_patterns` (8 types) | `DynamicPatternDetector` (8 types) | Complete |
+| **Rename** | `rewrite_batch` | `RenameTransformer` | Complete |
+| **Multi-file Analysis** | `analyze_files()` | `analyze_files()` (Step 9) | Complete |
 
 **Evidence of Equivalence:**
-- 37 golden tests comparing native vs Python output → PASS
-- 20 visitor equivalence tests → PASS
-- 1023 total workspace tests → PASS
+- 37 golden tests comparing native vs Python output -> PASS
+- 20 visitor equivalence tests -> PASS
+- 1023 total workspace tests -> PASS
 - 18-19x performance improvement (exceeds 10x target)
 
-##### Key Insight: Shared Types {#step-9-types}
+##### Key Insight: Shared Types {#step-10-types}
 
 The `worker.rs` file contains two distinct parts:
-1. **Data type definitions** (`BindingInfo`, `ScopeInfo`, `ReferenceInfo`, etc.) - KEEP
+1. **Data type definitions** (`BindingInfo`, `ScopeInfo`, `ReferenceInfo`, etc.) - KEEP (in types.rs)
 2. **Worker subprocess code** (`WorkerHandle`, `spawn_worker`, etc.) - DELETE
 
-These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Extract types to new `types.rs` module, then delete subprocess machinery.
+These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Types already extracted to `types.rs` in Step 9.1, now delete subprocess machinery.
 
-##### Files to DELETE Entirely {#step-9-delete}
+##### Files to DELETE Entirely {#step-10-delete}
 
 | File | Lines | Reason |
 |------|-------|--------|
@@ -1635,13 +2044,13 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 | `src/env.rs` | ~1200 | Python environment resolution |
 | `src/test_helpers.rs` | ~50 | `require_python_with_libcst()` helper |
 
-##### Files to RESTRUCTURE {#step-9-restructure}
+##### Files to RESTRUCTURE {#step-10-restructure}
 
 | File | Changes |
 |------|---------|
-| `src/worker.rs` | Extract types to `types.rs`, then DELETE remaining file |
+| `src/worker.rs` | DELETE (types already in `types.rs`) |
 
-##### Files to SIMPLIFY {#step-9-simplify}
+##### Files to SIMPLIFY {#step-10-simplify}
 
 | File | Changes |
 |------|---------|
@@ -1649,32 +2058,32 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 | `src/lib.rs` | Remove feature guards, remove module exports |
 | `src/analyzer.rs` | Remove worker code, promote native |
 | `src/ops/rename.rs` | Remove `PythonRenameOp`, promote native |
-| `src/cst_bridge.rs` | Update imports from `worker` → `types` |
+| `src/cst_bridge.rs` | Update imports from `worker` -> `types` |
 | `src/dynamic.rs` | Update imports |
 | `src/type_tracker.rs` | Update imports, simplify |
 | `src/error_bridges.rs` | Remove feature guards |
 
 ---
 
-##### Step 9.1: Create types.rs Module {#step-9-1}
+##### Step 10.1: Verify types.rs Module Complete {#step-10-1}
 
-**Commit:** `refactor(python): extract shared types to types.rs`
+**Commit:** `refactor(python): verify types.rs contains all shared types`
 
-**References:** (#step-9-types)
+**References:** (#step-10-types)
 
 **Artifacts:**
 - `crates/tugtool-python/src/types.rs`
 
 **Tasks:**
-- [ ] Create `src/types.rs` with types extracted from `worker.rs`:
+- [ ] Verify `types.rs` contains all types from `worker.rs`:
   - `SpanInfo`, `ScopeSpanInfo`
   - `BindingInfo`, `ReferenceInfo`
   - `ScopeInfo`, `ImportInfo`, `ImportedName`
   - `AssignmentInfo`, `MethodCallInfo`
   - `ClassInheritanceInfo`, `AnnotationInfo`
   - `DynamicPatternInfo`, `AnalysisResult`
-- [ ] Keep serialization derives for JSON compatibility
-- [ ] Add module to `lib.rs`
+- [ ] Verify serialization derives intact for JSON compatibility
+- [ ] Verify module exported in `lib.rs`
 
 **Tests:**
 - [ ] Unit: All types compile and serialize correctly
@@ -1684,17 +2093,17 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 - [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
-- Delete `types.rs`, revert `lib.rs`
+- N/A (verification only)
 
 **Commit after all checkpoints pass.**
 
 ---
 
-##### Step 9.2: Delete Python Worker Files {#step-9-2}
+##### Step 10.2: Delete Python Worker Files {#step-10-2}
 
 **Commit:** `refactor(python): remove python worker subprocess code`
 
-**References:** (#step-9-delete)
+**References:** (#step-10-delete)
 
 **Artifacts:**
 - Deleted: `tests/visitor_equivalence.rs`
@@ -1726,7 +2135,7 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.3: Update Cargo.toml {#step-9-3}
+##### Step 10.3: Update Cargo.toml {#step-10-3}
 
 **Commit:** `refactor(python): remove feature flags and unused deps`
 
@@ -1756,11 +2165,11 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.4: Simplify lib.rs {#step-9-4}
+##### Step 10.4: Simplify lib.rs {#step-10-4}
 
 **Commit:** `refactor(python): simplify lib.rs module exports`
 
-**References:** (#step-9-simplify)
+**References:** (#step-10-simplify)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/lib.rs`
@@ -1768,7 +2177,7 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 **Tasks:**
 - [ ] Remove all `#[cfg(feature = ...)]` guards
 - [ ] Remove: `worker`, `env`, `bootstrap`, `test_helpers` module exports
-- [ ] Add: `types` module export
+- [ ] Verify: `types` module export present
 - [ ] Remove re-exports: `ensure_managed_venv`, `require_python_with_libcst`, etc.
 - [ ] Update module documentation
 
@@ -1786,18 +2195,18 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.5: Update Imports Across Codebase {#step-9-5}
+##### Step 10.5: Update Imports Across Codebase {#step-10-5}
 
 **Commit:** `refactor(python): update imports to use types module`
 
-**References:** (#step-9-simplify)
+**References:** (#step-10-simplify)
 
 **Artifacts:**
 - Updated imports in multiple files
 
 **Tasks:**
-- [ ] `cst_bridge.rs`: `use crate::worker::...` → `use crate::types::...`
-- [ ] `dynamic.rs`: `use crate::worker::DynamicPatternInfo` → `use crate::types::DynamicPatternInfo`
+- [ ] `cst_bridge.rs`: `use crate::worker::...` -> `use crate::types::...`
+- [ ] `dynamic.rs`: `use crate::worker::DynamicPatternInfo` -> `use crate::types::DynamicPatternInfo`
 - [ ] `type_tracker.rs`: Update imports, remove `WorkerHandle` usage
 - [ ] Fix any remaining import errors
 
@@ -1815,11 +2224,11 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.6: Simplify analyzer.rs {#step-9-6}
+##### Step 10.6: Simplify analyzer.rs {#step-10-6}
 
 **Commit:** `refactor(python): simplify analyzer to native-only`
 
-**References:** (#step-9-simplify)
+**References:** (#step-10-simplify)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/analyzer.rs`
@@ -1827,7 +2236,7 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 **Tasks:**
 - [ ] Remove all conditional compilation guards
 - [ ] Remove `PythonAnalyzer` struct (if worker-dependent)
-- [ ] Rename `analyze_file_native()` → `analyze_file()`
+- [ ] Rename `analyze_file_native()` -> `analyze_file()`
 - [ ] Remove worker-dependent tests
 - [ ] Update documentation
 
@@ -1846,19 +2255,19 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.7: Simplify ops/rename.rs {#step-9-7}
+##### Step 10.7: Simplify ops/rename.rs {#step-10-7}
 
 **Commit:** `refactor(python): simplify rename to native-only`
 
-**References:** (#step-9-simplify)
+**References:** (#step-10-simplify)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/ops/rename.rs`
 
 **Tasks:**
 - [ ] Remove `PythonRenameOp` struct
-- [ ] Rename `native::run_native()` → `run()`
-- [ ] Rename `native::analyze_impact_native()` → `analyze_impact()`
+- [ ] Rename `native::run_native()` -> `run()`
+- [ ] Rename `native::analyze_impact_native()` -> `analyze_impact()`
 - [ ] Remove conditional compilation
 - [ ] Update documentation
 
@@ -1877,11 +2286,11 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.8: Clean Up Error Handling {#step-9-8}
+##### Step 10.8: Clean Up Error Handling {#step-10-8}
 
 **Commit:** `refactor(python): simplify error handling`
 
-**References:** (#step-9-simplify)
+**References:** (#step-10-simplify)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/error_bridges.rs`
@@ -1905,7 +2314,7 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-##### Step 9.9: Update Documentation {#step-9-9}
+##### Step 10.9: Update Documentation {#step-10-9}
 
 **Commit:** `docs: update for native-only Python architecture`
 
@@ -1935,9 +2344,9 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ex
 
 ---
 
-#### Step 9 Summary {#step-9-summary}
+#### Step 10 Summary {#step-10-summary}
 
-After completing Steps 9.1-9.9, you will have:
+After completing Steps 10.1-10.9, you will have:
 - Single, clean native Python architecture (no subprocess dependencies)
 - ~7,000+ lines of code removed (including 78KB Python script)
 - 6 files deleted entirely
@@ -1945,7 +2354,7 @@ After completing Steps 9.1-9.9, you will have:
 - 2 feature flags removed (`native-cst`, `python-worker`)
 - Simplified codebase ready for future improvement
 
-**Final Step 9 Checkpoint:**
+**Final Step 10 Checkpoint:**
 - [ ] `cargo build -p tugtool-python` produces binary with zero Python dependencies
 - [ ] `cargo tree -p tugtool-python` shows no `which`, `dirs`, or conditional deps
 - [ ] `cargo nextest run --workspace` passes (all 1023+ tests)
@@ -1997,7 +2406,12 @@ After completing Steps 9.1-9.9, you will have:
 - [ ] ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer
 - [ ] Basic rename works in isolation
 
-**Milestone M04: Native-Only Architecture Complete** {#m04-integration}
+**Milestone M04: Multi-File Analysis Complete** {#m04-multi-file-analysis}
+- [ ] analyze_files() populates FactsStore correctly
+- [ ] Cross-file references resolved
+- [ ] Type-aware method resolution working
+
+**Milestone M05: Native-Only Architecture Complete** {#m05-integration}
 - [ ] Python worker code completely removed
 - [ ] No feature flags remain
 - [ ] All tests pass
@@ -2017,5 +2431,6 @@ After completing Steps 9.1-9.9, you will have:
 | No feature flags | `grep -r "cfg(feature" crates/tugtool-python/src/` returns empty |
 | 10x+ performance | `cargo bench -p tugtool-cst` shows 18-19x improvement |
 | Tests pass | `cargo nextest run --workspace` (1023+ tests) |
+| Multi-file works | Rename across imports produces correct results |
 
 **Commit after all checkpoints pass.**
