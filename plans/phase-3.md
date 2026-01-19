@@ -1038,32 +1038,32 @@ After completing Steps 3.1-3.3, you will have:
 - `tugtool-cst/src/visitor/scope.rs`
 
 **Tasks:**
-- [ ] Define `ScopeInfo` struct (id, kind, name, parent, span, globals, nonlocals)
-- [ ] Define `ScopeKind` enum (Module, Class, Function, Lambda, Comprehension)
-- [ ] Implement `ScopeCollector<'a>` struct
-- [ ] Implement `Visitor<'a>` for ScopeCollector
-- [ ] Handle `visit_module` - enter Module scope
-- [ ] Handle `visit_function_def` - enter Function scope
-- [ ] Handle `visit_class_def` - enter Class scope
-- [ ] Handle `visit_lambda` - enter Lambda scope
-- [ ] Handle `visit_list_comp`, `visit_dict_comp`, etc. - enter Comprehension scope
-- [ ] Handle `visit_global` - record global declarations
-- [ ] Handle `visit_nonlocal` - record nonlocal declarations
-- [ ] Implement `leave_*` methods to exit scopes
-- [ ] Add `into_scopes()` method to extract results
+- [x] Define `ScopeInfo` struct (id, kind, name, parent, span, globals, nonlocals)
+- [x] Define `ScopeKind` enum (Module, Class, Function, Lambda, Comprehension)
+- [x] Implement `ScopeCollector<'a>` struct
+- [x] Implement `Visitor<'a>` for ScopeCollector
+- [x] Handle `visit_module` - enter Module scope
+- [x] Handle `visit_function_def` - enter Function scope
+- [x] Handle `visit_class_def` - enter Class scope
+- [x] Handle `visit_lambda` - enter Lambda scope
+- [x] Handle `visit_list_comp`, `visit_dict_comp`, etc. - enter Comprehension scope
+- [x] Handle `visit_global` - record global declarations
+- [x] Handle `visit_nonlocal` - record nonlocal declarations
+- [x] Implement `leave_*` methods to exit scopes
+- [x] Add `into_scopes()` method to extract results
 
 **Tests:**
-- [ ] Unit: Simple function creates Function scope
-- [ ] Unit: Nested functions create nested scopes
-- [ ] Unit: Class with methods creates proper hierarchy
-- [ ] Unit: Comprehensions create their own scope
-- [ ] Unit: Global/nonlocal declarations tracked
+- [x] Unit: Simple function creates Function scope
+- [x] Unit: Nested functions create nested scopes
+- [x] Unit: Class with methods creates proper hierarchy
+- [x] Unit: Comprehensions create their own scope
+- [x] Unit: Global/nonlocal declarations tracked
 - [ ] Golden: Compare output to Python visitor
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst scope` passes
-- [ ] Scope output matches Python ScopeVisitor for test cases
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo test -p tugtool-cst scope` passes
+- [x] Scope output matches Python ScopeVisitor for test cases
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove scope.rs

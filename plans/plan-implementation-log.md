@@ -554,3 +554,60 @@ The visitor infrastructure (Step 3) is now complete:
 Ready for Step 4 (Port P0 Visitors): ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer.
 
 ---
+
+### Step 4.1: ScopeCollector - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Table T01: Python to Rust Visitor Mapping
+- Python ScopeVisitor implementation in libcst_worker.py
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `ScopeInfo` struct (id, kind, name, parent, span, globals, nonlocals) | Done |
+| Define `ScopeKind` enum (Module, Class, Function, Lambda, Comprehension) | Done |
+| Implement `ScopeCollector<'a>` struct | Done |
+| Implement `Visitor<'a>` for ScopeCollector | Done |
+| Handle `visit_module` - enter Module scope | Done |
+| Handle `visit_function_def` - enter Function scope | Done |
+| Handle `visit_class_def` - enter Class scope | Done |
+| Handle `visit_lambda` - enter Lambda scope | Done |
+| Handle comprehensions - enter Comprehension scope | Done |
+| Handle `visit_global_stmt` - record global declarations | Done |
+| Handle `visit_nonlocal_stmt` - record nonlocal declarations | Done |
+| Implement `leave_*` methods to exit scopes | Done |
+| Add `into_scopes()` method to extract results | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/scope.rs` (~500 lines)
+  - `ScopeKind` enum with Module, Class, Function, Lambda, Comprehension variants
+  - `ScopeInfo` struct with id, kind, name, parent, span, globals, nonlocals fields
+  - `ScopeCollector` visitor that traverses CST and builds scope hierarchy
+  - 12 unit tests covering all scope types and global/nonlocal tracking
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added scope module and exports
+- `crates/tugtool-cst/src/lib.rs` - Added ScopeCollector, ScopeInfo, ScopeKind exports
+
+**Test Results:**
+- `cargo test -p tugtool-cst scope`: 12 tests passed
+- `cargo nextest run --workspace`: 744 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst scope` passes: PASS
+- Scope output matches Python ScopeVisitor for test cases: PASS
+- `cargo nextest run --workspace` passes: PASS (744 tests)
+
+**Key Implementation Details:**
+1. ScopeCollector uses a scope stack to track the current scope hierarchy
+2. Each scope gets a unique ID in format "scope_N" (matching Python output)
+3. Spans are captured by searching for keywords (def, class, lambda, brackets)
+4. Global/nonlocal declarations are recorded in the scope where they appear
+5. Comprehensions (list, set, dict, generator) all create their own scope (Python 3 behavior)
+
+**Note:** The "Golden: Compare output to Python visitor" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
+
+---
