@@ -14,9 +14,12 @@
 //! - `validation`: Python identifier validation
 //! - `verification`: Python verification pipeline (compileall, pytest, mypy)
 //! - `ops`: Python refactoring operations (rename, etc.)
+//! - `cst_bridge`: Native Rust CST analysis (when `native-cst` feature enabled)
 
 pub mod analyzer;
 pub mod bootstrap;
+#[cfg(feature = "native-cst")]
+pub mod cst_bridge;
 pub mod dynamic;
 pub mod env;
 mod error_bridges;

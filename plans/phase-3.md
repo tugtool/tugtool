@@ -1251,23 +1251,23 @@ After completing Steps 4.1-4.4, you will have:
 - `crates/tugtool-python/src/cst_bridge.rs`
 
 **Tasks:**
-- [ ] Create cst_bridge.rs module
-- [ ] Implement `parse_and_analyze` function using tugtool-cst
-- [ ] Implement `rewrite_batch` function using RenameTransformer
-- [ ] Define conversion types between tugtool-cst and existing types
-- [ ] Implement From traits for type conversion
-- [ ] Add error handling and mapping
-- [ ] Feature-gate with `#[cfg(feature = "native-cst")]`
+- [x] Create cst_bridge.rs module
+- [x] Implement `parse_and_analyze` function using tugtool-cst
+- [x] Implement `rewrite_batch` function using RenameTransformer
+- [x] Define conversion types between tugtool-cst and existing types
+- [x] Implement From traits for type conversion
+- [x] Add error handling and mapping
+- [x] Feature-gate with `#[cfg(feature = "native-cst")]`
 
 **Tests:**
-- [ ] Unit: parse_and_analyze returns valid results
-- [ ] Unit: rewrite_batch produces correct output
+- [x] Unit: parse_and_analyze returns valid results
+- [x] Unit: rewrite_batch produces correct output
 - [ ] Integration: Compare with Python worker output
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python cst_bridge` passes
-- [ ] Bridge functions callable from analyzer.rs
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo test -p tugtool-python cst_bridge` passes
+- [x] Bridge functions callable from analyzer.rs
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove cst_bridge.rs

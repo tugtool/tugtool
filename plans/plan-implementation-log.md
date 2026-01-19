@@ -858,3 +858,59 @@ tugtool-cst = { path = "../tugtool-cst", optional = true }
 **Next Step:** Step 5.2 - CST Bridge Module (create cst_bridge.rs with native analysis functions)
 
 ---
+
+### Step 5.2: CST Bridge Module - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D05] Parallel Backend via Feature Flags (lines 274-289)
+- Internal Architecture section (lines 636-660)
+- Existing worker types (worker.rs)
+- tugtool-cst visitor types (scope.rs, binding.rs, reference.rs, rename.rs)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create cst_bridge.rs module | Done |
+| Implement `parse_and_analyze` function | Done |
+| Implement `rewrite_batch` function | Done |
+| Define conversion types | Done |
+| Implement From traits | Done |
+| Add error handling | Done |
+| Feature-gate module | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/cst_bridge.rs` (~350 lines)
+  - `CstBridgeError` enum with ParseError and RenameError variants
+  - `NativeAnalysisResult` struct containing scopes, bindings, references
+  - `parse_and_analyze()` function using ScopeCollector, BindingCollector, ReferenceCollector
+  - `rewrite_batch()` function using RenameTransformer
+  - From implementations for ScopeInfo, BindingInfo, ReferenceInfo
+  - 11 unit tests
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added cst_bridge module export with `#[cfg(feature = "native-cst")]`
+
+**Test Results:**
+- `cargo test -p tugtool-python cst_bridge`: 11 tests passed
+- `cargo nextest run --workspace`: 819 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-python cst_bridge` passes: PASS (11 tests)
+- Bridge functions callable from analyzer.rs: PASS (public API exposed via feature gate)
+- `cargo nextest run --workspace` passes: PASS (819 tests)
+
+**Key Implementation Details:**
+1. CstBridgeError wraps ParserError using `prettify_error()` for human-readable messages
+2. Type conversions from tugtool-cst types to worker protocol types
+3. ScopeSpanInfo conversion leaves line/col at 0 (byte spans preserved in native code)
+4. References are organized by name using all_references() HashMap iteration
+5. Empty rewrites list returns unchanged source (no-op optimization)
+
+**Note:** The "Integration: Compare with Python worker output" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
+
+**Next Step:** Step 5.3 - Analyzer Integration (feature-gated native analysis in analyzer.rs)
+
+---
