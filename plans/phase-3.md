@@ -2530,16 +2530,16 @@ After completing Steps 9.0-9.7, you will have:
 - **50 acceptance criteria tests (AC-1 through AC-8)** proving behavioral parity
 
 **Final Step 9 Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python` passes all tests
-- [ ] All acceptance criteria tests pass (AC-1 through AC-8, 50 tests)
-- [ ] Golden test verifies FactsStore structure matches expected
-- [ ] Golden test is byte-for-byte reproducible across runs
-- [ ] Cross-file rename scenarios work correctly
-- [ ] Type-aware method rename produces correct results
-- [ ] FactsStore fully populated for multi-file workspaces
-- [ ] Scope chain resolution matches Python semantics
-- [ ] Import resolution matches Contract C3 table (including `import foo.bar` → binds `foo`)
-- [ ] Rename fails if any file fails analysis (strict policy)
+- [x] `cargo nextest run -p tugtool-python` passes all tests
+- [x] All acceptance criteria tests pass (AC-1 through AC-8, 50 tests)
+- [x] Golden test verifies FactsStore structure matches expected
+- [x] Golden test is byte-for-byte reproducible across runs
+- [x] Cross-file rename scenarios work correctly
+- [x] Type-aware method rename produces correct results
+- [x] FactsStore fully populated for multi-file workspaces
+- [x] Scope chain resolution matches Python semantics
+- [x] Import resolution matches Contract C3 table (including `import foo.bar` → binds `foo`)
+- [x] Rename fails if any file fails analysis (strict policy)
 
 ---
 
@@ -2878,7 +2878,12 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 
 ---
 
-##### Step 10.9: Update Documentation {#step-10-9}
+##### Step 10.9: Remove Now-Extraneous `native` From All Names & Symbols {#step-10-9}
+
+---
+
+
+##### Step 10.10: Update Documentation {#step-10-10}
 
 **Commit:** `docs: update for native-only Python architecture`
 
