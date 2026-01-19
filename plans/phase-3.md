@@ -1734,7 +1734,6 @@ Any behavior within the supported subset MUST match the original worker exactly.
 
 Location: `crates/tugtool-python/src/lookup.rs:63-123`
 
-```
 Input: (store: &FactsStore, location: Location{file, line, col}, files: &[(path, content)])
 Output: Ok(Symbol) | Err(SymbolNotFound | AmbiguousSymbol)
 
@@ -1769,13 +1768,11 @@ Key Invariant: Must return the SAME symbol whether user clicks on:
 - The definition site (def foo(): → returns foo)
 - A reference site (foo() → returns foo via reference.symbol_id)
 - An import binding (from x import foo → returns original foo in x.py)
-```
 
 **Contract C2: `refs_of_symbol()` Behavior**
 
 Location: `crates/tugtool-core/src/facts/mod.rs:811-820`
 
-```
 Input: symbol_id: SymbolId
 Output: Vec<&Reference> (all references to this symbol, sorted by ReferenceId)
 
@@ -1786,7 +1783,6 @@ Invariants:
 - Includes call sites, attribute accesses, type annotations
 - Order is deterministic (sorted by ReferenceId)
 - Returns empty Vec for unknown symbol_id (no panic)
-```
 
 **Contract C3: Import Resolution Table**
 
@@ -1841,7 +1837,6 @@ Limitations:
 
 Python's LEGB rule with class scope exception:
 
-```
 1. Local scope: Check current scope's bindings
 2. Enclosing scopes: Walk up parent chain (skip class scopes!)
 3. Global scope: Module-level bindings
@@ -1853,7 +1848,6 @@ Special rules:
 - Class scopes do NOT form closures: methods cannot see class variables
   directly (must use self.x or ClassName.x)
 - Comprehension scopes: Create their own scope (list/dict/set/generator)
-```
 
 **Contract C5: Type Inference Levels**
 
@@ -1869,7 +1863,6 @@ Resolution: `type_of(scope_path, name)` walks up scope chain. Annotated types ov
 
 **Contract C6: Inheritance and Override Resolution**
 
-```
 parents_of_class(child_id) → Vec<SymbolId>  // Direct parents only
 children_of_class(parent_id) → Vec<SymbolId>  // Direct children only
 
@@ -1877,11 +1870,9 @@ Override behavior:
 - Renaming Base.method should update Child.method if it's an override
 - Override detection: same method name in child class
 - MRO (Method Resolution Order): NOT implemented (direct parents only)
-```
 
 **Contract C7: Partial Analysis Error Handling**
 
-```
 analyze_files() behavior on parse errors:
 - Continue analyzing other files (do not abort)
 - Track which files failed in FileAnalysisBundle.failed_files: Vec<(String, AnalyzerError)>
@@ -1909,13 +1900,11 @@ if !bundle.failed_files.is_empty() {
     });
 }
 ```
-```
 
 **Contract C8: Deterministic ID Assignment**
 
 For reproducible golden tests and stable patches, IDs must be deterministic across runs.
 
-```
 ID Assignment Rules:
 
 1. File ordering: Files processed in SORTED order by normalized path
@@ -1953,7 +1942,6 @@ Cross-platform stability:
 Verification:
 - Golden tests compare serialized FactsStore JSON
 - Same input files → identical JSON output (byte-for-byte)
-```
 
 **Acceptance Criteria Checklists:**
 
@@ -2024,13 +2012,21 @@ Verification:
 - [ ] Test: FactsStore contains data from successful files only
 
 **Tasks:**
-- [ ] Review and confirm all contracts match original Python worker behavior
-- [ ] Create test file stubs for each acceptance criteria group
-- [ ] Document any intentional deviations from Python worker behavior
+- [x] Review and confirm all contracts match original Python worker behavior
+- [x] Create test file stubs for each acceptance criteria group
+- [x] Document any intentional deviations from Python worker behavior
+
+**Intentional Deviations from Python Worker:**
+None. The contracts document the exact behavior of the original Python worker, including its limitations:
+- Relative imports (`from . import`) return None (not resolved)
+- Star imports (`from foo import *`) return None (not resolved)
+- External packages (not in workspace) return None (not resolved)
+
+These were limitations in the original Python worker, not new deviations.
 
 **Checkpoint:**
-- [ ] All contracts documented and reviewed
-- [ ] Acceptance criteria test stubs created
+- [x] All contracts documented and reviewed
+- [x] Acceptance criteria test stubs created
 - [ ] Team agreement on contract definitions
 
 **Rollback:**
