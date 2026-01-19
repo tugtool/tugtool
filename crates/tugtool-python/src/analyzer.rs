@@ -289,6 +289,13 @@ pub mod native {
         pub file_analyses: Vec<FileAnalysis>,
         /// Files that failed to parse or analyze, with their error messages.
         pub failed_files: Vec<(String, AnalyzerError)>,
+        /// All workspace file paths (for import resolution in Pass 3).
+        ///
+        /// This set contains all paths from the input file list, regardless of
+        /// whether they were successfully analyzed. This allows Pass 3 to resolve
+        /// imports even when some files failed to parse (we know the file exists,
+        /// we just couldn't analyze it).
+        pub workspace_files: HashSet<String>,
     }
 
     impl FileAnalysisBundle {
@@ -397,8 +404,20 @@ pub mod native {
             return Ok(bundle);
         }
 
-        // Pass 1: Single-file analysis
-        // (Will be implemented in Step 9.2)
+        // ====================================================================
+        // Pass 1: Single-File Analysis
+        // ====================================================================
+        // Parse each file using native CST parser and collect analysis results.
+        // Track all workspace file paths for import resolution in Pass 3.
+        // Continue on parse errors (track failures in bundle).
+
+        // Build workspace file set for import resolution
+        // We track all paths regardless of analysis success/failure because:
+        // - A file that failed to parse still exists and can be an import target
+        // - Pass 3 needs to know which paths exist in the workspace
+        bundle.workspace_files = files.iter().map(|(path, _)| path.clone()).collect();
+
+        // Analyze each file
         for (path, content) in files {
             let file_id = store.next_file_id();
             match analyze_file_native(file_id, path, content) {
@@ -406,20 +425,27 @@ pub mod native {
                     bundle.file_analyses.push(analysis);
                 }
                 Err(e) => {
+                    // Track failure but continue analyzing other files
                     bundle.failed_files.push((path.clone(), e));
                 }
             }
         }
 
-        // Pass 2: Symbol registration
+        // ====================================================================
+        // Pass 2: Symbol Registration
         // (Will be implemented in Step 9.3)
+        // ====================================================================
         let _global_symbols: GlobalSymbolMap = HashMap::new();
 
-        // Pass 3: Reference & Import resolution
+        // ====================================================================
+        // Pass 3: Reference & Import Resolution
         // (Will be implemented in Step 9.4)
+        // ====================================================================
 
-        // Pass 4: Type-aware method resolution
+        // ====================================================================
+        // Pass 4: Type-Aware Method Resolution
         // (Will be implemented in Step 9.5)
+        // ====================================================================
 
         Ok(bundle)
     }
@@ -2883,6 +2909,7 @@ class MyClass:
             assert!(bundle.is_complete());
             assert!(bundle.file_analyses.is_empty());
             assert!(bundle.failed_files.is_empty());
+            assert!(bundle.workspace_files.is_empty());
 
             // Store should be empty
             assert_eq!(store.files().count(), 0);
@@ -2918,6 +2945,153 @@ class MyClass:
             );
 
             assert!(map.contains_key(&("foo".to_string(), SymbolKind::Function)));
+        }
+
+        // ====================================================================
+        // Pass 1 Tests (Step 9.2)
+        // ====================================================================
+
+        #[test]
+        fn analyze_files_pass1_single_file() {
+            // Test: Single file analyzed correctly
+            let mut store = FactsStore::new();
+            let files = vec![("test.py".to_string(), "def foo(): pass".to_string())];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // File should be analyzed successfully
+            assert_eq!(bundle.success_count(), 1);
+            assert_eq!(bundle.failure_count(), 0);
+            assert!(bundle.is_complete());
+
+            // FileAnalysis should have symbols
+            assert_eq!(bundle.file_analyses.len(), 1);
+            let analysis = &bundle.file_analyses[0];
+            assert!(!analysis.symbols.is_empty(), "should have at least one symbol (foo)");
+
+            // Find the function symbol
+            let foo_symbol = analysis
+                .symbols
+                .iter()
+                .find(|s| s.name == "foo")
+                .expect("should have foo symbol");
+            assert_eq!(foo_symbol.kind, SymbolKind::Function);
+
+            // Workspace files should be tracked
+            assert!(bundle.workspace_files.contains("test.py"));
+        }
+
+        #[test]
+        fn analyze_files_pass1_multiple_files_in_order() {
+            // Test: Multiple files analyzed in order
+            let mut store = FactsStore::new();
+            let files = vec![
+                ("first.py".to_string(), "def first_func(): pass".to_string()),
+                ("second.py".to_string(), "class SecondClass: pass".to_string()),
+                ("third.py".to_string(), "x = 1".to_string()),
+            ];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // All files should be analyzed
+            assert_eq!(bundle.success_count(), 3);
+            assert_eq!(bundle.failure_count(), 0);
+            assert!(bundle.is_complete());
+
+            // Verify order is preserved (file_analyses should match input order)
+            assert_eq!(bundle.file_analyses.len(), 3);
+
+            // First file should have first_func
+            let first = &bundle.file_analyses[0];
+            assert!(
+                first.symbols.iter().any(|s| s.name == "first_func"),
+                "first file should have first_func"
+            );
+
+            // Second file should have SecondClass
+            let second = &bundle.file_analyses[1];
+            assert!(
+                second.symbols.iter().any(|s| s.name == "SecondClass"),
+                "second file should have SecondClass"
+            );
+
+            // Third file should have x
+            let third = &bundle.file_analyses[2];
+            assert!(
+                third.symbols.iter().any(|s| s.name == "x"),
+                "third file should have x"
+            );
+
+            // All workspace files tracked
+            assert_eq!(bundle.workspace_files.len(), 3);
+            assert!(bundle.workspace_files.contains("first.py"));
+            assert!(bundle.workspace_files.contains("second.py"));
+            assert!(bundle.workspace_files.contains("third.py"));
+        }
+
+        #[test]
+        fn analyze_files_pass1_parse_error_continues() {
+            // Test: Parse error in one file doesn't stop analysis of others
+            let mut store = FactsStore::new();
+            let files = vec![
+                ("good1.py".to_string(), "def good1(): pass".to_string()),
+                (
+                    "bad.py".to_string(),
+                    "def incomplete_syntax(".to_string(), // Invalid Python
+                ),
+                ("good2.py".to_string(), "def good2(): pass".to_string()),
+            ];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Two files should succeed, one should fail
+            assert_eq!(bundle.success_count(), 2);
+            assert_eq!(bundle.failure_count(), 1);
+            assert!(!bundle.is_complete()); // Not complete because one file failed
+
+            // The failed file should be tracked
+            assert_eq!(bundle.failed_files.len(), 1);
+            assert_eq!(bundle.failed_files[0].0, "bad.py");
+
+            // Successful files should have their symbols
+            let good1 = bundle
+                .file_analyses
+                .iter()
+                .find(|a| a.symbols.iter().any(|s| s.name == "good1"))
+                .expect("should find good1 analysis");
+            assert!(good1.symbols.iter().any(|s| s.name == "good1"));
+
+            let good2 = bundle
+                .file_analyses
+                .iter()
+                .find(|a| a.symbols.iter().any(|s| s.name == "good2"))
+                .expect("should find good2 analysis");
+            assert!(good2.symbols.iter().any(|s| s.name == "good2"));
+
+            // All workspace files should be tracked (including failed one)
+            assert_eq!(bundle.workspace_files.len(), 3);
+            assert!(bundle.workspace_files.contains("good1.py"));
+            assert!(bundle.workspace_files.contains("bad.py"));
+            assert!(bundle.workspace_files.contains("good2.py"));
+        }
+
+        #[test]
+        fn analyze_files_pass1_workspace_files_tracked() {
+            // Test: Workspace file paths are tracked for import resolution
+            let mut store = FactsStore::new();
+            let files = vec![
+                ("src/main.py".to_string(), "import utils".to_string()),
+                ("src/utils.py".to_string(), "def helper(): pass".to_string()),
+                ("tests/test_main.py".to_string(), "import main".to_string()),
+            ];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // All paths should be in workspace_files
+            assert_eq!(bundle.workspace_files.len(), 3);
+            assert!(bundle.workspace_files.contains("src/main.py"));
+            assert!(bundle.workspace_files.contains("src/utils.py"));
+            assert!(bundle.workspace_files.contains("tests/test_main.py"));
         }
     }
 }

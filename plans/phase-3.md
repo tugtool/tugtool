@@ -2084,20 +2084,20 @@ These were limitations in the original Python worker, not new deviations.
 - Updated `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] Iterate over all `(path, content)` pairs
-- [ ] Call `analyze_file_native()` for each file to get `FileAnalysis`
-- [ ] Store results in `Vec<FileAnalysis>` for subsequent passes
-- [ ] Track workspace file paths for import resolution
-- [ ] Handle parse errors gracefully (continue analyzing other files)
+- [x] Iterate over all `(path, content)` pairs
+- [x] Call `analyze_file_native()` for each file to get `FileAnalysis`
+- [x] Store results in `Vec<FileAnalysis>` for subsequent passes
+- [x] Track workspace file paths for import resolution
+- [x] Handle parse errors gracefully (continue analyzing other files)
 
 **Tests:**
-- [ ] Unit: Single file analyzed correctly
-- [ ] Unit: Multiple files analyzed in order
-- [ ] Unit: Parse error in one file doesn't stop analysis of others
+- [x] Unit: Single file analyzed correctly
+- [x] Unit: Multiple files analyzed in order
+- [x] Unit: Parse error in one file doesn't stop analysis of others
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python analyze_files_pass1` passes
-- [ ] All files analyzed and results stored
+- [x] `cargo test -p tugtool-python analyze_files_pass1` passes
+- [x] All files analyzed and results stored
 
 **Rollback:**
 - Revert Pass 1 implementation

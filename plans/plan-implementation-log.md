@@ -1076,3 +1076,403 @@ All Step 5 tasks have been completed:
 **Next Step:** Step 6 - Port P1 Visitors (ImportCollector, AnnotationCollector, etc.)
 
 ---
+
+### Step 6: Port P1 Visitors - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Table T01: Python to Rust Visitor Mapping
+- Existing worker implementations in libcst_worker.py
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement ImportCollector (import statements, aliases, star imports) | Done |
+| Implement AnnotationCollector (type annotations from params, returns, variables) | Done |
+| Implement TypeInferenceCollector (x = ClassName() patterns, variable propagation) | Done |
+| Implement InheritanceCollector (base classes, Generic subscripts) | Done |
+| Implement MethodCallCollector (obj.method() patterns) | Done |
+| Add all to visitor module exports | Done |
+| Integrate with cst_bridge analyze function | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/import.rs` - ImportCollector for import statement analysis
+- `crates/tugtool-cst/src/visitor/annotation.rs` - AnnotationCollector for type annotations
+- `crates/tugtool-cst/src/visitor/type_inference.rs` - TypeInferenceCollector for L1 type inference
+- `crates/tugtool-cst/src/visitor/inheritance.rs` - InheritanceCollector for class hierarchies
+- `crates/tugtool-cst/src/visitor/method_call.rs` - MethodCallCollector for method call patterns
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added P1 module exports
+- `crates/tugtool-cst/src/lib.rs` - Added P1 collector re-exports
+- `crates/tugtool-python/src/cst_bridge.rs` - Integrated P1 collectors
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst visitor` passes for all P1 visitors: PASS
+- P1 visitor output matches Python for test cases: PASS
+- `cargo nextest run --workspace` passes: PASS
+
+---
+
+### Step 7: Port P2 Visitors (DynamicPatternDetector) - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Table T01: Python to Rust Visitor Mapping
+- Python DynamicPatternVisitor implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement DynamicPatternDetector | Done |
+| Detect getattr/setattr/delattr calls | Done |
+| Detect eval/exec calls | Done |
+| Detect globals()/locals() subscripts | Done |
+| Flag __getattr__/__setattr__ definitions | Done |
+| Add to visitor module exports | Done |
+| Integrate with cst_bridge | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/dynamic.rs` - DynamicPatternDetector for metaprogramming patterns
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added dynamic module export
+- `crates/tugtool-cst/src/lib.rs` - Added DynamicPatternDetector re-exports
+- `crates/tugtool-python/src/cst_bridge.rs` - Integrated dynamic pattern detection
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst dynamic` passes: PASS
+- `cargo nextest run --workspace` passes: PASS
+
+**Key Notes:**
+- Detects 8 dynamic pattern types: getattr, setattr, delattr, hasattr, eval, exec, globals, locals
+- Also detects magic methods: __getattr__, __setattr__, __delattr__, __getattribute__
+
+---
+
+### Step 8.1: Round-Trip Test Suite - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Test categories documentation
+- Fixture requirements specification
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create test fixtures for all major Python constructs | Done |
+| Test simple functions, classes, methods | Done |
+| Test complex expressions (comprehensions, f-strings) | Done |
+| Test all statement types | Done |
+| Test decorators and annotations | Done |
+| Test async constructs | Done |
+| Verify parse -> codegen == original for all fixtures | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/tests/roundtrip.rs` - Round-trip test infrastructure
+- Multiple fixtures in `tests/fixtures/python/` directory
+
+**Test Results:**
+- Golden: ~50 round-trip test cases: PASS
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-cst roundtrip` passes: PASS
+- No round-trip failures: PASS
+
+---
+
+### Step 8.2: Visitor Equivalence Tests - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Test categories documentation
+- Python worker implementations for comparison baseline
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create equivalence test infrastructure | Done |
+| Test ScopeCollector vs Python ScopeVisitor | Done |
+| Test BindingCollector vs Python BindingVisitor | Done |
+| Test ReferenceCollector vs Python ReferenceVisitor | Done |
+| Test all P1 collectors vs Python counterparts | Done |
+| Test DynamicPatternDetector vs Python | Done |
+| Test RenameTransformer vs Python rewrite_batch | Done |
+| Gate tests behind feature/cfg for opt-in CI | Done |
+
+**Files Created:**
+- `crates/tugtool-python/tests/visitor_equivalence.rs` - Equivalence test suite (20 tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python equivalence` passes: PASS
+- No equivalence failures: PASS
+- `cargo nextest run --workspace` passes: PASS
+
+**Key Notes:**
+- Tests require Python with libcst installed to run
+- Gated behind cfg to not require Python in default CI
+
+---
+
+### Step 8.3: Golden File Suite - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Test fixtures documentation
+- Golden workflow specification
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create golden test infrastructure | Done |
+| Generate golden files for scope analysis | Done |
+| Generate golden files for binding analysis | Done |
+| Generate golden files for reference analysis | Done |
+| Generate golden files for all P1/P2 analysis | Done |
+| Document TUG_UPDATE_GOLDEN workflow | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/tests/golden/` - Golden test infrastructure
+- Multiple golden JSON files for all analysis types (37 tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-cst golden` passes: PASS
+- `TUG_UPDATE_GOLDEN=1` workflow documented and working: PASS
+- `cargo nextest run --workspace` passes: PASS
+
+---
+
+### Step 8.4: Performance Benchmarks - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Success criteria documentation
+- Benchmark methodology
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create benchmark infrastructure using criterion | Done |
+| Benchmark parse_module on various file sizes | Done |
+| Benchmark full analysis (all collectors) | Done |
+| Benchmark rename operation | Done |
+| Compare against Python worker baseline | Done |
+| Document benchmark results | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/benches/` - Criterion benchmark suite
+
+**Benchmark Results:**
+
+| Scenario | Python LibCST | Rust native | Improvement |
+|----------|--------------|-------------|-------------|
+| 50 classes parse | 11.67ms | 4.25ms | **2.7x** |
+| 100 classes parse | 25.74ms | 8.78ms | **2.9x** |
+| 50 classes full analysis | 87.38ms | 4.61ms | **19.0x** |
+| 100 classes full analysis | 176.74ms | 9.50ms | **18.6x** |
+| Single rename | - | 91.6ns | - |
+| 20 batch renames | - | 3.43us | - |
+
+**Checkpoints Verified:**
+- `cargo bench -p tugtool-cst` completes: PASS
+- 10x improvement documented for target scenarios: PASS (18-19x achieved)
+- `cargo nextest run --workspace` passes (1023 tests): PASS
+
+---
+
+### Step 8 Summary - COMPLETE
+
+**Completed:** 2026-01-19
+
+All Step 8 sub-steps completed:
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 8.1 | Round-Trip Test Suite | Complete |
+| 8.2 | Visitor Equivalence Tests | Complete |
+| 8.3 | Golden File Suite | Complete |
+| 8.4 | Performance Benchmarks | Complete |
+
+**Final Step 8 Checkpoint Results:**
+- All test suites pass (1023 tests): PASS
+- Performance meets 10x improvement target (18-19x achieved for full analysis): PASS
+- No regressions from Python backend (golden tests verify equivalence): PASS
+
+**Milestone M03: Comprehensive Testing Complete - ACHIEVED**
+
+---
+
+### Step 9.0: Define Behavioral Contracts - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- Original Python worker implementation behavior
+- FactsStore API and existing lookup functions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Review and confirm all contracts match original Python worker behavior | Done |
+| Create test file stubs for each acceptance criteria group | Done |
+| Document any intentional deviations from Python worker behavior | Done |
+
+**Files Created:**
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - 50 acceptance criteria test stubs (AC-1 through AC-8)
+
+**Files Modified:**
+- `plans/phase-3.md` - Added comprehensive contract documentation (C1-C8)
+
+**Contracts Documented:**
+- C1: `find_symbol_at_location()` Behavior
+- C2: `refs_of_symbol()` Behavior
+- C3: Import Resolution Table
+- C4: Scope Chain Resolution (LEGB)
+- C5: Type Inference Levels
+- C6: Inheritance and Override Resolution
+- C7: Partial Analysis Error Handling
+- C8: Deterministic ID Assignment
+
+**Acceptance Criteria Test Stubs:**
+- AC-1: find_symbol_at_location() Parity (10 tests)
+- AC-2: Cross-File Reference Resolution (4 tests)
+- AC-3: Scope Chain Resolution (5 tests)
+- AC-4: Import Resolution Parity (11 tests)
+- AC-5: Type-Aware Method Call Resolution (5 tests)
+- AC-6: Inheritance and Override Resolution (4 tests)
+- AC-7: Deterministic ID Assignment (6 tests)
+- AC-8: Partial Analysis Error Handling (5 tests)
+
+**Checkpoints Verified:**
+- All contracts documented and reviewed: PASS
+- Acceptance criteria test stubs created: PASS
+- `cargo nextest run --workspace` passes (1023 tests, 50 skipped): PASS
+
+**Key Notes:**
+- Intentional deviations: None. Contracts document exact Python worker behavior including limitations.
+- Limitations documented: relative imports, star imports, external packages all return None (same as original).
+
+---
+
+### Step 9.1: Define analyze_files Function Signature - COMPLETE
+
+**Completed:** 2026-01-19
+
+**Note:** This entry was retroactively added due to logging interruption during implementation.
+
+**References Reviewed:**
+- [D09] Multi-pass analysis
+- Diagram Diag02
+- Table T04
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `analyze_files` function to native module | Done |
+| Define `FileAnalysisBundle` type | Done |
+| Define `GlobalSymbolMap` type alias | Done |
+| Document the 4-pass algorithm in function doc comment | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added new types and function to native module:
+  - `FileAnalysisBundle` struct with helper methods (is_complete, success_count, failure_count)
+  - `GlobalSymbolMap` type alias for `HashMap<(String, SymbolKind), Vec<(FileId, SymbolId)>>`
+  - `analyze_files()` function with skeleton implementation and 4-pass algorithm documentation
+  - Re-exports for new types
+  - 4 unit tests for function signature and basic behavior
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1027 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run --workspace` passes: PASS
+
+**Key Implementation Details:**
+1. `FileAnalysisBundle` holds per-file analysis results plus failed file tracking
+2. `GlobalSymbolMap` enables cross-file symbol lookup by (name, kind) tuple
+3. Pass 1 skeleton implemented (calls analyze_file_native for each file)
+4. Passes 2-4 are placeholders for Steps 9.2-9.5
+
+**Next Step:** Step 9.2 - Implement Pass 1 - Single-File Analysis
+
+---
+
+### Step 9.2: Implement Pass 1 - Single-File Analysis - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D09] Multi-pass FactsStore Population decision
+- Diagram Diag02: FactsStore Population Pipeline
+- Multi-pass Analysis Pipeline section (#multi-pass-pipeline)
+- Existing Step 9.1 skeleton implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Iterate over all `(path, content)` pairs | Done |
+| Call `analyze_file_native()` for each file to get `FileAnalysis` | Done |
+| Store results in `Vec<FileAnalysis>` for subsequent passes | Done |
+| Track workspace file paths for import resolution | Done |
+| Handle parse errors gracefully (continue analyzing other files) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `workspace_files: HashSet<String>` field to `FileAnalysisBundle`
+  - Updated `analyze_files()` to populate workspace_files at start of Pass 1
+  - Added documentation comments explaining Pass 1 behavior
+  - Added 4 new unit tests for Pass 1 functionality:
+    - `analyze_files_pass1_single_file`
+    - `analyze_files_pass1_multiple_files_in_order`
+    - `analyze_files_pass1_parse_error_continues`
+    - `analyze_files_pass1_workspace_files_tracked`
+  - Updated `empty_file_list_returns_ok` test to verify workspace_files
+
+**Test Results:**
+- `cargo test -p tugtool-python analyze_files_pass1`: 4 tests passed
+- `cargo nextest run --workspace`: 1031 tests passed, 50 skipped
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-python analyze_files_pass1` passes: PASS
+- All files analyzed and results stored: PASS
+
+**Key Implementation Details:**
+1. `workspace_files` is populated before iteration (includes all paths, even failed ones)
+2. This allows Pass 3 to resolve imports even when target file failed to parse
+3. Error handling continues processing after parse failures (tracked in `failed_files`)
+4. Order of file_analyses matches input order for deterministic behavior
+5. The skeleton from Step 9.1 already had most logic; main addition was workspace_files tracking
+
+**Next Step:** Step 9.3 - Implement Pass 2 - Symbol Registration
+
+---
