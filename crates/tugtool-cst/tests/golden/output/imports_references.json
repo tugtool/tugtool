@@ -1,0 +1,110 @@
+{
+  "Counter": [
+    {
+      "kind": "import",
+      "span": [
+        121,
+        128
+      ]
+    }
+  ],
+  "Dict": [
+    {
+      "kind": "import",
+      "span": [
+        167,
+        171
+      ]
+    }
+  ],
+  "DictType": [
+    {
+      "kind": "import",
+      "span": [
+        175,
+        183
+      ]
+    }
+  ],
+  "List": [
+    {
+      "kind": "import",
+      "span": [
+        161,
+        165
+      ]
+    }
+  ],
+  "Path": [
+    {
+      "kind": "import",
+      "span": [
+        92,
+        96
+      ]
+    }
+  ],
+  "collections": [
+    {
+      "kind": "import",
+      "span": [
+        102,
+        113
+      ]
+    }
+  ],
+  "defaultdict": [
+    {
+      "kind": "import",
+      "span": [
+        130,
+        141
+      ]
+    }
+  ],
+  "os": [
+    {
+      "kind": "import",
+      "span": [
+        48,
+        50
+      ]
+    }
+  ],
+  "pathlib": [
+    {
+      "kind": "import",
+      "span": [
+        77,
+        84
+      ]
+    }
+  ],
+  "sys": [
+    {
+      "kind": "import",
+      "span": [
+        58,
+        61
+      ]
+    }
+  ],
+  "system": [
+    {
+      "kind": "import",
+      "span": [
+        65,
+        71
+      ]
+    }
+  ],
+  "typing": [
+    {
+      "kind": "import",
+      "span": [
+        147,
+        153
+      ]
+    }
+  ]
+}

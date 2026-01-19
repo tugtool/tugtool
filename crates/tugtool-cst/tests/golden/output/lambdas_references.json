@@ -1,0 +1,107 @@
+{
+  "a": [
+    {
+      "kind": "definition",
+      "span": [
+        80,
+        81
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        84,
+        85
+      ]
+    }
+  ],
+  "add": [
+    {
+      "kind": "definition",
+      "span": [
+        73,
+        76
+      ]
+    }
+  ],
+  "b": [
+    {
+      "kind": "definition",
+      "span": [
+        82,
+        83
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        89,
+        90
+      ]
+    }
+  ],
+  "double": [
+    {
+      "kind": "definition",
+      "span": [
+        48,
+        54
+      ]
+    }
+  ],
+  "nested": [
+    {
+      "kind": "definition",
+      "span": [
+        98,
+        104
+      ]
+    }
+  ],
+  "x": [
+    {
+      "kind": "definition",
+      "span": [
+        64,
+        65
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        67,
+        68
+      ]
+    },
+    {
+      "kind": "definition",
+      "span": [
+        114,
+        115
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        127,
+        128
+      ]
+    }
+  ],
+  "y": [
+    {
+      "kind": "definition",
+      "span": [
+        124,
+        125
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        131,
+        132
+      ]
+    }
+  ]
+}

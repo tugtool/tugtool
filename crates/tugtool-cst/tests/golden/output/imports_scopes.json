@@ -1,0 +1,14 @@
+[
+  {
+    "id": "scope_0",
+    "kind": "module",
+    "name": null,
+    "parent": null,
+    "span": [
+      0,
+      184
+    ],
+    "globals": [],
+    "nonlocals": []
+  }
+]

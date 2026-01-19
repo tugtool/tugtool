@@ -1,0 +1,43 @@
+{
+  "data": [
+    {
+      "kind": "definition",
+      "span": [
+        58,
+        62
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        112,
+        116
+      ]
+    }
+  ],
+  "process": [
+    {
+      "kind": "definition",
+      "span": [
+        50,
+        57
+      ]
+    }
+  ],
+  "result": [
+    {
+      "kind": "definition",
+      "span": [
+        103,
+        109
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        132,
+        138
+      ]
+    }
+  ]
+}

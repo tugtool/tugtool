@@ -1,0 +1,112 @@
+[
+  {
+    "name": "Animal",
+    "kind": "class",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      59,
+      65
+    ]
+  },
+  {
+    "name": "speak",
+    "kind": "function",
+    "scope_path": [
+      "<module>",
+      "Animal"
+    ],
+    "span": [
+      75,
+      80
+    ]
+  },
+  {
+    "name": "self",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Animal",
+      "speak"
+    ],
+    "span": [
+      81,
+      85
+    ]
+  },
+  {
+    "name": "Dog",
+    "kind": "class",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      108,
+      111
+    ]
+  },
+  {
+    "name": "speak",
+    "kind": "function",
+    "scope_path": [
+      "<module>",
+      "Dog"
+    ],
+    "span": [
+      129,
+      134
+    ]
+  },
+  {
+    "name": "self",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Dog",
+      "speak"
+    ],
+    "span": [
+      135,
+      139
+    ]
+  },
+  {
+    "name": "fetch",
+    "kind": "function",
+    "scope_path": [
+      "<module>",
+      "Dog"
+    ],
+    "span": [
+      173,
+      178
+    ]
+  },
+  {
+    "name": "self",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Dog",
+      "fetch"
+    ],
+    "span": [
+      179,
+      183
+    ]
+  },
+  {
+    "name": "item",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Dog",
+      "fetch"
+    ],
+    "span": [
+      185,
+      189
+    ]
+  }
+]

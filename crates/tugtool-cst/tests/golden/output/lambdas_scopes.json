@@ -1,0 +1,62 @@
+[
+  {
+    "id": "scope_0",
+    "kind": "module",
+    "name": null,
+    "parent": null,
+    "span": [
+      0,
+      133
+    ],
+    "globals": [],
+    "nonlocals": []
+  },
+  {
+    "id": "scope_1",
+    "kind": "lambda",
+    "name": null,
+    "parent": "scope_0",
+    "span": [
+      22,
+      28
+    ],
+    "globals": [],
+    "nonlocals": []
+  },
+  {
+    "id": "scope_2",
+    "kind": "lambda",
+    "name": null,
+    "parent": "scope_0",
+    "span": [
+      57,
+      63
+    ],
+    "globals": [],
+    "nonlocals": []
+  },
+  {
+    "id": "scope_3",
+    "kind": "lambda",
+    "name": null,
+    "parent": "scope_0",
+    "span": [
+      79,
+      85
+    ],
+    "globals": [],
+    "nonlocals": []
+  },
+  {
+    "id": "scope_4",
+    "kind": "lambda",
+    "name": null,
+    "parent": "scope_3",
+    "span": [
+      107,
+      113
+    ],
+    "globals": [],
+    "nonlocals": []
+  }
+]

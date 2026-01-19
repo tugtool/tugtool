@@ -1,0 +1,59 @@
+[
+  {
+    "name": "counter",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      64,
+      71
+    ]
+  },
+  {
+    "name": "increment",
+    "kind": "function",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      81,
+      90
+    ]
+  },
+  {
+    "name": "make_counter",
+    "kind": "function",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      135,
+      147
+    ]
+  },
+  {
+    "name": "count",
+    "kind": "variable",
+    "scope_path": [
+      "<module>",
+      "make_counter"
+    ],
+    "span": [
+      155,
+      160
+    ]
+  },
+  {
+    "name": "inner",
+    "kind": "function",
+    "scope_path": [
+      "<module>",
+      "make_counter"
+    ],
+    "span": [
+      174,
+      179
+    ]
+  }
+]

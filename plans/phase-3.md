@@ -1510,20 +1510,20 @@ After completing Steps 5.1-5.4, you will have:
 - Golden JSON files for all analysis types
 
 **Tasks:**
-- [ ] Create golden test infrastructure
-- [ ] Generate golden files for scope analysis
-- [ ] Generate golden files for binding analysis
-- [ ] Generate golden files for reference analysis
-- [ ] Generate golden files for all P1/P2 analysis
-- [ ] Document TUG_UPDATE_GOLDEN workflow
+- [x] Create golden test infrastructure
+- [x] Generate golden files for scope analysis
+- [x] Generate golden files for binding analysis
+- [x] Generate golden files for reference analysis
+- [x] Generate golden files for all P1/P2 analysis
+- [x] Document TUG_UPDATE_GOLDEN workflow
 
 **Tests:**
-- [ ] Golden: All golden tests pass
+- [x] Golden: All golden tests pass
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-cst golden` passes
-- [ ] `TUG_UPDATE_GOLDEN=1` workflow documented and working
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run -p tugtool-cst golden` passes
+- [x] `TUG_UPDATE_GOLDEN=1` workflow documented and working
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Update golden files if intentional changes

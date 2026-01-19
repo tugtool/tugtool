@@ -1,0 +1,55 @@
+[
+  {
+    "name": "__return__",
+    "type_str": "Optional[str]",
+    "annotation_kind": "subscript",
+    "source_kind": "return",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      137,
+      139
+    ]
+  },
+  {
+    "name": "items",
+    "type_str": "List[str]",
+    "annotation_kind": "subscript",
+    "source_kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      192,
+      197
+    ]
+  },
+  {
+    "name": "count",
+    "type_str": "int",
+    "annotation_kind": "simple",
+    "source_kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": null
+  },
+  {
+    "name": "result",
+    "type_str": "str",
+    "annotation_kind": "simple",
+    "source_kind": "variable",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      207,
+      213
+    ]
+  }
+]

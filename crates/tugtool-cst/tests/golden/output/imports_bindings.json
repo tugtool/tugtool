@@ -1,0 +1,79 @@
+[
+  {
+    "name": "os",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      48,
+      50
+    ]
+  },
+  {
+    "name": "system",
+    "kind": "import_alias",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      65,
+      71
+    ]
+  },
+  {
+    "name": "Path",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      92,
+      96
+    ]
+  },
+  {
+    "name": "Counter",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      121,
+      128
+    ]
+  },
+  {
+    "name": "defaultdict",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      130,
+      141
+    ]
+  },
+  {
+    "name": "List",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      161,
+      165
+    ]
+  },
+  {
+    "name": "DictType",
+    "kind": "import_alias",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      175,
+      183
+    ]
+  }
+]

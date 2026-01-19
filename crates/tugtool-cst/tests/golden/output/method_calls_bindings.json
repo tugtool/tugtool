@@ -1,0 +1,115 @@
+[
+  {
+    "name": "Calculator",
+    "kind": "class",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      57,
+      67
+    ]
+  },
+  {
+    "name": "add",
+    "kind": "function",
+    "scope_path": [
+      "<module>",
+      "Calculator"
+    ],
+    "span": [
+      77,
+      80
+    ]
+  },
+  {
+    "name": "self",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Calculator",
+      "add"
+    ],
+    "span": [
+      81,
+      85
+    ]
+  },
+  {
+    "name": "a",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Calculator",
+      "add"
+    ],
+    "span": [
+      87,
+      88
+    ]
+  },
+  {
+    "name": "b",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Calculator",
+      "add"
+    ],
+    "span": [
+      90,
+      91
+    ]
+  },
+  {
+    "name": "compute",
+    "kind": "function",
+    "scope_path": [
+      "<module>",
+      "Calculator"
+    ],
+    "span": [
+      124,
+      131
+    ]
+  },
+  {
+    "name": "self",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Calculator",
+      "compute"
+    ],
+    "span": [
+      132,
+      136
+    ]
+  },
+  {
+    "name": "x",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "Calculator",
+      "compute"
+    ],
+    "span": [
+      138,
+      139
+    ]
+  },
+  {
+    "name": "result",
+    "kind": "variable",
+    "scope_path": [
+      "<module>",
+      "Calculator",
+      "compute"
+    ],
+    "span": [
+      150,
+      156
+    ]
+  }
+]

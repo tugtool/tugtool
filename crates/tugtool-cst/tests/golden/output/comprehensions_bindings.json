@@ -1,0 +1,46 @@
+[
+  {
+    "name": "squares",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      51,
+      58
+    ]
+  },
+  {
+    "name": "evens",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      88,
+      93
+    ]
+  },
+  {
+    "name": "pairs",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      133,
+      138
+    ]
+  },
+  {
+    "name": "gen",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      170,
+      173
+    ]
+  }
+]

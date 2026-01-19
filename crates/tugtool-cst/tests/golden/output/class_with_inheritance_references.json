@@ -1,0 +1,91 @@
+{
+  "Animal": [
+    {
+      "kind": "definition",
+      "span": [
+        59,
+        65
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        112,
+        118
+      ]
+    }
+  ],
+  "Dog": [
+    {
+      "kind": "definition",
+      "span": [
+        108,
+        111
+      ]
+    }
+  ],
+  "fetch": [
+    {
+      "kind": "definition",
+      "span": [
+        173,
+        178
+      ]
+    }
+  ],
+  "item": [
+    {
+      "kind": "definition",
+      "span": [
+        185,
+        189
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        207,
+        211
+      ]
+    }
+  ],
+  "self": [
+    {
+      "kind": "definition",
+      "span": [
+        81,
+        85
+      ]
+    },
+    {
+      "kind": "definition",
+      "span": [
+        135,
+        139
+      ]
+    },
+    {
+      "kind": "definition",
+      "span": [
+        179,
+        183
+      ]
+    }
+  ],
+  "speak": [
+    {
+      "kind": "definition",
+      "span": [
+        75,
+        80
+      ]
+    },
+    {
+      "kind": "definition",
+      "span": [
+        129,
+        134
+      ]
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+[
+  {
+    "kind": "import",
+    "module": "os",
+    "alias": null,
+    "names": null,
+    "is_star": false,
+    "relative_level": 0,
+    "span": [
+      22,
+      40
+    ]
+  },
+  {
+    "kind": "import",
+    "module": "sys",
+    "alias": "system",
+    "names": null,
+    "is_star": false,
+    "relative_level": 0,
+    "span": [
+      41,
+      50
+    ]
+  },
+  {
+    "kind": "from",
+    "module": "pathlib",
+    "alias": null,
+    "names": [
+      {
+        "name": "Path",
+        "alias": null
+      }
+    ],
+    "is_star": false,
+    "relative_level": 0,
+    "span": [
+      72,
+      96
+    ]
+  },
+  {
+    "kind": "from",
+    "module": "collections",
+    "alias": null,
+    "names": [
+      {
+        "name": "Counter",
+        "alias": null
+      },
+      {
+        "name": "defaultdict",
+        "alias": null
+      }
+    ],
+    "is_star": false,
+    "relative_level": 0,
+    "span": [
+      97,
+      141
+    ]
+  },
+  {
+    "kind": "from",
+    "module": "typing",
+    "alias": null,
+    "names": [
+      {
+        "name": "List",
+        "alias": null
+      },
+      {
+        "name": "Dict",
+        "alias": "DictType"
+      }
+    ],
+    "is_star": false,
+    "relative_level": 0,
+    "span": [
+      142,
+      183
+    ]
+  }
+]

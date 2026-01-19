@@ -1543,6 +1543,8 @@ dependencies = [
  "peg",
  "rayon",
  "regex",
+ "serde",
+ "serde_json",
  "thiserror",
  "tugtool-core",
  "tugtool-cst-derive",

@@ -1,0 +1,83 @@
+[
+  {
+    "name": "List",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      73,
+      77
+    ]
+  },
+  {
+    "name": "Optional",
+    "kind": "import",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      79,
+      87
+    ]
+  },
+  {
+    "name": "transform",
+    "kind": "function",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      93,
+      102
+    ]
+  },
+  {
+    "name": "items",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      103,
+      108
+    ]
+  },
+  {
+    "name": "count",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      121,
+      126
+    ]
+  },
+  {
+    "name": "result",
+    "kind": "variable",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      159,
+      165
+    ]
+  },
+  {
+    "name": "item",
+    "kind": "variable",
+    "scope_path": [
+      "<module>",
+      "transform"
+    ],
+    "span": [
+      184,
+      188
+    ]
+  }
+]

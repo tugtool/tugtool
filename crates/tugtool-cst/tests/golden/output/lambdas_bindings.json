@@ -1,0 +1,90 @@
+[
+  {
+    "name": "double",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      48,
+      54
+    ]
+  },
+  {
+    "name": "x",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      64,
+      65
+    ]
+  },
+  {
+    "name": "add",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      73,
+      76
+    ]
+  },
+  {
+    "name": "a",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      80,
+      81
+    ]
+  },
+  {
+    "name": "b",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      82,
+      83
+    ]
+  },
+  {
+    "name": "nested",
+    "kind": "variable",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      98,
+      104
+    ]
+  },
+  {
+    "name": "x",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      114,
+      115
+    ]
+  },
+  {
+    "name": "y",
+    "kind": "parameter",
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      124,
+      125
+    ]
+  }
+]

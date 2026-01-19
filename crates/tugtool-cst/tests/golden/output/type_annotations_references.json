@@ -1,0 +1,164 @@
+{
+  "List": [
+    {
+      "kind": "import",
+      "span": [
+        73,
+        77
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        110,
+        114
+      ]
+    }
+  ],
+  "None": [
+    {
+      "kind": "reference",
+      "span": [
+        255,
+        259
+      ]
+    }
+  ],
+  "Optional": [
+    {
+      "kind": "import",
+      "span": [
+        79,
+        87
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        140,
+        148
+      ]
+    }
+  ],
+  "count": [
+    {
+      "kind": "definition",
+      "span": [
+        121,
+        126
+      ]
+    }
+  ],
+  "int": [
+    {
+      "kind": "reference",
+      "span": [
+        128,
+        131
+      ]
+    }
+  ],
+  "item": [
+    {
+      "kind": "reference",
+      "span": [
+        184,
+        188
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        217,
+        221
+      ]
+    }
+  ],
+  "items": [
+    {
+      "kind": "definition",
+      "span": [
+        103,
+        108
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        192,
+        197
+      ]
+    }
+  ],
+  "result": [
+    {
+      "kind": "definition",
+      "span": [
+        159,
+        165
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        207,
+        213
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        233,
+        239
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        243,
+        249
+      ]
+    }
+  ],
+  "str": [
+    {
+      "kind": "reference",
+      "span": [
+        115,
+        118
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        149,
+        152
+      ]
+    },
+    {
+      "kind": "reference",
+      "span": [
+        167,
+        170
+      ]
+    }
+  ],
+  "transform": [
+    {
+      "kind": "definition",
+      "span": [
+        93,
+        102
+      ]
+    }
+  ],
+  "typing": [
+    {
+      "kind": "import",
+      "span": [
+        59,
+        65
+      ]
+    }
+  ]
+}

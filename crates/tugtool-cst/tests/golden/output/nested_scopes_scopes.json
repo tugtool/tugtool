@@ -1,0 +1,38 @@
+[
+  {
+    "id": "scope_0",
+    "kind": "module",
+    "name": null,
+    "parent": null,
+    "span": [
+      0,
+      134
+    ],
+    "globals": [],
+    "nonlocals": []
+  },
+  {
+    "id": "scope_1",
+    "kind": "function",
+    "name": "outer",
+    "parent": "scope_0",
+    "span": [
+      45,
+      48
+    ],
+    "globals": [],
+    "nonlocals": []
+  },
+  {
+    "id": "scope_2",
+    "kind": "function",
+    "name": "inner",
+    "parent": "scope_1",
+    "span": [
+      78,
+      81
+    ],
+    "globals": [],
+    "nonlocals": []
+  }
+]

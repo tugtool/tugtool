@@ -1,0 +1,44 @@
+[
+  {
+    "target": "double",
+    "type_source": "unknown",
+    "inferred_type": null,
+    "rhs_name": null,
+    "callee_name": null,
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      48,
+      54
+    ]
+  },
+  {
+    "target": "add",
+    "type_source": "unknown",
+    "inferred_type": null,
+    "rhs_name": null,
+    "callee_name": null,
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      73,
+      76
+    ]
+  },
+  {
+    "target": "nested",
+    "type_source": "unknown",
+    "inferred_type": null,
+    "rhs_name": null,
+    "callee_name": null,
+    "scope_path": [
+      "<module>"
+    ],
+    "span": [
+      98,
+      104
+    ]
+  }
+]
