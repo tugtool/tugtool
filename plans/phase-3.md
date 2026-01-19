@@ -2291,23 +2291,23 @@ These were limitations in the original Python worker, not new deviations.
 - Updated `crates/tugtool-python/src/ops/rename.rs`
 
 **Tasks:**
-- [ ] Update `run_native()` to use `PythonAdapter.analyze_files()`
-- [ ] Ensure `analyze_impact_native()` uses fully-populated FactsStore
-- [ ] Verify cross-file symbol resolution works for:
-  - [ ] Imported functions/classes
-  - [ ] Method overrides in subclasses
-  - [ ] Type-aware method calls
-- [ ] Add integration tests for multi-file rename scenarios
+- [x] Update `run_native()` to use `PythonAdapter.analyze_files()`
+- [x] Ensure `analyze_impact_native()` uses fully-populated FactsStore
+- [x] Verify cross-file symbol resolution works for:
+  - [x] Imported functions/classes
+  - [x] Method overrides in subclasses
+  - [x] Type-aware method calls
+- [x] Add integration tests for multi-file rename scenarios
 
 **Tests:**
-- [ ] Integration: Rename function updates imports in other files
-- [ ] Integration: Rename base class method updates overrides
-- [ ] Integration: Rename with typed receiver resolves correctly
+- [x] Integration: Rename function updates imports in other files
+- [x] Integration: Rename base class method updates overrides
+- [x] Integration: Rename with typed receiver resolves correctly
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python rename` passes
-- [ ] Cross-file rename produces correct results
-- [ ] Type-aware method rename works
+- [x] `cargo nextest run -p tugtool-python rename` passes
+- [x] Cross-file rename produces correct results
+- [x] Type-aware method rename works
 
 **Rollback:**
 - Revert rename.rs integration

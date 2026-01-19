@@ -1706,3 +1706,73 @@ All Step 8 sub-steps completed:
 **Next Step:** Step 9.6 - Wire analyze_files into Rename Operations
 
 ---
+
+### Step 9.6: Wire analyze_files into Rename Operations - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D09] Multi-pass FactsStore Population decision
+- Internal architecture section
+- Contract C7: Partial Analysis Error Handling (strict policy)
+- Existing rename.rs implementation (native module)
+- analyzer.rs analyze_files() function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `run_native()` to use `analyze_files()` | Done |
+| Ensure `analyze_impact_native()` uses fully-populated FactsStore | Done |
+| Verify cross-file symbol resolution for imported functions/classes | Done |
+| Verify method overrides in subclasses work | Done |
+| Verify type-aware method calls work | Done |
+| Add integration tests for multi-file rename scenarios | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Added `use crate::analyzer::analyze_files;` import (feature-gated)
+  - Added `RenameError::AnalysisFailed` error variant for Contract C7 strict policy
+  - Added `analyze_impact_native()` function using 4-pass analyze_files
+  - Added `run_native()` function using 4-pass analyze_files
+  - Added `find_override_methods_native()` helper function
+  - Updated pub use exports to include new functions
+  - Added 5 integration tests for multi-file rename scenarios
+
+- `crates/tugtool-python/src/error_bridges.rs`:
+  - Added conversion for `RenameError::AnalysisFailed` to `TugError::VerificationFailed`
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python native_multifile`: 5 tests passed
+- `cargo nextest run -p tugtool-python rename`: 31 tests passed
+- `cargo nextest run --workspace`: 1065 tests passed, 50 skipped
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python rename` passes: PASS (31 tests)
+- Cross-file rename produces correct results: PASS (verified by `native_rename_cross_file_import` test)
+- Type-aware method rename works: PASS (verified by `native_rename_typed_method_call` test)
+
+**Key Decisions/Notes:**
+1. **Contract C7 Implementation**: Both `analyze_impact_native()` and `run_native()` check `bundle.is_complete()` and return `RenameError::AnalysisFailed` if any files failed analysis. This ensures rename operations cannot produce incomplete/incorrect results.
+
+2. **Override Method Handling**: `find_override_methods_native()` uses BFS to find all descendant classes and collects methods with matching names. This ensures base class method renames also update overrides in child classes.
+
+3. **Type-Aware Resolution**: The 4-pass analyze_files populates InheritanceInfo and resolves typed method calls. The rename operation then collects all references (including type-aware method call references) from the fully-populated FactsStore.
+
+4. **Duplicate Reference Prevention**: Both functions use `seen_spans` HashSet to prevent duplicate edits when the same span is referenced multiple times (e.g., definition appears in both symbol and references).
+
+5. **Dynamic Warnings**: Native mode currently returns empty warnings vec. Dynamic pattern detection would need to be integrated separately if needed.
+
+**Tests Added:**
+- `native_rename_cross_file_import` - Verifies renaming function updates imports in other files
+- `native_rename_method_with_override` - Verifies renaming base method updates child class overrides
+- `native_rename_typed_method_call` - Verifies type-aware method call resolution
+- `native_rename_fails_on_parse_error` - Verifies Contract C7 strict policy
+- `native_analyze_impact_cross_file` - Verifies impact analysis returns cross-file references
+
+**Next Step:** Step 9.7 - Implement Acceptance Criteria Test Suites
+
+---

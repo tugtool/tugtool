@@ -58,6 +58,10 @@ use crate::worker::{spawn_worker, WorkerError};
 #[cfg(feature = "native-cst")]
 use crate::cst_bridge;
 
+// Native analyze_files for multi-file analysis
+#[cfg(feature = "native-cst")]
+use crate::analyzer::analyze_files;
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -103,6 +107,10 @@ pub enum RenameError {
     /// Analyzer error.
     #[error("analyzer error: {message}")]
     AnalyzerError { message: String },
+
+    /// Analysis failed for some files (strict policy - cannot rename).
+    #[error("cannot perform rename: {count} file(s) failed analysis: {}", files.join(", "))]
+    AnalysisFailed { count: usize, files: Vec<String> },
 
     /// Native CST error.
     #[cfg(feature = "native-cst")]
@@ -878,10 +886,435 @@ pub mod native {
         let result = cst_bridge::rewrite_batch(source, rewrites)?;
         Ok(result)
     }
+
+    // ========================================================================
+    // Multi-File Native Rename (using analyze_files 4-pass pipeline)
+    // ========================================================================
+
+    /// Analyze the impact of renaming a symbol using native CST analysis.
+    ///
+    /// This function uses the native 4-pass `analyze_files` pipeline to build
+    /// a fully-populated FactsStore with cross-file references, inheritance
+    /// hierarchies, and type-aware method resolution.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_root` - The workspace root directory
+    /// * `files` - List of (path, content) tuples for all Python files
+    /// * `location` - The location of the symbol to rename
+    /// * `new_name` - The proposed new name
+    ///
+    /// # Returns
+    ///
+    /// Impact analysis including symbol info, all references, and warnings.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AnalysisFailed` if any files fail to parse (Contract C7 strict policy).
+    pub fn analyze_impact_native(
+        workspace_root: &std::path::Path,
+        files: &[(String, String)],
+        location: &Location,
+        new_name: &str,
+    ) -> RenameResult<ImpactAnalysis> {
+        use crate::lookup::{find_symbol_at_location, symbol_to_info};
+        use crate::files::read_file;
+        use tugtool_core::facts::ReferenceKind;
+
+        // Validate new name
+        validate_python_identifier(new_name)?;
+
+        // Build FactsStore via native 4-pass analysis
+        let mut store = FactsStore::new();
+        let bundle = analyze_files(files, &mut store).map_err(|e| RenameError::AnalyzerError {
+            message: e.to_string(),
+        })?;
+
+        // Contract C7: Strict policy - fail if any files failed analysis
+        if !bundle.is_complete() {
+            return Err(RenameError::AnalysisFailed {
+                count: bundle.failed_files.len(),
+                files: bundle.failed_files.iter().map(|(p, _)| p.clone()).collect(),
+            });
+        }
+
+        // Find symbol at location
+        let symbol = find_symbol_at_location(&store, location, files)?;
+
+        // Collect all edits needed: (file_id, span, kind)
+        let mut all_edits: Vec<(FileId, Span, ReferenceKind)> = Vec::new();
+
+        // Add the target symbol's definition
+        all_edits.push((
+            symbol.decl_file_id,
+            symbol.decl_span,
+            ReferenceKind::Definition,
+        ));
+
+        // Add references to the target symbol
+        for reference in store.refs_of_symbol(symbol.symbol_id) {
+            all_edits.push((reference.file_id, reference.span, reference.ref_kind));
+        }
+
+        // For methods, collect override methods and their references
+        let override_ids = find_override_methods_native(&store, &symbol);
+        for override_id in &override_ids {
+            if let Some(override_sym) = store.symbol(*override_id) {
+                all_edits.push((
+                    override_sym.decl_file_id,
+                    override_sym.decl_span,
+                    ReferenceKind::Definition,
+                ));
+            }
+            for reference in store.refs_of_symbol(*override_id) {
+                all_edits.push((reference.file_id, reference.span, reference.ref_kind));
+            }
+        }
+
+        // Deduplicate edits by (file_id, span)
+        let mut seen_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
+        all_edits.retain(|(file_id, span, _)| seen_spans.insert((*file_id, span.start, span.end)));
+
+        // Build reference info
+        let mut references = Vec::new();
+        let mut files_affected = std::collections::HashSet::new();
+
+        for (file_id, span, kind) in &all_edits {
+            let file = store
+                .file(*file_id)
+                .ok_or_else(|| RenameError::AnalyzerError {
+                    message: format!("file not found: {:?}", file_id),
+                })?;
+            files_affected.insert(&file.path);
+
+            let content = read_file(workspace_root, &file.path)?;
+            let (line, col) = tugtool_core::text::byte_offset_to_position_str(&content, span.start);
+            references.push(ReferenceInfo {
+                location: Location {
+                    file: file.path.clone(),
+                    line,
+                    col,
+                    byte_start: Some(span.start),
+                    byte_end: Some(span.end),
+                },
+                kind: format!("{:?}", kind).to_lowercase(),
+            });
+        }
+
+        // Build symbol info
+        let decl_file =
+            store
+                .file(symbol.decl_file_id)
+                .ok_or_else(|| RenameError::AnalyzerError {
+                    message: "declaration file not found".to_string(),
+                })?;
+        let decl_content = read_file(workspace_root, &decl_file.path)?;
+        let symbol_info = symbol_to_info(&symbol, decl_file, &decl_content);
+
+        // Generate snapshot ID
+        let snapshot_id = generate_snapshot_id();
+
+        Ok(ImpactAnalysis {
+            status: "ok".to_string(),
+            schema_version: "1".to_string(),
+            snapshot_id,
+            symbol: symbol_info,
+            references,
+            impact: ImpactSummary {
+                files_affected: files_affected.len(),
+                references_count: all_edits.len(),
+                edits_estimated: all_edits.len(),
+            },
+            warnings: Vec::new(), // Dynamic warnings not yet supported in native mode
+        })
+    }
+
+    /// Run a rename operation using native CST analysis.
+    ///
+    /// This function performs a full multi-file rename using the native 4-pass
+    /// `analyze_files` pipeline:
+    ///
+    /// 1. Analyze all files to build FactsStore with cross-file resolution
+    /// 2. Find the target symbol at the specified location
+    /// 3. Collect all references including override methods
+    /// 4. Apply edits in a sandbox and verify
+    /// 5. Optionally apply changes to the real workspace
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_root` - The workspace root directory
+    /// * `files` - List of (path, content) tuples for all Python files
+    /// * `location` - The location of the symbol to rename
+    /// * `new_name` - The new name for the symbol
+    /// * `python_path` - Path to Python interpreter (for verification)
+    /// * `verify_mode` - Verification mode to use
+    /// * `apply` - Whether to apply changes to the real workspace
+    ///
+    /// # Returns
+    ///
+    /// The rename result with patch, verification, and summary.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AnalysisFailed` if any files fail to parse (Contract C7 strict policy).
+    pub fn run_native(
+        workspace_root: &std::path::Path,
+        files: &[(String, String)],
+        location: &Location,
+        new_name: &str,
+        python_path: &std::path::Path,
+        verify_mode: VerificationMode,
+        apply: bool,
+    ) -> RenameResult<RenameOutput> {
+        use crate::lookup::find_symbol_at_location;
+        use tugtool_core::diff::generate_unified_diff;
+
+        // Validate new name
+        validate_python_identifier(new_name)?;
+
+        // Build FactsStore via native 4-pass analysis
+        let mut store = FactsStore::new();
+        let bundle = analyze_files(files, &mut store).map_err(|e| RenameError::AnalyzerError {
+            message: e.to_string(),
+        })?;
+
+        // Contract C7: Strict policy - fail if any files failed analysis
+        if !bundle.is_complete() {
+            return Err(RenameError::AnalysisFailed {
+                count: bundle.failed_files.len(),
+                files: bundle.failed_files.iter().map(|(p, _)| p.clone()).collect(),
+            });
+        }
+
+        // Find symbol at location
+        let symbol = find_symbol_at_location(&store, location, files)?;
+
+        // Collect all edits needed: (file_id, span)
+        let mut all_edits: Vec<(FileId, Span)> = Vec::new();
+
+        // Add the target symbol's definition
+        all_edits.push((symbol.decl_file_id, symbol.decl_span));
+
+        // Add references to the target symbol
+        for reference in store.refs_of_symbol(symbol.symbol_id) {
+            all_edits.push((reference.file_id, reference.span));
+        }
+
+        // For methods, collect override methods and their references
+        let override_ids = find_override_methods_native(&store, &symbol);
+        for override_id in &override_ids {
+            if let Some(override_sym) = store.symbol(*override_id) {
+                all_edits.push((override_sym.decl_file_id, override_sym.decl_span));
+            }
+            for reference in store.refs_of_symbol(*override_id) {
+                all_edits.push((reference.file_id, reference.span));
+            }
+        }
+
+        // Deduplicate edits by (file_id, span)
+        let mut seen_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
+        all_edits.retain(|(file_id, span)| seen_spans.insert((*file_id, span.start, span.end)));
+
+        // Generate edits by file
+        let mut edits_by_file: HashMap<String, Vec<(Span, &str)>> = HashMap::new();
+        for (file_id, span) in &all_edits {
+            let file = store
+                .file(*file_id)
+                .ok_or_else(|| RenameError::AnalyzerError {
+                    message: "file not found".to_string(),
+                })?;
+            edits_by_file
+                .entry(file.path.clone())
+                .or_default()
+                .push((*span, new_name));
+        }
+
+        // Create sandbox
+        let sandbox = TempDir::new()?;
+
+        // Copy files to sandbox
+        for (path, _) in files {
+            let src = workspace_root.join(path);
+            let dst = sandbox.path().join(path);
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&src, &dst)?;
+        }
+
+        // Apply edits in sandbox
+        let mut edit_infos = Vec::new();
+        let mut total_bytes_added: i64 = 0;
+        let mut total_bytes_removed: i64 = 0;
+
+        for (path, edits) in &edits_by_file {
+            let file_path = sandbox.path().join(path);
+            let content = fs::read_to_string(&file_path)?;
+
+            // Sort edits by span start in reverse order
+            let mut sorted_edits: Vec<_> = edits.iter().collect();
+            sorted_edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+
+            let mut new_content = content.clone();
+            for (span, replacement) in &sorted_edits {
+                let start = span.start as usize;
+                let end = span.end as usize;
+                let old_text = &content[start..end];
+                let (line, col) = byte_offset_to_position_str(&content, span.start);
+
+                edit_infos.push(OutputEdit {
+                    file: path.clone(),
+                    span: Span::new(span.start, span.end),
+                    old_text: old_text.to_string(),
+                    new_text: replacement.to_string(),
+                    line,
+                    col,
+                });
+
+                total_bytes_removed += (span.end - span.start) as i64;
+                total_bytes_added += replacement.len() as i64;
+
+                new_content = format!(
+                    "{}{}{}",
+                    &new_content[..start],
+                    replacement,
+                    &new_content[end..]
+                );
+            }
+
+            fs::write(&file_path, &new_content)?;
+        }
+
+        // Sort edit_infos by file then span start
+        edit_infos.sort_by(|a, b| a.file.cmp(&b.file).then(a.span.start.cmp(&b.span.start)));
+
+        // Run verification
+        let verification = run_verification(python_path, sandbox.path(), verify_mode)?;
+
+        if verification.status == VerificationStatus::Failed {
+            return Err(RenameError::VerificationFailed {
+                status: verification.status,
+                output: verification
+                    .checks
+                    .iter()
+                    .filter(|c| c.status == VerificationStatus::Failed)
+                    .filter_map(|c| c.output.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            });
+        }
+
+        // Apply to real workspace if requested
+        let files_written = if apply {
+            let mut written = Vec::new();
+            for (path, edits) in &edits_by_file {
+                let file_path = workspace_root.join(path);
+                let content = fs::read_to_string(&file_path)?;
+
+                let mut sorted_edits: Vec<_> = edits.iter().collect();
+                sorted_edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
+
+                let mut new_content = content.clone();
+                for (span, replacement) in &sorted_edits {
+                    let start = span.start as usize;
+                    let end = span.end as usize;
+                    new_content = format!(
+                        "{}{}{}",
+                        &new_content[..start],
+                        replacement,
+                        &new_content[end..]
+                    );
+                }
+
+                fs::write(&file_path, &new_content)?;
+                written.push(path.clone());
+            }
+            Some(written)
+        } else {
+            None
+        };
+
+        // Generate unified diff
+        let unified_diff = generate_unified_diff(&edit_infos);
+
+        // Generate snapshot and undo token
+        let snapshot_id = generate_snapshot_id();
+        let undo_token = generate_undo_token();
+
+        Ok(RenameOutput {
+            status: "ok".to_string(),
+            schema_version: "1".to_string(),
+            snapshot_id,
+            patch: MaterializedPatch {
+                edits: edit_infos.clone(),
+                unified_diff,
+            },
+            summary: RenameSummary {
+                files_changed: edits_by_file.len(),
+                edits_count: edit_infos.len(),
+                bytes_added: total_bytes_added,
+                bytes_removed: total_bytes_removed,
+            },
+            verification,
+            warnings: Vec::new(), // Dynamic warnings not yet supported in native mode
+            undo_token,
+            applied: if apply { Some(true) } else { None },
+            files_written,
+        })
+    }
+
+    /// Find override methods for a symbol in the FactsStore.
+    ///
+    /// This is a native implementation that doesn't require PythonAdapter.
+    fn find_override_methods_native(
+        store: &FactsStore,
+        method_symbol: &tugtool_core::facts::Symbol,
+    ) -> Vec<tugtool_core::facts::SymbolId> {
+        use tugtool_core::facts::SymbolKind;
+
+        let mut overrides = Vec::new();
+
+        // Get the container class (the method's parent)
+        let class_id = match method_symbol.container_symbol_id {
+            Some(id) => id,
+            None => return overrides, // Not a method
+        };
+
+        // Collect all descendant classes using BFS
+        let mut descendant_classes = Vec::new();
+        let mut queue = vec![class_id];
+
+        while let Some(current_class) = queue.pop() {
+            for child_id in store.children_of_class(current_class) {
+                if !descendant_classes.contains(&child_id) {
+                    descendant_classes.push(child_id);
+                    queue.push(child_id);
+                }
+            }
+        }
+
+        // Find methods with the same name in descendant classes
+        let method_name = &method_symbol.name;
+        for descendant_id in descendant_classes {
+            let candidate_methods = store.symbols_named(method_name);
+            for method in candidate_methods {
+                if method.container_symbol_id == Some(descendant_id)
+                    && (method.kind == SymbolKind::Method || method.kind == SymbolKind::Function)
+                {
+                    overrides.push(method.symbol_id);
+                }
+            }
+        }
+
+        overrides
+    }
 }
 
 #[cfg(feature = "native-cst")]
-pub use native::{apply_renames, collect_rename_edits, rename_in_file, NativeRenameEdit};
+pub use native::{
+    analyze_impact_native, apply_renames, collect_rename_edits, rename_in_file, run_native,
+    NativeRenameEdit,
+};
 
 // ============================================================================
 // Tests
@@ -1171,6 +1604,284 @@ outer()
             let result = native::rename_in_file(content, "name", "person").expect("rename should succeed");
             assert!(result.contains("def greet(person):"), "parameter should be renamed");
             // Note: f-string interpolation may or may not be renamed depending on reference collector
+        }
+    }
+
+    // Multi-file native rename integration tests
+    #[cfg(feature = "native-cst")]
+    mod native_multifile_tests {
+        use super::*;
+        use crate::test_helpers::require_python_with_libcst;
+        use tempfile::TempDir;
+
+        /// Test: Rename function updates imports in other files
+        #[test]
+        fn native_rename_cross_file_import() {
+            let python = require_python_with_libcst();
+            let workspace = TempDir::new().unwrap();
+
+            // Create module with function to rename
+            let utils_content = "def helper():\n    return 42\n";
+            let utils_path = workspace.path().join("utils.py");
+            fs::write(&utils_path, utils_content).unwrap();
+
+            // Create file that imports and uses the function
+            let main_content = "from utils import helper\n\nresult = helper()\n";
+            let main_path = workspace.path().join("main.py");
+            fs::write(&main_path, main_content).unwrap();
+
+            // Collect files
+            let files: Vec<(String, String)> = vec![
+                ("utils.py".to_string(), utils_content.to_string()),
+                ("main.py".to_string(), main_content.to_string()),
+            ];
+
+            // Run native rename on the function definition
+            let result = native::run_native(
+                workspace.path(),
+                &files,
+                &Location::new("utils.py", 1, 5), // 'helper' in def helper():
+                "utility_func",
+                &python,
+                VerificationMode::Syntax,
+                true,
+            );
+
+            assert!(result.is_ok(), "run_native failed: {:?}", result.err());
+
+            // Verify both files were updated
+            let utils_updated = fs::read_to_string(&utils_path).unwrap();
+            assert!(
+                utils_updated.contains("def utility_func():"),
+                "Function definition should be renamed"
+            );
+
+            let main_updated = fs::read_to_string(&main_path).unwrap();
+            assert!(
+                main_updated.contains("from utils import utility_func"),
+                "Import should be renamed"
+            );
+            assert!(
+                main_updated.contains("result = utility_func()"),
+                "Usage should be renamed"
+            );
+        }
+
+        /// Test: Rename base class method updates overrides in child classes
+        #[test]
+        fn native_rename_method_with_override() {
+            let python = require_python_with_libcst();
+            let workspace = TempDir::new().unwrap();
+
+            let content = r#"class Base:
+    def process(self):
+        pass
+
+class Child(Base):
+    def process(self):  # override
+        super().process()
+
+def use_it(obj: Base):
+    obj.process()
+"#;
+            let test_path = workspace.path().join("test.py");
+            fs::write(&test_path, content).unwrap();
+
+            let files: Vec<(String, String)> = vec![("test.py".to_string(), content.to_string())];
+
+            // Run native rename on the base method
+            let result = native::run_native(
+                workspace.path(),
+                &files,
+                &Location::new("test.py", 2, 9), // 'process' in Base.process
+                "handle",
+                &python,
+                VerificationMode::Syntax,
+                true,
+            );
+
+            assert!(result.is_ok(), "run_native failed: {:?}", result.err());
+
+            let updated = fs::read_to_string(&test_path).unwrap();
+
+            // Both base and override should be renamed
+            assert!(
+                updated.contains("def handle(self):"),
+                "Base method should be renamed"
+            );
+            // Count occurrences of "def handle"
+            let handle_count = updated.matches("def handle(self):").count();
+            assert_eq!(
+                handle_count, 2,
+                "Both base and override should have 'def handle': got {}",
+                handle_count
+            );
+
+            // super().process() call should also be renamed
+            assert!(
+                updated.contains("super().handle()"),
+                "super() call should be renamed"
+            );
+
+            // Usage should be renamed
+            assert!(
+                updated.contains("obj.handle()"),
+                "Method call should be renamed"
+            );
+        }
+
+        /// Test: Rename with typed receiver resolves correctly
+        #[test]
+        fn native_rename_typed_method_call() {
+            let python = require_python_with_libcst();
+            let workspace = TempDir::new().unwrap();
+
+            let content = r#"class Handler:
+    def process_request(self, data):
+        return data
+
+def main():
+    h = Handler()
+    h.process_request("test")
+"#;
+            let test_path = workspace.path().join("test.py");
+            fs::write(&test_path, content).unwrap();
+
+            let files: Vec<(String, String)> = vec![("test.py".to_string(), content.to_string())];
+
+            // Run native rename on the method definition
+            let result = native::run_native(
+                workspace.path(),
+                &files,
+                &Location::new("test.py", 2, 9), // 'process_request' in def process_request
+                "handle_request",
+                &python,
+                VerificationMode::Syntax,
+                true,
+            );
+
+            assert!(result.is_ok(), "run_native failed: {:?}", result.err());
+
+            let updated = fs::read_to_string(&test_path).unwrap();
+
+            // Method definition should be renamed
+            assert!(
+                updated.contains("def handle_request(self, data):"),
+                "Method definition should be renamed"
+            );
+
+            // Method call should be renamed (type-aware resolution)
+            assert!(
+                updated.contains("h.handle_request("),
+                "Method call should be renamed"
+            );
+        }
+
+        /// Test: Analysis fails if any file has parse errors (Contract C7)
+        #[test]
+        fn native_rename_fails_on_parse_error() {
+            let workspace = TempDir::new().unwrap();
+
+            // Create valid file
+            let valid_content = "def foo():\n    pass\n";
+            let valid_path = workspace.path().join("valid.py");
+            fs::write(&valid_path, valid_content).unwrap();
+
+            // Create file with syntax error
+            let invalid_content = "def broken(\n";  // missing closing paren and body
+            let invalid_path = workspace.path().join("invalid.py");
+            fs::write(&invalid_path, invalid_content).unwrap();
+
+            let files: Vec<(String, String)> = vec![
+                ("valid.py".to_string(), valid_content.to_string()),
+                ("invalid.py".to_string(), invalid_content.to_string()),
+            ];
+
+            // Impact analysis should fail due to strict policy
+            let result = native::analyze_impact_native(
+                workspace.path(),
+                &files,
+                &Location::new("valid.py", 1, 5),
+                "bar",
+            );
+
+            assert!(result.is_err(), "Should fail when files have parse errors");
+
+            match result.unwrap_err() {
+                RenameError::AnalysisFailed { count, files } => {
+                    assert_eq!(count, 1, "Should report 1 failed file");
+                    assert!(
+                        files.contains(&"invalid.py".to_string()),
+                        "Should include the invalid file"
+                    );
+                }
+                e => panic!("Expected AnalysisFailed error, got: {:?}", e),
+            }
+        }
+
+        /// Test: analyze_impact_native returns correct references
+        #[test]
+        fn native_analyze_impact_cross_file() {
+            let workspace = TempDir::new().unwrap();
+
+            // Create module with function
+            let utils_content = "def helper():\n    return 42\n";
+            let utils_path = workspace.path().join("utils.py");
+            fs::write(&utils_path, utils_content).unwrap();
+
+            // Create file that imports and uses it
+            let main_content = "from utils import helper\n\nresult = helper()\n";
+            let main_path = workspace.path().join("main.py");
+            fs::write(&main_path, main_content).unwrap();
+
+            let files: Vec<(String, String)> = vec![
+                ("utils.py".to_string(), utils_content.to_string()),
+                ("main.py".to_string(), main_content.to_string()),
+            ];
+
+            let result = native::analyze_impact_native(
+                workspace.path(),
+                &files,
+                &Location::new("utils.py", 1, 5),
+                "new_name",
+            );
+
+            assert!(result.is_ok(), "analyze_impact_native failed: {:?}", result.err());
+
+            let analysis = result.unwrap();
+            assert_eq!(analysis.symbol.name, "helper");
+            assert_eq!(analysis.symbol.kind, "function");
+
+            // Should include references from both files:
+            // - Definition in utils.py
+            // - Import in main.py
+            // - Call in main.py
+            assert!(
+                analysis.references.len() >= 2,
+                "Should have at least 2 references (def + import), got {}",
+                analysis.references.len()
+            );
+
+            // Verify we have references in both files
+            let utils_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.location.file == "utils.py")
+                .collect();
+            let main_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.location.file == "main.py")
+                .collect();
+
+            assert!(
+                !utils_refs.is_empty(),
+                "Should have references in utils.py"
+            );
+            assert!(
+                !main_refs.is_empty(),
+                "Should have references in main.py"
+            );
         }
     }
 }
