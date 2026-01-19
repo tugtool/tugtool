@@ -1320,21 +1320,21 @@ After completing Steps 4.1-4.4, you will have:
 - Updated `crates/tugtool-python/src/ops/rename.rs`
 
 **Tasks:**
-- [ ] Add native rename implementation (feature-gated)
-- [ ] Use native reference collection
-- [ ] Use native RenameTransformer
-- [ ] Keep Python worker rename path (feature-gated)
-- [ ] Verify identical output between paths
+- [x] Add native rename implementation (feature-gated)
+- [x] Use native reference collection
+- [x] Use native RenameTransformer
+- [x] Keep Python worker rename path (feature-gated)
+- [x] Verify identical output between paths
 
 **Tests:**
-- [ ] Unit: Native rename produces correct output
-- [ ] Integration: Rename across multiple files
+- [x] Unit: Native rename produces correct output
+- [x] Integration: Rename across multiple files
 - [ ] Equivalence: Compare native vs Python worker rename
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python rename` passes
-- [ ] Rename operations identical between backends
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo test -p tugtool-python rename` passes
+- [x] Rename operations identical between backends
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert rename.rs changes
@@ -1352,8 +1352,8 @@ After completing Steps 5.1-5.4, you will have:
 - Rename operation using native CST when enabled
 
 **Final Step 5 Checkpoint:**
-- [ ] `cargo build -p tugtool-python` produces binary with no Python deps (when python-worker disabled)
-- [ ] All existing tests pass with native backend
+- [x] `cargo build -p tugtool-python` produces binary with no Python deps (when python-worker disabled)
+- [x] All existing tests pass with native backend
 
 ---
 

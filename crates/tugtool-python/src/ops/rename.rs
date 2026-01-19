@@ -12,6 +12,19 @@
 //! - Local variables (scope chain lookup)
 //! - Functions/classes at module level (binding + import tracking)
 //! - Method calls via self.method() (syntactic pattern)
+//!
+//! # Backends
+//!
+//! The rename operation supports two backends:
+//!
+//! - **Native CST** (`native-cst` feature, default): Uses tugtool-cst for pure Rust
+//!   reference collection and transformation with zero Python dependencies.
+//! - **Python Worker** (`python-worker` feature): Uses LibCST via Python subprocess
+//!   for analysis and transformation.
+//!
+//! When the `native-cst` feature is enabled, use [`native::run_native`] and
+//! [`native::analyze_impact_native`] for zero-dependency operations. The
+//! [`PythonRenameOp`] struct provides the Python worker-based implementation.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -40,6 +53,10 @@ use crate::verification::{
     run_verification, VerificationError, VerificationMode, VerificationResult, VerificationStatus,
 };
 use crate::worker::{spawn_worker, WorkerError};
+
+// Native CST bridge for feature-gated rename
+#[cfg(feature = "native-cst")]
+use crate::cst_bridge;
 
 // ============================================================================
 // Error Types
@@ -86,6 +103,11 @@ pub enum RenameError {
     /// Analyzer error.
     #[error("analyzer error: {message}")]
     AnalyzerError { message: String },
+
+    /// Native CST error.
+    #[cfg(feature = "native-cst")]
+    #[error("native CST error: {0}")]
+    NativeCst(#[from] crate::cst_bridge::CstBridgeError),
 }
 
 impl From<VerificationError> for RenameError {
@@ -668,6 +690,200 @@ impl PythonRenameOp {
 }
 
 // ============================================================================
+// Native CST Implementation
+// ============================================================================
+
+/// Native CST rename implementation.
+///
+/// This module provides zero-Python-dependency rename operations when the `native-cst`
+/// feature is enabled. It uses `tugtool-cst` for reference collection and transformation.
+#[cfg(feature = "native-cst")]
+pub mod native {
+    use super::*;
+
+    /// Apply a single-file rename operation using native CST.
+    ///
+    /// This function performs a simplified rename operation on a single file:
+    /// 1. Parse and analyze the file using native CST
+    /// 2. Find all references to the target name
+    /// 3. Apply renames using the native RenameTransformer
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The Python source code
+    /// * `old_name` - The name to rename from
+    /// * `new_name` - The name to rename to
+    ///
+    /// # Returns
+    ///
+    /// The transformed source code with all renames applied, or an error.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::ops::rename::native::rename_in_file;
+    ///
+    /// let content = "def foo():\n    return foo";
+    /// let result = rename_in_file(content, "foo", "bar")?;
+    /// assert_eq!(result, "def bar():\n    return bar");
+    /// ```
+    pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameResult<String> {
+        // Parse and analyze the file
+        let analysis = cst_bridge::parse_and_analyze(content)?;
+
+        // Collect all spans where the name appears
+        let mut rewrites: Vec<(Span, String)> = Vec::new();
+
+        // Check bindings for the target name
+        for binding in &analysis.bindings {
+            if binding.name == old_name {
+                if let Some(ref span_info) = binding.span {
+                    let span = Span::new(span_info.start as u64, span_info.end as u64);
+                    rewrites.push((span, new_name.to_string()));
+                }
+            }
+        }
+
+        // Check references for the target name
+        for (name, refs) in &analysis.references {
+            if name == old_name {
+                for ref_info in refs {
+                    if let Some(ref span_info) = ref_info.span {
+                        let span = Span::new(span_info.start as u64, span_info.end as u64);
+                        // Avoid duplicates
+                        if !rewrites.iter().any(|(s, _)| s.start == span.start && s.end == span.end) {
+                            rewrites.push((span, new_name.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply all renames using the native transformer
+        let result = cst_bridge::rewrite_batch(content, &rewrites)?;
+
+        Ok(result)
+    }
+
+    /// Collect rename edits for a single file using native CST analysis.
+    ///
+    /// This function analyzes a file and returns the edits needed to rename
+    /// a symbol, without actually applying them.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The Python source code
+    /// * `old_name` - The name to find references for
+    /// * `new_name` - The name to rename to (used for edit generation)
+    ///
+    /// # Returns
+    ///
+    /// A vector of edits (file path placeholder, span, old_text, new_text, line, col).
+    pub fn collect_rename_edits(
+        content: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> RenameResult<Vec<NativeRenameEdit>> {
+        // Parse and analyze the file
+        let analysis = cst_bridge::parse_and_analyze(content)?;
+
+        let mut edits: Vec<NativeRenameEdit> = Vec::new();
+        let mut seen_spans: HashSet<(u64, u64)> = HashSet::new();
+
+        // Collect edits from bindings
+        for binding in &analysis.bindings {
+            if binding.name == old_name {
+                if let Some(ref span_info) = binding.span {
+                    let span = Span::new(span_info.start as u64, span_info.end as u64);
+                    let key = (span.start, span.end);
+                    if seen_spans.insert(key) {
+                        let (line, col) = byte_offset_to_position_str(content, span.start);
+                        let old_text = content
+                            .get(span.start as usize..span.end as usize)
+                            .unwrap_or(old_name)
+                            .to_string();
+                        edits.push(NativeRenameEdit {
+                            span,
+                            old_text,
+                            new_text: new_name.to_string(),
+                            line,
+                            col,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Collect edits from references
+        for (name, refs) in &analysis.references {
+            if name == old_name {
+                for ref_info in refs {
+                    if let Some(ref span_info) = ref_info.span {
+                        let span = Span::new(span_info.start as u64, span_info.end as u64);
+                        let key = (span.start, span.end);
+                        if seen_spans.insert(key) {
+                            let (line, col) = byte_offset_to_position_str(content, span.start);
+                            let old_text = content
+                                .get(span.start as usize..span.end as usize)
+                                .unwrap_or(old_name)
+                                .to_string();
+                            edits.push(NativeRenameEdit {
+                                span,
+                                old_text,
+                                new_text: new_name.to_string(),
+                                line,
+                                col,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by span start for consistent ordering
+        edits.sort_by_key(|e| e.span.start);
+
+        Ok(edits)
+    }
+
+    /// A rename edit collected by native CST analysis.
+    #[derive(Debug, Clone)]
+    pub struct NativeRenameEdit {
+        /// The byte span to replace.
+        pub span: Span,
+        /// The original text at the span.
+        pub old_text: String,
+        /// The new text to replace with.
+        pub new_text: String,
+        /// The line number (1-based).
+        pub line: u32,
+        /// The column number (1-based).
+        pub col: u32,
+    }
+
+    /// Apply batch renames to source code using native CST transformer.
+    ///
+    /// This is a thin wrapper around `cst_bridge::rewrite_batch` for use
+    /// in the rename operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - The original Python source code
+    /// * `rewrites` - List of (span, new_name) tuples specifying renames
+    ///
+    /// # Returns
+    ///
+    /// The transformed source code with all renames applied.
+    pub fn apply_renames(source: &str, rewrites: &[(Span, String)]) -> RenameResult<String> {
+        let result = cst_bridge::rewrite_batch(source, rewrites)?;
+        Ok(result)
+    }
+}
+
+#[cfg(feature = "native-cst")]
+pub use native::{apply_renames, collect_rename_edits, rename_in_file, NativeRenameEdit};
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -855,6 +1071,106 @@ mod tests {
             assert!(content.contains("def transform_data()"));
             assert!(content.contains("transform_data()"));
             assert!(!content.contains("process_data"));
+        }
+    }
+
+    // Native CST rename tests
+    #[cfg(feature = "native-cst")]
+    mod native_rename_tests {
+        use super::*;
+
+        #[test]
+        fn native_rename_simple_function() {
+            let content = "def foo():\n    pass\n\nfoo()\n";
+            let result = native::rename_in_file(content, "foo", "bar").expect("rename should succeed");
+            assert!(result.contains("def bar()"), "function definition not renamed");
+            assert!(result.contains("bar()"), "function call not renamed");
+            assert!(!result.contains("foo"), "old name still present");
+        }
+
+        #[test]
+        fn native_rename_variable() {
+            let content = "x = 1\ny = x + 2\nprint(x)\n";
+            let result = native::rename_in_file(content, "x", "value").expect("rename should succeed");
+            assert!(result.contains("value = 1"), "assignment not renamed");
+            assert!(result.contains("y = value + 2"), "reference not renamed");
+            assert!(result.contains("print(value)"), "function arg not renamed");
+            assert!(!result.contains(" x"), "old name still present");
+        }
+
+        #[test]
+        fn native_rename_class() {
+            let content = "class MyClass:\n    pass\n\nobj = MyClass()\n";
+            let result = native::rename_in_file(content, "MyClass", "NewClass").expect("rename should succeed");
+            assert!(result.contains("class NewClass:"), "class definition not renamed");
+            assert!(result.contains("NewClass()"), "instantiation not renamed");
+            assert!(!result.contains("MyClass"), "old name still present");
+        }
+
+        #[test]
+        fn native_rename_preserves_formatting() {
+            let content = "def foo():\n    # Comment\n    return 42\n\nresult = foo()\n";
+            let result = native::rename_in_file(content, "foo", "bar").expect("rename should succeed");
+            assert!(result.contains("# Comment"), "comment should be preserved");
+            assert!(result.contains("return 42"), "return statement should be preserved");
+            assert!(result.contains("result = bar()"), "variable and call should be renamed");
+        }
+
+        #[test]
+        fn native_rename_no_match() {
+            let content = "def foo():\n    pass\n";
+            let result = native::rename_in_file(content, "nonexistent", "something").expect("rename should succeed");
+            assert_eq!(result, content, "content should be unchanged when no matches");
+        }
+
+        #[test]
+        fn native_collect_edits_simple() {
+            let content = "def foo():\n    return foo";
+            let edits = native::collect_rename_edits(content, "foo", "bar").expect("should collect edits");
+            assert!(!edits.is_empty(), "should find at least one edit");
+
+            // Verify edit locations
+            for edit in &edits {
+                assert_eq!(edit.old_text, "foo", "old text should be foo");
+                assert_eq!(edit.new_text, "bar", "new text should be bar");
+                assert!(edit.line >= 1, "line should be 1-based");
+                assert!(edit.col >= 1, "col should be 1-based");
+            }
+        }
+
+        #[test]
+        fn native_apply_renames_multiple() {
+            let content = "x = 1\ny = x";
+            let rewrites = vec![
+                (Span::new(0, 1), "a".to_string()),
+                (Span::new(10, 11), "a".to_string()),
+            ];
+            let result = native::apply_renames(content, &rewrites).expect("apply should succeed");
+            assert_eq!(result, "a = 1\ny = a");
+        }
+
+        #[test]
+        fn native_rename_nested_function() {
+            let content = r#"def outer():
+    def inner():
+        pass
+    inner()
+
+outer()
+"#;
+            // Rename outer function
+            let result = native::rename_in_file(content, "outer", "wrapper").expect("rename should succeed");
+            assert!(result.contains("def wrapper():"), "outer function should be renamed");
+            assert!(result.contains("wrapper()"), "outer call should be renamed");
+            assert!(result.contains("def inner():"), "inner function should be unchanged");
+        }
+
+        #[test]
+        fn native_rename_parameter() {
+            let content = "def greet(name):\n    return f\"Hello, {name}!\"\n";
+            let result = native::rename_in_file(content, "name", "person").expect("rename should succeed");
+            assert!(result.contains("def greet(person):"), "parameter should be renamed");
+            // Note: f-string interpolation may or may not be renamed depending on reference collector
         }
     }
 }

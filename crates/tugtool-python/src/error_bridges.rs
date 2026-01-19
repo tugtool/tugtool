@@ -109,6 +109,10 @@ impl From<RenameError> for TugError {
                 }
             }
             RenameError::AnalyzerError { message } => TugError::InternalError { message },
+            #[cfg(feature = "native-cst")]
+            RenameError::NativeCst(cst_err) => TugError::InternalError {
+                message: format!("native CST error: {}", cst_err),
+            },
         }
     }
 }
