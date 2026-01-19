@@ -873,33 +873,34 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 - API documentation
 
 **Tasks:**
-- [ ] Create `version.rs` with `PythonVersion` struct
-- [ ] Define `PythonVersion` as an enum with `Permissive` and `V { major, minor }` variants
-- [ ] Add version constants: `V3_8`, `V3_9`, `V3_10`, `V3_11`, `V3_12`
-- [ ] Add feature query methods: `has_match_statements()`, `has_walrus_in_comprehension_iterable()`, etc.
-- [ ] Create `ParseOptions` struct with `version` and `encoding` fields
-- [ ] Add `parse_module_with_options` function accepting `ParseOptions`
-- [ ] Keep `parse_module` as convenience wrapper using `PythonVersion::Permissive`
-- [ ] Define public API surface in lib.rs
-- [ ] Re-export `PythonVersion`, `ParseOptions`, parsing functions
-- [ ] Re-export `prettify_error` for error formatting
-- [ ] Re-export all node types from nodes module
-- [ ] Re-export `Codegen`, `CodegenState` for code generation
-- [ ] Add rustdoc comments to all public items (document that version validation is deferred)
-- [ ] Create `tugtool-cst/examples/parse_example.rs` showing version-aware parsing
+- [x] Create `version.rs` with `PythonVersion` struct
+- [x] Define `PythonVersion` as an enum with `Permissive` and `V { major, minor }` variants
+- [x] Add version constants: `V3_8`, `V3_9`, `V3_10`, `V3_11`, `V3_12`
+- [x] Add feature query methods: `has_match_statements()`, `has_walrus_in_comprehension_iterable()`, etc.
+- [x] Create `ParseOptions` struct with `version` and `encoding` fields
+- [x] Add `parse_module_with_options` function accepting `ParseOptions`
+- [x] Keep `parse_module` as convenience wrapper using `PythonVersion::Permissive`
+- [x] Define public API surface in lib.rs
+- [x] Re-export `PythonVersion`, `ParseOptions`, parsing functions
+- [x] Re-export `prettify_error` for error formatting
+- [x] Re-export all node types from nodes module
+- [x] Re-export `Codegen`, `CodegenState` for code generation
+- [x] Add rustdoc comments to all public items (document that version validation is deferred)
+- [x] Create `tugtool-cst/examples/parse_example.rs` showing version-aware parsing
 
 **Tests:**
-- [ ] Unit: `PythonVersion` constants exist and are stable (`V3_8`, `V3_9`, etc.)
-- [ ] Unit: `PythonVersion::Permissive` does not perform version validation
-- [ ] Unit: `parse_module_with_options` accepts version parameter
-- [ ] Unit: Same code parses identically regardless of version (for now—validation deferred)
-- [ ] Unit: Example code compiles and runs
-- [ ] Integration: Parse various Python files successfully
+- [x] Unit: `PythonVersion` constants exist and are stable (`V3_8`, `V3_9`, etc.)
+- [x] Unit: `PythonVersion::Permissive` does not perform version validation
+- [x] Unit: `parse_module_with_options` accepts version parameter
+- [x] Unit: Same code parses identically regardless of version (for now—validation deferred)
+- [x] Unit: Example code compiles and runs
+- [x] Integration: Parse various Python files successfully
 
 **Checkpoint:**
-- [ ] `cargo doc -p tugtool-cst --open` shows clean API documentation including `PythonVersion`
-- [ ] `cargo run --example parse_example` succeeds
-- [ ] `cargo test -p tugtool-cst version` passes
+- [x] `cargo doc -p tugtool-cst --open` shows clean API documentation including `PythonVersion`
+- [x] `cargo run --example parse_example` succeeds
+- [x] `cargo test -p tugtool-cst version` passes
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert lib.rs and version.rs changes
@@ -935,6 +936,7 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 **Checkpoint:**
 - [ ] `cargo build -p tugtool-cst` succeeds
 - [ ] Visitor trait has methods for key node types
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove visitor module
@@ -1003,6 +1005,7 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst span` passes
 - [ ] SpanTable reports accurate spans for identifier nodes
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert node definition changes
@@ -1060,6 +1063,7 @@ After completing Steps 3.1-3.3, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst scope` passes
 - [ ] Scope output matches Python ScopeVisitor for test cases
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove scope.rs
@@ -1104,6 +1108,7 @@ After completing Steps 3.1-3.3, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst binding` passes
 - [ ] Binding output matches Python for test cases
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove binding.rs
@@ -1143,6 +1148,7 @@ After completing Steps 3.1-3.3, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst reference` passes
 - [ ] Reference output matches Python for test cases
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove reference.rs
@@ -1178,6 +1184,7 @@ After completing Steps 3.1-3.3, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst rename` passes
 - [ ] Rename output identical to Python for test cases
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove rename.rs
@@ -1225,6 +1232,7 @@ After completing Steps 4.1-4.4, you will have:
 **Checkpoint:**
 - [ ] `cargo build -p tugtool-python --features native-cst` succeeds
 - [ ] `cargo build -p tugtool-python --features python-worker` succeeds
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert Cargo.toml changes
@@ -1259,6 +1267,7 @@ After completing Steps 4.1-4.4, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-python cst_bridge` passes
 - [ ] Bridge functions callable from analyzer.rs
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove cst_bridge.rs
@@ -1292,6 +1301,7 @@ After completing Steps 4.1-4.4, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-python analyzer` passes
 - [ ] Analysis results identical between backends
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert analyzer.rs changes
@@ -1324,6 +1334,7 @@ After completing Steps 4.1-4.4, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-python rename` passes
 - [ ] Rename operations identical between backends
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert rename.rs changes
@@ -1376,6 +1387,7 @@ After completing Steps 5.1-5.4, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst visitor` passes for all P1 visitors
 - [ ] P1 visitor output matches Python for test cases
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove P1 visitor files
@@ -1409,6 +1421,7 @@ After completing Steps 5.1-5.4, you will have:
 **Checkpoint:**
 - [ ] `cargo test -p tugtool-cst dynamic` passes
 - [ ] Dynamic pattern output matches Python
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove dynamic.rs
@@ -1477,6 +1490,7 @@ After completing Steps 5.1-5.4, you will have:
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python equivalence` passes
 - [ ] No equivalence failures
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Investigate and fix collector bugs
@@ -1509,6 +1523,7 @@ After completing Steps 5.1-5.4, you will have:
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-cst golden` passes
 - [ ] `TUG_UPDATE_GOLDEN=1` workflow documented and working
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Update golden files if intentional changes
@@ -1541,6 +1556,7 @@ After completing Steps 5.1-5.4, you will have:
 **Checkpoint:**
 - [ ] `cargo bench -p tugtool-cst` completes
 - [ ] 10x improvement documented for target scenarios
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - N/A (benchmarks are informational)
@@ -1589,6 +1605,7 @@ After completing Steps 8.1-8.4, you will have:
 - [ ] `cargo build -p tugtool` produces native-CST binary by default
 - [ ] `ldd` shows no libpython dependency
 - [ ] All CI checks pass
+- [ ] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert default feature change
@@ -1610,6 +1627,7 @@ After completing Steps 8.1-8.4, you will have:
 - [ ] All existing integration tests pass with native backend (verify: `cargo nextest run`)
 - [ ] No Python subprocess spawned when using native backend (verify: strace/dtruss)
 - [ ] Default CI path runs with no Python installed (equivalence tests are opt-in during migration)
+- [ ] `cargo nextest run --workspace` passes
 
 **Acceptance tests:**
 - [ ] Golden: All golden file tests pass
