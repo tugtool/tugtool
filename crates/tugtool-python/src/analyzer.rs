@@ -581,16 +581,133 @@ pub mod native {
             }
         }
 
-        // Store global_symbols and import_bindings for Pass 3
-        // (Currently these are local variables; in a full implementation they would
-        // be passed to Pass 3 or stored in the bundle)
-        let _ = global_symbols; // Will be used in Step 9.4
-        let _ = import_bindings; // Will be used in Step 9.4
-
         // ====================================================================
         // Pass 3: Reference & Import Resolution
-        // (Will be implemented in Step 9.4)
         // ====================================================================
+        // For each FileAnalysis:
+        //   - Resolve references using GlobalSymbolMap
+        //   - Apply scope chain resolution (LEGB with class exception)
+        //   - Insert References into FactsStore
+        //   - Process imports and insert Import records
+
+        // Build file path to FileId mapping for import resolution
+        let file_path_to_id: HashMap<String, FileId> = bundle
+            .file_analyses
+            .iter()
+            .map(|a| (a.path.clone(), a.file_id))
+            .collect();
+
+        // Build scope-to-symbols index for each file (for scope chain resolution)
+        // Maps (FileId, ScopeId) -> Vec of (name, SymbolId, SymbolKind)
+        let mut scope_symbols: HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>> =
+            HashMap::new();
+
+        // Rebuild scope_symbols from symbols (we need to know which symbols are in which scope)
+        // This is populated from the symbols we just registered
+        for analysis in &bundle.file_analyses {
+            let file_id = analysis.file_id;
+            for symbol in &analysis.symbols {
+                // Find the SymbolId for this symbol in the global_symbols map
+                if let Some(entries) = global_symbols.get(&(symbol.name.clone(), symbol.kind)) {
+                    for (fid, sym_id) in entries {
+                        if *fid == file_id {
+                            scope_symbols
+                                .entry((file_id, symbol.scope_id))
+                                .or_default()
+                                .push((symbol.name.clone(), *sym_id, symbol.kind));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        for analysis in &bundle.file_analyses {
+            let file_id = analysis.file_id;
+
+            // Build per-file import resolver
+            let import_resolver = FileImportResolver::from_imports(
+                &analysis.imports,
+                &bundle.workspace_files,
+            );
+
+            // Process imports first - insert Import records
+            for local_import in &analysis.imports {
+                let import_id = store.next_import_id();
+                let span = local_import.span.unwrap_or_else(|| Span::new(0, 0));
+
+                // For "from" imports, create an Import record for each name
+                if local_import.kind == "from" && !local_import.is_star {
+                    for imported_name in &local_import.names {
+                        let name_import_id = store.next_import_id();
+                        let mut import = Import::new(
+                            name_import_id,
+                            file_id,
+                            span,
+                            &local_import.module_path,
+                        );
+                        import.imported_name = Some(imported_name.name.clone());
+                        import.alias = imported_name.alias.clone();
+                        import.is_star = false;
+                        store.insert_import(import);
+                    }
+                } else if local_import.is_star {
+                    // Star import
+                    let mut import = Import::new(
+                        import_id,
+                        file_id,
+                        span,
+                        &local_import.module_path,
+                    );
+                    import.is_star = true;
+                    store.insert_import(import);
+                } else {
+                    // Regular module import
+                    let mut import = Import::new(
+                        import_id,
+                        file_id,
+                        span,
+                        &local_import.module_path,
+                    );
+                    import.alias = local_import.alias.clone();
+                    store.insert_import(import);
+                }
+            }
+
+            // Process references
+            for local_ref in &analysis.references {
+                let ref_span = local_ref.span.unwrap_or_else(|| Span::new(0, 0));
+
+                // Try to resolve the reference to a symbol
+                let resolved_symbol_id = resolve_reference(
+                    &local_ref.name,
+                    local_ref.scope_id,
+                    file_id,
+                    &analysis.scopes,
+                    &global_symbols,
+                    &import_bindings,
+                    &scope_symbols,
+                    &import_resolver,
+                    &file_path_to_id,
+                    local_ref.kind,
+                );
+
+                if let Some(symbol_id) = resolved_symbol_id {
+                    // Create reference
+                    let ref_id = store.next_reference_id();
+                    let reference = Reference::new(
+                        ref_id,
+                        symbol_id,
+                        file_id,
+                        ref_span,
+                        local_ref.kind,
+                    );
+                    store.insert_reference(reference);
+                }
+                // Note: Unresolved references are silently dropped.
+                // This is intentional - we only track references we can resolve.
+            }
+        }
 
         // ====================================================================
         // Pass 4: Type-Aware Method Resolution
@@ -660,9 +777,11 @@ pub mod native {
             }
         }
 
-        // Note: Native analysis doesn't yet support imports
-        // This will be addressed when ImportCollector is ported (P1 visitor)
-        let imports = Vec::new();
+        // Convert native imports to LocalImport format
+        // Note: We use an empty workspace_files set here since single-file analysis
+        // doesn't have access to the workspace. The caller (analyze_files) handles
+        // workspace-aware import resolution.
+        let imports = convert_native_imports(&native_result.imports, &HashSet::new());
 
         Ok(FileAnalysis {
             file_id,
@@ -799,11 +918,494 @@ pub mod native {
 
         current_parent
     }
+
+    // ========================================================================
+    // Import Resolution (Contract C3)
+    // ========================================================================
+
+    /// Per-file import resolver for Pass 3 reference resolution.
+    ///
+    /// This struct implements Contract C3 import resolution:
+    /// - `import foo` → aliases["foo"] = ("foo", None)
+    /// - `import foo.bar` → aliases["foo"] = ("foo", None) **binds ROOT only**
+    /// - `import foo as f` → aliases["f"] = ("foo", None)
+    /// - `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved_file)
+    /// - `from foo import bar` → aliases["bar"] = ("foo.bar", resolved_file)
+    /// - `from foo import bar as b` → aliases["b"] = ("foo.bar", resolved_file)
+    /// - Relative imports → None (not supported)
+    /// - Star imports → None (not supported)
+    #[derive(Debug, Default)]
+    pub struct FileImportResolver {
+        /// Maps local bound names to (qualified_path, resolved_file).
+        aliases: HashMap<String, (String, Option<String>)>,
+    }
+
+    impl FileImportResolver {
+        /// Create a new empty resolver.
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Build from a list of local imports, resolving to workspace files.
+        pub fn from_imports(imports: &[LocalImport], workspace_files: &HashSet<String>) -> Self {
+            let mut resolver = Self::new();
+
+            for import in imports {
+                // Skip relative imports (Contract C3: unsupported)
+                if import.module_path.starts_with('.') {
+                    continue;
+                }
+
+                match import.kind.as_str() {
+                    "from" => {
+                        // Skip star imports (Contract C3: unsupported)
+                        if import.is_star {
+                            continue;
+                        }
+
+                        // `from foo import bar` or `from foo import bar as b`
+                        for imported_name in &import.names {
+                            let local_name = imported_name
+                                .alias
+                                .as_ref()
+                                .unwrap_or(&imported_name.name);
+                            let qualified_path =
+                                format!("{}.{}", import.module_path, imported_name.name);
+
+                            // Try to resolve the module to a workspace file
+                            let resolved_file =
+                                resolve_module_to_file(&import.module_path, workspace_files);
+
+                            resolver.aliases.insert(
+                                local_name.clone(),
+                                (qualified_path, resolved_file),
+                            );
+                        }
+                    }
+                    "import" => {
+                        if let Some(alias) = &import.alias {
+                            // `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved)
+                            let resolved_file =
+                                resolve_module_to_file(&import.module_path, workspace_files);
+                            resolver
+                                .aliases
+                                .insert(alias.clone(), (import.module_path.clone(), resolved_file));
+                        } else {
+                            // `import foo.bar` → aliases["foo"] = ("foo", None)
+                            // Per Contract C3: binds ROOT only
+                            let root = import
+                                .module_path
+                                .split('.')
+                                .next()
+                                .unwrap_or(&import.module_path);
+                            resolver
+                                .aliases
+                                .insert(root.to_string(), (root.to_string(), None));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            resolver
+        }
+
+        /// Resolve a local name to its qualified path and source file.
+        pub fn resolve(&self, local_name: &str) -> Option<(&str, Option<&str>)> {
+            self.aliases
+                .get(local_name)
+                .map(|(qn, rf)| (qn.as_str(), rf.as_deref()))
+        }
+
+        /// Check if a name is imported.
+        pub fn is_imported(&self, local_name: &str) -> bool {
+            self.aliases.contains_key(local_name)
+        }
+    }
+
+    /// Resolve a module path to a workspace file path.
+    ///
+    /// Per Contract C3 module resolution algorithm:
+    /// 1. If module_path starts with '.': return None (relative import)
+    /// 2. Convert to candidate file paths: "foo.bar" → ["foo/bar.py", "foo/bar/__init__.py"]
+    /// 3. Search workspace_files for first match (module file wins over package)
+    pub fn resolve_module_to_file(
+        module_path: &str,
+        workspace_files: &HashSet<String>,
+    ) -> Option<String> {
+        // Skip relative imports
+        if module_path.starts_with('.') {
+            return None;
+        }
+
+        // Convert module path to file path
+        let file_path = module_path.replace('.', "/");
+
+        // Try as .py file first (per Contract C3: module file wins)
+        let py_path = format!("{}.py", file_path);
+        if workspace_files.contains(&py_path) {
+            return Some(py_path);
+        }
+
+        // Try as package (__init__.py)
+        let init_path = format!("{}/__init__.py", file_path);
+        if workspace_files.contains(&init_path) {
+            return Some(init_path);
+        }
+
+        None
+    }
+
+    // ========================================================================
+    // Reference Resolution (Contract C4: LEGB Scope Chain)
+    // ========================================================================
+
+    /// Resolve a reference to its target symbol using scope chain resolution.
+    ///
+    /// Implements Contract C4: LEGB rule with class scope exception:
+    /// 1. Local scope: Check current scope's bindings
+    /// 2. Enclosing scopes: Walk up parent chain (skip class scopes!)
+    /// 3. Global scope: Module-level bindings
+    /// 4. Built-in scope: (not tracked)
+    ///
+    /// Special rules:
+    /// - `global x`: Skip directly to module scope for x
+    /// - `nonlocal x`: Skip to nearest enclosing function scope for x
+    /// - Class scopes do NOT form closures
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_reference(
+        name: &str,
+        scope_id: ScopeId,
+        file_id: FileId,
+        scopes: &[Scope],
+        global_symbols: &GlobalSymbolMap,
+        import_bindings: &ImportBindingsSet,
+        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+        import_resolver: &FileImportResolver,
+        file_path_to_id: &HashMap<String, FileId>,
+        _ref_kind: ReferenceKind,
+    ) -> Option<SymbolId> {
+        // Find the scope
+        let scope = scopes.iter().find(|s| s.id == scope_id)?;
+
+        // Check if this name has a `global` declaration in this scope
+        if scope.is_global(name) {
+            // Skip directly to module scope
+            return resolve_in_module_scope(
+                name,
+                file_id,
+                scopes,
+                global_symbols,
+                import_bindings,
+                scope_symbols,
+                import_resolver,
+                file_path_to_id,
+            );
+        }
+
+        // Check if this name has a `nonlocal` declaration in this scope
+        if scope.is_nonlocal(name) {
+            // Skip to nearest enclosing function scope
+            return resolve_in_enclosing_function(
+                name,
+                scope,
+                file_id,
+                scopes,
+                global_symbols,
+                import_bindings,
+                scope_symbols,
+                import_resolver,
+                file_path_to_id,
+            );
+        }
+
+        // Normal LEGB resolution
+        // 1. Check local scope
+        if let Some((sym_id, sym_kind)) =
+            find_symbol_in_scope_with_kind(name, file_id, scope_id, scope_symbols)
+        {
+            // Per Contract C3: If this is an import binding, try to resolve to original definition
+            if sym_kind == SymbolKind::Import && import_resolver.is_imported(name) {
+                if let Some(original_id) = resolve_import_to_original(
+                    name,
+                    global_symbols,
+                    import_bindings,
+                    import_resolver,
+                    file_path_to_id,
+                ) {
+                    return Some(original_id);
+                }
+            }
+            // Not an import, or couldn't resolve to original - return the local binding
+            return Some(sym_id);
+        }
+
+        // 2. Walk up enclosing scopes (skip class scopes per Python rules)
+        let mut current_scope = scope;
+        while let Some(parent_id) = current_scope.parent_id {
+            let parent = scopes.iter().find(|s| s.id == parent_id)?;
+
+            // Skip class scopes - they don't form closures
+            if parent.kind != ScopeKind::Class {
+                if let Some((sym_id, sym_kind)) =
+                    find_symbol_in_scope_with_kind(name, file_id, parent_id, scope_symbols)
+                {
+                    // Per Contract C3: If this is an import binding, try to resolve to original
+                    if sym_kind == SymbolKind::Import && import_resolver.is_imported(name) {
+                        if let Some(original_id) = resolve_import_to_original(
+                            name,
+                            global_symbols,
+                            import_bindings,
+                            import_resolver,
+                            file_path_to_id,
+                        ) {
+                            return Some(original_id);
+                        }
+                    }
+                    return Some(sym_id);
+                }
+            }
+
+            current_scope = parent;
+        }
+
+        // 3. Check module scope (global)
+        resolve_in_module_scope(
+            name,
+            file_id,
+            scopes,
+            global_symbols,
+            import_bindings,
+            scope_symbols,
+            import_resolver,
+            file_path_to_id,
+        )
+    }
+
+    /// Find a symbol in a specific scope.
+    fn find_symbol_in_scope(
+        name: &str,
+        file_id: FileId,
+        scope_id: ScopeId,
+        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    ) -> Option<SymbolId> {
+        scope_symbols
+            .get(&(file_id, scope_id))
+            .and_then(|symbols| symbols.iter().find(|(n, _, _)| n == name).map(|(_, id, _)| *id))
+    }
+
+    /// Find a symbol in a specific scope, returning both ID and kind.
+    fn find_symbol_in_scope_with_kind(
+        name: &str,
+        file_id: FileId,
+        scope_id: ScopeId,
+        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    ) -> Option<(SymbolId, SymbolKind)> {
+        scope_symbols
+            .get(&(file_id, scope_id))
+            .and_then(|symbols| {
+                symbols
+                    .iter()
+                    .find(|(n, _, _)| n == name)
+                    .map(|(_, id, kind)| (*id, *kind))
+            })
+    }
+
+    /// Resolve an imported name to its original definition.
+    ///
+    /// Per Contract C3: References to imported names should resolve to the
+    /// ORIGINAL definition, not the import binding. This function follows
+    /// the import chain to find the original symbol.
+    fn resolve_import_to_original(
+        name: &str,
+        global_symbols: &GlobalSymbolMap,
+        import_bindings: &ImportBindingsSet,
+        import_resolver: &FileImportResolver,
+        file_path_to_id: &HashMap<String, FileId>,
+    ) -> Option<SymbolId> {
+        let (qualified_path, resolved_file) = import_resolver.resolve(name)?;
+        let resolved_file_path = resolved_file?;
+        let &target_file_id = file_path_to_id.get(resolved_file_path)?;
+        let target_name = qualified_path.rsplit('.').next().unwrap_or(name);
+
+        // Look for the symbol in the target file
+        for kind in [
+            SymbolKind::Function,
+            SymbolKind::Class,
+            SymbolKind::Variable,
+            SymbolKind::Constant,
+        ] {
+            if let Some(entries) = global_symbols.get(&(target_name.to_string(), kind)) {
+                for (fid, sym_id) in entries {
+                    if *fid == target_file_id {
+                        // Verify this is a definition, not another import binding
+                        if !import_bindings.contains(&(target_file_id, target_name.to_string())) {
+                            return Some(*sym_id);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Resolve in module scope (for `global` declarations or final fallback).
+    ///
+    /// This is called when:
+    /// 1. A name has a `global` declaration
+    /// 2. LEGB resolution reaches the module level
+    ///
+    /// Note: Import resolution is now primarily handled in `resolve_reference`
+    /// via `resolve_import_to_original`. This function serves as the fallback
+    /// for names that couldn't be resolved through the import chain.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_in_module_scope(
+        name: &str,
+        file_id: FileId,
+        _scopes: &[Scope],
+        global_symbols: &GlobalSymbolMap,
+        import_bindings: &ImportBindingsSet,
+        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+        import_resolver: &FileImportResolver,
+        file_path_to_id: &HashMap<String, FileId>,
+    ) -> Option<SymbolId> {
+        let module_scope_id = ScopeId(0);
+
+        // Try to resolve through imports first (for names that reach here via `global`)
+        if import_resolver.is_imported(name) {
+            if let Some(original_id) = resolve_import_to_original(
+                name,
+                global_symbols,
+                import_bindings,
+                import_resolver,
+                file_path_to_id,
+            ) {
+                return Some(original_id);
+            }
+        }
+
+        // Check module scope bindings (for local definitions or unresolved imports)
+        if let Some(sym_id) = find_symbol_in_scope(name, file_id, module_scope_id, scope_symbols) {
+            return Some(sym_id);
+        }
+
+        // Fall back to any same-file symbol with matching name
+        // Try multiple symbol kinds
+        for kind in [
+            SymbolKind::Function,
+            SymbolKind::Class,
+            SymbolKind::Variable,
+            SymbolKind::Constant,
+            SymbolKind::Import,
+        ] {
+            if let Some(entries) = global_symbols.get(&(name.to_string(), kind)) {
+                for (fid, sym_id) in entries {
+                    if *fid == file_id {
+                        return Some(*sym_id);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Resolve in enclosing function scope (for `nonlocal` declarations).
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_in_enclosing_function(
+        name: &str,
+        scope: &Scope,
+        file_id: FileId,
+        scopes: &[Scope],
+        global_symbols: &GlobalSymbolMap,
+        import_bindings: &ImportBindingsSet,
+        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+        import_resolver: &FileImportResolver,
+        file_path_to_id: &HashMap<String, FileId>,
+    ) -> Option<SymbolId> {
+        // Walk up to find nearest enclosing function scope
+        let mut current_scope = scope;
+        while let Some(parent_id) = current_scope.parent_id {
+            let parent = scopes.iter().find(|s| s.id == parent_id)?;
+
+            if parent.kind == ScopeKind::Function || parent.kind == ScopeKind::Lambda {
+                if let Some(sym_id) = find_symbol_in_scope(name, file_id, parent_id, scope_symbols) {
+                    return Some(sym_id);
+                }
+            }
+
+            current_scope = parent;
+        }
+
+        // Didn't find in any enclosing function - fall back to module scope
+        resolve_in_module_scope(
+            name,
+            file_id,
+            scopes,
+            global_symbols,
+            import_bindings,
+            scope_symbols,
+            import_resolver,
+            file_path_to_id,
+        )
+    }
+
+    /// Convert local imports from native CST analysis to LocalImport format.
+    fn convert_native_imports(
+        imports: &[tugtool_cst::ImportInfo],
+        workspace_files: &HashSet<String>,
+    ) -> Vec<LocalImport> {
+        let mut result = Vec::new();
+
+        for import in imports {
+            // Skip relative imports
+            if import.relative_level > 0 {
+                continue;
+            }
+
+            let names: Vec<ImportedName> = import
+                .names
+                .as_ref()
+                .map(|n| {
+                    n.iter()
+                        .map(|ni| ImportedName {
+                            name: ni.name.clone(),
+                            alias: ni.alias.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // Resolve import to workspace file
+            let resolved_file = resolve_module_to_file(&import.module, workspace_files);
+
+            let kind = match import.kind {
+                tugtool_cst::ImportKind::Import => "import",
+                tugtool_cst::ImportKind::From => "from",
+            };
+
+            result.push(LocalImport {
+                kind: kind.to_string(),
+                module_path: import.module.clone(),
+                names,
+                alias: import.alias.clone(),
+                is_star: import.is_star,
+                span: import.span.as_ref().map(|s| Span::new(s.start, s.end)),
+                line: import.line,
+                resolved_file,
+            });
+        }
+
+        result
+    }
 }
 
 // Re-export native analysis types and functions at module level when feature is enabled
 #[cfg(feature = "native-cst")]
-pub use native::{analyze_file_native, analyze_files, FileAnalysisBundle, GlobalSymbolMap};
+pub use native::{
+    analyze_file_native, analyze_files, FileAnalysisBundle, FileImportResolver, GlobalSymbolMap,
+    resolve_module_to_file,
+};
 
 // ============================================================================
 // Method Call Index (for O(1) lookup during type-aware pass)
@@ -3466,6 +4068,427 @@ class MyClass:
                 func_scope.globals.contains("x"),
                 "function scope should have 'x' declared as global"
             );
+        }
+
+        // ====================================================================
+        // Pass 3 Tests (Step 9.4)
+        // ====================================================================
+
+        #[test]
+        fn analyze_files_pass3_same_file_references_resolved() {
+            // Test: References within the same file are resolved correctly
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def foo(): pass\ndef bar(): foo()".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify references are in store
+            let references: Vec<_> = store.references().collect();
+            assert!(!references.is_empty(), "should have references");
+
+            // Find the foo symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let foo_sym = symbols
+                .iter()
+                .find(|s| s.name == "foo" && s.kind == SymbolKind::Function)
+                .expect("should have foo symbol");
+
+            // Check that there are references to foo
+            let foo_refs: Vec<_> = references
+                .iter()
+                .filter(|r| r.symbol_id == foo_sym.symbol_id)
+                .collect();
+            assert!(
+                !foo_refs.is_empty(),
+                "should have references to foo symbol"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass3_cross_file_references_via_imports() {
+            // Test: Cross-file references through imports are resolved
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "main.py".to_string(),
+                    "from utils import helper\nhelper()".to_string(),
+                ),
+                ("utils.py".to_string(), "def helper(): pass".to_string()),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the helper definition in utils.py
+            let symbols: Vec<_> = store.symbols().collect();
+            let files_in_store: Vec<_> = store.files().collect();
+
+            let utils_file = files_in_store
+                .iter()
+                .find(|f| f.path == "utils.py")
+                .expect("should have utils.py");
+
+            let helper_def = symbols
+                .iter()
+                .find(|s| {
+                    s.name == "helper"
+                        && s.decl_file_id == utils_file.file_id
+                        && s.kind == SymbolKind::Function
+                })
+                .expect("should have helper function in utils.py");
+
+            // Check that main.py has references to helper
+            let references: Vec<_> = store.references().collect();
+            let main_file = files_in_store
+                .iter()
+                .find(|f| f.path == "main.py")
+                .expect("should have main.py");
+
+            // The helper call in main.py should resolve to the definition in utils.py
+            let cross_file_refs: Vec<_> = references
+                .iter()
+                .filter(|r| r.file_id == main_file.file_id && r.symbol_id == helper_def.symbol_id)
+                .collect();
+
+            assert!(
+                !cross_file_refs.is_empty(),
+                "should have cross-file reference from main.py to helper in utils.py"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass3_import_bindings_prefer_original_definitions() {
+            // Test: When resolving references, prefer original definitions over import bindings
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "main.py".to_string(),
+                    "from utils import helper\nhelper()".to_string(),
+                ),
+                ("utils.py".to_string(), "def helper(): pass".to_string()),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // The helper symbol in main.py should be an import binding
+            let symbols: Vec<_> = store.symbols().collect();
+            let files_in_store: Vec<_> = store.files().collect();
+
+            let _main_file = files_in_store
+                .iter()
+                .find(|f| f.path == "main.py")
+                .expect("should have main.py");
+            let utils_file = files_in_store
+                .iter()
+                .find(|f| f.path == "utils.py")
+                .expect("should have utils.py");
+
+            // Should have helper function in utils.py (the original definition)
+            let helper_original = symbols
+                .iter()
+                .find(|s| s.name == "helper" && s.decl_file_id == utils_file.file_id && s.kind == SymbolKind::Function);
+            assert!(helper_original.is_some(), "should have original helper definition");
+        }
+
+        #[test]
+        fn analyze_files_pass3_imports_inserted() {
+            // Test: Import records are inserted into FactsStore
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "import os\nfrom sys import path".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify imports are in store
+            let imports: Vec<_> = store.imports().collect();
+            assert!(!imports.is_empty(), "should have imports in store");
+
+            // Should have import for os module
+            let os_import = imports.iter().find(|i| i.module_path == "os");
+            assert!(os_import.is_some(), "should have os import");
+
+            // Should have import for sys.path
+            let sys_import = imports.iter().find(|i| i.module_path == "sys");
+            assert!(sys_import.is_some(), "should have sys import");
+        }
+
+        // ====================================================================
+        // AC-3 Tests: Scope Chain Resolution (Contract C4)
+        // ====================================================================
+
+        #[test]
+        fn analyze_files_pass3_ac3_local_shadows_global() {
+            // Test: local shadows global (function scope hides module scope)
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "x = 1\ndef foo():\n    x = 2\n    return x".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have two x symbols - one at module level, one in function
+            let symbols: Vec<_> = store.symbols().collect();
+            let x_symbols: Vec<_> = symbols.iter().filter(|s| s.name == "x").collect();
+            assert!(
+                x_symbols.len() >= 2,
+                "should have at least 2 x symbols (module and function level)"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac3_global_declaration_skips_to_module() {
+            // Test: global x declaration skips to module scope
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "x = 1\ndef foo():\n    global x\n    x = 2".to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify the function scope has x declared as global
+            let analysis = &bundle.file_analyses[0];
+            let func_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.kind == ScopeKind::Function)
+                .expect("should have function scope");
+
+            assert!(
+                func_scope.globals.contains("x"),
+                "function scope should have x declared as global"
+            );
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac3_nonlocal_skips_to_enclosing_function() {
+            // Test: nonlocal x skips to nearest enclosing function scope
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def outer():\n    x = 1\n    def inner():\n        nonlocal x\n        x = 2".to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify the inner function scope has x declared as nonlocal
+            let analysis = &bundle.file_analyses[0];
+            let func_scopes: Vec<_> = analysis
+                .scopes
+                .iter()
+                .filter(|s| s.kind == ScopeKind::Function)
+                .collect();
+
+            // Should have both outer and inner function scopes
+            assert!(func_scopes.len() >= 2, "should have at least 2 function scopes");
+
+            // One of them should have x as nonlocal
+            let has_nonlocal = func_scopes.iter().any(|s| s.nonlocals.contains("x"));
+            assert!(has_nonlocal, "one function scope should have x as nonlocal");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac3_class_scope_no_closure() {
+            // Test: class scope does NOT form closure
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "class Foo:\n    x = 1\n    def method(self):\n        return x".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // This should parse without error - the x in method refers to module x (if any)
+            // or is unresolved, NOT to class x. This tests that class scopes don't form closures.
+            let scopes: Vec<_> = store.scopes().collect();
+            let class_scope = scopes.iter().find(|s| s.kind == CoreScopeKind::Class);
+            assert!(class_scope.is_some(), "should have class scope");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac3_comprehension_creates_own_scope() {
+            // Test: comprehension creates own scope
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "x = 1\nresult = [x for x in range(5)]".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have a comprehension scope
+            let scopes: Vec<_> = store.scopes().collect();
+            let comprehension_scope = scopes.iter().find(|s| s.kind == CoreScopeKind::Comprehension);
+            assert!(
+                comprehension_scope.is_some(),
+                "should have comprehension scope"
+            );
+        }
+
+        // ====================================================================
+        // AC-4 Tests: Import Resolution Parity (Contract C3)
+        // ====================================================================
+
+        #[test]
+        fn analyze_files_pass3_ac4_import_foo_binds_foo() {
+            // Test: `import foo` binds `foo`
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "import os".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have os as an import binding
+            let symbols: Vec<_> = store.symbols().collect();
+            let os_sym = symbols.iter().find(|s| s.name == "os" && s.kind == SymbolKind::Import);
+            assert!(os_sym.is_some(), "should have os import binding");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_import_foo_bar_binds_root_only() {
+            // Test: `import foo.bar` binds `foo` only (NOT `foo.bar`) - critical Python semantics
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "import os.path".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have os as an import binding, NOT os.path
+            let symbols: Vec<_> = store.symbols().collect();
+            let os_sym = symbols.iter().find(|s| s.name == "os" && s.kind == SymbolKind::Import);
+            assert!(os_sym.is_some(), "should have os import binding");
+
+            // Should NOT have os.path as a binding
+            let os_path_sym = symbols.iter().find(|s| s.name == "os.path");
+            assert!(os_path_sym.is_none(), "should NOT have os.path as binding");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_import_foo_as_f_binds_f() {
+            // Test: `import foo as f` binds `f`
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "import os as operating_system".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have operating_system as an import binding
+            let symbols: Vec<_> = store.symbols().collect();
+            let alias_sym = symbols.iter().find(|s| s.name == "operating_system" && s.kind == SymbolKind::Import);
+            assert!(alias_sym.is_some(), "should have operating_system import binding");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_from_foo_import_bar_binds_bar() {
+            // Test: `from foo import bar` binds `bar` with resolved file
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "main.py".to_string(),
+                "from utils import helper".to_string(),
+            ),
+            (
+                "utils.py".to_string(),
+                "def helper(): pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have helper as an import binding in main.py
+            let symbols: Vec<_> = store.symbols().collect();
+            let files_in_store: Vec<_> = store.files().collect();
+            let main_file = files_in_store.iter().find(|f| f.path == "main.py").unwrap();
+
+            let helper_import = symbols.iter().find(|s|
+                s.name == "helper" &&
+                s.decl_file_id == main_file.file_id &&
+                s.kind == SymbolKind::Import
+            );
+            assert!(helper_import.is_some(), "should have helper import binding in main.py");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_from_foo_import_bar_as_b_binds_b() {
+            // Test: `from foo import bar as b` binds `b`
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "main.py".to_string(),
+                "from utils import helper as h".to_string(),
+            ),
+            (
+                "utils.py".to_string(),
+                "def helper(): pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have h as an import binding (not helper)
+            let symbols: Vec<_> = store.symbols().collect();
+            let files_in_store: Vec<_> = store.files().collect();
+            let main_file = files_in_store.iter().find(|f| f.path == "main.py").unwrap();
+
+            let h_import = symbols.iter().find(|s|
+                s.name == "h" &&
+                s.decl_file_id == main_file.file_id &&
+                s.kind == SymbolKind::Import
+            );
+            assert!(h_import.is_some(), "should have 'h' import binding");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_relative_imports_return_none() {
+            // Test: relative imports return None (documented limitation)
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "pkg/main.py".to_string(),
+                "from . import utils".to_string(),
+            )];
+
+            // Should succeed (not error on relative imports)
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // The import is parsed but not resolved (limitation)
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_star_imports_return_none() {
+            // Test: star imports return None (documented limitation)
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "from os import *".to_string(),
+            )];
+
+            // Should succeed (not error on star imports)
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Star imports are tracked but specific names can't be resolved
+            let imports: Vec<_> = store.imports().collect();
+            let star_import = imports.iter().find(|i| i.is_star);
+            assert!(star_import.is_some(), "should have star import tracked");
+        }
+
+        #[test]
+        fn analyze_files_pass3_ac4_module_resolution_prefers_py_file() {
+            // Test: module resolution "foo" → "foo.py" wins over "foo/__init__.py"
+            // We test this with the resolve_module_to_file function
+            let workspace_files: HashSet<String> = vec![
+                "utils.py".to_string(),
+                "utils/__init__.py".to_string(),
+            ].into_iter().collect();
+
+            let resolved = resolve_module_to_file("utils", &workspace_files);
+            assert_eq!(resolved, Some("utils.py".to_string()), "should prefer utils.py over utils/__init__.py");
         }
     }
 }

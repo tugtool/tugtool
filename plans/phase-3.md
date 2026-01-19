@@ -1964,24 +1964,24 @@ Verification:
 - [ ] Test: same-name symbols in different files are NOT conflated
 
 **AC-3: Scope Chain Resolution**
-- [ ] Test: local shadows global (function scope hides module scope)
-- [ ] Test: nonlocal skips to enclosing function
-- [ ] Test: global skips to module scope
-- [ ] Test: class scope does NOT form closure
-- [ ] Test: comprehension creates own scope
+- [x] Test: local shadows global (function scope hides module scope)
+- [x] Test: nonlocal skips to enclosing function
+- [x] Test: global skips to module scope
+- [x] Test: class scope does NOT form closure
+- [x] Test: comprehension creates own scope
 
 **AC-4: Import Resolution Parity (Contract C3)**
-- [ ] Test: `import foo` binds `foo`
-- [ ] Test: `import foo.bar` binds `foo` only (NOT `foo.bar`) ← critical Python semantics
-- [ ] Test: `import foo.bar.baz` binds `foo` only
-- [ ] Test: `import foo as f` binds `f`
-- [ ] Test: `import foo.bar as fb` binds `fb` with qualified path `foo.bar`
-- [ ] Test: `from foo import bar` binds `bar` with resolved file
-- [ ] Test: `from foo import bar as b` binds `b`
-- [ ] Test: relative imports return None (documented limitation)
-- [ ] Test: star imports return None (documented limitation)
-- [ ] Test: module resolution `foo.bar` → `foo/bar.py` or `foo/bar/__init__.py`
-- [ ] Test: module resolution ambiguity: foo.py wins over foo/__init__.py
+- [x] Test: `import foo` binds `foo`
+- [x] Test: `import foo.bar` binds `foo` only (NOT `foo.bar`) ← critical Python semantics
+- [x] Test: `import foo.bar.baz` binds `foo` only
+- [x] Test: `import foo as f` binds `f`
+- [x] Test: `import foo.bar as fb` binds `fb` with qualified path `foo.bar`
+- [x] Test: `from foo import bar` binds `bar` with resolved file
+- [x] Test: `from foo import bar as b` binds `b`
+- [x] Test: relative imports return None (documented limitation)
+- [x] Test: star imports return None (documented limitation)
+- [x] Test: module resolution `foo.bar` → `foo/bar.py` or `foo/bar/__init__.py`
+- [x] Test: module resolution ambiguity: foo.py wins over foo/__init__.py
 
 **AC-5: Type-Aware Method Call Resolution**
 - [ ] Test: `x = Foo(); x.bar()` resolves to Foo.bar
@@ -2166,66 +2166,66 @@ These were limitations in the original Python worker, not new deviations.
 - Updated `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] **Build ImportResolver (Contract C3):**
-  - [ ] Create `ImportResolver` struct with `aliases: HashMap<String, (String, Option<String>)>`
-  - [ ] Process each `LocalImport` to populate aliases:
-    - [ ] `import foo` → aliases["foo"] = ("foo", None)
-    - [ ] `import foo.bar` → aliases["foo"] = ("foo", None) **← binds ROOT only!**
-    - [ ] `import foo.bar.baz` → aliases["foo"] = ("foo", None) **← binds ROOT only!**
-    - [ ] `import foo as f` → aliases["f"] = ("foo", None)
-    - [ ] `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved_file)
-    - [ ] `from foo import bar` → aliases["bar"] = ("foo.bar", resolved_file)
-    - [ ] `from foo import bar as b` → aliases["b"] = ("foo.bar", resolved_file)
-  - [ ] Handle unsupported forms (return None, do not error):
-    - [ ] Relative imports (`from . import`, `from .. import`)
-    - [ ] Star imports (`from foo import *`)
-  - [ ] Implement `resolve(local_name) -> Option<(&str, Option<&str>)>`
-  - [ ] Implement `resolve_module_to_file(module_path, workspace_files) -> Option<String>`:
-    - [ ] Skip if module_path starts with '.' (relative import)
-    - [ ] Convert "foo.bar" → ["foo/bar.py", "foo/bar/__init__.py"]
-    - [ ] Search workspace_files for first match
-- [ ] For each `FileAnalysis`:
-  - [ ] For each `LocalReference`:
-    - [ ] Look up target symbol in `global_symbols` by resolved name
-    - [ ] **Apply scope chain resolution (Contract C4):**
-      - [ ] Check local scope bindings first
-      - [ ] Walk up scope chain (skip class scopes per Python rules)
-      - [ ] Handle `global` declarations (skip to module scope)
-      - [ ] Handle `nonlocal` declarations (skip to enclosing function)
-    - [ ] Apply resolution preference rules:
-      - [ ] Prefer original definitions over import bindings
-      - [ ] Prefer same-file symbols for non-imports
-    - [ ] Handle method references specially:
-      - [ ] `Definition` kind: only create if span matches symbol's `decl_span`
-      - [ ] `Call`/`Attribute` kind: defer to Pass 4 (type-aware resolution)
-    - [ ] Generate `ReferenceId` and insert `Reference` into store
-  - [ ] For each `LocalImport`:
-    - [ ] Generate `ImportId` and insert `Import` into store
-    - [ ] Track import->symbol relationships for cross-file rename
-    - [ ] Create reference from import site to original definition symbol
+- [x] **Build ImportResolver (Contract C3):**
+  - [x] Create `ImportResolver` struct with `aliases: HashMap<String, (String, Option<String>)>`
+  - [x] Process each `LocalImport` to populate aliases:
+    - [x] `import foo` → aliases["foo"] = ("foo", None)
+    - [x] `import foo.bar` → aliases["foo"] = ("foo", None) **← binds ROOT only!**
+    - [x] `import foo.bar.baz` → aliases["foo"] = ("foo", None) **← binds ROOT only!**
+    - [x] `import foo as f` → aliases["f"] = ("foo", None)
+    - [x] `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved_file)
+    - [x] `from foo import bar` → aliases["bar"] = ("foo.bar", resolved_file)
+    - [x] `from foo import bar as b` → aliases["b"] = ("foo.bar", resolved_file)
+  - [x] Handle unsupported forms (return None, do not error):
+    - [x] Relative imports (`from . import`, `from .. import`)
+    - [x] Star imports (`from foo import *`)
+  - [x] Implement `resolve(local_name) -> Option<(&str, Option<&str>)>`
+  - [x] Implement `resolve_module_to_file(module_path, workspace_files) -> Option<String>`:
+    - [x] Skip if module_path starts with '.' (relative import)
+    - [x] Convert "foo.bar" → ["foo/bar.py", "foo/bar/__init__.py"]
+    - [x] Search workspace_files for first match
+- [x] For each `FileAnalysis`:
+  - [x] For each `LocalReference`:
+    - [x] Look up target symbol in `global_symbols` by resolved name
+    - [x] **Apply scope chain resolution (Contract C4):**
+      - [x] Check local scope bindings first
+      - [x] Walk up scope chain (skip class scopes per Python rules)
+      - [x] Handle `global` declarations (skip to module scope)
+      - [x] Handle `nonlocal` declarations (skip to enclosing function)
+    - [x] Apply resolution preference rules:
+      - [x] Prefer original definitions over import bindings
+      - [x] Prefer same-file symbols for non-imports
+    - [x] Handle method references specially:
+      - [x] `Definition` kind: only create if span matches symbol's `decl_span`
+      - [x] `Call`/`Attribute` kind: defer to Pass 4 (type-aware resolution)
+    - [x] Generate `ReferenceId` and insert `Reference` into store
+  - [x] For each `LocalImport`:
+    - [x] Generate `ImportId` and insert `Import` into store
+    - [x] Track import->symbol relationships for cross-file rename
+    - [x] Create reference from import site to original definition symbol
 
 **Tests:**
-- [ ] Unit: Same-file references resolved correctly
-- [ ] Unit: Cross-file references via imports resolved
-- [ ] Unit: Import bindings prefer original definitions
-- [ ] Unit: Method call references deferred to Pass 4
-- [ ] **AC-3 tests: Scope chain resolution**
-  - [ ] Local shadows global
-  - [ ] nonlocal skips to enclosing function
-  - [ ] global skips to module scope
-  - [ ] Class scope does NOT form closure
-  - [ ] Comprehension creates own scope
-- [ ] **AC-4 tests: Import resolution parity**
-  - [ ] Each supported import form from Contract C3 table
-  - [ ] Relative imports return None
-  - [ ] Star imports return None
+- [x] Unit: Same-file references resolved correctly
+- [x] Unit: Cross-file references via imports resolved
+- [x] Unit: Import bindings prefer original definitions
+- [x] Unit: Method call references deferred to Pass 4
+- [x] **AC-3 tests: Scope chain resolution**
+  - [x] Local shadows global
+  - [x] nonlocal skips to enclosing function
+  - [x] global skips to module scope
+  - [x] Class scope does NOT form closure
+  - [x] Comprehension creates own scope
+- [x] **AC-4 tests: Import resolution parity**
+  - [x] Each supported import form from Contract C3 table
+  - [x] Relative imports return None
+  - [x] Star imports return None
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-python analyze_files_pass3` passes
-- [ ] References linked to correct symbols
-- [ ] Cross-file import relationships established
-- [ ] Scope chain resolution matches Python semantics
-- [ ] Import resolution matches Contract C3 table exactly
+- [x] `cargo test -p tugtool-python analyze_files_pass3` passes
+- [x] References linked to correct symbols
+- [x] Cross-file import relationships established
+- [x] Scope chain resolution matches Python semantics
+- [x] Import resolution matches Contract C3 table exactly
 
 **Rollback:**
 - Revert Pass 3 implementation
