@@ -1553,3 +1553,86 @@ All Step 8 sub-steps completed:
 **Next Step:** Step 9.4 - Implement Pass 3 - Reference and Import Resolution
 
 ---
+
+### Step 9.4: Implement Pass 3 - Reference and Import Resolution - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D09] Multi-pass FactsStore Population decision
+- Diagram Diag02: FactsStore Population Pipeline (Pass 3 section)
+- Contract C3: Import Resolution Table
+- Contract C4: Scope Chain Resolution (LEGB)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Build FileImportResolver per Contract C3 | Done |
+| Implement resolve_module_to_file() for workspace file lookup | Done |
+| Implement resolve_reference() with LEGB scope chain (Contract C4) | Done |
+| Implement resolve_import_to_original() for cross-file resolution | Done |
+| Handle global/nonlocal declarations | Done |
+| Insert Reference records into FactsStore | Done |
+| Insert Import records into FactsStore | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `FileImportResolver` struct with `from_imports()`, `resolve()`, `is_imported()` methods
+  - Added `resolve_module_to_file()` function for module path to file path conversion
+  - Added `resolve_reference()` function implementing LEGB scope chain resolution
+  - Added `find_symbol_in_scope()` and `find_symbol_in_scope_with_kind()` helpers
+  - Added `resolve_import_to_original()` for following import chains to original definitions
+  - Added `resolve_in_module_scope()` and `resolve_in_enclosing_function()` helpers
+  - Added `convert_native_imports()` helper for native CST import conversion
+  - Implemented full Pass 3 logic: build import resolver, process imports, resolve references
+  - Added 17 unit tests for Pass 3 functionality
+- `plans/phase-3.md`:
+  - Updated Step 9.4 checkboxes to complete
+  - Updated AC-3 and AC-4 acceptance criteria checkboxes to complete
+
+**Test Results:**
+- `cargo test -p tugtool-python analyze_files_pass3`: 17 tests passed
+- `cargo nextest run --workspace`: 1054 tests passed, 50 skipped
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-python analyze_files_pass3` passes: PASS
+- References linked to correct symbols: PASS
+- Cross-file import relationships established: PASS
+- Scope chain resolution matches Python semantics: PASS
+- Import resolution matches Contract C3 table exactly: PASS
+
+**Key Implementation Details:**
+1. **FileImportResolver**: Per-file import resolver that maps local bound names to (qualified_path, resolved_file) tuples per Contract C3
+2. **LEGB Resolution**: `resolve_reference()` implements full LEGB with class scope exception and global/nonlocal handling
+3. **Import Chain Following**: When finding an import binding, `resolve_import_to_original()` follows the import chain to the original definition
+4. **Root Cause Fix**: Initial implementation had a bug where import bindings were returned before checking if they should resolve to original definitions. Fixed by checking symbol kind after finding and following import chain if needed.
+
+**Tests Added:**
+- AC-3 (Scope Chain Resolution): 5 tests
+  - `ac3_local_shadows_global`
+  - `ac3_nonlocal_skips_to_enclosing_function`
+  - `ac3_global_skips_to_module_scope`
+  - `ac3_class_scope_does_not_form_closure`
+  - `ac3_comprehension_creates_own_scope`
+- AC-4 (Import Resolution Parity): 11 tests
+  - `ac4_import_foo_binds_foo`
+  - `ac4_import_foo_bar_binds_foo_only`
+  - `ac4_import_foo_bar_baz_binds_foo_only`
+  - `ac4_import_foo_as_f_binds_f`
+  - `ac4_import_foo_bar_as_fb_binds_fb`
+  - `ac4_from_foo_import_bar_binds_bar`
+  - `ac4_from_foo_import_bar_as_b_binds_b`
+  - `ac4_relative_imports_return_none`
+  - `ac4_star_imports_return_none`
+  - `ac4_module_resolution_foo_bar_to_file`
+  - `ac4_module_resolution_py_wins_over_init`
+- Pass 3 functional tests:
+  - `analyze_files_pass3_references_inserted`
+  - `analyze_files_pass3_cross_file_references_via_imports`
+  - `analyze_files_pass3_import_bindings_prefer_original_definitions`
+  - Plus additional tests
+
+**Next Step:** Step 9.5 - Implement Pass 4 - Type-Aware Method Resolution
+
+---
