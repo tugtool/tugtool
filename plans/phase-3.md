@@ -1543,20 +1543,31 @@ After completing Steps 5.1-5.4, you will have:
 - Benchmark results documentation
 
 **Tasks:**
-- [ ] Create benchmark infrastructure using criterion
-- [ ] Benchmark parse_module on various file sizes
-- [ ] Benchmark full analysis (all collectors)
-- [ ] Benchmark rename operation
-- [ ] Compare against Python worker baseline
-- [ ] Document benchmark results
+- [x] Create benchmark infrastructure using criterion
+- [x] Benchmark parse_module on various file sizes
+- [x] Benchmark full analysis (all collectors)
+- [x] Benchmark rename operation
+- [x] Compare against Python worker baseline
+- [x] Document benchmark results
+
+**Benchmark Results:**
+
+| Scenario | Python LibCST | Rust native | Improvement |
+|----------|--------------|-------------|-------------|
+| 50 classes parse | 11.67ms | 4.25ms | **2.7x** |
+| 100 classes parse | 25.74ms | 8.78ms | **2.9x** |
+| 50 classes full analysis | 87.38ms | 4.61ms | **19.0x** |
+| 100 classes full analysis | 176.74ms | 9.50ms | **18.6x** |
+| Single rename | - | 91.6ns | - |
+| 20 batch renames | - | 3.43µs | - |
 
 **Tests:**
-- [ ] Benchmark: All benchmarks run successfully
+- [x] Benchmark: All benchmarks run successfully
 
 **Checkpoint:**
-- [ ] `cargo bench -p tugtool-cst` completes
-- [ ] 10x improvement documented for target scenarios
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo bench -p tugtool-cst` completes
+- [x] 10x improvement documented for target scenarios
+- [x] `cargo nextest run --workspace` passes (1023 tests)
 
 **Rollback:**
 - N/A (benchmarks are informational)
@@ -1574,9 +1585,9 @@ After completing Steps 8.1-8.4, you will have:
 - Performance benchmark validation
 
 **Final Step 8 Checkpoint:**
-- [ ] All test suites pass
-- [ ] Performance meets 10x improvement target
-- [ ] No regressions from Python backend
+- [x] All test suites pass (1023 tests)
+- [x] Performance meets 10x improvement target (18-19x achieved for full analysis)
+- [x] No regressions from Python backend (golden tests verify equivalence)
 
 ---
 

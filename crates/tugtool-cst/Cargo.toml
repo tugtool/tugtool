@@ -43,3 +43,7 @@ mismatched_lifetime_syntaxes = "allow"
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 collapsible_if = "allow"
+
+[[bench]]
+name = "parser_bench"
+harness = false
