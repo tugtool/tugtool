@@ -59,6 +59,10 @@ use std::cmp::{max, min};
 pub mod version;
 pub use version::{ParseOptions, PythonVersion};
 
+/// Visitor and transformer infrastructure for CST traversal.
+pub mod visitor;
+pub use visitor::{Transform, Transformer, VisitResult, Visitor};
+
 /// Tokenizer for Python source code.
 pub mod tokenizer;
 pub use tokenizer::whitespace_parser::Config;

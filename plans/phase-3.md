@@ -922,21 +922,21 @@ TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst golden
 - `tugtool-cst/src/visitor/traits.rs`
 
 **Tasks:**
-- [ ] Create `visitor/` module directory
-- [ ] Define `VisitResult` enum (Continue, SkipChildren, Stop)
-- [ ] Define `Visitor<'a>` trait with default implementations
-- [ ] Define `Transformer<'a>` trait
-- [ ] Create `visitor_methods!` macro for trait method boilerplate
-- [ ] Add visitor module to lib.rs exports
+- [x] Create `visitor/` module directory
+- [x] Define `VisitResult` enum (Continue, SkipChildren, Stop)
+- [x] Define `Visitor<'a>` trait with default implementations
+- [x] Define `Transformer<'a>` trait
+- [x] Create `visitor_methods!` macro for trait method boilerplate
+- [x] Add visitor module to lib.rs exports
 
 **Tests:**
-- [ ] Unit: Trait definitions compile
-- [ ] Unit: Default implementations work
+- [x] Unit: Trait definitions compile
+- [x] Unit: Default implementations work
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-cst` succeeds
-- [ ] Visitor trait has methods for key node types
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build -p tugtool-cst` succeeds
+- [x] Visitor trait has methods for key node types
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove visitor module
