@@ -65,6 +65,8 @@ pub mod visitor;
 pub use visitor::{BindingCollector, BindingInfo, BindingKind, ReferenceCollector, ReferenceInfo, ReferenceKind, RenameError, RenameRequest, RenameResult, RenameTransformer, ScopeCollector, ScopeInfo, ScopeKind, Transform, Transformer, VisitResult, Visitor};
 // P1 visitor exports
 pub use visitor::{AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind, AssignmentInfo, ClassInheritanceInfo, ImportCollector, ImportInfo, ImportKind, ImportedName, InheritanceCollector, MethodCallCollector, MethodCallInfo, TypeInferenceCollector, TypeSource};
+// P2 visitor exports
+pub use visitor::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};
 // Re-export walk functions for CST traversal
 pub use visitor::{
     walk_annotation, walk_arg, walk_as_name, walk_assert, walk_assign, walk_assign_target,

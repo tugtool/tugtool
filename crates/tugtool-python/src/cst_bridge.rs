@@ -32,6 +32,8 @@ use tugtool_cst::{
     InheritanceCollector, ClassInheritanceInfo as CstClassInheritanceInfo,
     MethodCallCollector, MethodCallInfo as CstMethodCallInfo,
     TypeInferenceCollector, AssignmentInfo as CstAssignmentInfo,
+    // P2 visitors
+    DynamicPatternDetector, DynamicPatternInfo as CstDynamicPatternInfo,
 };
 use tugtool_core::patch::Span;
 
@@ -91,6 +93,10 @@ pub struct NativeAnalysisResult {
     pub class_inheritance: Vec<CstClassInheritanceInfo>,
     /// Method call patterns (obj.method()).
     pub method_calls: Vec<CstMethodCallInfo>,
+
+    // P2 analysis (dynamic pattern detection)
+    /// Dynamic patterns that may affect rename safety.
+    pub dynamic_patterns: Vec<CstDynamicPatternInfo>,
 }
 
 // ============================================================================
@@ -243,6 +249,9 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     // P1: Collect method call patterns
     let method_calls = MethodCallCollector::collect(&module, source);
 
+    // P2: Collect dynamic patterns
+    let dynamic_patterns = DynamicPatternDetector::collect(&module, source);
+
     Ok(NativeAnalysisResult {
         // P0
         scopes,
@@ -254,6 +263,8 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         assignments,
         class_inheritance,
         method_calls,
+        // P2
+        dynamic_patterns,
     })
 }
 
@@ -550,5 +561,78 @@ def use_handler():
             .find(|c| c.name == "JsonHandler");
         assert!(json_handler.is_some());
         assert!(json_handler.unwrap().bases.contains(&"BaseHandler".to_string()));
+    }
+
+    // ========================================================================
+    // P2 Collector Tests
+    // ========================================================================
+
+    #[test]
+    fn test_p2_dynamic_patterns_collected() {
+        let source = r#"
+x = getattr(obj, 'foo')
+setattr(obj, 'bar', value)
+result = eval('1 + 2')
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.dynamic_patterns.is_empty(), "should have dynamic patterns");
+        assert_eq!(result.dynamic_patterns.len(), 3, "should have 3 dynamic patterns");
+    }
+
+    #[test]
+    fn test_p2_magic_methods_detected() {
+        let source = r#"
+class Proxy:
+    def __getattr__(self, name):
+        return getattr(self._target, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._target, name, value)
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        // Should detect: __getattr__, getattr, __setattr__, setattr
+        assert_eq!(result.dynamic_patterns.len(), 4, "should have 4 dynamic patterns");
+    }
+
+    #[test]
+    fn test_p2_namespace_manipulation() {
+        let source = r#"
+x = globals()['name']
+y = locals()['name']
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert_eq!(result.dynamic_patterns.len(), 2, "should have 2 dynamic patterns");
+    }
+
+    #[test]
+    fn test_p2_comprehensive_analysis() {
+        // A more comprehensive test that exercises all P2 patterns
+        let source = r#"from typing import List
+
+class DynamicClass:
+    def __getattr__(self, name):
+        return None
+
+def dynamic_operations():
+    x = getattr(obj, 'foo')
+    setattr(obj, 'bar', value)
+    result = eval('code')
+    exec('more code')
+    g = globals()['name']
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        // P0/P1 assertions still hold
+        assert!(!result.scopes.is_empty());
+        assert!(!result.bindings.is_empty());
+        assert!(!result.imports.is_empty());
+
+        // P2 assertions
+        assert!(!result.dynamic_patterns.is_empty(), "should have dynamic patterns");
+        // __getattr__, getattr, setattr, eval, exec, globals[]
+        assert!(result.dynamic_patterns.len() >= 6, "should have at least 6 dynamic patterns");
     }
 }

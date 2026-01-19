@@ -73,6 +73,9 @@ mod inheritance;
 mod method_call;
 mod type_inference;
 
+// P2 visitors (dynamic pattern detection)
+mod dynamic;
+
 // P0 exports
 pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;
@@ -91,3 +94,6 @@ pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
 pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
 pub use method_call::{MethodCallCollector, MethodCallInfo};
 pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};
+
+// P2 exports
+pub use dynamic::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};

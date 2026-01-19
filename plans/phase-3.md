@@ -1406,22 +1406,22 @@ After completing Steps 5.1-5.4, you will have:
 - `tugtool-cst/src/visitor/dynamic.rs`
 
 **Tasks:**
-- [ ] Implement DynamicPatternDetector
-- [ ] Detect getattr/setattr/delattr calls
-- [ ] Detect eval/exec calls
-- [ ] Detect globals()/locals() subscripts
-- [ ] Flag __getattr__/__setattr__ definitions
-- [ ] Add to visitor module exports
-- [ ] Integrate with cst_bridge
+- [x] Implement DynamicPatternDetector
+- [x] Detect getattr/setattr/delattr calls
+- [x] Detect eval/exec calls
+- [x] Detect globals()/locals() subscripts
+- [x] Flag __getattr__/__setattr__ definitions
+- [x] Add to visitor module exports
+- [x] Integrate with cst_bridge
 
 **Tests:**
-- [ ] Unit: Each pattern detected
+- [x] Unit: Each pattern detected
 - [ ] Golden: Compare to Python DynamicPatternVisitor
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst dynamic` passes
+- [x] `cargo test -p tugtool-cst dynamic` passes
 - [ ] Dynamic pattern output matches Python
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove dynamic.rs
