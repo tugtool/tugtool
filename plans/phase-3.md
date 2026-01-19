@@ -2880,6 +2880,104 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 
 ##### Step 10.9: Remove Now-Extraneous `native` From All Names & Symbols {#step-10-9}
 
+**Commit:** `refactor(python): remove 'native' prefix from names`
+
+**References:** (#step-10-simplify)
+
+**Artifacts:**
+- Updated `crates/tugtool-python/src/analyzer.rs`
+- Updated `crates/tugtool-python/src/ops/rename.rs`
+- Updated `crates/tugtool-python/src/error_bridges.rs`
+- Updated `crates/tugtool-python/tests/acceptance_criteria.rs`
+
+**Purpose:** Now that the Python worker has been removed, the "native" prefix/suffix on function names, modules, and types is extraneous—there's no longer a "non-native" alternative to distinguish from. Clean up all naming to reflect the single, clean architecture.
+
+**Module Restructuring:**
+
+| Old Structure | New Structure |
+|--------------|---------------|
+| `analyzer::native` submodule | Contents moved to `analyzer` module |
+| `ops::rename::native` submodule | Contents moved to `ops::rename` module |
+
+**Function Renames:**
+
+| Old Name | New Name | Location |
+|----------|----------|----------|
+| `analyze_file_native()` | `analyze_file()` | analyzer.rs |
+| `build_scopes_from_native()` | `build_scopes()` | analyzer.rs |
+| `collect_symbols_from_native()` | `collect_symbols()` | analyzer.rs |
+| `convert_native_imports()` | `convert_imports()` | analyzer.rs |
+| `run_native()` | `run()` | ops/rename.rs |
+| `analyze_impact_native()` | `analyze_impact()` | ops/rename.rs |
+| `find_override_methods_native()` | `find_override_methods()` | ops/rename.rs |
+
+**Error Variant Renames:**
+
+| Old Name | New Name | Location |
+|----------|----------|----------|
+| `AnalyzerError::NativeCst` | `AnalyzerError::Cst` | analyzer.rs |
+| `RenameError::NativeCst` | `RenameError::Cst` | ops/rename.rs |
+
+**Test Module Renames:**
+
+| Old Name | New Name |
+|----------|----------|
+| `native_analysis_tests` | `analysis_tests` |
+| `native_rename_tests` | `rename_tests` |
+| `native_multifile_tests` | `multifile_tests` |
+
+**Import Path Updates:**
+- `tugtool_python::analyzer::native::analyze_files` → `tugtool_python::analyzer::analyze_files`
+- `tugtool_python::analyzer::native::analyze_file_native` → `tugtool_python::analyzer::analyze_file`
+- `tugtool_python::ops::rename::native::run_native` → `tugtool_python::ops::rename::run`
+- `tugtool_python::ops::rename::native::analyze_impact_native` → `tugtool_python::ops::rename::analyze_impact`
+
+**Tasks:**
+
+*analyzer.rs:*
+- [ ] Remove `mod native { }` wrapper, move contents to module level
+- [ ] Rename `analyze_file_native()` → `analyze_file()`
+- [ ] Rename `build_scopes_from_native()` → `build_scopes()`
+- [ ] Rename `collect_symbols_from_native()` → `collect_symbols()`
+- [ ] Rename `convert_native_imports()` → `convert_imports()`
+- [ ] Rename `AnalyzerError::NativeCst` → `AnalyzerError::Cst`
+- [ ] Update pub use exports (remove `native::` prefix)
+- [ ] Update module-level documentation
+- [ ] Rename test module `native_analysis_tests` → `analysis_tests`
+
+*ops/rename.rs:*
+- [ ] Remove `mod native { }` wrapper, move contents to module level
+- [ ] Rename `run_native()` → `run()`
+- [ ] Rename `analyze_impact_native()` → `analyze_impact()`
+- [ ] Rename `find_override_methods_native()` → `find_override_methods()`
+- [ ] Rename `RenameError::NativeCst` → `RenameError::Cst`
+- [ ] Update pub use exports (remove `native::` prefix)
+- [ ] Update module-level documentation
+- [ ] Rename test modules: `native_rename_tests` → `rename_tests`, `native_multifile_tests` → `multifile_tests`
+
+*error_bridges.rs:*
+- [ ] Update `RenameError::NativeCst` match arm to `RenameError::Cst`
+
+*Tests:*
+- [ ] Update `acceptance_criteria.rs` imports: `analyzer::native::` → `analyzer::`
+- [ ] Verify all test files compile with new import paths
+
+**Tests:**
+- [ ] All renamed functions work correctly
+- [ ] All tests pass with new import paths
+
+**Checkpoint:**
+- [ ] No `_native` suffix remains in function names
+- [ ] No `::native::` in import paths
+- [ ] No `NativeCst` error variants remain
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run --workspace` passes
+
+**Rollback:**
+- Revert all renamed files
+
+**Commit after all checkpoints pass.**
+
 ---
 
 
@@ -2915,12 +3013,13 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 
 #### Step 10 Summary {#step-10-summary}
 
-After completing Steps 10.1-10.9, you will have:
+After completing Steps 10.1-10.10, you will have:
 - Single, clean native Python architecture (no subprocess dependencies)
 - ~7,000+ lines of code removed (including 78KB Python script)
 - 6 files deleted entirely
 - 2 dependencies removed (`which`, `dirs`)
 - 2 feature flags removed (`native-cst`, `python-worker`)
+- Clean naming with no extraneous "native" prefixes/suffixes
 - Simplified codebase ready for future improvement
 
 **Final Step 10 Checkpoint:**
@@ -2929,6 +3028,7 @@ After completing Steps 10.1-10.9, you will have:
 - [ ] `cargo nextest run --workspace` passes (all 1023+ tests)
 - [ ] `cargo bench -p tugtool-cst` still shows 18-19x improvement
 - [ ] No `#[cfg(feature = "native-cst")]` or `#[cfg(feature = "python-worker")]` in codebase
+- [ ] No `_native` suffixes or `::native::` paths remain in public API
 
 **Estimated Code Reduction:**
 - Lines deleted: ~7,000+ (including 2,200-line Python script)
