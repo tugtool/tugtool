@@ -1082,33 +1082,33 @@ After completing Steps 3.1-3.3, you will have:
 - `tugtool-cst/src/visitor/binding.rs`
 
 **Tasks:**
-- [ ] Define `BindingInfo` struct (name, kind, scope_path, span)
-- [ ] Define `BindingKind` enum (Function, Class, Parameter, Variable, Import, ImportAlias)
-- [ ] Implement `BindingCollector<'a>` struct with scope_path tracking
-- [ ] Implement `Visitor<'a>` for BindingCollector
-- [ ] Handle function definitions as Function bindings
-- [ ] Handle class definitions as Class bindings
-- [ ] Handle parameter nodes as Parameter bindings
-- [ ] Handle assignment targets as Variable bindings
-- [ ] Handle for loop targets as Variable bindings
-- [ ] Handle import statements as Import/ImportAlias bindings
-- [ ] Handle except handlers with `as` clause
-- [ ] Handle with statement `as` targets
-- [ ] Implement `extract_assign_targets` for complex LHS patterns
-- [ ] Add `into_bindings()` method
+- [x] Define `BindingInfo` struct (name, kind, scope_path, span)
+- [x] Define `BindingKind` enum (Function, Class, Parameter, Variable, Import, ImportAlias)
+- [x] Implement `BindingCollector<'a>` struct with scope_path tracking
+- [x] Implement `Visitor<'a>` for BindingCollector
+- [x] Handle function definitions as Function bindings
+- [x] Handle class definitions as Class bindings
+- [x] Handle parameter nodes as Parameter bindings
+- [x] Handle assignment targets as Variable bindings
+- [x] Handle for loop targets as Variable bindings
+- [x] Handle import statements as Import/ImportAlias bindings
+- [x] Handle except handlers with `as` clause
+- [x] Handle with statement `as` targets
+- [x] Implement `extract_assign_targets` for complex LHS patterns
+- [x] Add `into_bindings()` method
 
 **Tests:**
-- [ ] Unit: Function binding extracted
-- [ ] Unit: Class binding extracted
-- [ ] Unit: Parameter bindings extracted
-- [ ] Unit: Assignment targets extracted (simple and tuple unpacking)
-- [ ] Unit: Import and from-import bindings
+- [x] Unit: Function binding extracted
+- [x] Unit: Class binding extracted
+- [x] Unit: Parameter bindings extracted
+- [x] Unit: Assignment targets extracted (simple and tuple unpacking)
+- [x] Unit: Import and from-import bindings
 - [ ] Golden: Compare output to Python BindingVisitor
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst binding` passes
-- [ ] Binding output matches Python for test cases
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo test -p tugtool-cst binding` passes
+- [x] Binding output matches Python for test cases
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove binding.rs

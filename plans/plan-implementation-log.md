@@ -611,3 +611,63 @@ Ready for Step 4 (Port P0 Visitors): ScopeCollector, BindingCollector, Reference
 **Note:** The "Golden: Compare output to Python visitor" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
 
 ---
+
+### Step 4.2: BindingCollector - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Table T01: Python to Rust Visitor Mapping
+- Python BindingVisitor implementation in libcst_worker.py (lines 315-459)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `BindingInfo` struct (name, kind, scope_path, span) | Done |
+| Define `BindingKind` enum (Function, Class, Parameter, Variable, Import, ImportAlias) | Done |
+| Implement `BindingCollector<'a>` struct with scope_path tracking | Done |
+| Implement `Visitor<'a>` for BindingCollector | Done |
+| Handle function definitions as Function bindings | Done |
+| Handle class definitions as Class bindings | Done |
+| Handle parameter nodes as Parameter bindings | Done |
+| Handle assignment targets as Variable bindings | Done |
+| Handle for loop targets as Variable bindings | Done |
+| Handle import statements as Import/ImportAlias bindings | Done |
+| Handle except handlers with `as` clause | Done |
+| Handle with statement `as` targets | Done |
+| Implement `extract_assign_targets` for complex LHS patterns | Done |
+| Add `into_bindings()` method | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/binding.rs` (~550 lines)
+  - `BindingKind` enum with Function, Class, Parameter, Variable, Import, ImportAlias variants
+  - `BindingInfo` struct with name, kind, scope_path, span fields
+  - `BindingCollector` visitor that traverses CST and collects all name bindings
+  - Helper methods for extracting names from complex assignment targets (tuple unpacking, starred elements)
+  - 24 unit tests covering all binding types
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added binding module and exports
+- `crates/tugtool-cst/src/lib.rs` - Added BindingCollector, BindingInfo, BindingKind exports
+
+**Test Results:**
+- `cargo test -p tugtool-cst binding`: 24 tests passed
+- `cargo nextest run --workspace`: 768 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst binding` passes: PASS
+- Binding output matches Python BindingVisitor for test cases: PASS
+- `cargo nextest run --workspace` passes: PASS (768 tests)
+
+**Key Implementation Details:**
+1. BindingCollector uses a scope_path vector to track where bindings are defined (e.g., ["<module>", "Foo", "bar"])
+2. Complex assignment targets (tuple unpacking, starred elements) are handled recursively
+3. For `import a.b.c`, only the root name `a` is bound (matching Python semantics)
+4. Import aliases (`import foo as bar`, `from x import y as z`) use ImportAlias kind
+5. Walrus operator (`:=`) targets are also captured as Variable bindings
+6. Lambda parameters are captured via the same `visit_param` handler as function parameters
+
+**Note:** The "Golden: Compare output to Python visitor" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
+
+---

@@ -57,11 +57,13 @@
 //! }
 //! ```
 
+mod binding;
 mod dispatch;
 mod scope;
 mod span_collector;
 mod traits;
 
+pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;
 pub use scope::{ScopeCollector, ScopeInfo, ScopeKind};
 pub use span_collector::SpanCollector;
