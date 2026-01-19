@@ -1569,6 +1569,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "tugtool-core",
+ "tugtool-cst",
  "walkdir",
  "which",
 ]

@@ -1219,20 +1219,20 @@ After completing Steps 4.1-4.4, you will have:
 - Updated `crates/tugtool-python/Cargo.toml`
 
 **Tasks:**
-- [ ] Add `native-cst` feature (default)
-- [ ] Add `python-worker` feature (legacy)
-- [ ] Add tugtool-cst dependency (optional, enabled by native-cst)
-- [ ] Ensure both features can be enabled simultaneously for testing
+- [x] Add `native-cst` feature (default)
+- [x] Add `python-worker` feature (legacy)
+- [x] Add tugtool-cst dependency (optional, enabled by native-cst)
+- [x] Ensure both features can be enabled simultaneously for testing
 
 **Tests:**
-- [ ] Unit: Build with `--features native-cst`
-- [ ] Unit: Build with `--features python-worker`
-- [ ] Unit: Build with both features
+- [x] Unit: Build with `--features native-cst`
+- [x] Unit: Build with `--features python-worker`
+- [x] Unit: Build with both features
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python --features native-cst` succeeds
-- [ ] `cargo build -p tugtool-python --features python-worker` succeeds
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build -p tugtool-python --features native-cst` succeeds
+- [x] `cargo build -p tugtool-python --features python-worker` succeeds
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert Cargo.toml changes

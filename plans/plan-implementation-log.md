@@ -804,3 +804,57 @@ The native Rust implementation provides all the core functionality needed for re
 **Next Step:** Step 5 - Integrate with tugtool-python (feature flags, cst_bridge, analyzer integration)
 
 ---
+
+### Step 5.1: Feature Flags and Dependencies - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- [D05] Parallel Backend via Feature Flags (lines 274-289)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `native-cst` feature (default) | Done |
+| Add `python-worker` feature (legacy) | Done |
+| Add tugtool-cst dependency (optional, enabled by native-cst) | Done |
+| Ensure both features can be enabled simultaneously for testing | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/Cargo.toml` - Added feature flags and optional tugtool-cst dependency
+
+**Feature Configuration:**
+```toml
+[features]
+# Default: use native Rust CST parser
+default = ["native-cst"]
+# Native CST backend using tugtool-cst (Rust-only, no Python subprocess)
+native-cst = ["dep:tugtool-cst"]
+# Legacy Python worker backend using LibCST via subprocess
+python-worker = []
+
+[dependencies]
+tugtool-cst = { path = "../tugtool-cst", optional = true }
+```
+
+**Test Results:**
+- `cargo build -p tugtool-python --no-default-features --features native-cst`: SUCCESS
+- `cargo build -p tugtool-python --no-default-features --features python-worker`: SUCCESS
+- `cargo build -p tugtool-python --no-default-features --features "native-cst,python-worker"`: SUCCESS
+- `cargo nextest run --workspace`: 808 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python --features native-cst` succeeds: PASS
+- `cargo build -p tugtool-python --features python-worker` succeeds: PASS
+- `cargo nextest run --workspace` passes: PASS (808 tests)
+
+**Key Design Decisions:**
+1. `native-cst` is the default feature, making native Rust CST the default backend
+2. `python-worker` feature preserves the legacy Python subprocess path for fallback
+3. Both features can be enabled simultaneously for equivalence testing during migration
+4. The tugtool-cst dependency is optional and only pulled in when native-cst is enabled
+
+**Next Step:** Step 5.2 - CST Bridge Module (create cst_bridge.rs with native analysis functions)
+
+---
