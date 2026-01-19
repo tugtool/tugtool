@@ -61,7 +61,10 @@ pub use version::{ParseOptions, PythonVersion};
 
 /// Visitor and transformer infrastructure for CST traversal.
 pub mod visitor;
+// P0 visitor exports
 pub use visitor::{BindingCollector, BindingInfo, BindingKind, ReferenceCollector, ReferenceInfo, ReferenceKind, RenameError, RenameRequest, RenameResult, RenameTransformer, ScopeCollector, ScopeInfo, ScopeKind, Transform, Transformer, VisitResult, Visitor};
+// P1 visitor exports
+pub use visitor::{AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind, AssignmentInfo, ClassInheritanceInfo, ImportCollector, ImportInfo, ImportKind, ImportedName, InheritanceCollector, MethodCallCollector, MethodCallInfo, TypeInferenceCollector, TypeSource};
 // Re-export walk functions for CST traversal
 pub use visitor::{
     walk_annotation, walk_arg, walk_as_name, walk_assert, walk_assign, walk_assign_target,

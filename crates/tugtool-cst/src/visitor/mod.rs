@@ -57,6 +57,7 @@
 //! }
 //! ```
 
+// P0 visitors (core functionality)
 mod binding;
 mod dispatch;
 mod reference;
@@ -65,6 +66,14 @@ mod scope;
 mod span_collector;
 mod traits;
 
+// P1 visitors (extended analysis)
+mod annotation;
+mod import;
+mod inheritance;
+mod method_call;
+mod type_inference;
+
+// P0 exports
 pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;
 pub use reference::{ReferenceCollector, ReferenceInfo, ReferenceKind};
@@ -75,3 +84,10 @@ pub use rename::{
 pub use scope::{ScopeCollector, ScopeInfo, ScopeKind};
 pub use span_collector::SpanCollector;
 pub use traits::{Transform, Transformer, VisitResult, Visitor};
+
+// P1 exports
+pub use annotation::{AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind};
+pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
+pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
+pub use method_call::{MethodCallCollector, MethodCallInfo};
+pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};

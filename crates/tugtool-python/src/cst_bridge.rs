@@ -20,10 +20,18 @@
 
 use thiserror::Error;
 use tugtool_cst::{
-    parse_module, prettify_error, BindingCollector, BindingInfo as CstBindingInfo,
-    BindingKind as CstBindingKind, ReferenceCollector, ReferenceInfo as CstReferenceInfo,
-    ReferenceKind as CstReferenceKind, RenameError, RenameRequest, RenameTransformer,
-    ScopeCollector, ScopeInfo as CstScopeInfo, ScopeKind as CstScopeKind,
+    parse_module, prettify_error,
+    // P0 visitors
+    BindingCollector, BindingInfo as CstBindingInfo, BindingKind as CstBindingKind,
+    ReferenceCollector, ReferenceInfo as CstReferenceInfo, ReferenceKind as CstReferenceKind,
+    RenameError, RenameRequest, RenameTransformer, ScopeCollector,
+    ScopeInfo as CstScopeInfo, ScopeKind as CstScopeKind,
+    // P1 visitors
+    AnnotationCollector, AnnotationInfo as CstAnnotationInfo,
+    ImportCollector, ImportInfo as CstImportInfo,
+    InheritanceCollector, ClassInheritanceInfo as CstClassInheritanceInfo,
+    MethodCallCollector, MethodCallInfo as CstMethodCallInfo,
+    TypeInferenceCollector, AssignmentInfo as CstAssignmentInfo,
 };
 use tugtool_core::patch::Span;
 
@@ -64,12 +72,25 @@ pub type CstBridgeResult<T> = Result<T, CstBridgeError>;
 /// the CST with the native Rust visitors.
 #[derive(Debug)]
 pub struct NativeAnalysisResult {
+    // P0 analysis (core functionality)
     /// Scopes in the file.
     pub scopes: Vec<ScopeInfo>,
     /// Bindings (name definitions) in the file.
     pub bindings: Vec<BindingInfo>,
     /// References organized by name.
     pub references: Vec<(String, Vec<ReferenceInfo>)>,
+
+    // P1 analysis (extended analysis)
+    /// Import statements in the file.
+    pub imports: Vec<CstImportInfo>,
+    /// Type annotations in the file.
+    pub annotations: Vec<CstAnnotationInfo>,
+    /// Assignment patterns for type inference.
+    pub assignments: Vec<CstAssignmentInfo>,
+    /// Class inheritance information.
+    pub class_inheritance: Vec<CstClassInheritanceInfo>,
+    /// Method call patterns (obj.method()).
+    pub method_calls: Vec<CstMethodCallInfo>,
 }
 
 // ============================================================================
@@ -187,15 +208,15 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         message: prettify_error(e, "source"),
     })?;
 
-    // Collect scopes
+    // P0: Collect scopes
     let cst_scopes = ScopeCollector::collect(&module, source);
     let scopes: Vec<ScopeInfo> = cst_scopes.into_iter().map(|s| s.into()).collect();
 
-    // Collect bindings
+    // P0: Collect bindings
     let cst_bindings = BindingCollector::collect(&module, source);
     let bindings: Vec<BindingInfo> = cst_bindings.into_iter().map(|b| b.into()).collect();
 
-    // Collect references
+    // P0: Collect references
     let cst_collector = ReferenceCollector::collect(&module, source);
     let references: Vec<(String, Vec<ReferenceInfo>)> = cst_collector
         .all_references()
@@ -207,10 +228,32 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         })
         .collect();
 
+    // P1: Collect imports
+    let imports = ImportCollector::collect(&module, source);
+
+    // P1: Collect type annotations
+    let annotations = AnnotationCollector::collect(&module, source);
+
+    // P1: Collect assignment patterns for type inference
+    let assignments = TypeInferenceCollector::collect(&module, source);
+
+    // P1: Collect class inheritance information
+    let class_inheritance = InheritanceCollector::collect(&module, source);
+
+    // P1: Collect method call patterns
+    let method_calls = MethodCallCollector::collect(&module, source);
+
     Ok(NativeAnalysisResult {
+        // P0
         scopes,
         bindings,
         references,
+        // P1
+        imports,
+        annotations,
+        assignments,
+        class_inheritance,
+        method_calls,
     })
 }
 
@@ -411,5 +454,101 @@ mod tests {
         assert_eq!(reference_kind_to_string(CstReferenceKind::Call), "call");
         assert_eq!(reference_kind_to_string(CstReferenceKind::Attribute), "attribute");
         assert_eq!(reference_kind_to_string(CstReferenceKind::Import), "import");
+    }
+
+    // ========================================================================
+    // P1 Collector Tests
+    // ========================================================================
+
+    #[test]
+    fn test_p1_imports_collected() {
+        let source = "import os\nfrom sys import path\nfrom . import local";
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.imports.is_empty(), "should have imports");
+        assert!(result.imports.len() >= 2, "should have at least 2 imports");
+    }
+
+    #[test]
+    fn test_p1_annotations_collected() {
+        let source = "def foo(x: int) -> str:\n    y: float = 1.0\n    return str(y)";
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.annotations.is_empty(), "should have annotations");
+        // Parameter annotation (x: int), return annotation (-> str), variable annotation (y: float)
+        assert!(result.annotations.len() >= 3, "should have at least 3 annotations");
+    }
+
+    #[test]
+    fn test_p1_assignments_collected() {
+        let source = "x = MyClass()\ny = x\nz = func()";
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.assignments.is_empty(), "should have assignments");
+        assert_eq!(result.assignments.len(), 3, "should have 3 assignments");
+    }
+
+    #[test]
+    fn test_p1_class_inheritance_collected() {
+        let source = "class Parent:\n    pass\n\nclass Child(Parent):\n    pass";
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.class_inheritance.is_empty(), "should have class inheritance info");
+        assert_eq!(result.class_inheritance.len(), 2, "should have 2 classes");
+
+        let child = result.class_inheritance.iter().find(|c| c.name == "Child");
+        assert!(child.is_some(), "should have Child class");
+        assert_eq!(child.unwrap().bases, vec!["Parent"]);
+    }
+
+    #[test]
+    fn test_p1_method_calls_collected() {
+        let source = "handler = Handler()\nhandler.process()\nhandler.save()";
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.method_calls.is_empty(), "should have method calls");
+        assert_eq!(result.method_calls.len(), 2, "should have 2 method calls");
+        assert_eq!(result.method_calls[0].receiver, "handler");
+        assert_eq!(result.method_calls[0].method, "process");
+        assert_eq!(result.method_calls[1].method, "save");
+    }
+
+    #[test]
+    fn test_p1_comprehensive_analysis() {
+        // A more comprehensive test that exercises all P1 collectors
+        let source = r#"from typing import List
+
+class BaseHandler:
+    def process(self, data: List[str]) -> bool:
+        return True
+
+class JsonHandler(BaseHandler):
+    def process(self, data: List[str]) -> bool:
+        result: bool = super().process(data)
+        return result
+
+def use_handler():
+    handler = JsonHandler()
+    handler.process(["data"])
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        // P0 assertions
+        assert!(!result.scopes.is_empty());
+        assert!(!result.bindings.is_empty());
+        assert!(!result.references.is_empty());
+
+        // P1 assertions
+        assert!(!result.imports.is_empty(), "should have imports (from typing)");
+        assert!(!result.annotations.is_empty(), "should have annotations");
+        assert!(!result.assignments.is_empty(), "should have assignments");
+        assert!(!result.class_inheritance.is_empty(), "should have class inheritance");
+        assert!(!result.method_calls.is_empty(), "should have method calls");
+
+        // Verify inheritance relationship
+        let json_handler = result.class_inheritance.iter()
+            .find(|c| c.name == "JsonHandler");
+        assert!(json_handler.is_some());
+        assert!(json_handler.unwrap().bases.contains(&"BaseHandler".to_string()));
     }
 }
