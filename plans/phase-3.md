@@ -1127,28 +1127,28 @@ After completing Steps 3.1-3.3, you will have:
 - `tugtool-cst/src/visitor/reference.rs`
 
 **Tasks:**
-- [ ] Define `ReferenceInfo` struct (kind, span)
-- [ ] Define `ReferenceKind` enum (Definition, Reference, Call, Attribute, Import)
-- [ ] Implement `ReferenceCollector<'a>` with context tracking
-- [ ] Track `Name` nodes as references
-- [ ] Track function/class names as definitions
-- [ ] Track call targets with Call kind
-- [ ] Track attribute accesses
-- [ ] Build reference map: `HashMap<String, Vec<ReferenceInfo>>`
-- [ ] Add `references_for(name: &str)` method
-- [ ] Add `into_references()` method
+- [x] Define `ReferenceInfo` struct (kind, span)
+- [x] Define `ReferenceKind` enum (Definition, Reference, Call, Attribute, Import)
+- [x] Implement `ReferenceCollector<'a>` with context tracking
+- [x] Track `Name` nodes as references
+- [x] Track function/class names as definitions
+- [x] Track call targets with Call kind
+- [x] Track attribute accesses
+- [x] Build reference map: `HashMap<String, Vec<ReferenceInfo>>`
+- [x] Add `references_for(name: &str)` method
+- [x] Add `into_references()` method
 
 **Tests:**
-- [ ] Unit: Name reference collected
-- [ ] Unit: Definition reference collected
-- [ ] Unit: Call reference collected
-- [ ] Unit: All references for a name retrieved
+- [x] Unit: Name reference collected
+- [x] Unit: Definition reference collected
+- [x] Unit: Call reference collected
+- [x] Unit: All references for a name retrieved
 - [ ] Golden: Compare output to Python ReferenceVisitor
 
 **Checkpoint:**
-- [ ] `cargo test -p tugtool-cst reference` passes
+- [x] `cargo test -p tugtool-cst reference` passes
 - [ ] Reference output matches Python for test cases
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Remove reference.rs

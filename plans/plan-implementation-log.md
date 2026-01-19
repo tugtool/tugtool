@@ -671,3 +671,59 @@ Ready for Step 4 (Port P0 Visitors): ScopeCollector, BindingCollector, Reference
 **Note:** The "Golden: Compare output to Python visitor" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
 
 ---
+
+### Step 4.3: ReferenceCollector - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Table T01: Python to Rust Visitor Mapping
+- Python ReferenceVisitor implementation in libcst_worker.py (lines 1285-1413)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `ReferenceInfo` struct (kind, span) | Done |
+| Define `ReferenceKind` enum (Definition, Reference, Call, Attribute, Import) | Done |
+| Implement `ReferenceCollector<'a>` with context tracking | Done |
+| Track `Name` nodes as references | Done |
+| Track function/class names as definitions | Done |
+| Track call targets with Call kind | Done |
+| Track attribute accesses | Done |
+| Build reference map: `HashMap<String, Vec<ReferenceInfo>>` | Done |
+| Add `references_for(name: &str)` method | Done |
+| Add `into_references()` method | Done |
+
+**Files Created:**
+- `crates/tugtool-cst/src/visitor/reference.rs` (~800 lines)
+  - `ReferenceKind` enum with Definition, Reference, Call, Attribute, Import variants
+  - `ReferenceInfo` struct with kind and optional span fields
+  - `ReferenceCollector` visitor that traverses CST and collects all name references
+  - Context stack pattern for tracking reference kinds (call, attribute, import, skip)
+  - Helper methods for handling assignment targets with skip contexts
+  - 17 unit tests covering all reference types
+
+**Files Modified:**
+- `crates/tugtool-cst/src/visitor/mod.rs` - Added reference module and exports
+- `crates/tugtool-cst/src/lib.rs` - Added ReferenceCollector, ReferenceInfo, ReferenceKind exports
+
+**Test Results:**
+- `cargo test -p tugtool-cst reference`: 17 tests passed
+- `cargo nextest run --workspace`: 785 tests passed
+
+**Checkpoints Verified:**
+- `cargo test -p tugtool-cst reference` passes: PASS
+- `cargo nextest run --workspace` passes: PASS (785 tests)
+
+**Key Implementation Details:**
+1. ReferenceCollector uses a context stack to determine reference kinds (matching Python's approach)
+2. Context entries track: CallFunc (for function calls), AttributeAttr (for attribute access), Import (for import statements), SkipName (to prevent double-counting definitions)
+3. When visiting function/class/param definitions, we add a Definition reference then push a SkipName context to prevent the Name node from being counted again
+4. Assignment definitions are handled similarly - mark_assign_definitions adds definitions and skip contexts, leave_assign pops them
+5. The `get_current_kind` method walks the context stack in reverse to determine the appropriate reference kind
+6. Spans are captured using a cursor-based search through the source text
+
+**Note:** The "Golden: Compare output to Python visitor" test item is deferred to Step 8.2 (Visitor Equivalence Tests) where comprehensive comparison infrastructure will be built.
+
+---
