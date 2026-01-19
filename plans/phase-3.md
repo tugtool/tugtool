@@ -1475,22 +1475,22 @@ After completing Steps 5.1-5.4, you will have:
 - `crates/tugtool-python/tests/visitor_equivalence.rs`
 
 **Tasks:**
-- [ ] Create equivalence test infrastructure
-- [ ] Test ScopeCollector vs Python ScopeVisitor
-- [ ] Test BindingCollector vs Python BindingVisitor
-- [ ] Test ReferenceCollector vs Python ReferenceVisitor
-- [ ] Test all P1 collectors vs Python counterparts
-- [ ] Test DynamicPatternDetector vs Python
-- [ ] Test RenameTransformer vs Python rewrite_batch
-- [ ] Gate these tests behind a feature / cfg so they are not required in default CI
+- [x] Create equivalence test infrastructure
+- [x] Test ScopeCollector vs Python ScopeVisitor
+- [x] Test BindingCollector vs Python BindingVisitor
+- [x] Test ReferenceCollector vs Python ReferenceVisitor
+- [x] Test all P1 collectors vs Python counterparts
+- [x] Test DynamicPatternDetector vs Python
+- [x] Test RenameTransformer vs Python rewrite_batch
+- [x] Gate these tests behind a feature / cfg so they are not required in default CI
 
 **Tests:**
-- [ ] Equivalence: All collectors match Python output
+- [x] Equivalence: All collectors match Python output
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python equivalence` passes
-- [ ] No equivalence failures
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run -p tugtool-python equivalence` passes
+- [x] No equivalence failures
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Investigate and fix collector bugs
