@@ -1163,24 +1163,24 @@ fn make_name<'input, 'a>(tok: TokenRef<'input, 'a>) -> Name<'input, 'a> {
 - All parsing entry points that call `.inflate(...)` (e.g., `parse_module_with_options`, `parse_expression`, `parse_statement`)
 
 **Tasks:**
-- [ ] Create `inflate_ctx.rs` module with `InflateCtx`, `NodePosition`, and `PositionTable` types
-- [ ] Change `Inflate` trait signature from `&Config<'a>` to `&mut InflateCtx<'a>`
-- [ ] **IMPORTANT:** Update blanket impls in `nodes/traits.rs` for `Option<T>`, `Vec<T>`, `Box<T>` - these affect all inflation
-- [ ] Update `#[cst_node]` macro to generate new signature in derive
-- [ ] Update all manual `Inflate` implementations (if any)
-- [ ] Update callers to create `InflateCtx` instead of `Config`
-- [ ] Export `InflateCtx` from `lib.rs`
+- [x] Create `inflate_ctx.rs` module with `InflateCtx`, `NodePosition`, and `PositionTable` types
+- [x] Change `Inflate` trait signature from `&Config<'a>` to `&mut InflateCtx<'a>`
+- [x] **IMPORTANT:** Update blanket impls in `nodes/traits.rs` for `Option<T>`, `Vec<T>`, `Box<T>` - these affect all inflation
+- [x] Update `#[cst_node]` macro to generate new signature in derive
+- [x] Update all manual `Inflate` implementations (if any)
+- [x] Update callers to create `InflateCtx` instead of `Config`
+- [x] Export `InflateCtx` from `lib.rs`
 
 **Tests:**
-- [ ] `cargo build -p tugtool-python-cst` compiles without errors
-- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
-- [ ] Unit test: InflateCtx id generation is sequential
-- [ ] Unit test: InflateCtx span recording works
+- [x] `cargo build -p tugtool-python-cst` compiles without errors
+- [x] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [x] Unit test: InflateCtx id generation is sequential
+- [x] Unit test: InflateCtx span recording works
 
 **Checkpoint:**
-- [ ] Build succeeds with new trait signature
-- [ ] All existing tests pass
-- [ ] `InflateCtx` is exported and usable
+- [x] Build succeeds with new trait signature
+- [x] All existing tests pass
+- [x] `InflateCtx` is exported and usable
 
 **Rollback:**
 - Revert trait signature change and new module

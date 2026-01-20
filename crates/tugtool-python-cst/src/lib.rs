@@ -94,7 +94,11 @@ pub use visitor::{
 /// Tokenizer for Python source code.
 pub mod tokenizer;
 pub use tokenizer::whitespace_parser::Config;
+use nodes::Inflate;
 use tokenizer::{whitespace_parser, TokConfig, Token, TokenIterator};
+
+mod inflate_ctx;
+pub use inflate_ctx::InflateCtx;
 
 mod nodes;
 use nodes::deflated::Module as DeflatedModule;
@@ -179,9 +183,10 @@ pub fn parse_module_with_options<'a>(
     }
     let tokens = tokenize(module_text)?;
     let conf = whitespace_parser::Config::new(module_text, &tokens);
+    let mut ctx = InflateCtx::new(conf);
     let tokvec = tokens.into();
     let m = parse_tokens_without_whitespace(&tokvec, module_text, options.encoding_str())?;
-    Ok(m.inflate(&conf)?)
+    Ok(m.inflate(&mut ctx)?)
 }
 
 /// Parses a Python module using permissive mode.
@@ -242,10 +247,11 @@ pub fn parse_tokens_without_whitespace<'r, 'a>(
 pub fn parse_statement(text: &str) -> Result<Statement> {
     let tokens = tokenize(text)?;
     let conf = whitespace_parser::Config::new(text, &tokens);
+    let mut ctx = InflateCtx::new(conf);
     let tokvec = tokens.into();
     let stm = parser::python::statement_input(&tokvec, text)
         .map_err(|err| ParserError::ParserError(err, text))?;
-    Ok(stm.inflate(&conf)?)
+    Ok(stm.inflate(&mut ctx)?)
 }
 
 /// Parses a single Python expression.
@@ -260,10 +266,11 @@ pub fn parse_statement(text: &str) -> Result<Statement> {
 pub fn parse_expression(text: &str) -> Result<Expression> {
     let tokens = tokenize(text)?;
     let conf = whitespace_parser::Config::new(text, &tokens);
+    let mut ctx = InflateCtx::new(conf);
     let tokvec = tokens.into();
     let expr = parser::python::expression_input(&tokvec, text)
         .map_err(|err| ParserError::ParserError(err, text))?;
-    Ok(expr.inflate(&conf)?)
+    Ok(expr.inflate(&mut ctx)?)
 }
 
 // ============================================================================

@@ -13,13 +13,13 @@ use crate::{
 };
 
 pub(crate) fn adjust_parameters_trailing_whitespace<'a>(
-    config: &Config<'a>,
+    ws: &Config<'a>,
     parameters: &mut Parameters<'a>,
     next_tok: &Token<'a>,
 ) -> Result<()> {
     let do_adjust = |param: &mut Param<'a>| -> Result<()> {
         let whitespace_after =
-            parse_parenthesizable_whitespace(config, &mut next_tok.whitespace_before.borrow_mut())?;
+            parse_parenthesizable_whitespace(ws, &mut next_tok.whitespace_before.borrow_mut())?;
         if param.comma.is_none() {
             param.whitespace_after_param = whitespace_after;
         }

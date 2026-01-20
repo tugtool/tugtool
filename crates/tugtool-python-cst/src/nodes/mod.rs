@@ -48,8 +48,10 @@ mod codegen;
 pub use codegen::{Codegen, CodegenState};
 
 pub(crate) mod traits;
+// Inflate trait is used internally for CST inflation
+pub(crate) use traits::Inflate;
 pub use traits::{
-    Inflate, NodeId, NodeIdGenerator, ParenthesizedNode, Span, SpanTable, WithComma, WithLeadingLines,
+    NodeId, NodeIdGenerator, ParenthesizedNode, Span, SpanTable, WithComma, WithLeadingLines,
 };
 
 pub(crate) mod inflate_helpers;

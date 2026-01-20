@@ -6,6 +6,7 @@
 use std::mem::swap;
 
 use crate::{
+    inflate_ctx::InflateCtx,
     inflate_helpers::adjust_parameters_trailing_whitespace,
     nodes::{
         op::*,
@@ -16,7 +17,7 @@ use crate::{
         CodegenState, Colon, Comma, CompOp, Dot, UnaryOp,
     },
     tokenizer::{
-        whitespace_parser::{parse_parenthesizable_whitespace, Config},
+        whitespace_parser::parse_parenthesizable_whitespace,
         Token,
     },
 };
@@ -58,13 +59,13 @@ impl<'r, 'a> DeflatedParameters<'r, 'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedParameters<'r, 'a> {
     type Inflated = Parameters<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let posonly_params = self.posonly_params.inflate(config)?;
-        let posonly_ind = self.posonly_ind.inflate(config)?;
-        let params = self.params.inflate(config)?;
-        let star_arg = self.star_arg.inflate(config)?;
-        let kwonly_params = self.kwonly_params.inflate(config)?;
-        let star_kwarg = self.star_kwarg.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let posonly_params = self.posonly_params.inflate(ctx)?;
+        let posonly_ind = self.posonly_ind.inflate(ctx)?;
+        let params = self.params.inflate(ctx)?;
+        let star_arg = self.star_arg.inflate(ctx)?;
+        let kwonly_params = self.kwonly_params.inflate(ctx)?;
+        let star_kwarg = self.star_kwarg.inflate(ctx)?;
         Ok(Self::Inflated {
             params,
             star_arg,
@@ -158,10 +159,10 @@ impl<'a> ParamSlash<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedParamSlash<'r, 'a> {
     type Inflated = ParamSlash<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_after =
-            parse_parenthesizable_whitespace(config, &mut self.tok.whitespace_after.borrow_mut())?;
-        let comma = self.comma.inflate(config)?;
+            parse_parenthesizable_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
+        let comma = self.comma.inflate(ctx)?;
         Ok(Self::Inflated {
             comma,
             whitespace_after,
@@ -183,8 +184,8 @@ impl<'a> Codegen<'a> for ParamStar<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedParamStar<'r, 'a> {
     type Inflated = ParamStar<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let comma = self.comma.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let comma = self.comma.inflate(ctx)?;
         Ok(Self::Inflated { comma })
     }
 }
@@ -200,9 +201,9 @@ pub struct Name<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedName<'r, 'a> {
     type Inflated = Name<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
@@ -238,14 +239,14 @@ pub struct Param<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedParam<'r, 'a> {
     type Inflated = Param<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let name = self.name.inflate(config)?;
-        let annotation = self.annotation.inflate(config)?;
-        let equal = self.equal.inflate(config)?;
-        let default = self.default.inflate(config)?;
-        let comma = self.comma.inflate(config)?;
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let name = self.name.inflate(ctx)?;
+        let annotation = self.annotation.inflate(ctx)?;
+        let equal = self.equal.inflate(ctx)?;
+        let default = self.default.inflate(ctx)?;
+        let comma = self.comma.inflate(ctx)?;
         let whitespace_after_star = if let Some(star_tok) = self.star_tok.as_mut() {
-            parse_parenthesizable_whitespace(config, &mut star_tok.whitespace_after.borrow_mut())?
+            parse_parenthesizable_whitespace(&ctx.ws, &mut star_tok.whitespace_after.borrow_mut())?
         } else {
             Default::default()
         };
@@ -333,16 +334,16 @@ pub struct Arg<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedArg<'r, 'a> {
     type Inflated = Arg<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_after_star = if let Some(star_tok) = self.star_tok.as_mut() {
-            parse_parenthesizable_whitespace(config, &mut star_tok.whitespace_after.borrow_mut())?
+            parse_parenthesizable_whitespace(&ctx.ws, &mut star_tok.whitespace_after.borrow_mut())?
         } else {
             Default::default()
         };
-        let keyword = self.keyword.inflate(config)?;
-        let equal = self.equal.inflate(config)?;
-        let value = self.value.inflate(config)?;
-        let comma = self.comma.inflate(config)?;
+        let keyword = self.keyword.inflate(ctx)?;
+        let equal = self.equal.inflate(ctx)?;
+        let value = self.value.inflate(ctx)?;
+        let comma = self.comma.inflate(ctx)?;
         // whitespace_after_arg is handled in Call
         let whitespace_after_arg = Default::default();
         Ok(Self::Inflated {
@@ -408,9 +409,9 @@ impl<'a> Codegen<'a> for LeftParen<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedLeftParen<'r, 'a> {
     type Inflated = LeftParen<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.lpar_tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated { whitespace_after })
@@ -435,9 +436,9 @@ impl<'a> Codegen<'a> for RightParen<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedRightParen<'r, 'a> {
     type Inflated = RightParen<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.rpar_tok).whitespace_before.borrow_mut(),
         )?;
         Ok(Self::Inflated { whitespace_before })
@@ -493,9 +494,9 @@ impl<'a> Codegen<'a> for Ellipsis<'a> {
 }
 impl<'r, 'a> Inflate<'a> for DeflatedEllipsis<'r, 'a> {
     type Inflated = Ellipsis<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated { lpar, rpar })
     }
 }
@@ -519,9 +520,9 @@ impl<'a> Codegen<'a> for Integer<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedInteger<'r, 'a> {
     type Inflated = Integer<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
@@ -549,9 +550,9 @@ impl<'a> Codegen<'a> for Float<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedFloat<'r, 'a> {
     type Inflated = Float<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
@@ -578,9 +579,9 @@ impl<'a> Codegen<'a> for Imaginary<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedImaginary<'r, 'a> {
     type Inflated = Imaginary<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
@@ -609,11 +610,11 @@ impl<'a> Codegen<'a> for Comparison<'a> {
 }
 impl<'r, 'a> Inflate<'a> for DeflatedComparison<'r, 'a> {
     type Inflated = Comparison<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let left = self.left.inflate(config)?;
-        let comparisons = self.comparisons.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let left = self.left.inflate(ctx)?;
+        let comparisons = self.comparisons.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             left,
             comparisons,
@@ -642,11 +643,11 @@ impl<'a> Codegen<'a> for UnaryOperation<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedUnaryOperation<'r, 'a> {
     type Inflated = UnaryOperation<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let operator = self.operator.inflate(config)?;
-        let expression = self.expression.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let operator = self.operator.inflate(ctx)?;
+        let expression = self.expression.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             operator,
             expression,
@@ -677,12 +678,12 @@ impl<'a> Codegen<'a> for BinaryOperation<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedBinaryOperation<'r, 'a> {
     type Inflated = BinaryOperation<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let left = self.left.inflate(config)?;
-        let operator = self.operator.inflate(config)?;
-        let right = self.right.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let left = self.left.inflate(ctx)?;
+        let operator = self.operator.inflate(ctx)?;
+        let right = self.right.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             left,
             operator,
@@ -714,12 +715,12 @@ impl<'a> Codegen<'a> for BooleanOperation<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedBooleanOperation<'r, 'a> {
     type Inflated = BooleanOperation<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let left = self.left.inflate(config)?;
-        let operator = self.operator.inflate(config)?;
-        let right = self.right.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let left = self.left.inflate(ctx)?;
+        let operator = self.operator.inflate(ctx)?;
+        let right = self.right.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             left,
             operator,
@@ -745,28 +746,28 @@ pub struct Call<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedCall<'r, 'a> {
     type Inflated = Call<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let func = self.func.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let func = self.func.inflate(ctx)?;
         let whitespace_after_func = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.lpar_tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_before_args = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.lpar_tok).whitespace_after.borrow_mut(),
         )?;
-        let mut args = self.args.inflate(config)?;
+        let mut args = self.args.inflate(ctx)?;
 
         if let Some(arg) = args.last_mut() {
             if arg.comma.is_none() {
                 arg.whitespace_after_arg = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*self.rpar_tok).whitespace_before.borrow_mut(),
                 )?;
             }
         }
-        let rpar = self.rpar.inflate(config)?;
+        let rpar = self.rpar.inflate(ctx)?;
 
         Ok(Self::Inflated {
             func,
@@ -806,12 +807,12 @@ pub struct Attribute<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedAttribute<'r, 'a> {
     type Inflated = Attribute<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let value = self.value.inflate(config)?;
-        let dot = self.dot.inflate(config)?;
-        let attr = self.attr.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let value = self.value.inflate(ctx)?;
+        let dot = self.dot.inflate(ctx)?;
+        let attr = self.attr.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value,
             attr,
@@ -862,9 +863,9 @@ impl<'a> Codegen<'a> for ComparisonTarget<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedComparisonTarget<'r, 'a> {
     type Inflated = ComparisonTarget<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let operator = self.operator.inflate(config)?;
-        let comparator = self.comparator.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let operator = self.operator.inflate(ctx)?;
+        let comparator = self.comparator.inflate(ctx)?;
         Ok(Self::Inflated {
             operator,
             comparator,
@@ -884,18 +885,18 @@ pub struct StarredElement<'a> {
 }
 
 impl<'r, 'a> DeflatedStarredElement<'r, 'a> {
-    pub fn inflate_element(self, config: &Config<'a>, is_last: bool) -> Result<StarredElement<'a>> {
-        let lpar = self.lpar.inflate(config)?;
+    pub fn inflate_element(self, ctx: &mut InflateCtx<'a>, is_last: bool) -> Result<StarredElement<'a>> {
+        let lpar = self.lpar.inflate(ctx)?;
         let whitespace_before_value = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.star_tok).whitespace_after.borrow_mut(),
         )?;
-        let value = self.value.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let value = self.value.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         let comma = if is_last {
-            self.comma.map(|c| c.inflate_before(config)).transpose()
+            self.comma.map(|c| c.inflate_before(ctx)).transpose()
         } else {
-            self.comma.inflate(config)
+            self.comma.inflate(ctx)
         }?;
         Ok(StarredElement {
             value,
@@ -909,8 +910,8 @@ impl<'r, 'a> DeflatedStarredElement<'r, 'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedStarredElement<'r, 'a> {
     type Inflated = StarredElement<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        self.inflate_element(config, false)
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        self.inflate_element(ctx, false)
     }
 }
 
@@ -963,15 +964,15 @@ impl<'a> Element<'a> {
     }
 }
 impl<'r, 'a> DeflatedElement<'r, 'a> {
-    pub fn inflate_element(self, config: &Config<'a>, is_last: bool) -> Result<Element<'a>> {
+    pub fn inflate_element(self, ctx: &mut InflateCtx<'a>, is_last: bool) -> Result<Element<'a>> {
         Ok(match self {
-            Self::Starred(s) => Element::Starred(Box::new(s.inflate_element(config, is_last)?)),
+            Self::Starred(s) => Element::Starred(Box::new(s.inflate_element(ctx, is_last)?)),
             Self::Simple { value, comma } => Element::Simple {
-                value: value.inflate(config)?,
+                value: value.inflate(ctx)?,
                 comma: if is_last {
-                    comma.map(|c| c.inflate_before(config)).transpose()?
+                    comma.map(|c| c.inflate_before(ctx)).transpose()?
                 } else {
-                    comma.inflate(config)?
+                    comma.inflate(ctx)?
                 },
             },
         })
@@ -1008,16 +1009,16 @@ pub struct Tuple<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedTuple<'r, 'a> {
     type Inflated = Tuple<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
         let len = self.elements.len();
         let elements = self
             .elements
             .into_iter()
             .enumerate()
-            .map(|(idx, el)| el.inflate_element(config, idx + 1 == len))
+            .map(|(idx, el)| el.inflate_element(ctx, idx + 1 == len))
             .collect::<Result<Vec<_>>>()?;
-        let rpar = self.rpar.inflate(config)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elements,
             lpar,
@@ -1060,11 +1061,11 @@ impl<'a> Codegen<'a> for GeneratorExp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedGeneratorExp<'r, 'a> {
     type Inflated = GeneratorExp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let elt = self.elt.inflate(config)?;
-        let for_in = self.for_in.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let elt = self.elt.inflate(ctx)?;
+        let for_in = self.for_in.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elt,
             for_in,
@@ -1097,13 +1098,13 @@ impl<'a> Codegen<'a> for ListComp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedListComp<'r, 'a> {
     type Inflated = ListComp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let lbracket = self.lbracket.inflate(config)?;
-        let elt = self.elt.inflate(config)?;
-        let for_in = self.for_in.inflate(config)?;
-        let rbracket = self.rbracket.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbracket = self.lbracket.inflate(ctx)?;
+        let elt = self.elt.inflate(ctx)?;
+        let for_in = self.for_in.inflate(ctx)?;
+        let rbracket = self.rbracket.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elt,
             for_in,
@@ -1131,9 +1132,9 @@ impl<'a> Codegen<'a> for LeftSquareBracket<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedLeftSquareBracket<'r, 'a> {
     type Inflated = LeftSquareBracket<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated { whitespace_after })
@@ -1156,9 +1157,9 @@ impl<'a> Codegen<'a> for RightSquareBracket<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedRightSquareBracket<'r, 'a> {
     type Inflated = RightSquareBracket<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         Ok(Self::Inflated { whitespace_before })
@@ -1177,13 +1178,13 @@ pub struct SetComp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSetComp<'r, 'a> {
     type Inflated = SetComp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let lbrace = self.lbrace.inflate(config)?;
-        let elt = self.elt.inflate(config)?;
-        let for_in = self.for_in.inflate(config)?;
-        let rbrace = self.rbrace.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbrace = self.lbrace.inflate(ctx)?;
+        let elt = self.elt.inflate(ctx)?;
+        let for_in = self.for_in.inflate(ctx)?;
+        let rbrace = self.rbrace.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elt,
             for_in,
@@ -1223,22 +1224,22 @@ pub struct DictComp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedDictComp<'r, 'a> {
     type Inflated = DictComp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let lbrace = self.lbrace.inflate(config)?;
-        let key = self.key.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbrace = self.lbrace.inflate(ctx)?;
+        let key = self.key.inflate(ctx)?;
         let whitespace_before_colon = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.colon_tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after_colon = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.colon_tok).whitespace_after.borrow_mut(),
         )?;
-        let value = self.value.inflate(config)?;
-        let for_in = self.for_in.inflate(config)?;
-        let rbrace = self.rbrace.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let value = self.value.inflate(ctx)?;
+        let for_in = self.for_in.inflate(ctx)?;
+        let rbrace = self.rbrace.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             key,
             value,
@@ -1284,9 +1285,9 @@ impl<'a> Default for LeftCurlyBrace<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedLeftCurlyBrace<'r, 'a> {
     type Inflated = LeftCurlyBrace<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated { whitespace_after })
@@ -1316,9 +1317,9 @@ impl<'a> Default for RightCurlyBrace<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedRightCurlyBrace<'r, 'a> {
     type Inflated = RightCurlyBrace<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         Ok(Self::Inflated { whitespace_before })
@@ -1373,9 +1374,9 @@ impl<'a> Codegen<'a> for CompFor<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedCompFor<'r, 'a> {
     type Inflated = CompFor<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let mut whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.for_tok).whitespace_before.borrow_mut(),
         )?;
         let asynchronous = if let Some(asy_tok) = self.async_tok.as_mut() {
@@ -1383,7 +1384,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompFor<'r, 'a> {
             // considered to be this keyword, so whitespace_before needs to adjust but
             // Asynchronous will own the whitespace before the for token.
             let mut asy_whitespace_after = parse_parenthesizable_whitespace(
-                config,
+                &ctx.ws,
                 &mut asy_tok.whitespace_before.borrow_mut(),
             )?;
             swap(&mut asy_whitespace_after, &mut whitespace_before);
@@ -1394,21 +1395,21 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompFor<'r, 'a> {
             None
         };
         let whitespace_after_for = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.for_tok).whitespace_after.borrow_mut(),
         )?;
-        let target = self.target.inflate(config)?;
+        let target = self.target.inflate(ctx)?;
         let whitespace_before_in = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.in_tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after_in = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.in_tok).whitespace_after.borrow_mut(),
         )?;
-        let iter = self.iter.inflate(config)?;
-        let ifs = self.ifs.inflate(config)?;
-        let inner_for_in = self.inner_for_in.inflate(config)?;
+        let iter = self.iter.inflate(ctx)?;
+        let ifs = self.ifs.inflate(ctx)?;
+        let inner_for_in = self.inner_for_in.inflate(ctx)?;
         Ok(Self::Inflated {
             target,
             iter,
@@ -1461,16 +1462,16 @@ impl<'a> Codegen<'a> for CompIf<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedCompIf<'r, 'a> {
     type Inflated = CompIf<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.if_tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_before_test = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.if_tok).whitespace_after.borrow_mut(),
         )?;
-        let test = self.test.inflate(config)?;
+        let test = self.test.inflate(ctx)?;
         Ok(Self::Inflated {
             test,
             whitespace_before,
@@ -1490,23 +1491,23 @@ pub struct List<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedList<'r, 'a> {
     type Inflated = List<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let lbracket = self.lbracket.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbracket = self.lbracket.inflate(ctx)?;
         let len = self.elements.len();
         let elements = self
             .elements
             .into_iter()
             .enumerate()
-            .map(|(idx, el)| el.inflate_element(config, idx + 1 == len))
+            .map(|(idx, el)| el.inflate_element(ctx, idx + 1 == len))
             .collect::<Result<Vec<_>>>()?;
         let rbracket = if !elements.is_empty() {
             // lbracket owns all the whitespace if there are no elements
-            self.rbracket.inflate(config)?
+            self.rbracket.inflate(ctx)?
         } else {
             Default::default()
         };
-        let rpar = self.rpar.inflate(config)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elements,
             lbracket,
@@ -1541,22 +1542,22 @@ pub struct Set<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSet<'r, 'a> {
     type Inflated = Set<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let lbrace = self.lbrace.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbrace = self.lbrace.inflate(ctx)?;
         let len = self.elements.len();
         let elements = self
             .elements
             .into_iter()
             .enumerate()
-            .map(|(idx, el)| el.inflate_element(config, idx + 1 == len))
+            .map(|(idx, el)| el.inflate_element(ctx, idx + 1 == len))
             .collect::<Result<Vec<_>>>()?;
         let rbrace = if !elements.is_empty() {
-            self.rbrace.inflate(config)?
+            self.rbrace.inflate(ctx)?
         } else {
             Default::default()
         };
-        let rpar = self.rpar.inflate(config)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elements,
             lbrace,
@@ -1591,22 +1592,22 @@ pub struct Dict<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedDict<'r, 'a> {
     type Inflated = Dict<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let lbrace = self.lbrace.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbrace = self.lbrace.inflate(ctx)?;
         let len = self.elements.len();
         let elements = self
             .elements
             .into_iter()
             .enumerate()
-            .map(|(idx, el)| el.inflate_element(config, idx + 1 == len))
+            .map(|(idx, el)| el.inflate_element(ctx, idx + 1 == len))
             .collect::<Result<Vec<_>>>()?;
         let rbrace = if !elements.is_empty() {
-            self.rbrace.inflate(config)?
+            self.rbrace.inflate(ctx)?
         } else {
             Default::default()
         };
-        let rpar = self.rpar.inflate(config)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             elements,
             lbrace,
@@ -1646,11 +1647,11 @@ pub enum DictElement<'a> {
 impl<'r, 'a> DeflatedDictElement<'r, 'a> {
     pub fn inflate_element(
         self,
-        config: &Config<'a>,
+        ctx: &mut InflateCtx<'a>,
         last_element: bool,
     ) -> Result<DictElement<'a>> {
         Ok(match self {
-            Self::Starred(s) => DictElement::Starred(s.inflate_element(config, last_element)?),
+            Self::Starred(s) => DictElement::Starred(s.inflate_element(ctx, last_element)?),
             Self::Simple {
                 key,
                 value,
@@ -1659,22 +1660,22 @@ impl<'r, 'a> DeflatedDictElement<'r, 'a> {
                 ..
             } => {
                 let whitespace_before_colon = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut colon_tok.whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after_colon = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut colon_tok.whitespace_after.borrow_mut(),
                 )?;
                 DictElement::Simple {
-                    key: key.inflate(config)?,
+                    key: key.inflate(ctx)?,
                     whitespace_before_colon,
                     whitespace_after_colon,
-                    value: value.inflate(config)?,
+                    value: value.inflate(ctx)?,
                     comma: if last_element {
-                        comma.map(|c| c.inflate_before(config)).transpose()
+                        comma.map(|c| c.inflate_before(ctx)).transpose()
                     } else {
-                        comma.inflate(config)
+                        comma.inflate(ctx)
                     }?,
                 }
             }
@@ -1751,18 +1752,18 @@ pub struct StarredDictElement<'a> {
 impl<'r, 'a> DeflatedStarredDictElement<'r, 'a> {
     fn inflate_element(
         self,
-        config: &Config<'a>,
+        ctx: &mut InflateCtx<'a>,
         last_element: bool,
     ) -> Result<StarredDictElement<'a>> {
         let whitespace_before_value = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.star_tok).whitespace_after.borrow_mut(),
         )?;
-        let value = self.value.inflate(config)?;
+        let value = self.value.inflate(ctx)?;
         let comma = if last_element {
-            self.comma.map(|c| c.inflate_before(config)).transpose()
+            self.comma.map(|c| c.inflate_before(ctx)).transpose()
         } else {
-            self.comma.inflate(config)
+            self.comma.inflate(ctx)
         }?;
         Ok(StarredDictElement {
             value,
@@ -1800,19 +1801,19 @@ pub struct Index<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedIndex<'r, 'a> {
     type Inflated = Index<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let (star, whitespace_after_star) = if let Some(star_tok) = self.star_tok.as_mut() {
             (
                 Some(star_tok.string),
                 Some(parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut star_tok.whitespace_after.borrow_mut(),
                 )?),
             )
         } else {
             (None, None)
         };
-        let value = self.value.inflate(config)?;
+        let value = self.value.inflate(ctx)?;
         Ok(Self::Inflated {
             value,
             star,
@@ -1842,12 +1843,12 @@ pub struct Slice<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSlice<'r, 'a> {
     type Inflated = Slice<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lower = self.lower.inflate(config)?;
-        let first_colon = self.first_colon.inflate(config)?;
-        let upper = self.upper.inflate(config)?;
-        let second_colon = self.second_colon.inflate(config)?;
-        let step = self.step.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lower = self.lower.inflate(ctx)?;
+        let first_colon = self.first_colon.inflate(ctx)?;
+        let upper = self.upper.inflate(ctx)?;
+        let second_colon = self.second_colon.inflate(ctx)?;
+        let step = self.step.inflate(ctx)?;
         Ok(Self::Inflated {
             lower,
             upper,
@@ -1886,9 +1887,9 @@ pub struct SubscriptElement<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSubscriptElement<'r, 'a> {
     type Inflated = SubscriptElement<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let slice = self.slice.inflate(config)?;
-        let comma = self.comma.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let slice = self.slice.inflate(ctx)?;
+        let comma = self.comma.inflate(ctx)?;
         Ok(Self::Inflated { slice, comma })
     }
 }
@@ -1915,17 +1916,17 @@ pub struct Subscript<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSubscript<'r, 'a> {
     type Inflated = Subscript<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let value = self.value.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let value = self.value.inflate(ctx)?;
         let whitespace_after_value = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut self.lbracket.tok.whitespace_before.borrow_mut(),
         )?;
-        let lbracket = self.lbracket.inflate(config)?;
-        let slice = self.slice.inflate(config)?;
-        let rbracket = self.rbracket.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let lbracket = self.lbracket.inflate(ctx)?;
+        let slice = self.slice.inflate(ctx)?;
+        let rbracket = self.rbracket.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value,
             slice,
@@ -1974,28 +1975,28 @@ pub struct IfExp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedIfExp<'r, 'a> {
     type Inflated = IfExp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let body = self.body.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let body = self.body.inflate(ctx)?;
         let whitespace_before_if = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.if_tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after_if = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.if_tok).whitespace_after.borrow_mut(),
         )?;
-        let test = self.test.inflate(config)?;
+        let test = self.test.inflate(ctx)?;
         let whitespace_before_else = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.else_tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after_else = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.else_tok).whitespace_after.borrow_mut(),
         )?;
-        let orelse = self.orelse.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let orelse = self.orelse.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             test,
             body,
@@ -2040,21 +2041,21 @@ pub struct Lambda<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedLambda<'r, 'a> {
     type Inflated = Lambda<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_lambda = if !self.params.is_empty() {
             Some(parse_parenthesizable_whitespace(
-                config,
+                &ctx.ws,
                 &mut (*self.lambda_tok).whitespace_after.borrow_mut(),
             )?)
         } else {
             Default::default()
         };
-        let mut params = self.params.inflate(config)?;
-        adjust_parameters_trailing_whitespace(config, &mut params, &self.colon.tok)?;
-        let colon = self.colon.inflate(config)?;
-        let body = self.body.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let mut params = self.params.inflate(ctx)?;
+        adjust_parameters_trailing_whitespace(&ctx.ws, &mut params, &self.colon.tok)?;
+        let colon = self.colon.inflate(ctx)?;
+        let body = self.body.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             params,
             body,
@@ -2107,16 +2108,16 @@ impl<'a> From<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedFrom<'r, 'a> {
     type Inflated = From<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before_from = Some(parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?);
         let whitespace_after_from = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
-        let item = self.item.inflate(config)?;
+        let item = self.item.inflate(ctx)?;
         Ok(Self::Inflated {
             item,
             whitespace_before_from,
@@ -2133,11 +2134,11 @@ pub enum YieldValue<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedYieldValue<'r, 'a> {
     type Inflated = YieldValue<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(match self {
-            Self::Expression(e) => Self::Inflated::Expression(e.inflate(config)?),
+            Self::Expression(e) => Self::Inflated::Expression(e.inflate(ctx)?),
             Self::From(e) => {
-                let mut e = e.inflate(config)?;
+                let mut e = e.inflate(ctx)?;
                 e.whitespace_before_from = None;
                 Self::Inflated::From(e)
             }
@@ -2166,18 +2167,18 @@ pub struct Yield<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedYield<'r, 'a> {
     type Inflated = Yield<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_yield = if self.value.is_some() {
             Some(parse_parenthesizable_whitespace(
-                config,
+                &ctx.ws,
                 &mut (*self.yield_tok).whitespace_after.borrow_mut(),
             )?)
         } else {
             Default::default()
         };
-        let value = self.value.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let value = self.value.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value,
             lpar,
@@ -2216,14 +2217,14 @@ pub struct Await<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedAwait<'r, 'a> {
     type Inflated = Await<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_await = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.await_tok).whitespace_after.borrow_mut(),
         )?;
-        let expression = self.expression.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let expression = self.expression.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             expression,
             lpar,
@@ -2277,15 +2278,15 @@ pub struct ConcatenatedString<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedConcatenatedString<'r, 'a> {
     type Inflated = ConcatenatedString<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let left = self.left.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let left = self.left.inflate(ctx)?;
         let whitespace_between = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.right_tok).whitespace_before.borrow_mut(),
         )?;
-        let right = self.right.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let right = self.right.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             left,
             right,
@@ -2318,9 +2319,9 @@ pub struct SimpleString<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSimpleString<'r, 'a> {
     type Inflated = SimpleString<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
@@ -2342,7 +2343,7 @@ pub struct TemplatedStringText<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedTemplatedStringText<'r, 'a> {
     type Inflated = TemplatedStringText<'a>;
-    fn inflate(self, _config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, _ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(Self::Inflated { value: self.value })
     }
 }
@@ -2378,23 +2379,23 @@ pub struct TemplatedStringExpression<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedTemplatedStringExpression<'r, 'a> {
     type Inflated = TemplatedStringExpression<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before_expression = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.lbrace_tok).whitespace_after.borrow_mut(),
         )?;
-        let expression = self.expression.inflate(config)?;
-        let equal = self.equal.inflate(config)?;
+        let expression = self.expression.inflate(ctx)?;
+        let equal = self.equal.inflate(ctx)?;
         let whitespace_after_expression = if let Some(after_expr_tok) = self.after_expr_tok.as_mut()
         {
             parse_parenthesizable_whitespace(
-                config,
+                &ctx.ws,
                 &mut after_expr_tok.whitespace_before.borrow_mut(),
             )?
         } else {
             Default::default()
         };
-        let format_spec = self.format_spec.inflate(config)?;
+        let format_spec = self.format_spec.inflate(ctx)?;
         Ok(Self::Inflated {
             expression,
             conversion: self.conversion,
@@ -2440,10 +2441,10 @@ pub struct TemplatedString<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedTemplatedString<'r, 'a> {
     type Inflated = TemplatedString<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let parts = self.parts.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let parts = self.parts.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             parts,
             start: self.start,
@@ -2478,7 +2479,7 @@ pub struct FormattedStringText<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedFormattedStringText<'r, 'a> {
     type Inflated = FormattedStringText<'a>;
-    fn inflate(self, _config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, _ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(Self::Inflated { value: self.value })
     }
 }
@@ -2513,23 +2514,23 @@ pub struct FormattedStringExpression<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedFormattedStringExpression<'r, 'a> {
     type Inflated = FormattedStringExpression<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before_expression = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.lbrace_tok).whitespace_after.borrow_mut(),
         )?;
-        let expression = self.expression.inflate(config)?;
-        let equal = self.equal.inflate(config)?;
+        let expression = self.expression.inflate(ctx)?;
+        let equal = self.equal.inflate(ctx)?;
         let whitespace_after_expression = if let Some(after_expr_tok) = self.after_expr_tok.as_mut()
         {
             parse_parenthesizable_whitespace(
-                config,
+                &ctx.ws,
                 &mut after_expr_tok.whitespace_before.borrow_mut(),
             )?
         } else {
             Default::default()
         };
-        let format_spec = self.format_spec.inflate(config)?;
+        let format_spec = self.format_spec.inflate(ctx)?;
         Ok(Self::Inflated {
             expression,
             conversion: self.conversion,
@@ -2581,10 +2582,10 @@ pub struct FormattedString<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedFormattedString<'r, 'a> {
     type Inflated = FormattedString<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let parts = self.parts.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let parts = self.parts.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             parts,
             start: self.start,
@@ -2634,19 +2635,19 @@ impl<'a> Codegen<'a> for NamedExpr<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedNamedExpr<'r, 'a> {
     type Inflated = NamedExpr<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let lpar = self.lpar.inflate(config)?;
-        let target = self.target.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let target = self.target.inflate(ctx)?;
         let whitespace_before_walrus = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut self.walrus_tok.whitespace_before.borrow_mut(),
         )?;
         let whitespace_after_walrus = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut self.walrus_tok.whitespace_after.borrow_mut(),
         )?;
-        let value = self.value.inflate(config)?;
-        let rpar = self.rpar.inflate(config)?;
+        let value = self.value.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             target,
             value,

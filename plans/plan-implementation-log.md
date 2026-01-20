@@ -2549,3 +2549,96 @@ The InflateCtx architecture is validated as viable. The Phase 4 design decisions
 This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the same reason (needs to support Default derive).
 
 ---
+
+### Phase 4 Step 2: Implement InflateCtx and Change Inflate Trait - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` Section D03: InflateCtx introduction
+- `plans/phase-4.md` Sections 4.3.1-4.3.2: InflateCtx structure and Inflate trait signature
+- `crates/tugtool-python-cst/src/nodes/traits.rs` - Existing Inflate trait and blanket impls
+- `crates/tugtool-python-cst-derive/src/cstnode.rs` - #[cst_node] macro implementation
+- `crates/tugtool-python-cst-derive/src/inflate.rs` - #[derive(Inflate)] macro for enums
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Manual Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Manual Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/op.rs` - Manual Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/module.rs` - Module Inflate implementation
+- `crates/tugtool-python-cst/src/nodes/inflate_helpers.rs` - Helper function
+- `crates/tugtool-python-cst/src/lib.rs` - Parsing entry points
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `inflate_ctx.rs` module with `InflateCtx`, `NodePosition`, and `PositionTable` types | Done |
+| Change `Inflate` trait signature from `&Config<'a>` to `&mut InflateCtx<'a>` | Done |
+| Update blanket impls in `nodes/traits.rs` for `Option<T>`, `Vec<T>`, `Box<T>` | Done |
+| Update `#[cst_node]` macro to generate new signature in derive | Done |
+| Update `#[derive(Inflate)]` macro for enums | Done |
+| Update all manual `Inflate` implementations | Done |
+| Update callers to create `InflateCtx` instead of `Config` | Done |
+| Export `InflateCtx` from `lib.rs` | Done |
+
+**Files Created:**
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - New module containing:
+  - `InflateCtx<'a>` struct with `ws`, `ids`, and `positions` fields
+  - `NodePosition` struct with `ident_span`, `lexical_span`, `def_span` fields
+  - `PositionTable` type alias (`HashMap<NodeId, NodePosition>`)
+  - Constructor methods: `new()`, `with_positions()`
+  - Helper methods: `next_id()`, `record_ident_span()`, `record_lexical_span()`, `record_def_span()`
+  - 4 unit tests for id generation and span recording
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/tokenizer/whitespace_parser.rs` - Added `Config::empty()` constructor for testing
+- `crates/tugtool-python-cst/src/nodes/traits.rs` - Changed Inflate trait signature and updated blanket impls
+- `crates/tugtool-python-cst-derive/src/inflate.rs` - Updated generated code for `#[derive(Inflate)]` macro
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Updated ~100 manual Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Updated ~60 manual Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/op.rs` - Updated ~11 manual Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/module.rs` - Updated Module inflate implementation
+- `crates/tugtool-python-cst/src/nodes/inflate_helpers.rs` - Updated helper function parameter
+- `crates/tugtool-python-cst/src/nodes/mod.rs` - Added `pub(crate) use traits::Inflate` for internal access
+- `crates/tugtool-python-cst/src/lib.rs` - Added module declaration, export, and updated parsing functions
+- `plans/phase-4.md` - Checked off all Step 2 tasks and checkpoints
+
+**Test Results:**
+- `cargo build -p tugtool-python-cst`: Build succeeded
+- `cargo nextest run -p tugtool-python-cst`: 350 tests passed
+- `cargo nextest run -p tugtool-python`: 254 tests passed
+- `cargo nextest run --workspace`: 1038 tests passed
+- `cargo nextest run -p tugtool-python-cst inflate_ctx`: 4 unit tests passed
+
+**Checkpoints Verified:**
+- Build succeeds with new trait signature: PASS
+- All existing tests pass: PASS
+- `InflateCtx` is exported and usable: PASS
+
+**Key Implementation Details:**
+
+1. **High blast radius change**: This was the highest blast-radius change in Phase 4, affecting:
+   - The `Inflate` trait definition
+   - 3 blanket implementations (`Option<T>`, `Vec<T>`, `Box<T>`)
+   - 1 derive macro (`#[cst_node]` generates Inflate impls)
+   - 1 enum derive macro (`#[derive(Inflate)]`)
+   - ~170+ manual Inflate implementations across expression.rs, statement.rs, op.rs, module.rs
+   - 3 parsing entry points (parse_module_with_options, parse_statement, parse_expression)
+
+2. **Signature change pattern**:
+   - Old: `fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated>`
+   - New: `fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated>`
+
+3. **Whitespace config access pattern**:
+   - Old: `parse_parenthesizable_whitespace(config, ...)`
+   - New: `parse_parenthesizable_whitespace(&ctx.ws, ...)`
+
+4. **Helper method updates**: Several helper methods like `inflate_element`, `inflate_before`, `inflate_withitem` had their `config: &Config<'a>` parameter renamed to `ws: &Config<'a>` for clarity since they only use the whitespace config portion.
+
+5. **Inflate trait visibility**: The `Inflate` trait is `pub` in traits.rs but re-exported as `pub(crate)` from nodes/mod.rs since it's an internal implementation detail not needed by external consumers.
+
+**Lessons Learned:**
+- The bulk replacement approach worked well for consistent patterns (`config` → `ctx`, `.inflate(config)` → `.inflate(ctx)`)
+- Helper methods with multiple parameters required manual attention to update correctly
+- The derive macro updates were straightforward since they follow a consistent code generation pattern
+
+---

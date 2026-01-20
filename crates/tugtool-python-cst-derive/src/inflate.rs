@@ -65,9 +65,9 @@ fn impl_inflate_enum(ast: &DeriveInput, e: &DataEnum) -> TokenStream {
     let gen = quote! {
         impl #generics Inflate<'a> for #ident #generics {
             type Inflated = #inflated_ident <'a>;
-            fn inflate(mut self, config: & crate::tokenizer::whitespace_parser::Config<'a>) -> std::result::Result<Self::Inflated, crate::tokenizer::whitespace_parser::WhitespaceError> {
+            fn inflate(mut self, ctx: &mut crate::inflate_ctx::InflateCtx<'a>) -> std::result::Result<Self::Inflated, crate::tokenizer::whitespace_parser::WhitespaceError> {
                 match self {
-                    #(Self::#varnames(x) => Ok(Self::Inflated::#varnames(x.inflate(config)?)),)*
+                    #(Self::#varnames(x) => Ok(Self::Inflated::#varnames(x.inflate(ctx)?)),)*
                 }
             }
         }

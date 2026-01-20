@@ -5,15 +5,13 @@
 
 use std::mem::swap;
 
+use crate::inflate_ctx::InflateCtx;
 use crate::tokenizer::whitespace_parser::parse_empty_lines;
 use crate::tokenizer::Token;
-use crate::{
-    nodes::{
-        codegen::{Codegen, CodegenState},
-        statement::*,
-        whitespace::EmptyLine,
-    },
-    tokenizer::whitespace_parser::Config,
+use crate::nodes::{
+    codegen::{Codegen, CodegenState},
+    statement::*,
+    whitespace::EmptyLine,
 };
 use tugtool_python_cst_derive::cst_node;
 
@@ -51,13 +49,13 @@ impl<'a> Codegen<'a> for Module<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedModule<'r, 'a> {
     type Inflated = Module<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let default_indent = config.default_indent;
-        let default_newline = config.default_newline;
-        let has_trailing_newline = config.has_trailing_newline();
-        let mut body = self.body.inflate(config)?;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let default_indent = ctx.ws.default_indent;
+        let default_newline = ctx.ws.default_newline;
+        let has_trailing_newline = ctx.ws.has_trailing_newline();
+        let mut body = self.body.inflate(ctx)?;
         let mut footer = parse_empty_lines(
-            config,
+            &ctx.ws,
             &mut (*self.eof_tok).whitespace_before.borrow_mut(),
             Some(""),
         )?;

@@ -5,9 +5,10 @@
 
 use super::{whitespace::ParenthesizableWhitespace, Codegen, CodegenState};
 use crate::{
+    inflate_ctx::InflateCtx,
     nodes::traits::{Inflate, Result},
     tokenizer::{
-        whitespace_parser::{parse_parenthesizable_whitespace, parse_simple_whitespace, Config},
+        whitespace_parser::{parse_parenthesizable_whitespace, parse_simple_whitespace},
         Token,
     },
 };
@@ -36,12 +37,12 @@ impl<'a> Codegen<'a> for Semicolon<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedSemicolon<'r, 'a> {
     type Inflated = Semicolon<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = ParenthesizableWhitespace::SimpleWhitespace(
-            parse_simple_whitespace(config, &mut (*self.tok).whitespace_before.borrow_mut())?,
+            parse_simple_whitespace(&ctx.ws, &mut (*self.tok).whitespace_before.borrow_mut())?,
         );
         let whitespace_after = ParenthesizableWhitespace::SimpleWhitespace(
-            parse_simple_whitespace(config, &mut (*self.tok).whitespace_after.borrow_mut())?,
+            parse_simple_whitespace(&ctx.ws, &mut (*self.tok).whitespace_after.borrow_mut())?,
         );
         Ok(Self::Inflated {
             whitespace_before,
@@ -71,13 +72,13 @@ impl<'a> Codegen<'a> for Comma<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedComma<'r, 'a> {
     type Inflated = Comma<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated {
@@ -88,9 +89,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedComma<'r, 'a> {
 }
 
 impl<'r, 'a> DeflatedComma<'r, 'a> {
-    pub fn inflate_before(self, config: &Config<'a>) -> Result<Comma<'a>> {
+    pub fn inflate_before(self, ctx: &mut InflateCtx<'a>) -> Result<Comma<'a>> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after = Default::default();
@@ -122,13 +123,13 @@ impl<'a> Codegen<'a> for AssignEqual<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedAssignEqual<'r, 'a> {
     type Inflated = AssignEqual<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated {
@@ -159,9 +160,9 @@ impl<'a> Codegen<'a> for Dot<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedDot<'r, 'a> {
     type Inflated = Dot<'a>;
-    fn inflate(mut self, config: &Config<'a>) -> Result<Self::Inflated> {
-        let whitespace_before = self.inflate_before(config)?;
-        let whitespace_after = self.inflate_after(config)?;
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let whitespace_before = self.inflate_before(ctx)?;
+        let whitespace_after = self.inflate_after(ctx)?;
         Ok(Self::Inflated {
             whitespace_before,
             whitespace_after,
@@ -170,12 +171,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedDot<'r, 'a> {
 }
 
 impl<'r, 'a> DeflatedDot<'r, 'a> {
-    fn inflate_before(&mut self, config: &Config<'a>) -> Result<ParenthesizableWhitespace<'a>> {
-        parse_parenthesizable_whitespace(config, &mut (*self.tok).whitespace_before.borrow_mut())
+    fn inflate_before(&mut self, ctx: &mut InflateCtx<'a>) -> Result<ParenthesizableWhitespace<'a>> {
+        parse_parenthesizable_whitespace(&ctx.ws, &mut (*self.tok).whitespace_before.borrow_mut())
     }
 
-    fn inflate_after(&mut self, config: &Config<'a>) -> Result<ParenthesizableWhitespace<'a>> {
-        parse_parenthesizable_whitespace(config, &mut (*self.tok).whitespace_after.borrow_mut())
+    fn inflate_after(&mut self, ctx: &mut InflateCtx<'a>) -> Result<ParenthesizableWhitespace<'a>> {
+        parse_parenthesizable_whitespace(&ctx.ws, &mut (*self.tok).whitespace_after.borrow_mut())
     }
 }
 
@@ -196,7 +197,7 @@ impl<'a> Codegen<'a> for ImportStar {
 
 impl<'r, 'a> Inflate<'a> for DeflatedImportStar<'r, 'a> {
     type Inflated = ImportStar;
-    fn inflate(self, _config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, _ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(ImportStar {})
     }
 }
@@ -248,32 +249,32 @@ impl<'a> Codegen<'a> for UnaryOp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedUnaryOp<'r, 'a> {
     type Inflated = UnaryOp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(match self {
             Self::Plus { tok, .. } => {
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Plus { whitespace_after }
             }
             Self::Minus { tok, .. } => {
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Minus { whitespace_after }
             }
             Self::BitInvert { tok, .. } => {
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitInvert { whitespace_after }
             }
             Self::Not { tok, .. } => {
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Not { whitespace_after }
@@ -320,15 +321,15 @@ impl<'a> Codegen<'a> for BooleanOp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedBooleanOp<'r, 'a> {
     type Inflated = BooleanOp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(match self {
             Self::And { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::And {
@@ -338,11 +339,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBooleanOp<'r, 'a> {
             }
             Self::Or { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Or {
@@ -515,15 +516,15 @@ impl<'a> Codegen<'a> for BinaryOp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
     type Inflated = BinaryOp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(match self {
             Self::Add { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Add {
@@ -533,11 +534,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::Subtract { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Subtract {
@@ -547,11 +548,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::Multiply { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Multiply {
@@ -561,11 +562,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::Divide { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Divide {
@@ -575,11 +576,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::FloorDivide { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::FloorDivide {
@@ -589,11 +590,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::Modulo { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Modulo {
@@ -603,11 +604,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::Power { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Power {
@@ -617,11 +618,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::LeftShift { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::LeftShift {
@@ -631,11 +632,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::RightShift { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::RightShift {
@@ -645,11 +646,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::BitOr { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitOr {
@@ -659,11 +660,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::BitAnd { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitAnd {
@@ -673,11 +674,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::BitXor { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitXor {
@@ -687,11 +688,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOp<'r, 'a> {
             }
             Self::MatrixMultiply { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::MatrixMultiply {
@@ -851,15 +852,15 @@ impl<'a> Codegen<'a> for CompOp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
     type Inflated = CompOp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(match self {
             Self::LessThan { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::LessThan {
@@ -869,11 +870,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::GreaterThan { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::GreaterThan {
@@ -883,11 +884,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::LessThanEqual { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::LessThanEqual {
@@ -897,11 +898,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::GreaterThanEqual { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::GreaterThanEqual {
@@ -911,11 +912,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::Equal { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Equal {
@@ -925,11 +926,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::NotEqual { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::NotEqual {
@@ -939,11 +940,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::In { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::In {
@@ -953,11 +954,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
             }
             Self::Is { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::Is {
@@ -969,15 +970,15 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
                 is_tok, not_tok, ..
             } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*is_tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_between = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*is_tok).whitespace_after.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*not_tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::IsNot {
@@ -990,15 +991,15 @@ impl<'r, 'a> Inflate<'a> for DeflatedCompOp<'r, 'a> {
                 not_tok, in_tok, ..
             } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*not_tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_between = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*not_tok).whitespace_after.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*in_tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::NotIn {
@@ -1022,13 +1023,13 @@ pub struct Colon<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedColon<'r, 'a> {
     type Inflated = Colon<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated {
@@ -1130,15 +1131,15 @@ pub enum AugOp<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
     type Inflated = AugOp<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         Ok(match self {
             Self::AddAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::AddAssign {
@@ -1148,11 +1149,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::SubtractAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::SubtractAssign {
@@ -1162,11 +1163,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::MultiplyAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::MultiplyAssign {
@@ -1176,11 +1177,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::MatrixMultiplyAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::MatrixMultiplyAssign {
@@ -1190,11 +1191,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::DivideAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::DivideAssign {
@@ -1204,11 +1205,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::ModuloAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::ModuloAssign {
@@ -1218,11 +1219,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::BitAndAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitAndAssign {
@@ -1232,11 +1233,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::BitOrAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitOrAssign {
@@ -1246,11 +1247,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::BitXorAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::BitXorAssign {
@@ -1260,11 +1261,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::LeftShiftAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::LeftShiftAssign {
@@ -1274,11 +1275,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::RightShiftAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::RightShiftAssign {
@@ -1288,11 +1289,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::PowerAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::PowerAssign {
@@ -1302,11 +1303,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugOp<'r, 'a> {
             }
             Self::FloorDivideAssign { tok, .. } => {
                 let whitespace_before = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_before.borrow_mut(),
                 )?;
                 let whitespace_after = parse_parenthesizable_whitespace(
-                    config,
+                    &ctx.ws,
                     &mut (*tok).whitespace_after.borrow_mut(),
                 )?;
                 Self::Inflated::FloorDivideAssign {
@@ -1403,13 +1404,13 @@ pub struct BitOr<'a> {
 
 impl<'r, 'a> Inflate<'a> for DeflatedBitOr<'r, 'a> {
     type Inflated = BitOr<'a>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let whitespace_before = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_before.borrow_mut(),
         )?;
         let whitespace_after = parse_parenthesizable_whitespace(
-            config,
+            &ctx.ws,
             &mut (*self.tok).whitespace_after.borrow_mut(),
         )?;
         Ok(Self::Inflated {

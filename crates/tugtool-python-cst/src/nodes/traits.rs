@@ -33,9 +33,10 @@
 //! Spans use [`tugtool_core::patch::Span`] with u64 byte offsets into UTF-8 source.
 
 use crate::{
+    inflate_ctx::InflateCtx,
     nodes::expression::{DeflatedLeftParen, DeflatedRightParen},
     nodes::op::DeflatedComma,
-    tokenizer::whitespace_parser::{Config, WhitespaceError},
+    tokenizer::whitespace_parser::WhitespaceError,
     Codegen, CodegenState, EmptyLine, LeftParen, RightParen,
 };
 use std::collections::HashMap;
@@ -260,20 +261,20 @@ where
     Self: Sized,
 {
     type Inflated;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated>;
 }
 
 impl<'a, T: Inflate<'a>> Inflate<'a> for Option<T> {
     type Inflated = Option<T::Inflated>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        self.map(|x| x.inflate(config)).transpose()
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        self.map(|x| x.inflate(ctx)).transpose()
     }
 }
 
 impl<'a, T: Inflate<'a> + ?Sized> Inflate<'a> for Box<T> {
     type Inflated = Box<T::Inflated>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        match (*self).inflate(config) {
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        match (*self).inflate(ctx) {
             Ok(a) => Ok(Box::new(a)),
             Err(e) => Err(e),
         }
@@ -282,7 +283,7 @@ impl<'a, T: Inflate<'a> + ?Sized> Inflate<'a> for Box<T> {
 
 impl<'a, T: Inflate<'a>> Inflate<'a> for Vec<T> {
     type Inflated = Vec<T::Inflated>;
-    fn inflate(self, config: &Config<'a>) -> Result<Self::Inflated> {
-        self.into_iter().map(|item| item.inflate(config)).collect()
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        self.into_iter().map(|item| item.inflate(ctx)).collect()
     }
 }

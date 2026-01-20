@@ -110,6 +110,19 @@ impl<'a> Config<'a> {
         }
     }
 
+    /// Create an empty config for testing purposes.
+    ///
+    /// This creates a minimal Config with empty input, suitable for unit tests
+    /// that need an InflateCtx but don't need actual whitespace parsing.
+    pub fn empty() -> Self {
+        Self {
+            input: "",
+            lines: Vec::new(),
+            default_newline: "\n",
+            default_indent: "    ",
+        }
+    }
+
     pub fn has_trailing_newline(&self) -> bool {
         self.input.ends_with('\n')
             && !self.input.ends_with("\\\n")
