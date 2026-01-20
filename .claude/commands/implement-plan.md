@@ -79,9 +79,7 @@ For each Execution Step, systematically work through:
 8. **Run Verification**: Execute tests using `cargo nextest run`
 9. **Perform Checkpoints**: Go through each checkpoint item, checking them off in the plan file
 10. **Final Review**: Verify ALL items are actually completed and checked off in the plan
-11. **Write Completion Summary**: Generate a detailed completion summary (see format below)
-12. **Append to Implementation Log**: Append the completion summary to `plans/plan-implementation-log.md`
-13. **Pause for Review**: Stop and await user confirmation before proceeding
+11. **Pause for Review**: Stop and await user confirmation before proceeding
 
 ## Quality Gates
 
@@ -94,7 +92,6 @@ Before reporting completion:
 - [ ] No phase numbers from planning docs appear in code
 - [ ] Code follows project conventions (check CLAUDE.md)
 - [ ] Changes are consistent with the codebase architecture
-- [ ] **Completion summary appended to `plans/plan-implementation-log.md`**
 - [ ] **NO git commands were executed** (staging/committing is the user's job)
 
 ## Output Format
@@ -107,73 +104,10 @@ As you work, provide:
 5. **Checkpoint Status**: Result of each checkpoint verification
 6. **Completion Summary**: Final status with explicit confirmation that ALL items are done
 
-## Completion Summary Format
-
-When a step is complete, generate a detailed summary and **append it to `plans/plan-implementation-log.md`**. Use this format:
-
-```markdown
-### Step X.Y: [Step Title] - COMPLETE
-
-**Completed:** [Date in YYYY-MM-DD format]
-
-**References Reviewed:**
-- [List of files/documents consulted]
-
-**Implementation Progress:**
-
-| Task | Status |
-|------|--------|
-| [Task 1] | Done |
-| [Task 2] | Done |
-| ...
-
-**Files Created:**
-- [List new files with brief descriptions]
-
-**Files Modified:**
-- [List modified files with brief descriptions]
-
-**Test Results:**
-- [Test command]: [X tests passed]
-
-**Checkpoints Verified:**
-- [Checkpoint 1]: PASS
-- [Checkpoint 2]: PASS
-- ...
-
-**Key Decisions/Notes:**
-[Any important implementation decisions, workarounds, or lessons learned]
-
----
-```
-
-The log file preserves a historical record of all implementation work, which is valuable for:
-- Tracking progress across sessions
-- Understanding what was done when
-- Documenting implementation decisions
-- Onboarding new contributors
-
-## MANDATORY FINAL STEP - DO NOT SKIP
-
-**BEFORE reporting completion to the user, you MUST append a completion summary to `plans/plan-implementation-log.md`.**
-
-This is NOT optional. This is NOT "if you have time." This MUST happen for EVERY step you implement.
-
-Failure to append to the log means the step is NOT complete, regardless of whether the code works.
-
-Checklist before saying "done":
-1. ✅ Code implemented
-2. ✅ Tests pass
-3. ✅ Plan file checkboxes updated
-4. ✅ **Log entry appended to `plans/plan-implementation-log.md`** ← THIS ONE. DO IT.
-
----
-
 ## Critical Reminders
 
 - **NEVER USE GIT** - No `git add`, `git commit`, `git push`, or any git commands. You implement code; the user commits.
 - **UPDATE THE PLAN FILE** - Check off `- [ ]` → `- [x]` in the plan file as you complete each task and checkpoint. This is how progress is tracked.
-- **APPEND TO IMPLEMENTATION LOG** - After completing a step, append the completion summary to `plans/plan-implementation-log.md`. This creates a historical record of all implementation work.
 - The plan-skeleton.md defines the structure—actual content comes from the specific plan-N.md file
 - Phase numbers (like X.Y.5) are organizational markers for the plan, not code comments
 - "Actually read" means open the file and examine its contents, not assume you know what's there
