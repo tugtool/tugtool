@@ -1250,29 +1250,29 @@ let scope_end = match &self.body {
 ```
 
 **Tasks:**
-- [ ] In `FunctionDef::inflate()`:
+- [x] In `FunctionDef::inflate()`:
   - Compute `lexical_start` from `async_tok` or `def_tok`
   - Compute `def_start` from first decorator's `at_tok` (or `lexical_start` if no decorators)
   - Compute `scope_end` directly from `self.body` (deflated suite's dedent/newline token)
   - Call `ctx.record_lexical_span()` and `ctx.record_def_span()`
   - **Note:** Do NOT record ident_span here - it lives on the Name node per [D11]
-- [ ] In `ClassDef::inflate()`: same pattern as FunctionDef
-- [ ] In `Name::inflate()`: record `ident_span` from `self.tok` (this is where identifier spans live per [D11])
-- [ ] Verify that nested scopes (function inside function) each record their own spans correctly
-- [ ] Verify that IndentedBlock::inflate() does NOT need any scope-related changes
+- [x] In `ClassDef::inflate()`: same pattern as FunctionDef
+- [x] In `Name::inflate()`: record `ident_span` from `self.tok` (this is where identifier spans live per [D11])
+- [x] Verify that nested scopes (function inside function) each record their own spans correctly
+- [x] Verify that IndentedBlock::inflate() does NOT need any scope-related changes
 
 **Tests:**
-- [ ] Unit test: `FunctionDef` lexical span starts at `def`, not decorator
-- [ ] Unit test: `FunctionDef` def span starts at first decorator `@`
-- [ ] Unit test: Undecorated function has `lexical_span.start == def_span.start`
-- [ ] Unit test: Nested functions have correct non-overlapping spans
-- [ ] Unit test: Class with decorators has correct def_span
-- [ ] Unit test: Single-line function (`def f(): pass`) has correct scope_end
+- [x] Unit test: `FunctionDef` lexical span starts at `def`, not decorator
+- [x] Unit test: `FunctionDef` def span starts at first decorator `@`
+- [x] Unit test: Undecorated function has `lexical_span.start == def_span.start`
+- [x] Unit test: Nested functions have correct non-overlapping spans
+- [x] Unit test: Class with decorators has correct def_span
+- [x] Unit test: Single-line function (`def f(): pass`) has correct scope_end
 
 **Checkpoint:**
-- [ ] Build succeeds
-- [ ] No changes to `IndentedBlock::inflate()` needed
-- [ ] Span collection integration test passes
+- [x] Build succeeds
+- [x] No changes to `IndentedBlock::inflate()` needed
+- [x] Span collection integration test passes
 
 **Rollback:**
 - Revert `FunctionDef`/`ClassDef` inflate changes

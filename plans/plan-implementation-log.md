@@ -2732,3 +2732,71 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 - `SimpleString` - String literals
 
 ---
+
+### Step 4: Implement Direct Scope Span Collection - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 4 specification and design decisions [D06], [D07], [D08], [D10], [D11]
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - FunctionDef and ClassDef Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Name Inflate implementation
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - InflateCtx span recording methods
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| FunctionDef::inflate() - compute lexical_start from async_tok or def_tok | Done |
+| FunctionDef::inflate() - compute def_start from first decorator or lexical_start | Done |
+| FunctionDef::inflate() - compute scope_end from deflated body suite | Done |
+| FunctionDef::inflate() - call record_lexical_span() and record_def_span() | Done |
+| ClassDef::inflate() - same pattern as FunctionDef | Done |
+| Name::inflate() - record ident_span from self.tok | Done |
+| Verify nested scopes record correct spans | Done |
+| Verify IndentedBlock::inflate() needs no changes | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added Span import; added span computation to FunctionDef::inflate() and ClassDef::inflate()
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added Span import; added ident_span recording to Name::inflate()
+- `crates/tugtool-python-cst/src/lib.rs` - Exported PositionTable and NodePosition; added 9 unit tests for span collection
+- `plans/phase-4.md` - Checked off all Step 4 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 368 tests passed (9 new)
+- `cargo nextest run --workspace`: 1056 tests passed
+
+**Checkpoints Verified:**
+- Build succeeds: PASS
+- No changes to IndentedBlock::inflate() needed: PASS
+- Span collection integration test passes: PASS
+
+**Unit Tests Added:**
+- `test_function_def_lexical_span_starts_at_def_not_decorator` - Verifies lexical span starts at 'def', not '@'
+- `test_function_def_def_span_starts_at_first_decorator` - Verifies def_span starts at first decorator '@'
+- `test_undecorated_function_lexical_equals_def_start` - Verifies undecorated functions have equal starts
+- `test_nested_functions_have_distinct_spans` - Verifies inner function contained in outer
+- `test_class_def_with_decorators` - Verifies class def_span vs lexical_span with decorator
+- `test_single_line_function_has_correct_scope_end` - Verifies SimpleStatementSuite end boundary
+- `test_name_node_has_ident_span` - Verifies Name nodes record ident_span
+- `test_function_name_has_ident_span` - Verifies function name span extraction
+- `test_async_function_lexical_span_starts_at_async` - Verifies async def starts at 'async'
+
+**Key Implementation Details:**
+
+1. **Span computation BEFORE inflation**: Per [D10], spans are computed from deflated body suite tokens before `self.body.inflate()` is called. This is critical because TokenRef fields are stripped during inflation.
+
+2. **Scope end boundary rules (per [D06]):**
+   - `DeflatedSuite::IndentedBlock`: `block.dedent_tok.start_pos.byte_idx()` - dedent marks scope boundary
+   - `DeflatedSuite::SimpleStatementSuite`: `suite.newline_tok.end_pos.byte_idx()` - newline end for single-line
+
+3. **Span semantics (per [D08], [D11]):**
+   - `lexical_span`: Starts at `def`/`async`/`class`, NOT at decorators (scope boundary for variable resolution)
+   - `def_span`: Starts at first decorator's `@` if decorated, else same as lexical_span (extractable definition)
+   - `ident_span`: Lives ONLY on Name nodes, not duplicated on FunctionDef/ClassDef (single source of truth)
+
+4. **Direct computation vs stack approach (per [D10])**: FunctionDef/ClassDef compute their scope end directly from their own body suite. This avoids the "IndentedBlock pop-on-every-block problem" where a stack-based approach would pop incorrectly on nested if/for/while blocks.
+
+5. **Helper function for tests**: Added `parse_with_positions()` helper that uses `InflateCtx::with_positions()` to enable position tracking during parsing.
+
+---

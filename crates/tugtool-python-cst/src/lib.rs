@@ -98,7 +98,7 @@ use nodes::Inflate;
 use tokenizer::{whitespace_parser, TokConfig, Token, TokenIterator};
 
 mod inflate_ctx;
-pub use inflate_ctx::InflateCtx;
+pub use inflate_ctx::{InflateCtx, NodePosition, PositionTable};
 
 mod nodes;
 use nodes::deflated::Module as DeflatedModule;
@@ -773,6 +773,250 @@ mod test {
                     panic!("Expected SimpleString, got {:?}", assign.value);
                 }
             }
+        }
+    }
+
+    // ========================================================================
+    // Step 4 Tests: Span Collection
+    // ========================================================================
+
+    /// Helper function to parse source with position tracking enabled.
+    fn parse_with_positions(source: &str) -> (Module, PositionTable) {
+        let tokens = tokenize(source).expect("tokenize error");
+        let conf = whitespace_parser::Config::new(source, &tokens);
+        let mut ctx = InflateCtx::with_positions(conf);
+        let tokvec: TokVec = tokens.into();
+        let m = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let module = m.inflate(&mut ctx).expect("inflate error");
+        let positions = ctx.positions.expect("positions should be enabled");
+        (module, positions)
+    }
+
+    #[test]
+    fn test_function_def_lexical_span_starts_at_def_not_decorator() {
+        // With decorator: lexical span should start at 'def', NOT at '@'
+        let source = "@dec\ndef foo():\n    pass\n";
+        //            0123 4567890123456789012345
+        //                  ^def starts at byte 5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            let node_id = func.node_id.expect("FunctionDef should have node_id");
+            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+
+            let lexical_span = pos.lexical_span.expect("Should have lexical_span");
+            // 'def' starts at byte 5 (after "@dec\n")
+            assert_eq!(lexical_span.start, 5, "lexical_span should start at 'def', not '@'");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_function_def_def_span_starts_at_first_decorator() {
+        // With decorator: def_span should start at '@', the first decorator
+        let source = "@dec\ndef foo():\n    pass\n";
+        //            ^@ at byte 0
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            let node_id = func.node_id.expect("FunctionDef should have node_id");
+            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+
+            let def_span = pos.def_span.expect("Should have def_span");
+            // '@' starts at byte 0
+            assert_eq!(def_span.start, 0, "def_span should start at first decorator '@'");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_undecorated_function_lexical_equals_def_start() {
+        // Without decorator: lexical_span.start should equal def_span.start
+        let source = "def foo():\n    pass\n";
+        //            ^def at byte 0
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            let node_id = func.node_id.expect("FunctionDef should have node_id");
+            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+
+            let lexical_span = pos.lexical_span.expect("Should have lexical_span");
+            let def_span = pos.def_span.expect("Should have def_span");
+
+            assert_eq!(
+                lexical_span.start, def_span.start,
+                "For undecorated function, lexical_span.start should equal def_span.start"
+            );
+            assert_eq!(lexical_span.start, 0, "Both should start at byte 0");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_nested_functions_have_distinct_spans() {
+        let source = "def outer():\n    def inner():\n        pass\n";
+        //            0         1         2         3         4
+        //            0123456789012345678901234567890123456789012345
+        //            ^outer: def at 0
+        //                        ^inner: def at 17
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(outer)) = &module.body[0] {
+            let outer_id = outer.node_id.expect("outer should have node_id");
+            let outer_pos = positions.get(&outer_id).expect("outer should have position");
+            let outer_lexical = outer_pos.lexical_span.expect("outer should have lexical_span");
+
+            // Find inner function in outer's body
+            if let Suite::IndentedBlock(block) = &outer.body {
+                if let Statement::Compound(CompoundStatement::FunctionDef(inner)) = &block.body[0] {
+                    let inner_id = inner.node_id.expect("inner should have node_id");
+                    let inner_pos = positions.get(&inner_id).expect("inner should have position");
+                    let inner_lexical = inner_pos.lexical_span.expect("inner should have lexical_span");
+
+                    // Inner function's span should be contained within outer's span
+                    assert!(
+                        inner_lexical.start >= outer_lexical.start,
+                        "inner start {} should be >= outer start {}",
+                        inner_lexical.start, outer_lexical.start
+                    );
+                    assert!(
+                        inner_lexical.end <= outer_lexical.end,
+                        "inner end {} should be <= outer end {}",
+                        inner_lexical.end, outer_lexical.end
+                    );
+
+                    // They should have different starts
+                    assert_ne!(
+                        inner_lexical.start, outer_lexical.start,
+                        "inner and outer should have different start positions"
+                    );
+                } else {
+                    panic!("Expected inner FunctionDef");
+                }
+            } else {
+                panic!("Expected IndentedBlock");
+            }
+        } else {
+            panic!("Expected outer FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_class_def_with_decorators() {
+        let source = "@decorator\nclass Foo:\n    pass\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123
+        //            ^@ at 0    ^class at 11
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::ClassDef(class)) = &module.body[0] {
+            let node_id = class.node_id.expect("ClassDef should have node_id");
+            let pos = positions.get(&node_id).expect("ClassDef should have position");
+
+            let lexical_span = pos.lexical_span.expect("Should have lexical_span");
+            let def_span = pos.def_span.expect("Should have def_span");
+
+            // def_span starts at '@', lexical_span starts at 'class'
+            assert_eq!(def_span.start, 0, "def_span should start at decorator '@'");
+            assert_eq!(lexical_span.start, 11, "lexical_span should start at 'class'");
+            assert!(
+                def_span.start < lexical_span.start,
+                "def_span should start before lexical_span for decorated class"
+            );
+        } else {
+            panic!("Expected ClassDef");
+        }
+    }
+
+    #[test]
+    fn test_single_line_function_has_correct_scope_end() {
+        // Single-line function: `def f(): pass` (SimpleStatementSuite)
+        let source = "def f(): pass\n";
+        //            0         1
+        //            01234567890123
+        //                     ^newline at 13
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            let node_id = func.node_id.expect("FunctionDef should have node_id");
+            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+
+            let lexical_span = pos.lexical_span.expect("Should have lexical_span");
+            // Scope should end at end of newline (byte 14, which is len of source)
+            assert_eq!(lexical_span.end, 14, "scope_end should be at end of newline token");
+            assert_eq!(lexical_span.start, 0, "scope should start at 'def'");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_name_node_has_ident_span() {
+        let source = "foo = 1";
+        //            0123456
+        //            ^foo: bytes 0-3
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let AssignTargetExpression::Name(name) = &assign.targets[0].target {
+                    let node_id = name.node_id.expect("Name should have node_id");
+                    let pos = positions.get(&node_id).expect("Name should have position");
+
+                    let ident_span = pos.ident_span.expect("Name should have ident_span");
+                    assert_eq!(ident_span.start, 0, "ident_span should start at 0");
+                    assert_eq!(ident_span.end, 3, "ident_span should end at 3 (exclusive)");
+
+                    // Extract the text and verify it matches
+                    let ident_text = &source[ident_span.start as usize..ident_span.end as usize];
+                    assert_eq!(ident_text, "foo", "ident_span should cover 'foo'");
+                } else {
+                    panic!("Expected Name");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_function_name_has_ident_span() {
+        let source = "def my_func(): pass\n";
+        //            01234567890123456789
+        //                ^my_func: bytes 4-11
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            // Function's name is a Name node which has its own node_id
+            let name_id = func.name.node_id.expect("Name should have node_id");
+            let name_pos = positions.get(&name_id).expect("Name should have position");
+
+            let ident_span = name_pos.ident_span.expect("Name should have ident_span");
+            let ident_text = &source[ident_span.start as usize..ident_span.end as usize];
+            assert_eq!(ident_text, "my_func", "ident_span should cover 'my_func'");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_async_function_lexical_span_starts_at_async() {
+        let source = "async def foo(): pass\n";
+        //            0         1         2
+        //            0123456789012345678901
+        //            ^async at 0
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            let node_id = func.node_id.expect("FunctionDef should have node_id");
+            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+
+            let lexical_span = pos.lexical_span.expect("Should have lexical_span");
+            // Async function's lexical span should start at 'async', not 'def'
+            assert_eq!(lexical_span.start, 0, "lexical_span should start at 'async'");
+        } else {
+            panic!("Expected FunctionDef");
         }
     }
 }

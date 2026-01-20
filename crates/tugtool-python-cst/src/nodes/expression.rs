@@ -21,6 +21,7 @@ use crate::{
         Token,
     },
 };
+use tugtool_core::patch::Span;
 use tugtool_python_cst_derive::{cst_node, Codegen, Inflate, ParenthesizedDeflatedNode, ParenthesizedNode};
 
 type TokenRef<'r, 'a> = &'r Token<'a>;
@@ -207,6 +208,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedName<'r, 'a> {
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this Name node
         let node_id = ctx.next_id();
+
+        // Record identifier span from token (if position tracking is enabled and token is present).
+        // Per [D11] in phase-4.md, identifier spans live on Name nodes.
+        if let Some(tok) = &self.tok {
+            let start = tok.start_pos.byte_idx() as u64;
+            let end = tok.end_pos.byte_idx() as u64;
+            ctx.record_ident_span(node_id, Span { start, end });
+        }
 
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;

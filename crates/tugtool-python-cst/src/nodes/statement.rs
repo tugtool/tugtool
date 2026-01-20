@@ -30,6 +30,7 @@ use crate::{
     },
     LeftCurlyBrace, LeftSquareBracket, RightCurlyBrace, RightSquareBracket,
 };
+use tugtool_core::patch::Span;
 use tugtool_python_cst_derive::{cst_node, Codegen, Inflate, ParenthesizedDeflatedNode, ParenthesizedNode};
 
 type TokenRef<'r, 'a> = &'r Token<'a>;
@@ -869,6 +870,34 @@ impl<'r, 'a> Inflate<'a> for DeflatedFunctionDef<'r, 'a> {
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this FunctionDef node
         let node_id = ctx.next_id();
+
+        // Compute span boundaries BEFORE inflating (tokens are stripped during inflation).
+        // Per [D06], [D08], [D10] in phase-4.md:
+        // - lexical_start: where the scope begins (at 'def' or 'async')
+        // - def_start: where the extractable definition begins (at first decorator '@' if any)
+        // - scope_end: where the scope ends (at dedent or end of single-line suite)
+        let lexical_start = self
+            .async_tok
+            .as_ref()
+            .map(|t| t.start_pos.byte_idx() as u64)
+            .unwrap_or_else(|| self.def_tok.start_pos.byte_idx() as u64);
+
+        let def_start = if !self.decorators.is_empty() {
+            // First decorator's @ token marks the start of the definition
+            self.decorators[0].at_tok.start_pos.byte_idx() as u64
+        } else {
+            lexical_start
+        };
+
+        // Compute scope end directly from our body suite (see [D10])
+        let scope_end = match &self.body {
+            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx() as u64,
+            DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx() as u64,
+        };
+
+        // Record spans (if position tracking is enabled)
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        ctx.record_def_span(node_id, Span { start: def_start, end: scope_end });
 
         let mut decorators = self.decorators.inflate(ctx)?;
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
@@ -1788,6 +1817,30 @@ impl<'r, 'a> Inflate<'a> for DeflatedClassDef<'r, 'a> {
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this ClassDef node
         let node_id = ctx.next_id();
+
+        // Compute span boundaries BEFORE inflating (tokens are stripped during inflation).
+        // Per [D06], [D08], [D10] in phase-4.md:
+        // - lexical_start: where the scope begins (at 'class')
+        // - def_start: where the extractable definition begins (at first decorator '@' if any)
+        // - scope_end: where the scope ends (at dedent or end of single-line suite)
+        let lexical_start = self.class_tok.start_pos.byte_idx() as u64;
+
+        let def_start = if !self.decorators.is_empty() {
+            // First decorator's @ token marks the start of the definition
+            self.decorators[0].at_tok.start_pos.byte_idx() as u64
+        } else {
+            lexical_start
+        };
+
+        // Compute scope end directly from our body suite (see [D10])
+        let scope_end = match &self.body {
+            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx() as u64,
+            DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx() as u64,
+        };
+
+        // Record spans (if position tracking is enabled)
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        ctx.record_def_span(node_id, Span { start: def_start, end: scope_end });
 
         let mut leading_lines = parse_empty_lines(
             &ctx.ws,
