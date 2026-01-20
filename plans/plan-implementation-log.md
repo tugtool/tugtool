@@ -2800,3 +2800,60 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 5. **Helper function for tests**: Added `parse_with_positions()` helper that uses `InflateCtx::with_positions()` to enable position tracking during parsing.
 
 ---
+
+### Step 5: Implement parse_module_with_positions - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 5 specification and [D03] InflateCtx, #new-api-surface section
+- `crates/tugtool-python-cst/src/lib.rs` - Existing parse functions and test structure
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - InflateCtx with_positions() implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `ParsedModule` struct | Done |
+| Implement `parse_module_with_positions()` with InflateCtx::with_positions() | Done |
+| Export from `lib.rs` | Done |
+| Add doc comments and examples | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/lib.rs` - Added `ParsedModule` struct and `parse_module_with_positions()` function with full documentation; added 6 unit tests
+- `plans/phase-4.md` - Checked off all Step 5 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo build -p tugtool-python-cst`: Succeeded
+- `cargo nextest run -p tugtool-python-cst`: 374 tests passed (6 new)
+- `cargo test -p tugtool-python-cst --doc`: 14 doc tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes: PASS
+- Doc tests pass: PASS
+
+**Unit Tests Added:**
+- `test_parse_module_with_positions_basic_returns_positions` - Verifies basic parsing returns positions
+- `test_original_parse_module_still_works_unchanged` - Verifies parse_module still works without regression
+- `test_parse_module_with_positions_accurate_for_known_input` - Tests exact byte positions for known input
+- `test_tracked_node_count_matches_number_of_tracked_nodes` - Verifies count is consistent with assigned IDs
+- `test_parse_module_with_positions_with_encoding` - Tests encoding parameter handling
+- `test_parse_module_with_positions_strips_bom` - Tests UTF-8 BOM stripping
+
+**Key Implementation Details:**
+
+1. **ParsedModule struct**: Contains three fields:
+   - `module: Module<'a>` - The parsed CST
+   - `positions: PositionTable` - Position data keyed by NodeId
+   - `tracked_node_count: u32` - Count of nodes with assigned NodeIds
+
+2. **UTF-8 BOM handling**: Function strips BOM (same as `parse_module`) before parsing, so positions are relative to stripped source.
+
+3. **Documentation approach**: Since `node_id` is `pub(crate)`, the doc example demonstrates iterating over the PositionTable rather than accessing node_id directly. This shows the public API pattern for external users.
+
+4. **API comparison documented**: Added "Comparison with parse_module" section explaining when to use each function:
+   - `parse_module`: Faster, no position tracking overhead
+   - `parse_module_with_positions`: Captures positions during inflation for refactoring operations
+
+---

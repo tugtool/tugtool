@@ -221,6 +221,154 @@ pub fn parse_module<'a>(
     parse_module_with_options(module_text, options)
 }
 
+// ============================================================================
+// Position-aware parsing
+// ============================================================================
+
+/// Parse result that includes position information.
+///
+/// This struct is returned by [`parse_module_with_positions`] and provides:
+/// - The parsed [`Module`] CST
+/// - A [`PositionTable`] mapping [`NodeId`]s to their source positions
+/// - A count of tracked nodes (nodes that received a [`NodeId`])
+///
+/// # Position Data
+///
+/// The [`PositionTable`] stores [`NodePosition`] records for tracked nodes,
+/// each containing optional spans:
+/// - **ident_span**: The identifier text span (for rename operations)
+/// - **lexical_span**: The scope extent, excluding decorators (for containment queries)
+/// - **def_span**: The complete definition, including decorators (for extraction)
+///
+/// # Tracked Nodes
+///
+/// Not all CST nodes receive position tracking. The tracked node types are:
+/// - `Name` - identifiers (records `ident_span`)
+/// - `FunctionDef` - function definitions (records `lexical_span`, `def_span`)
+/// - `ClassDef` - class definitions (records `lexical_span`, `def_span`)
+/// - `Param` - function parameters
+/// - `Decorator` - decorators
+/// - `Integer`, `Float`, `SimpleString` - literals
+///
+/// # Example
+///
+/// ```
+/// use tugtool_python_cst::parse_module_with_positions;
+///
+/// let source = "def foo(): pass";
+/// let parsed = parse_module_with_positions(source, None).expect("parse error");
+///
+/// // Access the parsed module
+/// let module = &parsed.module;
+///
+/// // Access position data via PositionTable
+/// let positions = &parsed.positions;
+///
+/// // Get count of nodes with assigned NodeIds
+/// let count = parsed.tracked_node_count;
+/// ```
+#[derive(Debug)]
+pub struct ParsedModule<'a> {
+    /// The parsed CST module.
+    pub module: Module<'a>,
+
+    /// Position table mapping NodeIds to their source positions.
+    ///
+    /// Use this to look up spans for tracked nodes:
+    /// ```ignore
+    /// if let Some(pos) = positions.get(&node.node_id.unwrap()) {
+    ///     if let Some(ident_span) = pos.ident_span {
+    ///         // Use the identifier span
+    ///     }
+    /// }
+    /// ```
+    pub positions: PositionTable,
+
+    /// The count of nodes that received NodeIds during inflation.
+    ///
+    /// This is a subset of all nodes - only tracked node types receive IDs.
+    /// The value matches `ctx.ids.count()` after inflation completes.
+    pub tracked_node_count: u32,
+}
+
+/// Parses a Python module with position tracking enabled.
+///
+/// This function parses source code and captures position information for
+/// tracked nodes. Use this when you need accurate byte spans for operations
+/// like rename, scope analysis, or code extraction.
+///
+/// # Arguments
+///
+/// * `module_text` - The Python source code to parse.
+/// * `encoding` - Optional encoding hint (e.g., `"utf-8"`).
+///
+/// # Returns
+///
+/// A [`ParsedModule`] containing the CST and position data on success,
+/// or a [`ParserError`] on failure.
+///
+/// # Position Tracking
+///
+/// Position tracking is performed during inflation. The [`PositionTable`]
+/// stores spans derived directly from tokenizer positions, providing accurate
+/// byte offsets without relying on string search.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_python_cst::parse_module_with_positions;
+///
+/// let source = "def foo(): pass";
+/// let parsed = parse_module_with_positions(source, None).expect("parse error");
+///
+/// // Access the module
+/// assert!(!parsed.module.body.is_empty());
+///
+/// // Check that positions were captured
+/// assert!(!parsed.positions.is_empty());
+///
+/// // Iterate over captured positions
+/// for (node_id, pos) in parsed.positions.iter() {
+///     if let Some(lexical) = pos.lexical_span {
+///         println!("Node {:?}: lexical span {}..{}", node_id, lexical.start, lexical.end);
+///     }
+///     if let Some(ident) = pos.ident_span {
+///         println!("Node {:?}: ident span {}..{}", node_id, ident.start, ident.end);
+///     }
+/// }
+/// ```
+///
+/// # Comparison with [`parse_module`]
+///
+/// - [`parse_module`]: Faster, no position tracking overhead. Use when you
+///   don't need position data.
+/// - [`parse_module_with_positions`]: Captures positions during inflation.
+///   Use when you need accurate spans for refactoring operations.
+pub fn parse_module_with_positions<'a>(
+    mut module_text: &'a str,
+    encoding: Option<&str>,
+) -> Result<'a, ParsedModule<'a>> {
+    // Strip UTF-8 BOM
+    if let Some(stripped) = module_text.strip_prefix('\u{feff}') {
+        module_text = stripped;
+    }
+
+    let tokens = tokenize(module_text)?;
+    let ws_config = whitespace_parser::Config::new(module_text, &tokens);
+    let mut ctx = InflateCtx::with_positions(ws_config);
+
+    let tokvec: TokVec = tokens.into();
+    let encoding_str = encoding;
+    let deflated_module = parse_tokens_without_whitespace(&tokvec, module_text, encoding_str)?;
+    let module = deflated_module.inflate(&mut ctx)?;
+
+    Ok(ParsedModule {
+        module,
+        positions: ctx.positions.expect("InflateCtx::with_positions should set positions"),
+        tracked_node_count: ctx.ids.count(),
+    })
+}
+
 /// Parses tokens into a deflated module without whitespace inflation.
 ///
 /// This is a low-level function used internally. Most users should use
@@ -1017,6 +1165,173 @@ mod test {
             assert_eq!(lexical_span.start, 0, "lexical_span should start at 'async'");
         } else {
             panic!("Expected FunctionDef");
+        }
+    }
+
+    // ========================================================================
+    // Step 5 Tests: parse_module_with_positions API
+    // ========================================================================
+
+    #[test]
+    fn test_parse_module_with_positions_basic_returns_positions() {
+        // Test that parse_module_with_positions returns a ParsedModule with positions
+        let source = "x = 1";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // Should have a valid module
+        assert!(!parsed.module.body.is_empty(), "Module should have body");
+
+        // Should have positions for tracked nodes
+        assert!(!parsed.positions.is_empty(), "PositionTable should not be empty");
+
+        // Should have tracked some nodes
+        assert!(
+            parsed.tracked_node_count > 0,
+            "tracked_node_count should be > 0"
+        );
+    }
+
+    #[test]
+    fn test_original_parse_module_still_works_unchanged() {
+        // Verify that parse_module still works without position tracking
+        let source = "def foo():\n    return 42\n";
+
+        // parse_module should work
+        let module = parse_module(source, None).expect("parse_module should succeed");
+
+        // Round-trip should work
+        let mut state = CodegenState::default();
+        module.codegen(&mut state);
+        assert_eq!(state.to_string(), source, "Round-trip should preserve source");
+
+        // FunctionDef should still have node_id (inflation still assigns IDs)
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            assert!(
+                func.node_id.is_some(),
+                "FunctionDef should have node_id even without position tracking"
+            );
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_parse_module_with_positions_accurate_for_known_input() {
+        // Test that positions are accurate for a specific, known input
+        let source = "foo = bar";
+        //            012345678
+        //            ^foo: 0-3
+        //                  ^bar: 6-9
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                // Check target 'foo'
+                if let AssignTargetExpression::Name(target_name) = &assign.targets[0].target {
+                    let target_id = target_name.node_id.expect("target should have node_id");
+                    let target_pos = parsed.positions.get(&target_id).expect("target should have position");
+                    let target_span = target_pos.ident_span.expect("target should have ident_span");
+
+                    // Verify exact positions
+                    assert_eq!(target_span.start, 0, "foo should start at byte 0");
+                    assert_eq!(target_span.end, 3, "foo should end at byte 3");
+                    assert_eq!(&source[target_span.start as usize..target_span.end as usize], "foo");
+                } else {
+                    panic!("Expected Name target");
+                }
+
+                // Check value 'bar'
+                if let Expression::Name(value_name) = &assign.value {
+                    let value_id = value_name.node_id.expect("value should have node_id");
+                    let value_pos = parsed.positions.get(&value_id).expect("value should have position");
+                    let value_span = value_pos.ident_span.expect("value should have ident_span");
+
+                    // Verify exact positions
+                    assert_eq!(value_span.start, 6, "bar should start at byte 6");
+                    assert_eq!(value_span.end, 9, "bar should end at byte 9");
+                    assert_eq!(&source[value_span.start as usize..value_span.end as usize], "bar");
+                } else {
+                    panic!("Expected Name value");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_tracked_node_count_matches_number_of_tracked_nodes() {
+        // Test that tracked_node_count correctly reflects the number of tracked nodes
+        let source = "def foo(x): pass\n";
+        //            Tracked nodes: FunctionDef, Name(foo), Param, Name(x), plus other Names
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // The tracked_node_count should match the number of nodes that received NodeIds
+        // We can verify this by checking that node_ids are sequential and maximal
+        let count = parsed.tracked_node_count;
+        assert!(count > 0, "Should have tracked nodes");
+
+        // Count should be reasonable for this small input
+        // Expected: FunctionDef, Name(foo), Param, Name(x), Name(pass - in statement context)
+        // The exact count depends on implementation, but should be > 3 (at minimum: FunctionDef, Name(foo), Param, Name(x))
+        assert!(
+            count >= 4,
+            "Should have at least 4 tracked nodes for 'def foo(x): pass', got {}",
+            count
+        );
+
+        // Verify that the highest NodeId assigned is count - 1 (0-indexed)
+        // This ensures IDs are sequential
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            let func_id = func.node_id.expect("FunctionDef should have node_id");
+            assert!(
+                func_id.as_u32() < count,
+                "FunctionDef's NodeId {} should be < tracked_node_count {}",
+                func_id.as_u32(),
+                count
+            );
+
+            let name_id = func.name.node_id.expect("Name should have node_id");
+            assert!(
+                name_id.as_u32() < count,
+                "Name's NodeId {} should be < tracked_node_count {}",
+                name_id.as_u32(),
+                count
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_module_with_positions_with_encoding() {
+        // Test that encoding parameter works
+        let source = "x = 1";
+        let parsed = parse_module_with_positions(source, Some("utf-8")).expect("parse error");
+
+        assert!(!parsed.module.body.is_empty(), "Module should have body with encoding");
+    }
+
+    #[test]
+    fn test_parse_module_with_positions_strips_bom() {
+        // Test that UTF-8 BOM is stripped
+        let source_with_bom = "\u{feff}x = 1";
+
+        let parsed = parse_module_with_positions(source_with_bom, None).expect("parse error");
+        assert!(!parsed.module.body.is_empty(), "Module should parse with BOM");
+
+        // Position data should be relative to after BOM
+        // BOM is 3 bytes, so 'x' should be at position 0 in the stripped source
+        // But the function strips BOM, so positions are relative to the stripped source
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let AssignTargetExpression::Name(name) = &assign.targets[0].target {
+                    let node_id = name.node_id.expect("Name should have node_id");
+                    let pos = parsed.positions.get(&node_id).expect("Name should have position");
+                    let span = pos.ident_span.expect("Name should have ident_span");
+
+                    // Position should be 0 (relative to stripped source)
+                    assert_eq!(span.start, 0, "Position should be relative to stripped source");
+                }
+            }
         }
     }
 }

@@ -1290,24 +1290,24 @@ let scope_end = match &self.body {
 - `parse_module_with_positions()` function
 
 **Tasks:**
-- [ ] Implement `ParsedModule` struct
-- [ ] Implement `parse_module_with_positions()` that:
+- [x] Implement `ParsedModule` struct
+- [x] Implement `parse_module_with_positions()` that:
   - Creates `InflateCtx::with_positions()`
   - Calls existing inflation
   - Returns `ParsedModule` with positions
-- [ ] Export from `lib.rs`
-- [ ] Add doc comments and examples
+- [x] Export from `lib.rs`
+- [x] Add doc comments and examples
 
 **Tests:**
-- [ ] Unit test: Basic parsing returns positions
-- [ ] Unit test: Original `parse_module()` still works unchanged
-- [ ] Unit test: Positions are accurate for known input
-- [ ] Unit test: `node_count` matches number of tracked nodes
+- [x] Unit test: Basic parsing returns positions
+- [x] Unit test: Original `parse_module()` still works unchanged
+- [x] Unit test: Positions are accurate for known input
+- [x] Unit test: `node_count` matches number of tracked nodes
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes
-- [ ] Doc tests pass
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes
+- [x] Doc tests pass
 
 **Rollback:**
 - Revert new API
