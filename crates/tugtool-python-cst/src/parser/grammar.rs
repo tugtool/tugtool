@@ -1968,6 +1968,7 @@ fn make_name_or_attr<'input, 'a>(
 fn make_name<'input, 'a>(tok: TokenRef<'input, 'a>) -> Name<'input, 'a> {
     Name {
         value: tok.string,
+        tok: Some(tok),
         ..Default::default()
     }
 }

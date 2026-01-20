@@ -2507,3 +2507,45 @@ Renamed `tugtool-cst` to `tugtool-python-cst` and `tugtool-cst-derive` to `tugto
 The InflateCtx architecture is validated as viable. The Phase 4 design decisions (D01-D12) are sound and implementable.
 
 ---
+
+### Phase 4 Step 1: Add tok Field to Name Nodes - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` Section D05: Add tok field to DeflatedName
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Name struct definition
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - make_name function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `tok: Option<TokenRef<'a>>` field to `Name` struct in `expression.rs` | Done |
+| Update `make_name` function in `grammar.rs` to store `tok: Some(tok)` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added `pub(crate) tok: Option<TokenRef<'a>>` to `Name` struct
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Updated `make_name` to store `tok: Some(tok)`
+- `plans/phase-4.md` - Checked off all Step 1 tasks and checkpoints
+
+**Test Results:**
+- `cargo build -p tugtool-python-cst`: Build succeeded
+- `cargo nextest run -p tugtool-python-cst`: 346 tests passed
+- `cargo nextest run --workspace`: 1034 tests passed
+
+**Checkpoints Verified:**
+- Build succeeds: PASS
+- All tests pass: PASS
+- DeflatedName has `tok: Option<TokenRef<'r, 'a>>` field: PASS (verified by successful compilation)
+
+**Key Implementation Details:**
+1. **Option type required**: The `tok` field uses `Option<TokenRef<'a>>` because `Name` derives `Default`, and `TokenRef` (a reference type) cannot implement `Default`
+2. **Parser vs Default**: Parser-created nodes have `Some(tok)`; only default-constructed nodes have `None`
+3. **Macro handles deflated struct**: The `#[cst_node]` macro automatically generates `DeflatedName` with the `tok` field
+4. **No inflate/codegen changes**: The tok field is stripped from inflated nodes by the macro, so no changes to `Inflate` or `Codegen` implementations were needed
+
+**Pattern Precedent:**
+This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the same reason (needs to support Default derive).
+
+---

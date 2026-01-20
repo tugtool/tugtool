@@ -1078,8 +1078,8 @@ pub fn parse_module_with_positions<'a>(
 - Modified `crates/tugtool-python-cst/src/parser/grammar.rs`
 
 **Tasks:**
-- [ ] Add `pub(crate) tok: Option<TokenRef<'a>>` field to `Name` struct in `expression.rs`
-- [ ] Update `make_name` function in `grammar.rs` to store `tok: Some(tok)`
+- [x] Add `pub(crate) tok: Option<TokenRef<'a>>` field to `Name` struct in `expression.rs`
+- [x] Update `make_name` function in `grammar.rs` to store `tok: Some(tok)`
 
 **Code Changes:**
 
@@ -1131,14 +1131,14 @@ fn make_name<'input, 'a>(tok: TokenRef<'input, 'a>) -> Name<'input, 'a> {
 ```
 
 **Tests:**
-- [ ] `cargo build -p tugtool-python-cst` compiles without errors
-- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
-- [ ] `cargo nextest run --workspace` passes all tests
+- [x] `cargo build -p tugtool-python-cst` compiles without errors
+- [x] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [x] `cargo nextest run --workspace` passes all tests
 
 **Checkpoint:**
-- [ ] Build succeeds
-- [ ] All tests pass
-- [ ] `DeflatedName` has `tok: Option<TokenRef<'r, 'a>>` field (verify via macro expansion)
+- [x] Build succeeds
+- [x] All tests pass
+- [x] `DeflatedName` has `tok: Option<TokenRef<'r, 'a>>` field (verify via macro expansion)
 
 **Rollback:**
 - Revert changes to expression.rs and grammar.rs

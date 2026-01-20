@@ -194,6 +194,8 @@ pub struct Name<'a> {
     pub value: &'a str,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    pub(crate) tok: Option<TokenRef<'a>>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedName<'r, 'a> {
