@@ -2353,3 +2353,95 @@ Clicking at byte 21 matches only "inner" (span 21-26), NOT "Outer" (span 6-11).
 The native CST produces name-only spans, not full-declaration spans. This architectural decision eliminates the need for tie-breaking. Tests that appeared to verify "smallest span wins" were actually verifying that only one span matches each click location. New tests explicitly verify this behavior.
 
 ---
+
+### Documentation: Unify Span Infrastructure in Phase 3
+
+**Completed:** 2026-01-19
+
+**Summary:**
+Consolidated Issues 3, 4, 5 into a unified span infrastructure section in plans/phase-3.md. This reorganization clarified the span type taxonomy and provided detailed implementation plans.
+
+**Files Modified:**
+- `plans/phase-3.md` - Major restructuring (+479 lines, -104 lines):
+  - Consolidated Issues 3, 4, 5 into unified span section
+  - Renamed span types: Identifier, Lexical, Definition
+  - Added detailed implementation plans for Issues 4 and 5
+
+**Files Deleted:**
+- `plans/issue-4-scope-spans-plan.md` - Obsolete, content merged into phase-3.md
+
+**Key Changes:**
+1. Span type taxonomy clarified: Identifier spans (name-only), Lexical spans (scope boundaries), Definition spans (full declarations)
+2. Implementation approach for each span type documented
+3. Superseded by Phase 4 plan which takes a different architectural approach
+
+---
+
+### Phase 4: Native CST Position/Span Infrastructure Plan
+
+**Completed:** 2026-01-20
+
+**Summary:**
+Created comprehensive Phase 4 plan defining the InflateCtx architecture for embedded NodeId and position tracking during CST parsing.
+
+**Files Created:**
+- `plans/phase-4.md` (1632 lines):
+  - Defines InflateCtx architecture with embedded NodeId
+  - Specifies NodePosition struct for ident/lexical/def spans
+  - Documents 12 design decisions (D01-D12)
+  - Includes 14 execution steps with checkpoints
+  - Supersedes Phase 3 Issues 3, 4, 5 (cursor-based spans)
+
+**Key Design Decisions:**
+1. D01: `NodeId(u32)` embedded directly in CST nodes during inflate
+2. D02: `InflateCtx` struct threaded through all inflate functions
+3. D03: `NodePosition` struct replaces cursor-based span collection
+4. D04: Three span types: `ident_span`, `lexical_span`, `def_span`
+5. D05-D12: Additional architectural decisions for implementation
+
+**Rationale:**
+The Phase 3 cursor-based approach (SpanCollector) required a separate post-parse pass. Phase 4 eliminates this by computing positions during the inflate phase, resulting in better performance and simpler architecture.
+
+---
+
+### Phase 4 Prerequisite: Rename CST Crates
+
+**Completed:** 2026-01-20
+
+**Summary:**
+Renamed `tugtool-cst` to `tugtool-python-cst` and `tugtool-cst-derive` to `tugtool-python-cst-derive` to clarify that these crates are Python-specific, preparing for potential future language-specific CST implementations.
+
+**Files Modified:**
+- `Cargo.toml` (workspace) - Updated member paths
+- `crates/tugtool-python-cst/Cargo.toml` - Renamed crate, updated derive dependency
+- `crates/tugtool-python-cst-derive/Cargo.toml` - Renamed crate
+- `crates/tugtool-python/Cargo.toml` - Updated dependency reference
+- `crates/tugtool-python/src/cst_bridge.rs` - Updated imports
+- `crates/tugtool-python/src/analyzer.rs` - Updated inline type references
+- `crates/tugtool-python/src/dynamic.rs` - Updated imports
+- `crates/tugtool-python/src/lib.rs` - Updated imports
+- `crates/tugtool-python/src/ops/rename.rs` - Updated imports
+- `CLAUDE.md` - Updated architecture documentation
+- `plans/phase-4.md` - Updated crate name references
+- Multiple files in `crates/tugtool-python-cst/` - Updated internal imports and doc examples
+
+**Directories Renamed:**
+- `crates/tugtool-cst/` → `crates/tugtool-python-cst/`
+- `crates/tugtool-cst-derive/` → `crates/tugtool-python-cst-derive/`
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1031 tests passed
+
+**Checkpoints Verified:**
+- `cargo build --workspace` succeeds: PASS
+- All imports updated from `tugtool_cst::` to `tugtool_python_cst::`: PASS
+- All imports updated from `tugtool_cst_derive::` to `tugtool_python_cst_derive::`: PASS
+- Documentation updated: PASS
+- All tests pass: PASS
+
+**Key Implementation Details:**
+1. Hyphenated crate names become underscored in Rust `use` statements
+2. Proc-macro crate must be separate from the main CST crate
+3. All doc comment examples needed updating for the new import paths
+
+---
