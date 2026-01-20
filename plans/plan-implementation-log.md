@@ -2642,3 +2642,93 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 - The derive macro updates were straightforward since they follow a consistent code generation pattern
 
 ---
+
+### Phase 4 Step 3: Add node_id to Key Inflated Node Structs - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` Section D04: Embed NodeId on Inflated Nodes
+- `plans/phase-4.md` Section 4.3.3: Embedded NodeId on Inflated Nodes
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Node struct definitions
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Node struct definitions
+- `crates/tugtool-python-cst-derive/src/cstnode.rs` - Macro implementation for struct generation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `node_id: Option<NodeId>` to `Name` struct | Done |
+| Add `node_id: Option<NodeId>` to `FunctionDef` struct | Done |
+| Add `node_id: Option<NodeId>` to `ClassDef` struct | Done |
+| Add `node_id: Option<NodeId>` to `Param` struct | Done |
+| Add `node_id: Option<NodeId>` to `Decorator` struct | Done |
+| Add `node_id: Option<NodeId>` to `Integer`, `Float`, `SimpleString` structs | Done |
+| Update each node's `Inflate` implementation to call `ctx.next_id()` and store result | Done |
+| Ensure `Default` implementations set `node_id: None` | Done |
+| Write unit tests for node_id population | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst-derive/src/cstnode.rs` - Added `node_id` to deflated field filter list with documentation comment
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added `node_id` field and inflate updates to: Name, Param, Integer, Float, SimpleString
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added `node_id` field and inflate updates to: FunctionDef, ClassDef, Decorator
+- `crates/tugtool-python-cst/src/lib.rs` - Added 9 unit tests for node_id verification
+- `plans/phase-4.md` - Checked off all Step 3 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo build -p tugtool-python-cst`: Build succeeded
+- `cargo nextest run -p tugtool-python-cst`: 359 tests passed (9 new tests added)
+- `cargo nextest run --workspace`: 1047 tests passed
+
+**Checkpoints Verified:**
+- Build succeeds: PASS
+- All tests pass: PASS
+- Inflated nodes have populated `node_id` fields: PASS
+
+**Unit Tests Added:**
+- `test_parsed_name_has_node_id` - Verifies Name nodes have Some(NodeId) after parsing
+- `test_parsed_function_def_has_node_id` - Verifies FunctionDef and its name have distinct NodeIds
+- `test_parsed_class_def_has_node_id` - Verifies ClassDef nodes have Some(NodeId)
+- `test_parsed_param_has_node_id` - Verifies Param nodes and their names have NodeIds
+- `test_parsed_decorator_has_node_id` - Verifies Decorator nodes have Some(NodeId)
+- `test_parsed_integer_has_node_id` - Verifies Integer literal nodes have Some(NodeId)
+- `test_parsed_float_has_node_id` - Verifies Float literal nodes have Some(NodeId)
+- `test_parsed_simple_string_has_node_id` - Verifies SimpleString nodes have Some(NodeId)
+- `test_all_tracked_node_types_have_node_id` - Comprehensive test covering all tracked types
+
+**Key Implementation Details:**
+
+1. **Macro modification required**: The `#[cst_node]` macro generates both inflated and deflated struct variants. When we added `node_id: Option<NodeId>` to structs, the macro attempted to create a `DeflatedNodeId` type (which doesn't exist).
+
+2. **Solution**: Added `node_id` to the field filter in `impl_named_fields()` so it's excluded from deflated structs but kept in inflated structs. This follows the same pattern as `whitespace*`, `footer`, `header`, `leading_lines`, and `lines_after_decorators` fields.
+
+3. **Architectural review**: Used code-architect agent to validate the approach:
+   - Correctness: Confirmed - `node_id` is assigned during inflation, not parsing
+   - Consistency: Matches existing patterns for inflate-only fields
+   - Alternatives considered: Adding to `is_builtin()` (wrong), field attributes (cleaner but inconsistent), type-based detection (fragile)
+   - Risk: Low - misuse causes compile-time errors, not runtime bugs
+
+4. **Documentation added**: Added comprehensive comment in `cstnode.rs` explaining the field filtering convention:
+   ```rust
+   // Filter fields that exist only on inflated structs (not in deflated):
+   // - whitespace*: Whitespace is materialized during inflation from token streams
+   // - header/footer/leading_lines/lines_after_decorators: Line metadata, same reason
+   // - node_id: Stable identity assigned during inflation via ctx.next_id()
+   //
+   // Conversely, TokenRef fields are filtered from inflated structs (see below)
+   // since they're only needed during parsing/inflation, not in the final CST.
+   ```
+
+5. **Default handling**: `Option<NodeId>` naturally defaults to `None`, so `#[cst_node(..., Default)]` macro-derived Default implementations work correctly without explicit handling.
+
+**Tracked Node Types (with node_id):**
+- `Name` - Identifiers (most critical for rename operations)
+- `Param` - Function parameters
+- `FunctionDef` - Function definitions
+- `ClassDef` - Class definitions
+- `Decorator` - Decorator nodes (for def_span tracking)
+- `Integer` - Integer literals
+- `Float` - Float literals
+- `SimpleString` - String literals
+
+---

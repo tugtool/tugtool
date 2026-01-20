@@ -244,8 +244,13 @@ fn impl_unnamed_fields(mut deflated_fields: FieldsUnnamed) -> FieldsUnnamed {
 fn impl_named_fields(mut fields: FieldsNamed) -> (Fields, Fields) {
     let mut deflated_fields = fields.clone();
     let mut added_lifetime = false;
-    // Drop whitespace fields from deflated fields
-    // And add lifetimes to tokenref fields
+    // Filter fields that exist only on inflated structs (not in deflated):
+    // - whitespace*: Whitespace is materialized during inflation from token streams
+    // - header/footer/leading_lines/lines_after_decorators: Line metadata, same reason
+    // - node_id: Stable identity assigned during inflation via ctx.next_id()
+    //
+    // Conversely, TokenRef fields are filtered from inflated structs (see below)
+    // since they're only needed during parsing/inflation, not in the final CST.
     deflated_fields.named = deflated_fields
         .named
         .into_pairs()
@@ -256,6 +261,7 @@ fn impl_named_fields(mut fields: FieldsNamed) -> (Fields, Fields) {
                 && id != "header"
                 && id != "leading_lines"
                 && id != "lines_after_decorators"
+                && id != "node_id"
         })
         .map(|pair| {
             if is_builtin(pair.value()) {

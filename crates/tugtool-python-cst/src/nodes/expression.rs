@@ -11,7 +11,7 @@ use crate::{
     nodes::{
         op::*,
         statement::*,
-        traits::{Inflate, ParenthesizedDeflatedNode, ParenthesizedNode, Result, WithComma},
+        traits::{Inflate, NodeId, ParenthesizedDeflatedNode, ParenthesizedNode, Result, WithComma},
         whitespace::ParenthesizableWhitespace,
         Annotation, AssignEqual, AssignTargetExpression, BinaryOp, BooleanOp, Codegen,
         CodegenState, Colon, Comma, CompOp, Dot, UnaryOp,
@@ -197,17 +197,24 @@ pub struct Name<'a> {
     pub rpar: Vec<RightParen<'a>>,
 
     pub(crate) tok: Option<TokenRef<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedName<'r, 'a> {
     type Inflated = Name<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Name node
+        let node_id = ctx.next_id();
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -235,11 +242,17 @@ pub struct Param<'a> {
     pub whitespace_after_param: ParenthesizableWhitespace<'a>,
 
     pub(crate) star_tok: Option<TokenRef<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedParam<'r, 'a> {
     type Inflated = Param<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Param node
+        let node_id = ctx.next_id();
+
         let name = self.name.inflate(ctx)?;
         let annotation = self.annotation.inflate(ctx)?;
         let equal = self.equal.inflate(ctx)?;
@@ -260,6 +273,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedParam<'r, 'a> {
             star: self.star,
             whitespace_after_star,
             whitespace_after_param,
+            node_id: Some(node_id),
         })
     }
 }
@@ -508,6 +522,9 @@ pub struct Integer<'a> {
     pub value: &'a str,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Integer<'a> {
@@ -521,12 +538,16 @@ impl<'a> Codegen<'a> for Integer<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedInteger<'r, 'a> {
     type Inflated = Integer<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Integer node
+        let node_id = ctx.next_id();
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -538,6 +559,9 @@ pub struct Float<'a> {
     pub value: &'a str,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Float<'a> {
@@ -551,12 +575,16 @@ impl<'a> Codegen<'a> for Float<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedFloat<'r, 'a> {
     type Inflated = Float<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Float node
+        let node_id = ctx.next_id();
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2315,17 +2343,24 @@ pub struct SimpleString<'a> {
     pub value: &'a str,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedSimpleString<'r, 'a> {
     type Inflated = SimpleString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this SimpleString node
+        let node_id = ctx.next_id();
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }

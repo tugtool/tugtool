@@ -17,7 +17,7 @@ use crate::{
         expression::*,
         op::*,
         traits::{
-            Inflate, ParenthesizedDeflatedNode, ParenthesizedNode, Result, WithComma,
+            Inflate, NodeId, ParenthesizedDeflatedNode, ParenthesizedNode, Result, WithComma,
             WithLeadingLines,
         },
     },
@@ -812,6 +812,9 @@ pub struct FunctionDef<'a> {
     pub(crate) open_paren_tok: TokenRef<'a>,
     pub(crate) close_paren_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> DeflatedFunctionDef<'r, 'a> {
@@ -864,6 +867,9 @@ impl<'a> Codegen<'a> for FunctionDef<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedFunctionDef<'r, 'a> {
     type Inflated = FunctionDef<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this FunctionDef node
+        let node_id = ctx.next_id();
+
         let mut decorators = self.decorators.inflate(ctx)?;
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
@@ -951,6 +957,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedFunctionDef<'r, 'a> {
             whitespace_after_type_parameters,
             whitespace_before_params,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -964,6 +971,9 @@ pub struct Decorator<'a> {
 
     pub(crate) at_tok: TokenRef<'a>,
     pub(crate) newline_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Decorator<'a> {
@@ -982,6 +992,9 @@ impl<'a> Codegen<'a> for Decorator<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedDecorator<'r, 'a> {
     type Inflated = Decorator<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Decorator node
+        let node_id = ctx.next_id();
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut (*self.at_tok).whitespace_before.borrow_mut(),
@@ -999,6 +1012,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedDecorator<'r, 'a> {
             leading_lines,
             whitespace_after_at,
             trailing_whitespace,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1716,6 +1730,9 @@ pub struct ClassDef<'a> {
     pub(crate) lpar_tok: Option<TokenRef<'a>>,
     pub(crate) rpar_tok: Option<TokenRef<'a>>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for ClassDef<'a> {
@@ -1769,6 +1786,9 @@ impl<'a> Codegen<'a> for ClassDef<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedClassDef<'r, 'a> {
     type Inflated = ClassDef<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this ClassDef node
+        let node_id = ctx.next_id();
+
         let mut leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut (*self.class_tok).whitespace_before.borrow_mut(),
@@ -1828,6 +1848,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedClassDef<'r, 'a> {
             whitespace_after_type_parameters,
             whitespace_after_name,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }

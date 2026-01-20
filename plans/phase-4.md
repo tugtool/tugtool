@@ -1200,25 +1200,25 @@ fn make_name<'input, 'a>(tok: TokenRef<'input, 'a>) -> Name<'input, 'a> {
 **Note (pitfall):** A single missed `node_id: Some(ctx.next_id())` on any tracked node will surface later as a hard-to-debug `unwrap()` panic in collectors. Add a unit test that parses representative code and asserts **all tracked node types encountered** have `node_id.is_some()` (and consider adding debug assertions in their `Inflate` impls).
 
 **Tasks:**
-- [ ] Add `node_id: Option<NodeId>` to `Name` struct
-- [ ] Add `node_id: Option<NodeId>` to `FunctionDef` struct
-- [ ] Add `node_id: Option<NodeId>` to `ClassDef` struct
-- [ ] Add `node_id: Option<NodeId>` to `Param` struct
-- [ ] Add `node_id: Option<NodeId>` to `Decorator` struct
-- [ ] Add `node_id: Option<NodeId>` to `Integer`, `Float`, `SimpleString` structs
-- [ ] Update each node's `Inflate` implementation to call `ctx.next_id()` and store result
-- [ ] Ensure `Default` implementations set `node_id: None`
+- [x] Add `node_id: Option<NodeId>` to `Name` struct
+- [x] Add `node_id: Option<NodeId>` to `FunctionDef` struct
+- [x] Add `node_id: Option<NodeId>` to `ClassDef` struct
+- [x] Add `node_id: Option<NodeId>` to `Param` struct
+- [x] Add `node_id: Option<NodeId>` to `Decorator` struct
+- [x] Add `node_id: Option<NodeId>` to `Integer`, `Float`, `SimpleString` structs
+- [x] Update each node's `Inflate` implementation to call `ctx.next_id()` and store result
+- [x] Ensure `Default` implementations set `node_id: None`
 
 **Tests:**
-- [ ] `cargo build -p tugtool-python-cst` compiles without errors
-- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
-- [ ] Unit test: Parsed `Name` node has `Some(NodeId)` after inflation
-- [ ] Unit test: Parsed `FunctionDef` node has `Some(NodeId)` after inflation
+- [x] `cargo build -p tugtool-python-cst` compiles without errors
+- [x] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [x] Unit test: Parsed `Name` node has `Some(NodeId)` after inflation
+- [x] Unit test: Parsed `FunctionDef` node has `Some(NodeId)` after inflation
 
 **Checkpoint:**
-- [ ] Build succeeds
-- [ ] All tests pass
-- [ ] Inflated nodes have populated `node_id` fields
+- [x] Build succeeds
+- [x] All tests pass
+- [x] Inflated nodes have populated `node_id` fields
 
 **Rollback:**
 - Revert node struct changes

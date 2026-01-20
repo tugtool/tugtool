@@ -477,4 +477,302 @@ mod test {
         assert_eq!(state2.to_string(), state3.to_string());
         assert_eq!(state1.to_string(), source);
     }
+
+    // ========================================================================
+    // NodeId tests - verify that parsed nodes have populated node_id fields
+    // ========================================================================
+
+    #[test]
+    fn test_parsed_name_has_node_id() {
+        // Parse code that contains a Name node (variable assignment)
+        let module = parse_module("x = 1", None).expect("parse error");
+
+        // The module's body should contain a simple statement with Assign
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                // The target of the assignment is an AssignTarget containing a Name
+                if let AssignTargetExpression::Name(name) = &assign.targets[0].target {
+                    // Verify the Name node has a populated node_id
+                    assert!(
+                        name.node_id.is_some(),
+                        "Parsed Name node should have Some(NodeId), got None"
+                    );
+                } else {
+                    panic!("Expected Name target in assignment");
+                }
+            } else {
+                panic!("Expected Assign statement");
+            }
+        } else {
+            panic!("Expected SimpleStatementLine");
+        }
+    }
+
+    #[test]
+    fn test_parsed_function_def_has_node_id() {
+        // Parse code that contains a FunctionDef
+        let module = parse_module("def foo(): pass", None).expect("parse error");
+
+        // The module's body should contain a compound statement with FunctionDef
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func_def) = compound {
+                // Verify the FunctionDef node has a populated node_id
+                assert!(
+                    func_def.node_id.is_some(),
+                    "Parsed FunctionDef node should have Some(NodeId), got None"
+                );
+
+                // Verify the function's Name also has a node_id
+                assert!(
+                    func_def.name.node_id.is_some(),
+                    "FunctionDef's name should have Some(NodeId), got None"
+                );
+
+                // Verify IDs are different (distinct nodes)
+                assert_ne!(
+                    func_def.node_id.unwrap(),
+                    func_def.name.node_id.unwrap(),
+                    "FunctionDef and its name should have distinct NodeIds"
+                );
+            } else {
+                panic!("Expected FunctionDef compound statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_parsed_class_def_has_node_id() {
+        // Parse code that contains a ClassDef
+        let module = parse_module("class Foo: pass", None).expect("parse error");
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::ClassDef(class_def) = compound {
+                // Verify the ClassDef node has a populated node_id
+                assert!(
+                    class_def.node_id.is_some(),
+                    "Parsed ClassDef node should have Some(NodeId), got None"
+                );
+
+                // Verify the class's Name also has a node_id
+                assert!(
+                    class_def.name.node_id.is_some(),
+                    "ClassDef's name should have Some(NodeId), got None"
+                );
+            } else {
+                panic!("Expected ClassDef compound statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_parsed_param_has_node_id() {
+        // Parse code that contains function parameters
+        let module = parse_module("def foo(x, y): pass", None).expect("parse error");
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func_def) = compound {
+                // Check the first parameter
+                let param = &func_def.params.params[0];
+                assert!(
+                    param.node_id.is_some(),
+                    "Parsed Param node should have Some(NodeId), got None"
+                );
+
+                // Check the parameter's name
+                assert!(
+                    param.name.node_id.is_some(),
+                    "Param's name should have Some(NodeId), got None"
+                );
+
+                // Second parameter should also have distinct IDs
+                let param2 = &func_def.params.params[1];
+                assert!(
+                    param2.node_id.is_some(),
+                    "Second Param node should have Some(NodeId)"
+                );
+                assert_ne!(
+                    param.node_id.unwrap(),
+                    param2.node_id.unwrap(),
+                    "Different parameters should have distinct NodeIds"
+                );
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_parsed_decorator_has_node_id() {
+        // Parse code with a decorator
+        let module = parse_module("@decorator\ndef foo(): pass", None).expect("parse error");
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func_def) = compound {
+                assert!(!func_def.decorators.is_empty(), "Function should have decorator");
+                let decorator = &func_def.decorators[0];
+                assert!(
+                    decorator.node_id.is_some(),
+                    "Parsed Decorator node should have Some(NodeId), got None"
+                );
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_parsed_integer_has_node_id() {
+        // Parse code with an integer literal
+        let module = parse_module("x = 42", None).expect("parse error");
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let Expression::Integer(integer) = &assign.value {
+                    assert!(
+                        integer.node_id.is_some(),
+                        "Parsed Integer node should have Some(NodeId), got None"
+                    );
+                } else {
+                    panic!("Expected Integer expression");
+                }
+            } else {
+                panic!("Expected Assign");
+            }
+        } else {
+            panic!("Expected SimpleStatementLine");
+        }
+    }
+
+    #[test]
+    fn test_parsed_float_has_node_id() {
+        // Parse code with a float literal
+        let module = parse_module("x = 3.14", None).expect("parse error");
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let Expression::Float(float) = &assign.value {
+                    assert!(
+                        float.node_id.is_some(),
+                        "Parsed Float node should have Some(NodeId), got None"
+                    );
+                } else {
+                    panic!("Expected Float expression");
+                }
+            } else {
+                panic!("Expected Assign");
+            }
+        } else {
+            panic!("Expected SimpleStatementLine");
+        }
+    }
+
+    #[test]
+    fn test_parsed_simple_string_has_node_id() {
+        // Parse code with a string literal
+        let module = parse_module(r#"x = "hello""#, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let Expression::SimpleString(string) = &assign.value {
+                    assert!(
+                        string.node_id.is_some(),
+                        "Parsed SimpleString node should have Some(NodeId), got None"
+                    );
+                } else {
+                    panic!("Expected SimpleString expression, got {:?}", assign.value);
+                }
+            } else {
+                panic!("Expected Assign");
+            }
+        } else {
+            panic!("Expected SimpleStatementLine");
+        }
+    }
+
+    #[test]
+    fn test_all_tracked_node_types_have_node_id() {
+        // Separate tests for each tracked node type, easier to maintain and debug
+
+        // Test FunctionDef, Decorator, Param, and Names in function context
+        let func_source = "@dec\ndef f(x): pass";
+        let module = parse_module(func_source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
+            assert!(func.node_id.is_some(), "FunctionDef missing node_id");
+            assert!(func.name.node_id.is_some(), "FunctionDef name missing node_id");
+
+            assert!(!func.decorators.is_empty(), "Expected decorator");
+            assert!(func.decorators[0].node_id.is_some(), "Decorator missing node_id");
+
+            assert!(!func.params.params.is_empty(), "Expected param");
+            assert!(func.params.params[0].node_id.is_some(), "Param missing node_id");
+            assert!(func.params.params[0].name.node_id.is_some(), "Param name missing node_id");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+
+        // Test ClassDef
+        let class_source = "class C: pass";
+        let module = parse_module(class_source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::ClassDef(class)) = &module.body[0] {
+            assert!(class.node_id.is_some(), "ClassDef missing node_id");
+            assert!(class.name.node_id.is_some(), "ClassDef name missing node_id");
+        } else {
+            panic!("Expected ClassDef");
+        }
+
+        // Test literals at module level (easier to parse)
+        let int_source = "x = 42";
+        let module = parse_module(int_source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                // Check target name
+                if let AssignTargetExpression::Name(name) = &assign.targets[0].target {
+                    assert!(name.node_id.is_some(), "Name missing node_id");
+                }
+                // Check value
+                if let Expression::Integer(i) = &assign.value {
+                    assert!(i.node_id.is_some(), "Integer missing node_id");
+                } else {
+                    panic!("Expected Integer");
+                }
+            }
+        }
+
+        let float_source = "x = 3.14";
+        let module = parse_module(float_source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let Expression::Float(f) = &assign.value {
+                    assert!(f.node_id.is_some(), "Float missing node_id");
+                } else {
+                    panic!("Expected Float");
+                }
+            }
+        }
+
+        let str_source = r#"x = "hello""#;
+        let module = parse_module(str_source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                if let Expression::SimpleString(s) = &assign.value {
+                    assert!(s.node_id.is_some(), "SimpleString missing node_id");
+                } else {
+                    panic!("Expected SimpleString, got {:?}", assign.value);
+                }
+            }
+        }
+    }
 }
