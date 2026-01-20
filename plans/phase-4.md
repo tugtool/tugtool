@@ -1044,19 +1044,19 @@ pub fn parse_module_with_positions<'a>(
 - Verification that InflateCtx approach is viable
 
 **Tasks:**
-- [ ] Grep all `tok: TokenRef` fields and their containing structs
-- [ ] Document which nodes have direct position access
-- [ ] Identify all nodes that need `node_id` field (see [D04])
-- [ ] Verify `#[cst_node]` macro can be extended for `node_id`
-- [ ] Prototype: Can InflateCtx thread through existing inflate implementations?
-- [ ] Write findings to `plans/phase-4-position-audit.md`
+- [x] Grep all `tok: TokenRef` fields and their containing structs
+- [x] Document which nodes have direct position access
+- [x] Identify all nodes that need `node_id` field (see [D04])
+- [x] Verify `#[cst_node]` macro can be extended for `node_id`
+- [x] Prototype: Can InflateCtx thread through existing inflate implementations?
+- [x] Write findings to `plans/phase-4-position-audit.md`
 
 **Tests:**
-- [ ] Unit test: Verify Token has start_pos/end_pos with correct values for simple input
+- [x] Unit test: Verify Token has start_pos/end_pos with correct values for simple input
 
 **Checkpoint:**
-- [ ] Audit document exists and is complete
-- [ ] InflateCtx approach validated
+- [x] Audit document exists and is complete
+- [x] InflateCtx approach validated
 
 **Rollback:**
 - Revert audit document if approach changes

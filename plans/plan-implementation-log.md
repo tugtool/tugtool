@@ -2445,3 +2445,65 @@ Renamed `tugtool-cst` to `tugtool-python-cst` and `tugtool-cst-derive` to `tugto
 3. All doc comment examples needed updating for the new import paths
 
 ---
+
+### Phase 4 Step 0: Audit Current Position Data Availability - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `crates/tugtool-python-cst/src/tokenizer/text_position/mod.rs` - `TextPositionSnapshot` structure
+- `crates/tugtool-python-cst/src/tokenizer/core/mod.rs` - `Token` struct with `start_pos`/`end_pos`
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - `FunctionDef`, `ClassDef` inflate implementations
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - `Name`, `Param` inflate implementations
+- `crates/tugtool-python-cst-derive/src/cstnode.rs` - `#[cst_node]` macro implementation
+- `crates/tugtool-python-cst-derive/src/inflate.rs` - `Inflate` derive macro
+- `crates/tugtool-python-cst/src/nodes/traits.rs` - `Inflate` trait and blanket implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Grep all `tok: TokenRef` fields and their containing structs | Done |
+| Document which nodes have direct position access | Done |
+| Identify all nodes that need `node_id` field (see D04) | Done |
+| Verify `#[cst_node]` macro can be extended for `node_id` | Done |
+| Prototype: Can InflateCtx thread through existing inflate implementations? | Done |
+| Write findings to `plans/phase-4-position-audit.md` | Done |
+
+**Files Created:**
+- `plans/phase-4-position-audit.md` (12KB) - Comprehensive audit document covering:
+  - Token position infrastructure (`TextPositionSnapshot`, `Token`)
+  - All deflated nodes with TokenRef fields (categorized by statement/expression/operator/module)
+  - Nodes requiring `node_id` field (8 tracked nodes identified)
+  - Critical finding: `Name` node lacks `tok` field
+  - `#[cst_node]` macro extensibility analysis
+  - InflateCtx threading feasibility assessment
+  - Scope end position availability for D10
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/tokenizer/tests.rs` - Added 3 new position verification tests:
+  - `test_token_position_data_availability` - Basic position verification for `x = 1`
+  - `test_token_position_with_utf8` - UTF-8 multi-byte character handling (`café = 1`)
+  - `test_token_position_function_def` - Function definition token positions
+- `plans/phase-4.md` - Checked off all Step 0 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst test_token_position`: 3 tests passed
+- `cargo nextest run --workspace`: 1034 tests passed (3 new tests added)
+
+**Checkpoints Verified:**
+- Audit document exists and is complete: PASS
+- InflateCtx approach validated: PASS
+
+**Key Findings:**
+1. **Token positions are accurate**: `Token.start_pos` and `Token.end_pos` provide exact byte offsets from the tokenizer
+2. **Most nodes have TokenRef fields**: Critical nodes (`FunctionDef`, `ClassDef`, `IndentedBlock`, etc.) have necessary token references
+3. **Name node lacks tok field**: This is the main gap; Step 1 will address it by adding `tok: Option<TokenRef<'a>>`
+4. **Scope end is accessible**: `dedent_tok` and `newline_tok` on `IndentedBlock`/`SimpleStatementSuite` provide precise boundaries for D10 implementation
+5. **InflateCtx threading is viable**: High blast radius (~60+ inflate impls, 3 blanket impls, 1 derive macro) but feasible with incremental approach
+6. **Tracked nodes identified**: `Name`, `FunctionDef`, `ClassDef`, `Param`, `Decorator`, `Integer`, `Float`, `SimpleString`
+
+**Conclusion:**
+The InflateCtx architecture is validated as viable. The Phase 4 design decisions (D01-D12) are sound and implementable.
+
+---

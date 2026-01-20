@@ -917,3 +917,108 @@ fn test_can_tokenize_f_and_t_strings() {
         ])
     )
 }
+
+/// Phase 4 Audit: Verify that Token has accurate start_pos and end_pos byte positions.
+/// This test validates the position data infrastructure that Phase 4 relies on.
+#[test]
+fn test_token_position_data_availability() {
+    use crate::tokenize;
+
+    // Simple input: "x = 1"
+    // Byte positions:
+    //   'x' at byte 0
+    //   ' ' at byte 1
+    //   '=' at byte 2
+    //   ' ' at byte 3
+    //   '1' at byte 4
+    let source = "x = 1";
+    let tokens = tokenize(source).expect("tokenize should succeed");
+
+    // Find the Name token 'x'
+    let x_token = tokens.iter().find(|t| t.string == "x").expect("should find 'x' token");
+    assert_eq!(x_token.start_pos.byte_idx(), 0, "'x' should start at byte 0");
+    assert_eq!(x_token.end_pos.byte_idx(), 1, "'x' should end at byte 1");
+
+    // Find the '=' operator token
+    let eq_token = tokens.iter().find(|t| t.string == "=").expect("should find '=' token");
+    assert_eq!(eq_token.start_pos.byte_idx(), 2, "'=' should start at byte 2");
+    assert_eq!(eq_token.end_pos.byte_idx(), 3, "'=' should end at byte 3");
+
+    // Find the Number token '1'
+    let one_token = tokens.iter().find(|t| t.string == "1").expect("should find '1' token");
+    assert_eq!(one_token.start_pos.byte_idx(), 4, "'1' should start at byte 4");
+    assert_eq!(one_token.end_pos.byte_idx(), 5, "'1' should end at byte 5");
+}
+
+/// Phase 4 Audit: Verify position data for multi-byte UTF-8 characters.
+/// Byte offsets must be accurate for non-ASCII source code.
+#[test]
+fn test_token_position_with_utf8() {
+    use crate::tokenize;
+
+    // "café = 1" where 'é' is 2 bytes (0xC3 0xA9)
+    // Byte positions:
+    //   'c' at byte 0
+    //   'a' at byte 1
+    //   'f' at byte 2
+    //   'é' at bytes 3-4 (2 bytes)
+    //   ' ' at byte 5
+    //   '=' at byte 6
+    //   ' ' at byte 7
+    //   '1' at byte 8
+    let source = "café = 1";
+    let tokens = tokenize(source).expect("tokenize should succeed");
+
+    // Find the Name token 'café'
+    let cafe_token = tokens.iter().find(|t| t.string == "café").expect("should find 'café' token");
+    assert_eq!(cafe_token.start_pos.byte_idx(), 0, "'café' should start at byte 0");
+    assert_eq!(cafe_token.end_pos.byte_idx(), 5, "'café' should end at byte 5 (4 chars, 5 bytes)");
+
+    // Find the '=' operator token
+    let eq_token = tokens.iter().find(|t| t.string == "=").expect("should find '=' token");
+    assert_eq!(eq_token.start_pos.byte_idx(), 6, "'=' should start at byte 6");
+    assert_eq!(eq_token.end_pos.byte_idx(), 7, "'=' should end at byte 7");
+
+    // Find the Number token '1'
+    let one_token = tokens.iter().find(|t| t.string == "1").expect("should find '1' token");
+    assert_eq!(one_token.start_pos.byte_idx(), 8, "'1' should start at byte 8");
+    assert_eq!(one_token.end_pos.byte_idx(), 9, "'1' should end at byte 9");
+}
+
+/// Phase 4 Audit: Verify position data for function definitions.
+/// This validates that def_tok, open_paren_tok, etc. have correct positions.
+#[test]
+fn test_token_position_function_def() {
+    use crate::tokenize;
+
+    // "def foo():"
+    // Byte positions:
+    //   'def' at bytes 0-2
+    //   ' ' at byte 3
+    //   'foo' at bytes 4-6
+    //   '(' at byte 7
+    //   ')' at byte 8
+    //   ':' at byte 9
+    let source = "def foo():";
+    let tokens = tokenize(source).expect("tokenize should succeed");
+
+    let def_token = tokens.iter().find(|t| t.string == "def").expect("should find 'def' token");
+    assert_eq!(def_token.start_pos.byte_idx(), 0, "'def' should start at byte 0");
+    assert_eq!(def_token.end_pos.byte_idx(), 3, "'def' should end at byte 3");
+
+    let foo_token = tokens.iter().find(|t| t.string == "foo").expect("should find 'foo' token");
+    assert_eq!(foo_token.start_pos.byte_idx(), 4, "'foo' should start at byte 4");
+    assert_eq!(foo_token.end_pos.byte_idx(), 7, "'foo' should end at byte 7");
+
+    let open_paren = tokens.iter().find(|t| t.string == "(").expect("should find '(' token");
+    assert_eq!(open_paren.start_pos.byte_idx(), 7, "'(' should start at byte 7");
+    assert_eq!(open_paren.end_pos.byte_idx(), 8, "'(' should end at byte 8");
+
+    let close_paren = tokens.iter().find(|t| t.string == ")").expect("should find ')' token");
+    assert_eq!(close_paren.start_pos.byte_idx(), 8, "')' should start at byte 8");
+    assert_eq!(close_paren.end_pos.byte_idx(), 9, "')' should end at byte 9");
+
+    let colon = tokens.iter().find(|t| t.string == ":").expect("should find ':' token");
+    assert_eq!(colon.start_pos.byte_idx(), 9, "':' should start at byte 9");
+    assert_eq!(colon.end_pos.byte_idx(), 10, "':' should end at byte 10");
+}
