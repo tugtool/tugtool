@@ -33,7 +33,18 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use tugtool::python::require_python_with_libcst;
+/// Find Python in PATH for tests (libcst no longer required with native CST)
+fn find_python_for_tests() -> PathBuf {
+    for name in &["python3", "python"] {
+        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return PathBuf::from(path);
+            }
+        }
+    }
+    panic!("Python not found in PATH for tests");
+}
 
 // ============================================================================
 // Test Infrastructure
@@ -221,7 +232,7 @@ fn run_golden_test(
 
 #[test]
 fn golden_analyze_impact_success() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     let result = run_golden_test(
         &[
@@ -244,7 +255,7 @@ fn golden_analyze_impact_success() {
 
 #[test]
 fn golden_run_success_dry() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     let result = run_golden_test(
         &[
@@ -267,7 +278,7 @@ fn golden_run_success_dry() {
 
 #[test]
 fn golden_run_success_applied() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     let result = run_golden_test(
         &[
@@ -291,7 +302,7 @@ fn golden_run_success_applied() {
 
 #[test]
 fn golden_run_success_verified() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     let result = run_golden_test(
         &[
@@ -316,7 +327,7 @@ fn golden_run_success_verified() {
 
 #[test]
 fn golden_snapshot_success() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     let result = run_golden_test(
         &["snapshot"],
@@ -332,7 +343,7 @@ fn golden_snapshot_success() {
 
 #[test]
 fn golden_session_status() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     let result = run_golden_test(
         &["session", "status"],
@@ -352,7 +363,7 @@ fn golden_session_status() {
 
 #[test]
 fn golden_error_invalid_arguments() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     // Invalid location format
     let result = run_golden_test(
@@ -376,7 +387,7 @@ fn golden_error_invalid_arguments() {
 
 #[test]
 fn golden_error_symbol_not_found() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     // Symbol at non-existent location
     let result = run_golden_test(
@@ -400,7 +411,7 @@ fn golden_error_symbol_not_found() {
 
 #[test]
 fn golden_error_invalid_name() {
-    let python = require_python_with_libcst();
+    let python = find_python_for_tests();
 
     // Invalid Python identifier
     let result = run_golden_test(

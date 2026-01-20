@@ -37,7 +37,7 @@ use tugtool_cst::{
 };
 use tugtool_core::patch::Span;
 
-use crate::worker::{BindingInfo, ReferenceInfo, ScopeInfo, ScopeSpanInfo, SpanInfo};
+use crate::types::{BindingInfo, ReferenceInfo, ScopeInfo, ScopeSpanInfo, SpanInfo};
 
 // ============================================================================
 // Error Types

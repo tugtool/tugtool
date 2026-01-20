@@ -2639,22 +2639,22 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - `crates/tugtool-python/src/types.rs`
 
 **Tasks:**
-- [ ] Verify `types.rs` contains all types from `worker.rs`:
+- [x] Verify `types.rs` contains all types from `worker.rs`:
   - `SpanInfo`, `ScopeSpanInfo`
   - `BindingInfo`, `ReferenceInfo`
   - `ScopeInfo`, `ImportInfo`, `ImportedName`
   - `AssignmentInfo`, `MethodCallInfo`
   - `ClassInheritanceInfo`, `AnnotationInfo`
   - `DynamicPatternInfo`, `AnalysisResult`
-- [ ] Verify serialization derives intact for JSON compatibility
-- [ ] Verify module exported in `lib.rs`
+- [x] Verify serialization derives intact for JSON compatibility
+- [x] Verify module exported in `lib.rs`
 
 **Tests:**
-- [ ] Unit: All types compile and serialize correctly
+- [x] Unit: All types compile and serialize correctly
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - N/A (verification only)
@@ -2678,19 +2678,19 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Deleted: `src/worker.rs`
 
 **Tasks:**
-- [ ] Delete `tests/visitor_equivalence.rs`
-- [ ] Delete `src/libcst_worker.py`
-- [ ] Delete `src/bootstrap.rs`
-- [ ] Delete `src/env.rs`
-- [ ] Delete `src/test_helpers.rs`
-- [ ] Delete `src/worker.rs` (types already extracted)
+- [x] Delete `tests/visitor_equivalence.rs`
+- [x] Delete `src/libcst_worker.py`
+- [x] Delete `src/bootstrap.rs`
+- [x] Delete `src/env.rs`
+- [x] Delete `src/test_helpers.rs`
+- [x] Delete `src/worker.rs` (types already extracted)
 
 **Tests:**
-- [ ] Integration: Workspace still builds
+- [x] Integration: Workspace still builds
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] No compilation errors from missing modules
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] No compilation errors from missing modules
 
 **Rollback:**
 - `git checkout` deleted files
@@ -2709,18 +2709,18 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated `crates/tugtool-python/Cargo.toml`
 
 **Tasks:**
-- [ ] Remove `python-worker` feature entirely
-- [ ] Remove `native-cst` feature (make always-on)
-- [ ] Remove `which` dependency
-- [ ] Remove `dirs` dependency
-- [ ] Make `tugtool-cst` a required (not optional) dependency
+- [x] Remove `python-worker` feature entirely
+- [x] Remove `native-cst` feature (make always-on)
+- [x] Remove `which` dependency
+- [x] Remove `dirs` dependency
+- [x] Make `tugtool-cst` a required (not optional) dependency
 
 **Tests:**
-- [ ] Integration: Build succeeds with simplified Cargo.toml
+- [x] Integration: Build succeeds with simplified Cargo.toml
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo tree -p tugtool-python` shows no `which` or `dirs`
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo tree -p tugtool-python` shows no `which` or `dirs`
 
 **Rollback:**
 - Revert Cargo.toml changes
@@ -2739,18 +2739,18 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated `crates/tugtool-python/src/lib.rs`
 
 **Tasks:**
-- [ ] Remove all `#[cfg(feature = ...)]` guards
-- [ ] Remove: `worker`, `env`, `bootstrap`, `test_helpers` module exports
-- [ ] Verify: `types` module export present
-- [ ] Remove re-exports: `ensure_managed_venv`, `require_python_with_libcst`, etc.
-- [ ] Update module documentation
+- [x] Remove all `#[cfg(feature = ...)]` guards
+- [x] Remove: `worker`, `env`, `bootstrap`, `test_helpers` module exports
+- [x] Verify: `types` module export present
+- [x] Remove re-exports: `ensure_managed_venv`, `require_python_with_libcst`, etc.
+- [x] Update module documentation
 
 **Tests:**
-- [ ] Integration: All dependent crates still compile
+- [x] Integration: All dependent crates still compile
 
 **Checkpoint:**
-- [ ] `cargo build --workspace` succeeds
-- [ ] No unused import warnings
+- [x] `cargo build --workspace` succeeds
+- [x] No unused import warnings
 
 **Rollback:**
 - Revert lib.rs changes
@@ -2769,17 +2769,17 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated imports in multiple files
 
 **Tasks:**
-- [ ] `cst_bridge.rs`: `use crate::worker::...` -> `use crate::types::...`
-- [ ] `dynamic.rs`: `use crate::worker::DynamicPatternInfo` -> `use crate::types::DynamicPatternInfo`
-- [ ] `type_tracker.rs`: Update imports, remove `WorkerHandle` usage
-- [ ] Fix any remaining import errors
+- [x] `cst_bridge.rs`: `use crate::worker::...` -> `use crate::types::...`
+- [x] `dynamic.rs`: `use crate::worker::DynamicPatternInfo` -> `use crate::types::DynamicPatternInfo`
+- [x] `type_tracker.rs`: Update imports, remove `WorkerHandle` usage
+- [x] Fix any remaining import errors
 
 **Tests:**
-- [ ] Integration: All files compile with new imports
+- [x] Integration: All files compile with new imports
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo clippy -p tugtool-python` passes
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo clippy -p tugtool-python` passes
 
 **Rollback:**
 - Revert import changes
@@ -2798,19 +2798,19 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] Remove all conditional compilation guards
-- [ ] Remove `PythonAnalyzer` struct (if worker-dependent)
-- [ ] Rename `analyze_file_native()` -> `analyze_file()`
-- [ ] Remove worker-dependent tests
-- [ ] Update documentation
+- [x] Remove all conditional compilation guards
+- [x] Remove `PythonAnalyzer` struct (if worker-dependent)
+- [ ] Rename `analyze_file_native()` -> `analyze_file()` (deferred to Step 10.9)
+- [x] Remove worker-dependent tests
+- [ ] Update documentation (partially done)
 
 **Tests:**
-- [ ] Unit: Analyzer tests pass
-- [ ] Integration: Rename operations work
+- [x] Unit: Analyzer tests pass
+- [x] Integration: Rename operations work
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python` passes
-- [ ] No conditional compilation remains in analyzer.rs
+- [x] `cargo nextest run -p tugtool-python` passes
+- [x] No conditional compilation remains in analyzer.rs
 
 **Rollback:**
 - Revert analyzer.rs changes
@@ -2829,19 +2829,19 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated `crates/tugtool-python/src/ops/rename.rs`
 
 **Tasks:**
-- [ ] Remove `PythonRenameOp` struct
-- [ ] Rename `native::run_native()` -> `run()`
-- [ ] Rename `native::analyze_impact_native()` -> `analyze_impact()`
-- [ ] Remove conditional compilation
-- [ ] Update documentation
+- [x] Remove `PythonRenameOp` struct
+- [ ] Rename `native::run_native()` -> `run()` (deferred to Step 10.9)
+- [ ] Rename `native::analyze_impact_native()` -> `analyze_impact()` (deferred to Step 10.9)
+- [x] Remove conditional compilation
+- [ ] Update documentation (partially done)
 
 **Tests:**
-- [ ] Unit: Rename tests pass
-- [ ] Integration: End-to-end rename works
+- [x] Unit: Rename tests pass
+- [x] Integration: End-to-end rename works
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python` passes
-- [ ] No conditional compilation remains in rename.rs
+- [x] `cargo nextest run -p tugtool-python` passes
+- [x] No conditional compilation remains in rename.rs
 
 **Rollback:**
 - Revert rename.rs changes
@@ -2860,16 +2860,16 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated `crates/tugtool-python/src/error_bridges.rs`
 
 **Tasks:**
-- [ ] Remove `#[cfg(feature = "native-cst")]` from error variants
-- [ ] Simplify or remove Python-specific error bridge code
-- [ ] Update any remaining error types
+- [x] Remove `#[cfg(feature = "native-cst")]` from error variants
+- [x] Simplify or remove Python-specific error bridge code
+- [x] Update any remaining error types
 
 **Tests:**
-- [ ] Unit: Error types compile and work correctly
+- [x] Unit: Error types compile and work correctly
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert error_bridges.rs changes
@@ -2935,43 +2935,43 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 **Tasks:**
 
 *analyzer.rs:*
-- [ ] Remove `mod native { }` wrapper, move contents to module level
-- [ ] Rename `analyze_file_native()` → `analyze_file()`
-- [ ] Rename `build_scopes_from_native()` → `build_scopes()`
-- [ ] Rename `collect_symbols_from_native()` → `collect_symbols()`
-- [ ] Rename `convert_native_imports()` → `convert_imports()`
-- [ ] Rename `AnalyzerError::NativeCst` → `AnalyzerError::Cst`
-- [ ] Update pub use exports (remove `native::` prefix)
-- [ ] Update module-level documentation
-- [ ] Rename test module `native_analysis_tests` → `analysis_tests`
+- [x] Remove `mod native { }` wrapper, move contents to module level
+- [x] Rename `analyze_file_native()` → `analyze_file()`
+- [x] Rename `build_scopes_from_native()` → `build_scopes()`
+- [x] Rename `collect_symbols_from_native()` → `collect_symbols()`
+- [x] Rename `convert_native_imports()` → `convert_imports()`
+- [x] Rename `AnalyzerError::NativeCst` → `AnalyzerError::Cst`
+- [x] Update pub use exports (remove `native::` prefix)
+- [x] Update module-level documentation
+- [x] Rename test module `native_analysis_tests` → `analysis_tests`
 
 *ops/rename.rs:*
-- [ ] Remove `mod native { }` wrapper, move contents to module level
-- [ ] Rename `run_native()` → `run()`
-- [ ] Rename `analyze_impact_native()` → `analyze_impact()`
-- [ ] Rename `find_override_methods_native()` → `find_override_methods()`
-- [ ] Rename `RenameError::NativeCst` → `RenameError::Cst`
-- [ ] Update pub use exports (remove `native::` prefix)
-- [ ] Update module-level documentation
-- [ ] Rename test modules: `native_rename_tests` → `rename_tests`, `native_multifile_tests` → `multifile_tests`
+- [x] Remove `mod native { }` wrapper, move contents to module level
+- [x] Rename `run_native()` → `run()`
+- [x] Rename `analyze_impact_native()` → `analyze_impact()`
+- [x] Rename `find_override_methods_native()` → `find_override_methods()`
+- [x] Rename `RenameError::NativeCst` → `RenameError::Cst`
+- [x] Update pub use exports (remove `native::` prefix)
+- [x] Update module-level documentation
+- [x] Rename test modules: `native_rename_tests` → `rename_tests`, `native_multifile_tests` → `multifile_tests`
 
 *error_bridges.rs:*
-- [ ] Update `RenameError::NativeCst` match arm to `RenameError::Cst`
+- [x] Update `RenameError::NativeCst` match arm to `RenameError::Cst`
 
 *Tests:*
-- [ ] Update `acceptance_criteria.rs` imports: `analyzer::native::` → `analyzer::`
-- [ ] Verify all test files compile with new import paths
+- [x] Update `acceptance_criteria.rs` imports: `analyzer::native::` → `analyzer::`
+- [x] Verify all test files compile with new import paths
 
 **Tests:**
-- [ ] All renamed functions work correctly
-- [ ] All tests pass with new import paths
+- [x] All renamed functions work correctly
+- [x] All tests pass with new import paths
 
 **Checkpoint:**
-- [ ] No `_native` suffix remains in function names
-- [ ] No `::native::` in import paths
-- [ ] No `NativeCst` error variants remain
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run --workspace` passes
+- [x] No `_native` suffix remains in function names
+- [x] No `::native::` in import paths
+- [x] No `NativeCst` error variants remain
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run --workspace` passes
 
 **Rollback:**
 - Revert all renamed files

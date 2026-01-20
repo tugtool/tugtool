@@ -1837,3 +1837,130 @@ All Step 8 sub-steps completed:
 - Tests run with native-cst feature only (Python worker comparison deferred)
 
 ---
+
+### Step 10.1: Verify types.rs Module Complete - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- (#step-10-types) Key Insight: Shared Types
+- worker.rs data type definitions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `types.rs` with all types from `worker.rs` | Done |
+| Verify serialization derives intact for JSON compatibility | Done |
+| Export types module in `lib.rs` | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/types.rs` (~350 lines):
+  - `SpanInfo` - byte range in source code
+  - `ScopeSpanInfo` - line/column span for scopes
+  - `BindingInfo` - name definitions (function, class, variable, parameter, import)
+  - `ReferenceInfo` - name usages (read, call, attribute access)
+  - `ScopeInfo` - lexical scopes with global/nonlocal tracking
+  - `ImportInfo` - import statements
+  - `ImportedName` - names in from imports
+  - `AssignmentInfo` - type inference from assignments
+  - `MethodCallInfo` - method call patterns for type resolution
+  - `ClassInheritanceInfo` - class hierarchies
+  - `AnnotationInfo` - type annotations
+  - `DynamicPatternInfo` - getattr, eval, etc. patterns
+  - `AnalysisResult` - combined analysis result
+  - 11 unit tests for serialization
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added `pub mod types;` export
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python types::`: 11 tests passed
+- `cargo nextest run --workspace`: 1126 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run --workspace` passes: PASS (1126 tests)
+
+**Key Decisions/Notes:**
+1. Created standalone `types.rs` module that duplicates type definitions from `worker.rs`
+2. This allows `worker.rs` (with subprocess code) to be deleted in Step 10.2 while preserving types
+3. All types have Serialize/Deserialize derives for JSON compatibility
+4. Types are now exported via `tugtool_python::types::*`
+5. The `cst_bridge.rs` still imports from `worker` - this will be updated in Step 10.5
+
+**Next Step:** Step 10.2 - Delete Python Worker Files
+
+---
+
+### Steps 10.2-10.8: Remove Python Worker Implementation - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Plan file: gleaming-chasing-hellman.md
+- Audit confirmation of 100% feature parity between native CST and Python worker
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Step 10.2: Delete Python Worker Files | Done |
+| Step 10.3: Update Cargo.toml - remove features and deps | Done |
+| Step 10.4: Simplify lib.rs | Done |
+| Step 10.5: Update Imports Across Codebase | Done |
+| Step 10.6: Simplify analyzer.rs | Done |
+| Step 10.7: Simplify ops/rename.rs | Done |
+| Step 10.8: Clean up error handling | Done |
+
+**Files Deleted:**
+- `crates/tugtool-python/tests/visitor_equivalence.rs` (~423 lines)
+- `crates/tugtool-python/src/libcst_worker.py` (Python subprocess script)
+- `crates/tugtool-python/src/bootstrap.rs` (~600 lines)
+- `crates/tugtool-python/src/env.rs` (~1200 lines)
+- `crates/tugtool-python/src/test_helpers.rs` (~50 lines)
+- `crates/tugtool-python/src/worker.rs` (~800 lines)
+- `crates/tugtool/tests/python_fixtures.rs` (~1080 lines)
+
+**Files Modified:**
+- `crates/tugtool-python/Cargo.toml` - Removed features section, removed `which`/`dirs` dependencies
+- `crates/tugtool-python/src/lib.rs` - Removed feature guards and deleted module exports
+- `crates/tugtool-python/src/cst_bridge.rs` - Updated imports from `worker` to `types`
+- `crates/tugtool-python/src/dynamic.rs` - Rewrote `collect_dynamic_warnings` to use native CST
+- `crates/tugtool-python/src/analyzer.rs` - Deleted `PythonAnalyzer` and `PythonAdapter` structs (~850 lines), updated imports
+- `crates/tugtool-python/src/type_tracker.rs` - Removed worker-related code
+- `crates/tugtool-python/src/ops/rename.rs` - Deleted `PythonRenameOp` struct (~485 lines), deleted integration test modules
+- `crates/tugtool-python/src/error_bridges.rs` - Removed WorkerError handling
+- `crates/tugtool/src/cli.rs` - Updated to use native implementation functions
+- `crates/tugtool/src/main.rs` - Removed bootstrap/env imports, simplified toolchain commands
+- `crates/tugtool/tests/golden_tests.rs` - Added local `find_python_for_tests()` helper
+- `crates/tugtool/src/mcp.rs` - Added local `find_python_for_tests()` helper
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1025 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` produces binary with no Python worker subprocess deps: PASS
+- All existing tests pass with native-only backend: PASS (1025 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS (no warnings)
+
+**Code Reduction Summary:**
+- Lines deleted: ~5,000+
+- Files deleted: 7
+- Dependencies removed: 2 (`which`, `dirs`)
+- Feature flags removed: 2 (`native-cst`, `python-worker`)
+
+**Key Implementation Details:**
+1. **Consolidated Steps**: Steps 10.2-10.8 were combined due to code interdependencies. Deleting worker files required updating imports, which required removing feature guards, which required updating all dependent code.
+
+2. **Type Preservation**: The `types.rs` module (created in Step 10.1) preserved all shared data types that were previously in `worker.rs`, allowing cst_bridge.rs and other modules to continue working.
+
+3. **Native-Only Architecture**: The codebase now uses only the native Rust CST implementation. Python is no longer required for analysis/transformation operations.
+
+4. **Simplified Python Resolution**: The toolchain commands now return "setup no longer required" messages since libcst is no longer needed. Python resolution in test files uses simple PATH lookup.
+
+5. **Test Migration**: Tests that relied on `require_python_with_libcst()` now use local `find_python_for_tests()` helpers that only need Python in PATH (no libcst dependency).
+
+**Milestone M04: Python Worker Removal Complete - ACHIEVED**
+
+---

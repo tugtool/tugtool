@@ -1095,7 +1095,19 @@ pub async fn run_mcp_server() -> Result<(), TugError> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use tugtool_python::test_helpers::require_python_with_libcst;
+
+    /// Find Python in PATH for tests (libcst no longer required with native CST)
+    fn find_python_for_tests() -> std::path::PathBuf {
+        for name in &["python3", "python"] {
+            if let Ok(output) = std::process::Command::new("which").arg(name).output() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return std::path::PathBuf::from(path);
+                }
+            }
+        }
+        panic!("Python not found in PATH for tests");
+    }
 
     #[test]
     fn server_creates_successfully() {
@@ -1760,7 +1772,7 @@ if __name__ == "__main__":
 
     #[test]
     fn analyze_impact_returns_valid_response() {
-        let python = require_python_with_libcst();
+        let python = find_python_for_tests();
         // Set TUG_PYTHON so the MCP server can find it during resolution
         std::env::set_var("TUG_PYTHON", &python);
         let workspace = create_rename_test_workspace();
@@ -1814,7 +1826,7 @@ if __name__ == "__main__":
 
     #[test]
     fn rename_symbol_dry_run_returns_patch_without_modifying_files() {
-        let python = require_python_with_libcst();
+        let python = find_python_for_tests();
         // Set TUG_PYTHON so the MCP server can find it during resolution
         std::env::set_var("TUG_PYTHON", &python);
         let workspace = create_rename_test_workspace();
@@ -1871,7 +1883,7 @@ if __name__ == "__main__":
 
     #[test]
     fn rename_symbol_apply_modifies_files() {
-        let python = require_python_with_libcst();
+        let python = find_python_for_tests();
         // Set TUG_PYTHON so the MCP server can find it during resolution
         std::env::set_var("TUG_PYTHON", &python);
         let workspace = create_rename_test_workspace();

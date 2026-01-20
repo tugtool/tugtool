@@ -4,13 +4,12 @@
 //! Python-specific error types to the unified `TugError` type.
 //!
 //! These bridges live in tugtool-python because they depend on types
-//! defined in this crate (RenameError, WorkerError, etc.).
+//! defined in this crate (RenameError, etc.).
 
 use tugtool_core::error::{Location, SymbolInfo, TugError};
 
 use crate::ops::rename::RenameError;
 use crate::verification::VerificationStatus;
-use crate::worker::WorkerError;
 
 // ============================================================================
 // Bridge: RenameError -> TugError
@@ -74,7 +73,6 @@ impl From<RenameError> for TugError {
                     },
                 }
             }
-            RenameError::Worker(worker_err) => TugError::from(worker_err),
             RenameError::Io(io_err) => TugError::InternalError {
                 message: format!("IO error: {}", io_err),
             },
@@ -118,22 +116,9 @@ impl From<RenameError> for TugError {
                 ),
                 exit_code: 5, // verification failed exit code per Table T26
             },
-            #[cfg(feature = "native-cst")]
-            RenameError::NativeCst(cst_err) => TugError::InternalError {
-                message: format!("native CST error: {}", cst_err),
+            RenameError::Cst(cst_err) => TugError::InternalError {
+                message: format!("CST error: {}", cst_err),
             },
-        }
-    }
-}
-
-// ============================================================================
-// Bridge: WorkerError -> TugError
-// ============================================================================
-
-impl From<WorkerError> for TugError {
-    fn from(err: WorkerError) -> Self {
-        TugError::WorkerError {
-            message: err.to_string(),
         }
     }
 }

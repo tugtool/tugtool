@@ -34,9 +34,9 @@ use tugtool_core::output::Location;
 #[cfg(feature = "python")]
 use tugtool_core::session::Session;
 #[cfg(feature = "python")]
-use tugtool_python::env::{resolve_python, ResolutionOptions};
+use tugtool_python::files::collect_python_files;
 #[cfg(feature = "python")]
-use tugtool_python::rename::PythonRenameOp;
+use tugtool_python::rename::{analyze_impact, run};
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
@@ -49,7 +49,7 @@ use tugtool_python::verification::VerificationMode;
 /// # Arguments
 ///
 /// * `session` - Open session (provides workspace root, session directory)
-/// * `python_path` - Optional explicit Python path (overrides resolution)
+/// * `_python_path` - Unused (kept for API compatibility)
 /// * `at` - Location string in "file:line:col" format
 /// * `to` - New name for the symbol
 ///
@@ -63,7 +63,7 @@ use tugtool_python::verification::VerificationMode;
 #[cfg(feature = "python")]
 pub fn run_analyze_impact(
     session: &Session,
-    python_path: Option<PathBuf>,
+    _python_path: Option<PathBuf>,
     at: &str,
     to: &str,
 ) -> Result<String, TugError> {
@@ -75,14 +75,12 @@ pub fn run_analyze_impact(
         ))
     })?;
 
-    // Resolve Python interpreter (use explicit path if provided, otherwise auto-resolve)
-    let python = resolve_python_path(session, python_path)?;
+    // Collect Python files in workspace
+    let files = collect_python_files(session.workspace_root())
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
 
-    // Create rename operation using session
-    let op = PythonRenameOp::with_session(session, python);
-
-    // Run analysis - RenameError converts to TugError via From impl
-    let analysis = op.analyze_impact(&location, to)?;
+    // Run native analysis - RenameError converts to TugError via From impl
+    let analysis = analyze_impact(session.workspace_root(), &files, &location, to)?;
 
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&analysis)
@@ -95,7 +93,7 @@ pub fn run_analyze_impact(
 /// # Arguments
 ///
 /// * `session` - Open session (provides workspace root, session directory)
-/// * `python_path` - Optional explicit Python path (overrides resolution)
+/// * `python_path` - Optional explicit Python path for verification
 /// * `at` - Location string in "file:line:col" format
 /// * `to` - New name for the symbol
 /// * `verify_mode` - Verification mode after rename
@@ -125,14 +123,23 @@ pub fn run_rename(
         ))
     })?;
 
-    // Resolve Python interpreter (use explicit path if provided, otherwise auto-resolve)
-    let python = resolve_python_path(session, python_path)?;
+    // Resolve Python interpreter for verification
+    let python = resolve_python_path(python_path)?;
 
-    // Create rename operation using session
-    let op = PythonRenameOp::with_session(session, python);
+    // Collect Python files in workspace
+    let files = collect_python_files(session.workspace_root())
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
 
-    // Run rename - RenameError converts to TugError via From impl
-    let result = op.run(&location, to, verify_mode, apply)?;
+    // Run native rename - RenameError converts to TugError via From impl
+    let result = run(
+        session.workspace_root(),
+        &files,
+        &location,
+        to,
+        &python,
+        verify_mode,
+        apply,
+    )?;
 
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&result)
@@ -147,22 +154,33 @@ pub fn run_rename(
 /// Resolve Python interpreter path.
 ///
 /// If an explicit path is provided, use it directly.
-/// Otherwise, auto-resolve using the session's python directory.
+/// Otherwise, try common Python executable names in PATH.
 #[cfg(feature = "python")]
-fn resolve_python_path(
-    session: &Session,
-    explicit_path: Option<PathBuf>,
-) -> Result<PathBuf, TugError> {
+fn resolve_python_path(explicit_path: Option<PathBuf>) -> Result<PathBuf, TugError> {
     if let Some(path) = explicit_path {
         return Ok(path);
     }
 
-    // Auto-resolve Python with libcst requirement
-    let options = ResolutionOptions::default().require_libcst();
-    let python_env = resolve_python(session.session_dir(), &options)
-        .map_err(|e| TugError::internal(format!("Python environment error: {}", e)))?;
+    // Try common Python executable names
+    for name in &["python3", "python"] {
+        if let Ok(path) = std::process::Command::new("which")
+            .arg(name)
+            .output()
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .to_string()
+            })
+        {
+            if !path.is_empty() {
+                return Ok(PathBuf::from(path));
+            }
+        }
+    }
 
-    Ok(python_env.interpreter().to_path_buf())
+    Err(TugError::internal(
+        "Could not find Python interpreter. Please provide --python-path.".to_string(),
+    ))
 }
 
 // ============================================================================
@@ -203,23 +221,17 @@ mod tests {
 
         #[test]
         fn explicit_path_is_used_directly() {
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
             let explicit = PathBuf::from("/usr/bin/python3.11");
-            let result = resolve_python_path(&session, Some(explicit.clone())).unwrap();
+            let result = resolve_python_path(Some(explicit.clone())).unwrap();
 
             assert_eq!(result, explicit);
         }
 
         #[test]
         fn explicit_path_overrides_auto_resolution() {
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
             // Even if a different Python could be resolved, the explicit path wins
             let explicit = PathBuf::from("/custom/python");
-            let result = resolve_python_path(&session, Some(explicit.clone())).unwrap();
+            let result = resolve_python_path(Some(explicit.clone())).unwrap();
 
             assert_eq!(result, explicit);
         }

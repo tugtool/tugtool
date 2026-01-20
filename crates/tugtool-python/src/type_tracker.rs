@@ -24,7 +24,7 @@
 use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeSource};
 use tugtool_core::patch::{FileId, Span};
 
-use crate::worker::{AnnotationInfo, AssignmentInfo, WorkerHandle};
+use crate::types::{AnnotationInfo, AssignmentInfo};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -35,9 +35,9 @@ use thiserror::Error;
 /// Errors during type tracking.
 #[derive(Debug, Error)]
 pub enum TypeTrackerError {
-    /// Worker error during assignment extraction.
-    #[error("worker error: {0}")]
-    Worker(#[from] crate::worker::WorkerError),
+    /// IO error.
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Result type for type tracker operations.
@@ -433,32 +433,6 @@ impl Default for TypeTracker {
 // Integration with Analyzer
 // ============================================================================
 
-/// Analyze a file for type information and populate the type tracker.
-///
-/// This is the main entry point for type tracking. It:
-/// 1. Gets assignment info from the worker (Level 1)
-/// 2. Gets annotation info from the worker (Level 2)
-/// 3. Processes assignments to extract direct types
-/// 4. Processes annotations to extract explicit types
-/// 5. Resolves types through propagation
-///
-/// Annotated types take precedence over inferred types.
-pub fn analyze_types(worker: &mut WorkerHandle, cst_id: &str) -> TypeTrackerResult<TypeTracker> {
-    // Get assignments from worker (Level 1)
-    let assignments = worker.get_assignments(cst_id)?;
-
-    // Get annotations from worker (Level 2)
-    let annotations = worker.get_annotations(cst_id)?;
-
-    // Process and resolve types
-    let mut tracker = TypeTracker::new();
-    tracker.process_assignments(&assignments);
-    tracker.process_annotations(&annotations);
-    tracker.resolve_types();
-
-    Ok(tracker)
-}
-
 /// Analyze a file for type information using combined analysis result.
 ///
 /// This is an optimized version that uses the `get_analysis` combined result
@@ -549,7 +523,7 @@ pub fn resolve_method_call(
 // Method Reference Collection
 // ============================================================================
 
-use crate::worker::MethodCallInfo;
+use crate::types::MethodCallInfo;
 
 /// A method reference resolved through type inference.
 #[derive(Debug, Clone)]
@@ -703,7 +677,7 @@ mod tests {
             rhs_name: Option<&str>,
             callee_name: Option<&str>,
         ) -> AssignmentInfo {
-            use crate::worker::SpanInfo;
+            use crate::types::SpanInfo;
             AssignmentInfo {
                 target: target.to_string(),
                 scope_path: scope_path.into_iter().map(String::from).collect(),
@@ -1034,7 +1008,7 @@ mod tests {
             // Test: def get_handler() -> Handler
             //       h = get_handler()  # h should have type Handler
             let mut tracker = TypeTracker::new();
-            use crate::worker::AnnotationInfo;
+            use crate::types::AnnotationInfo;
 
             // First, process the return type annotation for get_handler
             let annotations = vec![AnnotationInfo {
@@ -1073,7 +1047,7 @@ mod tests {
             //       def use_handler():
             //           h = get_handler()  # h should have type Handler
             let mut tracker = TypeTracker::new();
-            use crate::worker::AnnotationInfo;
+            use crate::types::AnnotationInfo;
 
             // Return type annotation for get_handler at module scope
             let annotations = vec![AnnotationInfo {
@@ -1112,7 +1086,7 @@ mod tests {
             //       h = get_handler()
             //       h2 = h  # h2 should also have type Handler
             let mut tracker = TypeTracker::new();
-            use crate::worker::AnnotationInfo;
+            use crate::types::AnnotationInfo;
 
             // Return type annotation
             let annotations = vec![AnnotationInfo {
@@ -1156,7 +1130,7 @@ mod tests {
             //       p = factory.create()  # This won't work with just callee_name "create"
             //       # But direct: p = create() with def create() -> Product should work
             let mut tracker = TypeTracker::new();
-            use crate::worker::AnnotationInfo;
+            use crate::types::AnnotationInfo;
 
             // Return type for a module-level factory function
             let annotations = vec![AnnotationInfo {
@@ -1190,7 +1164,7 @@ mod tests {
 
     mod annotation_tests {
         use super::*;
-        use crate::worker::AnnotationInfo;
+        use crate::types::AnnotationInfo;
 
         fn make_annotation(
             name: &str,
@@ -1198,7 +1172,7 @@ mod tests {
             scope_path: Vec<&str>,
             source_kind: &str,
         ) -> AnnotationInfo {
-            use crate::worker::SpanInfo;
+            use crate::types::SpanInfo;
             AnnotationInfo {
                 name: name.to_string(),
                 type_str: type_str.to_string(),
@@ -1216,7 +1190,7 @@ mod tests {
             scope_path: Vec<&str>,
             inferred_type: Option<&str>,
         ) -> AssignmentInfo {
-            use crate::worker::SpanInfo;
+            use crate::types::SpanInfo;
             AssignmentInfo {
                 target: target.to_string(),
                 scope_path: scope_path.into_iter().map(String::from).collect(),
@@ -1470,479 +1444,9 @@ mod tests {
         }
     }
 
-    mod integration_tests {
-        use super::*;
-        use crate::test_helpers::require_python_with_libcst;
-        use crate::worker::spawn_worker;
-        use tempfile::TempDir;
-
-        #[test]
-        fn analyze_types_integration() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class MyHandler:
-    def process(self):
-        pass
-
-handler = MyHandler()
-handler.process()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // handler should have type MyHandler
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "handler"),
-                Some("MyHandler")
-            );
-        }
-
-        #[test]
-        fn analyze_types_with_propagation() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class MyClass:
-    pass
-
-x = MyClass()
-y = x
-z = y
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // All should have type MyClass
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "x"),
-                Some("MyClass")
-            );
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "y"),
-                Some("MyClass")
-            );
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "z"),
-                Some("MyClass")
-            );
-        }
-
-        #[test]
-        fn analyze_types_in_function() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class Handler:
-    def do_thing(self):
-        pass
-
-def process():
-    h = Handler()
-    h.do_thing()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // h should have type Handler in the function scope
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string(), "process".to_string()], "h"),
-                Some("Handler")
-            );
-        }
-
-        #[test]
-        fn method_resolution_test() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class MyHandler:
-    def process(self):
-        pass
-
-handler = MyHandler()
-handler.process()
-"#;
-
-            // Parse and get type info
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // Build facts store
-            let mut store = FactsStore::new();
-            let adapter = crate::analyzer::PythonAdapter::new(temp.path().to_str().unwrap());
-            adapter
-                .analyze_files(
-                    &mut worker,
-                    &[("test.py".to_string(), content.to_string())],
-                    &mut store,
-                )
-                .unwrap();
-
-            // Resolve method call
-            let resolution = resolve_method_call(
-                &tracker,
-                &store,
-                &["<module>".to_string()],
-                "handler",
-                "process",
-            );
-
-            assert!(resolution.is_some());
-            let res = resolution.unwrap();
-            assert_eq!(res.class_name, "MyHandler");
-            assert_eq!(res.method_name, "process");
-            assert!(res.certain);
-        }
-
-        #[test]
-        fn find_typed_method_references_integration() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class MyHandler:
-    def process(self):
-        pass
-
-handler = MyHandler()
-handler.process()
-"#;
-
-            // Parse and analyze
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-            let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
-
-            // Find typed method references
-            let refs =
-                find_typed_method_references("MyHandler", "process", &tracker, &method_calls);
-
-            // Should find handler.process() as a reference
-            assert_eq!(refs.len(), 1);
-            assert_eq!(refs[0].class_name, "MyHandler");
-            assert_eq!(refs[0].method_name, "process");
-        }
-
-        #[test]
-        fn find_multiple_typed_method_references() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class MyHandler:
-    def process(self):
-        pass
-
-h1 = MyHandler()
-h2 = MyHandler()
-h3 = h1
-
-h1.process()
-h2.process()
-h3.process()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-            let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
-
-            let refs =
-                find_typed_method_references("MyHandler", "process", &tracker, &method_calls);
-
-            // Should find all three calls: h1.process(), h2.process(), h3.process()
-            assert_eq!(refs.len(), 3);
-        }
-
-        #[test]
-        fn method_reference_only_matches_correct_type() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class Handler1:
-    def process(self):
-        pass
-
-class Handler2:
-    def process(self):
-        pass
-
-h1 = Handler1()
-h2 = Handler2()
-
-h1.process()
-h2.process()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-            let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
-
-            // Looking for Handler1.process should only find h1.process()
-            let refs1 =
-                find_typed_method_references("Handler1", "process", &tracker, &method_calls);
-            assert_eq!(refs1.len(), 1);
-
-            // Looking for Handler2.process should only find h2.process()
-            let refs2 =
-                find_typed_method_references("Handler2", "process", &tracker, &method_calls);
-            assert_eq!(refs2.len(), 1);
-        }
-
-        #[test]
-        fn method_reference_in_function_scope() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class Service:
-    def execute(self):
-        pass
-
-def use_service():
-    svc = Service()
-    svc.execute()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-            let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
-
-            let refs = find_typed_method_references("Service", "execute", &tracker, &method_calls);
-
-            assert_eq!(refs.len(), 1);
-            assert_eq!(refs[0].scope_path, vec!["<module>", "use_service"]);
-        }
-
-        #[test]
-        fn method_reference_with_variable_propagation() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class Database:
-    def connect(self):
-        pass
-
-db = Database()
-connection = db
-connection.connect()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-            let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
-
-            // connection inherits type from db, so connection.connect() should resolve
-            let refs = find_typed_method_references("Database", "connect", &tracker, &method_calls);
-
-            assert_eq!(refs.len(), 1);
-        }
-
-        #[test]
-        fn analyze_types_with_annotations() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-x: int = 5
-y: str = "hello"
-
-def process(handler: Handler) -> str:
-    return handler.name
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // Variable annotations
-            assert_eq!(tracker.type_of(&["<module>".to_string()], "x"), Some("int"));
-            assert_eq!(tracker.type_of(&["<module>".to_string()], "y"), Some("str"));
-
-            // Parameter annotation
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string(), "process".to_string()], "handler"),
-                Some("Handler")
-            );
-        }
-
-        #[test]
-        fn annotated_method_resolution() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class Handler:
-    def process(self):
-        pass
-
-def use_handler(h: Handler):
-    h.process()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-            let method_calls = worker.get_method_calls(&parse_response.cst_id).unwrap();
-
-            // h has type Handler from annotation, so h.process() should resolve
-            let refs = find_typed_method_references("Handler", "process", &tracker, &method_calls);
-
-            assert_eq!(refs.len(), 1);
-        }
-
-        #[test]
-        fn self_parameter_from_class() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-class MyClass:
-    def method(self):
-        pass
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // self should have type MyClass (implicitly)
-            assert_eq!(
-                tracker.type_of(
-                    &[
-                        "<module>".to_string(),
-                        "MyClass".to_string(),
-                        "method".to_string()
-                    ],
-                    "self"
-                ),
-                Some("MyClass")
-            );
-        }
-
-        #[test]
-        fn annotation_precedence_integration() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            // Annotation should take precedence over constructor inference
-            let content = r#"
-class Handler:
-    pass
-
-class SubHandler(Handler):
-    pass
-
-# Annotation says Handler, constructor says SubHandler
-x: Handler = SubHandler()
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            // Annotation takes precedence
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "x"),
-                Some("Handler")
-            );
-        }
-
-        #[test]
-        fn generic_annotation_integration() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            let content = r#"
-from typing import List, Dict, Optional
-
-items: List[int] = []
-mapping: Dict[str, int] = {}
-maybe: Optional[str] = None
-"#;
-
-            let parse_response = worker.parse("test.py", content).unwrap();
-            let tracker = analyze_types(&mut worker, &parse_response.cst_id).unwrap();
-
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "items"),
-                Some("List[int]")
-            );
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "mapping"),
-                Some("Dict[str, int]")
-            );
-            assert_eq!(
-                tracker.type_of(&["<module>".to_string()], "maybe"),
-                Some("Optional[str]")
-            );
-        }
-    }
-
     mod method_call_unit_tests {
         use super::*;
-        use crate::worker::SpanInfo;
+        use crate::types::SpanInfo;
 
         fn make_method_call(receiver: &str, method: &str, scope_path: Vec<&str>) -> MethodCallInfo {
             MethodCallInfo {
@@ -1960,7 +1464,7 @@ maybe: Optional[str] = None
             scope_path: Vec<&str>,
             inferred_type: Option<&str>,
         ) -> AssignmentInfo {
-            use crate::worker::SpanInfo;
+            use crate::types::SpanInfo;
             AssignmentInfo {
                 target: target.to_string(),
                 scope_path: scope_path.into_iter().map(String::from).collect(),

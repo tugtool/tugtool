@@ -40,12 +40,6 @@ use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 #[cfg(feature = "python")]
 use tugtool::cli::{run_analyze_impact, run_rename};
 #[cfg(feature = "python")]
-use tugtool_python::bootstrap::{
-    ensure_managed_venv, validate_managed_venv, BootstrapError, VenvLocation,
-};
-#[cfg(feature = "python")]
-use tugtool_python::env::{check_libcst, managed_venv_dir, resolve_python, ResolutionOptions};
-#[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
 // Test command resolution (used by Python verification)
@@ -719,130 +713,76 @@ fn execute_toolchain(
 }
 
 /// Execute Python toolchain command.
+///
+/// With native CST, toolchain setup is no longer required. Python is only needed
+/// for verification (running `python -m compileall` or tests).
 #[cfg(feature = "python")]
-fn execute_python_toolchain(global: &GlobalArgs, action: ToolchainAction) -> Result<(), TugError> {
-    let session = open_session(global)?;
-
+fn execute_python_toolchain(_global: &GlobalArgs, action: ToolchainAction) -> Result<(), TugError> {
     match action {
-        ToolchainAction::Setup {
-            recreate,
-            global: use_global,
-        } => {
-            let location = if use_global {
-                VenvLocation::Global
-            } else {
-                VenvLocation::Workspace(session.session_dir().to_path_buf())
-            };
-
-            match ensure_managed_venv(location, recreate) {
-                Ok(result) => {
-                    let response = serde_json::json!({
-                        "status": "ok",
-                        "schema_version": SCHEMA_VERSION,
-                        "language": "python",
-                        "venv_path": result.venv_path,
-                        "python_path": result.python_path,
-                        "python_version": result.python_version,
-                        "libcst_version": result.libcst_version,
-                        "created_fresh": result.created_fresh,
-                    });
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                    Ok(())
-                }
-                Err(e) => {
-                    // Convert bootstrap error to TugError
-                    Err(bootstrap_error_to_tug_error(e))
-                }
-            }
+        ToolchainAction::Setup { .. } => {
+            let response = serde_json::json!({
+                "status": "ok",
+                "schema_version": SCHEMA_VERSION,
+                "language": "python",
+                "message": "Toolchain setup is no longer required. Tugtool now uses native Rust CST parsing.",
+                "note": "Python is only needed for verification (syntax checking with compileall or running tests).",
+            });
+            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            Ok(())
         }
         ToolchainAction::Info => {
-            // Resolve Python using normal algorithm
-            let options = ResolutionOptions::default();
-            match resolve_python(session.session_dir(), &options) {
-                Ok(env) => {
-                    let venv_dir = managed_venv_dir(session.session_dir());
-                    let is_managed =
-                        env.config.is_managed_venv || env.interpreter().starts_with(&venv_dir);
-
-                    let response = serde_json::json!({
-                        "status": "ok",
-                        "schema_version": SCHEMA_VERSION,
-                        "language": "python",
-                        "python_path": env.interpreter(),
-                        "version": env.version().to_string(),
-                        "libcst_version": env.libcst_version(),
-                        "resolution_source": format!("{}", env.source()),
-                        "is_managed": is_managed,
-                        "venv_path": if is_managed { Some(venv_dir) } else { None },
-                    });
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                    Ok(())
-                }
-                Err(e) => {
-                    let response = serde_json::json!({
-                        "status": "error",
-                        "schema_version": SCHEMA_VERSION,
-                        "language": "python",
-                        "error": {
-                            "message": e.to_string(),
-                        },
-                    });
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                    Err(TugError::internal(e.to_string()))
-                }
-            }
+            // Try to find Python in PATH for verification purposes
+            let python_path = find_python_in_path();
+            let response = serde_json::json!({
+                "status": "ok",
+                "schema_version": SCHEMA_VERSION,
+                "language": "python",
+                "python_path": python_path,
+                "message": "Native CST is used for analysis. Python shown is for verification only.",
+            });
+            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            Ok(())
         }
         ToolchainAction::Check => {
-            // Check if Python with libcst is available
-            let venv_dir = managed_venv_dir(session.session_dir());
-
-            // First try managed venv
-            let valid = if venv_dir.exists() {
-                validate_managed_venv(&venv_dir).unwrap_or(false)
-            } else {
-                // Try resolving Python from other sources
-                let options = ResolutionOptions::default();
-                if let Ok(env) = resolve_python(session.session_dir(), &options) {
-                    // Check if libcst is available
-                    check_libcst(env.interpreter())
-                        .map(|(available, _)| available)
-                        .unwrap_or(false)
-                } else {
-                    false
-                }
-            };
+            // Check if Python is available (for verification)
+            let python_path = find_python_in_path();
+            let valid = python_path.is_some();
 
             let response = serde_json::json!({
                 "status": if valid { "ok" } else { "error" },
                 "schema_version": SCHEMA_VERSION,
                 "language": "python",
                 "valid": valid,
+                "python_path": python_path,
+                "message": if valid {
+                    "Python found for verification."
+                } else {
+                    "Python not found. Verification will be skipped."
+                },
             });
             println!("{}", serde_json::to_string_pretty(&response).unwrap());
 
-            if valid {
-                Ok(())
-            } else {
-                // Return error to set exit code 1
-                Err(TugError::internal(
-                    "Python toolchain check failed: no valid Python with libcst found",
-                ))
-            }
+            // Always return Ok - Python is optional for native CST
+            Ok(())
         }
     }
 }
 
-/// Convert BootstrapError to TugError.
+/// Find Python interpreter in PATH (for verification purposes).
 #[cfg(feature = "python")]
-fn bootstrap_error_to_tug_error(e: BootstrapError) -> TugError {
-    match e {
-        BootstrapError::NoPythonFound => TugError::internal(e.to_string()),
-        BootstrapError::PythonTooOld { .. } => TugError::internal(e.to_string()),
-        BootstrapError::VenvCreationFailed { .. } => TugError::internal(e.to_string()),
-        BootstrapError::LibcstInstallFailed { .. } => TugError::internal(e.to_string()),
-        BootstrapError::VenvInvalid { .. } => TugError::internal(e.to_string()),
-        BootstrapError::Io(io_err) => TugError::internal(format!("IO error: {}", io_err)),
+fn find_python_in_path() -> Option<String> {
+    for name in &["python3", "python"] {
+        if let Ok(output) = std::process::Command::new("which")
+            .arg(name)
+            .output()
+        {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
     }
+    None
 }
 
 // ============================================================================
@@ -901,12 +841,15 @@ fn resolve_toolchain(
     }
 
     // 3. Auto-resolve based on language
+    #[cfg(feature = "python")]
     let resolved_path = match lang {
         "python" => {
-            let options = ResolutionOptions::default().require_libcst();
-            let python_env = resolve_python(session.session_dir(), &options)
-                .map_err(|e| TugError::internal(format!("Python resolution failed: {}", e)))?;
-            python_env.interpreter().to_path_buf()
+            // Find Python in PATH (libcst no longer required with native CST)
+            find_python_in_path()
+                .map(PathBuf::from)
+                .ok_or_else(|| TugError::internal(
+                    "Could not find Python interpreter in PATH. Python is needed for verification.",
+                ))?
         }
         "rust" => {
             // Future: find rust-analyzer in PATH
@@ -920,6 +863,15 @@ fn resolve_toolchain(
                 "TypeScript toolchain resolution not yet implemented",
             ));
         }
+        _ => {
+            return Err(TugError::internal(format!(
+                "Unknown language '{}' for toolchain resolution",
+                lang
+            )));
+        }
+    };
+    #[cfg(not(feature = "python"))]
+    let resolved_path = match lang {
         _ => {
             return Err(TugError::internal(format!(
                 "Unknown language '{}' for toolchain resolution",

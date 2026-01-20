@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use tugtool_core::patch::Span;
 
-use crate::worker::DynamicPatternInfo;
+use crate::types::DynamicPatternInfo;
 
 // ============================================================================
 // Warning Types
@@ -278,7 +278,6 @@ pub fn get_aggressive_rename_patterns<'a>(
 ///
 /// # Arguments
 ///
-/// * `worker` - The Python worker handle for parsing files
 /// * `files` - List of file paths to analyze
 /// * `symbol_name` - The symbol name being analyzed (for matching in aggressive mode)
 /// * `mode` - The dynamic pattern response mode (safe or aggressive)
@@ -290,17 +289,18 @@ pub fn get_aggressive_rename_patterns<'a>(
 /// # Example
 ///
 /// ```ignore
-/// let warnings = collect_dynamic_warnings(&mut worker, &file_paths, "process_data", DynamicMode::Safe)?;
+/// let warnings = collect_dynamic_warnings(&file_paths, "process_data", DynamicMode::Safe)?;
 /// for warning in warnings {
 ///     println!("{}: {}", warning.code, warning.message);
 /// }
 /// ```
 pub fn collect_dynamic_warnings(
-    worker: &mut crate::worker::WorkerHandle,
     files: &[std::path::PathBuf],
     symbol_name: &str,
     mode: DynamicMode,
-) -> Result<Vec<DynamicWarning>, crate::worker::WorkerError> {
+) -> Result<Vec<DynamicWarning>, std::io::Error> {
+    use tugtool_cst::{parse_module, DynamicPatternDetector};
+
     let mut all_warnings = Vec::new();
 
     for file_path in files {
@@ -310,25 +310,44 @@ pub fn collect_dynamic_warnings(
             Err(_) => continue, // Skip files we can't read
         };
 
-        // Parse the file
-        let parse_result = match worker.parse(file_path.to_string_lossy().as_ref(), &content) {
-            Ok(r) => r,
+        // Parse the file using native CST
+        let module = match parse_module(&content, None) {
+            Ok(m) => m,
             Err(_) => continue, // Skip files with parse errors
         };
 
-        // Get dynamic patterns
-        let patterns = match worker.get_dynamic_patterns(&parse_result.cst_id) {
-            Ok(p) => p,
-            Err(_) => continue, // Skip on error
-        };
+        // Get dynamic patterns using native detector
+        let cst_patterns = DynamicPatternDetector::collect(&module, &content);
+
+        // Convert CST patterns to our types
+        let patterns: Vec<DynamicPatternInfo> = cst_patterns
+            .into_iter()
+            .map(|p| {
+                // Map CST kind to our string format
+                let kind = match p.kind.as_str() {
+                    "globals_subscript" => "globals".to_string(),
+                    "locals_subscript" => "locals".to_string(),
+                    other => other.to_string(),
+                };
+                DynamicPatternInfo {
+                    kind,
+                    scope_path: p.scope_path,
+                    literal_name: p.attribute_name,
+                    pattern_text: Some(p.description),
+                    span: p.span.map(|s| crate::types::SpanInfo {
+                        start: s.start as usize,
+                        end: s.end as usize,
+                    }),
+                    line: p.line,
+                    col: p.col,
+                }
+            })
+            .collect();
 
         // Analyze patterns and generate warnings
         let file_path_str = file_path.to_string_lossy();
         let warnings = analyze_dynamic_patterns(&patterns, &file_path_str, Some(symbol_name), mode);
         all_warnings.extend(warnings);
-
-        // Release the CST
-        let _ = worker.release(&parse_result.cst_id);
     }
 
     Ok(all_warnings)
@@ -365,7 +384,7 @@ pub fn format_warnings(warnings: &[DynamicWarning]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::worker::SpanInfo;
+    use crate::types::SpanInfo;
 
     fn make_pattern(
         kind: &str,

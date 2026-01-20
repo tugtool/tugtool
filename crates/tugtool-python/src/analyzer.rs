@@ -7,34 +7,22 @@
 //! - Reference resolution via scope chain
 //! - Import resolution for workspace files
 //!
-//! # Backends
-//!
-//! The analyzer supports two backends:
-//!
-//! - **Native CST** (`native-cst` feature, default): Uses tugtool-cst for pure Rust
-//!   analysis with zero Python dependencies.
-//! - **Python Worker** (`python-worker` feature): Uses LibCST via Python subprocess
-//!   for analysis.
-//!
-//! When the `native-cst` feature is enabled, use [`analyze_file_native`] for
-//! zero-dependency analysis. The [`PythonAnalyzer`] struct provides the Python
-//! worker-based implementation when the `python-worker` feature is enabled.
+//! Uses Rust CST parsing via tugtool-cst for zero-dependency analysis.
+//! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::facts::{
-    FactsStore, File, Import, InheritanceInfo, Language, Reference, ReferenceKind,
+    FactsStore, File, Import, Language, Reference, ReferenceKind,
     ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind as CoreScopeKind, Symbol,
     SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
-use tugtool_core::text::position_to_byte_offset_str;
 
-use crate::type_tracker::{analyze_types_from_analysis, populate_type_info, TypeTracker};
-use crate::worker::{BindingInfo, ImportInfo, ScopeInfo, WorkerHandle};
+use crate::type_tracker::TypeTracker;
+use crate::types::{BindingInfo, ScopeInfo};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
-// Native CST bridge for feature-gated analysis
-#[cfg(feature = "native-cst")]
+// Native CST bridge
 use crate::cst_bridge;
 
 // ============================================================================
@@ -44,10 +32,6 @@ use crate::cst_bridge;
 /// Errors that can occur during Python analysis.
 #[derive(Debug, Error)]
 pub enum AnalyzerError {
-    /// Worker communication error.
-    #[error("worker error: {0}")]
-    Worker(#[from] crate::worker::WorkerError),
-
     /// File not found in workspace.
     #[error("file not found: {path}")]
     FileNotFound { path: String },
@@ -64,10 +48,9 @@ pub enum AnalyzerError {
     #[error("could not resolve import: {module_path}")]
     ImportNotResolved { module_path: String },
 
-    /// Native CST analysis error.
-    #[cfg(feature = "native-cst")]
-    #[error("native CST error: {0}")]
-    NativeCst(#[from] crate::cst_bridge::CstBridgeError),
+    /// CST analysis error.
+    #[error("CST error: {0}")]
+    Cst(#[from] crate::cst_bridge::CstBridgeError),
 
     /// IO error.
     #[error("IO error: {0}")]
@@ -275,297 +258,255 @@ pub struct ImportedName {
 }
 
 // ============================================================================
-// Native Analysis (feature-gated)
+// Analysis Implementation
 // ============================================================================
 
-/// Native CST-based file analysis using pure Rust.
+// ============================================================================
+// Multi-File Analysis Types
+// ============================================================================
+
+/// Bundle of analysis results from processing multiple files.
 ///
-/// This module provides zero-Python-dependency analysis when the `native-cst`
-/// feature is enabled. It uses tugtool-cst for parsing and analysis.
-#[cfg(feature = "native-cst")]
-pub mod native {
-    use super::*;
-
-    // ========================================================================
-    // Multi-File Analysis Types (Step 9.1)
-    // ========================================================================
-
-    /// Bundle of analysis results from processing multiple files.
+/// This type collects the results of Pass 1 (single-file analysis) and tracks
+/// any files that failed to parse or analyze. Used by subsequent passes to
+/// build the complete FactsStore with cross-file resolution.
+#[derive(Debug, Default)]
+pub struct FileAnalysisBundle {
+    /// Successfully analyzed files.
+    pub file_analyses: Vec<FileAnalysis>,
+    /// Files that failed to parse or analyze, with their error messages.
+    pub failed_files: Vec<(String, AnalyzerError)>,
+    /// All workspace file paths (for import resolution in Pass 3).
     ///
-    /// This type collects the results of Pass 1 (single-file analysis) and tracks
-    /// any files that failed to parse or analyze. Used by subsequent passes to
-    /// build the complete FactsStore with cross-file resolution.
-    #[derive(Debug, Default)]
-    pub struct FileAnalysisBundle {
-        /// Successfully analyzed files.
-        pub file_analyses: Vec<FileAnalysis>,
-        /// Files that failed to parse or analyze, with their error messages.
-        pub failed_files: Vec<(String, AnalyzerError)>,
-        /// All workspace file paths (for import resolution in Pass 3).
-        ///
-        /// This set contains all paths from the input file list, regardless of
-        /// whether they were successfully analyzed. This allows Pass 3 to resolve
-        /// imports even when some files failed to parse (we know the file exists,
-        /// we just couldn't analyze it).
-        pub workspace_files: HashSet<String>,
+    /// This set contains all paths from the input file list, regardless of
+    /// whether they were successfully analyzed. This allows Pass 3 to resolve
+    /// imports even when some files failed to parse (we know the file exists,
+    /// we just couldn't analyze it).
+    pub workspace_files: HashSet<String>,
+}
+
+impl FileAnalysisBundle {
+    /// Create a new empty bundle.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    impl FileAnalysisBundle {
-        /// Create a new empty bundle.
-        pub fn new() -> Self {
-            Self::default()
-        }
+    /// Check if all files were analyzed successfully.
+    pub fn is_complete(&self) -> bool {
+        self.failed_files.is_empty()
+    }
 
-        /// Check if all files were analyzed successfully.
-        pub fn is_complete(&self) -> bool {
-            self.failed_files.is_empty()
-        }
+    /// Get the number of successfully analyzed files.
+    pub fn success_count(&self) -> usize {
+        self.file_analyses.len()
+    }
 
-        /// Get the number of successfully analyzed files.
-        pub fn success_count(&self) -> usize {
-            self.file_analyses.len()
-        }
+    /// Get the number of failed files.
+    pub fn failure_count(&self) -> usize {
+        self.failed_files.len()
+    }
+}
 
-        /// Get the number of failed files.
-        pub fn failure_count(&self) -> usize {
-            self.failed_files.len()
+/// Maps symbol names and kinds to their locations across all files.
+///
+/// This type is populated during Pass 2 (symbol registration) and used during
+/// Pass 3 (reference resolution) to link references to their target symbols
+/// across file boundaries.
+///
+/// The key is (name, kind) to distinguish between symbols with the same name
+/// but different kinds (e.g., a function `foo` vs a variable `foo`).
+pub type GlobalSymbolMap = HashMap<(String, SymbolKind), Vec<(FileId, SymbolId)>>;
+
+/// Set of import bindings: (FileId, local_name).
+///
+/// This tracks which names in each file are import bindings rather than
+/// local definitions. Used during Pass 3 to apply resolution preference
+/// rules (prefer original definitions over import bindings).
+pub type ImportBindingsSet = HashSet<(FileId, String)>;
+
+/// Maps local file scope IDs to global FactsStore scope IDs.
+///
+/// Each file has its own local scope numbering (starting from 0).
+/// This map translates those local IDs to the globally-unique CoreScopeIds
+/// assigned by the FactsStore.
+pub type ScopeIdMap = HashMap<(FileId, ScopeId), CoreScopeId>;
+
+/// Analyze multiple files and populate the FactsStore using native CST.
+///
+/// This is the main entry point for multi-file Python analysis without any
+/// Python dependencies. It implements a 4-pass algorithm to build a complete
+/// FactsStore with proper cross-file resolution.
+///
+/// # Algorithm (4-Pass)
+///
+/// **Pass 1: Single-File Analysis**
+/// - Parse each file using native CST parser
+/// - Collect scopes, symbols, references, imports
+/// - Continue on parse errors (track failures in bundle)
+///
+/// **Pass 2: Symbol Registration**
+/// - Assign globally-unique FileIds and SymbolIds
+/// - Insert Files and Symbols into FactsStore
+/// - Build GlobalSymbolMap for cross-file resolution
+/// - Link container symbols (methods to classes)
+/// - Track import bindings separately
+///
+/// **Pass 3: Reference & Import Resolution**
+/// - Resolve references using GlobalSymbolMap
+/// - Prefer original definitions over import bindings
+/// - Insert References and Imports into FactsStore
+/// - Handle method references with span matching
+///
+/// **Pass 4: Type-Aware Method Resolution**
+/// - Build MethodCallIndex for efficient lookup
+/// - Resolve method calls using receiver type information
+/// - Populate TypeInfo and InheritanceInfo in FactsStore
+/// - Insert typed method call references
+///
+/// # Arguments
+///
+/// * `files` - List of (path, content) pairs to analyze
+/// * `store` - FactsStore to populate with analysis results
+///
+/// # Returns
+///
+/// * `Ok(FileAnalysisBundle)` - Bundle with successful analyses and any failures
+/// * `Err(AnalyzerError)` - Fatal error that prevented analysis
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::analyzer::analyze_files;
+/// use tugtool_core::facts::FactsStore;
+///
+/// let mut store = FactsStore::new();
+/// let files = vec![
+///     ("main.py".to_string(), "from utils import helper\nhelper()".to_string()),
+///     ("utils.py".to_string(), "def helper(): pass".to_string()),
+/// ];
+///
+/// let bundle = analyze_files(&files, &mut store)?;
+/// assert!(bundle.is_complete());
+/// assert_eq!(store.files().len(), 2);
+/// ```
+///
+/// # Behavioral Contract
+///
+/// See plans/phase-3.md Step 9.0 for the full behavioral contracts (C1-C8)
+/// that this function must satisfy for parity with the original Python worker.
+pub fn analyze_files(
+    files: &[(String, String)],
+    store: &mut FactsStore,
+) -> AnalyzerResult<FileAnalysisBundle> {
+    let mut bundle = FileAnalysisBundle::new();
+
+    // Handle empty file list
+    if files.is_empty() {
+        return Ok(bundle);
+    }
+
+    // ====================================================================
+    // Pass 1: Single-File Analysis
+    // ====================================================================
+    // Parse each file using native CST parser and collect analysis results.
+    // Track all workspace file paths for import resolution in Pass 3.
+    // Continue on parse errors (track failures in bundle).
+
+    // Build workspace file set for import resolution
+    // We track all paths regardless of analysis success/failure because:
+    // - A file that failed to parse still exists and can be an import target
+    // - Pass 3 needs to know which paths exist in the workspace
+    bundle.workspace_files = files.iter().map(|(path, _)| path.clone()).collect();
+
+    // Keep a map of file_id -> content for content hash computation in Pass 2
+    let mut file_contents: HashMap<FileId, &str> = HashMap::new();
+
+    // Analyze each file
+    for (path, content) in files {
+        let file_id = store.next_file_id();
+        file_contents.insert(file_id, content.as_str());
+        match analyze_file(file_id, path, content) {
+            Ok(analysis) => {
+                bundle.file_analyses.push(analysis);
+            }
+            Err(e) => {
+                // Track failure but continue analyzing other files
+                bundle.failed_files.push((path.clone(), e));
+            }
         }
     }
 
-    /// Maps symbol names and kinds to their locations across all files.
-    ///
-    /// This type is populated during Pass 2 (symbol registration) and used during
-    /// Pass 3 (reference resolution) to link references to their target symbols
-    /// across file boundaries.
-    ///
-    /// The key is (name, kind) to distinguish between symbols with the same name
-    /// but different kinds (e.g., a function `foo` vs a variable `foo`).
-    pub type GlobalSymbolMap = HashMap<(String, SymbolKind), Vec<(FileId, SymbolId)>>;
+    // ====================================================================
+    // Pass 2: Symbol Registration
+    // ====================================================================
+    // For each FileAnalysis:
+    //   - Insert File into FactsStore
+    //   - Assign globally-unique SymbolIds and insert Symbols
+    //   - Build GlobalSymbolMap for cross-file resolution
+    //   - Link container symbols (methods to classes)
+    //   - Track import bindings separately
+    //   - Insert ScopeInfo records into FactsStore
 
-    /// Set of import bindings: (FileId, local_name).
-    ///
-    /// This tracks which names in each file are import bindings rather than
-    /// local definitions. Used during Pass 3 to apply resolution preference
-    /// rules (prefer original definitions over import bindings).
-    pub type ImportBindingsSet = HashSet<(FileId, String)>;
+    let mut global_symbols: GlobalSymbolMap = HashMap::new();
+    let mut import_bindings: ImportBindingsSet = HashSet::new();
+    let mut scope_id_map: ScopeIdMap = HashMap::new();
 
-    /// Maps local file scope IDs to global FactsStore scope IDs.
-    ///
-    /// Each file has its own local scope numbering (starting from 0).
-    /// This map translates those local IDs to the globally-unique CoreScopeIds
-    /// assigned by the FactsStore.
-    pub type ScopeIdMap = HashMap<(FileId, ScopeId), CoreScopeId>;
+    // Track class symbols within each file for method->class linking
+    // Key: (FileId, class_name) -> SymbolId
+    let mut class_symbols: HashMap<(FileId, String), SymbolId> = HashMap::new();
 
-    /// Analyze multiple files and populate the FactsStore using native CST.
-    ///
-    /// This is the main entry point for multi-file Python analysis without any
-    /// Python dependencies. It implements a 4-pass algorithm to build a complete
-    /// FactsStore with proper cross-file resolution.
-    ///
-    /// # Algorithm (4-Pass)
-    ///
-    /// **Pass 1: Single-File Analysis**
-    /// - Parse each file using native CST parser
-    /// - Collect scopes, symbols, references, imports
-    /// - Continue on parse errors (track failures in bundle)
-    ///
-    /// **Pass 2: Symbol Registration**
-    /// - Assign globally-unique FileIds and SymbolIds
-    /// - Insert Files and Symbols into FactsStore
-    /// - Build GlobalSymbolMap for cross-file resolution
-    /// - Link container symbols (methods to classes)
-    /// - Track import bindings separately
-    ///
-    /// **Pass 3: Reference & Import Resolution**
-    /// - Resolve references using GlobalSymbolMap
-    /// - Prefer original definitions over import bindings
-    /// - Insert References and Imports into FactsStore
-    /// - Handle method references with span matching
-    ///
-    /// **Pass 4: Type-Aware Method Resolution**
-    /// - Build MethodCallIndex for efficient lookup
-    /// - Resolve method calls using receiver type information
-    /// - Populate TypeInfo and InheritanceInfo in FactsStore
-    /// - Insert typed method call references
-    ///
-    /// # Arguments
-    ///
-    /// * `files` - List of (path, content) pairs to analyze
-    /// * `store` - FactsStore to populate with analysis results
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(FileAnalysisBundle)` - Bundle with successful analyses and any failures
-    /// * `Err(AnalyzerError)` - Fatal error that prevented analysis
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use tugtool_python::analyzer::native::analyze_files;
-    /// use tugtool_core::facts::FactsStore;
-    ///
-    /// let mut store = FactsStore::new();
-    /// let files = vec![
-    ///     ("main.py".to_string(), "from utils import helper\nhelper()".to_string()),
-    ///     ("utils.py".to_string(), "def helper(): pass".to_string()),
-    /// ];
-    ///
-    /// let bundle = analyze_files(&files, &mut store)?;
-    /// assert!(bundle.is_complete());
-    /// assert_eq!(store.files().len(), 2);
-    /// ```
-    ///
-    /// # Behavioral Contract
-    ///
-    /// See plans/phase-3.md Step 9.0 for the full behavioral contracts (C1-C8)
-    /// that this function must satisfy for parity with the original Python worker.
-    pub fn analyze_files(
-        files: &[(String, String)],
-        store: &mut FactsStore,
-    ) -> AnalyzerResult<FileAnalysisBundle> {
-        let mut bundle = FileAnalysisBundle::new();
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+        let content = file_contents.get(&file_id).unwrap_or(&"");
 
-        // Handle empty file list
-        if files.is_empty() {
-            return Ok(bundle);
+        // Insert File into FactsStore
+        let content_hash = ContentHash::compute(content.as_bytes());
+        let file = File::new(file_id, &analysis.path, content_hash, Language::Python);
+        store.insert_file(file);
+
+        // Pass 2a: Register scopes (must happen before symbols for parent linking)
+        // Map local scope IDs to global CoreScopeIds
+        let mut local_to_global_scope: HashMap<ScopeId, CoreScopeId> = HashMap::new();
+
+        // First pass: assign CoreScopeIds to all scopes
+        for scope in &analysis.scopes {
+            let core_scope_id = store.next_scope_id();
+            local_to_global_scope.insert(scope.id, core_scope_id);
+            scope_id_map.insert((file_id, scope.id), core_scope_id);
         }
 
-        // ====================================================================
-        // Pass 1: Single-File Analysis
-        // ====================================================================
-        // Parse each file using native CST parser and collect analysis results.
-        // Track all workspace file paths for import resolution in Pass 3.
-        // Continue on parse errors (track failures in bundle).
+        // Second pass: insert ScopeInfo records with parent links
+        for scope in &analysis.scopes {
+            let core_scope_id = local_to_global_scope[&scope.id];
+            let parent_core_id = scope
+                .parent_id
+                .and_then(|pid| local_to_global_scope.get(&pid).copied());
 
-        // Build workspace file set for import resolution
-        // We track all paths regardless of analysis success/failure because:
-        // - A file that failed to parse still exists and can be an import target
-        // - Pass 3 needs to know which paths exist in the workspace
-        bundle.workspace_files = files.iter().map(|(path, _)| path.clone()).collect();
+            // Compute span for scope (currently we don't have precise scope spans,
+            // so we use a placeholder - this will be improved in future)
+            // TODO: Get actual scope spans from native analysis
+            let span = Span::new(0, 0);
 
-        // Keep a map of file_id -> content for content hash computation in Pass 2
-        let mut file_contents: HashMap<FileId, &str> = HashMap::new();
-
-        // Analyze each file
-        for (path, content) in files {
-            let file_id = store.next_file_id();
-            file_contents.insert(file_id, content.as_str());
-            match analyze_file_native(file_id, path, content) {
-                Ok(analysis) => {
-                    bundle.file_analyses.push(analysis);
-                }
-                Err(e) => {
-                    // Track failure but continue analyzing other files
-                    bundle.failed_files.push((path.clone(), e));
-                }
+            let mut core_scope =
+                CoreScopeInfo::new(core_scope_id, file_id, span, scope.to_core_kind());
+            if let Some(parent_id) = parent_core_id {
+                core_scope = core_scope.with_parent(parent_id);
             }
+            store.insert_scope(core_scope);
         }
 
-        // ====================================================================
-        // Pass 2: Symbol Registration
-        // ====================================================================
-        // For each FileAnalysis:
-        //   - Insert File into FactsStore
-        //   - Assign globally-unique SymbolIds and insert Symbols
-        //   - Build GlobalSymbolMap for cross-file resolution
-        //   - Link container symbols (methods to classes)
-        //   - Track import bindings separately
-        //   - Insert ScopeInfo records into FactsStore
-
-        let mut global_symbols: GlobalSymbolMap = HashMap::new();
-        let mut import_bindings: ImportBindingsSet = HashSet::new();
-        let mut scope_id_map: ScopeIdMap = HashMap::new();
-
-        // Track class symbols within each file for method->class linking
-        // Key: (FileId, class_name) -> SymbolId
-        let mut class_symbols: HashMap<(FileId, String), SymbolId> = HashMap::new();
-
-        for analysis in &bundle.file_analyses {
-            let file_id = analysis.file_id;
-            let content = file_contents.get(&file_id).unwrap_or(&"");
-
-            // Insert File into FactsStore
-            let content_hash = ContentHash::compute(content.as_bytes());
-            let file = File::new(file_id, &analysis.path, content_hash, Language::Python);
-            store.insert_file(file);
-
-            // Pass 2a: Register scopes (must happen before symbols for parent linking)
-            // Map local scope IDs to global CoreScopeIds
-            let mut local_to_global_scope: HashMap<ScopeId, CoreScopeId> = HashMap::new();
-
-            // First pass: assign CoreScopeIds to all scopes
-            for scope in &analysis.scopes {
-                let core_scope_id = store.next_scope_id();
-                local_to_global_scope.insert(scope.id, core_scope_id);
-                scope_id_map.insert((file_id, scope.id), core_scope_id);
-            }
-
-            // Second pass: insert ScopeInfo records with parent links
-            for scope in &analysis.scopes {
-                let core_scope_id = local_to_global_scope[&scope.id];
-                let parent_core_id = scope
-                    .parent_id
-                    .and_then(|pid| local_to_global_scope.get(&pid).copied());
-
-                // Compute span for scope (currently we don't have precise scope spans,
-                // so we use a placeholder - this will be improved in future)
-                // TODO: Get actual scope spans from native analysis
-                let span = Span::new(0, 0);
-
-                let mut core_scope =
-                    CoreScopeInfo::new(core_scope_id, file_id, span, scope.to_core_kind());
-                if let Some(parent_id) = parent_core_id {
-                    core_scope = core_scope.with_parent(parent_id);
-                }
-                store.insert_scope(core_scope);
-            }
-
-            // Pass 2b: First pass - register class symbols to enable method linking
-            for symbol in &analysis.symbols {
-                if symbol.kind == SymbolKind::Class {
-                    // Reserve SymbolId for class
-                    let symbol_id = store.next_symbol_id();
-                    class_symbols.insert((file_id, symbol.name.clone()), symbol_id);
-
-                    // Get span (use default if not available)
-                    let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
-
-                    // Insert class symbol
-                    let sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
-                    store.insert_symbol(sym);
-
-                    // Update global_symbols map
-                    global_symbols
-                        .entry((symbol.name.clone(), symbol.kind))
-                        .or_default()
-                        .push((file_id, symbol_id));
-                }
-            }
-
-            // Pass 2c: Register non-class symbols with container linking
-            for symbol in &analysis.symbols {
-                if symbol.kind == SymbolKind::Class {
-                    // Already handled above
-                    continue;
-                }
-
+        // Pass 2b: First pass - register class symbols to enable method linking
+        for symbol in &analysis.symbols {
+            if symbol.kind == SymbolKind::Class {
+                // Reserve SymbolId for class
                 let symbol_id = store.next_symbol_id();
+                class_symbols.insert((file_id, symbol.name.clone()), symbol_id);
 
                 // Get span (use default if not available)
                 let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
 
-                // Create symbol
-                let mut sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
-
-                // Link container for methods
-                // A method is a function defined inside a class scope
-                if let Some(container_name) = &symbol.container {
-                    if let Some(&container_id) = class_symbols.get(&(file_id, container_name.clone()))
-                    {
-                        sym = sym.with_container(container_id);
-                    }
-                }
-
+                // Insert class symbol
+                let sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
                 store.insert_symbol(sym);
 
                 // Update global_symbols map
@@ -573,872 +514,827 @@ pub mod native {
                     .entry((symbol.name.clone(), symbol.kind))
                     .or_default()
                     .push((file_id, symbol_id));
-
-                // Track import bindings
-                if symbol.kind == SymbolKind::Import {
-                    import_bindings.insert((file_id, symbol.name.clone()));
-                }
             }
         }
 
-        // ====================================================================
-        // Pass 3: Reference & Import Resolution
-        // ====================================================================
-        // For each FileAnalysis:
-        //   - Resolve references using GlobalSymbolMap
-        //   - Apply scope chain resolution (LEGB with class exception)
-        //   - Insert References into FactsStore
-        //   - Process imports and insert Import records
-
-        // Build file path to FileId mapping for import resolution
-        let file_path_to_id: HashMap<String, FileId> = bundle
-            .file_analyses
-            .iter()
-            .map(|a| (a.path.clone(), a.file_id))
-            .collect();
-
-        // Build scope-to-symbols index for each file (for scope chain resolution)
-        // Maps (FileId, ScopeId) -> Vec of (name, SymbolId, SymbolKind)
-        let mut scope_symbols: HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>> =
-            HashMap::new();
-
-        // Rebuild scope_symbols from symbols (we need to know which symbols are in which scope)
-        // This is populated from the symbols we just registered
-        for analysis in &bundle.file_analyses {
-            let file_id = analysis.file_id;
-            for symbol in &analysis.symbols {
-                // Find the SymbolId for this symbol in the global_symbols map
-                if let Some(entries) = global_symbols.get(&(symbol.name.clone(), symbol.kind)) {
-                    for (fid, sym_id) in entries {
-                        if *fid == file_id {
-                            scope_symbols
-                                .entry((file_id, symbol.scope_id))
-                                .or_default()
-                                .push((symbol.name.clone(), *sym_id, symbol.kind));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        for analysis in &bundle.file_analyses {
-            let file_id = analysis.file_id;
-
-            // Build per-file import resolver
-            let import_resolver = FileImportResolver::from_imports(
-                &analysis.imports,
-                &bundle.workspace_files,
-            );
-
-            // Process imports first - insert Import records
-            for local_import in &analysis.imports {
-                let import_id = store.next_import_id();
-                let span = local_import.span.unwrap_or_else(|| Span::new(0, 0));
-
-                // For "from" imports, create an Import record for each name
-                if local_import.kind == "from" && !local_import.is_star {
-                    for imported_name in &local_import.names {
-                        let name_import_id = store.next_import_id();
-                        let mut import = Import::new(
-                            name_import_id,
-                            file_id,
-                            span,
-                            &local_import.module_path,
-                        );
-                        import.imported_name = Some(imported_name.name.clone());
-                        import.alias = imported_name.alias.clone();
-                        import.is_star = false;
-                        store.insert_import(import);
-                    }
-                } else if local_import.is_star {
-                    // Star import
-                    let mut import = Import::new(
-                        import_id,
-                        file_id,
-                        span,
-                        &local_import.module_path,
-                    );
-                    import.is_star = true;
-                    store.insert_import(import);
-                } else {
-                    // Regular module import
-                    let mut import = Import::new(
-                        import_id,
-                        file_id,
-                        span,
-                        &local_import.module_path,
-                    );
-                    import.alias = local_import.alias.clone();
-                    store.insert_import(import);
-                }
-            }
-
-            // Process references
-            for local_ref in &analysis.references {
-                let ref_span = local_ref.span.unwrap_or_else(|| Span::new(0, 0));
-
-                // Try to resolve the reference to a symbol
-                let resolved_symbol_id = resolve_reference(
-                    &local_ref.name,
-                    local_ref.scope_id,
-                    file_id,
-                    &analysis.scopes,
-                    &global_symbols,
-                    &import_bindings,
-                    &scope_symbols,
-                    &import_resolver,
-                    &file_path_to_id,
-                    local_ref.kind,
-                );
-
-                if let Some(symbol_id) = resolved_symbol_id {
-                    // Create reference
-                    let ref_id = store.next_reference_id();
-                    let reference = Reference::new(
-                        ref_id,
-                        symbol_id,
-                        file_id,
-                        ref_span,
-                        local_ref.kind,
-                    );
-                    store.insert_reference(reference);
-                }
-                // Note: Unresolved references are silently dropped.
-                // This is intentional - we only track references we can resolve.
-            }
-        }
-
-        // ====================================================================
-        // Pass 4: Type-Aware Method Resolution
-        // ====================================================================
-        // Build TypeTrackers per file, populate TypeInfo and InheritanceInfo,
-        // build MethodCallIndex, and insert typed method call references.
-        //
-        // Per Contract C5 (Type Inference Levels):
-        // - Level 1: Constructor calls (x = MyClass()) and variable propagation
-        // - Level 2: Annotations (def f(x: Foo), x: int)
-        // - Level 3: Return types (h = get_handler() where get_handler() -> Handler)
-        //
-        // Per Contract C6 (Inheritance and Override Resolution):
-        // - Build parent/child relationships from class_inheritance data
-        // - Renaming Base.method affects Child.method if it's an override
-
-        // We need to re-analyze files to get P1 data (assignments, annotations,
-        // class_inheritance, method_calls). This is necessary because the
-        // FileAnalysis struct doesn't currently include P1 data.
-        //
-        // Note: This could be optimized by storing P1 data in Pass 1, but for now
-        // we re-analyze to keep the implementation simple and correct.
-
-        // Build MethodCallIndex for O(1) lookup by method name
-        let mut method_call_index = MethodCallIndex::new();
-
-        // Store TypeTrackers per file for type resolution
-        let mut type_trackers: HashMap<FileId, TypeTracker> = HashMap::new();
-
-        // Collect all class inheritance info across files for building InheritanceInfo
-        let mut all_class_inheritance: Vec<(FileId, tugtool_cst::ClassInheritanceInfo)> = Vec::new();
-
-        // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
-        for (path, content) in files {
-            // Skip files that failed analysis in Pass 1
-            if bundle.failed_files.iter().any(|(p, _)| p == path) {
+        // Pass 2c: Register non-class symbols with container linking
+        for symbol in &analysis.symbols {
+            if symbol.kind == SymbolKind::Class {
+                // Already handled above
                 continue;
             }
 
-            // Get the FileId for this path
-            let file_id = match file_path_to_id.get(path) {
-                Some(&id) => id,
-                None => continue,
-            };
+            let symbol_id = store.next_symbol_id();
 
-            // Re-parse to get P1 data
-            let native_result = match cst_bridge::parse_and_analyze(content) {
-                Ok(result) => result,
-                Err(_) => continue, // Skip if re-parse fails (shouldn't happen)
-            };
+            // Get span (use default if not available)
+            let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
 
-            // Build TypeTracker from assignments and annotations
-            let mut tracker = TypeTracker::new();
+            // Create symbol
+            let mut sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
 
-            // Convert CST AssignmentInfo to worker AssignmentInfo for TypeTracker
-            let worker_assignments: Vec<crate::worker::AssignmentInfo> = native_result
-                .assignments
-                .iter()
-                .map(|a| crate::worker::AssignmentInfo {
-                    target: a.target.clone(),
-                    scope_path: a.scope_path.clone(),
-                    type_source: a.type_source.as_str().to_string(),
-                    inferred_type: a.inferred_type.clone(),
-                    rhs_name: a.rhs_name.clone(),
-                    callee_name: a.callee_name.clone(),
-                    span: a
-                        .span
-                        .as_ref()
-                        .map(|s| crate::worker::SpanInfo {
-                            start: s.start as usize,
-                            end: s.end as usize,
-                        }),
-                    line: a.line,
-                    col: a.col,
-                })
-                .collect();
+            // Link container for methods
+            // A method is a function defined inside a class scope
+            if let Some(container_name) = &symbol.container {
+                if let Some(&container_id) = class_symbols.get(&(file_id, container_name.clone()))
+                {
+                    sym = sym.with_container(container_id);
+                }
+            }
 
-            // Convert CST AnnotationInfo to worker AnnotationInfo for TypeTracker
-            let worker_annotations: Vec<crate::worker::AnnotationInfo> = native_result
-                .annotations
-                .iter()
-                .map(|a| crate::worker::AnnotationInfo {
-                    name: a.name.clone(),
-                    annotation_kind: a.annotation_kind.as_str().to_string(),
-                    source_kind: a.source_kind.as_str().to_string(),
-                    type_str: a.type_str.clone(),
-                    scope_path: a.scope_path.clone(),
-                    span: a
-                        .span
-                        .as_ref()
-                        .map(|s| crate::worker::SpanInfo {
-                            start: s.start as usize,
-                            end: s.end as usize,
-                        }),
-                    line: a.line,
-                    col: a.col,
-                })
-                .collect();
+            store.insert_symbol(sym);
 
-            tracker.process_assignments(&worker_assignments);
-            tracker.process_annotations(&worker_annotations);
-            tracker.resolve_types();
+            // Update global_symbols map
+            global_symbols
+                .entry((symbol.name.clone(), symbol.kind))
+                .or_default()
+                .push((file_id, symbol_id));
 
-            type_trackers.insert(file_id, tracker);
+            // Track import bindings
+            if symbol.kind == SymbolKind::Import {
+                import_bindings.insert((file_id, symbol.name.clone()));
+            }
+        }
+    }
 
-            // Build MethodCallIndex from method calls
-            // First, get the FileAnalysis to access scope information
-            let analysis = bundle
-                .file_analyses
-                .iter()
-                .find(|a| a.file_id == file_id);
+    // ====================================================================
+    // Pass 3: Reference & Import Resolution
+    // ====================================================================
+    // For each FileAnalysis:
+    //   - Resolve references using GlobalSymbolMap
+    //   - Apply scope chain resolution (LEGB with class exception)
+    //   - Insert References into FactsStore
+    //   - Process imports and insert Import records
 
-            for mc in &native_result.method_calls {
-                // Resolve receiver type using TypeTracker
-                let receiver_type = type_trackers
-                    .get(&file_id)
-                    .and_then(|tracker| tracker.type_of(&mc.scope_path, &mc.receiver))
-                    .map(String::from);
+    // Build file path to FileId mapping for import resolution
+    let file_path_to_id: HashMap<String, FileId> = bundle
+        .file_analyses
+        .iter()
+        .map(|a| (a.path.clone(), a.file_id))
+        .collect();
 
-                let indexed_call = IndexedMethodCall {
+    // Build scope-to-symbols index for each file (for scope chain resolution)
+    // Maps (FileId, ScopeId) -> Vec of (name, SymbolId, SymbolKind)
+    let mut scope_symbols: HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>> =
+        HashMap::new();
+
+    // Rebuild scope_symbols from symbols (we need to know which symbols are in which scope)
+    // This is populated from the symbols we just registered
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+        for symbol in &analysis.symbols {
+            // Find the SymbolId for this symbol in the global_symbols map
+            if let Some(entries) = global_symbols.get(&(symbol.name.clone(), symbol.kind)) {
+                for (fid, sym_id) in entries {
+                    if *fid == file_id {
+                        scope_symbols
+                            .entry((file_id, symbol.scope_id))
+                            .or_default()
+                            .push((symbol.name.clone(), *sym_id, symbol.kind));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+
+        // Build per-file import resolver
+        let import_resolver = FileImportResolver::from_imports(
+            &analysis.imports,
+            &bundle.workspace_files,
+        );
+
+        // Process imports first - insert Import records
+        for local_import in &analysis.imports {
+            let import_id = store.next_import_id();
+            let span = local_import.span.unwrap_or_else(|| Span::new(0, 0));
+
+            // For "from" imports, create an Import record for each name
+            if local_import.kind == "from" && !local_import.is_star {
+                for imported_name in &local_import.names {
+                    let name_import_id = store.next_import_id();
+                    let mut import = Import::new(
+                        name_import_id,
+                        file_id,
+                        span,
+                        &local_import.module_path,
+                    );
+                    import.imported_name = Some(imported_name.name.clone());
+                    import.alias = imported_name.alias.clone();
+                    import.is_star = false;
+                    store.insert_import(import);
+                }
+            } else if local_import.is_star {
+                // Star import
+                let mut import = Import::new(
+                    import_id,
                     file_id,
-                    receiver: mc.receiver.clone(),
-                    receiver_type,
-                    scope_path: mc.scope_path.clone(),
-                    method_span: mc
-                        .method_span
-                        .as_ref()
-                        .map(|s| Span::new(s.start, s.end))
-                        .unwrap_or_else(|| Span::new(0, 0)),
-                };
-
-                method_call_index.add(mc.method.clone(), indexed_call);
+                    span,
+                    &local_import.module_path,
+                );
+                import.is_star = true;
+                store.insert_import(import);
+            } else {
+                // Regular module import
+                let mut import = Import::new(
+                    import_id,
+                    file_id,
+                    span,
+                    &local_import.module_path,
+                );
+                import.alias = local_import.alias.clone();
+                store.insert_import(import);
             }
-
-            // Collect class inheritance info
-            for ci in native_result.class_inheritance {
-                all_class_inheritance.push((file_id, ci));
-            }
-
-            // Mark analysis as used to suppress warning
-            let _ = analysis;
         }
 
-        // Pass 4b: Populate TypeInfo in FactsStore for typed variables
-        for (&file_id, tracker) in &type_trackers {
-            crate::type_tracker::populate_type_info(tracker, store, file_id);
+        // Process references
+        for local_ref in &analysis.references {
+            let ref_span = local_ref.span.unwrap_or_else(|| Span::new(0, 0));
+
+            // Try to resolve the reference to a symbol
+            let resolved_symbol_id = resolve_reference(
+                &local_ref.name,
+                local_ref.scope_id,
+                file_id,
+                &analysis.scopes,
+                &global_symbols,
+                &import_bindings,
+                &scope_symbols,
+                &import_resolver,
+                &file_path_to_id,
+                local_ref.kind,
+            );
+
+            if let Some(symbol_id) = resolved_symbol_id {
+                // Create reference
+                let ref_id = store.next_reference_id();
+                let reference = Reference::new(
+                    ref_id,
+                    symbol_id,
+                    file_id,
+                    ref_span,
+                    local_ref.kind,
+                );
+                store.insert_reference(reference);
+            }
+            // Note: Unresolved references are silently dropped.
+            // This is intentional - we only track references we can resolve.
+        }
+    }
+
+    // ====================================================================
+    // Pass 4: Type-Aware Method Resolution
+    // ====================================================================
+    // Build TypeTrackers per file, populate TypeInfo and InheritanceInfo,
+    // build MethodCallIndex, and insert typed method call references.
+    //
+    // Per Contract C5 (Type Inference Levels):
+    // - Level 1: Constructor calls (x = MyClass()) and variable propagation
+    // - Level 2: Annotations (def f(x: Foo), x: int)
+    // - Level 3: Return types (h = get_handler() where get_handler() -> Handler)
+    //
+    // Per Contract C6 (Inheritance and Override Resolution):
+    // - Build parent/child relationships from class_inheritance data
+    // - Renaming Base.method affects Child.method if it's an override
+
+    // We need to re-analyze files to get P1 data (assignments, annotations,
+    // class_inheritance, method_calls). This is necessary because the
+    // FileAnalysis struct doesn't currently include P1 data.
+    //
+    // Note: This could be optimized by storing P1 data in Pass 1, but for now
+    // we re-analyze to keep the implementation simple and correct.
+
+    // Build MethodCallIndex for O(1) lookup by method name
+    let mut method_call_index = MethodCallIndex::new();
+
+    // Store TypeTrackers per file for type resolution
+    let mut type_trackers: HashMap<FileId, TypeTracker> = HashMap::new();
+
+    // Collect all class inheritance info across files for building InheritanceInfo
+    let mut all_class_inheritance: Vec<(FileId, tugtool_cst::ClassInheritanceInfo)> = Vec::new();
+
+    // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
+    for (path, content) in files {
+        // Skip files that failed analysis in Pass 1
+        if bundle.failed_files.iter().any(|(p, _)| p == path) {
+            continue;
         }
 
-        // Pass 4c: Build InheritanceInfo from class_inheritance data
-        // Create a map of (file_id, class_name) -> SymbolId for resolving inheritance
-        // Use owned strings to avoid borrow issues
-        let class_name_to_symbol: HashMap<(FileId, String), SymbolId> = store
-            .symbols()
-            .filter(|s| s.kind == SymbolKind::Class)
-            .map(|s| ((s.decl_file_id, s.name.clone()), s.symbol_id))
+        // Get the FileId for this path
+        let file_id = match file_path_to_id.get(path) {
+            Some(&id) => id,
+            None => continue,
+        };
+
+        // Re-parse to get P1 data
+        let native_result = match cst_bridge::parse_and_analyze(content) {
+            Ok(result) => result,
+            Err(_) => continue, // Skip if re-parse fails (shouldn't happen)
+        };
+
+        // Build TypeTracker from assignments and annotations
+        let mut tracker = TypeTracker::new();
+
+        // Convert CST AssignmentInfo to types AssignmentInfo for TypeTracker
+        let worker_assignments: Vec<crate::types::AssignmentInfo> = native_result
+            .assignments
+            .iter()
+            .map(|a| crate::types::AssignmentInfo {
+                target: a.target.clone(),
+                scope_path: a.scope_path.clone(),
+                type_source: a.type_source.as_str().to_string(),
+                inferred_type: a.inferred_type.clone(),
+                rhs_name: a.rhs_name.clone(),
+                callee_name: a.callee_name.clone(),
+                span: a
+                    .span
+                    .as_ref()
+                    .map(|s| crate::types::SpanInfo {
+                        start: s.start as usize,
+                        end: s.end as usize,
+                    }),
+                line: a.line,
+                col: a.col,
+            })
             .collect();
 
-        // Collect inheritance relationships first (to avoid borrow issues)
-        let mut inheritance_to_insert: Vec<tugtool_core::facts::InheritanceInfo> = Vec::new();
+        // Convert CST AnnotationInfo to types AnnotationInfo for TypeTracker
+        let worker_annotations: Vec<crate::types::AnnotationInfo> = native_result
+            .annotations
+            .iter()
+            .map(|a| crate::types::AnnotationInfo {
+                name: a.name.clone(),
+                annotation_kind: a.annotation_kind.as_str().to_string(),
+                source_kind: a.source_kind.as_str().to_string(),
+                type_str: a.type_str.clone(),
+                scope_path: a.scope_path.clone(),
+                span: a
+                    .span
+                    .as_ref()
+                    .map(|s| crate::types::SpanInfo {
+                        start: s.start as usize,
+                        end: s.end as usize,
+                    }),
+                line: a.line,
+                col: a.col,
+            })
+            .collect();
 
-        for (file_id, ci) in &all_class_inheritance {
-            // Find the child class symbol
-            let child_id = match class_name_to_symbol.get(&(*file_id, ci.name.clone())) {
-                Some(&id) => id,
-                None => continue,
+        tracker.process_assignments(&worker_assignments);
+        tracker.process_annotations(&worker_annotations);
+        tracker.resolve_types();
+
+        type_trackers.insert(file_id, tracker);
+
+        // Build MethodCallIndex from method calls
+        // First, get the FileAnalysis to access scope information
+        let analysis = bundle
+            .file_analyses
+            .iter()
+            .find(|a| a.file_id == file_id);
+
+        for mc in &native_result.method_calls {
+            // Resolve receiver type using TypeTracker
+            let receiver_type = type_trackers
+                .get(&file_id)
+                .and_then(|tracker| tracker.type_of(&mc.scope_path, &mc.receiver))
+                .map(String::from);
+
+            let indexed_call = IndexedMethodCall {
+                file_id,
+                receiver: mc.receiver.clone(),
+                receiver_type,
+                scope_path: mc.scope_path.clone(),
+                method_span: mc
+                    .method_span
+                    .as_ref()
+                    .map(|s| Span::new(s.start, s.end))
+                    .unwrap_or_else(|| Span::new(0, 0)),
             };
 
-            // For each base class, try to resolve it to a symbol
-            for base_name in &ci.bases {
-                // Try to find the base class in the same file first
-                if let Some(&parent_id) =
-                    class_name_to_symbol.get(&(*file_id, base_name.clone()))
-                {
-                    inheritance_to_insert.push(tugtool_core::facts::InheritanceInfo::new(
-                        child_id, parent_id,
-                    ));
-                    continue;
-                }
+            method_call_index.add(mc.method.clone(), indexed_call);
+        }
 
-                // Try to resolve via imports
-                // Find the FileAnalysis for this file to get import info
-                if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id)
-                {
-                    // Use FileImportResolver which resolves imports against workspace_files
-                    let import_resolver = FileImportResolver::from_imports(
-                        &analysis.imports,
-                        &bundle.workspace_files,
-                    );
+        // Collect class inheritance info
+        for ci in native_result.class_inheritance {
+            all_class_inheritance.push((file_id, ci));
+        }
 
-                    if let Some((qualified_name, resolved_file)) =
-                        import_resolver.resolve(base_name)
-                    {
-                        // If we have a resolved file, look for the class there
-                        if let Some(resolved_path) = resolved_file {
-                            if let Some(&target_file_id) = file_path_to_id.get(resolved_path) {
-                                // Extract the actual class name from the qualified path
-                                let target_class_name =
-                                    qualified_name.rsplit('.').next().unwrap_or(base_name);
-                                if let Some(&parent_id) = class_name_to_symbol
-                                    .get(&(target_file_id, target_class_name.to_string()))
-                                {
-                                    inheritance_to_insert.push(
-                                        tugtool_core::facts::InheritanceInfo::new(
-                                            child_id, parent_id,
-                                        ),
-                                    );
-                                }
+        // Mark analysis as used to suppress warning
+        let _ = analysis;
+    }
+
+    // Pass 4b: Populate TypeInfo in FactsStore for typed variables
+    for (&file_id, tracker) in &type_trackers {
+        crate::type_tracker::populate_type_info(tracker, store, file_id);
+    }
+
+    // Pass 4c: Build InheritanceInfo from class_inheritance data
+    // Create a map of (file_id, class_name) -> SymbolId for resolving inheritance
+    // Use owned strings to avoid borrow issues
+    let class_name_to_symbol: HashMap<(FileId, String), SymbolId> = store
+        .symbols()
+        .filter(|s| s.kind == SymbolKind::Class)
+        .map(|s| ((s.decl_file_id, s.name.clone()), s.symbol_id))
+        .collect();
+
+    // Collect inheritance relationships first (to avoid borrow issues)
+    let mut inheritance_to_insert: Vec<tugtool_core::facts::InheritanceInfo> = Vec::new();
+
+    for (file_id, ci) in &all_class_inheritance {
+        // Find the child class symbol
+        let child_id = match class_name_to_symbol.get(&(*file_id, ci.name.clone())) {
+            Some(&id) => id,
+            None => continue,
+        };
+
+        // For each base class, try to resolve it to a symbol
+        for base_name in &ci.bases {
+            // Try to find the base class in the same file first
+            if let Some(&parent_id) =
+                class_name_to_symbol.get(&(*file_id, base_name.clone()))
+            {
+                inheritance_to_insert.push(tugtool_core::facts::InheritanceInfo::new(
+                    child_id, parent_id,
+                ));
+                continue;
+            }
+
+            // Try to resolve via imports
+            // Find the FileAnalysis for this file to get import info
+            if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id)
+            {
+                // Use FileImportResolver which resolves imports against workspace_files
+                let import_resolver = FileImportResolver::from_imports(
+                    &analysis.imports,
+                    &bundle.workspace_files,
+                );
+
+                if let Some((qualified_name, resolved_file)) =
+                    import_resolver.resolve(base_name)
+                {
+                    // If we have a resolved file, look for the class there
+                    if let Some(resolved_path) = resolved_file {
+                        if let Some(&target_file_id) = file_path_to_id.get(resolved_path) {
+                            // Extract the actual class name from the qualified path
+                            let target_class_name =
+                                qualified_name.rsplit('.').next().unwrap_or(base_name);
+                            if let Some(&parent_id) = class_name_to_symbol
+                                .get(&(target_file_id, target_class_name.to_string()))
+                            {
+                                inheritance_to_insert.push(
+                                    tugtool_core::facts::InheritanceInfo::new(
+                                        child_id, parent_id,
+                                    ),
+                                );
                             }
                         }
                     }
                 }
             }
         }
-
-        // Now insert all collected inheritance relationships
-        for inheritance in inheritance_to_insert {
-            store.insert_inheritance(inheritance);
-        }
-
-        // Pass 4d: Insert typed method call references
-        // For each class method, look up matching calls in MethodCallIndex
-        // and filter by receiver type
-
-        // Collect class method symbols: (method_name, class_name, symbol_id, file_id)
-        let class_methods: Vec<(String, String, SymbolId, FileId)> = store
-            .symbols()
-            .filter(|s| {
-                // A method is a function with a container (the class)
-                (s.kind == SymbolKind::Function || s.kind == SymbolKind::Method)
-                    && s.container_symbol_id.is_some()
-            })
-            .filter_map(|s| {
-                // Get the container class name
-                let container_id = s.container_symbol_id?;
-                let container = store.symbol(container_id)?;
-                Some((
-                    s.name.clone(),
-                    container.name.clone(),
-                    s.symbol_id,
-                    s.decl_file_id,
-                ))
-            })
-            .collect();
-
-        for (method_name, class_name, method_symbol_id, _method_file_id) in class_methods {
-            // Look up all calls to this method name
-            let matching_calls = method_call_index.get(&method_name);
-
-            for call in matching_calls {
-                // Check if the receiver type matches the class
-                let type_matches = call.receiver_type.as_deref() == Some(&class_name);
-
-                // Also check if receiver is "self" or "cls" and we're in a method of this class
-                let is_self_call = (call.receiver == "self" || call.receiver == "cls")
-                    && call
-                        .scope_path
-                        .iter()
-                        .any(|s| s == &class_name);
-
-                if type_matches || is_self_call {
-                    // Insert a reference from this call site to the method
-                    let ref_id = store.next_reference_id();
-                    let reference = Reference::new(
-                        ref_id,
-                        method_symbol_id,
-                        call.file_id,
-                        call.method_span,
-                        ReferenceKind::Call,
-                    );
-                    store.insert_reference(reference);
-                }
-            }
-        }
-
-        Ok(bundle)
     }
 
-    /// Analyze a single Python file using the native Rust CST parser.
-    ///
-    /// This function provides the same analysis as [`PythonAnalyzer::analyze_file`]
-    /// but uses the native Rust CST parser instead of the Python worker subprocess.
-    ///
-    /// # Arguments
-    ///
-    /// * `file_id` - Unique identifier for the file
-    /// * `path` - File path (used for error messages)
-    /// * `content` - Python source code to analyze
-    ///
-    /// # Returns
-    ///
-    /// A [`FileAnalysis`] containing scopes, symbols, references, and imports.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use tugtool_python::analyzer::native::analyze_file_native;
-    /// use tugtool_core::patch::FileId;
-    ///
-    /// let content = "def foo():\n    x = 1\n    return x";
-    /// let analysis = analyze_file_native(FileId::new(0), "test.py", content)?;
-    ///
-    /// assert!(!analysis.scopes.is_empty());
-    /// assert!(!analysis.symbols.is_empty());
-    /// ```
-    pub fn analyze_file_native(
-        file_id: FileId,
-        path: &str,
-        content: &str,
-    ) -> AnalyzerResult<FileAnalysis> {
-        // Parse and analyze using native CST
-        let native_result = cst_bridge::parse_and_analyze(content)?;
+    // Now insert all collected inheritance relationships
+    for inheritance in inheritance_to_insert {
+        store.insert_inheritance(inheritance);
+    }
 
-        // Build scope structure from native scopes
-        let (scopes, _scope_map) = build_scopes_from_native(&native_result.scopes);
+    // Pass 4d: Insert typed method call references
+    // For each class method, look up matching calls in MethodCallIndex
+    // and filter by receiver type
 
-        // Convert bindings to local symbols
-        let symbols = collect_symbols_from_native(&native_result.bindings, &scopes);
-
-        // Convert references
-        let mut references = Vec::new();
-        for (name, native_refs) in native_result.references {
-            for native_ref in native_refs {
-                references.push(LocalReference {
-                    name: name.clone(),
-                    kind: reference_kind_from_str(&native_ref.kind),
-                    span: native_ref
-                        .span
-                        .as_ref()
-                        .map(|s| Span::new(s.start as u64, s.end as u64)),
-                    line: native_ref.line,
-                    col: native_ref.col,
-                    scope_id: ScopeId(0), // Will be resolved during scope analysis
-                    resolved_symbol: Some(name.clone()), // Same-name reference
-                });
-            }
-        }
-
-        // Convert native imports to LocalImport format
-        // Note: We use an empty workspace_files set here since single-file analysis
-        // doesn't have access to the workspace. The caller (analyze_files) handles
-        // workspace-aware import resolution.
-        let imports = convert_native_imports(&native_result.imports, &HashSet::new());
-
-        Ok(FileAnalysis {
-            file_id,
-            path: path.to_string(),
-            cst_id: String::new(), // No CST ID for native analysis
-            scopes,
-            symbols,
-            references,
-            imports,
+    // Collect class method symbols: (method_name, class_name, symbol_id, file_id)
+    let class_methods: Vec<(String, String, SymbolId, FileId)> = store
+        .symbols()
+        .filter(|s| {
+            // A method is a function with a container (the class)
+            (s.kind == SymbolKind::Function || s.kind == SymbolKind::Method)
+                && s.container_symbol_id.is_some()
         })
-    }
+        .filter_map(|s| {
+            // Get the container class name
+            let container_id = s.container_symbol_id?;
+            let container = store.symbol(container_id)?;
+            Some((
+                s.name.clone(),
+                container.name.clone(),
+                s.symbol_id,
+                s.decl_file_id,
+            ))
+        })
+        .collect();
 
-    /// Build scope structure from native scope info.
-    fn build_scopes_from_native(
-        native_scopes: &[ScopeInfo],
-    ) -> (Vec<Scope>, HashMap<String, ScopeId>) {
-        let mut scope_map = HashMap::new();
+    for (method_name, class_name, method_symbol_id, _method_file_id) in class_methods {
+        // Look up all calls to this method name
+        let matching_calls = method_call_index.get(&method_name);
 
-        // Pass 1: Assign ScopeIds to all scopes
-        for (idx, ns) in native_scopes.iter().enumerate() {
-            let scope_id = ScopeId::new(idx as u32);
-            scope_map.insert(ns.id.clone(), scope_id);
-        }
+        for call in matching_calls {
+            // Check if the receiver type matches the class
+            let type_matches = call.receiver_type.as_deref() == Some(&class_name);
 
-        // Pass 2: Create scopes with parent references
-        let scopes: Vec<Scope> = native_scopes
-            .iter()
-            .enumerate()
-            .map(|(idx, ns)| {
-                let scope_id = ScopeId::new(idx as u32);
-                let parent_id = ns.parent.as_ref().and_then(|p| scope_map.get(p).copied());
-
-                let mut scope = Scope::new(
-                    scope_id,
-                    ScopeKind::from(ns.kind.as_str()),
-                    ns.name.clone(),
-                    parent_id,
-                );
-                // Populate globals and nonlocals from native scope info
-                scope.globals = ns.globals.iter().cloned().collect();
-                scope.nonlocals = ns.nonlocals.iter().cloned().collect();
-                scope
-            })
-            .collect();
-
-        (scopes, scope_map)
-    }
-
-    /// Collect symbols from native bindings.
-    fn collect_symbols_from_native(
-        bindings: &[BindingInfo],
-        scopes: &[Scope],
-    ) -> Vec<LocalSymbol> {
-        let mut symbols = Vec::new();
-
-        for binding in bindings {
-            let kind = symbol_kind_from_str(&binding.kind);
-
-            // Determine scope from scope_path
-            let scope_id = find_scope_for_path(&binding.scope_path, scopes).unwrap_or(ScopeId(0));
-
-            // Determine container for methods
-            let container = if binding.scope_path.len() >= 2 {
-                let path_without_module: Vec<_> = binding
+            // Also check if receiver is "self" or "cls" and we're in a method of this class
+            let is_self_call = (call.receiver == "self" || call.receiver == "cls")
+                && call
                     .scope_path
                     .iter()
-                    .filter(|s| *s != "<module>")
-                    .collect();
+                    .any(|s| s == &class_name);
 
-                if !path_without_module.is_empty() {
-                    let last_name = path_without_module.last().unwrap();
-                    let is_class = scopes.iter().any(|s| {
-                        s.kind == ScopeKind::Class && s.name.as_deref() == Some(last_name.as_str())
-                    });
-                    if is_class {
-                        Some((*last_name).clone())
-                    } else {
-                        None
-                    }
+            if type_matches || is_self_call {
+                // Insert a reference from this call site to the method
+                let ref_id = store.next_reference_id();
+                let reference = Reference::new(
+                    ref_id,
+                    method_symbol_id,
+                    call.file_id,
+                    call.method_span,
+                    ReferenceKind::Call,
+                );
+                store.insert_reference(reference);
+            }
+        }
+    }
+
+    Ok(bundle)
+}
+
+/// Analyze a single Python file using the native Rust CST parser.
+///
+/// This function parses the file using tugtool-cst and collects scopes,
+/// bindings, references, and imports with zero Python dependencies.
+///
+/// # Arguments
+///
+/// * `file_id` - Unique identifier for the file
+/// * `path` - File path (used for error messages)
+/// * `content` - Python source code to analyze
+///
+/// # Returns
+///
+/// A [`FileAnalysis`] containing scopes, symbols, references, and imports.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::analyzer::analyze_file;
+/// use tugtool_core::patch::FileId;
+///
+/// let content = "def foo():\n    x = 1\n    return x";
+/// let analysis = analyze_file(FileId::new(0), "test.py", content)?;
+///
+/// assert!(!analysis.scopes.is_empty());
+/// assert!(!analysis.symbols.is_empty());
+/// ```
+pub fn analyze_file(
+    file_id: FileId,
+    path: &str,
+    content: &str,
+) -> AnalyzerResult<FileAnalysis> {
+    // Parse and analyze using native CST
+    let native_result = cst_bridge::parse_and_analyze(content)?;
+
+    // Build scope structure from native scopes
+    let (scopes, _scope_map) = build_scopes(&native_result.scopes);
+
+    // Convert bindings to local symbols
+    let symbols = collect_symbols(&native_result.bindings, &scopes);
+
+    // Convert references
+    let mut references = Vec::new();
+    for (name, native_refs) in native_result.references {
+        for native_ref in native_refs {
+            references.push(LocalReference {
+                name: name.clone(),
+                kind: reference_kind_from_str(&native_ref.kind),
+                span: native_ref
+                    .span
+                    .as_ref()
+                    .map(|s| Span::new(s.start as u64, s.end as u64)),
+                line: native_ref.line,
+                col: native_ref.col,
+                scope_id: ScopeId(0), // Will be resolved during scope analysis
+                resolved_symbol: Some(name.clone()), // Same-name reference
+            });
+        }
+    }
+
+    // Convert native imports to LocalImport format
+    // Note: We use an empty workspace_files set here since single-file analysis
+    // doesn't have access to the workspace. The caller (analyze_files) handles
+    // workspace-aware import resolution.
+    let imports = convert_imports(&native_result.imports, &HashSet::new());
+
+    Ok(FileAnalysis {
+        file_id,
+        path: path.to_string(),
+        cst_id: String::new(), // No CST ID for native analysis
+        scopes,
+        symbols,
+        references,
+        imports,
+    })
+}
+
+/// Build scope structure from native scope info.
+fn build_scopes(
+    native_scopes: &[ScopeInfo],
+) -> (Vec<Scope>, HashMap<String, ScopeId>) {
+    let mut scope_map = HashMap::new();
+
+    // Pass 1: Assign ScopeIds to all scopes
+    for (idx, ns) in native_scopes.iter().enumerate() {
+        let scope_id = ScopeId::new(idx as u32);
+        scope_map.insert(ns.id.clone(), scope_id);
+    }
+
+    // Pass 2: Create scopes with parent references
+    let scopes: Vec<Scope> = native_scopes
+        .iter()
+        .enumerate()
+        .map(|(idx, ns)| {
+            let scope_id = ScopeId::new(idx as u32);
+            let parent_id = ns.parent.as_ref().and_then(|p| scope_map.get(p).copied());
+
+            let mut scope = Scope::new(
+                scope_id,
+                ScopeKind::from(ns.kind.as_str()),
+                ns.name.clone(),
+                parent_id,
+            );
+            // Populate globals and nonlocals from native scope info
+            scope.globals = ns.globals.iter().cloned().collect();
+            scope.nonlocals = ns.nonlocals.iter().cloned().collect();
+            scope
+        })
+        .collect();
+
+    (scopes, scope_map)
+}
+
+/// Collect symbols from native bindings.
+fn collect_symbols(
+    bindings: &[BindingInfo],
+    scopes: &[Scope],
+) -> Vec<LocalSymbol> {
+    let mut symbols = Vec::new();
+
+    for binding in bindings {
+        let kind = symbol_kind_from_str(&binding.kind);
+
+        // Determine scope from scope_path
+        let scope_id = find_scope_for_path(&binding.scope_path, scopes).unwrap_or(ScopeId(0));
+
+        // Determine container for methods
+        let container = if binding.scope_path.len() >= 2 {
+            let path_without_module: Vec<_> = binding
+                .scope_path
+                .iter()
+                .filter(|s| *s != "<module>")
+                .collect();
+
+            if !path_without_module.is_empty() {
+                let last_name = path_without_module.last().unwrap();
+                let is_class = scopes.iter().any(|s| {
+                    s.kind == ScopeKind::Class && s.name.as_deref() == Some(last_name.as_str())
+                });
+                if is_class {
+                    Some((*last_name).clone())
                 } else {
                     None
                 }
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
-            symbols.push(LocalSymbol {
-                name: binding.name.clone(),
-                kind,
-                scope_id,
-                span: binding
-                    .span
-                    .as_ref()
-                    .map(|s| Span::new(s.start as u64, s.end as u64)),
-                line: binding.line,
-                col: binding.col,
-                container,
-            });
-        }
-
-        symbols
+        symbols.push(LocalSymbol {
+            name: binding.name.clone(),
+            kind,
+            scope_id,
+            span: binding
+                .span
+                .as_ref()
+                .map(|s| Span::new(s.start as u64, s.end as u64)),
+            line: binding.line,
+            col: binding.col,
+            container,
+        });
     }
 
-    /// Find the scope that matches a scope_path.
-    fn find_scope_for_path(scope_path: &[String], scopes: &[Scope]) -> Option<ScopeId> {
-        if scope_path.is_empty() {
-            return Some(ScopeId(0)); // Module scope
-        }
+    symbols
+}
 
-        // Walk through the scope_path and find matching scopes
-        // The scope_path is like ["<module>", "ClassName", "method_name"]
+/// Find the scope that matches a scope_path.
+fn find_scope_for_path(scope_path: &[String], scopes: &[Scope]) -> Option<ScopeId> {
+    if scope_path.is_empty() {
+        return Some(ScopeId(0)); // Module scope
+    }
 
-        let mut current_parent: Option<ScopeId> = None;
+    // Walk through the scope_path and find matching scopes
+    // The scope_path is like ["<module>", "ClassName", "method_name"]
 
-        for name in scope_path {
-            // Find a scope with this name and matching parent
-            let found = scopes.iter().find(|s| {
-                let name_matches = if name == "<module>" {
-                    s.kind == ScopeKind::Module
-                } else {
-                    s.name.as_deref() == Some(name.as_str())
-                };
-                let parent_matches = s.parent_id == current_parent;
-                name_matches && parent_matches
-            });
+    let mut current_parent: Option<ScopeId> = None;
 
-            if let Some(scope) = found {
-                current_parent = Some(scope.id);
+    for name in scope_path {
+        // Find a scope with this name and matching parent
+        let found = scopes.iter().find(|s| {
+            let name_matches = if name == "<module>" {
+                s.kind == ScopeKind::Module
             } else {
-                // Scope path doesn't match - return module scope as fallback
-                return scopes.first().map(|s| s.id);
+                s.name.as_deref() == Some(name.as_str())
+            };
+            let parent_matches = s.parent_id == current_parent;
+            name_matches && parent_matches
+        });
+
+        if let Some(scope) = found {
+            current_parent = Some(scope.id);
+        } else {
+            // Scope path doesn't match - return module scope as fallback
+            return scopes.first().map(|s| s.id);
+        }
+    }
+
+    current_parent
+}
+
+// ========================================================================
+// Import Resolution (Contract C3)
+// ========================================================================
+
+/// Per-file import resolver for Pass 3 reference resolution.
+///
+/// This struct implements Contract C3 import resolution:
+/// - `import foo` → aliases["foo"] = ("foo", None)
+/// - `import foo.bar` → aliases["foo"] = ("foo", None) **binds ROOT only**
+/// - `import foo as f` → aliases["f"] = ("foo", None)
+/// - `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved_file)
+/// - `from foo import bar` → aliases["bar"] = ("foo.bar", resolved_file)
+/// - `from foo import bar as b` → aliases["b"] = ("foo.bar", resolved_file)
+/// - Relative imports → None (not supported)
+/// - Star imports → None (not supported)
+#[derive(Debug, Default)]
+pub struct FileImportResolver {
+    /// Maps local bound names to (qualified_path, resolved_file).
+    aliases: HashMap<String, (String, Option<String>)>,
+}
+
+impl FileImportResolver {
+    /// Create a new empty resolver.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Build from a list of local imports, resolving to workspace files.
+    pub fn from_imports(imports: &[LocalImport], workspace_files: &HashSet<String>) -> Self {
+        let mut resolver = Self::new();
+
+        for import in imports {
+            // Skip relative imports (Contract C3: unsupported)
+            if import.module_path.starts_with('.') {
+                continue;
             }
-        }
 
-        current_parent
-    }
-
-    // ========================================================================
-    // Import Resolution (Contract C3)
-    // ========================================================================
-
-    /// Per-file import resolver for Pass 3 reference resolution.
-    ///
-    /// This struct implements Contract C3 import resolution:
-    /// - `import foo` → aliases["foo"] = ("foo", None)
-    /// - `import foo.bar` → aliases["foo"] = ("foo", None) **binds ROOT only**
-    /// - `import foo as f` → aliases["f"] = ("foo", None)
-    /// - `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved_file)
-    /// - `from foo import bar` → aliases["bar"] = ("foo.bar", resolved_file)
-    /// - `from foo import bar as b` → aliases["b"] = ("foo.bar", resolved_file)
-    /// - Relative imports → None (not supported)
-    /// - Star imports → None (not supported)
-    #[derive(Debug, Default)]
-    pub struct FileImportResolver {
-        /// Maps local bound names to (qualified_path, resolved_file).
-        aliases: HashMap<String, (String, Option<String>)>,
-    }
-
-    impl FileImportResolver {
-        /// Create a new empty resolver.
-        pub fn new() -> Self {
-            Self::default()
-        }
-
-        /// Build from a list of local imports, resolving to workspace files.
-        pub fn from_imports(imports: &[LocalImport], workspace_files: &HashSet<String>) -> Self {
-            let mut resolver = Self::new();
-
-            for import in imports {
-                // Skip relative imports (Contract C3: unsupported)
-                if import.module_path.starts_with('.') {
-                    continue;
-                }
-
-                match import.kind.as_str() {
-                    "from" => {
-                        // Skip star imports (Contract C3: unsupported)
-                        if import.is_star {
-                            continue;
-                        }
-
-                        // `from foo import bar` or `from foo import bar as b`
-                        for imported_name in &import.names {
-                            let local_name = imported_name
-                                .alias
-                                .as_ref()
-                                .unwrap_or(&imported_name.name);
-                            let qualified_path =
-                                format!("{}.{}", import.module_path, imported_name.name);
-
-                            // Try to resolve the module to a workspace file
-                            let resolved_file =
-                                resolve_module_to_file(&import.module_path, workspace_files);
-
-                            resolver.aliases.insert(
-                                local_name.clone(),
-                                (qualified_path, resolved_file),
-                            );
-                        }
+            match import.kind.as_str() {
+                "from" => {
+                    // Skip star imports (Contract C3: unsupported)
+                    if import.is_star {
+                        continue;
                     }
-                    "import" => {
-                        if let Some(alias) = &import.alias {
-                            // `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved)
-                            let resolved_file =
-                                resolve_module_to_file(&import.module_path, workspace_files);
-                            resolver
-                                .aliases
-                                .insert(alias.clone(), (import.module_path.clone(), resolved_file));
-                        } else {
-                            // `import foo.bar` → aliases["foo"] = ("foo", None)
-                            // Per Contract C3: binds ROOT only
-                            let root = import
-                                .module_path
-                                .split('.')
-                                .next()
-                                .unwrap_or(&import.module_path);
-                            resolver
-                                .aliases
-                                .insert(root.to_string(), (root.to_string(), None));
-                        }
+
+                    // `from foo import bar` or `from foo import bar as b`
+                    for imported_name in &import.names {
+                        let local_name = imported_name
+                            .alias
+                            .as_ref()
+                            .unwrap_or(&imported_name.name);
+                        let qualified_path =
+                            format!("{}.{}", import.module_path, imported_name.name);
+
+                        // Try to resolve the module to a workspace file
+                        let resolved_file =
+                            resolve_module_to_file(&import.module_path, workspace_files);
+
+                        resolver.aliases.insert(
+                            local_name.clone(),
+                            (qualified_path, resolved_file),
+                        );
                     }
-                    _ => {}
                 }
+                "import" => {
+                    if let Some(alias) = &import.alias {
+                        // `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved)
+                        let resolved_file =
+                            resolve_module_to_file(&import.module_path, workspace_files);
+                        resolver
+                            .aliases
+                            .insert(alias.clone(), (import.module_path.clone(), resolved_file));
+                    } else {
+                        // `import foo.bar` → aliases["foo"] = ("foo", None)
+                        // Per Contract C3: binds ROOT only
+                        let root = import
+                            .module_path
+                            .split('.')
+                            .next()
+                            .unwrap_or(&import.module_path);
+                        resolver
+                            .aliases
+                            .insert(root.to_string(), (root.to_string(), None));
+                    }
+                }
+                _ => {}
             }
-
-            resolver
         }
 
-        /// Resolve a local name to its qualified path and source file.
-        pub fn resolve(&self, local_name: &str) -> Option<(&str, Option<&str>)> {
-            self.aliases
-                .get(local_name)
-                .map(|(qn, rf)| (qn.as_str(), rf.as_deref()))
-        }
-
-        /// Check if a name is imported.
-        pub fn is_imported(&self, local_name: &str) -> bool {
-            self.aliases.contains_key(local_name)
-        }
+        resolver
     }
 
-    /// Resolve a module path to a workspace file path.
-    ///
-    /// Per Contract C3 module resolution algorithm:
-    /// 1. If module_path starts with '.': return None (relative import)
-    /// 2. Convert to candidate file paths: "foo.bar" → ["foo/bar.py", "foo/bar/__init__.py"]
-    /// 3. Search workspace_files for first match (module file wins over package)
-    pub fn resolve_module_to_file(
-        module_path: &str,
-        workspace_files: &HashSet<String>,
-    ) -> Option<String> {
-        // Skip relative imports
-        if module_path.starts_with('.') {
-            return None;
-        }
-
-        // Convert module path to file path
-        let file_path = module_path.replace('.', "/");
-
-        // Try as .py file first (per Contract C3: module file wins)
-        let py_path = format!("{}.py", file_path);
-        if workspace_files.contains(&py_path) {
-            return Some(py_path);
-        }
-
-        // Try as package (__init__.py)
-        let init_path = format!("{}/__init__.py", file_path);
-        if workspace_files.contains(&init_path) {
-            return Some(init_path);
-        }
-
-        None
+    /// Resolve a local name to its qualified path and source file.
+    pub fn resolve(&self, local_name: &str) -> Option<(&str, Option<&str>)> {
+        self.aliases
+            .get(local_name)
+            .map(|(qn, rf)| (qn.as_str(), rf.as_deref()))
     }
 
-    // ========================================================================
-    // Reference Resolution (Contract C4: LEGB Scope Chain)
-    // ========================================================================
+    /// Check if a name is imported.
+    pub fn is_imported(&self, local_name: &str) -> bool {
+        self.aliases.contains_key(local_name)
+    }
+}
 
-    /// Resolve a reference to its target symbol using scope chain resolution.
-    ///
-    /// Implements Contract C4: LEGB rule with class scope exception:
-    /// 1. Local scope: Check current scope's bindings
-    /// 2. Enclosing scopes: Walk up parent chain (skip class scopes!)
-    /// 3. Global scope: Module-level bindings
-    /// 4. Built-in scope: (not tracked)
-    ///
-    /// Special rules:
-    /// - `global x`: Skip directly to module scope for x
-    /// - `nonlocal x`: Skip to nearest enclosing function scope for x
-    /// - Class scopes do NOT form closures
-    #[allow(clippy::too_many_arguments)]
-    fn resolve_reference(
-        name: &str,
-        scope_id: ScopeId,
-        file_id: FileId,
-        scopes: &[Scope],
-        global_symbols: &GlobalSymbolMap,
-        import_bindings: &ImportBindingsSet,
-        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
-        import_resolver: &FileImportResolver,
-        file_path_to_id: &HashMap<String, FileId>,
-        _ref_kind: ReferenceKind,
-    ) -> Option<SymbolId> {
-        // Find the scope
-        let scope = scopes.iter().find(|s| s.id == scope_id)?;
+/// Resolve a module path to a workspace file path.
+///
+/// Per Contract C3 module resolution algorithm:
+/// 1. If module_path starts with '.': return None (relative import)
+/// 2. Convert to candidate file paths: "foo.bar" → ["foo/bar.py", "foo/bar/__init__.py"]
+/// 3. Search workspace_files for first match (module file wins over package)
+pub fn resolve_module_to_file(
+    module_path: &str,
+    workspace_files: &HashSet<String>,
+) -> Option<String> {
+    // Skip relative imports
+    if module_path.starts_with('.') {
+        return None;
+    }
 
-        // Check if this name has a `global` declaration in this scope
-        if scope.is_global(name) {
-            // Skip directly to module scope
-            return resolve_in_module_scope(
-                name,
-                file_id,
-                scopes,
-                global_symbols,
-                import_bindings,
-                scope_symbols,
-                import_resolver,
-                file_path_to_id,
-            );
-        }
+    // Convert module path to file path
+    let file_path = module_path.replace('.', "/");
 
-        // Check if this name has a `nonlocal` declaration in this scope
-        if scope.is_nonlocal(name) {
-            // Skip to nearest enclosing function scope
-            return resolve_in_enclosing_function(
-                name,
-                scope,
-                file_id,
-                scopes,
-                global_symbols,
-                import_bindings,
-                scope_symbols,
-                import_resolver,
-                file_path_to_id,
-            );
-        }
+    // Try as .py file first (per Contract C3: module file wins)
+    let py_path = format!("{}.py", file_path);
+    if workspace_files.contains(&py_path) {
+        return Some(py_path);
+    }
 
-        // Normal LEGB resolution
-        // 1. Check local scope
-        if let Some((sym_id, sym_kind)) =
-            find_symbol_in_scope_with_kind(name, file_id, scope_id, scope_symbols)
-        {
-            // Per Contract C3: If this is an import binding, try to resolve to original definition
-            if sym_kind == SymbolKind::Import && import_resolver.is_imported(name) {
-                if let Some(original_id) = resolve_import_to_original(
-                    name,
-                    global_symbols,
-                    import_bindings,
-                    import_resolver,
-                    file_path_to_id,
-                ) {
-                    return Some(original_id);
-                }
-            }
-            // Not an import, or couldn't resolve to original - return the local binding
-            return Some(sym_id);
-        }
+    // Try as package (__init__.py)
+    let init_path = format!("{}/__init__.py", file_path);
+    if workspace_files.contains(&init_path) {
+        return Some(init_path);
+    }
 
-        // 2. Walk up enclosing scopes (skip class scopes per Python rules)
-        let mut current_scope = scope;
-        while let Some(parent_id) = current_scope.parent_id {
-            let parent = scopes.iter().find(|s| s.id == parent_id)?;
+    None
+}
 
-            // Skip class scopes - they don't form closures
-            if parent.kind != ScopeKind::Class {
-                if let Some((sym_id, sym_kind)) =
-                    find_symbol_in_scope_with_kind(name, file_id, parent_id, scope_symbols)
-                {
-                    // Per Contract C3: If this is an import binding, try to resolve to original
-                    if sym_kind == SymbolKind::Import && import_resolver.is_imported(name) {
-                        if let Some(original_id) = resolve_import_to_original(
-                            name,
-                            global_symbols,
-                            import_bindings,
-                            import_resolver,
-                            file_path_to_id,
-                        ) {
-                            return Some(original_id);
-                        }
-                    }
-                    return Some(sym_id);
-                }
-            }
+// ========================================================================
+// Reference Resolution (Contract C4: LEGB Scope Chain)
+// ========================================================================
 
-            current_scope = parent;
-        }
+/// Resolve a reference to its target symbol using scope chain resolution.
+///
+/// Implements Contract C4: LEGB rule with class scope exception:
+/// 1. Local scope: Check current scope's bindings
+/// 2. Enclosing scopes: Walk up parent chain (skip class scopes!)
+/// 3. Global scope: Module-level bindings
+/// 4. Built-in scope: (not tracked)
+///
+/// Special rules:
+/// - `global x`: Skip directly to module scope for x
+/// - `nonlocal x`: Skip to nearest enclosing function scope for x
+/// - Class scopes do NOT form closures
+#[allow(clippy::too_many_arguments)]
+fn resolve_reference(
+    name: &str,
+    scope_id: ScopeId,
+    file_id: FileId,
+    scopes: &[Scope],
+    global_symbols: &GlobalSymbolMap,
+    import_bindings: &ImportBindingsSet,
+    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    import_resolver: &FileImportResolver,
+    file_path_to_id: &HashMap<String, FileId>,
+    _ref_kind: ReferenceKind,
+) -> Option<SymbolId> {
+    // Find the scope
+    let scope = scopes.iter().find(|s| s.id == scope_id)?;
 
-        // 3. Check module scope (global)
-        resolve_in_module_scope(
+    // Check if this name has a `global` declaration in this scope
+    if scope.is_global(name) {
+        // Skip directly to module scope
+        return resolve_in_module_scope(
             name,
             file_id,
             scopes,
@@ -1447,100 +1343,32 @@ pub mod native {
             scope_symbols,
             import_resolver,
             file_path_to_id,
-        )
+        );
     }
 
-    /// Find a symbol in a specific scope.
-    fn find_symbol_in_scope(
-        name: &str,
-        file_id: FileId,
-        scope_id: ScopeId,
-        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
-    ) -> Option<SymbolId> {
-        scope_symbols
-            .get(&(file_id, scope_id))
-            .and_then(|symbols| symbols.iter().find(|(n, _, _)| n == name).map(|(_, id, _)| *id))
+    // Check if this name has a `nonlocal` declaration in this scope
+    if scope.is_nonlocal(name) {
+        // Skip to nearest enclosing function scope
+        return resolve_in_enclosing_function(
+            name,
+            scope,
+            file_id,
+            scopes,
+            global_symbols,
+            import_bindings,
+            scope_symbols,
+            import_resolver,
+            file_path_to_id,
+        );
     }
 
-    /// Find a symbol in a specific scope, returning both ID and kind.
-    fn find_symbol_in_scope_with_kind(
-        name: &str,
-        file_id: FileId,
-        scope_id: ScopeId,
-        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
-    ) -> Option<(SymbolId, SymbolKind)> {
-        scope_symbols
-            .get(&(file_id, scope_id))
-            .and_then(|symbols| {
-                symbols
-                    .iter()
-                    .find(|(n, _, _)| n == name)
-                    .map(|(_, id, kind)| (*id, *kind))
-            })
-    }
-
-    /// Resolve an imported name to its original definition.
-    ///
-    /// Per Contract C3: References to imported names should resolve to the
-    /// ORIGINAL definition, not the import binding. This function follows
-    /// the import chain to find the original symbol.
-    fn resolve_import_to_original(
-        name: &str,
-        global_symbols: &GlobalSymbolMap,
-        import_bindings: &ImportBindingsSet,
-        import_resolver: &FileImportResolver,
-        file_path_to_id: &HashMap<String, FileId>,
-    ) -> Option<SymbolId> {
-        let (qualified_path, resolved_file) = import_resolver.resolve(name)?;
-        let resolved_file_path = resolved_file?;
-        let &target_file_id = file_path_to_id.get(resolved_file_path)?;
-        let target_name = qualified_path.rsplit('.').next().unwrap_or(name);
-
-        // Look for the symbol in the target file
-        for kind in [
-            SymbolKind::Function,
-            SymbolKind::Class,
-            SymbolKind::Variable,
-            SymbolKind::Constant,
-        ] {
-            if let Some(entries) = global_symbols.get(&(target_name.to_string(), kind)) {
-                for (fid, sym_id) in entries {
-                    if *fid == target_file_id {
-                        // Verify this is a definition, not another import binding
-                        if !import_bindings.contains(&(target_file_id, target_name.to_string())) {
-                            return Some(*sym_id);
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    /// Resolve in module scope (for `global` declarations or final fallback).
-    ///
-    /// This is called when:
-    /// 1. A name has a `global` declaration
-    /// 2. LEGB resolution reaches the module level
-    ///
-    /// Note: Import resolution is now primarily handled in `resolve_reference`
-    /// via `resolve_import_to_original`. This function serves as the fallback
-    /// for names that couldn't be resolved through the import chain.
-    #[allow(clippy::too_many_arguments)]
-    fn resolve_in_module_scope(
-        name: &str,
-        file_id: FileId,
-        _scopes: &[Scope],
-        global_symbols: &GlobalSymbolMap,
-        import_bindings: &ImportBindingsSet,
-        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
-        import_resolver: &FileImportResolver,
-        file_path_to_id: &HashMap<String, FileId>,
-    ) -> Option<SymbolId> {
-        let module_scope_id = ScopeId(0);
-
-        // Try to resolve through imports first (for names that reach here via `global`)
-        if import_resolver.is_imported(name) {
+    // Normal LEGB resolution
+    // 1. Check local scope
+    if let Some((sym_id, sym_kind)) =
+        find_symbol_in_scope_with_kind(name, file_id, scope_id, scope_symbols)
+    {
+        // Per Contract C3: If this is an import binding, try to resolve to original definition
+        if sym_kind == SymbolKind::Import && import_resolver.is_imported(name) {
             if let Some(original_id) = resolve_import_to_original(
                 name,
                 global_symbols,
@@ -1551,129 +1379,268 @@ pub mod native {
                 return Some(original_id);
             }
         }
+        // Not an import, or couldn't resolve to original - return the local binding
+        return Some(sym_id);
+    }
 
-        // Check module scope bindings (for local definitions or unresolved imports)
-        if let Some(sym_id) = find_symbol_in_scope(name, file_id, module_scope_id, scope_symbols) {
-            return Some(sym_id);
+    // 2. Walk up enclosing scopes (skip class scopes per Python rules)
+    let mut current_scope = scope;
+    while let Some(parent_id) = current_scope.parent_id {
+        let parent = scopes.iter().find(|s| s.id == parent_id)?;
+
+        // Skip class scopes - they don't form closures
+        if parent.kind != ScopeKind::Class {
+            if let Some((sym_id, sym_kind)) =
+                find_symbol_in_scope_with_kind(name, file_id, parent_id, scope_symbols)
+            {
+                // Per Contract C3: If this is an import binding, try to resolve to original
+                if sym_kind == SymbolKind::Import && import_resolver.is_imported(name) {
+                    if let Some(original_id) = resolve_import_to_original(
+                        name,
+                        global_symbols,
+                        import_bindings,
+                        import_resolver,
+                        file_path_to_id,
+                    ) {
+                        return Some(original_id);
+                    }
+                }
+                return Some(sym_id);
+            }
         }
 
-        // Fall back to any same-file symbol with matching name
-        // Try multiple symbol kinds
-        for kind in [
-            SymbolKind::Function,
-            SymbolKind::Class,
-            SymbolKind::Variable,
-            SymbolKind::Constant,
-            SymbolKind::Import,
-        ] {
-            if let Some(entries) = global_symbols.get(&(name.to_string(), kind)) {
-                for (fid, sym_id) in entries {
-                    if *fid == file_id {
+        current_scope = parent;
+    }
+
+    // 3. Check module scope (global)
+    resolve_in_module_scope(
+        name,
+        file_id,
+        scopes,
+        global_symbols,
+        import_bindings,
+        scope_symbols,
+        import_resolver,
+        file_path_to_id,
+    )
+}
+
+/// Find a symbol in a specific scope.
+fn find_symbol_in_scope(
+    name: &str,
+    file_id: FileId,
+    scope_id: ScopeId,
+    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+) -> Option<SymbolId> {
+    scope_symbols
+        .get(&(file_id, scope_id))
+        .and_then(|symbols| symbols.iter().find(|(n, _, _)| n == name).map(|(_, id, _)| *id))
+}
+
+/// Find a symbol in a specific scope, returning both ID and kind.
+fn find_symbol_in_scope_with_kind(
+    name: &str,
+    file_id: FileId,
+    scope_id: ScopeId,
+    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+) -> Option<(SymbolId, SymbolKind)> {
+    scope_symbols
+        .get(&(file_id, scope_id))
+        .and_then(|symbols| {
+            symbols
+                .iter()
+                .find(|(n, _, _)| n == name)
+                .map(|(_, id, kind)| (*id, *kind))
+        })
+}
+
+/// Resolve an imported name to its original definition.
+///
+/// Per Contract C3: References to imported names should resolve to the
+/// ORIGINAL definition, not the import binding. This function follows
+/// the import chain to find the original symbol.
+fn resolve_import_to_original(
+    name: &str,
+    global_symbols: &GlobalSymbolMap,
+    import_bindings: &ImportBindingsSet,
+    import_resolver: &FileImportResolver,
+    file_path_to_id: &HashMap<String, FileId>,
+) -> Option<SymbolId> {
+    let (qualified_path, resolved_file) = import_resolver.resolve(name)?;
+    let resolved_file_path = resolved_file?;
+    let &target_file_id = file_path_to_id.get(resolved_file_path)?;
+    let target_name = qualified_path.rsplit('.').next().unwrap_or(name);
+
+    // Look for the symbol in the target file
+    for kind in [
+        SymbolKind::Function,
+        SymbolKind::Class,
+        SymbolKind::Variable,
+        SymbolKind::Constant,
+    ] {
+        if let Some(entries) = global_symbols.get(&(target_name.to_string(), kind)) {
+            for (fid, sym_id) in entries {
+                if *fid == target_file_id {
+                    // Verify this is a definition, not another import binding
+                    if !import_bindings.contains(&(target_file_id, target_name.to_string())) {
                         return Some(*sym_id);
                     }
                 }
             }
         }
-
-        None
     }
-
-    /// Resolve in enclosing function scope (for `nonlocal` declarations).
-    #[allow(clippy::too_many_arguments)]
-    fn resolve_in_enclosing_function(
-        name: &str,
-        scope: &Scope,
-        file_id: FileId,
-        scopes: &[Scope],
-        global_symbols: &GlobalSymbolMap,
-        import_bindings: &ImportBindingsSet,
-        scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
-        import_resolver: &FileImportResolver,
-        file_path_to_id: &HashMap<String, FileId>,
-    ) -> Option<SymbolId> {
-        // Walk up to find nearest enclosing function scope
-        let mut current_scope = scope;
-        while let Some(parent_id) = current_scope.parent_id {
-            let parent = scopes.iter().find(|s| s.id == parent_id)?;
-
-            if parent.kind == ScopeKind::Function || parent.kind == ScopeKind::Lambda {
-                if let Some(sym_id) = find_symbol_in_scope(name, file_id, parent_id, scope_symbols) {
-                    return Some(sym_id);
-                }
-            }
-
-            current_scope = parent;
-        }
-
-        // Didn't find in any enclosing function - fall back to module scope
-        resolve_in_module_scope(
-            name,
-            file_id,
-            scopes,
-            global_symbols,
-            import_bindings,
-            scope_symbols,
-            import_resolver,
-            file_path_to_id,
-        )
-    }
-
-    /// Convert local imports from native CST analysis to LocalImport format.
-    fn convert_native_imports(
-        imports: &[tugtool_cst::ImportInfo],
-        workspace_files: &HashSet<String>,
-    ) -> Vec<LocalImport> {
-        let mut result = Vec::new();
-
-        for import in imports {
-            // Skip relative imports
-            if import.relative_level > 0 {
-                continue;
-            }
-
-            let names: Vec<ImportedName> = import
-                .names
-                .as_ref()
-                .map(|n| {
-                    n.iter()
-                        .map(|ni| ImportedName {
-                            name: ni.name.clone(),
-                            alias: ni.alias.clone(),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            // Resolve import to workspace file
-            let resolved_file = resolve_module_to_file(&import.module, workspace_files);
-
-            let kind = match import.kind {
-                tugtool_cst::ImportKind::Import => "import",
-                tugtool_cst::ImportKind::From => "from",
-            };
-
-            result.push(LocalImport {
-                kind: kind.to_string(),
-                module_path: import.module.clone(),
-                names,
-                alias: import.alias.clone(),
-                is_star: import.is_star,
-                span: import.span.as_ref().map(|s| Span::new(s.start, s.end)),
-                line: import.line,
-                resolved_file,
-            });
-        }
-
-        result
-    }
+    None
 }
 
-// Re-export native analysis types and functions at module level when feature is enabled
-#[cfg(feature = "native-cst")]
-pub use native::{
-    analyze_file_native, analyze_files, FileAnalysisBundle, FileImportResolver, GlobalSymbolMap,
-    resolve_module_to_file,
-};
+/// Resolve in module scope (for `global` declarations or final fallback).
+///
+/// This is called when:
+/// 1. A name has a `global` declaration
+/// 2. LEGB resolution reaches the module level
+///
+/// Note: Import resolution is now primarily handled in `resolve_reference`
+/// via `resolve_import_to_original`. This function serves as the fallback
+/// for names that couldn't be resolved through the import chain.
+#[allow(clippy::too_many_arguments)]
+fn resolve_in_module_scope(
+    name: &str,
+    file_id: FileId,
+    _scopes: &[Scope],
+    global_symbols: &GlobalSymbolMap,
+    import_bindings: &ImportBindingsSet,
+    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    import_resolver: &FileImportResolver,
+    file_path_to_id: &HashMap<String, FileId>,
+) -> Option<SymbolId> {
+    let module_scope_id = ScopeId(0);
+
+    // Try to resolve through imports first (for names that reach here via `global`)
+    if import_resolver.is_imported(name) {
+        if let Some(original_id) = resolve_import_to_original(
+            name,
+            global_symbols,
+            import_bindings,
+            import_resolver,
+            file_path_to_id,
+        ) {
+            return Some(original_id);
+        }
+    }
+
+    // Check module scope bindings (for local definitions or unresolved imports)
+    if let Some(sym_id) = find_symbol_in_scope(name, file_id, module_scope_id, scope_symbols) {
+        return Some(sym_id);
+    }
+
+    // Fall back to any same-file symbol with matching name
+    // Try multiple symbol kinds
+    for kind in [
+        SymbolKind::Function,
+        SymbolKind::Class,
+        SymbolKind::Variable,
+        SymbolKind::Constant,
+        SymbolKind::Import,
+    ] {
+        if let Some(entries) = global_symbols.get(&(name.to_string(), kind)) {
+            for (fid, sym_id) in entries {
+                if *fid == file_id {
+                    return Some(*sym_id);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Resolve in enclosing function scope (for `nonlocal` declarations).
+#[allow(clippy::too_many_arguments)]
+fn resolve_in_enclosing_function(
+    name: &str,
+    scope: &Scope,
+    file_id: FileId,
+    scopes: &[Scope],
+    global_symbols: &GlobalSymbolMap,
+    import_bindings: &ImportBindingsSet,
+    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    import_resolver: &FileImportResolver,
+    file_path_to_id: &HashMap<String, FileId>,
+) -> Option<SymbolId> {
+    // Walk up to find nearest enclosing function scope
+    let mut current_scope = scope;
+    while let Some(parent_id) = current_scope.parent_id {
+        let parent = scopes.iter().find(|s| s.id == parent_id)?;
+
+        if parent.kind == ScopeKind::Function || parent.kind == ScopeKind::Lambda {
+            if let Some(sym_id) = find_symbol_in_scope(name, file_id, parent_id, scope_symbols) {
+                return Some(sym_id);
+            }
+        }
+
+        current_scope = parent;
+    }
+
+    // Didn't find in any enclosing function - fall back to module scope
+    resolve_in_module_scope(
+        name,
+        file_id,
+        scopes,
+        global_symbols,
+        import_bindings,
+        scope_symbols,
+        import_resolver,
+        file_path_to_id,
+    )
+}
+
+/// Convert local imports from native CST analysis to LocalImport format.
+fn convert_imports(
+    imports: &[tugtool_cst::ImportInfo],
+    workspace_files: &HashSet<String>,
+) -> Vec<LocalImport> {
+    let mut result = Vec::new();
+
+    for import in imports {
+        // Skip relative imports
+        if import.relative_level > 0 {
+            continue;
+        }
+
+        let names: Vec<ImportedName> = import
+            .names
+            .as_ref()
+            .map(|n| {
+                n.iter()
+                    .map(|ni| ImportedName {
+                        name: ni.name.clone(),
+                        alias: ni.alias.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Resolve import to workspace file
+        let resolved_file = resolve_module_to_file(&import.module, workspace_files);
+
+        let kind = match import.kind {
+            tugtool_cst::ImportKind::Import => "import",
+            tugtool_cst::ImportKind::From => "from",
+        };
+
+        result.push(LocalImport {
+            kind: kind.to_string(),
+            module_path: import.module.clone(),
+            names,
+            alias: import.alias.clone(),
+            is_star: import.is_star,
+            span: import.span.as_ref().map(|s| Span::new(s.start, s.end)),
+            line: import.line,
+            resolved_file,
+        });
+    }
+
+    result
+}
 
 // ============================================================================
 // Method Call Index (for O(1) lookup during type-aware pass)
@@ -1861,869 +1828,6 @@ impl ImportResolver {
     /// Check if a name is imported.
     pub fn is_imported(&self, local_name: &str) -> bool {
         self.aliases.contains_key(local_name)
-    }
-}
-
-// ============================================================================
-// Python Analyzer
-// ============================================================================
-
-/// Python analyzer that uses LibCST worker for parsing.
-pub struct PythonAnalyzer<'a> {
-    /// Worker handle for CST operations.
-    worker: &'a mut WorkerHandle,
-    /// Known Python files in workspace (path → exists).
-    workspace_files: HashMap<String, bool>,
-}
-
-impl<'a> PythonAnalyzer<'a> {
-    /// Create a new Python analyzer.
-    ///
-    /// The `workspace_root` parameter is currently unused but kept for API compatibility
-    /// and potential future use in relative import resolution.
-    pub fn new(worker: &'a mut WorkerHandle, _workspace_root: impl Into<String>) -> Self {
-        PythonAnalyzer {
-            worker,
-            workspace_files: HashMap::new(),
-        }
-    }
-
-    /// Register workspace files for import resolution.
-    pub fn register_workspace_files(&mut self, files: impl IntoIterator<Item = impl Into<String>>) {
-        for file in files {
-            let path = file.into();
-            self.workspace_files.insert(path, true);
-        }
-    }
-
-    /// Analyze a single Python file.
-    pub fn analyze_file(
-        &mut self,
-        file_id: FileId,
-        path: &str,
-        content: &str,
-    ) -> AnalyzerResult<FileAnalysis> {
-        // Parse the file
-        let parse_response = self.worker.parse(path, content)?;
-        let cst_id = parse_response.cst_id;
-
-        // Get scopes from worker
-        let worker_scopes = self.worker.get_scopes(&cst_id)?;
-
-        // Build scope structure (scope_map not currently used after build)
-        let (scopes, _scope_map) = self.build_scopes(&worker_scopes);
-
-        // Get bindings from worker
-        let worker_bindings = self.worker.get_bindings(&cst_id)?;
-
-        // Convert bindings to local symbols
-        let symbols = self.collect_symbols(&worker_bindings, &scopes);
-
-        // Get imports from worker
-        let worker_imports = self.worker.get_imports(&cst_id)?;
-
-        // Convert imports to local imports and resolve
-        let imports = self.collect_imports(&worker_imports);
-
-        // Get all references in a single pass
-        let all_refs = self.worker.get_references(&cst_id)?;
-
-        let mut references = Vec::new();
-        for (name, worker_refs) in all_refs {
-            for worker_ref in worker_refs {
-                references.push(LocalReference {
-                    name: name.clone(),
-                    kind: reference_kind_from_str(&worker_ref.kind),
-                    span: worker_ref
-                        .span
-                        .as_ref()
-                        .map(|s| Span::new(s.start as u64, s.end as u64)),
-                    line: worker_ref.line,
-                    col: worker_ref.col,
-                    scope_id: ScopeId(0), // Will be resolved during scope analysis
-                    resolved_symbol: Some(name.clone()), // Same-name reference
-                });
-            }
-        }
-
-        Ok(FileAnalysis {
-            file_id,
-            path: path.to_string(),
-            cst_id,
-            scopes,
-            symbols,
-            references,
-            imports,
-        })
-    }
-
-    /// Build scope structure from worker scopes.
-    ///
-    /// This uses a two-pass approach to handle scopes that may appear out of order
-    /// (e.g., child before parent). While LibCST typically returns scopes in
-    /// depth-first order (parents before children), this two-pass approach is more
-    /// robust and handles any ordering.
-    ///
-    /// Pass 1: Assign ScopeIds to all scopes
-    /// Pass 2: Link parent references using the complete scope_map
-    fn build_scopes(&self, worker_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, ScopeId>) {
-        let mut scope_map = HashMap::new();
-
-        // Pass 1: Assign ScopeIds to all scopes
-        for (idx, ws) in worker_scopes.iter().enumerate() {
-            let scope_id = ScopeId::new(idx as u32);
-            scope_map.insert(ws.id.clone(), scope_id);
-        }
-
-        // Pass 2: Create scopes with parent references (now all IDs are known)
-        let scopes: Vec<Scope> = worker_scopes
-            .iter()
-            .enumerate()
-            .map(|(idx, ws)| {
-                let scope_id = ScopeId::new(idx as u32);
-                let parent_id = ws.parent.as_ref().and_then(|p| scope_map.get(p).copied());
-
-                Scope::new(
-                    scope_id,
-                    ScopeKind::from(ws.kind.as_str()),
-                    ws.name.clone(),
-                    parent_id,
-                )
-            })
-            .collect();
-
-        (scopes, scope_map)
-    }
-
-    /// Collect symbols from worker bindings.
-    fn collect_symbols(&self, bindings: &[BindingInfo], scopes: &[Scope]) -> Vec<LocalSymbol> {
-        let mut symbols = Vec::new();
-
-        for binding in bindings {
-            let kind = symbol_kind_from_str(&binding.kind);
-
-            // Determine scope from scope_path by matching names in the scope tree
-            let scope_id = self
-                .find_scope_for_path(&binding.scope_path, scopes)
-                .unwrap_or(ScopeId(0));
-
-            // Determine container for methods
-            // The container is the class that immediately contains this symbol
-            let container = if binding.scope_path.len() >= 2 {
-                // Look for the last class in the scope_path before the symbol
-                // Skip "<module>" and find the containing class
-                let path_without_module: Vec<_> = binding
-                    .scope_path
-                    .iter()
-                    .filter(|s| *s != "<module>")
-                    .collect();
-
-                if !path_without_module.is_empty() {
-                    // Check if the last element corresponds to a class scope
-                    let last_name = path_without_module.last().unwrap();
-                    let is_class = scopes.iter().any(|s| {
-                        s.kind == ScopeKind::Class && s.name.as_deref() == Some(last_name.as_str())
-                    });
-                    if is_class {
-                        Some((*last_name).clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            symbols.push(LocalSymbol {
-                name: binding.name.clone(),
-                kind,
-                scope_id,
-                span: binding
-                    .span
-                    .as_ref()
-                    .map(|s| Span::new(s.start as u64, s.end as u64)),
-                line: binding.line,
-                col: binding.col,
-                container,
-            });
-        }
-
-        symbols
-    }
-
-    /// Find the scope that matches a scope_path.
-    ///
-    /// The scope_path is like ["<module>", "ClassName", "method_name"] which
-    /// represents the nesting of scopes where a symbol is defined.
-    fn find_scope_for_path(&self, scope_path: &[String], scopes: &[Scope]) -> Option<ScopeId> {
-        if scope_path.is_empty() {
-            return Some(ScopeId(0)); // Module scope
-        }
-
-        // Start from module scope and walk down the path
-        let mut current_scope_id = ScopeId(0);
-
-        for (i, path_element) in scope_path.iter().enumerate() {
-            if path_element == "<module>" {
-                // Skip the module marker, we already start at module scope
-                continue;
-            }
-
-            // Find a scope with this name that has current_scope_id as parent
-            let found = scopes.iter().find(|s| {
-                s.parent_id == Some(current_scope_id) && s.name.as_deref() == Some(path_element)
-            });
-
-            if let Some(scope) = found {
-                current_scope_id = scope.id;
-            } else {
-                // Path element not found - if this is the last element, return parent
-                // (the symbol is defined in the current scope, not a new nested one)
-                if i == scope_path.len() - 1 {
-                    return Some(current_scope_id);
-                }
-                // Otherwise, path doesn't match scope structure - return what we have
-                return Some(current_scope_id);
-            }
-        }
-
-        Some(current_scope_id)
-    }
-
-    /// Collect and resolve imports.
-    fn collect_imports(&self, worker_imports: &[ImportInfo]) -> Vec<LocalImport> {
-        let mut imports = Vec::new();
-
-        for wi in worker_imports {
-            let names: Vec<ImportedName> = wi
-                .names
-                .as_ref()
-                .map(|n| {
-                    n.iter()
-                        .map(|ni| ImportedName {
-                            name: ni.name.clone(),
-                            alias: ni.alias.clone(),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            // Try to resolve the import to a workspace file
-            let resolved_file = self.resolve_import_to_file(&wi.module);
-
-            imports.push(LocalImport {
-                kind: wi.kind.clone(),
-                module_path: wi.module.clone(),
-                names,
-                alias: wi.alias.clone(),
-                is_star: wi.is_star,
-                span: wi
-                    .span
-                    .as_ref()
-                    .map(|s| Span::new(s.start as u64, s.end as u64)),
-                line: wi.line,
-                resolved_file,
-            });
-        }
-
-        imports
-    }
-
-    /// Resolve a module path to a workspace file.
-    ///
-    /// # Limitations
-    ///
-    /// Relative imports (e.g., `from . import foo` or `from ..utils import bar`) are
-    /// not currently resolved. This would require tracking the importing file's
-    /// location and resolving the relative path from there. See the cross-file rename
-    /// tests for cases that require this functionality.
-    ///
-    /// # TODO(relative-imports)
-    ///
-    /// Implement relative import resolution:
-    /// 1. Pass the importing file's path as an additional parameter
-    /// 2. For `.`, resolve relative to the importing file's directory
-    /// 3. For `..`, resolve relative to the parent directory
-    /// 4. Handle `__init__.py` package semantics correctly
-    fn resolve_import_to_file(&self, module_path: &str) -> Option<String> {
-        // TODO(relative-imports): Relative imports are not yet supported.
-        // They require the importing file's location to resolve correctly.
-        // For example, `from . import foo` in `pkg/sub/mod.py` should resolve
-        // to `pkg/sub/foo.py`, but we don't track the importing file here.
-        if module_path.starts_with('.') {
-            return None;
-        }
-
-        // Convert module path to file path
-        // "myproject.utils" → "myproject/utils.py" or "myproject/utils/__init__.py"
-        let file_path = module_path.replace('.', "/");
-
-        // Try as .py file
-        let py_path = format!("{}.py", file_path);
-        if self.workspace_files.contains_key(&py_path) {
-            return Some(py_path);
-        }
-
-        // Try as package (__init__.py)
-        let init_path = format!("{}/__init__.py", file_path);
-        if self.workspace_files.contains_key(&init_path) {
-            return Some(init_path);
-        }
-
-        None
-    }
-
-    /// Resolve a symbol at a specific location.
-    pub fn resolve_symbol_at(
-        &mut self,
-        path: &str,
-        line: u32,
-        col: u32,
-        content: &str,
-    ) -> AnalyzerResult<Option<LocalSymbol>> {
-        // Parse and analyze the file
-        let file_id = FileId::new(0);
-        let analysis = self.analyze_file(file_id, path, content)?;
-
-        // Find symbol at the given location
-        for symbol in &analysis.symbols {
-            if let (Some(sym_line), Some(sym_col)) = (symbol.line, symbol.col) {
-                if sym_line == line && sym_col == col {
-                    return Ok(Some(symbol.clone()));
-                }
-            }
-        }
-
-        Ok(None)
-    }
-}
-
-// ============================================================================
-// Python Adapter (FactsStore Integration)
-// ============================================================================
-
-/// Adapter that populates a FactsStore from Python file analysis.
-pub struct PythonAdapter {
-    /// Workspace root path.
-    workspace_root: String,
-}
-
-impl PythonAdapter {
-    /// Create a new Python adapter.
-    pub fn new(workspace_root: impl Into<String>) -> Self {
-        PythonAdapter {
-            workspace_root: workspace_root.into(),
-        }
-    }
-
-    /// Analyze multiple files and populate the FactsStore.
-    pub fn analyze_files(
-        &self,
-        worker: &mut WorkerHandle,
-        files: &[(String, String)], // (path, content) pairs
-        store: &mut FactsStore,
-    ) -> AnalyzerResult<()> {
-        let mut analyzer = PythonAnalyzer::new(worker, &self.workspace_root);
-
-        // Register all workspace files for import resolution
-        analyzer.register_workspace_files(files.iter().map(|(p, _)| p.clone()));
-
-        // Symbol name → (file_id, SymbolId) mapping for cross-file reference resolution
-        let mut global_symbols: HashMap<String, Vec<(FileId, SymbolId)>> = HashMap::new();
-
-        // Track which (file_id, name) pairs are import bindings (not definitions).
-        // When resolving references, we prefer original definitions over import bindings.
-        let mut import_bindings: HashSet<(FileId, String)> = HashSet::new();
-
-        // First pass: analyze all files and collect symbols
-        let mut file_analyses = Vec::new();
-
-        for (path, content) in files {
-            let file_id = store.next_file_id();
-            let content_hash = ContentHash::compute(content.as_bytes());
-
-            // Insert file into store
-            let file = File::new(file_id, path.clone(), content_hash, Language::Python);
-            store.insert_file(file);
-
-            // Analyze the file
-            let analysis = analyzer.analyze_file(file_id, path, content)?;
-            file_analyses.push(analysis);
-        }
-
-        // Second pass: insert symbols into store
-        for analysis in &file_analyses {
-            for local_sym in &analysis.symbols {
-                let symbol_id = store.next_symbol_id();
-                let span = local_sym.span.unwrap_or(Span::new(0, 0));
-
-                let mut symbol = Symbol::new(
-                    symbol_id,
-                    local_sym.kind,
-                    &local_sym.name,
-                    analysis.file_id,
-                    span,
-                );
-
-                // Set container if this is a method
-                if let Some(ref container_name) = local_sym.container {
-                    // Find the container symbol in this file
-                    if let Some(container_symbols) = global_symbols.get(container_name) {
-                        for (file_id, container_id) in container_symbols {
-                            if *file_id == analysis.file_id {
-                                symbol = symbol.with_container(*container_id);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                store.insert_symbol(symbol);
-
-                // Track for cross-file resolution
-                global_symbols
-                    .entry(local_sym.name.clone())
-                    .or_default()
-                    .push((analysis.file_id, symbol_id));
-
-                // Track import bindings separately
-                if local_sym.kind == SymbolKind::Import {
-                    import_bindings.insert((analysis.file_id, local_sym.name.clone()));
-                }
-            }
-        }
-
-        // Third pass: insert references and imports
-        for analysis in &file_analyses {
-            // Insert references
-            for local_ref in &analysis.references {
-                // Find the symbol being referenced
-                if let Some(ref resolved_name) = local_ref.resolved_symbol {
-                    if let Some(symbol_entries) = global_symbols.get(resolved_name) {
-                        // Resolve the symbol, preferring definitions over import bindings.
-                        //
-                        // When a name is imported (e.g., `from utils import calculate_sum`),
-                        // both the original definition and the import binding are in symbol_entries.
-                        // References to the imported name should link to the ORIGINAL definition,
-                        // not the local import binding, so cross-file renames work correctly.
-                        let symbol_id = {
-                            // Check if same-file symbol is an import binding
-                            let same_file_is_import = import_bindings
-                                .contains(&(analysis.file_id, resolved_name.clone()));
-
-                            if same_file_is_import {
-                                // Prefer cross-file original (non-import) over local import binding
-                                symbol_entries
-                                    .iter()
-                                    .find(|(fid, _)| *fid != analysis.file_id)
-                                    .or_else(|| symbol_entries.first())
-                                    .map(|(_, sid)| *sid)
-                            } else {
-                                // Normal case: prefer same-file symbol
-                                symbol_entries
-                                    .iter()
-                                    .find(|(fid, _)| *fid == analysis.file_id)
-                                    .or_else(|| symbol_entries.first())
-                                    .map(|(_, sid)| *sid)
-                            }
-                        };
-
-                        if let Some(symbol_id) = symbol_id {
-                            let span = local_ref.span.unwrap_or(Span::new(0, 0));
-
-                            // Check if the symbol is a method (has a container)
-                            let is_method = store
-                                .symbol(symbol_id)
-                                .map(|sym| sym.container_symbol_id.is_some())
-                                .unwrap_or(false);
-
-                            if is_method {
-                                // For methods, handle carefully to avoid name collision issues:
-                                //
-                                // 1. For Definition references: only create if span matches
-                                //    the symbol's decl_span. This prevents Handler2.process
-                                //    definition from being linked to Handler1.process.
-                                //
-                                // 2. For Attribute references (obj.method() calls): skip and
-                                //    let the type-aware fourth pass handle them with receiver
-                                //    type disambiguation.
-                                //
-                                // 3. For Call references (direct calls): same as Attribute.
-                                //
-                                // This ensures renaming Handler1.process only affects
-                                // Handler1.process definition and typed calls, not other
-                                // methods with the same name.
-
-                                match local_ref.kind {
-                                    ReferenceKind::Definition => {
-                                        // Only create if span matches the symbol's decl_span
-                                        if let Some(sym) = store.symbol(symbol_id) {
-                                            if span != sym.decl_span {
-                                                // This is a definition of a DIFFERENT method
-                                                // with the same name - skip it
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    ReferenceKind::Attribute | ReferenceKind::Call => {
-                                        // Skip - let fourth pass handle with type info
-                                        continue;
-                                    }
-                                    _ => {
-                                        // Other kinds (Reference, Import, etc.) - allow
-                                    }
-                                }
-                            }
-
-                            let ref_id = store.next_reference_id();
-                            let reference = Reference::new(
-                                ref_id,
-                                symbol_id,
-                                analysis.file_id,
-                                span,
-                                local_ref.kind,
-                            );
-                            store.insert_reference(reference);
-                        }
-                    }
-                }
-            }
-
-            // Insert imports and create references for imported names
-            for local_import in &analysis.imports {
-                let import_id = store.next_import_id();
-                let span = local_import.span.unwrap_or(Span::new(0, 0));
-
-                let mut import =
-                    Import::new(import_id, analysis.file_id, span, &local_import.module_path);
-
-                if local_import.is_star {
-                    import = import.with_star();
-                } else if !local_import.names.is_empty() {
-                    // For `from ... import name`, record the first name
-                    let first_name = &local_import.names[0];
-                    import = import.with_imported_name(&first_name.name);
-                    if let Some(ref alias) = first_name.alias {
-                        import = import.with_alias(alias);
-                    }
-                    // Note: References for imported names are created via the regular
-                    // reference resolution above, which correctly links them to the
-                    // original symbol definitions for cross-file rename tracking.
-                } else if let Some(ref alias) = local_import.alias {
-                    // For `import ... as alias`
-                    import = import.with_alias(alias);
-                }
-
-                store.insert_import(import);
-            }
-        }
-
-        // Fourth pass: type-aware method resolution (per Step 5 type inference)
-        //
-        // This pass integrates the TypeTracker to:
-        // 1. Populate TypeInfo in the FactsStore for all typed variables
-        // 2. Resolve method calls on typed receivers to the correct class method
-        //
-        // For method calls like `obj.method()` where `obj` has a known type,
-        // this creates correctly-linked references to `ClassName.method` instead
-        // of relying on name-based matching which can be incorrect when multiple
-        // classes define methods with the same name.
-        //
-        // OPTIMIZATION: Uses MethodCallIndex for O(M × C_match) instead of O(M × F × C)
-        // by building an index of all method calls once, then looking up by method name.
-
-        // Build MethodCallIndex and cache TypeTrackers in a single pass over all files.
-        // This avoids repeated get_analysis() and analyze_types_from_analysis() calls.
-        let mut method_call_index = MethodCallIndex::new();
-
-        for analysis in &file_analyses {
-            // Get combined analysis to access type data (assignments, annotations, method_calls)
-            let combined = analyzer.worker.get_analysis(&analysis.cst_id)?;
-
-            // Build TypeTracker from assignments and annotations
-            let tracker = analyze_types_from_analysis(&combined.assignments, &combined.annotations);
-
-            // Populate TypeInfo in FactsStore for all typed variables
-            populate_type_info(&tracker, store, analysis.file_id);
-
-            // Build method call index with resolved receiver types
-            for method_call in &combined.method_calls {
-                // Get the receiver's type from the TypeTracker
-                let receiver_type = tracker.type_of(&method_call.scope_path, &method_call.receiver);
-
-                // Get method span
-                let method_span = match &method_call.method_span {
-                    Some(s) => Span::new(s.start as u64, s.end as u64),
-                    None => continue,
-                };
-
-                // Add to index
-                method_call_index.add(
-                    method_call.method.clone(),
-                    IndexedMethodCall {
-                        file_id: analysis.file_id,
-                        receiver: method_call.receiver.clone(),
-                        receiver_type: receiver_type.map(String::from),
-                        scope_path: method_call.scope_path.clone(),
-                        method_span,
-                    },
-                );
-            }
-
-            // Populate inheritance hierarchy from class_inheritance data
-            //
-            // For each class with base classes, create InheritanceInfo entries
-            // to enable method override tracking during rename.
-            //
-            // Uses ImportResolver for import-aware resolution: if a base class is
-            // imported from another file, we prefer the class from that file over
-            // a same-named class in the current file.
-
-            // Build import resolver for this file
-            let import_resolver = ImportResolver::from_imports(&analysis.imports);
-
-            for class_info in &combined.class_inheritance {
-                // Find the child class symbol in this file
-                let child_symbols: Vec<_> = store
-                    .symbols_named(&class_info.name)
-                    .iter()
-                    .filter(|s| s.decl_file_id == analysis.file_id && s.kind == SymbolKind::Class)
-                    .map(|s| s.symbol_id)
-                    .collect();
-
-                let child_id = match child_symbols.first() {
-                    Some(id) => *id,
-                    None => continue,
-                };
-
-                // For each base class, try to resolve it and create inheritance link
-                for base_name in &class_info.bases {
-                    // First, try import-aware resolution
-                    let base_id = if let Some(resolved_file) =
-                        import_resolver.resolved_file(base_name)
-                    {
-                        // Base class was imported from a specific file - prefer that file
-                        let target_file_id = store.file_by_path(resolved_file).map(|f| f.file_id);
-
-                        let base_symbols: Vec<_> = store
-                            .symbols_named(base_name)
-                            .iter()
-                            .filter(|s| s.kind == SymbolKind::Class)
-                            .map(|s| (s.symbol_id, s.decl_file_id))
-                            .collect();
-
-                        // Prefer the class from the resolved import file
-                        if let Some(target_fid) = target_file_id {
-                            base_symbols
-                                .iter()
-                                .find(|(_, fid)| *fid == target_fid)
-                                .or_else(|| base_symbols.first())
-                                .map(|(id, _)| *id)
-                        } else {
-                            // Import resolved to a file not in workspace - fall back to heuristic
-                            base_symbols
-                                .iter()
-                                .find(|(_, fid)| *fid == analysis.file_id)
-                                .or_else(|| base_symbols.first())
-                                .map(|(id, _)| *id)
-                        }
-                    } else {
-                        // Not an imported name - use same-file-first heuristic
-                        let base_symbols: Vec<_> = store
-                            .symbols_named(base_name)
-                            .iter()
-                            .filter(|s| s.kind == SymbolKind::Class)
-                            .map(|s| (s.symbol_id, s.decl_file_id))
-                            .collect();
-
-                        base_symbols
-                            .iter()
-                            .find(|(_, fid)| *fid == analysis.file_id)
-                            .or_else(|| base_symbols.first())
-                            .map(|(id, _)| *id)
-                    };
-
-                    if let Some(parent_id) = base_id {
-                        store.insert_inheritance(InheritanceInfo::new(child_id, parent_id));
-                    }
-                }
-            }
-        }
-
-        // Collect existing reference spans to avoid duplicates
-        // Key: (file_id, span_start, span_end) for quick lookup
-        let mut existing_ref_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
-        for analysis in &file_analyses {
-            for r in store.refs_in_file(analysis.file_id) {
-                existing_ref_spans.insert((r.file_id, r.span.start, r.span.end));
-            }
-        }
-
-        // Collect type-aware method call references using indexed lookup
-        // Complexity: O(M × C_match) instead of O(M × F × C)
-        let mut typed_method_refs: Vec<(SymbolId, FileId, Span)> = Vec::new();
-
-        for analysis in &file_analyses {
-            // Get symbols defined in this file (cloned to avoid borrow issues)
-            let file_symbols: Vec<_> = store
-                .symbols_in_file(analysis.file_id)
-                .into_iter()
-                .map(|s| (s.symbol_id, s.kind, s.name.clone(), s.container_symbol_id))
-                .collect();
-
-            for (symbol_id, kind, symbol_name, container_opt) in file_symbols {
-                // Only process methods/functions with a container (class methods)
-                if kind != SymbolKind::Method && kind != SymbolKind::Function {
-                    continue;
-                }
-                let container_id = match container_opt {
-                    Some(id) => id,
-                    None => continue,
-                };
-
-                // Get the container class name
-                let container_name = match store.symbol(container_id) {
-                    Some(c) => c.name.clone(),
-                    None => continue,
-                };
-
-                // Use indexed lookup instead of nested file iteration
-                // O(C_match) instead of O(F × C)
-                for indexed_call in method_call_index.get(&symbol_name) {
-                    // Check if the receiver type matches the container class
-                    let type_matches = indexed_call.receiver_type.as_ref() == Some(&container_name);
-
-                    if type_matches {
-                        let key = (
-                            indexed_call.file_id,
-                            indexed_call.method_span.start,
-                            indexed_call.method_span.end,
-                        );
-                        if !existing_ref_spans.contains(&key) {
-                            typed_method_refs.push((
-                                symbol_id,
-                                indexed_call.file_id,
-                                indexed_call.method_span,
-                            ));
-                            // Mark as added to prevent duplicates within this pass
-                            existing_ref_spans.insert(key);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Insert all collected type-aware method references
-        for (symbol_id, file_id, span) in typed_method_refs {
-            let ref_id = store.next_reference_id();
-            let reference = Reference::new(ref_id, symbol_id, file_id, span, ReferenceKind::Call);
-            store.insert_reference(reference);
-        }
-
-        Ok(())
-    }
-
-    /// Find all references to a symbol across the workspace.
-    pub fn find_references<'a>(
-        &self,
-        store: &'a FactsStore,
-        symbol_id: SymbolId,
-    ) -> Vec<&'a Reference> {
-        store.refs_of_symbol(symbol_id)
-    }
-
-    /// Find all methods that override the given method in descendant classes.
-    ///
-    /// When renaming a base class method, all override methods in child classes
-    /// must also be renamed to maintain the inheritance contract.
-    ///
-    /// Returns the SymbolIds of override methods (not including the original).
-    pub fn find_override_methods(
-        &self,
-        store: &FactsStore,
-        method_symbol: &Symbol,
-    ) -> Vec<SymbolId> {
-        let mut overrides = Vec::new();
-
-        // Get the container class (the method's parent)
-        let class_id = match method_symbol.container_symbol_id {
-            Some(id) => id,
-            None => return overrides, // Not a method
-        };
-
-        // Collect all descendant classes using BFS
-        let mut descendant_classes = Vec::new();
-        let mut queue = vec![class_id];
-
-        while let Some(current_class) = queue.pop() {
-            for child_id in store.children_of_class(current_class) {
-                if !descendant_classes.contains(&child_id) {
-                    descendant_classes.push(child_id);
-                    queue.push(child_id);
-                }
-            }
-        }
-
-        // Find methods with the same name in descendant classes
-        let method_name = &method_symbol.name;
-        for descendant_id in descendant_classes {
-            let candidate_methods = store.symbols_named(method_name);
-            for method in candidate_methods {
-                if method.container_symbol_id == Some(descendant_id)
-                    && (method.kind == SymbolKind::Method || method.kind == SymbolKind::Function)
-                {
-                    overrides.push(method.symbol_id);
-                }
-            }
-        }
-
-        overrides
-    }
-
-    /// Resolve a symbol at a location.
-    ///
-    /// The `content` parameter is the file content, needed to convert line/col to byte offset.
-    pub fn resolve_symbol_at_location<'a>(
-        &self,
-        store: &'a FactsStore,
-        path: &str,
-        line: u32,
-        col: u32,
-        content: &str,
-    ) -> Option<&'a Symbol> {
-        // Find the file
-        let file = store.file_by_path(path)?;
-
-        // Convert line/col to byte offset
-        let byte_offset = position_to_byte_offset_str(content, line, col);
-
-        // Find symbols in this file
-        let symbols = store.symbols_in_file(file.file_id);
-
-        // Find symbols whose span contains the byte offset
-        let mut matching_symbols: Vec<_> = symbols
-            .into_iter()
-            .filter(|s| s.decl_span.start <= byte_offset && byte_offset < s.decl_span.end)
-            .collect();
-
-        // If no direct match, check references at this location
-        if matching_symbols.is_empty() {
-            let refs = store.refs_in_file(file.file_id);
-            for reference in refs {
-                if reference.span.start <= byte_offset && byte_offset < reference.span.end {
-                    if let Some(symbol) = store.symbol(reference.symbol_id) {
-                        return Some(symbol);
-                    }
-                }
-            }
-            return None;
-        }
-
-        // Return the first matching symbol (prefer smallest span if multiple)
-        matching_symbols.sort_by_key(|s| s.decl_span.end - s.decl_span.start);
-        matching_symbols.into_iter().next()
     }
 }
 
@@ -3541,268 +2645,14 @@ mod tests {
         }
     }
 
-    // Integration tests that require the worker are in a separate module
-    // to allow skipping when Python/libcst are not available
-    #[cfg(test)]
-    mod integration_tests {
-        use super::*;
-        use crate::test_helpers::require_python_with_libcst;
-        use crate::worker::spawn_worker;
-        use tempfile::TempDir;
 
-        #[test]
-        fn analyze_simple_file() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-            let mut analyzer = PythonAnalyzer::new(&mut worker, temp.path().to_str().unwrap());
-
-            let content = r#"
-def foo():
-    pass
-
-x = 1
-foo()
-"#;
-
-            let result = analyzer.analyze_file(FileId::new(0), "test.py", content);
-            assert!(result.is_ok(), "Analysis failed: {:?}", result.err());
-
-            let analysis = result.unwrap();
-            assert!(!analysis.symbols.is_empty());
-            assert!(analysis
-                .symbols
-                .iter()
-                .any(|s| s.name == "foo" && s.kind == SymbolKind::Function));
-            assert!(analysis
-                .symbols
-                .iter()
-                .any(|s| s.name == "x" && s.kind == SymbolKind::Variable));
-        }
-
-        #[test]
-        fn analyze_class_with_method() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-            let mut analyzer = PythonAnalyzer::new(&mut worker, temp.path().to_str().unwrap());
-
-            let content = r#"
-class MyClass:
-    def my_method(self):
-        pass
-"#;
-
-            let result = analyzer.analyze_file(FileId::new(0), "test.py", content);
-            assert!(result.is_ok());
-
-            let analysis = result.unwrap();
-            assert!(analysis
-                .symbols
-                .iter()
-                .any(|s| s.name == "MyClass" && s.kind == SymbolKind::Class));
-            assert!(analysis
-                .symbols
-                .iter()
-                .any(|s| s.name == "my_method" && s.kind == SymbolKind::Function));
-        }
-
-        #[test]
-        fn analyze_imports() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-            let mut analyzer = PythonAnalyzer::new(&mut worker, temp.path().to_str().unwrap());
-
-            let content = r#"
-import os
-from os.path import join, exists as path_exists
-from typing import *
-"#;
-
-            let result = analyzer.analyze_file(FileId::new(0), "test.py", content);
-            assert!(result.is_ok());
-
-            let analysis = result.unwrap();
-            assert!(!analysis.imports.is_empty());
-
-            // Check import os
-            assert!(analysis
-                .imports
-                .iter()
-                .any(|i| i.module_path == "os" && i.kind == "import"));
-
-            // Check from os.path import ...
-            assert!(analysis
-                .imports
-                .iter()
-                .any(|i| i.module_path == "os.path" && i.kind == "from"));
-
-            // Check star import
-            assert!(analysis.imports.iter().any(|i| i.is_star));
-        }
-
-        #[test]
-        fn adapter_populates_facts_store() {
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-            let adapter = PythonAdapter::new(temp.path().to_str().unwrap());
-
-            let files = vec![
-                ("main.py".to_string(), "def main():\n    pass\n".to_string()),
-                (
-                    "utils.py".to_string(),
-                    "def helper():\n    pass\n".to_string(),
-                ),
-            ];
-
-            let mut store = FactsStore::new();
-            let result = adapter.analyze_files(&mut worker, &files, &mut store);
-
-            assert!(result.is_ok(), "Adapter failed: {:?}", result.err());
-            assert_eq!(store.file_count(), 2);
-            assert!(store.symbol_count() >= 2);
-
-            // Check files are in store
-            assert!(store.file_by_path("main.py").is_some());
-            assert!(store.file_by_path("utils.py").is_some());
-
-            // Check symbols exist
-            let main_symbols = store.symbols_named("main");
-            assert!(!main_symbols.is_empty());
-
-            let helper_symbols = store.symbols_named("helper");
-            assert!(!helper_symbols.is_empty());
-        }
-
-        #[test]
-        fn libcst_rewrite_preserves_formatting() {
-            use crate::worker::{RewriteRequest, SpanInfo};
-
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            // Source with specific formatting: indentation, comments, trailing whitespace
-            let content = r#"def foo():    # comment here
-    """Docstring for foo."""
-    x = 1  # inline comment
-    return x
-
-class MyClass:
-    def foo(self):  # method
-        pass
-"#;
-
-            // Parse the content
-            let parse_result = worker.parse("test.py", content).unwrap();
-
-            // Find the span of the first "foo" (at "def foo")
-            // "def foo" - foo starts at byte 4 (after "def ")
-            let rewrites = vec![RewriteRequest {
-                span: SpanInfo { start: 4, end: 7 },
-                new_name: "bar".to_string(),
-            }];
-
-            let new_content = worker
-                .rewrite_batch(&parse_result.cst_id, &rewrites)
-                .unwrap();
-
-            // The change should ONLY affect the identifier "foo" -> "bar"
-            // All other formatting (comments, indentation, docstring) should be preserved
-            let expected = r#"def bar():    # comment here
-    """Docstring for foo."""
-    x = 1  # inline comment
-    return x
-
-class MyClass:
-    def foo(self):  # method
-        pass
-"#;
-
-            assert_eq!(new_content, expected);
-
-            // Verify formatting preservation characteristics:
-            // 1. Comment "# comment here" is preserved
-            assert!(new_content.contains("# comment here"));
-            // 2. Docstring is preserved
-            assert!(new_content.contains("\"\"\"Docstring for foo.\"\"\""));
-            // 3. Inline comment is preserved
-            assert!(new_content.contains("# inline comment"));
-            // 4. Indentation is preserved (4 spaces)
-            assert!(new_content.contains("    \"\"\"Docstring"));
-            // 5. The class method "foo" was NOT changed (different span)
-            assert!(new_content.contains("def foo(self)"));
-        }
-
-        #[test]
-        fn libcst_rewrite_batch_multiple_names() {
-            use crate::worker::{RewriteRequest, SpanInfo};
-
-            let python = require_python_with_libcst();
-            let temp = TempDir::new().unwrap();
-            std::fs::create_dir_all(temp.path().join("python")).unwrap();
-            std::fs::create_dir_all(temp.path().join("workers")).unwrap();
-
-            let mut worker = spawn_worker(&python, temp.path()).unwrap();
-
-            // Source with multiple references to same name
-            let content = "def foo():\n    pass\n\nfoo()\nfoo()\n";
-            //                 ^4-7                ^21-24 ^27-30
-
-            let parse_result = worker.parse("test.py", content).unwrap();
-
-            // Rewrite all occurrences of "foo"
-            let rewrites = vec![
-                RewriteRequest {
-                    span: SpanInfo { start: 4, end: 7 }, // def foo
-                    new_name: "bar".to_string(),
-                },
-                RewriteRequest {
-                    span: SpanInfo { start: 21, end: 24 }, // first foo()
-                    new_name: "bar".to_string(),
-                },
-                RewriteRequest {
-                    span: SpanInfo { start: 27, end: 30 }, // second foo()
-                    new_name: "bar".to_string(),
-                },
-            ];
-
-            let new_content = worker
-                .rewrite_batch(&parse_result.cst_id, &rewrites)
-                .unwrap();
-
-            // All "foo" should now be "bar"
-            assert!(!new_content.contains("foo"));
-            assert_eq!(new_content.matches("bar").count(), 3);
-            assert_eq!(new_content, "def bar():\n    pass\n\nbar()\nbar()\n");
-        }
-    }
-
-    #[cfg(feature = "native-cst")]
-    mod native_analysis_tests {
+    mod analysis_tests {
         use super::*;
 
         #[test]
         fn analyze_simple_function() {
             let content = "def foo():\n    x = 1\n    return x";
-            let result = analyze_file_native(FileId::new(0), "test.py", content)
+            let result = analyze_file(FileId::new(0), "test.py", content)
                 .expect("should analyze successfully");
 
             // Check scopes
@@ -3830,7 +2680,7 @@ class MyClass:
         #[test]
         fn analyze_class_with_method() {
             let content = "class MyClass:\n    def method(self):\n        pass";
-            let result = analyze_file_native(FileId::new(0), "test.py", content)
+            let result = analyze_file(FileId::new(0), "test.py", content)
                 .expect("should analyze successfully");
 
             // Check scopes
@@ -3851,7 +2701,7 @@ class MyClass:
         #[test]
         fn analyze_nested_scopes() {
             let content = "def outer():\n    def inner():\n        x = 1\n    inner()";
-            let result = analyze_file_native(FileId::new(0), "test.py", content)
+            let result = analyze_file(FileId::new(0), "test.py", content)
                 .expect("should analyze successfully");
 
             // Should have at least 3 scopes: module, outer, inner
@@ -3868,7 +2718,7 @@ class MyClass:
         #[test]
         fn analyze_comprehension() {
             let content = "[x * 2 for x in range(10)]";
-            let result = analyze_file_native(FileId::new(0), "test.py", content)
+            let result = analyze_file(FileId::new(0), "test.py", content)
                 .expect("should analyze successfully");
 
             // Comprehensions create their own scope
@@ -3879,7 +2729,7 @@ class MyClass:
         #[test]
         fn analyze_returns_valid_file_analysis() {
             let content = "x = 1";
-            let result = analyze_file_native(FileId::new(42), "my_file.py", content)
+            let result = analyze_file(FileId::new(42), "my_file.py", content)
                 .expect("should analyze successfully");
 
             assert_eq!(result.file_id, FileId::new(42));
@@ -3890,7 +2740,7 @@ class MyClass:
         #[test]
         fn analyze_parse_error_returns_error() {
             let content = "def foo(\n";  // Invalid syntax
-            let result = analyze_file_native(FileId::new(0), "test.py", content);
+            let result = analyze_file(FileId::new(0), "test.py", content);
 
             assert!(result.is_err(), "should return error for invalid syntax");
         }
@@ -3900,10 +2750,9 @@ class MyClass:
     // analyze_files Tests (Step 9.1)
     // ========================================================================
 
-    #[cfg(feature = "native-cst")]
     mod analyze_files_tests {
         use super::*;
-        use crate::analyzer::native::{analyze_files, FileAnalysisBundle, GlobalSymbolMap};
+        use crate::analyzer::{analyze_files, FileAnalysisBundle, GlobalSymbolMap};
 
         #[test]
         fn function_signature_compiles() {

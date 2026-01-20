@@ -28,7 +28,7 @@
 
 use tugtool_core::facts::FactsStore;
 use tugtool_core::output::Location;
-use tugtool_python::analyzer::native::analyze_files;
+use tugtool_python::analyzer::analyze_files;
 use tugtool_python::lookup::find_symbol_at_location;
 
 // ============================================================================
@@ -1016,7 +1016,7 @@ mod ac7_deterministic_id_assignment {
 
     use super::*;
     use tugtool_core::facts::FactsStore;
-    use tugtool_python::analyzer::native::analyze_files;
+    use tugtool_python::analyzer::analyze_files;
 
     #[test]
     fn same_files_produce_identical_symbol_ids() {
@@ -1193,7 +1193,7 @@ mod ac8_partial_analysis_error_handling {
 
     use super::*;
     use tugtool_core::facts::FactsStore;
-    use tugtool_python::analyzer::native::analyze_files;
+    use tugtool_python::analyzer::analyze_files;
 
     #[test]
     fn parse_error_doesnt_abort_other_files() {

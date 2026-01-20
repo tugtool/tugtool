@@ -4,27 +4,17 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Python language support for tugtool using LibCST"
-
-[features]
-# Default: use native Rust CST parser
-default = ["native-cst"]
-# Native CST backend using tugtool-cst (Rust-only, no Python subprocess)
-native-cst = ["dep:tugtool-cst"]
-# Legacy Python worker backend using LibCST via subprocess
-python-worker = []
+description = "Python language support for tugtool using native Rust CST parser"
 
 [dependencies]
 tugtool-core = { path = "../tugtool-core" }
-tugtool-cst = { path = "../tugtool-cst", optional = true }
+tugtool-cst = { path = "../tugtool-cst" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tempfile = "3"
 tracing = "0.1"
 walkdir = "2"
-which = "7"
-dirs = "6"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [lints]
