@@ -3103,3 +3103,227 @@ After completing Steps 10.1-10.10, you will have:
 | Multi-file works | Rename across imports produces correct results |
 
 **Commit after all checkpoints pass.**
+
+---
+
+### 3.0.7 Implementation Improvement {#implementation-improvement}
+
+**Purpose:** Address implementation gaps discovered during Step 9/10 verification. While the native multi-file `analyze_files()` pipeline is complete and all 1025 tests pass, review identified deviations from the behavioral contracts defined in Step 9.0.
+
+**Context:** Phase 3 Steps 9 and 10 are marked complete. The native analysis pipeline exists, rename operations are wired to it with strict failure policy, and Python worker code has been removed. However, four issues require attention to ensure full contract compliance and test accuracy.
+
+---
+
+#### Issue 1: Deterministic ID Assignment (Contract C8 Violation) {#issue-1-determinism}
+
+**Priority:** P0 (blocks byte-for-byte reproducibility guarantee)
+
+**Problem:** There are two sources of non-determinism in file processing order:
+
+1. **File discovery order** - `collect_python_files()` uses `WalkDir` which returns filesystem-order (non-deterministic) results
+2. **Caller-provided order** - `analyze_files()` processes files in whatever order the caller provides, without sorting
+
+Both violate Contract C8 which specifies sorted path order for deterministic ID assignment.
+
+**Locations:**
+
+1. `crates/tugtool-python/src/files.rs:49-88`
+   `collect_python_files()` uses `WalkDir` which returns filesystem-order results.
+
+2. `crates/tugtool-python/src/analyzer.rs:415-437`
+   ```rust
+   // Analyze each file
+   for (path, content) in files {
+       let file_id = store.next_file_id();
+       // ...
+   }
+   ```
+   Files are processed in the caller-provided order, not sorted order.
+
+**Impact:**
+- IDs can vary across runs on the same machine (filesystem order is non-deterministic)
+- IDs can vary across machines with different filesystems
+- Breaks "byte-for-byte reproducible FactsStore JSON" guarantee from Contract C8
+- Golden tests may be unstable if file order changes
+
+**Fix Required:**
+- Sort file paths in `collect_python_files()` before returning
+- Sort the `files` slice in `analyze_files()` before processing
+- **Note:** Sorting inside `analyze_files()` is the hard guarantee since it's the single point where IDs are assigned. Sorting in `collect_python_files()` is defense-in-depth.
+
+**Acceptance Criteria:**
+- [ ] `collect_python_files()` returns files in sorted path order
+- [ ] `analyze_files()` sorts input files before assigning FileIds (hard guarantee)
+- [ ] Test: Same files analyzed twice produce identical SymbolIds
+- [ ] Test: Same files analyzed twice produce identical ReferenceIds
+- [ ] Test: Files provided in different order produce identical IDs
+- [ ] Golden test JSON is byte-for-byte reproducible across runs
+- [ ] Path normalization uses forward slashes (no lowercasing—case matters on Linux/macOS)
+
+---
+
+#### Issue 2: False-Positive Acceptance Test {#issue-2-false-positive-test}
+
+**Priority:** P1 (test coverage gap)
+
+**Problem:** The test `clicking_on_import_binding_returns_original_definition` does not test what it claims. The test asserts AC-1 acceptance criteria for import binding resolution but actually clicks on the definition site, not the import binding.
+
+**Location:** `crates/tugtool-python/tests/acceptance_criteria.rs:102-119`
+
+The test creates:
+- `x.py` with `def foo(): pass` (definition at line 1, col 5)
+- `y.py` with `from x import foo` (import binding at line 1, col 15)
+
+The test then calls `find_symbol_at_location()` with `Location::new("x.py", 1, 5)` - this clicks on the **definition** in x.py, not the import binding in y.py.
+
+**Impact:**
+- AC-1 acceptance criteria "clicking on import binding returns original definition" appears verified but is not actually tested
+- The import binding → original definition resolution path is untested
+- Potential bugs in this path would go undetected
+
+**Fix Required:**
+Change the test to:
+1. Click on the import binding location in y.py
+2. Compute the column precisely by finding `"foo"` in the import line (e.g., `"from x import foo".find("foo") + 1` for 1-based col) rather than hardcoding a guessed column
+3. Assert that it returns the original `foo` symbol from x.py
+
+**Acceptance Criteria:**
+- [ ] Test clicks on `foo` in `from x import foo` (y.py, not x.py)
+- [ ] Column offset is computed from the actual line content, not hardcoded
+- [ ] Test verifies returned symbol is the original definition from x.py
+- [ ] Test name accurately reflects what is being tested
+- [ ] Consider adding complementary test for definition-site click if not already covered
+
+---
+
+#### Issue 3: find_symbol_at_location() Contract Deviation {#issue-3-contract-deviation}
+
+**Priority:** P1 (semantic correctness for edge cases)
+
+**Problem:** The `find_symbol_at_location()` implementation does not implement the full tie-breaking algorithm specified in Contract C1.
+
+**Location:** `crates/tugtool-python/src/lookup.rs:63-123`
+
+**Current behavior:** "symbols first; if none, return first matching reference; otherwise ambiguous"
+
+**Contract C1 specifies:**
+1. Prefer SMALLEST span (most specific/innermost)
+2. If tied, prefer by kind: Method > Function > Class > Variable
+3. For references: also prefer smallest span
+4. If still tied: AmbiguousSymbol error
+
+**Analysis:**
+The deviation may be intentional. In practice, the native CST produces name-only spans (just the identifier, not the full declaration), which means span overlap is unlikely. The original Python worker may have behaved the same way.
+
+**Impact:**
+- Nested/overlapping declarations may not resolve to the innermost one
+- Edge cases with overlapping spans could produce incorrect results
+- Contract documentation does not match implementation
+
+**Fix Required (choose one):**
+1. **Option A:** Implement the full tie-breaking algorithm as specified in C1
+2. **Option B:** Update Contract C1 documentation to reflect actual behavior and document why overlap is not expected (name-only spans)
+
+**Important:** If choosing Option B (update docs), also update the acceptance criteria checklists (AC-1) to remove or revise assertions about tie-break behavior that isn't implemented. Otherwise, tests asserting "smallest span wins" will pass vacuously (no overlap ever happens) rather than verifying the intended behavior.
+
+**Acceptance Criteria:**
+- [ ] Either implement C1 tie-breaking OR update C1 to match actual behavior
+- [ ] If updating documentation: explain why spans don't overlap in practice
+- [ ] If updating documentation: revise AC-1 checklist items for tie-breaking (lines 1954-1957 in Step 9.0)
+- [ ] Test nested symbol resolution (method inside class)
+- [ ] Test truly ambiguous case produces AmbiguousSymbol error
+- [ ] Document the chosen approach in the contract
+
+---
+
+#### Issue 4: Placeholder Scope Spans {#issue-4-scope-spans}
+
+**Priority:** P1 (data completeness)
+
+**Problem:** Scopes are inserted into the FactsStore with placeholder `Span::new(0, 0)` values instead of actual scope spans.
+
+**Location:** `crates/tugtool-python/src/analyzer.rs:485-496`
+```rust
+// TODO: Get actual scope spans from native analysis
+let span = Span::new(0, 0);
+```
+
+**Impact:**
+- Any feature depending on scope spans will not work correctly:
+  - Scope containment queries
+  - "Jump to scope" navigation
+  - Diagnostics with scope context
+  - Scope-based filtering
+- The FactsStore contains incomplete data
+
+**Root Cause:**
+The ScopeCollector in tugtool-cst collects scope information but does not compute or return span information. The span computation needs to be added to the collector or computed during CST traversal.
+
+**Fix Required:**
+1. Update ScopeCollector in tugtool-cst to compute actual scope spans from CST nodes
+2. Pass span information through `NativeScope` type
+3. Use actual spans when inserting scopes in `analyzer.rs`
+
+**Acceptance Criteria:**
+- [ ] ScopeCollector computes actual scope spans from CST
+- [ ] `NativeScope` includes span information
+- [ ] `analyzer.rs` uses real spans, not `Span::new(0, 0)`
+- [ ] Test: scope spans match expected ranges
+- [ ] Test: module scope span covers entire file
+- [ ] Test: function scope span covers function body
+- [ ] Test: class scope span covers class body
+
+---
+
+#### Implementation Order {#improvement-order}
+
+| Priority | Issue | Effort | Risk |
+|----------|-------|--------|------|
+| P0 | Issue 1: Deterministic ID Assignment | Low | Low |
+| P1 | Issue 2: False-Positive Test | Low | Low |
+| P1 | Issue 3: Contract Deviation | Medium | Low |
+| P1 | Issue 4: Scope Spans | Medium | Low |
+
+**Recommended sequence:**
+1. Issue 1 first (P0, easy fix, high impact on correctness guarantee)
+2. Issue 2 second (quick test fix, improves test accuracy)
+3. Issue 3 third (either implement or document, decision needed)
+4. Issue 4 fourth (requires tugtool-cst changes to ScopeCollector)
+
+---
+
+#### Test Execution Notes {#test-execution-notes}
+
+**Important:** String filters vs test target filters behave differently in nextest:
+
+- `cargo nextest run -p tugtool-python acceptance_criteria` — **runs 0 tests** (string filter, no tests contain "acceptance_criteria" in their name)
+- `cargo nextest run -p tugtool-python --test acceptance_criteria` — **correct** (runs tests in that test target)
+
+Similarly, `tugtool-python` has no `--test rename` target; rename coverage is in unit tests within the crate and integration tests in `tugtool`. Verification commands in this plan should use correct invocations:
+
+```bash
+# Correct: run acceptance criteria tests
+cargo nextest run -p tugtool-python --test acceptance_criteria
+
+# Correct: run all tugtool-python tests
+cargo nextest run -p tugtool-python
+
+# Correct: run workspace tests
+cargo nextest run --workspace
+```
+
+---
+
+#### Verification Checklist {#improvement-verification}
+
+**After all improvements (Issues 1-4):**
+- [ ] All 1025+ existing tests still pass
+- [ ] New determinism tests added (Issue 1)
+- [ ] Import binding test corrected (Issue 2)
+- [ ] Contract C8 (determinism) is satisfied
+- [ ] Contract C1 matches implementation (either code or docs updated)
+- [ ] Scope spans are computed and populated (Issue 4)
+- [ ] `cargo nextest run -p tugtool-python --test acceptance_criteria` passes
+- [ ] `cargo nextest run --workspace` passes
+
+**Commit:** `fix(python): address implementation gaps from Step 9/10 review`
