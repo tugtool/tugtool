@@ -2166,3 +2166,66 @@ All Phase Exit Criteria verified:
 - Clean, simplified codebase ready for future development
 
 ---
+
+### 3.0.7 Issue 1: Deterministic ID Assignment (Contract C8) - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Contract C8: Deterministic ID Assignment (plans/phase-3.md lines 1904-1941)
+- Section 3.0.7 Issue 1 specification (lines 3117-3162)
+
+**Problem:**
+Two sources of non-determinism in file processing order:
+1. `collect_python_files()` uses `WalkDir` which returns filesystem-order results
+2. `analyze_files()` processes files in caller-provided order without sorting
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Sort file paths in `collect_python_files()` before returning | Done |
+| Sort file paths in `collect_files_from_snapshot()` before returning | Done |
+| Sort files slice in `analyze_files()` before processing (hard guarantee) | Done |
+| Add determinism tests for different input orders | Done |
+| Run tests and verify all pass | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/files.rs`:
+  - Added sorting in `collect_python_files()` (lines 87-91)
+  - Added sorting in `collect_files_from_snapshot()` (lines 136-138)
+  - Added 2 new tests: `collect_returns_files_in_sorted_order`, `collect_sorts_nested_paths_correctly`
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added Contract C8 sorting block (lines 408-421)
+  - Files are now sorted by path before processing (hard guarantee)
+
+- `crates/tugtool-python/tests/acceptance_criteria.rs`:
+  - Added `different_input_order_produces_identical_ids` test (lines 1102-1213)
+  - This test verifies the hard guarantee by analyzing same files in 3 different orders
+
+- `plans/phase-3.md`:
+  - Checked off all 7 acceptance criteria for Issue 1
+  - Updated verification checklist (4 items checked)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python --test acceptance_criteria`: 51 tests passed
+- `cargo nextest run -p tugtool-cst golden`: 37 tests passed
+- `cargo nextest run --workspace`: 1028 tests passed
+
+**Checkpoints Verified:**
+- `collect_python_files()` returns sorted: PASS
+- `analyze_files()` sorts input (hard guarantee): PASS
+- Test: Same files → identical SymbolIds: PASS
+- Test: Same files → identical ReferenceIds: PASS
+- Test: Different order → identical IDs: PASS
+- Golden test JSON is reproducible: PASS
+- Path normalization uses forward slashes (no lowercasing): PASS
+
+**Key Implementation Details:**
+1. **Hard guarantee in `analyze_files()`**: Even if callers provide unsorted input, IDs are assigned deterministically
+2. **Defense-in-depth in file collectors**: Both `collect_python_files()` and `collect_files_from_snapshot()` sort results
+3. **Case-sensitive sorting**: No lowercasing applied (case matters on Linux/macOS)
+4. **New critical test**: `different_input_order_produces_identical_ids` verifies the hard guarantee
+
+---

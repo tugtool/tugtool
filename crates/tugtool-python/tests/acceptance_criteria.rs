@@ -1100,6 +1100,120 @@ mod ac7_deterministic_id_assignment {
     }
 
     #[test]
+    fn different_input_order_produces_identical_ids() {
+        // This is the CRITICAL test for Contract C8's hard guarantee:
+        // analyze_files() must produce identical IDs regardless of input order.
+        //
+        // We provide the same files in different orders and verify that:
+        // - FileIds are assigned in sorted path order
+        // - SymbolIds are identical across runs
+        // - ReferenceIds are identical across runs
+        let file_a = ("a.py", "def alpha(): pass\nalpha()\n");
+        let file_b = ("b.py", "def beta(): pass\n");
+        let file_c = ("c.py", "from a import alpha\nalpha()\n");
+
+        // Order 1: a, b, c
+        let order1 = files(&[file_a, file_b, file_c]);
+        // Order 2: c, b, a (reversed)
+        let order2 = files(&[file_c, file_b, file_a]);
+        // Order 3: b, c, a (arbitrary)
+        let order3 = files(&[file_b, file_c, file_a]);
+
+        let mut store1 = FactsStore::new();
+        let result1 = analyze_files(&order1, &mut store1);
+        assert!(result1.is_ok());
+
+        let mut store2 = FactsStore::new();
+        let result2 = analyze_files(&order2, &mut store2);
+        assert!(result2.is_ok());
+
+        let mut store3 = FactsStore::new();
+        let result3 = analyze_files(&order3, &mut store3);
+        assert!(result3.is_ok());
+
+        // Verify file counts match
+        assert_eq!(store1.files().count(), store2.files().count());
+        assert_eq!(store2.files().count(), store3.files().count());
+
+        // Verify symbol counts match
+        let sym_count1 = store1.symbols().count();
+        let sym_count2 = store2.symbols().count();
+        let sym_count3 = store3.symbols().count();
+        assert_eq!(
+            sym_count1, sym_count2,
+            "Symbol counts should match between order1 and order2"
+        );
+        assert_eq!(
+            sym_count2, sym_count3,
+            "Symbol counts should match between order2 and order3"
+        );
+
+        // Verify reference counts match
+        let ref_count1 = store1.references().count();
+        let ref_count2 = store2.references().count();
+        let ref_count3 = store3.references().count();
+        assert_eq!(
+            ref_count1, ref_count2,
+            "Reference counts should match between order1 and order2"
+        );
+        assert_eq!(
+            ref_count2, ref_count3,
+            "Reference counts should match between order2 and order3"
+        );
+
+        // Verify FileIds are assigned in sorted path order (a.py=0, b.py=1, c.py=2)
+        // Regardless of input order, a.py should always be FileId(0)
+        let file_a_1 = store1.file_by_path("a.py").expect("a.py should exist in store1");
+        let file_a_2 = store2.file_by_path("a.py").expect("a.py should exist in store2");
+        let file_a_3 = store3.file_by_path("a.py").expect("a.py should exist in store3");
+        assert_eq!(
+            file_a_1.file_id, file_a_2.file_id,
+            "FileId for a.py should match between order1 and order2"
+        );
+        assert_eq!(
+            file_a_2.file_id, file_a_3.file_id,
+            "FileId for a.py should match between order2 and order3"
+        );
+
+        // Verify SymbolIds match across stores
+        // Find 'alpha' symbol and verify its ID is the same
+        let alpha1 = store1.symbols().find(|s| s.name == "alpha");
+        let alpha2 = store2.symbols().find(|s| s.name == "alpha");
+        let alpha3 = store3.symbols().find(|s| s.name == "alpha");
+        assert!(alpha1.is_some(), "alpha should exist in store1");
+        assert!(alpha2.is_some(), "alpha should exist in store2");
+        assert!(alpha3.is_some(), "alpha should exist in store3");
+        assert_eq!(
+            alpha1.unwrap().symbol_id,
+            alpha2.unwrap().symbol_id,
+            "SymbolId for alpha should match between order1 and order2"
+        );
+        assert_eq!(
+            alpha2.unwrap().symbol_id,
+            alpha3.unwrap().symbol_id,
+            "SymbolId for alpha should match between order2 and order3"
+        );
+
+        // Verify 'beta' symbol ID matches
+        let beta1 = store1.symbols().find(|s| s.name == "beta");
+        let beta2 = store2.symbols().find(|s| s.name == "beta");
+        let beta3 = store3.symbols().find(|s| s.name == "beta");
+        assert!(beta1.is_some(), "beta should exist in store1");
+        assert!(beta2.is_some(), "beta should exist in store2");
+        assert!(beta3.is_some(), "beta should exist in store3");
+        assert_eq!(
+            beta1.unwrap().symbol_id,
+            beta2.unwrap().symbol_id,
+            "SymbolId for beta should match between order1 and order2"
+        );
+        assert_eq!(
+            beta2.unwrap().symbol_id,
+            beta3.unwrap().symbol_id,
+            "SymbolId for beta should match between order2 and order3"
+        );
+    }
+
+    #[test]
     fn symbols_within_file_processed_in_span_order() {
         // Symbols in a file should be assigned SymbolIds by span.start order
         let code = r#"def first(): pass

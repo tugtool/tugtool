@@ -84,6 +84,12 @@ pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, St
         }
     }
 
+    // Sort files by path for deterministic ID assignment (Contract C8).
+    // This ensures consistent FileId/SymbolId assignment regardless of filesystem order.
+    // Note: analyze_files() also sorts as the hard guarantee, but we sort here for
+    // defense-in-depth and to provide predictable iteration order to callers.
+    files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
+
     Ok(files)
 }
 
@@ -126,6 +132,10 @@ pub fn collect_files_from_snapshot(
 
         files.push((file_info.path.clone(), content));
     }
+
+    // Sort files by path for deterministic ID assignment (Contract C8).
+    // See collect_python_files() for rationale.
+    files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
 
     Ok(files)
 }
@@ -236,5 +246,76 @@ mod tests {
         let workspace = create_test_workspace();
         let result = read_file(workspace.path(), "nonexistent.py");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn collect_returns_files_in_sorted_order() {
+        // Contract C8: Files must be returned in sorted path order
+        // for deterministic ID assignment.
+        let dir = TempDir::new().unwrap();
+
+        // Create files with names that would NOT be in sorted order
+        // if returned in filesystem (creation) order
+        File::create(dir.path().join("z_last.py"))
+            .unwrap()
+            .write_all(b"# z")
+            .unwrap();
+        File::create(dir.path().join("a_first.py"))
+            .unwrap()
+            .write_all(b"# a")
+            .unwrap();
+        File::create(dir.path().join("m_middle.py"))
+            .unwrap()
+            .write_all(b"# m")
+            .unwrap();
+
+        let files = collect_python_files(dir.path()).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Files should be in sorted alphabetical order
+        assert_eq!(paths, vec!["a_first.py", "m_middle.py", "z_last.py"]);
+    }
+
+    #[test]
+    fn collect_sorts_nested_paths_correctly() {
+        // Verify sorting works correctly for nested directory structures
+        let dir = TempDir::new().unwrap();
+
+        // Create directories in non-alphabetical order
+        fs::create_dir_all(dir.path().join("pkg_b")).unwrap();
+        fs::create_dir_all(dir.path().join("pkg_a")).unwrap();
+        fs::create_dir_all(dir.path().join("pkg_a/sub")).unwrap();
+
+        File::create(dir.path().join("pkg_b/mod.py"))
+            .unwrap()
+            .write_all(b"# b")
+            .unwrap();
+        File::create(dir.path().join("pkg_a/mod.py"))
+            .unwrap()
+            .write_all(b"# a")
+            .unwrap();
+        File::create(dir.path().join("pkg_a/sub/deep.py"))
+            .unwrap()
+            .write_all(b"# deep")
+            .unwrap();
+        File::create(dir.path().join("root.py"))
+            .unwrap()
+            .write_all(b"# root")
+            .unwrap();
+
+        let files = collect_python_files(dir.path()).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should be sorted lexicographically:
+        // pkg_a/mod.py < pkg_a/sub/deep.py < pkg_b/mod.py < root.py
+        assert_eq!(
+            paths,
+            vec![
+                "pkg_a/mod.py",
+                "pkg_a/sub/deep.py",
+                "pkg_b/mod.py",
+                "root.py"
+            ]
+        );
     }
 }

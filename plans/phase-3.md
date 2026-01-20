@@ -3152,13 +3152,13 @@ Both violate Contract C8 which specifies sorted path order for deterministic ID 
 - **Note:** Sorting inside `analyze_files()` is the hard guarantee since it's the single point where IDs are assigned. Sorting in `collect_python_files()` is defense-in-depth.
 
 **Acceptance Criteria:**
-- [ ] `collect_python_files()` returns files in sorted path order
-- [ ] `analyze_files()` sorts input files before assigning FileIds (hard guarantee)
-- [ ] Test: Same files analyzed twice produce identical SymbolIds
-- [ ] Test: Same files analyzed twice produce identical ReferenceIds
-- [ ] Test: Files provided in different order produce identical IDs
-- [ ] Golden test JSON is byte-for-byte reproducible across runs
-- [ ] Path normalization uses forward slashes (no lowercasing—case matters on Linux/macOS)
+- [x] `collect_python_files()` returns files in sorted path order
+- [x] `analyze_files()` sorts input files before assigning FileIds (hard guarantee)
+- [x] Test: Same files analyzed twice produce identical SymbolIds
+- [x] Test: Same files analyzed twice produce identical ReferenceIds
+- [x] Test: Files provided in different order produce identical IDs
+- [x] Golden test JSON is byte-for-byte reproducible across runs
+- [x] Path normalization uses forward slashes (no lowercasing—case matters on Linux/macOS)
 
 ---
 
@@ -3317,13 +3317,13 @@ cargo nextest run --workspace
 #### Verification Checklist {#improvement-verification}
 
 **After all improvements (Issues 1-4):**
-- [ ] All 1025+ existing tests still pass
-- [ ] New determinism tests added (Issue 1)
+- [x] All 1025+ existing tests still pass (1028 tests)
+- [x] New determinism tests added (Issue 1)
 - [ ] Import binding test corrected (Issue 2)
-- [ ] Contract C8 (determinism) is satisfied
+- [x] Contract C8 (determinism) is satisfied
 - [ ] Contract C1 matches implementation (either code or docs updated)
 - [ ] Scope spans are computed and populated (Issue 4)
-- [ ] `cargo nextest run -p tugtool-python --test acceptance_criteria` passes
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo nextest run -p tugtool-python --test acceptance_criteria` passes
+- [x] `cargo nextest run --workspace` passes
 
 **Commit:** `fix(python): address implementation gaps from Step 9/10 review`

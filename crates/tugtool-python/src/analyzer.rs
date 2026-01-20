@@ -406,6 +406,21 @@ pub fn analyze_files(
     }
 
     // ====================================================================
+    // Contract C8: Deterministic ID Assignment
+    // ====================================================================
+    // Sort files by path to ensure deterministic FileId/SymbolId/ReferenceId
+    // assignment. This is the HARD GUARANTEE - even if callers don't sort,
+    // analyze_files() produces identical IDs for the same set of files.
+    //
+    // Sorting rules (from Contract C8):
+    // - Paths normalized with forward slashes (Rust handles this via String comparison)
+    // - Case-sensitive comparison (no lowercasing - case matters on Linux/macOS)
+    // - Lexicographic ordering
+    let mut sorted_files: Vec<(&String, &String)> =
+        files.iter().map(|(p, c)| (p, c)).collect();
+    sorted_files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
+
+    // ====================================================================
     // Pass 1: Single-File Analysis
     // ====================================================================
     // Parse each file using native CST parser and collect analysis results.
@@ -416,13 +431,13 @@ pub fn analyze_files(
     // We track all paths regardless of analysis success/failure because:
     // - A file that failed to parse still exists and can be an import target
     // - Pass 3 needs to know which paths exist in the workspace
-    bundle.workspace_files = files.iter().map(|(path, _)| path.clone()).collect();
+    bundle.workspace_files = sorted_files.iter().map(|(path, _)| (*path).clone()).collect();
 
     // Keep a map of file_id -> content for content hash computation in Pass 2
     let mut file_contents: HashMap<FileId, &str> = HashMap::new();
 
-    // Analyze each file
-    for (path, content) in files {
+    // Analyze each file (in sorted order for deterministic ID assignment)
+    for (path, content) in sorted_files {
         let file_id = store.next_file_id();
         file_contents.insert(file_id, content.as_str());
         match analyze_file(file_id, path, content) {
