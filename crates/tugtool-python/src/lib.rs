@@ -5,7 +5,7 @@
 //!
 //! # Architecture
 //!
-//! The crate uses [`tugtool_cst`] for parsing Python source code into a Concrete
+//! The crate uses [`tugtool_python_cst`] for parsing Python source code into a Concrete
 //! Syntax Tree (CST). Analysis is performed via visitor collectors that extract
 //! semantic information (scopes, bindings, references, etc.).
 //!

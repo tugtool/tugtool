@@ -7,7 +7,7 @@
 //! - Reference resolution via scope chain
 //! - Import resolution for workspace files
 //!
-//! Uses Rust CST parsing via tugtool-cst for zero-dependency analysis.
+//! Uses Rust CST parsing via tugtool-python-cst for zero-dependency analysis.
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::facts::{
@@ -728,7 +728,7 @@ pub fn analyze_files(
     let mut type_trackers: HashMap<FileId, TypeTracker> = HashMap::new();
 
     // Collect all class inheritance info across files for building InheritanceInfo
-    let mut all_class_inheritance: Vec<(FileId, tugtool_cst::ClassInheritanceInfo)> = Vec::new();
+    let mut all_class_inheritance: Vec<(FileId, tugtool_python_cst::ClassInheritanceInfo)> = Vec::new();
 
     // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
     for (path, content) in files {
@@ -977,7 +977,7 @@ pub fn analyze_files(
 
 /// Analyze a single Python file using the native Rust CST parser.
 ///
-/// This function parses the file using tugtool-cst and collects scopes,
+/// This function parses the file using tugtool-python-cst and collects scopes,
 /// bindings, references, and imports with zero Python dependencies.
 ///
 /// # Arguments
@@ -1610,7 +1610,7 @@ fn resolve_in_enclosing_function(
 
 /// Convert local imports from native CST analysis to LocalImport format.
 fn convert_imports(
-    imports: &[tugtool_cst::ImportInfo],
+    imports: &[tugtool_python_cst::ImportInfo],
     workspace_files: &HashSet<String>,
 ) -> Vec<LocalImport> {
     let mut result = Vec::new();
@@ -1638,8 +1638,8 @@ fn convert_imports(
         let resolved_file = resolve_module_to_file(&import.module, workspace_files);
 
         let kind = match import.kind {
-            tugtool_cst::ImportKind::Import => "import",
-            tugtool_cst::ImportKind::From => "from",
+            tugtool_python_cst::ImportKind::Import => "import",
+            tugtool_python_cst::ImportKind::From => "from",
         };
 
         result.push(LocalImport {

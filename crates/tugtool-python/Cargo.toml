@@ -8,7 +8,7 @@ description = "Python language support for tugtool using native Rust CST parser"
 
 [dependencies]
 tugtool-core = { path = "../tugtool-core" }
-tugtool-cst = { path = "../tugtool-cst" }
+tugtool-python-cst = { path = "../tugtool-python-cst" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"

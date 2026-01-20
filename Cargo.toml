@@ -6,8 +6,8 @@ resolver = "2"
 members = [
     "crates/tugtool",
     "crates/tugtool-core",
-    "crates/tugtool-cst",
-    "crates/tugtool-cst-derive",
+    "crates/tugtool-python-cst",
+    "crates/tugtool-python-cst-derive",
     "crates/tugtool-python",
     "crates/tugtool-rust",
 ]

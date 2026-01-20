@@ -13,7 +13,7 @@
 //! - Functions/classes at module level (binding + import tracking)
 //! - Method calls via self.method() (syntactic pattern)
 //!
-//! Uses Rust CST parsing via tugtool-cst for zero-dependency operations.
+//! Uses Rust CST parsing via tugtool-python-cst for zero-dependency operations.
 //! See [`run`] and [`analyze_impact`] for the main entry points.
 
 use std::collections::{HashMap, HashSet};

@@ -1466,7 +1466,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugtool-cst"
+name = "tugtool-python"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tugtool-core",
+ "tugtool-python-cst",
+ "walkdir",
+]
+
+[[package]]
+name = "tugtool-python-cst"
 version = "0.1.0"
 dependencies = [
  "annotate-snippets",
@@ -1482,31 +1497,16 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tugtool-core",
- "tugtool-cst-derive",
+ "tugtool-python-cst-derive",
 ]
 
 [[package]]
-name = "tugtool-cst-derive"
+name = "tugtool-python-cst-derive"
 version = "0.1.0"
 dependencies = [
  "quote",
  "syn",
  "trybuild",
-]
-
-[[package]]
-name = "tugtool-python"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tracing",
- "tugtool-core",
- "tugtool-cst",
- "walkdir",
 ]
 
 [[package]]

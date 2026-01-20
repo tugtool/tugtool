@@ -3,9 +3,9 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-//! CST Bridge: Native Rust analysis using tugtool-cst.
+//! CST Bridge: Native Rust analysis using tugtool-python-cst.
 //!
-//! This module provides the bridge between the native Rust CST parser (tugtool-cst)
+//! This module provides the bridge between the native Rust CST parser (tugtool-python-cst)
 //! and the tugtool analysis infrastructure.
 //!
 //! # Architecture
@@ -18,7 +18,7 @@
 //! seamless integration with the rest of the analyzer infrastructure.
 
 use thiserror::Error;
-use tugtool_cst::{
+use tugtool_python_cst::{
     parse_module, prettify_error,
     // P0 visitors
     BindingCollector, BindingInfo as CstBindingInfo, BindingKind as CstBindingKind,
@@ -45,11 +45,11 @@ use crate::types::{BindingInfo, ReferenceInfo, ScopeInfo, ScopeSpanInfo, SpanInf
 /// Errors that can occur during native CST operations.
 #[derive(Debug, Error)]
 pub enum CstBridgeError {
-    /// Parse error from tugtool-cst.
+    /// Parse error from tugtool-python-cst.
     #[error("parse error: {message}")]
     ParseError { message: String },
 
-    /// Rename error from tugtool-cst.
+    /// Rename error from tugtool-python-cst.
     #[error("rename error: {0}")]
     RenameError(String),
 }

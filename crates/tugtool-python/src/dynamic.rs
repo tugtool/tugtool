@@ -299,7 +299,7 @@ pub fn collect_dynamic_warnings(
     symbol_name: &str,
     mode: DynamicMode,
 ) -> Result<Vec<DynamicWarning>, std::io::Error> {
-    use tugtool_cst::{parse_module, DynamicPatternDetector};
+    use tugtool_python_cst::{parse_module, DynamicPatternDetector};
 
     let mut all_warnings = Vec::new();
 

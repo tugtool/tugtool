@@ -1005,25 +1005,25 @@ pub fn parse_module_with_positions<'a>(
 - Updated all import statements
 
 **Tasks:**
-- [ ] Rename `crates/tugtool-cst-derive/` directory to `crates/tugtool-python-cst-derive/`
-- [ ] Rename `crates/tugtool-cst/` directory to `crates/tugtool-python-cst/`
-- [ ] Update `crates/tugtool-python-cst-derive/Cargo.toml`: change `name = "tugtool-cst-derive"` to `name = "tugtool-python-cst-derive"`
-- [ ] Update `crates/tugtool-python-cst/Cargo.toml`: change `name = "tugtool-cst"` to `name = "tugtool-python-cst"`
-- [ ] Update `crates/tugtool-python-cst/Cargo.toml`: update dependency on derive crate
-- [ ] Update workspace `Cargo.toml`: update member paths
-- [ ] Update `crates/tugtool-python/Cargo.toml`: update dependency name
-- [ ] Update all `use tugtool_cst::` → `use tugtool_python_cst::`
-- [ ] Update all `use tugtool_cst_derive::` → `use tugtool_python_cst_derive::`
-- [ ] Update CLAUDE.md documentation
+- [x] Rename `crates/tugtool-cst-derive/` directory to `crates/tugtool-python-cst-derive/`
+- [x] Rename `crates/tugtool-cst/` directory to `crates/tugtool-python-cst/`
+- [x] Update `crates/tugtool-python-cst-derive/Cargo.toml`: change `name = "tugtool-cst-derive"` to `name = "tugtool-python-cst-derive"`
+- [x] Update `crates/tugtool-python-cst/Cargo.toml`: change `name = "tugtool-cst"` to `name = "tugtool-python-cst"`
+- [x] Update `crates/tugtool-python-cst/Cargo.toml`: update dependency on derive crate
+- [x] Update workspace `Cargo.toml`: update member paths
+- [x] Update `crates/tugtool-python/Cargo.toml`: update dependency name
+- [x] Update all `use tugtool_cst::` → `use tugtool_python_cst::`
+- [x] Update all `use tugtool_cst_derive::` → `use tugtool_python_cst_derive::`
+- [x] Update CLAUDE.md documentation
 
 **Tests:**
-- [ ] `cargo build --workspace` succeeds
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build --workspace` succeeds
+- [x] `cargo nextest run --workspace` passes
 
 **Checkpoint:**
-- [ ] All crates build successfully
-- [ ] All tests pass
-- [ ] No references to old crate names remain
+- [x] All crates build successfully
+- [x] All tests pass
+- [x] No references to old crate names remain
 
 **Rollback:**
 - Revert directory renames and Cargo.toml changes

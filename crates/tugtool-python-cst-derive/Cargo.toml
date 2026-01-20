@@ -1,0 +1,23 @@
+# Proc macro helpers for tugtool-python-cst
+# Adapted from LibCST's libcst_derive crate, with PyO3 code removed
+
+[package]
+name = "tugtool-python-cst-derive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Proc macro helpers for tugtool-python-cst CST types."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+
+[dev-dependencies]
+trybuild = "1.0"
+
+[lints]
+workspace = true

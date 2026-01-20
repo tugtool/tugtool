@@ -31,14 +31,15 @@ crates/
 ├── tugtool-python/   # Python language support (feature-gated)
 │   └── src/
 │       ├── analyzer.rs   # Semantic analysis
-│       ├── cst_bridge.rs # Native CST bridge to tugtool-cst
+│       ├── cst_bridge.rs # Native CST bridge to tugtool-python-cst
 │       ├── ops/          # Refactoring operations (rename, etc.)
 │       └── ...
-├── tugtool-cst/      # Native Python CST parser (adapted from LibCST)
+├── tugtool-python-cst/      # Native Python CST parser (adapted from LibCST)
 │   └── src/
 │       ├── parser/       # PEG-based Python parser
 │       ├── visitor/      # Visitor infrastructure and collectors
 │       └── ...
+├── tugtool-python-cst-derive/   # Proc macro helpers for tugtool-python-cst
 └── tugtool-rust/     # Rust language support (placeholder)
 ```
 
@@ -147,7 +148,7 @@ All errors use stable codes for JSON output (Table T26):
 
 Python refactoring uses a native Rust CST parser (adapted from LibCST):
 
-1. **Native parsing** - Pure Rust parser in `tugtool-cst` crate
+1. **Native parsing** - Pure Rust parser in `tugtool-python-cst` crate
 2. **Visitor infrastructure** - Collectors for scopes, bindings, references, etc.
 3. **Facts collection** - Builds symbol/reference graph via `cst_bridge`
 4. **Rename execution** - Applies transformations via native CST
