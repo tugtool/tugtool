@@ -147,12 +147,12 @@ pub enum DynamicMode {
 
 /// Analyze dynamic patterns and generate warnings.
 ///
-/// This function takes the dynamic patterns detected by the worker and converts
+/// This function takes the dynamic patterns detected by the CST analysis and converts
 /// them to structured warnings with location information.
 ///
 /// # Arguments
 ///
-/// * `patterns` - Dynamic patterns from the worker
+/// * `patterns` - Dynamic patterns from the CST analysis
 /// * `file_path` - Path to the file being analyzed
 /// * `symbol_name` - Optional symbol name being renamed (for aggressive mode matching)
 /// * `mode` - Response mode (safe or aggressive)

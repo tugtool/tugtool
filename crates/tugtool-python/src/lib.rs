@@ -1,17 +1,39 @@
-//! Python adapter: LibCST-based analyzer and rewriter.
+//! Python language support for tugtool using native Rust CST analysis.
 //!
-//! This module provides Python language support for tug:
+//! This crate provides Python semantic analysis and refactoring operations
+//! using a pure Rust parser adapted from LibCST. No Python installation is required.
 //!
-//! - `analyzer`: Python symbol/reference analysis with scope chain resolution
-//! - `type_tracker`: Level 1-2 type inference from assignments and annotations
-//! - `dynamic`: Dynamic pattern detection (getattr, eval, etc.) with warnings
-//! - `files`: Python file collection utilities
-//! - `lookup`: Symbol lookup utilities for finding symbols at locations
-//! - `validation`: Python identifier validation
-//! - `verification`: Python verification pipeline (compileall, pytest, mypy)
-//! - `ops`: Python refactoring operations (rename, etc.)
-//! - `cst_bridge`: Native Rust CST analysis
-//! - `types`: Shared data types for Python analysis
+//! # Architecture
+//!
+//! The crate uses [`tugtool_cst`] for parsing Python source code into a Concrete
+//! Syntax Tree (CST). Analysis is performed via visitor collectors that extract
+//! semantic information (scopes, bindings, references, etc.).
+//!
+//! # Modules
+//!
+//! - [`analyzer`]: Multi-file semantic analysis with scope chain resolution
+//! - [`cst_bridge`]: Bridge layer between native CST and tugtool types
+//! - [`type_tracker`]: Level 1-2 type inference from assignments and annotations
+//! - [`dynamic`]: Dynamic pattern detection (getattr, eval, etc.) with warnings
+//! - [`files`]: Python file collection utilities
+//! - [`lookup`]: Symbol lookup utilities for finding symbols at locations
+//! - [`validation`]: Python identifier validation
+//! - [`verification`]: Python verification pipeline (compileall, pytest, mypy)
+//! - [`ops`]: Python refactoring operations (rename, etc.)
+//! - [`types`]: Shared data types for Python analysis
+//!
+//! # Example
+//!
+//! ```ignore
+//! use tugtool_python::analyzer::analyze_files;
+//! use tugtool_core::facts::FactsStore;
+//!
+//! let files = vec![
+//!     ("main.py".to_string(), "def hello(): pass".to_string()),
+//! ];
+//! let mut store = FactsStore::new();
+//! let bundle = analyze_files(&files, &mut store).expect("analysis failed");
+//! ```
 
 pub mod analyzer;
 pub mod cst_bridge;

@@ -2992,17 +2992,17 @@ These types are used throughout tugtool-python via `cst_bridge.rs`. Strategy: Ty
 - Updated crate documentation
 
 **Tasks:**
-- [ ] Update CLAUDE.md to remove Python worker references
-- [ ] Update tugtool-python crate-level documentation
-- [ ] Remove any references to `python-worker` feature
-- [ ] Document the native-only architecture
+- [x] Update CLAUDE.md to remove Python worker references
+- [x] Update tugtool-python crate-level documentation
+- [x] Remove any references to `python-worker` feature
+- [x] Document the native-only architecture
 
 **Tests:**
-- [ ] Golden: Documentation is accurate
+- [x] Golden: Documentation is accurate
 
 **Checkpoint:**
-- [ ] `cargo doc -p tugtool-python` succeeds
-- [ ] No broken doc links
+- [x] `cargo doc -p tugtool-python` succeeds
+- [x] No broken doc links
 
 **Rollback:**
 - Revert documentation changes

@@ -86,7 +86,7 @@ pub struct BindingInfo {
     pub name: String,
     /// The kind of binding.
     pub kind: BindingKind,
-    /// The scope path where this binding was defined (e.g., ["<module>", "Foo", "bar"]).
+    /// The scope path where this binding was defined (e.g., `["<module>", "Foo", "bar"]`).
     pub scope_path: Vec<String>,
     /// Source span for the binding name (byte offsets).
     pub span: Option<Span>,

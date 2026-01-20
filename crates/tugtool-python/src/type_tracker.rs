@@ -50,7 +50,7 @@ pub type TypeTrackerResult<T> = Result<T, TypeTrackerError>;
 /// Tracks type information from assignments and annotations within a single file.
 ///
 /// The TypeTracker processes assignment and annotation information from the
-/// LibCST worker and builds a scope-aware type map. Types are resolved through:
+/// CST analysis and builds a scope-aware type map. Types are resolved through:
 ///
 /// 1. Explicit annotations (Level 2): `x: int` → x has type int
 /// 2. Direct constructor calls (Level 1): `x = MyClass()` → x has type MyClass
@@ -107,7 +107,7 @@ impl TypeTracker {
         }
     }
 
-    /// Process assignment information from the worker (Level 1 + Level 3).
+    /// Process assignment information from the CST analysis (Level 1 + Level 3).
     ///
     /// This populates the internal type map with constructor-based types
     /// and prepares for type propagation. Also handles return type propagation
@@ -140,7 +140,7 @@ impl TypeTracker {
         }
     }
 
-    /// Process annotation information from the worker (Level 2 + Level 3).
+    /// Process annotation information from the CST analysis (Level 2 + Level 3).
     ///
     /// This populates the annotated type map with types from:
     /// - Function parameters: `def foo(x: int)`
@@ -825,7 +825,7 @@ mod tests {
             // a = b = MyClass() should give both a and b type MyClass
             let mut tracker = TypeTracker::new();
 
-            // The Python worker sends separate assignments for each target
+            // The CST analysis sends separate assignments for each target
             let assignments = vec![
                 make_assignment("a", vec!["<module>"], Some("MyClass"), None),
                 make_assignment("b", vec!["<module>"], Some("MyClass"), None),

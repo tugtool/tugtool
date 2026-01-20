@@ -14,14 +14,14 @@
 //! deterministic identifier during construction. NodeIds are assigned in pre-order
 //! traversal order (parent before children, left-to-right).
 //!
-//! ```ignore
-//! // Given code: x = 1
-//! // NodeId assignment order:
-//! //   NodeId(0) -> Module
-//! //   NodeId(1) -> Statement
-//! //   NodeId(2) -> Assign
-//! //   NodeId(3) -> Name "x"
-//! //   NodeId(4) -> Integer "1"
+//! ```text
+//! Given code: x = 1
+//! NodeId assignment order:
+//!   NodeId(0) -> Module
+//!   NodeId(1) -> Statement
+//!   NodeId(2) -> Assign
+//!   NodeId(3) -> Name "x"
+//!   NodeId(4) -> Integer "1"
 //! ```
 //!
 //! ## SpanTable

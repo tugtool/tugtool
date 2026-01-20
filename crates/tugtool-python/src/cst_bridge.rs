@@ -6,8 +6,7 @@
 //! CST Bridge: Native Rust analysis using tugtool-cst.
 //!
 //! This module provides the bridge between the native Rust CST parser (tugtool-cst)
-//! and the existing Python analysis infrastructure. It enables zero-Python-dependency
-//! analysis when the `native-cst` feature is enabled.
+//! and the tugtool analysis infrastructure.
 //!
 //! # Architecture
 //!
@@ -15,7 +14,7 @@
 //! - [`parse_and_analyze`]: Parse Python source and collect analysis data (scopes, bindings, references)
 //! - [`rewrite_batch`]: Apply batch rename operations to source code
 //!
-//! These functions produce output compatible with the existing worker types, allowing
+//! These functions produce output compatible with the shared types, allowing
 //! seamless integration with the rest of the analyzer infrastructure.
 
 use thiserror::Error;
@@ -103,7 +102,7 @@ pub struct NativeAnalysisResult {
 // Type Conversions
 // ============================================================================
 
-/// Convert a tugtool_core Span to worker SpanInfo.
+/// Convert a tugtool_core Span to SpanInfo.
 fn span_to_span_info(span: &Span) -> SpanInfo {
     SpanInfo {
         start: span.start as usize,
@@ -131,8 +130,8 @@ impl From<CstScopeInfo> for ScopeInfo {
         // Convert byte span to line/col span if available
         let span = cst_scope.span.as_ref().map(|_s| {
             // For now, we don't have line/col info from the native collector
-            // The scope span in the native collector is byte-based, but the worker
-            // protocol uses line/col. We'll need to compute this from source.
+            // The scope span in the native collector is byte-based.
+            // We'll need to compute this from source.
             // For initial implementation, we'll leave this as a placeholder.
             ScopeSpanInfo {
                 start_line: 0,

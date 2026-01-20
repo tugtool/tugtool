@@ -1964,3 +1964,161 @@ All Step 8 sub-steps completed:
 **Milestone M04: Python Worker Removal Complete - ACHIEVED**
 
 ---
+
+### Step 10.9: Remove Now-Extraneous `native` From All Names & Symbols - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Plan file Step 10.9 specification (lines 2881-2979)
+- analyzer.rs module structure
+- ops/rename.rs module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove `mod native { }` wrapper from analyzer.rs | Done |
+| Remove `mod native { }` wrapper from ops/rename.rs | Done |
+| Rename `analyze_file_native()` → `analyze_file()` | Done |
+| Rename `build_scopes_from_native()` → `build_scopes()` | Done |
+| Rename `collect_symbols_from_native()` → `collect_symbols()` | Done |
+| Rename `convert_native_imports()` → `convert_imports()` | Done |
+| Rename `run_native()` → `run()` | Done |
+| Rename `analyze_impact_native()` → `analyze_impact()` | Done |
+| Rename `find_override_methods_native()` → `find_override_methods()` | Done |
+| Rename `AnalyzerError::NativeCst` → `AnalyzerError::Cst` | Done |
+| Rename `RenameError::NativeCst` → `RenameError::Cst` | Done |
+| Update all import paths and function calls | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Removed `mod native` wrapper, renamed functions and error variant
+- `crates/tugtool-python/src/ops/rename.rs` - Removed `mod native` wrapper, renamed functions and error variant
+- `crates/tugtool-python/src/error_bridges.rs` - Updated match arm for renamed error variant
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Updated imports
+- `crates/tugtool/src/cli.rs` - Updated imports and function calls
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1025 tests passed
+
+**Checkpoints Verified:**
+- `cargo build --workspace` succeeds: PASS
+- No `_native` suffixes remain in public API: PASS
+- No `::native::` paths remain: PASS
+- `cargo nextest run --workspace` passes: PASS (1025 tests)
+
+**Key Implementation Details:**
+1. Removed `pub mod native { }` wrappers by dedenting all code within
+2. Used `replace_all` edits to rename functions consistently across files
+3. Updated error variant names from `NativeCst` to `Cst`
+4. Fixed import path in cli.rs that still referenced the deleted `native` submodule
+
+---
+
+### Step 10.10: Update Documentation - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Plan file Step 10.10 specification (lines 2984-3010)
+- CLAUDE.md project documentation
+- tugtool-python/src/lib.rs crate documentation
+- tugtool-cst documentation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update CLAUDE.md to remove Python worker references | Done |
+| Update tugtool-python crate-level documentation | Done |
+| Remove any references to `python-worker` feature | Done |
+| Document the native-only architecture | Done |
+
+**Files Modified:**
+- `CLAUDE.md`:
+  - Updated architecture diagram to include `tugtool-cst` crate
+  - Changed feature flag description from "via LibCST" to "via native CST"
+  - Removed `python/` and `workers/` from session directory items
+  - Removed `TUG_PYTHON` environment variable
+  - Rewrote Python Language Support section for native-only architecture
+
+- `crates/tugtool-python/src/lib.rs`:
+  - Completely rewrote module documentation
+  - Added Architecture section explaining tugtool-cst dependency
+  - Added example code demonstrating `analyze_files` usage
+
+- `crates/tugtool-python/src/dynamic.rs`:
+  - Updated doc comments: "worker" → "CST analysis"
+
+- `crates/tugtool-python/src/cst_bridge.rs`:
+  - Updated module-level documentation
+  - Removed feature flag references from docs
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated doc comments
+  - Renamed variables `worker_assignments` → `cst_assignments`
+  - Renamed variables `worker_annotations` → `cst_annotations`
+
+- `crates/tugtool-python/src/type_tracker.rs`:
+  - Updated doc comments: "worker" → "CST analysis"
+
+- `crates/tugtool-cst/benches/parser_bench.rs`:
+  - Updated performance target docs to reflect 18-19x improvement
+
+- `crates/tugtool-cst/src/visitor/binding.rs`:
+  - Fixed HTML escape in doc comment
+
+- `crates/tugtool-cst/src/nodes/traits.rs`:
+  - Changed `ignore` code block to `text` for proper rustdoc
+
+**Test Results:**
+- `cargo doc -p tugtool-python --no-deps`: SUCCESS
+- `cargo doc -p tugtool-cst --no-deps`: SUCCESS
+- `cargo nextest run --workspace`: 1025 tests passed
+
+**Checkpoints Verified:**
+- `cargo doc -p tugtool-python` succeeds: PASS
+- `cargo doc -p tugtool-cst` succeeds: PASS
+- No broken doc links: PASS
+- `cargo nextest run --workspace` passes: PASS (1025 tests)
+
+**Key Implementation Details:**
+1. CLAUDE.md now accurately reflects the native-only architecture
+2. Crate documentation explains the tugtool-cst dependency and zero-Python requirement
+3. All "worker" terminology removed from doc comments in favor of "CST analysis"
+4. Fixed two rustdoc warnings in tugtool-cst (HTML tag escape, code block syntax)
+
+---
+
+### Step 10 Summary - COMPLETE
+
+**Completed:** 2026-01-19
+
+All Step 10 sub-steps completed:
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 10.1 | Verify types.rs Module Complete | Complete |
+| 10.2 | Delete Python Worker Files | Complete |
+| 10.3 | Update Cargo.toml | Complete |
+| 10.4 | Simplify lib.rs | Complete |
+| 10.5 | Update Imports Across Codebase | Complete |
+| 10.6 | Simplify analyzer.rs | Complete |
+| 10.7 | Simplify ops/rename.rs | Complete |
+| 10.8 | Clean up error handling | Complete |
+| 10.9 | Remove `native` from names/symbols | Complete |
+| 10.10 | Update Documentation | Complete |
+
+**Final Step 10 Results:**
+- Single, clean native Python architecture (no subprocess dependencies)
+- ~7,000+ lines of code removed (including Python worker script)
+- 7 files deleted entirely
+- 2 dependencies removed (`which`, `dirs`)
+- 2 feature flags removed (`native-cst`, `python-worker`)
+- Clean naming with no extraneous "native" prefixes/suffixes
+- Updated documentation reflecting native-only architecture
+- All 1025 tests pass
+
+**Phase 3 - Native Python Refactoring: COMPLETE**
+
+---

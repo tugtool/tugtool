@@ -179,7 +179,7 @@ pub struct FileAnalysis {
     pub file_id: FileId,
     /// File path.
     pub path: String,
-    /// CST ID from worker (for rewriting).
+    /// CST ID (for rewriting).
     pub cst_id: String,
     /// Scopes in the file.
     pub scopes: Vec<Scope>,
@@ -393,7 +393,7 @@ pub type ScopeIdMap = HashMap<(FileId, ScopeId), CoreScopeId>;
 /// # Behavioral Contract
 ///
 /// See plans/phase-3.md Step 9.0 for the full behavioral contracts (C1-C8)
-/// that this function must satisfy for parity with the original Python worker.
+/// that define the expected behavior of this function.
 pub fn analyze_files(
     files: &[(String, String)],
     store: &mut FactsStore,
@@ -738,7 +738,7 @@ pub fn analyze_files(
         let mut tracker = TypeTracker::new();
 
         // Convert CST AssignmentInfo to types AssignmentInfo for TypeTracker
-        let worker_assignments: Vec<crate::types::AssignmentInfo> = native_result
+        let cst_assignments: Vec<crate::types::AssignmentInfo> = native_result
             .assignments
             .iter()
             .map(|a| crate::types::AssignmentInfo {
@@ -761,7 +761,7 @@ pub fn analyze_files(
             .collect();
 
         // Convert CST AnnotationInfo to types AnnotationInfo for TypeTracker
-        let worker_annotations: Vec<crate::types::AnnotationInfo> = native_result
+        let cst_annotations: Vec<crate::types::AnnotationInfo> = native_result
             .annotations
             .iter()
             .map(|a| crate::types::AnnotationInfo {
@@ -782,8 +782,8 @@ pub fn analyze_files(
             })
             .collect();
 
-        tracker.process_assignments(&worker_assignments);
-        tracker.process_annotations(&worker_annotations);
+        tracker.process_assignments(&cst_assignments);
+        tracker.process_annotations(&cst_annotations);
         tracker.resolve_types();
 
         type_trackers.insert(file_id, tracker);

@@ -31,8 +31,13 @@ crates/
 ├── tugtool-python/   # Python language support (feature-gated)
 │   └── src/
 │       ├── analyzer.rs   # Semantic analysis
-│       ├── worker.rs     # LibCST worker process
-│       ├── rename.rs     # Rename refactoring
+│       ├── cst_bridge.rs # Native CST bridge to tugtool-cst
+│       ├── ops/          # Refactoring operations (rename, etc.)
+│       └── ...
+├── tugtool-cst/      # Native Python CST parser (adapted from LibCST)
+│   └── src/
+│       ├── parser/       # PEG-based Python parser
+│       ├── visitor/      # Visitor infrastructure and collectors
 │       └── ...
 └── tugtool-rust/     # Rust language support (placeholder)
 ```
@@ -43,7 +48,7 @@ The `tugtool` crate supports these feature flags:
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `python` | Yes | Python language support via LibCST |
+| `python` | Yes | Python language support via native CST |
 | `rust` | No | Rust language support (placeholder) |
 | `mcp` | Yes | Model Context Protocol server |
 | `full` | No | Enable all features |
@@ -122,13 +127,10 @@ cargo doc --workspace --open
 
 Tugtool stores session data in `.tug/` within the workspace:
 - `session.json` - Session metadata
-- `python/` - Python toolchain config and cache
 - `snapshots/` - Workspace snapshots
-- `workers/` - Worker process artifacts
 
 ### Environment Variables
 
-- `TUG_PYTHON` - Override Python interpreter path
 - `TUG_UPDATE_GOLDEN` - Enable golden file updates in tests
 - `TUG_SANDBOX` - Set when running in sandbox mode
 
@@ -143,19 +145,14 @@ All errors use stable codes for JSON output (Table T26):
 
 ## Python Language Support
 
-Python refactoring uses LibCST for parsing and transformation:
+Python refactoring uses a native Rust CST parser (adapted from LibCST):
 
-1. **Environment resolution** - Finds Python with libcst installed
-2. **Worker process** - Spawns LibCST worker for analysis
-3. **Facts collection** - Builds symbol/reference graph
-4. **Rename execution** - Applies transformations via CST
+1. **Native parsing** - Pure Rust parser in `tugtool-cst` crate
+2. **Visitor infrastructure** - Collectors for scopes, bindings, references, etc.
+3. **Facts collection** - Builds symbol/reference graph via `cst_bridge`
+4. **Rename execution** - Applies transformations via native CST
 
-Ensure libcst is available:
-```bash
-pip install libcst
-# Or use tug's managed venv:
-tug toolchain python setup
-```
+No Python installation is required. All analysis is performed natively in Rust.
 
 ## MCP Server
 
