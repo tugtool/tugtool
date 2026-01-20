@@ -3217,9 +3217,47 @@ Change the test to:
 
 ---
 
-#### Issue 3: find_symbol_at_location() Contract Deviation {#issue-3-contract-deviation}
+### Span Infrastructure: Issues 3, 4, and 5 {#span-infrastructure}
+
+Issues 3, 4, and 5 all relate to **span computation** in the native CST infrastructure. This section provides unified definitions and implementation plans for all three span types.
+
+#### Span Type Overview {#span-type-overview}
+
+Tugtool uses three distinct span types, each serving a different purpose:
+
+| Span Type | Entity | Purpose | Question Answered |
+|-----------|--------|---------|-------------------|
+| **Identifier Span** (`decl_span`) | `Symbol`, `Reference` | Rename operations | "Where is the identifier text to replace?" |
+| **Lexical Span** (`ScopeInfo.span`) | `ScopeInfo` | Containment queries | "Is position X lexically inside scope Y?" |
+| **Definition Span** (`def_span`) | `Symbol` | Code extraction | "What is the complete extractable code for this symbol?" |
+
+**Visual Example:**
+
+```python
+@decorator           # <-- Definition span starts here (includes decorator)
+def foo(x: int):     # <-- Lexical span starts at 'def'; Identifier span covers 'foo'
+    return x > 0     # <-- Both lexical and definition spans end here
+```
+
+| Span Type | Covers in Example |
+|-----------|-------------------|
+| Identifier span | `foo` (3 bytes) |
+| Lexical span | `def foo(x: int):\n    return x > 0` (excludes decorator) |
+| Definition span | `@decorator\ndef foo(x: int):\n    return x > 0` (includes decorator) |
+
+**Key Differences:**
+
+1. **Identifier spans** are narrow: just the identifier text. Used for text replacement in rename.
+2. **Lexical spans** exclude decorators: they define the lexical region where variables resolve. Decorators execute before the scope exists.
+3. **Definition spans** include decorators: they define the complete extractable unit. When moving a function, you want its decorators too.
+
+---
+
+#### Issue 3: Identifier Spans (RESOLVED) {#issue-3-identifier-spans}
 
 **Priority:** P1 (semantic correctness for edge cases)
+
+**Status:** RESOLVED - Documentation updated to reflect implementation.
 
 **Problem:** The `find_symbol_at_location()` implementation does not implement the full tie-breaking algorithm specified in Contract C1.
 
@@ -3227,49 +3265,50 @@ Change the test to:
 
 **Current behavior:** "symbols first; if none, return first matching reference; otherwise ambiguous"
 
-**Contract C1 specifies:**
+**Contract C1 originally specified:**
 1. Prefer SMALLEST span (most specific/innermost)
 2. If tied, prefer by kind: Method > Function > Class > Variable
 3. For references: also prefer smallest span
 4. If still tied: AmbiguousSymbol error
 
 **Analysis:**
-The deviation may be intentional. In practice, the native CST produces name-only spans (just the identifier, not the full declaration), which means span overlap is unlikely. The original Python worker may have behaved the same way.
+The deviation is intentional and correct. The native CST produces **identifier-only spans** (just the identifier, not the full declaration), which means span overlap is extremely rare. Two symbols at the same location would need literally identical names at identical byte positions.
 
-**Impact:**
-- Nested/overlapping declarations may not resolve to the innermost one
-- Edge cases with overlapping spans could produce incorrect results
-- Contract documentation does not match implementation
+**Resolution:** Chose Option B (update documentation). Contract C1 updated to document that spans are identifier-only (covering just the identifier, not the full declaration). This means:
+- Nested symbols have non-overlapping spans, so tie-breaking by span size is unnecessary
+- Tests verify correct resolution by confirming only one span matches each click location
+- AC-1 checklist updated to reflect identifier span behavior
+- New test `spans_are_identifier_only_not_full_declaration` explicitly verifies span behavior
+- Test `truly_ambiguous_symbols_return_error` verifies AmbiguousSymbol error exists
 
-**Fix Required (choose one):**
-1. **Option A:** Implement the full tie-breaking algorithm as specified in C1
-2. **Option B:** Update Contract C1 documentation to reflect actual behavior and document why overlap is not expected (name-only spans)
+**Identifier Span Semantics by Symbol Kind:**
 
-**Important:** If choosing Option B (update docs), also update the acceptance criteria checklists (AC-1) to remove or revise assertions about tie-break behavior that isn't implemented. Otherwise, tests asserting "smallest span wins" will pass vacuously (no overlap ever happens) rather than verifying the intended behavior.
+| Symbol Kind | Identifier Span Covers | Example |
+|-------------|------------------------|---------|
+| Function | Identifier after `def`/`async def` | `foo` in `def foo():` |
+| Method | Identifier after `def` | `bar` in `def bar(self):` |
+| Class | Identifier after `class` | `Baz` in `class Baz:` |
+| Variable | Target identifier | `x` in `x = 1` |
+| Parameter | Parameter name | `y` in `def f(y):` |
+| Import | Imported name or alias | `path` in `from os import path` |
 
 **Acceptance Criteria:**
 - [x] Either implement C1 tie-breaking OR update C1 to match actual behavior
 - [x] If updating documentation: explain why spans don't overlap in practice
-- [x] If updating documentation: revise AC-1 checklist items for tie-breaking (lines 1954-1957 in Step 9.0)
+- [x] If updating documentation: revise AC-1 checklist items for tie-breaking
 - [x] Test nested symbol resolution (method inside class)
 - [x] Test truly ambiguous case produces AmbiguousSymbol error
 - [x] Document the chosen approach in the contract
 
-**Resolution:** Chose Option B (update documentation). Contract C1 updated to document that
-spans are name-only (covering just the identifier, not the full declaration body). This means:
-- Nested symbols have non-overlapping spans, so tie-breaking is never needed
-- Tests verify correct resolution by confirming only one span matches each click location
-- AC-1 checklist updated to reflect name-only span behavior
-- New test `spans_are_name_only_not_full_declaration` explicitly verifies span behavior
-- Test `truly_ambiguous_symbols_return_error` verifies AmbiguousSymbol error exists
-
 ---
 
-#### Issue 4: Placeholder Scope Spans {#issue-4-scope-spans}
+#### Issue 4: Lexical Spans {#issue-4-lexical-spans}
 
 **Priority:** P1 (data completeness)
 
-**Problem:** Scopes are inserted into the FactsStore with placeholder `Span::new(0, 0)` values instead of actual scope spans.
+**Status:** NOT STARTED
+
+**Problem:** Scopes are inserted into the FactsStore with placeholder `Span::new(0, 0)` values instead of actual lexical spans.
 
 **Location:** `crates/tugtool-python/src/analyzer.rs:485-496`
 ```rust
@@ -3278,113 +3317,436 @@ let span = Span::new(0, 0);
 ```
 
 **Impact:**
-- Any feature depending on scope spans will not work correctly:
-  - Scope containment queries
+- Any feature depending on lexical spans will not work correctly:
+  - `scope_at_position()` queries always fail (0..0 contains no positions)
   - "Jump to scope" navigation
-  - Diagnostics with scope context
   - Scope-based filtering
 - The FactsStore contains incomplete data
 
 **Root Cause:**
-The ScopeCollector in tugtool-cst collects scope information but does not compute or return span information. The span computation needs to be added to the collector or computed during CST traversal.
+The `ScopeCollector` in tugtool-cst collects scope information but currently only captures keyword spans (e.g., just `def`), not the full lexical extent. The `analyzer.rs` uses a placeholder because the CST span data was not useful as-is.
 
-**Fix Required:**
-1. Update ScopeCollector in tugtool-cst to compute actual scope spans from CST nodes
-2. Pass span information through `NativeScope` type
-3. Use actual spans when inserting scopes in `analyzer.rs`
+##### Lexical Span Definition {#lexical-span-definition}
 
-**Acceptance Criteria:**
-- [ ] ScopeCollector computes actual scope spans from CST
-- [ ] `NativeScope` includes span information
-- [ ] `analyzer.rs` uses real spans, not `Span::new(0, 0)`
-- [ ] Test: scope spans match expected ranges
-- [ ] Test: module scope span covers entire file
-- [ ] Test: function scope span covers function body
-- [ ] Test: class scope span covers class body
+**Definition:** A lexical span is the byte range defining the **lexical extent** of a scope - the range of source positions that are "inside" that scope for variable resolution and containment queries.
+
+**Critical distinction from definition spans:** Lexical spans do NOT include decorators. Decorators execute before the function/class is created; they are not lexically "inside" the scope.
+
+**Lexical Span Semantics by Scope Kind:**
+
+| Scope Kind | Span Start | Span End |
+|------------|-----------|----------|
+| Module | Byte 0 | End of file |
+| Function | First byte of `def`/`async def` | Last byte of function body |
+| Class | First byte of `class` | Last byte of class body |
+| Lambda | First byte of `lambda` | Last byte of lambda expression |
+| Comprehension | Opening bracket `[`, `{`, or `(` | Closing bracket |
+
+**Example:**
+
+```python
+@decorator           # NOT inside lexical scope (decorator executes first)
+def foo():           # <-- Lexical span starts at 'def' (byte 12 if decorator is bytes 0-11)
+    x = 1            # Inside lexical scope
+                     # <-- Lexical span ends here
+```
+
+##### Implementation Plan {#issue-4-implementation}
+
+**Step 4.1: Update ScopeCollector to compute full lexical spans**
+
+**Commit:** `feat(cst): compute full lexical spans in ScopeCollector`
+
+**Files:** `crates/tugtool-cst/src/visitor/scope.rs`
+
+**Tasks:**
+- [ ] Add `pending_scope_starts: Vec<u64>` field to track scope start positions
+- [ ] Modify `enter_scope()` to record cursor position before finding keyword, push to stack
+- [ ] Add span computation in `exit_scope()`: pop start, get current cursor as end, update scope
+- [ ] Module scope already correct: `Span::new(0, source.len())`
+- [ ] Ensure comprehensions use bracket positions
+
+**Implementation approach:**
+```rust
+fn enter_scope(&mut self, kind: ScopeKind, name: Option<&str>, keyword: &str) {
+    let start_pos = self.cursor as u64;
+    self.pending_scope_starts.push(start_pos);
+    self.find_and_advance(keyword);
+    // Create scope with None span (filled at exit)
+    // ...
+}
+
+fn exit_scope(&mut self) {
+    if let Some(start) = self.pending_scope_starts.pop() {
+        let end = self.cursor as u64;
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.span = Some(Span::new(start, end));
+        }
+    }
+    // ...
+}
+```
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-cst` succeeds
+- [ ] Unit test: function lexical span covers `def foo():\n    pass`
+- [ ] Unit test: class lexical span covers `class Bar:\n    x = 1`
+- [ ] Unit test: decorated function lexical span does NOT include `@decorator`
+- [ ] Unit test: nested scopes have non-overlapping lexical spans (inner is proper subset of outer)
 
 ---
 
-#### Issue 5: Add Body Spans to Symbol Infrastructure {#issue-5-body-spans}
+**Step 4.2: Update cst_bridge to pass lexical spans through**
+
+**Commit:** `feat(python): pass lexical spans through cst_bridge`
+
+**Files:** `crates/tugtool-python/src/cst_bridge.rs`, `crates/tugtool-python/src/types.rs`
+
+**Tasks:**
+- [ ] Update `From<CstScopeInfo> for ScopeInfo` to convert lexical span directly
+- [ ] Remove placeholder line/col logic
+- [ ] Consider simplifying `ScopeSpanInfo` to just byte offsets
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] Integration test: parsed scopes have lexical spans
+
+---
+
+**Step 4.3: Update analyzer.rs to use actual lexical spans**
+
+**Commit:** `fix(python): use actual lexical spans instead of placeholder`
+
+**Files:** `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] Remove the TODO comment at line 500-503
+- [ ] Extract span from `NativeScope` instead of `Span::new(0, 0)`
+- [ ] Handle `None` span case defensively
+
+**Updated code:**
+```rust
+let span = scope.span
+    .as_ref()
+    .map(|s| Span::new(s.start as u64, s.end as u64))
+    .unwrap_or_else(|| {
+        if scope.kind == "module" {
+            Span::new(0, source.len() as u64)
+        } else {
+            // Shouldn't happen after Step 4.1
+            Span::new(0, 0)
+        }
+    });
+```
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run --workspace` passes
+- [ ] No more `Span::new(0, 0)` for non-module scopes
+
+---
+
+**Step 4.4: Add lexical span tests**
+
+**Commit:** `test(python): add lexical span accuracy tests`
+
+**Tasks:**
+- [ ] Test: module lexical span equals `0..source.len()`
+- [ ] Test: function lexical span covers `def` through body end
+- [ ] Test: async function lexical span starts at `async def`
+- [ ] Test: class lexical span covers `class` through body end
+- [ ] Test: lambda lexical span covers `lambda` through expression
+- [ ] Test: comprehension lexical span covers brackets
+- [ ] Test: decorated function lexical span does NOT include `@decorator`
+- [ ] Test: `scope_at_position` works correctly with real lexical spans
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python lexical_span` passes
+- [ ] `scope_at_position` returns correct innermost scope
+
+---
+
+**Issue 4 Acceptance Criteria:**
+- [ ] `ScopeCollector` computes actual lexical spans (full extent, not just keyword)
+- [ ] `NativeScope`/`ScopeInfo` includes lexical span as byte offsets
+- [ ] `analyzer.rs` uses real lexical spans, not `Span::new(0, 0)`
+- [ ] Test: lexical spans match expected ranges
+- [ ] Test: module lexical span covers entire file
+- [ ] Test: function lexical span covers function body (from `def` to end), NOT decorators
+- [ ] Test: class lexical span covers class body (from `class` to end), NOT decorators
+- [ ] Test: `scope_at_position` works correctly with real lexical spans
+
+**Effort Estimate:** Medium (2-3 days)
+
+**Risk:** Low - additive data, no breaking changes
+
+---
+
+#### Issue 5: Definition Spans {#issue-5-definition-spans}
 
 **Priority:** P1 (enables future refactoring operations)
 
-**Depends on:** Issue 4 (scope spans) should be resolved first as it establishes span computation patterns.
+**Status:** NOT STARTED
 
-**Problem:** Symbols only have name-only spans (`decl_span`), which is insufficient for AI-driven refactoring operations that need to:
+**Depends on:** Issue 4 (lexical spans) should be resolved first as it establishes span computation patterns.
+
+**Problem:** Symbols only have identifier spans (`decl_span`), which is insufficient for AI-driven refactoring operations that need to:
 - Extract complete function/class code
 - Move methods between classes
 - Inline function bodies
 - Replace implementations while preserving signatures
 - Query "give me the code for function X"
 
-**Context:**
+##### Definition Span Definition {#definition-span-definition}
 
-Symbol spans are currently **name-only** (e.g., just "foo" in `def foo():`). This works for rename operations but doesn't support code extraction/manipulation.
+**Definition:** A definition span is the source range containing the **complete, extractable code** for a symbol - everything needed to copy, move, or manipulate that symbol as a unit.
 
-**Body Spans vs Scope Spans (Issue 4):**
+**Critical distinction from lexical spans:** Definition spans INCLUDE decorators. When extracting or moving a function, you want its decorators too.
 
-These are distinct concepts serving different purposes:
+**Definition Span Semantics by Symbol Kind:**
 
-| Aspect | Scope Spans (Issue 4) | Body Spans (This Issue) |
-|--------|----------------------|------------------------|
-| **Entity** | `ScopeInfo` | `Symbol` |
-| **Purpose** | Containment queries ("is this reference inside that scope?") | Code extraction ("give me the complete code for this symbol") |
-| **Includes decorators?** | No | Yes |
-| **Question answered** | "What range is lexically inside this scope?" | "What is the complete extractable code for this symbol?" |
-
-Both are needed. Issue 4 establishes span computation patterns; this issue extends them to symbols.
-
-**Body Span Semantics by Symbol Kind:**
-
-| Symbol Kind | Body Span Covers | Example |
-|-------------|-----------------|---------|
+| Symbol Kind | Definition Span Covers | Example |
+|-------------|------------------------|---------|
 | Function/Method | From first `@decorator` (or `def`/`async def`) through end of body | `@decorator\ndef foo():\n    pass` |
 | Class | From first `@decorator` (or `class`) through end of body | `@dataclass\nclass Foo:\n    x: int` |
 | Variable | Entire assignment statement | `x = 1` or `a, b = 1, 2` (both share same span) |
 | Parameter | Full parameter including annotation and default | `x: int = 5` |
 | Import | The import statement | `from os import path` |
 
-**Design Decision:** Variable body spans cover the **full statement** (Option A), not just the RHS. Rationale:
+**Design Decision:** Variable definition spans cover the **full statement** (not just RHS). Rationale:
 - Consistency with functions/classes (complete extractable unit)
 - Supports "delete this variable" use case (need full statement range)
 - Tuple unpacking `a, b = 1, 2` makes sense as a unit
 - Annotated assignments `x: int = 5` preserve type information
 
-**Implementation Approach:**
+##### Implementation Plan {#issue-5-implementation}
 
-1. Add `body_span: Option<Span>` field to `Symbol` struct (backward compatible)
-2. Extend `BindingInfo` in tugtool-cst with body_span field
-3. Update `BindingCollector` to compute body spans during traversal:
-   - Track start position (first decorator or keyword)
-   - Compute end position after visiting body
-4. Bridge body spans through `NativeSymbol` to `FactsStore`
-5. Add helper methods: `Symbol::extract_body()`, `FactsStore::symbols_in_span()`
+**Step 5.1: Extend Symbol struct**
 
-**Files to Modify:**
+**Commit:** `feat(core): add def_span field to Symbol`
 
-| File | Changes |
-|------|---------|
-| `crates/tugtool-core/src/facts/mod.rs` | Add `body_span: Option<Span>` to `Symbol` |
-| `crates/tugtool-cst/src/visitor/binding.rs` | Compute body spans in `BindingCollector` |
-| `crates/tugtool-python/src/cst_bridge.rs` | Bridge body span data |
-| `crates/tugtool-python/src/analyzer.rs` | Populate body spans in FactsStore |
+**Files:** `crates/tugtool-core/src/facts/mod.rs`
 
-**Acceptance Criteria:**
-- [ ] `Symbol` struct has `body_span: Option<Span>` field
-- [ ] `BindingCollector` computes body spans for functions (including async, decorated)
-- [ ] `BindingCollector` computes body spans for classes (including decorated)
-- [ ] `BindingCollector` computes body spans for variables (full statement)
-- [ ] `BindingCollector` computes body spans for parameters
-- [ ] Body spans are populated in FactsStore via analyzer
-- [ ] `Symbol::extract_body()` helper returns correct source slice
+**Tasks:**
+- [ ] Add `def_span: Option<Span>` field to `Symbol` struct
+- [ ] Add `with_def_span(span: Span) -> Self` builder method
+- [ ] Add `def_span()` accessor method
+- [ ] Add `extract_definition()` helper method
+- [ ] Update serialization derives
+
+**Implementation:**
+```rust
+pub struct Symbol {
+    pub symbol_id: SymbolId,
+    pub kind: SymbolKind,
+    pub name: String,
+    pub decl_file_id: FileId,
+    pub decl_span: Span,              // Identifier span (unchanged)
+    pub def_span: Option<Span>,       // NEW: Full definition span
+    pub container_symbol_id: Option<SymbolId>,
+    pub module_id: Option<ModuleId>,
+}
+
+impl Symbol {
+    /// Extract the complete definition source code from file content.
+    pub fn extract_definition<'a>(&self, source: &'a str) -> Option<&'a str> {
+        self.def_span.as_ref().map(|span| {
+            &source[span.start as usize..span.end as usize]
+        })
+    }
+}
+```
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-core` succeeds
+- [ ] Existing code compiles (def_span is Option, backward compatible)
+
+---
+
+**Step 5.2: Extend BindingInfo in tugtool-cst**
+
+**Commit:** `feat(cst): add def_span to BindingInfo`
+
+**Files:** `crates/tugtool-cst/src/visitor/binding.rs`
+
+**Tasks:**
+- [ ] Add `def_span: Option<Span>` field to `BindingInfo` struct
+- [ ] Update `BindingInfo::new()` to initialize `def_span: None`
+- [ ] Add `with_def_span(span: Span) -> Self` builder method
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-cst` succeeds
+
+---
+
+**Step 5.3: Implement definition span collection for functions**
+
+**Commit:** `feat(cst): collect definition spans for function definitions`
+
+**Files:** `crates/tugtool-cst/src/visitor/binding.rs`
+
+**Tasks:**
+- [ ] Track function start position (first decorator or `def` keyword)
+- [ ] Track function end position (after body traversal)
+- [ ] Compute definition span for function bindings
+- [ ] Handle `async def` functions (include `async` in span)
+- [ ] Handle decorated functions (include decorators in span)
+
+**Implementation approach:**
+```rust
+fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
+    // Find start: first decorator OR "def"/"async def"
+    let start_pos = if !node.decorators.is_empty() {
+        self.find_decorator_start(&node.decorators[0])
+    } else if node.asynchronous.is_some() {
+        self.find_and_advance("async").map(|s| s.start)
+    } else {
+        self.find_and_advance("def").map(|s| s.start)
+    };
+
+    self.pending_def_start.push(start_pos);
+    // ... add binding, enter scope ...
+}
+
+fn leave_function_def(&mut self, _node: &FunctionDef<'a>) {
+    if let (Some(start), Some(binding)) = (
+        self.pending_def_start.pop(),
+        self.bindings.last_mut()
+    ) {
+        let end = self.cursor as u64;
+        binding.def_span = Some(Span::new(start, end));
+    }
+    // ...
+}
+```
+
+**Checkpoint:**
+- [ ] Unit test: simple function has correct definition span
+- [ ] Unit test: async function includes `async` in span
+- [ ] Unit test: decorated function includes decorators
+- [ ] Unit test: nested function has independent definition span
+
+---
+
+**Step 5.4: Implement definition span collection for classes**
+
+**Commit:** `feat(cst): collect definition spans for class definitions`
+
+**Files:** `crates/tugtool-cst/src/visitor/binding.rs`
+
+**Tasks:**
+- [ ] Track class start position (first decorator or `class` keyword)
+- [ ] Track class end position (after body traversal)
+- [ ] Handle decorated classes
+
+**Checkpoint:**
+- [ ] Unit test: simple class has correct definition span
+- [ ] Unit test: decorated class includes decorators
+
+---
+
+**Step 5.5: Implement definition span collection for variables**
+
+**Commit:** `feat(cst): collect definition spans for variable assignments`
+
+**Files:** `crates/tugtool-cst/src/visitor/binding.rs`
+
+**Tasks:**
+- [ ] Track assignment statement boundaries
+- [ ] Compute definition span covering entire statement
+- [ ] Handle tuple unpacking (all targets share same definition span)
+- [ ] Handle chained assignment (`x = y = 1`)
+- [ ] Handle annotated assignment (`x: int = 1`)
+
+**Checkpoint:**
+- [ ] Unit test: simple assignment `x = 1`
+- [ ] Unit test: tuple unpacking `a, b = 1, 2` - both share same span
+- [ ] Unit test: annotated assignment `x: int = 1`
+
+---
+
+**Step 5.6: Integrate definition spans into FactsStore**
+
+**Commit:** `feat(python): populate Symbol.def_span from BindingInfo`
+
+**Files:**
+- `crates/tugtool-python/src/cst_bridge.rs`
+- `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] Update `NativeSymbol` type to include def_span
+- [ ] Update conversion to pass def_span through
+- [ ] Update `analyze_files()` to set def_span on inserted symbols
+
+**Checkpoint:**
+- [ ] `cargo nextest run --workspace` passes
+- [ ] FactsStore symbols have def_span populated
+
+---
+
+**Step 5.7: Add API helpers**
+
+**Commit:** `feat(core): add definition span helper methods`
+
+**Files:** `crates/tugtool-core/src/facts/mod.rs`
+
+**Tasks:**
+- [ ] Add `FactsStore::symbols_in_span()` method
+- [ ] Add `Symbol::extract_definition()` helper (if not done in 5.1)
+- [ ] Add rustdoc documentation for definition span semantics
+
+**Implementation:**
+```rust
+impl FactsStore {
+    /// Get symbols fully contained within a span.
+    pub fn symbols_in_span(&self, file_id: FileId, span: Span) -> Vec<&Symbol> {
+        self.symbols_by_file(file_id)
+            .into_iter()
+            .filter(|s| s.def_span.map_or(false, |ds|
+                ds.start >= span.start && ds.end <= span.end))
+            .collect()
+    }
+}
+```
+
+**Checkpoint:**
+- [ ] `cargo doc -p tugtool-core` generates documentation
+- [ ] API helpers work correctly
+
+---
+
+**Step 5.8: Golden tests for definition spans**
+
+**Commit:** `test(cst): add golden tests for definition span collection`
+
+**Tasks:**
+- [ ] Create fixture: functions with decorators
+- [ ] Create fixture: nested classes and methods
+- [ ] Create fixture: various assignment forms
+- [ ] Generate and verify golden output
+
+**Checkpoint:**
+- [ ] Golden files match expected definition spans
+- [ ] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool-cst def_span` passes
+
+---
+
+**Issue 5 Acceptance Criteria:**
+- [ ] `Symbol` struct has `def_span: Option<Span>` field
+- [ ] `BindingCollector` computes definition spans for functions (including async, decorated)
+- [ ] `BindingCollector` computes definition spans for classes (including decorated)
+- [ ] `BindingCollector` computes definition spans for variables (full statement)
+- [ ] `BindingCollector` computes definition spans for parameters
+- [ ] Definition spans are populated in FactsStore via analyzer
+- [ ] `Symbol::extract_definition()` helper returns correct source slice
 - [ ] `FactsStore::symbols_in_span()` returns symbols contained in a range
-- [ ] Test: function body span includes decorators
-- [ ] Test: nested function has independent body span
-- [ ] Test: class body span includes full class definition
-- [ ] Test: variable body span covers entire assignment statement
-- [ ] Test: tuple unpacking variables share same body span
-- [ ] Test: annotated assignment includes annotation in body span
-- [ ] Golden tests verify body span accuracy
+- [ ] Test: function definition span includes decorators
+- [ ] Test: nested function has independent definition span
+- [ ] Test: class definition span includes full class definition
+- [ ] Test: variable definition span covers entire assignment statement
+- [ ] Test: tuple unpacking variables share same definition span
+- [ ] Test: annotated assignment includes annotation in definition span
+- [ ] Golden tests verify definition span accuracy
 
 **Effort Estimate:** Medium (3-5 days)
 
@@ -3392,20 +3754,33 @@ Both are needed. Issue 4 establishes span computation patterns; this issue exten
 
 ---
 
+#### Span Type Comparison Summary {#span-comparison-summary}
+
+| Aspect | Identifier Span (Issue 3) | Lexical Span (Issue 4) | Definition Span (Issue 5) |
+|--------|---------------------------|------------------------|---------------------------|
+| **Field** | `Symbol.decl_span` | `ScopeInfo.span` | `Symbol.def_span` |
+| **Entity** | Symbol, Reference | ScopeInfo | Symbol |
+| **Includes decorators?** | No | No | **Yes** |
+| **Purpose** | Text replacement | Containment queries | Code extraction |
+| **Collected by** | `BindingCollector` | `ScopeCollector` | `BindingCollector` |
+| **Status** | RESOLVED (documented) | NOT STARTED | NOT STARTED |
+
+---
+
 #### Implementation Order {#improvement-order}
 
-| Priority | Issue | Effort | Risk |
-|----------|-------|--------|------|
-| P0 | Issue 1: Deterministic ID Assignment | Low | Low |
-| P1 | Issue 2: False-Positive Test | Low | Low |
-| P1 | Issue 3: Contract Deviation | Medium | Low |
-| P1 | Issue 4: Scope Spans | Medium | Low |
-| P1 | Issue 5: Body Spans | Medium | Low |
+| Priority | Issue | Effort | Risk | Status |
+|----------|-------|--------|------|--------|
+| P0 | Issue 1: Deterministic ID Assignment | Low | Low | DONE |
+| P1 | Issue 2: False-Positive Test | Low | Low | DONE |
+| P1 | Issue 3: Identifier Spans | Low | Low | DONE (docs) |
+| P1 | Issue 4: Lexical Spans | Medium | Low | NOT STARTED |
+| P1 | Issue 5: Definition Spans | Medium | Low | NOT STARTED |
 
 **Recommended sequence:**
-1. Issue 1 first (P0, easy fix, high impact on correctness guarantee)
-2. Issue 2 second (quick test fix, improves test accuracy)
-3. Issue 3 third (either implement or document, decision needed)
+1. ~~Issue 1 first (P0, easy fix, high impact on correctness guarantee)~~ DONE
+2. ~~Issue 2 second (quick test fix, improves test accuracy)~~ DONE
+3. ~~Issue 3 third (documentation updated to reflect identifier spans)~~ DONE
 4. Issue 4 fourth (requires tugtool-cst changes to ScopeCollector)
 5. Issue 5 fifth (builds on Issue 4 patterns, extends BindingCollector)
 
@@ -3415,8 +3790,8 @@ Both are needed. Issue 4 establishes span computation patterns; this issue exten
 
 **Important:** String filters vs test target filters behave differently in nextest:
 
-- `cargo nextest run -p tugtool-python acceptance_criteria` — **runs 0 tests** (string filter, no tests contain "acceptance_criteria" in their name)
-- `cargo nextest run -p tugtool-python --test acceptance_criteria` — **correct** (runs tests in that test target)
+- `cargo nextest run -p tugtool-python acceptance_criteria` - **runs 0 tests** (string filter, no tests contain "acceptance_criteria" in their name)
+- `cargo nextest run -p tugtool-python --test acceptance_criteria` - **correct** (runs tests in that test target)
 
 Similarly, `tugtool-python` has no `--test rename` target; rename coverage is in unit tests within the crate and integration tests in `tugtool`. Verification commands in this plan should use correct invocations:
 
@@ -3440,9 +3815,9 @@ cargo nextest run --workspace
 - [x] New determinism tests added (Issue 1)
 - [x] Import binding test corrected (Issue 2)
 - [x] Contract C8 (determinism) is satisfied
-- [x] Contract C1 matches implementation (docs updated to reflect name-only spans)
-- [ ] Scope spans are computed and populated (Issue 4)
-- [ ] Body spans are computed and populated (Issue 5)
+- [x] Contract C1 matches implementation (docs updated to reflect identifier spans)
+- [ ] Lexical spans are computed and populated (Issue 4)
+- [ ] Definition spans are computed and populated (Issue 5)
 - [x] `cargo nextest run -p tugtool-python --test acceptance_criteria` passes
 - [x] `cargo nextest run --workspace` passes
 
