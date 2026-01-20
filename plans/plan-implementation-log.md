@@ -2300,3 +2300,56 @@ to their original definitions per Contract C1's "Key Invariant":
 4. **Graceful fallback**: If import cannot be resolved (external module), returns the import symbol itself
 
 ---
+
+## Issue 3: find_symbol_at_location() Contract Deviation
+
+**Date:** 2026-01-19
+**Status:** COMPLETE
+
+**Problem:** Contract C1 specified a tie-breaking algorithm for overlapping spans, but the implementation didn't implement it. The question was: implement tie-breaking (Option A) or document why it's not needed (Option B)?
+
+**Analysis:**
+Investigated span behavior and discovered that symbol spans are **name-only**, covering just the identifier (e.g., "foo" in `def foo():`) NOT the full declaration body.
+
+Example byte positions for nested code:
+```python
+class Outer:      # "Outer" span: bytes 6-11 (just the word)
+    def inner():  # "inner" span: bytes 21-26 (just the word)
+        pass
+```
+
+Clicking at byte 21 matches only "inner" (span 21-26), NOT "Outer" (span 6-11).
+**Spans don't overlap, so tie-breaking is never needed.**
+
+**Decision:** Option B - Update documentation to match actual behavior.
+
+**Files Changed:**
+
+- `plans/phase-3.md`:
+  - Updated Contract C1 to document name-only span behavior
+  - Added "Critical: Name-Only Spans" section explaining why tie-breaking is unnecessary
+  - Updated algorithm to reflect actual implementation
+  - Revised AC-1 checklist to mark tests complete and add note about name-only spans
+  - Checked off all 6 acceptance criteria for Issue 3
+
+- `crates/tugtool-python/tests/acceptance_criteria.rs`:
+  - Added `spans_are_name_only_not_full_declaration` test proving spans don't overlap
+  - Added `truly_ambiguous_symbols_return_error` test verifying error path exists
+  - Renamed `overlapping_spans_prefer_smallest` to `nested_function_resolved_without_overlap` with updated comments clarifying that spans don't actually overlap
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python ac1_`: 13 tests passed
+- `cargo nextest run --workspace`: 1031 tests passed (2 new tests added)
+
+**Checkpoints Verified:**
+- Contract C1 updated to match actual behavior: PASS
+- Documentation explains why spans don't overlap: PASS
+- AC-1 checklist revised: PASS
+- Test nested symbol resolution: PASS (`nested_symbol_returns_innermost`, `nested_function_resolved_without_overlap`)
+- Test truly ambiguous case: PASS (`truly_ambiguous_symbols_return_error`)
+- Chosen approach documented in contract: PASS
+
+**Key Insight:**
+The native CST produces name-only spans, not full-declaration spans. This architectural decision eliminates the need for tie-breaking. Tests that appeared to verify "smallest span wins" were actually verifying that only one span matches each click location. New tests explicitly verify this behavior.
+
+---

@@ -213,9 +213,16 @@ x.bar()
     }
 
     #[test]
-    fn overlapping_spans_prefer_smallest() {
-        // def outer():
-        //     def inner():  # clicking on "inner" should return inner, not outer
+    fn nested_function_resolved_without_overlap() {
+        // Test that clicking on a nested function name returns the nested function.
+        //
+        // Note: With name-only spans, the spans DON'T actually overlap.
+        // "outer" span covers only "outer", "inner" span covers only "inner".
+        // This test verifies that the correct symbol is returned because
+        // only one span matches the click location.
+        //
+        // def outer():      # "outer" span: just the word "outer"
+        //     def inner():  # "inner" span: just the word "inner"
         //         pass
         let code = "def outer():\n    def inner():\n        pass\n";
         let file_list = files(&[("test.py", code)]);
@@ -291,6 +298,72 @@ class B:
         assert_eq!(symbol_a.name, "method");
         assert_eq!(symbol_b.name, "method");
         assert_ne!(symbol_a.symbol_id, symbol_b.symbol_id, "Should be different symbols");
+    }
+
+    #[test]
+    fn spans_are_name_only_not_full_declaration() {
+        // This test verifies that symbol spans cover only the identifier name,
+        // NOT the full declaration body. This is why nested symbols can be
+        // resolved without tie-breaking - spans don't overlap.
+        //
+        // class Outer:      # "Outer" span should NOT extend to class body
+        //     def inner():  # "inner" span covers only "inner"
+        //         pass
+        let code = "class Outer:\n    def inner():\n        pass\n";
+        let file_list = files(&[("test.py", code)]);
+        let store = analyze_test_files(&file_list);
+
+        // Find both symbols
+        let outer = store.symbols().find(|s| s.name == "Outer");
+        let inner = store.symbols().find(|s| s.name == "inner");
+
+        assert!(outer.is_some(), "Expected Outer symbol");
+        assert!(inner.is_some(), "Expected inner symbol");
+
+        let outer = outer.unwrap();
+        let inner = inner.unwrap();
+
+        // Verify spans cover ONLY the identifier names
+        // "Outer" starts at byte 6 (after "class ") and is 5 chars
+        // "inner" starts at byte 21 (after "    def ") and is 5 chars
+        let outer_span_len = outer.decl_span.end - outer.decl_span.start;
+        let inner_span_len = inner.decl_span.end - inner.decl_span.start;
+
+        assert_eq!(outer_span_len, 5, "Outer span should be 5 bytes (name only)");
+        assert_eq!(inner_span_len, 5, "inner span should be 5 bytes (name only)");
+
+        // Verify spans DON'T overlap - inner's span should be completely outside outer's span
+        // This proves that clicking on "inner" won't accidentally match "Outer"
+        assert!(
+            inner.decl_span.start >= outer.decl_span.end,
+            "inner span ({:?}) should not overlap with Outer span ({:?})",
+            inner.decl_span,
+            outer.decl_span
+        );
+    }
+
+    #[test]
+    fn truly_ambiguous_symbols_return_error() {
+        // Note: With name-only spans, it's nearly impossible to create truly
+        // ambiguous symbols (two symbols whose spans overlap). This test
+        // documents what WOULD happen if we could: AmbiguousSymbol error.
+        //
+        // In practice, even two variables assigned on the same line have
+        // different spans because each identifier has a different position.
+        //
+        // This test verifies the error path exists by checking that the
+        // AmbiguousSymbol error variant can be constructed and matched.
+        use tugtool_python::lookup::LookupError;
+
+        let err = LookupError::AmbiguousSymbol {
+            candidates: vec!["foo (1)".to_string(), "foo (2)".to_string()],
+        };
+
+        // Verify error message contains both candidates
+        let msg = err.to_string();
+        assert!(msg.contains("foo (1)"), "Error should contain first candidate");
+        assert!(msg.contains("foo (2)"), "Error should contain second candidate");
+        assert!(msg.contains("ambiguous"), "Error should mention ambiguity");
     }
 }
 

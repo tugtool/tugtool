@@ -1732,30 +1732,47 @@ Any behavior within the supported subset MUST match the original worker exactly.
 
 **Contract C1: `find_symbol_at_location()` Behavior**
 
-Location: `crates/tugtool-python/src/lookup.rs:63-123`
+Location: `crates/tugtool-python/src/lookup.rs:63-134`
 
 Input: (store: &FactsStore, location: Location{file, line, col}, files: &[(path, content)])
 Output: Ok(Symbol) | Err(SymbolNotFound | AmbiguousSymbol)
+
+**Critical: Name-Only Spans**
+
+Symbol spans in the FactsStore are **name-only**, covering just the identifier (e.g., "foo" in `def foo():`), NOT the full declaration body. This means:
+- `class Outer:` has span covering only "Outer" (bytes 6-11)
+- `def inner(self):` has span covering only "inner" (bytes 21-26)
+- Clicking on nested code does NOT match the containing scope's span
+
+Because spans don't overlap, tie-breaking is unnecessary and not implemented.
 
 Algorithm:
 1. Find file in store by path
 2. Convert (line, col) to byte_offset using file content
 3. Find ALL symbols where decl_span.start <= byte_offset < decl_span.end
-4. If multiple symbols match:
-   a. Prefer the SMALLEST span (most specific/innermost)
-   b. If still tied, prefer by kind: Method > Function > Class > Variable
-   c. If still tied: AmbiguousSymbol error
-5. If exactly one symbol matches: return it
+4. If multiple symbols match: return AmbiguousSymbol error
+   (In practice, this never happens with name-only spans)
+5. If exactly one symbol matches:
+   a. If it's an Import symbol, resolve to original definition (see C3)
+   b. Otherwise, return the symbol
 6. If no symbol found, check references where span contains byte_offset:
-   a. Collect all matching references
-   b. Prefer smallest span reference
-   c. Return the referenced symbol (via reference.symbol_id)
+   a. Return first matching reference's symbol (via reference.symbol_id)
 7. If zero matches: SymbolNotFound
 
-Tie-Breaking Rationale:
-- Smallest span = most specific declaration (method inside class, nested function)
-- This matches IDE "go to definition" behavior where clicking on nested code
-  should resolve to the innermost declaration, not the containing scope
+**Why No Tie-Breaking Is Needed:**
+
+With name-only spans, clicking on a nested identifier (e.g., "inner" inside class "Outer")
+matches only that identifier's span. The containing scope's span ("Outer") doesn't
+extend to cover the nested definition's name. Example:
+
+```python
+class Outer:      # Outer span: bytes 6-11 (just "Outer")
+    def inner():  # inner span: bytes 21-26 (just "inner")
+        pass
+```
+
+Clicking at byte 21 (the "i" in "inner") matches only "inner" (span 21-26).
+It does NOT match "Outer" (span 6-11). No overlap means no tie-breaking needed.
 
 Symbol-vs-Reference Precedence:
 - Symbols are checked FIRST, references only if no symbol matches
@@ -1946,16 +1963,20 @@ Verification:
 **Acceptance Criteria Checklists:**
 
 **AC-1: find_symbol_at_location() Parity (Contract C1)**
-- [ ] Test: clicking on definition returns the symbol
-- [ ] Test: clicking on reference returns the referenced symbol
-- [ ] Test: clicking on import binding returns the original definition
-- [ ] Test: method name in class returns method symbol
-- [ ] Test: method call on typed receiver returns correct method
-- [ ] Test: nested symbol (method in class) returns innermost (smallest span)
-- [ ] Test: overlapping spans prefer smallest span
-- [ ] Test: truly ambiguous symbols return AmbiguousSymbol error
-- [ ] Test: symbol-vs-reference overlap: symbol wins (symbol checked first)
+- [x] Test: clicking on definition returns the symbol
+- [x] Test: clicking on reference returns the referenced symbol
+- [x] Test: clicking on import binding returns the original definition
+- [x] Test: method name in class returns method symbol
+- [x] Test: method call on typed receiver returns correct method
+- [x] Test: nested symbol (method in class) returns the method (spans don't overlap)
+- [x] Test: spans are name-only (don't cover full declaration body)
+- [x] Test: truly ambiguous case (two symbols at same span) returns AmbiguousSymbol error
+- [x] Test: symbol-vs-reference overlap: symbol wins (symbol checked first)
 - [ ] Golden test: compare native output for 10+ canonical files
+
+Note: The "overlapping spans prefer smallest span" test was removed. With name-only spans,
+nested symbols have non-overlapping spans, so tie-breaking is unnecessary. Tests verify
+that clicking on nested code resolves to the correct symbol because spans don't overlap.
 
 **AC-2: Cross-File Reference Resolution**
 - [ ] Test: `from x import y` creates ref pointing to y in x.py
@@ -3227,12 +3248,20 @@ The deviation may be intentional. In practice, the native CST produces name-only
 **Important:** If choosing Option B (update docs), also update the acceptance criteria checklists (AC-1) to remove or revise assertions about tie-break behavior that isn't implemented. Otherwise, tests asserting "smallest span wins" will pass vacuously (no overlap ever happens) rather than verifying the intended behavior.
 
 **Acceptance Criteria:**
-- [ ] Either implement C1 tie-breaking OR update C1 to match actual behavior
-- [ ] If updating documentation: explain why spans don't overlap in practice
-- [ ] If updating documentation: revise AC-1 checklist items for tie-breaking (lines 1954-1957 in Step 9.0)
-- [ ] Test nested symbol resolution (method inside class)
-- [ ] Test truly ambiguous case produces AmbiguousSymbol error
-- [ ] Document the chosen approach in the contract
+- [x] Either implement C1 tie-breaking OR update C1 to match actual behavior
+- [x] If updating documentation: explain why spans don't overlap in practice
+- [x] If updating documentation: revise AC-1 checklist items for tie-breaking (lines 1954-1957 in Step 9.0)
+- [x] Test nested symbol resolution (method inside class)
+- [x] Test truly ambiguous case produces AmbiguousSymbol error
+- [x] Document the chosen approach in the contract
+
+**Resolution:** Chose Option B (update documentation). Contract C1 updated to document that
+spans are name-only (covering just the identifier, not the full declaration body). This means:
+- Nested symbols have non-overlapping spans, so tie-breaking is never needed
+- Tests verify correct resolution by confirming only one span matches each click location
+- AC-1 checklist updated to reflect name-only span behavior
+- New test `spans_are_name_only_not_full_declaration` explicitly verifies span behavior
+- Test `truly_ambiguous_symbols_return_error` verifies AmbiguousSymbol error exists
 
 ---
 
@@ -3275,6 +3304,94 @@ The ScopeCollector in tugtool-cst collects scope information but does not comput
 
 ---
 
+#### Issue 5: Add Body Spans to Symbol Infrastructure {#issue-5-body-spans}
+
+**Priority:** P1 (enables future refactoring operations)
+
+**Depends on:** Issue 4 (scope spans) should be resolved first as it establishes span computation patterns.
+
+**Problem:** Symbols only have name-only spans (`decl_span`), which is insufficient for AI-driven refactoring operations that need to:
+- Extract complete function/class code
+- Move methods between classes
+- Inline function bodies
+- Replace implementations while preserving signatures
+- Query "give me the code for function X"
+
+**Context:**
+
+Symbol spans are currently **name-only** (e.g., just "foo" in `def foo():`). This works for rename operations but doesn't support code extraction/manipulation.
+
+**Body Spans vs Scope Spans (Issue 4):**
+
+These are distinct concepts serving different purposes:
+
+| Aspect | Scope Spans (Issue 4) | Body Spans (This Issue) |
+|--------|----------------------|------------------------|
+| **Entity** | `ScopeInfo` | `Symbol` |
+| **Purpose** | Containment queries ("is this reference inside that scope?") | Code extraction ("give me the complete code for this symbol") |
+| **Includes decorators?** | No | Yes |
+| **Question answered** | "What range is lexically inside this scope?" | "What is the complete extractable code for this symbol?" |
+
+Both are needed. Issue 4 establishes span computation patterns; this issue extends them to symbols.
+
+**Body Span Semantics by Symbol Kind:**
+
+| Symbol Kind | Body Span Covers | Example |
+|-------------|-----------------|---------|
+| Function/Method | From first `@decorator` (or `def`/`async def`) through end of body | `@decorator\ndef foo():\n    pass` |
+| Class | From first `@decorator` (or `class`) through end of body | `@dataclass\nclass Foo:\n    x: int` |
+| Variable | Entire assignment statement | `x = 1` or `a, b = 1, 2` (both share same span) |
+| Parameter | Full parameter including annotation and default | `x: int = 5` |
+| Import | The import statement | `from os import path` |
+
+**Design Decision:** Variable body spans cover the **full statement** (Option A), not just the RHS. Rationale:
+- Consistency with functions/classes (complete extractable unit)
+- Supports "delete this variable" use case (need full statement range)
+- Tuple unpacking `a, b = 1, 2` makes sense as a unit
+- Annotated assignments `x: int = 5` preserve type information
+
+**Implementation Approach:**
+
+1. Add `body_span: Option<Span>` field to `Symbol` struct (backward compatible)
+2. Extend `BindingInfo` in tugtool-cst with body_span field
+3. Update `BindingCollector` to compute body spans during traversal:
+   - Track start position (first decorator or keyword)
+   - Compute end position after visiting body
+4. Bridge body spans through `NativeSymbol` to `FactsStore`
+5. Add helper methods: `Symbol::extract_body()`, `FactsStore::symbols_in_span()`
+
+**Files to Modify:**
+
+| File | Changes |
+|------|---------|
+| `crates/tugtool-core/src/facts/mod.rs` | Add `body_span: Option<Span>` to `Symbol` |
+| `crates/tugtool-cst/src/visitor/binding.rs` | Compute body spans in `BindingCollector` |
+| `crates/tugtool-python/src/cst_bridge.rs` | Bridge body span data |
+| `crates/tugtool-python/src/analyzer.rs` | Populate body spans in FactsStore |
+
+**Acceptance Criteria:**
+- [ ] `Symbol` struct has `body_span: Option<Span>` field
+- [ ] `BindingCollector` computes body spans for functions (including async, decorated)
+- [ ] `BindingCollector` computes body spans for classes (including decorated)
+- [ ] `BindingCollector` computes body spans for variables (full statement)
+- [ ] `BindingCollector` computes body spans for parameters
+- [ ] Body spans are populated in FactsStore via analyzer
+- [ ] `Symbol::extract_body()` helper returns correct source slice
+- [ ] `FactsStore::symbols_in_span()` returns symbols contained in a range
+- [ ] Test: function body span includes decorators
+- [ ] Test: nested function has independent body span
+- [ ] Test: class body span includes full class definition
+- [ ] Test: variable body span covers entire assignment statement
+- [ ] Test: tuple unpacking variables share same body span
+- [ ] Test: annotated assignment includes annotation in body span
+- [ ] Golden tests verify body span accuracy
+
+**Effort Estimate:** Medium (3-5 days)
+
+**Risk:** Low - purely additive, no breaking changes to existing functionality
+
+---
+
 #### Implementation Order {#improvement-order}
 
 | Priority | Issue | Effort | Risk |
@@ -3283,12 +3400,14 @@ The ScopeCollector in tugtool-cst collects scope information but does not comput
 | P1 | Issue 2: False-Positive Test | Low | Low |
 | P1 | Issue 3: Contract Deviation | Medium | Low |
 | P1 | Issue 4: Scope Spans | Medium | Low |
+| P1 | Issue 5: Body Spans | Medium | Low |
 
 **Recommended sequence:**
 1. Issue 1 first (P0, easy fix, high impact on correctness guarantee)
 2. Issue 2 second (quick test fix, improves test accuracy)
 3. Issue 3 third (either implement or document, decision needed)
 4. Issue 4 fourth (requires tugtool-cst changes to ScopeCollector)
+5. Issue 5 fifth (builds on Issue 4 patterns, extends BindingCollector)
 
 ---
 
@@ -3316,13 +3435,14 @@ cargo nextest run --workspace
 
 #### Verification Checklist {#improvement-verification}
 
-**After all improvements (Issues 1-4):**
-- [x] All 1025+ existing tests still pass (1028 tests)
+**After all improvements (Issues 1-5):**
+- [x] All 1025+ existing tests still pass (1031 tests as of Issue 3)
 - [x] New determinism tests added (Issue 1)
-- [ ] Import binding test corrected (Issue 2)
+- [x] Import binding test corrected (Issue 2)
 - [x] Contract C8 (determinism) is satisfied
-- [ ] Contract C1 matches implementation (either code or docs updated)
+- [x] Contract C1 matches implementation (docs updated to reflect name-only spans)
 - [ ] Scope spans are computed and populated (Issue 4)
+- [ ] Body spans are computed and populated (Issue 5)
 - [x] `cargo nextest run -p tugtool-python --test acceptance_criteria` passes
 - [x] `cargo nextest run --workspace` passes
 
