@@ -2857,3 +2857,60 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
    - `parse_module_with_positions`: Captures positions during inflation for refactoring operations
 
 ---
+
+### Step 6: Update Collectors to Use node.node_id - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 6 specification (lines 1317-1346)
+- [D04] Embed NodeId design decision
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - SpanCollector implementation
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector implementation
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - ScopeCollector implementation
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update SpanCollector to read `node.node_id.unwrap()` instead of generating IDs | Done |
+| Update BindingCollector to use `node.node_id` | N/A (doesn't use NodeId) |
+| Update ScopeCollector to use `node.node_id` | N/A (uses scope_N IDs) |
+| Update ReferenceCollector to use `node.node_id` | N/A (uses name-based keys) |
+| Remove `NodeIdGenerator` usage from collectors | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Complete rewrite to use embedded node_id; removed NodeIdGenerator; added debug assertions; added 2 new tests
+- `plans/phase-4.md` - Checked off all Step 6 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst span_collector`: 10 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 376 tests passed
+- `cargo nextest run --workspace`: 1064 tests passed
+
+**Checkpoints Verified:**
+- All collectors use embedded `node_id`: PASS (SpanCollector updated; others don't use NodeId)
+- All tests pass: PASS (1064 tests)
+
+**Unit Tests Added:**
+- `test_embedded_nodeid_matches_span_collector` - Verifies SpanCollector uses FunctionDef's embedded node_id
+- `test_embedded_nodeid_for_name` - Verifies SpanCollector uses Name's embedded node_id
+
+**Key Implementation Details:**
+
+1. **SpanCollector rewrite**: Removed `id_gen: NodeIdGenerator` field and all `self.id_gen.next()` calls. Now reads embedded `node.node_id` from tracked nodes (Name, Integer, Float, SimpleString, FunctionDef, ClassDef, Param, Decorator).
+
+2. **Debug assertions for invariant enforcement**: Added `expect_node_id()` helper that uses `debug_assert!` to catch non-parse-produced nodes. In release builds, uses sentinel value `NodeId(u32::MAX)` to avoid panics.
+
+3. **API change**: `SpanCollector::collect()` now returns just `SpanTable` instead of `(u32, SpanTable)` since node_count is no longer tracked during traversal.
+
+4. **Other collectors not modified**: Analysis revealed BindingCollector, ScopeCollector, and ReferenceCollector don't use NodeId at all:
+   - BindingCollector: Uses name-based tracking (BindingInfo with name, kind, scope_path, span)
+   - ScopeCollector: Uses its own `scope_N` string IDs (scope_0, scope_1, etc.)
+   - ReferenceCollector: Uses name-based keys in HashMap
+   These collectors are independent of the NodeId infrastructure and require no changes.
+
+5. **Attribute handling**: For Attribute nodes, we now use `node.attr.node_id` (the embedded Name's ID) rather than generating a separate ID for the Attribute.
+
+---

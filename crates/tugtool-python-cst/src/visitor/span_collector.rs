@@ -10,10 +10,10 @@
 //!
 //! # NodeId Assignment
 //!
-//! NodeIds are assigned deterministically in **pre-order** traversal order:
-//! - Parent nodes receive lower NodeIds than their children
-//! - Left siblings receive lower NodeIds than right siblings
-//! - The same source code always produces the same NodeId assignments
+//! NodeIds are assigned during inflation (parsing) and embedded directly on
+//! tracked nodes (Name, Integer, Float, SimpleString, FunctionDef, ClassDef,
+//! Param, Decorator). SpanCollector reads these embedded IDs rather than
+//! generating them during traversal.
 //!
 //! # Span Collection Strategy
 //!
@@ -37,7 +37,7 @@
 //! let module = parse_module(source, None)?;
 //!
 //! // Collect spans from the parsed module
-//! let (node_count, span_table) = SpanCollector::collect(&module, source);
+//! let span_table = SpanCollector::collect(&module, source);
 //!
 //! // Look up spans by NodeId
 //! if let Some(span) = span_table.span_of(NodeId(3)) {
@@ -48,14 +48,14 @@
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
 use crate::nodes::{
-    AsName, Attribute, ClassDef, Float, FunctionDef, ImportAlias, Integer, Module, Name, NodeId,
-    NodeIdGenerator, Param, SimpleString, Span, SpanTable,
+    AsName, Attribute, ClassDef, Decorator, Float, FunctionDef, ImportAlias, Integer, Module,
+    Name, NodeId, Param, SimpleString, Span, SpanTable,
 };
 
-/// A visitor that assigns NodeIds and collects spans for CST nodes.
+/// A visitor that collects spans for CST nodes using their embedded NodeIds.
 ///
-/// SpanCollector assigns deterministic [`NodeId`]s to nodes in pre-order
-/// traversal order and records spans for nodes with meaningful source positions.
+/// SpanCollector reads embedded [`NodeId`]s from tracked nodes (assigned during
+/// inflation) and records spans for nodes with meaningful source positions.
 ///
 /// # Position Tracking
 ///
@@ -67,13 +67,11 @@ use crate::nodes::{
 /// # Example
 ///
 /// ```ignore
-/// let (node_count, span_table) = SpanCollector::collect(&module, source);
+/// let span_table = SpanCollector::collect(&module, source);
 /// ```
 pub struct SpanCollector<'src> {
     /// The original source text
     source: &'src str,
-    /// Generator for assigning NodeIds
-    id_gen: NodeIdGenerator,
     /// Table of collected spans
     spans: SpanTable,
     /// Current search cursor position in the source
@@ -85,7 +83,6 @@ impl<'src> SpanCollector<'src> {
     pub fn new(source: &'src str) -> Self {
         Self {
             source,
-            id_gen: NodeIdGenerator::new(),
             spans: SpanTable::new(),
             cursor: 0,
         }
@@ -93,7 +90,7 @@ impl<'src> SpanCollector<'src> {
 
     /// Collect spans from a parsed module.
     ///
-    /// Returns the total node count and the populated span table.
+    /// Returns the populated span table.
     ///
     /// # Arguments
     ///
@@ -105,17 +102,12 @@ impl<'src> SpanCollector<'src> {
     /// ```ignore
     /// let source = "def foo(): pass";
     /// let module = parse_module(source, None)?;
-    /// let (count, spans) = SpanCollector::collect(&module, source);
+    /// let spans = SpanCollector::collect(&module, source);
     /// ```
-    pub fn collect(module: &Module<'_>, source: &'src str) -> (u32, SpanTable) {
+    pub fn collect(module: &Module<'_>, source: &'src str) -> SpanTable {
         let mut collector = SpanCollector::new(source);
         walk_module(&mut collector, module);
-        (collector.id_gen.count(), collector.spans)
-    }
-
-    /// Get the current NodeId count.
-    pub fn node_count(&self) -> u32 {
-        self.id_gen.count()
+        collector.spans
     }
 
     /// Get the collected SpanTable, consuming the collector.
@@ -148,47 +140,33 @@ impl<'src> SpanCollector<'src> {
     fn record_span(&mut self, node_id: NodeId, span: Span) {
         self.spans.insert(node_id, span);
     }
+
+    /// Get the node_id from a tracked node, with a debug assertion.
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if node_id is None (indicates a non-parse-produced node).
+    fn expect_node_id(node_id: Option<NodeId>, node_type: &str) -> NodeId {
+        debug_assert!(
+            node_id.is_some(),
+            "SpanCollector: {} node missing node_id - only use with parse-produced CSTs",
+            node_type
+        );
+        node_id.unwrap_or_else(|| {
+            // In release builds, use a sentinel value to avoid panics
+            // This should never happen with parse-produced trees
+            NodeId(u32::MAX)
+        })
+    }
 }
 
 impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     // ========================================================================
-    // Module - root node, gets NodeId(0)
-    // ========================================================================
-
-    fn visit_module(&mut self, _node: &Module<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        // Module spans the whole file, no need to record
-        VisitResult::Continue
-    }
-
-    // ========================================================================
-    // Statements - assign IDs but typically don't record spans
-    // ========================================================================
-
-    fn visit_statement(&mut self, _node: &crate::nodes::Statement<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_simple_statement_line(
-        &mut self,
-        _node: &crate::nodes::SimpleStatementLine<'a>,
-    ) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_small_statement(&mut self, _node: &crate::nodes::SmallStatement<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    // ========================================================================
-    // Identifiers (Name) - RECORD SPANS
+    // Identifiers (Name) - RECORD SPANS using embedded node_id
     // ========================================================================
 
     fn visit_name(&mut self, node: &Name<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "Name");
         if let Some(span) = self.find_and_advance(node.value) {
             self.record_span(id, span);
         }
@@ -196,11 +174,11 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     // ========================================================================
-    // Literals - RECORD SPANS
+    // Literals - RECORD SPANS using embedded node_id
     // ========================================================================
 
     fn visit_integer(&mut self, node: &Integer<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "Integer");
         if let Some(span) = self.find_and_advance(node.value) {
             self.record_span(id, span);
         }
@@ -208,7 +186,7 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     fn visit_float_literal(&mut self, node: &Float<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "Float");
         if let Some(span) = self.find_and_advance(node.value) {
             self.record_span(id, span);
         }
@@ -216,7 +194,7 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     fn visit_simple_string(&mut self, node: &SimpleString<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "SimpleString");
         if let Some(span) = self.find_and_advance(node.value) {
             self.record_span(id, span);
         }
@@ -224,11 +202,11 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     // ========================================================================
-    // Definitions - RECORD SPANS for names
+    // Definitions - RECORD SPANS using embedded node_id
     // ========================================================================
 
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "FunctionDef");
         // Record span for the function name (search for "def" then the name)
         // First find "def" to position cursor correctly
         if self.find_and_advance("def").is_some() {
@@ -240,7 +218,7 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "ClassDef");
         // Record span for the class name (search for "class" then the name)
         if self.find_and_advance("class").is_some() {
             if let Some(span) = self.find_and_advance(node.name.value) {
@@ -250,12 +228,22 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
         VisitResult::Continue
     }
 
+    fn visit_decorator(&mut self, node: &Decorator<'a>) -> VisitResult {
+        // Decorator has embedded node_id but we don't record a span for it here
+        // (decorator name spans are handled via the Name node inside decorator.decorator)
+        let _id = Self::expect_node_id(node.node_id, "Decorator");
+        VisitResult::Continue
+    }
+
     // ========================================================================
-    // Attributes - RECORD SPANS for attr name
+    // Attributes - RECORD SPANS
+    // Note: Attribute.attr is a Name which has its own embedded node_id.
+    // We record the span for the attr Name here using find_and_advance for cursor positioning.
     // ========================================================================
 
     fn visit_attribute(&mut self, node: &Attribute<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        // Attribute.attr is a Name, which has embedded node_id
+        let id = Self::expect_node_id(node.attr.node_id, "Attribute.attr (Name)");
         // Attribute span is just the attr name after the dot
         // First find the dot, then the attr name
         if self.find_and_advance(".").is_some() {
@@ -268,19 +256,20 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
 
     // ========================================================================
     // Imports - RECORD SPANS
+    // Note: Import names contain Name nodes with embedded node_ids
     // ========================================================================
 
     fn visit_import_alias(&mut self, node: &ImportAlias<'a>) -> VisitResult {
-        let id = self.id_gen.next();
         match &node.name {
             crate::nodes::NameOrAttribute::N(name) => {
+                let id = Self::expect_node_id(name.node_id, "ImportAlias name (Name)");
                 if let Some(span) = self.find_and_advance(name.value) {
                     self.record_span(id, span);
                 }
             }
             crate::nodes::NameOrAttribute::A(attr) => {
-                // For dotted imports like `foo.bar`, record the full span
-                // This is simplified - just records the last part
+                // For dotted imports like `foo.bar`, record the last part (attr name)
+                let id = Self::expect_node_id(attr.attr.node_id, "ImportAlias attr (Name)");
                 if let Some(span) = self.find_and_advance(attr.attr.value) {
                     self.record_span(id, span);
                 }
@@ -290,9 +279,9 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     fn visit_as_name(&mut self, node: &AsName<'a>) -> VisitResult {
-        let id = self.id_gen.next();
         match &node.name {
             crate::nodes::AssignTargetExpression::Name(name) => {
+                let id = Self::expect_node_id(name.node_id, "AsName name (Name)");
                 // Find "as" keyword first, then the alias name
                 if self.find_and_advance("as").is_some() {
                     if let Some(span) = self.find_and_advance(name.value) {
@@ -306,140 +295,14 @@ impl<'a, 'src> Visitor<'a> for SpanCollector<'src> {
     }
 
     // ========================================================================
-    // Parameters - RECORD SPANS for param names
+    // Parameters - RECORD SPANS using embedded node_id
     // ========================================================================
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
-        let id = self.id_gen.next();
+        let id = Self::expect_node_id(node.node_id, "Param");
         if let Some(span) = self.find_and_advance(node.name.value) {
             self.record_span(id, span);
         }
-        VisitResult::Continue
-    }
-
-    // ========================================================================
-    // Expressions - assign IDs
-    // ========================================================================
-
-    fn visit_expression(&mut self, _node: &crate::nodes::Expression<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    // ========================================================================
-    // Other nodes - assign IDs to maintain deterministic ordering
-    // ========================================================================
-
-    fn visit_assign(&mut self, _node: &crate::nodes::Assign<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_assign_target(&mut self, _node: &crate::nodes::AssignTarget<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_suite(&mut self, _node: &crate::nodes::Suite<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_parameters(&mut self, _node: &crate::nodes::Parameters<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_import_stmt(&mut self, _node: &crate::nodes::Import<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_import_from(&mut self, _node: &crate::nodes::ImportFrom<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_call(&mut self, _node: &crate::nodes::Call<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_arg(&mut self, _node: &crate::nodes::Arg<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_binary_operation(
-        &mut self,
-        _node: &crate::nodes::BinaryOperation<'a>,
-    ) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_unary_operation(&mut self, _node: &crate::nodes::UnaryOperation<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_comparison(&mut self, _node: &crate::nodes::Comparison<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_if_stmt(&mut self, _node: &crate::nodes::If<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_for_stmt(&mut self, _node: &crate::nodes::For<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_while_stmt(&mut self, _node: &crate::nodes::While<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_return_stmt(&mut self, _node: &crate::nodes::Return<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_pass_stmt(&mut self, _node: &crate::nodes::Pass<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_break_stmt(&mut self, _node: &crate::nodes::Break<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_continue_stmt(&mut self, _node: &crate::nodes::Continue<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_tuple(&mut self, _node: &crate::nodes::Tuple<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_list(&mut self, _node: &crate::nodes::List<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_dict(&mut self, _node: &crate::nodes::Dict<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
-        VisitResult::Continue
-    }
-
-    fn visit_set(&mut self, _node: &crate::nodes::Set<'a>) -> VisitResult {
-        let _id = self.id_gen.next();
         VisitResult::Continue
     }
 }
@@ -457,10 +320,8 @@ mod tests {
     fn test_span_collector_basic() {
         let source = "x = 1";
         let module = parse_module(source, None).expect("parse error");
-        let (node_count, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
-        // Should have collected some nodes
-        assert!(node_count > 0, "Expected some nodes to be counted");
         // Should have collected some spans
         assert!(!span_table.is_empty(), "Expected some spans to be collected");
     }
@@ -469,9 +330,8 @@ mod tests {
     fn test_span_collector_function() {
         let source = "def foo(): pass";
         let module = parse_module(source, None).expect("parse error");
-        let (node_count, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
-        assert!(node_count > 0);
         // Should have spans for function name
         assert!(!span_table.is_empty());
 
@@ -489,12 +349,11 @@ mod tests {
         let source = "x = 1\ny = 2";
         let module = parse_module(source, None).expect("parse error");
 
-        // Parse and collect twice
-        let (count1, spans1) = SpanCollector::collect(&module, source);
-        let (count2, spans2) = SpanCollector::collect(&module, source);
+        // Parse and collect twice from the same module
+        let spans1 = SpanCollector::collect(&module, source);
+        let spans2 = SpanCollector::collect(&module, source);
 
-        // Node counts should be identical for the same tree
-        assert_eq!(count1, count2, "NodeId assignment should be deterministic");
+        // Span collection should be deterministic
         assert_eq!(
             spans1.len(),
             spans2.len(),
@@ -506,7 +365,7 @@ mod tests {
     fn test_span_accuracy_identifiers() {
         let source = "x = 1";
         let module = parse_module(source, None).expect("parse error");
-        let (_, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
         // Find the span for "x"
         let x_span = span_table.iter().find(|(_, span)| {
@@ -524,7 +383,7 @@ mod tests {
     fn test_span_accuracy_integer() {
         let source = "x = 42";
         let module = parse_module(source, None).expect("parse error");
-        let (_, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
         // Find the span for "42"
         let int_span = span_table.iter().find(|(_, span)| {
@@ -542,7 +401,7 @@ mod tests {
     fn test_multiple_identifiers() {
         let source = "x = y";
         let module = parse_module(source, None).expect("parse error");
-        let (_, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
         // Should have spans for both x and y
         let spans: Vec<_> = span_table.iter().collect();
@@ -570,7 +429,7 @@ mod tests {
     fn test_function_with_params() {
         let source = "def add(a, b): return a + b";
         let module = parse_module(source, None).expect("parse error");
-        let (_, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
         // Should have spans for function name and parameters
         let has_add = span_table
@@ -592,7 +451,7 @@ mod tests {
     fn test_span_table_helpers() {
         let source = "x = 1";
         let module = parse_module(source, None).expect("parse error");
-        let (_, span_table) = SpanCollector::collect(&module, source);
+        let span_table = SpanCollector::collect(&module, source);
 
         // Test SpanTable methods
         assert!(!span_table.is_empty());
@@ -602,9 +461,76 @@ mod tests {
         let mut found_span = false;
         for (node_id, span) in span_table.iter() {
             assert!(span.start <= span.end);
-            assert!(node_id.as_u32() < 100); // Sanity check
+            assert!(node_id.as_u32() < 1000); // Sanity check (NodeIds can be larger now)
             found_span = true;
         }
         assert!(found_span);
+    }
+
+    #[test]
+    fn test_embedded_nodeid_matches_span_collector() {
+        // This test verifies that SpanCollector uses the embedded node_id from nodes
+        let source = "def foo(): pass";
+        let module = parse_module(source, None).expect("parse error");
+
+        // Get the FunctionDef's embedded node_id
+        if let Some(crate::nodes::Statement::Compound(
+            crate::nodes::CompoundStatement::FunctionDef(func),
+        )) = module.body.first()
+        {
+            let embedded_id = func
+                .node_id
+                .expect("FunctionDef should have embedded node_id");
+
+            // Collect spans
+            let span_table = SpanCollector::collect(&module, source);
+
+            // The FunctionDef's node_id should have a span in the table
+            assert!(
+                span_table.span_of(embedded_id).is_some(),
+                "SpanTable should contain span for FunctionDef's embedded node_id"
+            );
+
+            // Verify the span points to "foo"
+            let span = span_table.span_of(embedded_id).unwrap();
+            let text = &source[span.start as usize..span.end as usize];
+            assert_eq!(text, "foo", "FunctionDef span should point to function name");
+        } else {
+            panic!("Expected FunctionDef as first statement");
+        }
+    }
+
+    #[test]
+    fn test_embedded_nodeid_for_name() {
+        let source = "x = 1";
+        let module = parse_module(source, None).expect("parse error");
+
+        // Find the Name node for "x"
+        if let Some(crate::nodes::Statement::Simple(simple)) = module.body.first() {
+            if let Some(crate::nodes::SmallStatement::Assign(assign)) = simple.body.first() {
+                if let Some(target) = assign.targets.first() {
+                    if let crate::nodes::AssignTargetExpression::Name(name) = &target.target {
+                        let embedded_id =
+                            name.node_id.expect("Name should have embedded node_id");
+
+                        // Collect spans
+                        let span_table = SpanCollector::collect(&module, source);
+
+                        // The Name's node_id should have a span in the table
+                        assert!(
+                            span_table.span_of(embedded_id).is_some(),
+                            "SpanTable should contain span for Name's embedded node_id"
+                        );
+
+                        // Verify the span points to "x"
+                        let span = span_table.span_of(embedded_id).unwrap();
+                        let text = &source[span.start as usize..span.end as usize];
+                        assert_eq!(text, "x", "Name span should point to identifier");
+                        return;
+                    }
+                }
+            }
+        }
+        panic!("Could not find Name node in AST");
     }
 }

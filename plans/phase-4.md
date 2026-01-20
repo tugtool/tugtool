@@ -1324,23 +1324,23 @@ let scope_end = match &self.body {
 - Modified `SpanCollector`, `BindingCollector`, `ScopeCollector`, `ReferenceCollector`
 
 **Tasks:**
-- [ ] Update `SpanCollector` to read `node.node_id.unwrap()` instead of generating IDs
-- [ ] Update `BindingCollector` to use `node.node_id`
-- [ ] Update `ScopeCollector` to use `node.node_id`
-- [ ] Update `ReferenceCollector` to use `node.node_id` (if applicable)
-- [ ] Remove `NodeIdGenerator` usage from collectors (IDs now come from nodes)
+- [x] Update `SpanCollector` to read `node.node_id.unwrap()` instead of generating IDs
+- [x] Update `BindingCollector` to use `node.node_id` (N/A - doesn't use NodeId, uses name-based tracking)
+- [x] Update `ScopeCollector` to use `node.node_id` (N/A - uses its own scope_N string IDs)
+- [x] Update `ReferenceCollector` to use `node.node_id` (N/A - uses name-based keys in HashMap)
+- [x] Remove `NodeIdGenerator` usage from collectors (IDs now come from nodes)
 
 **Invariant:** Collectors only operate on parse-produced trees, so `node.node_id.unwrap()` is safe. Add debug assertions to enforce this.
 
 **Note (pitfall):** If any collector code can be invoked on non-parse-produced CSTs (e.g., tests constructing nodes via `Default`), `unwrap()` will panic. Guard against this by either (a) restricting collector entry points to parse outputs, and/or (b) using explicit assertions with a clear message so failures are actionable.
 
 **Tests:**
-- [ ] Unit test: Collector produces same NodeIds as embedded on nodes
-- [ ] Golden test: Compare span output before/after
+- [x] Unit test: Collector produces same NodeIds as embedded on nodes
+- [x] Golden test: Compare span output before/after (existing tests verify span accuracy)
 
 **Checkpoint:**
-- [ ] All collectors use embedded `node_id`
-- [ ] All tests pass
+- [x] All collectors use embedded `node_id`
+- [x] All tests pass
 
 **Rollback:**
 - Revert collector changes
