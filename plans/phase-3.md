@@ -3023,12 +3023,12 @@ After completing Steps 10.1-10.10, you will have:
 - Simplified codebase ready for future improvement
 
 **Final Step 10 Checkpoint:**
-- [ ] `cargo build -p tugtool-python` produces binary with zero Python dependencies
-- [ ] `cargo tree -p tugtool-python` shows no `which`, `dirs`, or conditional deps
-- [ ] `cargo nextest run --workspace` passes (all 1023+ tests)
-- [ ] `cargo bench -p tugtool-cst` still shows 18-19x improvement
-- [ ] No `#[cfg(feature = "native-cst")]` or `#[cfg(feature = "python-worker")]` in codebase
-- [ ] No `_native` suffixes or `::native::` paths remain in public API
+- [x] `cargo build -p tugtool-python` produces binary with zero Python dependencies
+- [x] `cargo tree -p tugtool-python` shows no `which`, `dirs`, or conditional deps
+- [x] `cargo nextest run --workspace` passes (all 1023+ tests)
+- [x] `cargo bench -p tugtool-cst` still shows 18-19x improvement
+- [x] No `#[cfg(feature = "native-cst")]` or `#[cfg(feature = "python-worker")]` in codebase
+- [x] No `_native` suffixes or `::native::` paths remain in public API
 
 **Estimated Code Reduction:**
 - Lines deleted: ~7,000+ (including 2,200-line Python script)
@@ -3044,27 +3044,27 @@ After completing Steps 10.1-10.10, you will have:
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `cargo build -p tugtool-python` produces binary with no Python dependencies (verify: `ldd` output)
-- [ ] Rename operations produce correct, stable results and preserve formatting (verify: integration tests + native golden suite)
-- [ ] FactsStore behavior used by rename is stable (verify: same logical symbol/reference set for representative fixtures)
-- [ ] Performance improvement >= 10x for 10KB+ Python files (verify: benchmark suite)
-- [ ] All existing integration tests pass with native backend (verify: `cargo nextest run`)
-- [ ] No Python subprocess spawned when using native backend (verify: strace/dtruss)
-- [ ] Default CI path runs with no Python installed (equivalence tests are opt-in during migration)
-- [ ] `cargo nextest run --workspace` passes
+- [x] `cargo build -p tugtool-python` produces binary with no Python dependencies (verify: `ldd` output)
+- [x] Rename operations produce correct, stable results and preserve formatting (verify: integration tests + native golden suite)
+- [x] FactsStore behavior used by rename is stable (verify: same logical symbol/reference set for representative fixtures)
+- [x] Performance improvement >= 10x for 10KB+ Python files (verify: benchmark suite)
+- [x] All existing integration tests pass with native backend (verify: `cargo nextest run`)
+- [x] No Python subprocess spawned when using native backend (verify: strace/dtruss)
+- [x] Default CI path runs with no Python installed (equivalence tests are opt-in during migration)
+- [x] `cargo nextest run --workspace` passes
 
 **Acceptance tests:**
-- [ ] Golden: All golden file tests pass
-- [ ] Integration: End-to-end rename on real codebase succeeds
-- [ ] Benchmark: parse_module 10x faster than Python worker for large files (achieved: 18-19x)
+- [x] Golden: All golden file tests pass
+- [x] Integration: End-to-end rename on real codebase succeeds
+- [x] Benchmark: parse_module 10x faster than Python worker for large files (achieved: 18-19x)
 
 ---
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Parser Extraction Complete** {#m01-parser-extraction}
-- [ ] tugtool-cst compiles with no PyO3 dependencies
-- [ ] Round-trip tests pass
+- [x] tugtool-cst compiles with no PyO3 dependencies
+- [x] Round-trip tests pass
 
 **Milestone M02: Visitor Infrastructure Complete** {#m02-visitor-infrastructure}
 - [x] Visitor/Transformer traits defined
@@ -3072,18 +3072,18 @@ After completing Steps 10.1-10.10, you will have:
 - [x] Position tracking working
 
 **Milestone M03: P0 Visitors Complete** {#m03-p0-visitors}
-- [ ] ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer
-- [ ] Basic rename works in isolation
+- [x] ScopeCollector, BindingCollector, ReferenceCollector, RenameTransformer
+- [x] Basic rename works in isolation
 
 **Milestone M04: Multi-File Analysis Complete** {#m04-multi-file-analysis}
-- [ ] analyze_files() populates FactsStore correctly
-- [ ] Cross-file references resolved
-- [ ] Type-aware method resolution working
+- [x] analyze_files() populates FactsStore correctly
+- [x] Cross-file references resolved
+- [x] Type-aware method resolution working
 
 **Milestone M05: Native-Only Architecture Complete** {#m05-integration}
-- [ ] Python worker code completely removed
-- [ ] No feature flags remain
-- [ ] All tests pass
+- [x] Python worker code completely removed
+- [x] No feature flags remain
+- [x] All tests pass
 
 ---
 
