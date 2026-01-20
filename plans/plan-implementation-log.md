@@ -2914,3 +2914,67 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 5. **Attribute handling**: For Attribute nodes, we now use `node.attr.node_id` (the embedded Name's ID) rather than generating a separate ID for the Attribute.
 
 ---
+
+### Step 7: Update SpanCollector to Use PositionTable - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 7 specification (lines 1350-1380)
+- (#identifier-span, #span-type-definitions) - Span type definitions
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Original SpanCollector implementation
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - PositionTable and NodePosition types
+- `crates/tugtool-python-cst/src/lib.rs` - parse_module_with_positions API
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Change SpanCollector to accept `PositionTable` from `parse_module_with_positions()` | Done |
+| Remove `find_and_advance()` from SpanCollector | Done |
+| Update `SpanCollector::collect()` to use `parse_module_with_positions()` | Done |
+| Verify all span lookups go through `PositionTable` (using `node.node_id` as key) | Done |
+| For identifier spans: `positions.get(&node_id).and_then(|p| p.ident_span)` | Done |
+| For lexical spans: `positions.get(&node_id).and_then(|p| p.lexical_span)` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Complete rewrite from visitor-based cursor tracking to PositionTable wrapper; removed find_and_advance(), source, cursor fields; SpanCollector is now a unit struct; added from_positions(), from_positions_with_lexical(), backward-compatible collect(); added 7 new tests
+- `plans/phase-4.md` - Checked off all Step 7 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst span`: 35 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 383 tests passed
+- `cargo nextest run --workspace`: 1071 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst span` passes: PASS (35 tests)
+- `grep find_and_advance crates/tugtool-python-cst/src/visitor/span_collector.rs` returns empty: PASS (only documentation comment mentions it)
+
+**Unit Tests Added:**
+- `test_from_positions_basic` - Verifies from_positions extracts spans from PositionTable
+- `test_from_positions_matches_collect` - Verifies new API produces same results as legacy collect()
+- `test_repeated_identifiers_have_distinct_spans` - Key test: verifies token-derived positions handle repeated identifiers correctly (string search would fail here)
+- `test_repeated_identifiers_with_same_name` - Additional repeated identifier test
+- `test_from_positions_function_name` - Verifies function name spans are accurate
+- `test_from_positions_with_lexical_spans` - Verifies extended API includes lexical spans
+- `test_collect_api_backward_compatible` - Verifies legacy collect() still works
+
+**Key Implementation Details:**
+
+1. **Architecture change**: SpanCollector transformed from a visitor that traverses the CST with cursor-based string search to a simple utility that extracts spans from the PositionTable captured during inflation.
+
+2. **New API methods**:
+   - `from_positions(&PositionTable) -> SpanTable`: Extracts `ident_span` values from PositionTable
+   - `from_positions_with_lexical(&PositionTable) -> SpanTable`: Also includes `lexical_span` for scope-defining nodes
+   - `collect(&Module, &str) -> SpanTable`: Legacy API that internally calls `parse_module_with_positions()` for backward compatibility
+
+3. **Benefits of PositionTable approach**:
+   - **Accuracy**: No risk of finding wrong occurrence of repeated identifiers
+   - **Determinism**: Positions derived from tokenizer, not search
+   - **Simplicity**: No cursor state to manage
+
+4. **Integer/Float/SimpleString spans**: Per the phase-4 plan, literals receive `node_id` but NOT `ident_span` in Phase 4. Span recording for literals is follow-on work. Updated test to reflect this.
+
+5. **Zero-overhead when not needed**: SpanCollector is now a unit struct (zero-sized type), with all state stored in the PositionTable which is only created when using `parse_module_with_positions()`.
+
+---

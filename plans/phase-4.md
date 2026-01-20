@@ -1359,21 +1359,21 @@ let scope_end = match &self.body {
 **Note:** After this step, `SpanCollector` becomes a thin wrapper around `parse_module_with_positions()` + `PositionTable` access. Consider whether it should be simplified to a direct API in a follow-on cleanup.
 
 **Tasks:**
-- [ ] Change SpanCollector to accept `PositionTable` from `parse_module_with_positions()`
-- [ ] Remove `find_and_advance()` from SpanCollector
-- [ ] Update `SpanCollector::collect()` to use `parse_module_with_positions()`
-- [ ] Verify all span lookups go through `PositionTable` (using `node.node_id` as key)
-- [ ] For identifier spans: `positions.get(&node_id).and_then(|p| p.ident_span)`
-- [ ] For lexical spans: `positions.get(&node_id).and_then(|p| p.lexical_span)`
+- [x] Change SpanCollector to accept `PositionTable` from `parse_module_with_positions()`
+- [x] Remove `find_and_advance()` from SpanCollector
+- [x] Update `SpanCollector::collect()` to use `parse_module_with_positions()`
+- [x] Verify all span lookups go through `PositionTable` (using `node.node_id` as key)
+- [x] For identifier spans: `positions.get(&node_id).and_then(|p| p.ident_span)`
+- [x] For lexical spans: `positions.get(&node_id).and_then(|p| p.lexical_span)`
 
 **Tests:**
-- [ ] Unit test: Same span results as before for simple cases
-- [ ] Unit test: Correct spans for repeated identifiers (string search would fail)
-- [ ] Golden test: Compare span output before/after
+- [x] Unit test: Same span results as before for simple cases
+- [x] Unit test: Correct spans for repeated identifiers (string search would fail)
+- [x] Golden test: Compare span output before/after
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst span` passes
-- [ ] `grep find_and_advance crates/tugtool-python-cst/src/visitor/span_collector.rs` returns empty
+- [x] `cargo nextest run -p tugtool-python-cst span` passes
+- [x] `grep find_and_advance crates/tugtool-python-cst/src/visitor/span_collector.rs` returns empty
 
 **Rollback:**
 - Revert SpanCollector changes
