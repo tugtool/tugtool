@@ -2229,3 +2229,74 @@ Two sources of non-determinism in file processing order:
 4. **New critical test**: `different_input_order_produces_identical_ids` verifies the hard guarantee
 
 ---
+
+### 3.0.7 Issue 2: False-Positive Acceptance Test - COMPLETE
+
+**Completed:** 2026-01-19
+
+**References Reviewed:**
+- Section 3.0.7 Issue 2 specification (plans/phase-3.md lines 3165-3196)
+- Contract C1: `find_symbol_at_location()` behavior (lines 1733-1771)
+
+**Problem:**
+The test `clicking_on_import_binding_returns_original_definition` did not test what it claimed.
+It was clicking on `x.py` (the definition site) instead of `y.py` (the import binding site).
+
+**Discovery:**
+Fixing the test revealed that `find_symbol_at_location()` was not resolving import bindings
+to their original definitions per Contract C1's "Key Invariant":
+> An import binding (from x import foo → returns original foo in x.py)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Fix test to click on y.py (import site), not x.py (definition site) | Done |
+| Compute column offset dynamically using `line.find("foo") + 1` | Done |
+| Add assertion for original definition file path | Done |
+| Add complementary test for definition-site click in multi-file scenario | Done |
+| Implement import resolution in `find_symbol_at_location()` | Done |
+| Run tests and verify all pass | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/tests/acceptance_criteria.rs`:
+  - Fixed `clicking_on_import_binding_returns_original_definition` test (lines 102-127)
+    - Now clicks on y.py line 1, column computed from "from x import foo"
+    - Verifies returned symbol is from x.py, not y.py
+  - Added new test `clicking_on_definition_in_multi_file_import_scenario` (lines 129-155)
+    - Complementary test for definition-site click
+
+- `crates/tugtool-python/src/lookup.rs`:
+  - Added `SymbolKind` import
+  - Added import resolution logic in `find_symbol_at_location()` (lines 115-126)
+    - When a symbol with kind `Import` is found, resolves to original definition
+  - Added `resolve_import_to_original()` function (lines 136-165)
+    - Finds matching import in imports table
+    - Resolves module path to file (e.g., "x" → "x.py")
+    - Returns original symbol from resolved file
+  - Added `resolve_module_to_file()` function (lines 167-191)
+    - Converts module path to file candidates
+    - Tries module file first, then `__init__.py`
+
+- `plans/phase-3.md`:
+  - Checked off all 5 acceptance criteria for Issue 2
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python clicking_on_import_binding`: PASS
+- `cargo nextest run -p tugtool-python clicking_on_definition_in_multi`: PASS
+- `cargo nextest run --workspace`: 1029 tests passed (1 new test added)
+
+**Checkpoints Verified:**
+- Test clicks on `foo` in `from x import foo` (y.py, not x.py): PASS
+- Column offset computed dynamically: PASS
+- Test verifies returned symbol is original definition from x.py: PASS
+- Test name accurately reflects behavior: PASS
+- Complementary test for definition-site click added: PASS
+
+**Key Implementation Details:**
+1. **Test now tests actual import binding path**: Clicking on y.py at the import statement
+2. **Dynamic column computation**: Uses `line.find("foo") + 1` instead of magic numbers
+3. **Contract C1 compliance**: `find_symbol_at_location()` now follows imports to original definitions
+4. **Graceful fallback**: If import cannot be resolved (external module), returns the import symbol itself
+
+---

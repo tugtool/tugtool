@@ -3188,11 +3188,11 @@ Change the test to:
 3. Assert that it returns the original `foo` symbol from x.py
 
 **Acceptance Criteria:**
-- [ ] Test clicks on `foo` in `from x import foo` (y.py, not x.py)
-- [ ] Column offset is computed from the actual line content, not hardcoded
-- [ ] Test verifies returned symbol is the original definition from x.py
-- [ ] Test name accurately reflects what is being tested
-- [ ] Consider adding complementary test for definition-site click if not already covered
+- [x] Test clicks on `foo` in `from x import foo` (y.py, not x.py)
+- [x] Column offset is computed from the actual line content, not hardcoded
+- [x] Test verifies returned symbol is the original definition from x.py
+- [x] Test name accurately reflects what is being tested
+- [x] Consider adding complementary test for definition-site click if not already covered
 
 ---
 

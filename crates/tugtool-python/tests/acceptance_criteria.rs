@@ -101,21 +101,57 @@ mod ac1_find_symbol_at_location {
 
     #[test]
     fn clicking_on_import_binding_returns_original_definition() {
-        // file x.py: def foo(): pass
-        // file y.py: from x import foo  # clicking on "foo" returns foo in x.py
-        let file_list = files(&[
-            ("x.py", "def foo(): pass\n"),
-            ("y.py", "from x import foo\nfoo()\n"),
-        ]);
+        // file x.py: def foo(): pass  # definition site
+        // file y.py: from x import foo  # clicking on "foo" HERE returns foo in x.py
+        let x_content = "def foo(): pass\n";
+        let y_content = "from x import foo\nfoo()\n";
+        let file_list = files(&[("x.py", x_content), ("y.py", y_content)]);
         let store = analyze_test_files(&file_list);
 
-        // Look for the definition of foo in x.py
-        let location = Location::new("x.py", 1, 5); // "foo" in x.py
+        // Compute the column of "foo" in "from x import foo" dynamically
+        // to avoid hardcoded magic numbers. The +1 converts 0-based to 1-based.
+        let import_line = "from x import foo";
+        let foo_col = import_line.find("foo").expect("foo not in import line") + 1;
+
+        // Click on the import binding in y.py (NOT the definition in x.py)
+        let location = Location::new("y.py", 1, foo_col as u32);
         let result = find_symbol_at_location(&store, &location, &file_list);
 
-        assert!(result.is_ok(), "Expected symbol in x.py, got: {:?}", result);
+        assert!(result.is_ok(), "Expected symbol via import binding, got: {:?}", result);
+        let symbol = result.unwrap();
+        // Should return the ORIGINAL definition from x.py, not an import binding
+        assert_eq!(symbol.name, "foo");
+        // Verify symbol is from x.py by looking up the file path via decl_file_id
+        let decl_file = store.file(symbol.decl_file_id).expect("decl_file should exist");
+        assert_eq!(decl_file.path, "x.py", "Should return the original definition from x.py");
+    }
+
+    #[test]
+    fn clicking_on_definition_in_multi_file_import_scenario() {
+        // Complementary test: clicking on the DEFINITION site in a multi-file scenario
+        // (vs clicking_on_import_binding_returns_original_definition which clicks on the import)
+        //
+        // file x.py: def foo(): pass  # clicking on "foo" HERE returns foo in x.py
+        // file y.py: from x import foo  # importer
+        let def_line = "def foo(): pass";
+        let x_content = format!("{def_line}\n");
+        let y_content = "from x import foo\nfoo()\n";
+        let file_list = files(&[("x.py", &x_content), ("y.py", y_content)]);
+        let store = analyze_test_files(&file_list);
+
+        // Compute the column of "foo" in "def foo(): pass" dynamically
+        let foo_col = def_line.find("foo").expect("foo not in def line") + 1;
+
+        // Click on the definition in x.py
+        let location = Location::new("x.py", 1, foo_col as u32);
+        let result = find_symbol_at_location(&store, &location, &file_list);
+
+        assert!(result.is_ok(), "Expected symbol at definition site, got: {:?}", result);
         let symbol = result.unwrap();
         assert_eq!(symbol.name, "foo");
+        // Verify symbol is from x.py by looking up the file path via decl_file_id
+        let decl_file = store.file(symbol.decl_file_id).expect("decl_file should exist");
+        assert_eq!(decl_file.path, "x.py", "Definition click should return the same symbol");
     }
 
     #[test]
