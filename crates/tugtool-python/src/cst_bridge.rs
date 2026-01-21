@@ -19,7 +19,7 @@
 
 use thiserror::Error;
 use tugtool_python_cst::{
-    parse_module, prettify_error,
+    parse_module_with_positions, prettify_error,
     // P0 visitors
     BindingCollector, BindingInfo as CstBindingInfo, BindingKind as CstBindingKind,
     ReferenceCollector, ReferenceInfo as CstReferenceInfo, ReferenceKind as CstReferenceKind,
@@ -210,21 +210,22 @@ impl From<CstReferenceInfo> for ReferenceInfo {
 /// assert!(!result.bindings.is_empty());
 /// ```
 pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> {
-    // Parse the source into a CST
-    let module = parse_module(source, None).map_err(|e| CstBridgeError::ParseError {
+    // Parse the source into a CST with position information
+    // This provides accurate token-derived spans for all tracked nodes
+    let parsed = parse_module_with_positions(source, None).map_err(|e| CstBridgeError::ParseError {
         message: prettify_error(e, "source"),
     })?;
 
-    // P0: Collect scopes
-    let cst_scopes = ScopeCollector::collect(&module, source);
+    // P0: Collect scopes (using position-aware parsing)
+    let cst_scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
     let scopes: Vec<ScopeInfo> = cst_scopes.into_iter().map(|s| s.into()).collect();
 
-    // P0: Collect bindings
-    let cst_bindings = BindingCollector::collect(&module, source);
+    // P0: Collect bindings (using position-aware parsing)
+    let cst_bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
     let bindings: Vec<BindingInfo> = cst_bindings.into_iter().map(|b| b.into()).collect();
 
-    // P0: Collect references
-    let cst_refs = ReferenceCollector::collect(&module, source);
+    // P0: Collect references (using position-aware parsing)
+    let cst_refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
     let references: Vec<(String, Vec<ReferenceInfo>)> = cst_refs
         .into_iter()
         .map(|(name, refs)| {
@@ -235,22 +236,22 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         .collect();
 
     // P1: Collect imports
-    let imports = ImportCollector::collect(&module, source);
+    let imports = ImportCollector::collect(&parsed.module, source);
 
     // P1: Collect type annotations
-    let annotations = AnnotationCollector::collect(&module, source);
+    let annotations = AnnotationCollector::collect(&parsed.module, source);
 
     // P1: Collect assignment patterns for type inference
-    let assignments = TypeInferenceCollector::collect(&module, source);
+    let assignments = TypeInferenceCollector::collect(&parsed.module, source);
 
     // P1: Collect class inheritance information
-    let class_inheritance = InheritanceCollector::collect(&module, source);
+    let class_inheritance = InheritanceCollector::collect(&parsed.module, source);
 
     // P1: Collect method call patterns
-    let method_calls = MethodCallCollector::collect(&module, source);
+    let method_calls = MethodCallCollector::collect(&parsed.module, source);
 
     // P2: Collect dynamic patterns
-    let dynamic_patterns = DynamicPatternDetector::collect(&module, source);
+    let dynamic_patterns = DynamicPatternDetector::collect(&parsed.module, source);
 
     Ok(NativeAnalysisResult {
         // P0

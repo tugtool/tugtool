@@ -1473,18 +1473,18 @@ let scope_end = match &self.body {
 - Modified `crates/tugtool-python/src/cst_bridge.rs`
 
 **Tasks:**
-- [ ] Update cst_bridge to use `parse_module_with_positions()`
-- [ ] Pass `PositionTable` to collectors
-- [ ] Update collectors to access spans via `node.node_id` + `PositionTable` lookup
-- [ ] Verify all downstream code receives accurate positions
+- [x] Update cst_bridge to use `parse_module_with_positions()`
+- [x] Pass `PositionTable` to collectors
+- [x] Update collectors to access spans via `node.node_id` + `PositionTable` lookup
+- [x] Verify all downstream code receives accurate positions
 
 **Tests:**
-- [ ] Integration test: End-to-end rename with accurate spans
-- [ ] Integration test: Scope containment queries work correctly
+- [x] Integration test: End-to-end rename with accurate spans
+- [x] Integration test: Scope containment queries work correctly
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python` passes
-- [ ] Golden tests pass
+- [x] `cargo nextest run -p tugtool-python` passes
+- [x] Golden tests pass
 
 **Rollback:**
 - Revert cst_bridge changes

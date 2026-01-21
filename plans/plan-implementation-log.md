@@ -3205,3 +3205,57 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
    - Use `node.node_id` for PositionTable key lookups
 
 ---
+
+### Step 11: Update tugtool-python Integration - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 11 specification (lines 1466-1491)
+- (#implementation-architecture) - Architecture section (lines 716-945)
+- `crates/tugtool-python/src/cst_bridge.rs` - Existing CST bridge implementation
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector API signatures
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - ScopeCollector API signatures
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector API signatures
+- `crates/tugtool-python-cst/src/lib.rs` - `parse_module_with_positions()` API
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update cst_bridge to use `parse_module_with_positions()` | Done |
+| Pass `PositionTable` to collectors | Done |
+| Update collectors to access spans via `node.node_id` + `PositionTable` lookup | Done |
+| Verify all downstream code receives accurate positions | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/cst_bridge.rs` - Updated to use `parse_module_with_positions()` and `collect_with_positions()` APIs for P0 collectors
+- `plans/phase-4.md` - Checked off all Step 11 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 254 tests passed
+- `cargo nextest run -p tugtool-python-cst golden`: 37 tests passed
+- `cargo nextest run --workspace`: 1088 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python` passes: PASS (254 tests)
+- Golden tests pass: PASS (37 tests)
+
+**Key Implementation Details:**
+
+1. **Import change**: Updated from `parse_module` to `parse_module_with_positions` in the imports section.
+
+2. **Parsing optimization**: The previous implementation was inefficient:
+   - Old: Called `parse_module()` once in `parse_and_analyze()`, then each P0 collector (`collect(&module, source)`) internally called `parse_module_with_positions()` again - resulting in 4 parse operations per file.
+   - New: Call `parse_module_with_positions()` once, then pass `&parsed.positions` to all P0 collectors via `collect_with_positions()` - resulting in 1 parse operation per file.
+
+3. **P0 collectors updated**:
+   - `ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source)`
+   - `BindingCollector::collect_with_positions(&parsed.module, &parsed.positions)`
+   - `ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions)`
+
+4. **P1/P2 collectors**: Continue to use their existing `collect(&module, source)` API as they don't require position tracking (they don't produce spans in their output). They now receive `&parsed.module` from the position-aware parse result.
+
+5. **No downstream API changes**: The `NativeAnalysisResult` struct and all conversion types remain unchanged. The integration is transparent to callers of `parse_and_analyze()`.
+
+---
