@@ -3280,12 +3280,12 @@ q_start = Date(2024, 5, 20).back_to_start(CalendarUnit.QUARTER)  # Apr 1
 - `tests/test_infer.py` - Format inference tests
 
 **Tasks:**
-- [ ] Create `InferOptions` class for configuration (date_order, etc.)
-- [ ] Implement format pattern detection for common formats
-- [ ] Create `parse_fuzzy(text, options)` function
-- [ ] Support configurable date order (MDY, DMY, YMD)
-- [ ] Handle common separators (/, -, ., space)
-- [ ] Return parsed value with confidence indicator
+- [x] Create `InferOptions` class for configuration (date_order, etc.)
+- [x] Implement format pattern detection for common formats
+- [x] Create `parse_fuzzy(text, options)` function
+- [x] Support configurable date order (MDY, DMY, YMD)
+- [x] Handle common separators (/, -, ., space)
+- [x] Return parsed value with confidence indicator
 
 **InferOptions specification:**
 ```python
@@ -3365,18 +3365,18 @@ def parse_fuzzy(
 ```
 
 **Tests:**
-- [ ] Unit test: ISO format parsing
-- [ ] Unit test: Slash-separated with MDY order
-- [ ] Unit test: Slash-separated with DMY order
-- [ ] Unit test: Named month parsing
-- [ ] Unit test: Time-only parsing
-- [ ] Unit test: Combined datetime parsing
-- [ ] Unit test: Ambiguous date with explicit order
-- [ ] Unit test: Confidence scores vary by format clarity
+- [x] Unit test: ISO format parsing
+- [x] Unit test: Slash-separated with MDY order
+- [x] Unit test: Slash-separated with DMY order
+- [x] Unit test: Named month parsing
+- [x] Unit test: Time-only parsing
+- [x] Unit test: Combined datetime parsing
+- [x] Unit test: Ambiguous date with explicit order
+- [x] Unit test: Confidence scores vary by format clarity
 
 **Checkpoint:**
-- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_infer.py -v` passes
-- [ ] `parse_fuzzy("Jan 15, 2024")` correctly parses
+- [x] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_infer.py -v` passes
+- [x] `parse_fuzzy("Jan 15, 2024")` correctly parses
 
 **Rollback:** Remove infer/ module and test file
 

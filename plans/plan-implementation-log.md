@@ -6,6 +6,58 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 14: Implement Flexible Format Inference | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 14 specification (lines 3268-3384)
+- `plans/phase-5.md` - [IA01] Ambiguity Resolution Strategy (YMD default with override)
+- `sample-code/python/temporale/temporale/errors.py` - Error patterns (ParseError)
+- `sample-code/python/temporale/temporale/format/iso8601.py` - Existing parsing patterns
+- `sample-code/python/temporale/temporale/__init__.py` - Export patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `InferOptions` class for configuration (date_order, etc.) | Done |
+| Implement format pattern detection for common formats | Done |
+| Create `parse_fuzzy(text, options)` function | Done |
+| Support configurable date order (MDY, DMY, YMD) | Done |
+| Handle common separators (/, -, ., space) | Done |
+| Return parsed value with confidence indicator | Done |
+| Write comprehensive test suite (57 tests) | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/infer/__init__.py` - Public API with DateOrder enum, InferOptions, ParseResult, and parse_fuzzy function
+- `sample-code/python/temporale/temporale/infer/_formats.py` - Format templates with regex patterns, extractors, and confidence scores for ISO, slash/dash/dot dates, named months, times, datetimes
+- `sample-code/python/temporale/temporale/infer/_patterns.py` - Pattern detection logic with PatternMatch dataclass and detect_format function
+- `sample-code/python/temporale/tests/test_infer.py` - 57 comprehensive tests covering all format inference functionality
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/__init__.py` - Added DateOrder, InferOptions, parse_fuzzy exports and docstring update
+
+**Test Results:**
+- `pytest tests/test_infer.py -v`: 57 tests passed
+- Full test suite: 946 tests passed (889 + 57 new)
+
+**Checkpoints Verified:**
+- `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_infer.py -v` passes: PASS
+- `parse_fuzzy("Jan 15, 2024")` correctly parses: PASS (returns Date(2024, 1, 15) with confidence 0.95)
+
+**Key Decisions/Notes:**
+- DateOrder enum provides YMD (default), MDY, DMY options per [IA01]
+- ParseResult is a frozen dataclass with value, format_detected, and confidence
+- Confidence scores: ISO formats get 1.0, named months 0.95, ambiguous formats 0.8
+- Confidence reduced for potentially invalid values (month > 12, day > 31, etc.)
+- Supports 12-hour time with AM/PM (converts noon=12, midnight=0 correctly)
+- Handles timezone suffixes (Z, +HH:MM, -HH:MM) in ISO datetime
+- Named month patterns support both "Jan 15, 2024" (MDY) and "15 Jan 2024" (DMY)
+- 2-digit year handling uses default_century (default 2000) or prefer_future heuristic
+
+---
+
 ## [phase-5.md] Step 13: Implement Interval Type and Range Operations | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

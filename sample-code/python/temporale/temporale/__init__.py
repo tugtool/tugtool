@@ -20,6 +20,11 @@ Format Functions:
     parse_iso8601: Parse ISO 8601 date/time/datetime string
     format_iso8601: Format temporal object as ISO 8601 string
 
+Inference Functions:
+    parse_fuzzy: Parse date/time with automatic format detection
+    DateOrder: Enum for date component ordering (YMD, MDY, DMY)
+    InferOptions: Configuration for format inference
+
 Exceptions:
     TemporaleError: Base exception
     ValidationError: Invalid input values
@@ -63,6 +68,9 @@ from temporale.errors import (
 # Format functions
 from temporale.format import format_iso8601, parse_iso8601
 
+# Inference functions
+from temporale.infer import DateOrder, InferOptions, parse_fuzzy
+
 __all__: list[str] = [
     "__version__",
     # Core types
@@ -85,4 +93,8 @@ __all__: list[str] = [
     # Format functions
     "parse_iso8601",
     "format_iso8601",
+    # Inference functions
+    "parse_fuzzy",
+    "DateOrder",
+    "InferOptions",
 ]
