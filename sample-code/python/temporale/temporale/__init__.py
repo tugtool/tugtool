@@ -69,7 +69,7 @@ from temporale.errors import (
 from temporale.format import format_iso8601, parse_iso8601
 
 # Inference functions
-from temporale.infer import DateOrder, InferOptions, parse_fuzzy
+from temporale.infer import DateOrder, InferOptions, parse_fuzzy, parse_relative
 
 __all__: list[str] = [
     "__version__",
@@ -95,6 +95,7 @@ __all__: list[str] = [
     "format_iso8601",
     # Inference functions
     "parse_fuzzy",
+    "parse_relative",
     "DateOrder",
     "InferOptions",
 ]

@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 15: Implement Relative and Natural Date Parsing | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 15 specification (lines 3387-3480)
+- `plans/phase-5.md` - [IA02] Relative Date Reference Point (parameter with system default)
+- `plans/phase-5.md` - [IA03] Natural Language Scope (minimal explicit patterns, no NLP)
+- `sample-code/python/temporale/temporale/infer/__init__.py` - Existing infer module structure
+- `sample-code/python/temporale/temporale/core/duration.py` - Duration class API
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `parse_relative(text, reference)` function | Done |
+| Support keywords: yesterday, today, tomorrow | Done |
+| Support weekday references: next/last Monday-Sunday | Done |
+| Support duration phrases: "3 days ago", "in 2 weeks" | Done |
+| Support month phrases: "next month", "last month" | Done |
+| Handle combination: "next Monday at 3pm" | Done |
+| Write comprehensive test suite (71 tests) | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/infer/_natural.py` - Natural language patterns and keyword definitions (RelativeDirection enum, DAY_KEYWORDS, WEEKDAY_NAMES, TIME_UNITS, PERIOD_KEYWORDS, regex patterns, parser helpers)
+- `sample-code/python/temporale/temporale/infer/_relative.py` - Main parse_relative function with weekday calculation helpers (_get_next_weekday, _get_last_weekday, _get_this_weekday)
+- `sample-code/python/temporale/tests/test_relative_parsing.py` - 71 comprehensive tests covering all relative date parsing functionality
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/infer/__init__.py` - Added parse_relative import and export, updated docstring
+- `sample-code/python/temporale/temporale/__init__.py` - Added parse_relative to public API exports
+
+**Test Results:**
+- `pytest tests/test_relative_parsing.py -v`: 71 tests passed
+- Full test suite: 1017 tests passed (946 + 71 new)
+
+**Checkpoints Verified:**
+- `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_relative_parsing.py -v` passes: PASS
+- `parse_relative("3 days ago")` returns correct date: PASS (returns Date(2024, 1, 12) for reference Jan 15, 2024)
+
+**Key Decisions/Notes:**
+- Reference DateTime parameter per [IA02] - uses DateTime.now() as default
+- Minimal scope per [IA03] - explicit patterns only, no NLP library dependency
+- Weekday references: "Monday" (next occurrence), "next Monday" (strictly after today), "last Monday" (previous), "this Monday" (current week)
+- Duration phrases support days, weeks, months, years, hours, minutes
+- Hours/minutes return DateTime (not Date) since they involve time-of-day changes
+- Time suffixes ("at 3pm", "at 14:30") work with any relative expression
+- Used Duration.from_hours() and Duration.from_minutes() factory methods (not constructor kwargs)
+- Weekday abbreviations supported (Mon, Tue, Wed, Thu, Fri, Sat, Sun plus variants)
+- All patterns are case-insensitive
+
+---
+
 ## [phase-5.md] Step 14: Implement Flexible Format Inference | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

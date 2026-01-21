@@ -3399,12 +3399,12 @@ def parse_fuzzy(
 - `tests/test_relative_parsing.py` - Relative date tests
 
 **Tasks:**
-- [ ] Implement `parse_relative(text, reference)` function
-- [ ] Support keywords: yesterday, today, tomorrow
-- [ ] Support weekday references: next/last Monday-Sunday
-- [ ] Support duration phrases: "3 days ago", "in 2 weeks"
-- [ ] Support month phrases: "next month", "last month"
-- [ ] Handle combination: "next Monday at 3pm"
+- [x] Implement `parse_relative(text, reference)` function
+- [x] Support keywords: yesterday, today, tomorrow
+- [x] Support weekday references: next/last Monday-Sunday
+- [x] Support duration phrases: "3 days ago", "in 2 weeks"
+- [x] Support month phrases: "next month", "last month"
+- [x] Handle combination: "next Monday at 3pm"
 
 **parse_relative specification:**
 ```python
@@ -3463,17 +3463,17 @@ def parse_relative(
 ```
 
 **Tests:**
-- [ ] Unit test: today/yesterday/tomorrow keywords
-- [ ] Unit test: Weekday references (next Monday, last Friday)
-- [ ] Unit test: Duration phrases (N days/weeks ago/from now)
-- [ ] Unit test: Period phrases (N months/years ago/from now)
-- [ ] Unit test: Custom reference datetime
-- [ ] Unit test: Combination with time ("tomorrow at 3pm")
-- [ ] Unit test: Edge cases (next Monday on a Monday)
+- [x] Unit test: today/yesterday/tomorrow keywords
+- [x] Unit test: Weekday references (next Monday, last Friday)
+- [x] Unit test: Duration phrases (N days/weeks ago/from now)
+- [x] Unit test: Period phrases (N months/years ago/from now)
+- [x] Unit test: Custom reference datetime
+- [x] Unit test: Combination with time ("tomorrow at 3pm")
+- [x] Unit test: Edge cases (next Monday on a Monday)
 
 **Checkpoint:**
-- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_relative_parsing.py -v` passes
-- [ ] `parse_relative("3 days ago")` returns correct date
+- [x] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_relative_parsing.py -v` passes
+- [x] `parse_relative("3 days ago")` returns correct date
 
 **Rollback:** Remove _relative.py, _natural.py, revert __init__.py, remove test file
 

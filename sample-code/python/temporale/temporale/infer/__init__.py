@@ -5,6 +5,7 @@ automatically detecting the format and extracting components.
 
 Public API:
     parse_fuzzy: Parse a date/time string with automatic format detection.
+    parse_relative: Parse relative date expressions like "yesterday", "next Monday".
     ParseResult: Result of fuzzy parsing with confidence score.
     InferOptions: Configuration for parsing ambiguous formats.
     DateOrder: Enum for date component ordering (YMD, MDY, DMY).
@@ -15,6 +16,7 @@ The inference system handles:
     - Named month formats ("Jan 15, 2024", "15 January 2024")
     - Time formats (24-hour, 12-hour with AM/PM)
     - Combined datetime formats
+    - Relative expressions ("today", "3 days ago", "next Monday at 3pm")
 
 Examples:
     >>> from temporale.infer import parse_fuzzy
@@ -29,6 +31,10 @@ Examples:
     >>> result = parse_fuzzy("01/15/2024", opts)
     >>> result.value
     Date(2024, 1, 15)
+
+    >>> from temporale.infer import parse_relative
+    >>> parse_relative("3 days ago")
+    Date(...)  # 3 days before today
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from typing import TYPE_CHECKING, Union
 from temporale.errors import ParseError
 from temporale.infer._formats import FormatKind
 from temporale.infer._patterns import detect_format
+from temporale.infer._relative import parse_relative
 
 if TYPE_CHECKING:
     from temporale.core.date import Date
@@ -279,4 +286,5 @@ __all__ = [
     "InferOptions",
     "ParseResult",
     "parse_fuzzy",
+    "parse_relative",
 ]
