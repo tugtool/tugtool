@@ -136,10 +136,7 @@ fn has_uv() -> bool {
 
 /// Create a venv using uv and install pytest.
 fn create_venv_with_uv(venv_path: &Path) -> Result<(), String> {
-    eprintln!(
-        "Creating test venv at {} with uv...",
-        venv_path.display()
-    );
+    eprintln!("Creating test venv at {} with uv...", venv_path.display());
 
     // Create venv with Python 3.11
     let status = Command::new("uv")
@@ -288,4 +285,3 @@ fn run_pytest_with_cmd(python_cmd: &Path, dir: &Path, extra_args: &[&str]) -> Py
         },
     }
 }
-

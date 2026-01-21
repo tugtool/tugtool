@@ -6,6 +6,57 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 18 Fixup: Export Rename + Test Infrastructure | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 18 Fixup Tasks 7-10 specification (lines 3712-3849)
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - ExportCollector implementation
+- `crates/tugtool-python/src/ops/rename.rs` - Rename operation with export handling
+- `crates/tugtool-python/src/files.rs` - File collection utilities
+- `crates/tugtool/tests/temporale_integration.rs` - Integration tests
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Fixup Tasks 1-6: Export rename support | Done (previous session) |
+| Fixup Task 7: Add file collection with test exclusion | Done |
+| Fixup Task 8: Create pattern assertion infrastructure | Done |
+| Fixup Task 9: Update integration tests with new verification model | Done |
+| Fixup Task 10: Revert earlier VerificationMode::Tests changes | Done |
+
+**Files Created:**
+- `crates/tugtool/tests/support/patterns.rs` - Pattern assertion infrastructure with `PatternAssertion`, `AssertionKind` enum (`Contains`, `NotContains`, `Matches`, `NotMatches`), `check_patterns()` and `assert_patterns()` functions
+
+**Files Modified:**
+- `crates/tugtool-python/src/files.rs` - Added `collect_python_files_excluding()` with support for directory patterns (`tests/`), glob patterns (`test_*.py`), and exact filename matches (`conftest.py`)
+- `crates/tugtool/tests/temporale_integration.rs` - Updated 3 refactoring tests to use test exclusion and pattern assertions instead of pytest verification
+- `crates/tugtool/Cargo.toml` - Added `regex = "1"` to dev-dependencies
+- `plans/phase-5.md` - Marked all fixup checkpoint items as complete
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1137 tests passed
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+- `cargo nextest run -p tugtool temporale_refactor`: 3 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all -- --check`: Clean
+
+**Checkpoints Verified:**
+- `collect_python_files_excluding()` works correctly: PASS
+- Pattern assertion infrastructure works for all assertion types: PASS
+- `cargo nextest run -p tugtool temporale_refactor` passes with syntax verification + patterns: PASS
+- Pattern assertions verify expected renames occurred: PASS
+
+**Key Decisions/Notes:**
+- **Test Exclusion Pattern:** The `collect_python_files_excluding()` function uses a simple but effective pattern matching system: directory patterns end with `/`, glob patterns contain `*`, and exact matches for specific filenames. This avoids test files from being renamed which would break test assertions.
+- **Pattern Assertion Design:** Chose positive assertions (`Contains "CalendarDate"`) over negative assertions (`NotContains "Date"`) for `__all__` verification because negative assertions matched docstrings containing "Date" text.
+- **ExportCollector Position Fix (Task 6):** Fixed a bug where `parse_simple_string()` used `source.find(value)` which found the FIRST occurrence of a string - often in docstrings. Added `search_from` field to track position and search from `__all__` location.
+- **Verification Model:** Integration tests now use `VerificationMode::Syntax` (compileall) + pattern assertions instead of pytest. This prevents the circular problem where renaming would also rename test assertions.
+
+---
+
 ## [phase-5.md] Step 18: Tugtool Integration Verification | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

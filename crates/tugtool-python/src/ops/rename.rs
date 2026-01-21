@@ -198,7 +198,8 @@ pub struct RenameSummary {
 /// This function performs a simplified rename operation on a single file:
 /// 1. Parse and analyze the file using native CST
 /// 2. Find all references to the target name
-/// 3. Apply renames using the native RenameTransformer
+/// 3. Find all `__all__` exports matching the target name
+/// 4. Apply renames using the native RenameTransformer
 ///
 /// # Arguments
 ///
@@ -254,6 +255,23 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
         }
     }
 
+    // Check __all__ exports for the target name
+    // We use content_span to replace just the string content, preserving quotes
+    for export in &analysis.exports {
+        if export.name == old_name {
+            if let Some(ref content_span) = export.content_span {
+                let span = Span::new(content_span.start, content_span.end);
+                // Avoid duplicates
+                if !rewrites
+                    .iter()
+                    .any(|(s, _)| s.start == span.start && s.end == span.end)
+                {
+                    rewrites.push((span, new_name.to_string()));
+                }
+            }
+        }
+    }
+
     // Apply all renames using the native transformer
     let result = cst_bridge::rewrite_batch(content, &rewrites)?;
 
@@ -263,7 +281,10 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
 /// Collect rename edits for a single file using native CST analysis.
 ///
 /// This function analyzes a file and returns the edits needed to rename
-/// a symbol, without actually applying them.
+/// a symbol, without actually applying them. Includes edits for:
+/// - Symbol bindings (definitions)
+/// - Symbol references (usages)
+/// - `__all__` export string literals
 ///
 /// # Arguments
 ///
@@ -330,6 +351,31 @@ pub fn collect_rename_edits(
                             col,
                         });
                     }
+                }
+            }
+        }
+    }
+
+    // Collect edits from __all__ exports
+    // Use content_span to replace just the string content, preserving quotes
+    for export in &analysis.exports {
+        if export.name == old_name {
+            if let Some(ref content_span) = export.content_span {
+                let span = Span::new(content_span.start, content_span.end);
+                let key = (span.start, span.end);
+                if seen_spans.insert(key) {
+                    let (line, col) = byte_offset_to_position_str(content, span.start);
+                    let old_text = content
+                        .get(span.start as usize..span.end as usize)
+                        .unwrap_or(old_name)
+                        .to_string();
+                    edits.push(NativeRenameEdit {
+                        span,
+                        old_text,
+                        new_text: new_name.to_string(),
+                        line,
+                        col,
+                    });
                 }
             }
         }
@@ -613,6 +659,30 @@ pub fn run(
             .entry(file.path.clone())
             .or_default()
             .push((*span, new_name));
+    }
+
+    // Collect __all__ export edits
+    // The FactsStore doesn't track exports, so we need to parse files to find them
+    let old_name = &symbol.name;
+    for (path, content) in files {
+        // Parse and analyze this file to get exports
+        if let Ok(analysis) = cst_bridge::parse_and_analyze(content) {
+            for export in &analysis.exports {
+                if export.name == *old_name {
+                    if let Some(ref content_span) = export.content_span {
+                        let span = Span::new(content_span.start, content_span.end);
+                        // Check if this span is already in edits_by_file
+                        let file_edits = edits_by_file.entry(path.clone()).or_default();
+                        if !file_edits
+                            .iter()
+                            .any(|(s, _)| s.start == span.start && s.end == span.end)
+                        {
+                            file_edits.push((span, new_name));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Create sandbox
@@ -994,6 +1064,111 @@ outer()
                 "parameter should be renamed"
             );
             // Note: f-string interpolation may or may not be renamed depending on reference collector
+        }
+
+        #[test]
+        fn native_rename_with_all_export() {
+            let content = r#"__all__ = ["foo", "bar"]
+
+def foo():
+    pass
+
+def bar():
+    pass
+"#;
+            let result =
+                rename_in_file(content, "foo", "renamed_foo").expect("rename should succeed");
+            // Function definition should be renamed
+            assert!(
+                result.contains("def renamed_foo():"),
+                "function definition should be renamed"
+            );
+            // __all__ export should be renamed
+            assert!(
+                result.contains("\"renamed_foo\""),
+                "__all__ export should be renamed"
+            );
+            // bar should be unchanged
+            assert!(
+                result.contains("\"bar\""),
+                "other exports should be unchanged"
+            );
+            assert!(
+                result.contains("def bar():"),
+                "other functions should be unchanged"
+            );
+        }
+
+        #[test]
+        fn native_rename_all_export_single_quotes() {
+            let content = r#"__all__ = ['MyClass']
+
+class MyClass:
+    pass
+"#;
+            let result =
+                rename_in_file(content, "MyClass", "RenamedClass").expect("rename should succeed");
+            assert!(
+                result.contains("class RenamedClass:"),
+                "class definition should be renamed"
+            );
+            assert!(
+                result.contains("'RenamedClass'"),
+                "__all__ export with single quotes should be renamed"
+            );
+        }
+
+        #[test]
+        fn native_rename_all_export_augmented() {
+            let content = r#"__all__ = ["base"]
+__all__ += ["extra"]
+
+def base():
+    pass
+
+def extra():
+    pass
+"#;
+            let result =
+                rename_in_file(content, "extra", "additional").expect("rename should succeed");
+            assert!(
+                result.contains("def additional():"),
+                "function definition should be renamed"
+            );
+            assert!(
+                result.contains("\"additional\""),
+                "__all__ += export should be renamed"
+            );
+            assert!(
+                result.contains("\"base\""),
+                "other exports should be unchanged"
+            );
+        }
+
+        #[test]
+        fn native_collect_edits_includes_all_export() {
+            let content = r#"__all__ = ["foo"]
+
+def foo():
+    pass
+"#;
+            let edits = collect_rename_edits(content, "foo", "bar").expect("should collect edits");
+            // Should have at least 2 edits: one for __all__ export, one for function definition
+            assert!(
+                edits.len() >= 2,
+                "should have at least 2 edits (export + definition), got {}",
+                edits.len()
+            );
+
+            // Find the __all__ export edit
+            let export_edit = edits.iter().find(|e| {
+                let span_text = &content[e.span.start as usize..e.span.end as usize];
+                span_text == "foo" && e.line == 1 // __all__ is on line 1
+            });
+            assert!(
+                export_edit.is_some(),
+                "should have an edit for __all__ export"
+            );
         }
     }
 }

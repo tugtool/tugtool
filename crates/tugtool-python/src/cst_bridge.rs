@@ -34,6 +34,9 @@ use tugtool_python_cst::{
     // P2 visitors
     DynamicPatternDetector,
     DynamicPatternInfo as CstDynamicPatternInfo,
+    // Export collector for __all__ handling
+    ExportCollector,
+    ExportInfo as CstExportInfo,
     ImportCollector,
     ImportInfo as CstImportInfo,
     InheritanceCollector,
@@ -95,6 +98,8 @@ pub struct NativeAnalysisResult {
     pub bindings: Vec<BindingInfo>,
     /// References organized by name.
     pub references: Vec<(String, Vec<ReferenceInfo>)>,
+    /// String literals in __all__ exports.
+    pub exports: Vec<CstExportInfo>,
 
     // P1 analysis (extended analysis)
     /// Import statements in the file.
@@ -250,6 +255,9 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         })
         .collect();
 
+    // P0: Collect __all__ exports
+    let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
+
     // P1: Collect imports
     let imports = ImportCollector::collect(&parsed.module);
 
@@ -273,6 +281,7 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         scopes,
         bindings,
         references,
+        exports,
         // P1
         imports,
         annotations,
@@ -508,6 +517,57 @@ mod tests {
             "attribute"
         );
         assert_eq!(reference_kind_to_string(CstReferenceKind::Import), "import");
+    }
+
+    // ========================================================================
+    // P0 Export Collector Tests
+    // ========================================================================
+
+    #[test]
+    fn test_p0_exports_collected() {
+        let source = r#"__all__ = ["foo", "bar"]
+
+def foo():
+    pass
+
+def bar():
+    pass
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(!result.exports.is_empty(), "should have exports");
+        assert_eq!(result.exports.len(), 2, "should have 2 exports");
+        assert_eq!(result.exports[0].name, "foo");
+        assert_eq!(result.exports[1].name, "bar");
+
+        // Verify spans are present
+        for export in &result.exports {
+            assert!(export.span.is_some(), "export should have span");
+            assert!(
+                export.content_span.is_some(),
+                "export should have content_span"
+            );
+        }
+    }
+
+    #[test]
+    fn test_p0_exports_augmented() {
+        let source = r#"__all__ = ["foo"]
+__all__ += ["bar"]
+"#;
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert_eq!(result.exports.len(), 2, "should have 2 exports");
+        assert_eq!(result.exports[0].name, "foo");
+        assert_eq!(result.exports[1].name, "bar");
+    }
+
+    #[test]
+    fn test_p0_exports_empty_when_no_all() {
+        let source = "def foo(): pass";
+        let result = parse_and_analyze(source).expect("parse should succeed");
+
+        assert!(result.exports.is_empty(), "should have no exports");
     }
 
     // ========================================================================

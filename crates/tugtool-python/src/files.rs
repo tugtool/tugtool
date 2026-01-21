@@ -47,6 +47,33 @@ pub type FileResult<T> = Result<T, FileError>;
 /// }
 /// ```
 pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, String)>> {
+    collect_python_files_excluding(workspace_root, &[])
+}
+
+/// Collect Python files, excluding paths matching any exclusion pattern.
+///
+/// This is the primary entry point for refactoring operations that need to exclude
+/// test files from the refactoring scope.
+///
+/// # Exclusion Pattern Syntax
+///
+/// - `"tests/"` - Exclude any path containing a `tests` directory component
+/// - `"test_*.py"` - Exclude files matching glob pattern (supports `*` wildcard)
+/// - `"conftest.py"` - Exclude exact filename match in any directory
+///
+/// # Example
+///
+/// ```ignore
+/// // Exclude test files from refactoring
+/// let files = collect_python_files_excluding(
+///     workspace_root,
+///     &["tests/", "test_*.py", "conftest.py"],
+/// )?;
+/// ```
+pub fn collect_python_files_excluding(
+    workspace_root: &Path,
+    exclude_patterns: &[&str],
+) -> FileResult<Vec<(String, String)>> {
     let mut files = Vec::new();
 
     for entry in WalkDir::new(workspace_root)
@@ -79,6 +106,12 @@ pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, St
 
         if path.extension().is_some_and(|ext| ext == "py") {
             let rel_path_str = rel_path.to_string_lossy().to_string();
+
+            // Check against exclusion patterns
+            if matches_any_exclusion_pattern(&rel_path_str, exclude_patterns) {
+                continue;
+            }
+
             let content = fs::read_to_string(path)?;
             files.push((rel_path_str, content));
         }
@@ -91,6 +124,71 @@ pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, St
     files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
 
     Ok(files)
+}
+
+/// Check if a path matches any of the exclusion patterns.
+///
+/// Pattern types:
+/// - Directory patterns (end with `/`): Match if any path component equals the dir name
+/// - Glob patterns (contain `*`): Match filename against simple glob
+/// - Exact patterns: Match if filename equals the pattern
+fn matches_any_exclusion_pattern(path: &str, patterns: &[&str]) -> bool {
+    let path_obj = Path::new(path);
+    let filename = path_obj
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    for pattern in patterns {
+        if pattern.ends_with('/') {
+            // Directory pattern: check if any component matches
+            let dir_name = pattern.trim_end_matches('/');
+            if path_obj.components().any(|c| {
+                c.as_os_str()
+                    .to_str()
+                    .map(|s| s == dir_name)
+                    .unwrap_or(false)
+            }) {
+                return true;
+            }
+        } else if pattern.contains('*') {
+            // Glob pattern: simple wildcard matching on filename
+            if matches_simple_glob(&filename, pattern) {
+                return true;
+            }
+        } else {
+            // Exact filename match
+            if filename == *pattern {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Simple glob matching supporting `*` as wildcard.
+///
+/// Only supports patterns with a single `*` for simplicity.
+/// Examples: `test_*.py`, `*_test.py`
+fn matches_simple_glob(text: &str, pattern: &str) -> bool {
+    if let Some(star_pos) = pattern.find('*') {
+        let prefix = &pattern[..star_pos];
+        let suffix = &pattern[star_pos + 1..];
+
+        // Text must start with prefix and end with suffix
+        // and be long enough to contain both
+        if text.len() >= prefix.len() + suffix.len()
+            && text.starts_with(prefix)
+            && text.ends_with(suffix)
+        {
+            return true;
+        }
+        false
+    } else {
+        // No wildcard - exact match
+        text == pattern
+    }
 }
 
 /// Collect Python files from a WorkspaceSnapshot.
@@ -317,5 +415,156 @@ mod tests {
                 "root.py"
             ]
         );
+    }
+
+    // ========================================================================
+    // Exclusion Pattern Tests
+    // ========================================================================
+
+    fn create_test_workspace_with_tests() -> TempDir {
+        let dir = TempDir::new().unwrap();
+
+        // Create library source files
+        let src_dir = dir.path().join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        File::create(src_dir.join("main.py"))
+            .unwrap()
+            .write_all(b"def main(): pass\n")
+            .unwrap();
+        File::create(src_dir.join("utils.py"))
+            .unwrap()
+            .write_all(b"def helper(): return 42\n")
+            .unwrap();
+
+        // Create test directory with test files
+        let tests_dir = dir.path().join("tests");
+        fs::create_dir_all(&tests_dir).unwrap();
+        File::create(tests_dir.join("test_main.py"))
+            .unwrap()
+            .write_all(b"def test_main(): pass\n")
+            .unwrap();
+        File::create(tests_dir.join("test_utils.py"))
+            .unwrap()
+            .write_all(b"def test_helper(): pass\n")
+            .unwrap();
+        File::create(tests_dir.join("conftest.py"))
+            .unwrap()
+            .write_all(b"# pytest fixtures\n")
+            .unwrap();
+
+        // Create test file at root level (test_*.py pattern)
+        File::create(dir.path().join("test_integration.py"))
+            .unwrap()
+            .write_all(b"def test_integration(): pass\n")
+            .unwrap();
+
+        dir
+    }
+
+    #[test]
+    fn collect_excluding_tests_directory() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Exclude the tests/ directory
+        let files = collect_python_files_excluding(workspace.path(), &["tests/"]).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should include library files and root-level test file
+        assert!(paths.contains(&"src/main.py"));
+        assert!(paths.contains(&"src/utils.py"));
+        assert!(paths.contains(&"test_integration.py"));
+
+        // Should NOT include files in tests/ directory
+        assert!(!paths.iter().any(|p| p.starts_with("tests/")));
+    }
+
+    #[test]
+    fn collect_excluding_test_prefix_pattern() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Exclude files matching test_*.py
+        let files = collect_python_files_excluding(workspace.path(), &["test_*.py"]).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should include library files and conftest.py
+        assert!(paths.contains(&"src/main.py"));
+        assert!(paths.contains(&"src/utils.py"));
+        assert!(paths.contains(&"tests/conftest.py"));
+
+        // Should NOT include test_*.py files anywhere
+        assert!(!paths.iter().any(|p| {
+            Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().starts_with("test_"))
+                .unwrap_or(false)
+        }));
+    }
+
+    #[test]
+    fn collect_excluding_exact_filename() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Exclude conftest.py exactly
+        let files = collect_python_files_excluding(workspace.path(), &["conftest.py"]).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should include all other files
+        assert!(paths.contains(&"src/main.py"));
+        assert!(paths.contains(&"tests/test_main.py"));
+
+        // Should NOT include conftest.py
+        assert!(!paths.iter().any(|p| p.ends_with("conftest.py")));
+    }
+
+    #[test]
+    fn collect_excluding_multiple_patterns() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Exclude tests directory AND test_*.py pattern AND conftest.py
+        let files = collect_python_files_excluding(
+            workspace.path(),
+            &["tests/", "test_*.py", "conftest.py"],
+        )
+        .unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should only include library source files
+        assert_eq!(paths, vec!["src/main.py", "src/utils.py"]);
+    }
+
+    #[test]
+    fn collect_excluding_empty_patterns_same_as_collect() {
+        let workspace = create_test_workspace_with_tests();
+
+        let all_files = collect_python_files(workspace.path()).unwrap();
+        let files_with_empty_exclusions =
+            collect_python_files_excluding(workspace.path(), &[]).unwrap();
+
+        // Should return identical results
+        assert_eq!(all_files, files_with_empty_exclusions);
+    }
+
+    #[test]
+    fn matches_simple_glob_prefix() {
+        assert!(matches_simple_glob("test_foo.py", "test_*.py"));
+        assert!(matches_simple_glob("test_.py", "test_*.py"));
+        assert!(matches_simple_glob("test_very_long_name.py", "test_*.py"));
+        assert!(!matches_simple_glob("mytest_foo.py", "test_*.py"));
+        assert!(!matches_simple_glob("test_foo.txt", "test_*.py"));
+    }
+
+    #[test]
+    fn matches_simple_glob_suffix() {
+        assert!(matches_simple_glob("foo_test.py", "*_test.py"));
+        assert!(matches_simple_glob("bar_test.py", "*_test.py"));
+        assert!(!matches_simple_glob("foo_test.txt", "*_test.py"));
+        assert!(!matches_simple_glob("testfoo.py", "*_test.py"));
+    }
+
+    #[test]
+    fn matches_simple_glob_middle() {
+        assert!(matches_simple_glob("foo_bar_baz.py", "foo_*_baz.py"));
+        assert!(matches_simple_glob("foo__baz.py", "foo_*_baz.py"));
+        assert!(!matches_simple_glob("foo_bar.py", "foo_*_baz.py"));
     }
 }

@@ -57,6 +57,7 @@ mcp = ["dep:rmcp", "dep:schemars"]
 full = ["python", "rust", "mcp"]
 
 [dev-dependencies]
+regex = "1"
 tempfile = "3"
 walkdir = "2"
 

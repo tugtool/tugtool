@@ -1218,7 +1218,6 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(matches!(cli.command, Command::Mcp));
         }
-
     }
 
     mod global_args {

@@ -63,9 +63,10 @@ pub use version::{ParseOptions, PythonVersion};
 pub mod visitor;
 // P0 visitor exports
 pub use visitor::{
-    BindingCollector, BindingInfo, BindingKind, ReferenceCollector, ReferenceInfo, ReferenceKind,
-    RenameError, RenameRequest, RenameResult, RenameTransformer, ScopeCollector, ScopeInfo,
-    ScopeKind, Transform, Transformer, VisitResult, Visitor,
+    BindingCollector, BindingInfo, BindingKind, ExportCollector, ExportInfo, ExportKind,
+    ReferenceCollector, ReferenceInfo, ReferenceKind, RenameError, RenameRequest, RenameResult,
+    RenameTransformer, ScopeCollector, ScopeInfo, ScopeKind, Transform, Transformer, VisitResult,
+    Visitor,
 };
 // P1 visitor exports
 pub use visitor::{

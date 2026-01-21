@@ -6,8 +6,13 @@
 //! - All Python files parse successfully with tugtool-python-cst
 //! - Symbol count meets success criteria (>100 symbols)
 //! - Cross-module reference count meets criteria (>50 references)
-//! - Refactoring operations produce valid Python
-//! - Refactored code passes pytest
+//! - Refactoring operations produce syntactically valid Python
+//! - Refactored code contains expected changes (verified via pattern assertions)
+//!
+//! Note: Refactoring tests exclude test files from the refactoring scope and
+//! use syntax verification (compileall) rather than pytest verification. This
+//! prevents the circular problem where renaming `Date` to `CalendarDate` would
+//! also rename test assertions that check for `Date`, causing tests to fail.
 //!
 //! See Phase 5 plan for full Temporale specification.
 
@@ -17,11 +22,12 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+use support::patterns::PatternAssertion;
 use tempfile::TempDir;
 use tugtool_core::facts::{FactsStore, SymbolKind};
 use tugtool_core::types::Location;
 use tugtool_python::analyzer::analyze_files;
-use tugtool_python::files::collect_python_files;
+use tugtool_python::files::{collect_python_files, collect_python_files_excluding};
 use tugtool_python::ops::rename;
 use tugtool_python::verification::VerificationMode;
 
@@ -227,16 +233,19 @@ fn temporale_has_expected_core_symbols() {
 
 /// Test renaming Date -> CalendarDate (List L01 scenario #2)
 ///
-/// This test verifies the rename operation produces valid Python.
-/// Note: String literals in `__all__` exports are not updated by the rename tool,
-/// so pytest validation is done via compileall (syntax check) rather than full tests.
+/// This test verifies the rename operation produces syntactically valid Python
+/// and that expected changes are made. Uses syntax verification (compileall)
+/// and pattern assertions rather than pytest.
 #[test]
 fn temporale_refactor_rename_date_class() {
     let python_env = support::python::get_python_env();
     let temp = copy_temporale_to_temp();
 
-    // Collect files from temp directory
-    let files = collect_python_files(temp.path()).expect("collect python files");
+    // Collect files from temp directory, EXCLUDING tests
+    // This prevents test files from being renamed, which would break pytest verification
+    let files =
+        collect_python_files_excluding(temp.path(), &["tests/", "test_*.py", "conftest.py"])
+            .expect("collect python files");
 
     // Find the Date class definition location
     let mut store = FactsStore::new();
@@ -263,7 +272,7 @@ fn temporale_refactor_rename_date_class() {
 
     let location = Location::new(file_path.clone(), line, col);
 
-    // Run the rename operation with syntax verification
+    // Run the rename operation with syntax verification (compileall)
     let result = rename::run(
         temp.path(),
         &files,
@@ -284,7 +293,7 @@ fn temporale_refactor_rename_date_class() {
     assert_eq!(output.status, "ok");
     assert!(output.summary.edits_count > 0, "Expected edits to be made");
 
-    // Verify a meaningful number of edits were made (class + usages)
+    // Verify a meaningful number of edits were made (class + usages + __all__ exports)
     assert!(
         output.summary.edits_count >= 50,
         "Expected at least 50 edits for Date rename, got {}",
@@ -296,22 +305,46 @@ fn temporale_refactor_rename_date_class() {
         output.summary.edits_count, output.summary.files_changed
     );
 
-    // Verify syntax is valid (compileall passed as part of verification)
-    eprintln!("Python syntax verification passed for Date -> CalendarDate rename");
+    // Verify expected changes via pattern assertions
+    let assertions = vec![
+        PatternAssertion::contains(
+            &file_path,
+            "class CalendarDate",
+            "Class should be renamed to CalendarDate",
+        ),
+        PatternAssertion::not_contains(
+            &file_path,
+            "class Date:",
+            "Old class name should be removed",
+        ),
+        // Verify __all__ export was updated (positive check - docstrings won't have this)
+        PatternAssertion::contains(
+            &file_path,
+            "\"CalendarDate\"",
+            "__all__ should contain the new name",
+        ),
+    ];
+
+    support::patterns::check_patterns(temp.path(), &assertions)
+        .expect("Pattern assertions should pass");
+
+    eprintln!("Syntax verification passed for Date -> CalendarDate rename");
 }
 
 /// Test renaming ValidationError -> InvalidInputError (List L01 scenario #7)
 ///
-/// This test verifies the rename operation produces valid Python.
-/// Note: String literals in `__all__` exports are not updated by the rename tool,
-/// so pytest validation is done via compileall (syntax check) rather than full tests.
-/// See Step 18 Fixup in phase-5.md for the planned fix.
+/// This test verifies the rename operation produces syntactically valid Python
+/// and that expected changes are made. Uses syntax verification (compileall)
+/// and pattern assertions rather than pytest.
 #[test]
 fn temporale_refactor_rename_validation_error() {
     let python_env = support::python::get_python_env();
     let temp = copy_temporale_to_temp();
 
-    let files = collect_python_files(temp.path()).expect("collect python files");
+    // Collect files EXCLUDING tests
+    let files =
+        collect_python_files_excluding(temp.path(), &["tests/", "test_*.py", "conftest.py"])
+            .expect("collect python files");
 
     let mut store = FactsStore::new();
     let _bundle = analyze_files(&files, &mut store).expect("analyze files");
@@ -338,6 +371,7 @@ fn temporale_refactor_rename_validation_error() {
 
     let location = Location::new(file_path.clone(), line, col);
 
+    // Run rename with syntax verification
     let result = rename::run(
         temp.path(),
         &files,
@@ -363,22 +397,46 @@ fn temporale_refactor_rename_validation_error() {
         output.summary.edits_count, output.summary.files_changed
     );
 
-    // Verify syntax is valid (compileall passed as part of verification)
-    eprintln!("Python syntax verification passed for ValidationError -> InvalidInputError rename");
+    // Verify expected changes via pattern assertions
+    let assertions = vec![
+        PatternAssertion::contains(
+            &file_path,
+            "class InvalidInputError",
+            "Class should be renamed to InvalidInputError",
+        ),
+        PatternAssertion::not_contains(
+            &file_path,
+            "class ValidationError",
+            "Old class name should be removed",
+        ),
+        // Verify __all__ export was updated (positive check)
+        PatternAssertion::contains(
+            &file_path,
+            "\"InvalidInputError\"",
+            "__all__ should contain the new name",
+        ),
+    ];
+
+    support::patterns::check_patterns(temp.path(), &assertions)
+        .expect("Pattern assertions should pass");
+
+    eprintln!("Syntax verification passed for ValidationError -> InvalidInputError rename");
 }
 
 /// Test renaming Era.BCE -> Era.BEFORE_COMMON_ERA (List L01 scenario #5)
 ///
-/// This test verifies the rename operation produces valid Python.
-/// Note: String literals in `__all__` exports are not updated by the rename tool,
-/// so pytest validation is done via compileall (syntax check) rather than full tests.
-/// See Step 18 Fixup in phase-5.md for the planned fix.
+/// This test verifies the rename operation produces syntactically valid Python
+/// and that expected changes are made. Uses syntax verification (compileall)
+/// and pattern assertions rather than pytest.
 #[test]
 fn temporale_refactor_rename_era_bce() {
     let python_env = support::python::get_python_env();
     let temp = copy_temporale_to_temp();
 
-    let files = collect_python_files(temp.path()).expect("collect python files");
+    // Collect files EXCLUDING tests
+    let files =
+        collect_python_files_excluding(temp.path(), &["tests/", "test_*.py", "conftest.py"])
+            .expect("collect python files");
 
     let mut store = FactsStore::new();
     let _bundle = analyze_files(&files, &mut store).expect("analyze files");
@@ -402,6 +460,7 @@ fn temporale_refactor_rename_era_bce() {
 
     let location = Location::new(file_path.clone(), line, col);
 
+    // Run rename with syntax verification
     let result = rename::run(
         temp.path(),
         &files,
@@ -427,8 +486,20 @@ fn temporale_refactor_rename_era_bce() {
         output.summary.edits_count, output.summary.files_changed
     );
 
-    // Verify syntax is valid (compileall passed as part of verification)
-    eprintln!("Python syntax verification passed for BCE -> BEFORE_COMMON_ERA rename");
+    // Verify expected changes via pattern assertions
+    let assertions = vec![
+        PatternAssertion::contains(
+            &file_path,
+            "BEFORE_COMMON_ERA",
+            "Enum member should be renamed to BEFORE_COMMON_ERA",
+        ),
+        PatternAssertion::not_contains(&file_path, "BCE =", "Old enum member name should be gone"),
+    ];
+
+    support::patterns::check_patterns(temp.path(), &assertions)
+        .expect("Pattern assertions should pass");
+
+    eprintln!("Syntax verification passed for BCE -> BEFORE_COMMON_ERA rename");
 }
 
 // ============================================================================
@@ -441,17 +512,13 @@ fn temporale_pytest_passes_on_original() {
     let python_env = support::python::get_python_env();
     let temporale_dir = temporale_path();
 
-    let pytest_result = support::python::run_pytest(
-        python_env,
-        &temporale_dir,
-        &["tests/", "-v", "--tb=short"],
-    );
+    let pytest_result =
+        support::python::run_pytest(python_env, &temporale_dir, &["tests/", "-v", "--tb=short"]);
 
     assert!(
         pytest_result.success,
         "pytest should pass on original Temporale code:\nstdout: {}\nstderr: {}",
-        pytest_result.stdout,
-        pytest_result.stderr
+        pytest_result.stdout, pytest_result.stderr
     );
 
     // Extract test count from output

@@ -60,6 +60,7 @@
 // P0 visitors (core functionality)
 mod binding;
 mod dispatch;
+mod exports;
 mod reference;
 mod rename;
 mod scope;
@@ -79,6 +80,7 @@ mod dynamic;
 // P0 exports
 pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;
+pub use exports::{ExportCollector, ExportInfo, ExportKind};
 pub use reference::{ReferenceCollector, ReferenceInfo, ReferenceKind};
 pub use rename::{
     sort_requests_by_start, sort_requests_by_start_reverse, spans_overlap, RenameError,
