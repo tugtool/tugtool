@@ -8,6 +8,7 @@ Core Types:
     Time: Time of day (hour, minute, second, nanosecond)
     DateTime: Combined date and time with optional timezone
     Duration: Time span with nanosecond precision
+    Period: Calendar-based duration (years, months, weeks, days)
 
 Units:
     Era: BCE/CE era designation
@@ -26,9 +27,10 @@ Exceptions:
     TimezoneError: Invalid timezone
 
 Example:
-    >>> from temporale import DateTime, Duration
+    >>> from temporale import DateTime, Duration, Period
     >>> now = DateTime.now()
     >>> future = now + Duration.from_hours(1)
+    >>> next_month = now + Period(months=1)
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ __version__ = "0.1.0"
 from temporale.core.date import Date
 from temporale.core.datetime import DateTime
 from temporale.core.duration import Duration
+from temporale.core.period import Period
 from temporale.core.time import Time
 
 # Units
@@ -64,6 +67,7 @@ __all__: list[str] = [
     "Date",
     "DateTime",
     "Duration",
+    "Period",
     "Time",
     # Units
     "Era",

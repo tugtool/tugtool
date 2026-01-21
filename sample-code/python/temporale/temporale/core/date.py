@@ -30,6 +30,7 @@ from temporale.units.era import Era
 
 if TYPE_CHECKING:
     from temporale.core.duration import Duration
+    from temporale.core.period import Period
 
 
 class Date:
@@ -510,39 +511,55 @@ class Date:
     def __add__(self, other: Duration) -> Date: ...
 
     @overload
+    def __add__(self, other: Period) -> Date: ...
+
+    @overload
     def __add__(self, other: object) -> Date: ...
 
     def __add__(self, other: object) -> Date:
-        """Add a Duration to this date.
+        """Add a Duration or Period to this date.
+
+        For Duration: adds whole days.
+        For Period: adds years, months, weeks, and days with month overflow clamping.
 
         Args:
-            other: A Duration to add.
+            other: A Duration or Period to add.
 
         Returns:
-            A new Date offset by the Duration.
+            A new Date offset by the Duration or Period.
 
         Raises:
-            TypeError: If other is not a Duration.
+            TypeError: If other is not a Duration or Period.
 
         Examples:
             >>> from temporale.core.duration import Duration
             >>> Date(2024, 1, 15) + Duration(days=10)
             Date(2024, 1, 25)
+
+            >>> from temporale.core.period import Period
+            >>> Date(2024, 1, 31) + Period(months=1)  # Clamps to Feb 29
+            Date(2024, 2, 29)
         """
         # Import here to avoid circular imports
         from temporale.core.duration import Duration
+        from temporale.core.period import Period
 
-        if not isinstance(other, Duration):
-            return NotImplemented  # type: ignore[return-value]
+        if isinstance(other, Duration):
+            # Add whole days from the duration
+            # For Date, we only care about whole days
+            return self.add_days(other.days)
+        elif isinstance(other, Period):
+            # Use period_ops for month-aware addition with clamping
+            from temporale.arithmetic.period_ops import add_period_to_date
+            return add_period_to_date(self, other)
 
-        # Add whole days from the duration
-        days_to_add = other.days
-        # If duration has fractional day, add another day if >= 12 hours
-        # For Date, we only care about whole days
-        return self.add_days(days_to_add)
+        return NotImplemented  # type: ignore[return-value]
 
     @overload
     def __sub__(self, other: Duration) -> Date: ...
+
+    @overload
+    def __sub__(self, other: Period) -> Date: ...
 
     @overload
     def __sub__(self, other: Date) -> Duration: ...
@@ -551,19 +568,20 @@ class Date:
     def __sub__(self, other: object) -> Date | Duration: ...
 
     def __sub__(self, other: object) -> Date | Duration:
-        """Subtract a Duration or Date from this date.
+        """Subtract a Duration, Period, or Date from this date.
 
         When subtracting a Duration, returns a new Date.
+        When subtracting a Period, returns a new Date (with negated period).
         When subtracting a Date, returns a Duration.
 
         Args:
-            other: A Duration or Date to subtract.
+            other: A Duration, Period, or Date to subtract.
 
         Returns:
-            A new Date (if subtracting Duration) or Duration (if subtracting Date).
+            A new Date (if subtracting Duration/Period) or Duration (if subtracting Date).
 
         Raises:
-            TypeError: If other is not a Duration or Date.
+            TypeError: If other is not a Duration, Period, or Date.
 
         Examples:
             >>> from temporale.core.duration import Duration
@@ -572,11 +590,20 @@ class Date:
 
             >>> Date(2024, 1, 25) - Date(2024, 1, 15)
             Duration(days=10, seconds=0, nanoseconds=0)
+
+            >>> from temporale.core.period import Period
+            >>> Date(2024, 3, 31) - Period(months=1)
+            Date(2024, 2, 29)
         """
         from temporale.core.duration import Duration
+        from temporale.core.period import Period
 
         if isinstance(other, Duration):
             return self.add_days(-other.days)
+        elif isinstance(other, Period):
+            # Use period_ops for month-aware subtraction with clamping
+            from temporale.arithmetic.period_ops import subtract_period_from_date
+            return subtract_period_from_date(self, other)
         elif isinstance(other, Date):
             # Return the difference as a Duration
             day_diff = self._days - other._days

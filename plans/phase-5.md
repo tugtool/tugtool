@@ -2599,12 +2599,12 @@ cargo nextest run -p tugtool pytest
 - `tests/test_period.py` - Period tests
 
 **Tasks:**
-- [ ] Create `Period` class with `years`, `months`, `weeks`, `days` components
-- [ ] Implement `Period.__add__` and `Period.__sub__` for Period+Period
-- [ ] Implement `Date.__add__(Period)` and `DateTime.__add__(Period)` with month overflow clamping
-- [ ] Add factory methods: `Period.of_months()`, `Period.of_years()`, etc.
-- [ ] Implement `Period.to_duration(reference_date)` for approximate conversion
-- [ ] Export from `temporale/core/__init__.py` and `temporale/__init__.py`
+- [x] Create `Period` class with `years`, `months`, `weeks`, `days` components
+- [x] Implement `Period.__add__` and `Period.__sub__` for Period+Period
+- [x] Implement `Date.__add__(Period)` and `DateTime.__add__(Period)` with month overflow clamping
+- [x] Add factory methods: `Period.of_months()`, `Period.of_years()`, etc.
+- [x] Implement `Period.to_duration(reference_date)` for approximate conversion
+- [x] Export from `temporale/core/__init__.py` and `temporale/__init__.py`
 
 **Period class specification:**
 ```python
@@ -2687,19 +2687,187 @@ Date(2024, 2, 29) + Period(years=1)   # -> Date(2025, 2, 28)
 ```
 
 **Tests:**
-- [ ] Unit test: Period construction and property access
-- [ ] Unit test: Period arithmetic (add, subtract, multiply, negate)
-- [ ] Unit test: Date + Period with month overflow (Jan 31 + 1 month)
-- [ ] Unit test: Date + Period for leap year edge cases
-- [ ] Unit test: DateTime + Period preserves time component
-- [ ] Unit test: Period.to_duration() with various reference dates
-- [ ] Unit test: Period comparison and hashing
+- [x] Unit test: Period construction and property access
+- [x] Unit test: Period arithmetic (add, subtract, multiply, negate)
+- [x] Unit test: Date + Period with month overflow (Jan 31 + 1 month)
+- [x] Unit test: Date + Period for leap year edge cases
+- [x] Unit test: DateTime + Period preserves time component
+- [x] Unit test: Period.to_duration() with various reference dates
+- [x] Unit test: Period comparison and hashing
+
+**Checkpoint:**
+- [x] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes
+- [x] `Date(2024, 1, 31) + Period(months=1) == Date(2024, 2, 29)` works
+
+**Rollback:** Remove period.py, period_ops.py, and test_period.py
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 12.5: Add Quarters Support to Period {#step-12-5}
+
+**Commit:** `feat(temporale): add quarters support to Period class`
+
+**References:** [IC01], Step 12
+
+**Purpose:** Extend the Period class to support financial quarters as a first-class component, enabling calendar-based calculations with quarterly granularity (4 quarters = 1 year, 1 quarter = 3 months).
+
+**Artifacts:**
+- `temporale/core/period.py` - Extended Period class with quarters
+- `tests/test_period.py` - Additional quarter-specific tests
+
+**Tasks:**
+- [ ] Add `_quarters` slot to Period class
+- [ ] Update `__init__` to accept `quarters: int = 0` parameter
+- [ ] Add `Period.of_quarters(n)` factory method
+- [ ] Add `@property quarters` accessor
+- [ ] Add `@property total_quarters` computed property (years * 4 + quarters)
+- [ ] Update `normalized()` to handle quarters (4 quarters -> 1 year, remainder stays as quarters)
+- [ ] Update `total_months` to include quarters (years * 12 + quarters * 3 + months)
+- [ ] Update `__add__`, `__sub__`, `__neg__`, `__mul__` to handle quarters component
+- [ ] Update `__eq__`, `__hash__` to include quarters
+- [ ] Update `__repr__` and `__str__` to include quarters (ISO 8601 extension: use Q notation)
+- [ ] Update `is_zero` to check quarters component
+
+**Period class changes:**
+```python
+class Period:
+    """A calendar-based duration with year, quarter, month, week, and day components.
+
+    Quarters are treated as 3 months for conversion purposes:
+    - 4 quarters = 1 year
+    - 1 quarter = 3 months
+
+    Normalization converts quarters to years + remaining quarters,
+    similar to how months normalize to years + remaining months.
+    """
+
+    __slots__ = ("_years", "_quarters", "_months", "_weeks", "_days")
+
+    def __init__(
+        self,
+        years: int = 0,
+        quarters: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+    ) -> None: ...
+
+    @classmethod
+    def of_quarters(cls, quarters: int) -> Period:
+        """Create a Period of a given number of quarters.
+
+        Args:
+            quarters: Number of quarters (can be negative).
+
+        Returns:
+            A Period representing the specified quarters.
+
+        Examples:
+            >>> Period.of_quarters(2)
+            Period(years=0, quarters=2, months=0, weeks=0, days=0)
+
+            >>> Period.of_quarters(6)  # 1.5 years
+            Period(years=0, quarters=6, months=0, weeks=0, days=0)
+        """
+        return cls(quarters=quarters)
+
+    @property
+    def quarters(self) -> int:
+        """Return the quarters component.
+
+        Returns:
+            Number of quarters (can be negative).
+        """
+        return self._quarters
+
+    @property
+    def total_quarters(self) -> int:
+        """Return the total quarters (years * 4 + quarters).
+
+        Note: months, weeks, and days are not included in this calculation.
+
+        Returns:
+            Total quarters from years and quarters components.
+
+        Examples:
+            >>> Period(years=1, quarters=2).total_quarters
+            6
+        """
+        return self._years * 4 + self._quarters
+
+    @property
+    def total_months(self) -> int:
+        """Return the total months (years * 12 + quarters * 3 + months).
+
+        Note: weeks and days are not included in this calculation.
+
+        Returns:
+            Total months from years, quarters, and months components.
+
+        Examples:
+            >>> Period(years=1, quarters=1, months=2).total_months
+            17  # 12 + 3 + 2
+        """
+        return self._years * 12 + self._quarters * 3 + self._months
+
+    def normalized(self) -> Period:
+        """Return a normalized Period.
+
+        Normalizes:
+        - Total months (years * 12 + quarters * 3 + months) to years + quarters + months
+          where quarters < 4 and months < 3
+        - Days to weeks + remaining days
+
+        Returns:
+            A new Period with normalized components.
+
+        Examples:
+            >>> Period(quarters=6).normalized()
+            Period(years=1, quarters=2, months=0, weeks=0, days=0)
+
+            >>> Period(months=14).normalized()
+            Period(years=1, quarters=0, months=2, weeks=0, days=0)
+
+            >>> Period(quarters=3, months=4).normalized()  # 9 + 4 = 13 months
+            Period(years=1, quarters=0, months=1, weeks=0, days=0)
+        """
+        ...
+```
+
+**String representation:**
+```python
+# __str__ uses ISO 8601-like format with Q for quarters
+>>> str(Period(years=1, quarters=2))
+"P1Y2Q"
+
+>>> str(Period(quarters=3, months=1))
+"P3Q1M"
+
+>>> str(Period.of_quarters(4))
+"P4Q"
+```
+
+**Tests:**
+- [ ] Unit test: Period construction with quarters
+- [ ] Unit test: Period.of_quarters factory method
+- [ ] Unit test: quarters property accessor
+- [ ] Unit test: total_quarters property
+- [ ] Unit test: total_months includes quarters (Q1 = 3 months)
+- [ ] Unit test: normalized() converts 4 quarters to 1 year
+- [ ] Unit test: normalized() handles mixed quarters and months
+- [ ] Unit test: Period arithmetic with quarters
+- [ ] Unit test: Period equality and hashing with quarters
+- [ ] Unit test: Date + Period with quarters (e.g., + 1 quarter = + 3 months)
+- [ ] Unit test: String representation includes quarters
 
 **Checkpoint:**
 - [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes
-- [ ] `Date(2024, 1, 31) + Period(months=1) == Date(2024, 2, 29)` works
+- [ ] `Period.of_quarters(4).normalized() == Period(years=1)` works
+- [ ] `Date(2024, 1, 15) + Period(quarters=1) == Date(2024, 4, 15)` works
 
-**Rollback:** Remove period.py, period_ops.py, and test_period.py
+**Rollback:** Revert period.py to Step 12 version, remove quarter tests from test_period.py
 
 **Commit after all checkpoints pass.**
 
@@ -2835,6 +3003,263 @@ class Interval(Generic[T]):
 - [ ] Interval overlap detection works correctly
 
 **Rollback:** Remove interval.py, range_ops.py, and test_interval.py
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 13.5: Calendar Period Navigation Operations {#step-13-5}
+
+**Commit:** `feat(temporale): add calendar period navigation operations`
+
+**References:** [IC01], [IC02], Step 12, Step 13
+
+**Purpose:** Add navigation operations for finding period boundaries (start/end of month, quarter, year) from a Date or DateTime, with optional Interval return for computing "time until end of period" scenarios.
+
+**Artifacts:**
+- `temporale/arithmetic/navigation.py` - Navigation operation implementations
+- `temporale/core/date.py` - Extended with navigation methods
+- `temporale/core/datetime.py` - Extended with navigation methods
+- `tests/test_navigation.py` - Navigation operation tests
+
+**Tasks:**
+- [ ] Create `temporale/arithmetic/navigation.py` module
+- [ ] Implement `forward_to_end(unit)` - find last day of current period
+- [ ] Implement `forward_to_start(unit)` - find first day of next period
+- [ ] Implement `back_to_start(unit)` - find first day of current period
+- [ ] Implement `back_to_end(unit)` - find last day of previous period
+- [ ] Add `as_interval: bool = False` parameter to return Interval instead of Date/DateTime
+- [ ] Add navigation methods to Date class
+- [ ] Add navigation methods to DateTime class (preserve time component)
+- [ ] Support units: MONTH, QUARTER, YEAR
+- [ ] Export from `temporale/arithmetic/__init__.py`
+
+**Navigation unit enum:**
+```python
+from enum import Enum
+
+class CalendarUnit(Enum):
+    """Calendar units for period navigation."""
+    MONTH = "month"
+    QUARTER = "quarter"
+    YEAR = "year"
+```
+
+**Navigation operations specification:**
+
+```python
+# Forward to end: Find the last day of the current period
+# From Jan 15 -> Jan 31 (end of month)
+# From Jan 15 -> Mar 31 (end of Q1)
+# From Jan 15 -> Dec 31 (end of year)
+def forward_to_end(
+    self,
+    unit: CalendarUnit,
+    as_interval: bool = False,
+) -> Date | Interval[Date]:
+    """Find the last day of the current calendar period.
+
+    Args:
+        unit: The calendar unit (MONTH, QUARTER, YEAR).
+        as_interval: If True, return an Interval from self to the end date.
+
+    Returns:
+        The last day of the current period, or an Interval if as_interval=True.
+
+    Examples:
+        >>> Date(2024, 1, 15).forward_to_end(CalendarUnit.MONTH)
+        Date(2024, 1, 31)
+
+        >>> Date(2024, 2, 15).forward_to_end(CalendarUnit.QUARTER)
+        Date(2024, 3, 31)
+
+        >>> Date(2024, 6, 15).forward_to_end(CalendarUnit.YEAR)
+        Date(2024, 12, 31)
+
+        >>> Date(2024, 1, 15).forward_to_end(CalendarUnit.MONTH, as_interval=True)
+        Interval(Date(2024, 1, 15), Date(2024, 2, 1))  # Half-open [Jan 15, Feb 1)
+    """
+    ...
+
+
+# Forward to start: Find the first day of the next period
+# From Jan 15 -> Feb 1 (start of next month)
+# From Jan 15 -> Apr 1 (start of Q2)
+# From Jan 15 -> Jan 1, 2025 (start of next year)
+def forward_to_start(
+    self,
+    unit: CalendarUnit,
+    as_interval: bool = False,
+) -> Date | Interval[Date]:
+    """Find the first day of the next calendar period.
+
+    Args:
+        unit: The calendar unit (MONTH, QUARTER, YEAR).
+        as_interval: If True, return an Interval from self to the start date.
+
+    Returns:
+        The first day of the next period, or an Interval if as_interval=True.
+
+    Examples:
+        >>> Date(2024, 1, 15).forward_to_start(CalendarUnit.MONTH)
+        Date(2024, 2, 1)
+
+        >>> Date(2024, 2, 15).forward_to_start(CalendarUnit.QUARTER)
+        Date(2024, 4, 1)
+
+        >>> Date(2024, 6, 15).forward_to_start(CalendarUnit.YEAR)
+        Date(2025, 1, 1)
+
+        >>> Date(2024, 1, 15).forward_to_start(CalendarUnit.MONTH, as_interval=True)
+        Interval(Date(2024, 1, 15), Date(2024, 2, 1))
+    """
+    ...
+
+
+# Back to start: Find the first day of the current period
+# From Jan 15 -> Jan 1 (start of month)
+# From Feb 15 -> Jan 1 (start of Q1)
+# From Jun 15 -> Jan 1 (start of year)
+def back_to_start(
+    self,
+    unit: CalendarUnit,
+    as_interval: bool = False,
+) -> Date | Interval[Date]:
+    """Find the first day of the current calendar period.
+
+    Args:
+        unit: The calendar unit (MONTH, QUARTER, YEAR).
+        as_interval: If True, return an Interval from the start date to self.
+
+    Returns:
+        The first day of the current period, or an Interval if as_interval=True.
+
+    Examples:
+        >>> Date(2024, 1, 15).back_to_start(CalendarUnit.MONTH)
+        Date(2024, 1, 1)
+
+        >>> Date(2024, 2, 15).back_to_start(CalendarUnit.QUARTER)
+        Date(2024, 1, 1)
+
+        >>> Date(2024, 6, 15).back_to_start(CalendarUnit.YEAR)
+        Date(2024, 1, 1)
+
+        >>> Date(2024, 1, 15).back_to_start(CalendarUnit.MONTH, as_interval=True)
+        Interval(Date(2024, 1, 1), Date(2024, 1, 15))  # Half-open [Jan 1, Jan 15)
+    """
+    ...
+
+
+# Back to end: Find the last day of the previous period
+# From Jan 15 -> Dec 31 (end of previous month, i.e., Dec of prior year)
+# Wait - that's wrong. From Jan 15, end of previous month is Dec 31 of same year? No.
+# From Jan 15, 2024 -> Dec 31, 2023 (end of previous month)
+# From Feb 15 -> Jan 31 (end of previous month)
+# From Apr 15 -> Mar 31 (end of Q1, previous quarter)
+# From Jun 15 -> Dec 31, 2023 (end of previous year)
+def back_to_end(
+    self,
+    unit: CalendarUnit,
+    as_interval: bool = False,
+) -> Date | Interval[Date]:
+    """Find the last day of the previous calendar period.
+
+    Args:
+        unit: The calendar unit (MONTH, QUARTER, YEAR).
+        as_interval: If True, return an Interval from the end date to self.
+
+    Returns:
+        The last day of the previous period, or an Interval if as_interval=True.
+
+    Examples:
+        >>> Date(2024, 2, 15).back_to_end(CalendarUnit.MONTH)
+        Date(2024, 1, 31)
+
+        >>> Date(2024, 1, 15).back_to_end(CalendarUnit.MONTH)
+        Date(2023, 12, 31)
+
+        >>> Date(2024, 4, 15).back_to_end(CalendarUnit.QUARTER)
+        Date(2024, 3, 31)
+
+        >>> Date(2024, 6, 15).back_to_end(CalendarUnit.YEAR)
+        Date(2023, 12, 31)
+
+        >>> Date(2024, 2, 15).back_to_end(CalendarUnit.MONTH, as_interval=True)
+        Interval(Date(2024, 1, 31), Date(2024, 2, 15))  # Half-open [Jan 31, Feb 15)
+    """
+    ...
+```
+
+**DateTime behavior:**
+```python
+# DateTime methods preserve the time component
+>>> DateTime(2024, 1, 15, 14, 30, 0).forward_to_end(CalendarUnit.MONTH)
+DateTime(2024, 1, 31, 14, 30, 0)
+
+>>> DateTime(2024, 1, 15, 14, 30, 0).back_to_start(CalendarUnit.MONTH)
+DateTime(2024, 1, 1, 14, 30, 0)
+
+# With as_interval=True, returns Interval[DateTime]
+>>> DateTime(2024, 1, 15, 14, 30, 0).forward_to_end(CalendarUnit.MONTH, as_interval=True)
+Interval(DateTime(2024, 1, 15, 14, 30, 0), DateTime(2024, 2, 1, 14, 30, 0))
+```
+
+**Quarter boundaries:**
+```python
+# Quarters: Q1 = Jan-Mar, Q2 = Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec
+QUARTER_MONTHS = {
+    1: (1, 3),   # Q1: Jan 1 - Mar 31
+    2: (4, 6),   # Q2: Apr 1 - Jun 30
+    3: (7, 9),   # Q3: Jul 1 - Sep 30
+    4: (10, 12), # Q4: Oct 1 - Dec 31
+}
+
+def _quarter_of_month(month: int) -> int:
+    """Return quarter number (1-4) for a month (1-12)."""
+    return (month - 1) // 3 + 1
+```
+
+**Use cases enabled:**
+```python
+# "How many days until end of quarter?"
+today = Date(2024, 2, 15)
+interval = today.forward_to_end(CalendarUnit.QUARTER, as_interval=True)
+days_remaining = interval.duration().days  # Duration from Feb 15 to Mar 31
+
+# "What was the last day of last month?"
+last_month_end = Date(2024, 2, 15).back_to_end(CalendarUnit.MONTH)  # Jan 31
+
+# "First day of this fiscal quarter?"
+q_start = Date(2024, 5, 20).back_to_start(CalendarUnit.QUARTER)  # Apr 1
+```
+
+**Tests:**
+- [ ] Unit test: forward_to_end with MONTH unit
+- [ ] Unit test: forward_to_end with QUARTER unit
+- [ ] Unit test: forward_to_end with YEAR unit
+- [ ] Unit test: forward_to_start with MONTH unit
+- [ ] Unit test: forward_to_start with QUARTER unit
+- [ ] Unit test: forward_to_start with YEAR unit
+- [ ] Unit test: back_to_start with MONTH unit
+- [ ] Unit test: back_to_start with QUARTER unit
+- [ ] Unit test: back_to_start with YEAR unit
+- [ ] Unit test: back_to_end with MONTH unit
+- [ ] Unit test: back_to_end with QUARTER unit
+- [ ] Unit test: back_to_end with YEAR unit
+- [ ] Unit test: as_interval=True returns Interval for all operations
+- [ ] Unit test: Interval.duration() on returned intervals
+- [ ] Unit test: DateTime navigation preserves time component
+- [ ] Unit test: Edge case - navigation from first/last day of period
+- [ ] Unit test: Edge case - leap year February handling
+- [ ] Unit test: Edge case - year boundary crossing
+
+**Checkpoint:**
+- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_navigation.py -v` passes
+- [ ] `Date(2024, 1, 15).forward_to_end(CalendarUnit.MONTH) == Date(2024, 1, 31)` works
+- [ ] `Date(2024, 2, 15).forward_to_end(CalendarUnit.QUARTER) == Date(2024, 3, 31)` works
+- [ ] Navigation with as_interval=True returns valid Interval
+
+**Rollback:** Remove navigation.py and test_navigation.py, revert Date/DateTime changes
 
 **Commit after all checkpoints pass.**
 

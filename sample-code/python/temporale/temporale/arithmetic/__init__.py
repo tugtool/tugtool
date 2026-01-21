@@ -4,6 +4,7 @@ This module provides functions for temporal arithmetic:
     - Addition and subtraction of durations
     - Comparison operations
     - Type-safe arithmetic between temporal types
+    - Period arithmetic (calendar-based durations)
 
 The functions in this module serve as the canonical implementations
 for temporal arithmetic. They provide explicit function-based APIs
@@ -25,6 +26,12 @@ Comparison Operations (from temporale.arithmetic.comparisons):
     - compare: Return -1, 0, or 1 for comparison
     - min_value, max_value: Find extremes
     - clamp: Constrain value to range
+
+Period Operations (from temporale.arithmetic.period_ops):
+    - add_period_to_date: Add a Period to a Date with clamping
+    - subtract_period_from_date: Subtract a Period from a Date
+    - add_period_to_datetime: Add a Period to a DateTime
+    - subtract_period_from_datetime: Subtract a Period from a DateTime
 """
 
 from __future__ import annotations
@@ -50,6 +57,12 @@ from temporale.arithmetic.comparisons import (
     max_value,
     clamp,
 )
+from temporale.arithmetic.period_ops import (
+    add_period_to_date,
+    subtract_period_from_date,
+    add_period_to_datetime,
+    subtract_period_from_datetime,
+)
 
 __all__ = [
     # Arithmetic operations
@@ -71,4 +84,9 @@ __all__ = [
     "min_value",
     "max_value",
     "clamp",
+    # Period operations
+    "add_period_to_date",
+    "subtract_period_from_date",
+    "add_period_to_datetime",
+    "subtract_period_from_datetime",
 ]

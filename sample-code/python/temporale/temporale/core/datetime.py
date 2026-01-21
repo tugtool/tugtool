@@ -30,6 +30,7 @@ from temporale.units.timezone import Timezone
 
 if TYPE_CHECKING:
     from temporale.core.duration import Duration
+    from temporale.core.period import Period
 
 from temporale.core.date import Date
 from temporale.core.time import Time
@@ -865,48 +866,67 @@ class DateTime:
     def __add__(self, other: Duration) -> DateTime: ...
 
     @overload
+    def __add__(self, other: Period) -> DateTime: ...
+
+    @overload
     def __add__(self, other: object) -> DateTime: ...
 
     def __add__(self, other: object) -> DateTime:
-        """Add a Duration to this datetime.
+        """Add a Duration or Period to this datetime.
+
+        For Duration: adds exact nanoseconds.
+        For Period: adds years, months, weeks, and days with month overflow clamping.
+                    The time component is preserved.
 
         Args:
-            other: A Duration to add.
+            other: A Duration or Period to add.
 
         Returns:
-            A new DateTime offset by the Duration.
+            A new DateTime offset by the Duration or Period.
 
         Raises:
-            TypeError: If other is not a Duration.
+            TypeError: If other is not a Duration or Period.
 
         Examples:
             >>> from temporale.core.duration import Duration
             >>> dt = DateTime(2024, 1, 15, 12, 0, 0)
             >>> dt + Duration(days=1, hours=2)
             DateTime(2024, 1, 16, 14, 0, 0, nanosecond=0)
+
+            >>> from temporale.core.period import Period
+            >>> DateTime(2024, 1, 31, 14, 30, 0) + Period(months=1)  # Clamps to Feb 29
+            DateTime(2024, 2, 29, 14, 30, 0, nanosecond=0)
         """
         from temporale.core.duration import Duration
+        from temporale.core.period import Period
 
-        if not isinstance(other, Duration):
-            return NotImplemented
+        if isinstance(other, Duration):
+            # Add total nanoseconds from duration
+            total_nanos = other.total_nanoseconds
+            new_nanos = self._nanos + (total_nanos % NANOS_PER_DAY)
+            new_days = self._days + (total_nanos // NANOS_PER_DAY)
 
-        # Add total nanoseconds from duration
-        total_nanos = other.total_nanoseconds
-        new_nanos = self._nanos + (total_nanos % NANOS_PER_DAY)
-        new_days = self._days + (total_nanos // NANOS_PER_DAY)
+            # Handle day overflow/underflow
+            while new_nanos >= NANOS_PER_DAY:
+                new_nanos -= NANOS_PER_DAY
+                new_days += 1
+            while new_nanos < 0:
+                new_nanos += NANOS_PER_DAY
+                new_days -= 1
 
-        # Handle day overflow/underflow
-        while new_nanos >= NANOS_PER_DAY:
-            new_nanos -= NANOS_PER_DAY
-            new_days += 1
-        while new_nanos < 0:
-            new_nanos += NANOS_PER_DAY
-            new_days -= 1
+            return DateTime._from_internal(new_days, new_nanos, self._tz)
+        elif isinstance(other, Period):
+            # Use period_ops for month-aware addition with clamping
+            from temporale.arithmetic.period_ops import add_period_to_datetime
+            return add_period_to_datetime(self, other)
 
-        return DateTime._from_internal(new_days, new_nanos, self._tz)
+        return NotImplemented
 
     @overload
     def __sub__(self, other: Duration) -> DateTime: ...
+
+    @overload
+    def __sub__(self, other: Period) -> DateTime: ...
 
     @overload
     def __sub__(self, other: DateTime) -> Duration: ...
@@ -915,19 +935,20 @@ class DateTime:
     def __sub__(self, other: object) -> DateTime | Duration: ...
 
     def __sub__(self, other: object) -> DateTime | Duration:
-        """Subtract a Duration or DateTime from this datetime.
+        """Subtract a Duration, Period, or DateTime from this datetime.
 
         When subtracting a Duration, returns a new DateTime.
+        When subtracting a Period, returns a new DateTime (with negated period).
         When subtracting a DateTime, returns a Duration.
 
         Args:
-            other: A Duration or DateTime to subtract.
+            other: A Duration, Period, or DateTime to subtract.
 
         Returns:
-            A new DateTime (if subtracting Duration) or Duration (if subtracting DateTime).
+            A new DateTime (if subtracting Duration/Period) or Duration (if subtracting DateTime).
 
         Raises:
-            TypeError: If other is not a Duration or DateTime.
+            TypeError: If other is not a Duration, Period, or DateTime.
             TimezoneError: If comparing naive and aware datetimes.
 
         Examples:
@@ -940,11 +961,20 @@ class DateTime:
             >>> dt2 = DateTime(2024, 1, 15, 12, 0, 0)
             >>> (dt1 - dt2).total_seconds
             7200.0
+
+            >>> from temporale.core.period import Period
+            >>> DateTime(2024, 3, 31, 14, 30, 0) - Period(months=1)
+            DateTime(2024, 2, 29, 14, 30, 0, nanosecond=0)
         """
         from temporale.core.duration import Duration
+        from temporale.core.period import Period
 
         if isinstance(other, Duration):
             return self + (-other)
+        elif isinstance(other, Period):
+            # Use period_ops for month-aware subtraction with clamping
+            from temporale.arithmetic.period_ops import subtract_period_from_datetime
+            return subtract_period_from_datetime(self, other)
         elif isinstance(other, DateTime):
             # Check for naive/aware mismatch
             if (self._tz is None) != (other._tz is None):

@@ -6,6 +6,102 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Steps 12.5 & 13.5: Plan Quarters and Navigation Operations | PLANNED | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 12 (Period Type) implementation details
+- `sample-code/python/temporale/temporale/core/period.py` - Existing Period implementation
+- `sample-code/python/temporale/tests/test_period.py` - Period test patterns
+- `sample-code/python/temporale/temporale/arithmetic/__init__.py` - Module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Design Step 12.5: Add Quarters Support to Period | Done |
+| Design Step 13.5: Calendar Period Navigation Operations | Done |
+| Add steps to phase-5.md plan | Done |
+
+**Files Modified:**
+- `plans/phase-5.md` - Added Step 12.5 (lines 2708-2872) and Step 13.5 (lines 3011-3264)
+
+**Step 12.5 Summary: Add Quarters Support to Period**
+- New `_quarters` slot and `quarters: int = 0` parameter
+- `Period.of_quarters(n)` factory method
+- `@property quarters` and `@property total_quarters`
+- Updated `total_months` to include quarters (1 quarter = 3 months)
+- Updated `normalized()` to handle quarters (4 quarters → 1 year)
+- ISO 8601-like string format with `Q` notation (e.g., `P1Y2Q`)
+
+**Step 13.5 Summary: Calendar Period Navigation Operations**
+- Four navigation operations: `forward_to_end`, `forward_to_start`, `back_to_start`, `back_to_end`
+- `CalendarUnit` enum with MONTH, QUARTER, YEAR values
+- `as_interval: bool = False` parameter for Interval return type
+- DateTime methods preserve time component
+- Enables use cases like "how many days until end of quarter?"
+
+**Key Decisions/Notes:**
+- Steps numbered 12.5 and 13.5 to insert between existing steps without renumbering
+- Quarters follow standard financial calendar (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
+- Navigation operations support both Date and DateTime with appropriate behavior
+- Interval return option leverages Step 13's Interval type (dependency)
+
+---
+
+## [phase-5.md] Step 12: Implement Period Type | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 12 tasks and Period class specification (lines 2588-2704)
+- `plans/phase-5.md` - [IC01] Period Type decision, [IC03] Month Overflow Clamping
+- `sample-code/python/temporale/temporale/core/duration.py` - Duration pattern reference
+- `sample-code/python/temporale/temporale/core/date.py` - Date class for operator integration
+- `sample-code/python/temporale/temporale/core/datetime.py` - DateTime class for operator integration
+- `sample-code/python/temporale/temporale/calendar.py` - `days_in_month()` helper
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `Period` class with `years`, `months`, `weeks`, `days` components | Done |
+| Implement `Period.__add__` and `Period.__sub__` for Period+Period | Done |
+| Implement `Date.__add__(Period)` and `DateTime.__add__(Period)` with month overflow clamping | Done |
+| Add factory methods: `Period.of_months()`, `Period.of_years()`, etc. | Done |
+| Implement `Period.to_duration(reference_date)` for approximate conversion | Done |
+| Export from `temporale/core/__init__.py` and `temporale/__init__.py` | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/core/period.py` - Period class with slots, factory methods, properties, arithmetic operators, `normalized()`, `to_duration()`
+- `sample-code/python/temporale/temporale/arithmetic/period_ops.py` - `add_period_to_date()`, `subtract_period_from_date()`, `add_period_to_datetime()`, `subtract_period_from_datetime()` with month overflow clamping
+- `sample-code/python/temporale/tests/test_period.py` - 57 comprehensive Period tests
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/date.py` - Added Period handling in `__add__` and `__sub__`
+- `sample-code/python/temporale/temporale/core/datetime.py` - Added Period handling in `__add__` and `__sub__` (preserves time)
+- `sample-code/python/temporale/temporale/core/__init__.py` - Added Period export
+- `sample-code/python/temporale/temporale/__init__.py` - Added Period export and docstring
+- `sample-code/python/temporale/temporale/arithmetic/__init__.py` - Added period_ops function exports
+
+**Test Results:**
+- `pytest tests/test_period.py -v`: 57 tests passed
+- `pytest tests/ -v`: 777 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes: PASS
+- `Date(2024, 1, 31) + Period(months=1) == Date(2024, 2, 29)` works: PASS
+
+**Key Decisions/Notes:**
+- Month overflow clamping: Jan 31 + 1 month → Feb 28/29 (clamps to last valid day)
+- Period arithmetic order: years first, then months, then weeks+days
+- `to_duration()` requires reference date since month/year lengths vary
+- `normalized()` converts months→years and days→weeks for canonical form
+- DateTime + Period preserves time component (hour, minute, second, nanosecond)
+
+---
+
 ## [phase-5.md] Step 11: Implement Arithmetic Module | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
