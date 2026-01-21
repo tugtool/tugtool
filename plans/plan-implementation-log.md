@@ -74,8 +74,6 @@ Entries are sorted newest-first.
 
 ---
 
----
-
 ## [phase-4.md] Step 14: Remove Legacy Collector APIs That Re-Parse | COMPLETE | 2026-01-20
 
 **Completed:** 2026-01-20

@@ -22,13 +22,11 @@ Review the recent conversation context to understand what implementation work wa
 
 2. **Read the Plan File**: Open the referenced plan file to get the exact step title and understand the context
 
-3. **DO NOT read the entire log file**: The log file is too large to read in full. You only need to know:
-   - New entries are prepended after line 8 (after the `---` separator following the header)
-   - Use `head -15` if you need to verify the header structure
+3. **Read Log Header**: Read the first 15-20 lines of `plans/plan-implementation-log.md` to see the header structure and first existing entry
 
 4. **Generate the Summary**: Create a detailed completion summary using the format below
 
-5. **Prepend to Log**: Insert the new entry after line 8 of `plans/plan-implementation-log.md`
+5. **Prepend Using Edit Tool**: Use the Edit tool to insert the new entry after line 7 ("Entries are sorted newest-first.") and before the first existing entry
 
 ## Machine-Parseable Entry Format
 
@@ -49,6 +47,8 @@ This format enables easy grep/sed operations:
 - `grep "| COMPLETE |"` - all completed entries
 
 ## Full Entry Template
+
+Each entry ends with `---` as a separator between entries:
 
 ```markdown
 ## [plan-file.md] Step X.Y: Title | COMPLETE | YYYY-MM-DD
@@ -84,39 +84,43 @@ This format enables easy grep/sed operations:
 ---
 ```
 
-## Prepend Strategy
+## Prepend Strategy Using Edit Tool
 
-Since the log file is large (3000+ lines), do NOT try to read the entire file. Instead:
-
-```bash
-# Read just the header (first 8 lines)
-head -8 plans/plan-implementation-log.md > /tmp/log-header.md
-
-# Write your new entry to a temp file
-cat > /tmp/new-entry.md << 'EOF'
-## [phase-X.md] Step Y: Title | COMPLETE | YYYY-MM-DD
-
-**Completed:** YYYY-MM-DD
-...rest of entry...
-
----
-EOF
-
-# Get everything after line 8 (existing entries)
-tail -n +9 plans/plan-implementation-log.md > /tmp/log-body.md
-
-# Combine: header + new entry + existing entries
-cat /tmp/log-header.md /tmp/new-entry.md /tmp/log-body.md > plans/plan-implementation-log.md
+The log file structure is:
 ```
+Line 1: # Plan Implementation Log
+Line 2: (blank)
+Line 3: This file documents...
+Line 4: (blank)
+Line 5: **Format:**...
+Line 6: (blank)
+Line 7: Entries are sorted newest-first.
+Line 8: (blank)
+Line 9: ## [first existing entry...]
+```
+
+**Use the Edit tool** to insert your new entry. Find the blank line after "Entries are sorted newest-first." and the start of the first entry (the `## [` line), then replace that blank line with your new entry followed by a blank line.
+
+Example Edit:
+```
+old_string: "Entries are sorted newest-first.\n\n## [phase-4.md]"
+new_string: "Entries are sorted newest-first.\n\n## [YOUR NEW ENTRY HERE]\n\n**Completed:** ...\n...\n\n---\n\n## [phase-4.md]"
+```
+
+This approach:
+- Uses the Edit tool (no temp files, no permissions issues)
+- Anchors on recognizable text patterns
+- Maintains proper spacing between entries
 
 ## Quality Gates
 
 Before reporting completion:
 - [ ] Identified all completed work from the conversation
 - [ ] Read the relevant plan file for context
+- [ ] Read first 20 lines of log file to see existing structure
 - [ ] Generated a complete, detailed summary
 - [ ] **Header uses pipe-separated format**: `## [plan.md] Step: Title | STATUS | DATE`
-- [ ] Prepended the summary to `plans/plan-implementation-log.md` (after header)
+- [ ] Used Edit tool to prepend the entry (not head/cat/temp files)
 - [ ] Verified the entry was added correctly with `head -60 plans/plan-implementation-log.md`
 
 ## Purpose
@@ -132,10 +136,10 @@ The implementation log serves as a historical record of all implementation work:
 
 ## Critical Reminders
 
+- **Use Edit tool**: Do NOT use head/cat/tail with temp files
 - **Machine-parseable header**: `## [plan.md] Step: Title | STATUS | DATE`
 - **Pipe separators**: Use `|` to separate fields in header
 - **Prepend, don't append**: New entries go at the top (after header), not bottom
-- **Don't read entire file**: The log is too large; just use head/tail as needed
 - **Be thorough**: Capture all tasks, files, and test results
 - **Be accurate**: Use exact file names and test counts
 - **Date format**: Always use YYYY-MM-DD (e.g., 2026-01-20)
