@@ -403,6 +403,8 @@ temporale/
         time.py           # Time class
         datetime.py       # DateTime class
         duration.py       # Duration class
+        period.py         # Period class (calendar-based durations)
+        interval.py       # Interval class (time spans)
         instant.py        # Instant (absolute moment in time)
     units/
         __init__.py       # Unit exports
@@ -422,6 +424,14 @@ temporale/
         __init__.py       # Arithmetic exports
         ops.py            # Addition, subtraction operations
         comparisons.py    # Comparison operations
+        period_ops.py     # Period arithmetic
+        range_ops.py      # Interval range operations
+    infer/
+        __init__.py       # Public API: parse_fuzzy(), parse_relative()
+        _patterns.py      # Regex patterns for format detection
+        _formats.py       # Known format templates and matchers
+        _relative.py      # Relative date parsing
+        _natural.py       # Natural language keywords
     _internal/
         __init__.py       # Internal utilities (underscore = private)
         validation.py     # Input validation
@@ -429,7 +439,7 @@ temporale/
 ```
 
 **Implications:**
-- Creates 15+ Python files
+- Creates 20+ Python files
 - Multiple `__init__.py` files for export testing
 - Relative and absolute imports both used
 - Private module convention (`_internal`) for testing privacy handling
@@ -608,6 +618,155 @@ class DateTime:
     def to_unix_nanos(self) -> int:
         """Return Unix nanoseconds timestamp."""
 ```
+
+---
+
+#### [IC01] Period Overflow Strategy (DECIDED) {#ic01-period-overflow}
+
+**Decision:** Use clamping strategy for month overflow.
+
+**Question:** What happens when adding 1 month to Jan 31?
+
+**Options considered:**
+1. Clamp to last valid day: Jan 31 + 1 month = Feb 29 (leap) or Feb 28
+2. Overflow to next month: Jan 31 + 1 month = Mar 2 or Mar 3
+3. Raise error
+4. Configurable behavior
+
+**Rationale:**
+- Clamping matches behavior of most datetime libraries (Java, Joda-Time, NodaTime)
+- Intuitive: "one month from Jan 31" means "end of February"
+- No silent data loss or surprising overflows
+
+**Resolution:** DECIDED - Use clamping (Option 1).
+
+---
+
+#### [IC02] Interval Boundary Semantics (DECIDED) {#ic02-interval-boundary}
+
+**Decision:** Half-open intervals `[start, end)` by default.
+
+**Question:** Are intervals open, closed, or half-open?
+
+**Options considered:**
+1. Always half-open `[start, end)`
+2. Always closed `[start, end]`
+3. Configurable per boundary
+
+**Rationale:**
+- Half-open intervals are composable: `[a,b) + [b,c) = [a,c)` with no gap or overlap
+- Standard in computing (array slices, range(), etc.)
+- Duration calculation is simple: `end - start`
+
+**Resolution:** DECIDED - Half-open intervals (Option 1).
+
+---
+
+#### [IC03] Period + Duration Mixing (DECIDED) {#ic03-period-duration}
+
+**Decision:** Keep Period and Duration separate; compose via operations.
+
+**Question:** Can Period contain both calendar and absolute components?
+
+**Options considered:**
+1. Keep Period pure (calendar only), combine via tuple
+2. Allow mixed: `Period(months=1, hours=12)`
+3. Separate Period and Duration, use operation like `date + period + duration`
+
+**Rationale:**
+- Calendar units (months) and exact units (hours) have fundamentally different semantics
+- Mixing them creates ambiguity: does "1 month + 12 hours" add the hours before or after month resolution?
+- Composition via chaining is explicit and unambiguous
+
+**Resolution:** DECIDED - Keep types pure, compose via operations (Option 3).
+
+---
+
+#### [IC04] Interval Type Variants (DECIDED) {#ic04-interval-types}
+
+**Decision:** Single Interval class that accepts both Date and DateTime.
+
+**Question:** Should there be separate types for Date intervals vs DateTime intervals?
+
+**Options considered:**
+1. Generic `Interval[T]` with type parameter
+2. Separate `DateRange`, `DateTimeRange` classes
+3. Single `Interval` that accepts both
+
+**Rationale:**
+- Generic type provides type safety while avoiding class explosion
+- Python's type system (3.10+) handles generics well
+- Most operations are identical; only duration() differs slightly
+
+**Resolution:** DECIDED - Generic `Interval[T]` with type parameter (Option 1).
+
+---
+
+#### [IA01] Ambiguity Resolution Strategy (DECIDED) {#ia01-ambiguity}
+
+**Decision:** Prefer ISO-like interpretation with explicit locale override.
+
+**Question:** How to handle ambiguous formats like "01/02/2024"?
+
+**Options considered:**
+1. Require explicit locale hint
+2. Use system locale as default
+3. Prefer ISO-like interpretation (YYYY-MM-DD family)
+4. Return multiple candidates with confidence scores
+
+**Rationale:**
+- YMD ordering is unambiguous and ISO 8601 standard
+- System locale adds unpredictability across environments
+- Explicit `InferOptions(date_order="DMY"|"MDY"|"YMD")` allows override when needed
+
+**Resolution:** DECIDED - Default to YMD with explicit override option (Option 3 + Option 1).
+
+---
+
+#### [IA02] Relative Date Reference Point (DECIDED) {#ia02-reference}
+
+**Decision:** Accept reference DateTime parameter with system time as default.
+
+**Question:** What is "today" when parsing "yesterday"?
+
+**Options considered:**
+1. Always use system local date/time
+2. Accept reference DateTime parameter
+3. Use UTC
+
+**Rationale:**
+- Parameter enables deterministic testing
+- System time is reasonable default for interactive use
+- API: `parse_relative(text, reference=DateTime.now())`
+
+**Resolution:** DECIDED - Parameter with system default (Option 2 + Option 1).
+
+---
+
+#### [IA03] Natural Language Scope (DECIDED) {#ia03-nl-scope}
+
+**Decision:** Minimal scope - explicit patterns only, no NLP library dependency.
+
+**Question:** How sophisticated should natural language parsing be?
+
+**Supported patterns:**
+- Day keywords: "yesterday", "today", "tomorrow"
+- Weekday references: "Monday", "next Monday", "last Friday"
+- Duration phrases: "3 days ago", "in 2 weeks"
+- Period phrases: "next month", "last year"
+
+**Not supported (out of scope):**
+- Complex NL: "the first Tuesday of next month"
+- Ordinals: "the 3rd", "second to last"
+- Relative time of day: "this afternoon", "tonight"
+
+**Rationale:**
+- Explicit patterns are deterministic and testable
+- Avoids dependency on NLP libraries (spaCy, dateparser, etc.)
+- Covers 90%+ of common use cases
+- Easy to extend later if needed
+
+**Resolution:** DECIDED - Minimal explicit patterns only (no NLP).
 
 ---
 
@@ -1146,6 +1305,7 @@ sample-code/python/temporale/    # Project root (this is the directory name)
         format/
         convert/
         arithmetic/
+        infer/
         _internal/
         errors.py
     tests/                       # Tests directory (sibling to package)
@@ -1155,12 +1315,16 @@ sample-code/python/temporale/    # Project root (this is the directory name)
         test_time.py             # Time class tests
         test_datetime.py         # DateTime class tests
         test_duration.py         # Duration class tests
+        test_period.py           # Period class tests
+        test_interval.py         # Interval class tests
         test_timezone.py         # Timezone tests
         test_era.py              # Era enum tests
         test_format.py           # Formatting tests
         test_parse.py            # Parsing tests
         test_arithmetic.py       # Arithmetic operation tests
         test_json.py             # JSON roundtrip tests
+        test_infer.py            # Format inference tests
+        test_relative_parsing.py # Relative date parsing tests
         test_edge_cases.py       # Edge cases, boundary conditions
 ```
 
@@ -2421,7 +2585,478 @@ cargo nextest run -p tugtool pytest
 
 ---
 
-#### Step 12: Add Custom Decorators and Edge Cases {#step-12}
+#### Step 12: Implement Period Type {#step-12}
+
+**Commit:** `feat(temporale): add Period class for calendar-based durations`
+
+**References:** [IC01], [IC03], Feature C Analysis
+
+**Purpose:** Add a Period type representing calendar-based durations (months, years) that vary by context, distinct from the exact-nanosecond Duration type.
+
+**Artifacts:**
+- `temporale/core/period.py` - Period class implementation
+- `temporale/arithmetic/period_ops.py` - Period arithmetic helpers
+- `tests/test_period.py` - Period tests
+
+**Tasks:**
+- [ ] Create `Period` class with `years`, `months`, `weeks`, `days` components
+- [ ] Implement `Period.__add__` and `Period.__sub__` for Period+Period
+- [ ] Implement `Date.__add__(Period)` and `DateTime.__add__(Period)` with month overflow clamping
+- [ ] Add factory methods: `Period.of_months()`, `Period.of_years()`, etc.
+- [ ] Implement `Period.to_duration(reference_date)` for approximate conversion
+- [ ] Export from `temporale/core/__init__.py` and `temporale/__init__.py`
+
+**Period class specification:**
+```python
+class Period:
+    """A calendar-based duration with year, month, week, and day components.
+
+    Unlike Duration (which is exact nanoseconds), Period represents calendar
+    concepts like "1 month" that vary by context. Adding 1 month to Jan 31
+    yields Feb 28/29, not exactly 30 or 31 days.
+
+    Attributes:
+        years: Number of years (can be negative).
+        months: Number of months (can be negative).
+        weeks: Number of weeks (can be negative).
+        days: Number of days (can be negative).
+    """
+
+    __slots__ = ("_years", "_months", "_weeks", "_days")
+
+    def __init__(
+        self,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+    ) -> None: ...
+
+    @classmethod
+    def of_years(cls, years: int) -> Period: ...
+
+    @classmethod
+    def of_months(cls, months: int) -> Period: ...
+
+    @classmethod
+    def of_weeks(cls, weeks: int) -> Period: ...
+
+    @classmethod
+    def of_days(cls, days: int) -> Period: ...
+
+    @property
+    def years(self) -> int: ...
+
+    @property
+    def months(self) -> int: ...
+
+    @property
+    def weeks(self) -> int: ...
+
+    @property
+    def days(self) -> int: ...
+
+    @property
+    def total_months(self) -> int:
+        """Total months (years*12 + months)."""
+        ...
+
+    def to_duration(self, reference: Date) -> Duration:
+        """Convert to exact Duration using reference date for month lengths."""
+        ...
+
+    def __add__(self, other: Period) -> Period: ...
+    def __sub__(self, other: Period) -> Period: ...
+    def __neg__(self) -> Period: ...
+    def __mul__(self, scalar: int) -> Period: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+```
+
+**Month overflow clamping specification:**
+```python
+# Adding months clamps to valid day-of-month
+Date(2024, 1, 31) + Period(months=1)  # -> Date(2024, 2, 29) (leap year)
+Date(2023, 1, 31) + Period(months=1)  # -> Date(2023, 2, 28)
+Date(2024, 3, 31) + Period(months=1)  # -> Date(2024, 4, 30)
+
+# Year addition is similar
+Date(2024, 2, 29) + Period(years=1)   # -> Date(2025, 2, 28)
+```
+
+**Tests:**
+- [ ] Unit test: Period construction and property access
+- [ ] Unit test: Period arithmetic (add, subtract, multiply, negate)
+- [ ] Unit test: Date + Period with month overflow (Jan 31 + 1 month)
+- [ ] Unit test: Date + Period for leap year edge cases
+- [ ] Unit test: DateTime + Period preserves time component
+- [ ] Unit test: Period.to_duration() with various reference dates
+- [ ] Unit test: Period comparison and hashing
+
+**Checkpoint:**
+- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes
+- [ ] `Date(2024, 1, 31) + Period(months=1) == Date(2024, 2, 29)` works
+
+**Rollback:** Remove period.py, period_ops.py, and test_period.py
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 13: Implement Interval Type and Range Operations {#step-13}
+
+**Commit:** `feat(temporale): add Interval class with range operations`
+
+**References:** [IC02], [IC04], Feature C Analysis
+
+**Purpose:** Add an Interval type representing a span between two temporal points, with operations for testing containment, overlap, and combining intervals.
+
+**Artifacts:**
+- `temporale/core/interval.py` - Interval class implementation
+- `temporale/arithmetic/range_ops.py` - Range operation helpers
+- `tests/test_interval.py` - Interval tests
+
+**Tasks:**
+- [ ] Create `Interval` class with `start`, `end`, and bound type
+- [ ] Implement half-open interval semantics `[start, end)` by default
+- [ ] Add factory methods for unbounded intervals
+- [ ] Implement containment: `contains(point)`, `contains(interval)`
+- [ ] Implement overlap: `overlaps(interval)`
+- [ ] Implement gap: `gap(interval)` returns Duration or None
+- [ ] Implement union: `union(interval)` for overlapping intervals
+- [ ] Implement intersection: `intersection(interval)`
+- [ ] Export from `temporale/core/__init__.py` and `temporale/__init__.py`
+
+**Interval class specification:**
+```python
+from typing import TypeVar, Generic, overload
+
+T = TypeVar("T", Date, DateTime)
+
+class Interval(Generic[T]):
+    """A time span between two points, half-open [start, end) by default.
+
+    Intervals can represent:
+    - Bounded: Interval(start, end)
+    - Open start: Interval.until(end)
+    - Open end: Interval.since(start)
+    - Empty: Interval.empty()
+
+    Attributes:
+        start: Start of interval (inclusive), or None if unbounded.
+        end: End of interval (exclusive), or None if unbounded.
+    """
+
+    __slots__ = ("_start", "_end")
+
+    def __init__(self, start: T, end: T) -> None:
+        """Create a bounded interval [start, end).
+
+        Raises:
+            ValueError: If end <= start.
+        """
+        ...
+
+    @classmethod
+    def since(cls, start: T) -> Interval[T]:
+        """Create interval [start, infinity)."""
+        ...
+
+    @classmethod
+    def until(cls, end: T) -> Interval[T]:
+        """Create interval (-infinity, end)."""
+        ...
+
+    @classmethod
+    def empty(cls) -> Interval:
+        """Create an empty interval."""
+        ...
+
+    @property
+    def start(self) -> T | None: ...
+
+    @property
+    def end(self) -> T | None: ...
+
+    @property
+    def is_bounded(self) -> bool: ...
+
+    @property
+    def is_empty(self) -> bool: ...
+
+    def duration(self) -> Duration | None:
+        """Return the duration of a bounded interval, or None."""
+        ...
+
+    @overload
+    def contains(self, point: T) -> bool: ...
+    @overload
+    def contains(self, interval: Interval[T]) -> bool: ...
+    def contains(self, other): ...
+
+    def overlaps(self, other: Interval[T]) -> bool:
+        """Return True if intervals share any time."""
+        ...
+
+    def gap(self, other: Interval[T]) -> Duration | None:
+        """Return duration between non-overlapping intervals, or None if overlapping."""
+        ...
+
+    def union(self, other: Interval[T]) -> Interval[T] | None:
+        """Return union of overlapping intervals, or None if disjoint."""
+        ...
+
+    def intersection(self, other: Interval[T]) -> Interval[T] | None:
+        """Return intersection of intervals, or None if no overlap."""
+        ...
+
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+```
+
+**Tests:**
+- [ ] Unit test: Interval construction and validation
+- [ ] Unit test: Bounded interval contains point
+- [ ] Unit test: Bounded interval contains sub-interval
+- [ ] Unit test: Unbounded intervals (since, until)
+- [ ] Unit test: Overlapping intervals
+- [ ] Unit test: Non-overlapping intervals with gap
+- [ ] Unit test: Union of overlapping intervals
+- [ ] Unit test: Intersection of overlapping intervals
+- [ ] Unit test: Empty interval handling
+- [ ] Unit test: Interval with Date vs DateTime
+
+**Checkpoint:**
+- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_interval.py -v` passes
+- [ ] Interval overlap detection works correctly
+
+**Rollback:** Remove interval.py, range_ops.py, and test_interval.py
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 14: Implement Flexible Format Inference {#step-14}
+
+**Commit:** `feat(temporale): add flexible date format inference`
+
+**References:** [IA01], Feature A Analysis
+
+**Purpose:** Add a module that can parse dates from ambiguous real-world formats by detecting the format pattern and applying appropriate parsing.
+
+**Artifacts:**
+- `temporale/infer/__init__.py` - Public API
+- `temporale/infer/_patterns.py` - Format pattern detection
+- `temporale/infer/_formats.py` - Known format templates
+- `tests/test_infer.py` - Format inference tests
+
+**Tasks:**
+- [ ] Create `InferOptions` class for configuration (date_order, etc.)
+- [ ] Implement format pattern detection for common formats
+- [ ] Create `parse_fuzzy(text, options)` function
+- [ ] Support configurable date order (MDY, DMY, YMD)
+- [ ] Handle common separators (/, -, ., space)
+- [ ] Return parsed value with confidence indicator
+
+**InferOptions specification:**
+```python
+class DateOrder(Enum):
+    """Order of date components in ambiguous formats."""
+    YMD = "YMD"  # Year-Month-Day (ISO-like)
+    MDY = "MDY"  # Month-Day-Year (US convention)
+    DMY = "DMY"  # Day-Month-Year (European convention)
+
+class InferOptions:
+    """Configuration for flexible parsing."""
+
+    def __init__(
+        self,
+        date_order: DateOrder = DateOrder.YMD,
+        prefer_future: bool = False,  # For 2-digit years
+        default_century: int = 2000,  # For 2-digit years
+    ) -> None: ...
+```
+
+**parse_fuzzy specification:**
+```python
+class ParseResult:
+    """Result of fuzzy parsing with confidence."""
+    value: Date | Time | DateTime
+    format_detected: str
+    confidence: float  # 0.0 to 1.0
+
+def parse_fuzzy(
+    text: str,
+    options: InferOptions | None = None,
+) -> ParseResult:
+    """Parse a date/time string with format inference.
+
+    Supported formats:
+    - ISO 8601: "2024-01-15", "2024-01-15T14:30:00"
+    - Slash separated: "01/15/2024", "15/01/2024" (depends on date_order)
+    - Dot separated: "15.01.2024"
+    - Named month: "Jan 15, 2024", "15 Jan 2024", "January 15, 2024"
+    - Time only: "14:30", "2:30 PM", "14:30:45"
+
+    Args:
+        text: String to parse.
+        options: Configuration options.
+
+    Returns:
+        ParseResult with parsed value and confidence.
+
+    Raises:
+        ParseError: If no format matches.
+    """
+    ...
+```
+
+**Supported formats (initial):**
+```python
+# Date formats
+"2024-01-15"      # ISO
+"01/15/2024"      # MDY slash
+"15/01/2024"      # DMY slash
+"2024/01/15"      # YMD slash
+"01-15-2024"      # MDY dash
+"15.01.2024"      # DMY dot
+"Jan 15, 2024"    # Named month
+"15 Jan 2024"     # Named month
+"January 15, 2024"  # Full month name
+
+# DateTime formats
+"2024-01-15 14:30:00"
+"Jan 15, 2024 2:30 PM"
+
+# Time formats
+"14:30"
+"14:30:45"
+"2:30 PM"
+"2:30:45 PM"
+```
+
+**Tests:**
+- [ ] Unit test: ISO format parsing
+- [ ] Unit test: Slash-separated with MDY order
+- [ ] Unit test: Slash-separated with DMY order
+- [ ] Unit test: Named month parsing
+- [ ] Unit test: Time-only parsing
+- [ ] Unit test: Combined datetime parsing
+- [ ] Unit test: Ambiguous date with explicit order
+- [ ] Unit test: Confidence scores vary by format clarity
+
+**Checkpoint:**
+- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_infer.py -v` passes
+- [ ] `parse_fuzzy("Jan 15, 2024")` correctly parses
+
+**Rollback:** Remove infer/ module and test file
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 15: Implement Relative and Natural Date Parsing {#step-15}
+
+**Commit:** `feat(temporale): add relative and natural date parsing`
+
+**References:** [IA02], [IA03], Feature A Analysis
+
+**Purpose:** Extend the infer module to handle relative dates ("yesterday", "next Monday") and simple date math expressions.
+
+**Artifacts:**
+- `temporale/infer/_relative.py` - Relative date parsing
+- `temporale/infer/_natural.py` - Natural language patterns
+- Update `temporale/infer/__init__.py` - Export new functions
+- `tests/test_relative_parsing.py` - Relative date tests
+
+**Tasks:**
+- [ ] Implement `parse_relative(text, reference)` function
+- [ ] Support keywords: yesterday, today, tomorrow
+- [ ] Support weekday references: next/last Monday-Sunday
+- [ ] Support duration phrases: "3 days ago", "in 2 weeks"
+- [ ] Support month phrases: "next month", "last month"
+- [ ] Handle combination: "next Monday at 3pm"
+
+**parse_relative specification:**
+```python
+def parse_relative(
+    text: str,
+    reference: DateTime | None = None,
+) -> Date | DateTime:
+    """Parse a relative date expression.
+
+    If no reference is provided, uses DateTime.now().
+
+    Supported patterns:
+    - "today", "yesterday", "tomorrow"
+    - "next Monday", "last Friday" (any weekday)
+    - "3 days ago", "in 2 weeks", "5 months ago"
+    - "next week", "last month", "next year"
+    - "Monday" (next occurrence by default)
+    - "Monday at 3pm" (with time)
+
+    Args:
+        text: Relative date expression.
+        reference: Reference point for calculation (default: now).
+
+    Returns:
+        Date or DateTime depending on whether time was specified.
+
+    Raises:
+        ParseError: If expression cannot be parsed.
+    """
+    ...
+```
+
+**Keyword definitions:**
+```python
+# Day keywords (relative to reference)
+"today"     -> reference.date()
+"yesterday" -> reference.date() - Duration(days=1)
+"tomorrow"  -> reference.date() + Duration(days=1)
+
+# Weekday keywords (next occurrence)
+"Monday"    -> next Monday >= today
+"next Monday" -> next Monday > today
+"last Monday" -> most recent Monday < today
+"this Monday" -> Monday of current week
+
+# Duration phrases
+"3 days ago"      -> reference - Duration(days=3)
+"in 2 weeks"      -> reference + Duration(days=14)
+"5 months ago"    -> reference - Period(months=5)
+"in 1 year"       -> reference + Period(years=1)
+
+# Period keywords
+"next week"  -> reference + Duration(days=7)
+"last month" -> reference - Period(months=1)
+"next year"  -> reference + Period(years=1)
+```
+
+**Tests:**
+- [ ] Unit test: today/yesterday/tomorrow keywords
+- [ ] Unit test: Weekday references (next Monday, last Friday)
+- [ ] Unit test: Duration phrases (N days/weeks ago/from now)
+- [ ] Unit test: Period phrases (N months/years ago/from now)
+- [ ] Unit test: Custom reference datetime
+- [ ] Unit test: Combination with time ("tomorrow at 3pm")
+- [ ] Unit test: Edge cases (next Monday on a Monday)
+
+**Checkpoint:**
+- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_relative_parsing.py -v` passes
+- [ ] `parse_relative("3 days ago")` returns correct date
+
+**Rollback:** Remove _relative.py, _natural.py, revert __init__.py, remove test file
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 16: Add Custom Decorators and Edge Cases {#step-16}
 
 **Commit:** `feat(temporale): add decorators and edge case handling`
 
@@ -2469,7 +3104,7 @@ def deprecated(message: str):
 
 ---
 
-#### Step 13: Public API and Exports {#step-13}
+#### Step 17: Public API and Exports {#step-17}
 
 **Commit:** `feat(temporale): finalize public API exports`
 
@@ -2489,13 +3124,15 @@ def deprecated(message: str):
 ```python
 from temporale import (
     # Core types
-    Date, Time, DateTime, Duration,
+    Date, Time, DateTime, Duration, Period, Interval,
     # Units
     Era, TimeUnit, Timezone,
     # Exceptions
     TemporaleError, ValidationError, ParseError, OverflowError, TimezoneError,
     # Format functions
     parse_iso8601, format_iso8601,
+    # Infer functions
+    parse_fuzzy, parse_relative, InferOptions, DateOrder,
     # Constants
     __version__,
 )
@@ -2515,7 +3152,7 @@ from temporale import (
 
 ---
 
-#### Step 14: Tugtool Integration Verification {#step-14}
+#### Step 18: Tugtool Integration Verification {#step-18}
 
 **Commit:** `test(tugtool): verify temporale analysis and refactoring`
 
@@ -2547,12 +3184,14 @@ from temporale import (
 
 ---
 
-#### Step 14 Summary {#step-14-summary}
+#### Step 18 Summary {#step-18-summary}
 
-After completing Steps 1-14, you will have:
-- A complete Temporale datetime library with 15+ Python modules
-- 100+ symbols across the codebase
-- 50+ cross-module references
+After completing Steps 1-18, you will have:
+- A complete Temporale datetime library with 20+ Python modules
+- 150+ symbols across the codebase
+- 75+ cross-module references
+- Period and Interval types for calendar-based arithmetic
+- Flexible format inference (parse_fuzzy) and relative date parsing
 - Comprehensive pytest test suite
 - Rust integration tests verifying tugtool analysis
 - Documented refactoring scenarios with verification
@@ -2560,8 +3199,8 @@ After completing Steps 1-14, you will have:
 **Final Phase 5 Checkpoint:**
 - [ ] `python -m pytest sample-code/python/temporale/tests/ -v` all tests pass
 - [ ] `cargo nextest run -p tugtool temporale` all integration tests pass
-- [ ] Symbol count verification: >100 distinct symbols
-- [ ] Reference count verification: >50 cross-module references
+- [ ] Symbol count verification: >150 distinct symbols
+- [ ] Reference count verification: >75 cross-module references
 
 ---
 
@@ -2585,23 +3224,26 @@ After completing Steps 1-14, you will have:
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Core Types Complete** {#m01-core-types}
-- [ ] Date, Time, DateTime, Duration all implemented
-- [ ] Basic pytest tests pass
+- [x] Date, Time, DateTime, Duration all implemented
+- [x] Basic pytest tests pass
 
-**Milestone M02: Full Library Complete** {#m02-full-library}
+**Milestone M02: Extended Types Complete** {#m02-extended-types}
+- [ ] Period and Interval types implemented
+- [ ] Infer module implemented
+- [ ] All pytest tests pass
+
+**Milestone M03: Full Library Complete** {#m03-full-library}
 - [ ] All modules implemented
 - [ ] All pytest tests pass
 - [ ] Public API finalized
 
-**Milestone M03: Integration Verified** {#m03-integration}
+**Milestone M04: Integration Verified** {#m04-integration}
 - [ ] Rust integration tests pass
 - [ ] Refactoring scenarios verified
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Infer module that adds heuristics to parsing to make it easier to work with Temporale objects in "the real world"
 - [ ] IANA timezone database support for Timezones
-- [ ] Temporal arithmetic extensions (periods, intervals)
 - [ ] Calendar system support (Julian, Islamic, OS/Gregorian calendar switch, etc.)
 - [ ] Leap second support
 - [ ] Property-based testing with Hypothesis
