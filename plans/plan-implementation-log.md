@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 9: Implement Formatting Module | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 9 tasks and specifications (lines 2315-2347)
+- `plans/phase-5.md` - Spec S03: Format Roundtrip Guarantee
+- `plans/phase-5.md` - Table T06: Format Module Symbols
+- `plans/phase-5.md` - Q10: strftime/strptime Scope decision (minimal subset)
+- Existing Date, Time, and DateTime `to_iso_format()` and `from_iso_format()` implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `parse_iso8601()` for date, time, and datetime strings | Done |
+| Implement `format_iso8601()` with configurable precision | Done |
+| Implement RFC 3339 as strict subset of ISO 8601 | Done |
+| Implement `strftime()` with common format codes | Done |
+| Integrate with DateTime/Date/Time `.format()` and `.parse()` methods | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/format/iso8601.py` - `parse_iso8601()` and `format_iso8601()` functions for unified ISO 8601 handling
+- `sample-code/python/temporale/temporale/format/rfc3339.py` - `parse_rfc3339()` and `format_rfc3339()` functions for strict RFC 3339 compliance
+- `sample-code/python/temporale/temporale/format/strftime.py` - `strftime()` and `strptime()` functions with minimal directive subset (%Y, %m, %d, %H, %M, %S, %f, %z, %Z, %%)
+- `sample-code/python/temporale/tests/test_format.py` - 42 tests for formatting (ISO 8601, RFC 3339, strftime)
+- `sample-code/python/temporale/tests/test_parse.py` - 56 tests for parsing (ISO 8601, RFC 3339, strptime, roundtrip)
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/format/__init__.py` - Added exports for all format functions
+- `sample-code/python/temporale/temporale/__init__.py` - Added `parse_iso8601` and `format_iso8601` to top-level exports
+
+**Test Results:**
+- `pytest tests/test_format.py tests/test_parse.py -v`: 98 tests passed
+- `pytest tests/ -v`: 559 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_format.py tests/test_parse.py -v` passes: PASS (98 tests)
+
+**Key Decisions/Notes:**
+- `parse_iso8601()` auto-detects whether input is Date, Time, or DateTime based on format
+- Lowercase 't' separator is normalized to uppercase 'T' for compatibility
+- RFC 3339 requires timezone (raises error for naive datetime)
+- strftime/strptime support minimal directive set per Q10 decision (no locale-dependent directives)
+- Roundtrip guarantee verified: `parse(format(x)) == x` for all temporal types
+- Format functions delegate to existing `to_iso_format()` methods on core classes
+- Top-level exports now include `parse_iso8601` and `format_iso8601` per plan step 13 preview
+
+---
+
 ## [phase-5.md] Step 8: Implement DateTime Class | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

@@ -2326,21 +2326,21 @@ cargo nextest run -p tugtool pytest
 - `tests/test_parse.py` with parse tests
 
 **Tasks:**
-- [ ] Implement `parse_iso8601()` for date, time, and datetime strings
-- [ ] Implement `format_iso8601()` with configurable precision
-- [ ] Implement RFC 3339 as strict subset of ISO 8601
-- [ ] Implement `strftime()` with common format codes
-- [ ] Integrate with DateTime/Date/Time `.format()` and `.parse()` methods
+- [x] Implement `parse_iso8601()` for date, time, and datetime strings
+- [x] Implement `format_iso8601()` with configurable precision
+- [x] Implement RFC 3339 as strict subset of ISO 8601
+- [x] Implement `strftime()` with common format codes
+- [x] Integrate with DateTime/Date/Time `.format()` and `.parse()` methods
 
 **Tests:**
-- [ ] Unit test: ISO 8601 date parsing
-- [ ] Unit test: ISO 8601 time parsing with subseconds
-- [ ] Unit test: ISO 8601 datetime with timezone
-- [ ] Unit test: Roundtrip guarantee (parse(format(x)) == x)
-- [ ] Unit test: strftime patterns
+- [x] Unit test: ISO 8601 date parsing
+- [x] Unit test: ISO 8601 time parsing with subseconds
+- [x] Unit test: ISO 8601 datetime with timezone
+- [x] Unit test: Roundtrip guarantee (parse(format(x)) == x)
+- [x] Unit test: strftime patterns
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_format.py tests/test_parse.py -v` passes
+- [x] `python -m pytest tests/test_format.py tests/test_parse.py -v` passes
 
 **Rollback:** Remove format module files and test files
 
@@ -2599,13 +2599,14 @@ After completing Steps 1-14, you will have:
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Property-based testing with Hypothesis
-- [ ] Performance benchmarks
-- [ ] Additional refactoring scenarios
+- [ ] Infer module that adds heuristics to parsing to make it easier to work with Temporale objects in "the real world"
 - [ ] IANA timezone database support for Timnezones
 - [ ] Temporal arithmetic extensions (periods, intervals)
 - [ ] Calendar system support (Julian, Islamic, OS/Gregorian calendar switch, etc.)
 - [ ] Leap second support
+- [ ] Property-based testing with Hypothesis
+- [ ] Additional refactoring scenarios
+
 
 | Checkpoint | Verification |
 |------------|--------------|

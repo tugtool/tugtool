@@ -14,6 +14,10 @@ Units:
     TimeUnit: Standard time units (YEAR, MONTH, DAY, etc.)
     Timezone: UTC offset-based timezone
 
+Format Functions:
+    parse_iso8601: Parse ISO 8601 date/time/datetime string
+    format_iso8601: Format temporal object as ISO 8601 string
+
 Exceptions:
     TemporaleError: Base exception
     ValidationError: Invalid input values
@@ -51,6 +55,9 @@ from temporale.errors import (
     ValidationError,
 )
 
+# Format functions
+from temporale.format import format_iso8601, parse_iso8601
+
 __all__: list[str] = [
     "__version__",
     # Core types
@@ -68,4 +75,7 @@ __all__: list[str] = [
     "ParseError",
     "OverflowError",
     "TimezoneError",
+    # Format functions
+    "parse_iso8601",
+    "format_iso8601",
 ]
