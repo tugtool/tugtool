@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 4: Implement Timezone Class | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 4 tasks and specifications (lines 2114-2144)
+- `plans/phase-5.md` - Timezone class API specification (lines 976-1005)
+- `plans/phase-5.md` - [D02] Immutability decision
+- `plans/phase-5.md` - Table T05 Units Module Symbols
+- `temporale/units/era.py` - Existing enum style reference
+- `temporale/errors.py` - TimezoneError exception for validation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement Timezone class with `__slots__` | Done |
+| Add `utc()` classmethod for UTC singleton pattern | Done |
+| Add `from_hours()` classmethod for common construction | Done |
+| Add `from_string()` parser for "+05:30", "Z", "UTC" formats | Done |
+| Implement `__eq__`, `__hash__`, `__repr__` | Done |
+| Export from `temporale/units/__init__.py` | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/units/timezone.py` - Timezone class with UTC offset model, singleton UTC, parsing, and comparison methods
+- `sample-code/python/temporale/tests/test_timezone.py` - 54 comprehensive tests across 7 test classes
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/units/__init__.py` - Added Timezone export
+- `plans/phase-5.md` - Updated checkboxes for Step 4 tasks, tests, and checkpoints
+
+**Test Results:**
+- `pytest tests/test_timezone.py -v`: 54 tests passed
+- `pytest tests/ -v`: 82 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_timezone.py -v` passes: PASS (54 tests)
+- `analyze_files()` on timezone.py finds Timezone class and methods: PASS (sym_66, 2 references)
+
+**Key Decisions/Notes:**
+- Timezone uses `__slots__` with `_offset_seconds` and `_name` for memory efficiency
+- UTC singleton pattern via class variable `_utc_instance` with lazy initialization
+- Maximum offset is +/- 14 hours (supports UTC+14 timezones like Pacific/Kiritimati)
+- `from_string()` supports multiple formats: "Z", "z", "UTC", "utc", "+HH:MM", "-HH:MM", "+HHMM", "-HHMM", "+HH", "-HH"
+- Equality is based solely on `offset_seconds`, ignoring name differences
+- Added `__str__` for human-readable output (e.g., "+05:30", "-05:00", "UTC")
+- Validated via `tug analyze-impact rename-symbol` which successfully found Timezone class
+
+---
+
 ## [phase-5.md] Step 3: Implement Era and TimeUnit Enums | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from temporale.units.era import Era
 from temporale.units.timeunit import TimeUnit
+from temporale.units.timezone import Timezone
 
 __all__: list[str] = [
     "Era",
     "TimeUnit",
+    "Timezone",
 ]

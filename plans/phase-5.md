@@ -2122,22 +2122,22 @@ cargo nextest run -p tugtool pytest
 - `tests/test_timezone.py` with timezone tests
 
 **Tasks:**
-- [ ] Implement Timezone class with `__slots__`
-- [ ] Add `utc()` classmethod for UTC singleton pattern
-- [ ] Add `from_hours()` classmethod for common construction
-- [ ] Add `from_string()` parser for "+05:30", "Z", "UTC" formats
-- [ ] Implement `__eq__`, `__hash__`, `__repr__`
-- [ ] Export from `temporale/units/__init__.py`
+- [x] Implement Timezone class with `__slots__`
+- [x] Add `utc()` classmethod for UTC singleton pattern
+- [x] Add `from_hours()` classmethod for common construction
+- [x] Add `from_string()` parser for "+05:30", "Z", "UTC" formats
+- [x] Implement `__eq__`, `__hash__`, `__repr__`
+- [x] Export from `temporale/units/__init__.py`
 
 **Tests:**
-- [ ] Unit test: Timezone.utc() properties
-- [ ] Unit test: from_hours positive and negative offsets
-- [ ] Unit test: from_string parsing various formats
-- [ ] Unit test: Equality and hashing
+- [x] Unit test: Timezone.utc() properties
+- [x] Unit test: from_hours positive and negative offsets
+- [x] Unit test: from_string parsing various formats
+- [x] Unit test: Equality and hashing
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_timezone.py -v` passes
-- [ ] `analyze_files()` on timezone.py finds Timezone class and methods
+- [x] `python -m pytest tests/test_timezone.py -v` passes
+- [x] `analyze_files()` on timezone.py finds Timezone class and methods
 
 **Rollback:** Remove timezone.py and test file
 
