@@ -5,6 +5,7 @@ description = "A Python datetime library for testing refactoring tools"
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
+dependencies = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

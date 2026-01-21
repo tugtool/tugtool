@@ -1055,10 +1055,22 @@ class Timezone:
 Temporale tests are run via pytest. Two testing approaches:
 
 **Approach 1: Standalone pytest (library validation)**
+
+**CANONICAL COMMAND (from workspace root):**
 ```bash
-cd sample-code/python/temporale
-python -m pytest tests/ -v
+.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
 ```
+
+**IMPORTANT: ONE venv, at workspace root.**
+- All Python testing uses `.tug-test-venv/` at the tugtool workspace root
+- NO per-project venvs in sample-code directories
+- NEVER use `uv run pytest` inside sample-code projects (it auto-creates venvs)
+- The venv is created automatically by Rust test infrastructure or manually via:
+  ```bash
+  uv venv --python 3.11 .tug-test-venv
+  uv pip install --python .tug-test-venv/bin/python pytest
+  uv pip install --python .tug-test-venv/bin/python -e sample-code/python/temporale/
+  ```
 
 **Approach 2: Tugtool integration tests (refactoring validation)**
 
@@ -1128,10 +1140,9 @@ sample-code/python/temporale/    # Project root (this is the directory name)
         test_edge_cases.py       # Edge cases, boundary conditions
 ```
 
-**Run tests from project root:**
+**Run tests from workspace root:**
 ```bash
-cd sample-code/python/temporale
-python -m pytest tests/ -v
+.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
 ```
 
 #### pytest Configuration {#pytest-config}
@@ -2080,19 +2091,19 @@ cargo nextest run -p tugtool pytest
 - `tests/test_era.py` with enum tests
 
 **Tasks:**
-- [ ] Implement `Era` enum with BCE/CE values and `is_before_common_era` property
-- [ ] Implement `TimeUnit` enum with YEAR, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND
-- [ ] Add `to_seconds()` method to TimeUnit for unit conversion
-- [ ] Export from `temporale/units/__init__.py`
+- [x] Implement `Era` enum with BCE/CE values and `is_before_common_era` property
+- [x] Implement `TimeUnit` enum with YEAR, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND
+- [x] Add `to_seconds()` method to TimeUnit for unit conversion
+- [x] Export from `temporale/units/__init__.py`
 
 **Tests:**
-- [ ] Unit test: Era.BCE and Era.CE values
-- [ ] Unit test: Era.is_before_common_era property
-- [ ] Unit test: TimeUnit values and ordering
-- [ ] Unit test: TimeUnit.to_seconds() conversion
+- [x] Unit test: Era.BCE and Era.CE values
+- [x] Unit test: Era.is_before_common_era property
+- [x] Unit test: TimeUnit values and ordering
+- [x] Unit test: TimeUnit.to_seconds() conversion
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_era.py -v` passes
+- [x] `python -m pytest tests/test_era.py -v` passes
 
 **Rollback:** Remove era.py, timeunit.py, revert __init__.py changes
 

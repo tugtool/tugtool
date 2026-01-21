@@ -236,7 +236,13 @@
       "Bash(git ls-tree:*)",
       "Bash(uv --version:*)",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/python -c \"import temporale; print\\(''Import temporale: OK''\\)\")",
-      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/python:*)"
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/python:*)",
+      "Bash(../.tug-test-venv/bin/python -m pytest:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip list:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale/.venv/bin/pip list:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale/.venv/bin/python -m pip:*)",
+      "Bash(.tug-test-venv/bin/python -m pytest:*)"
     ],
     "deny": [],
     "ask": []

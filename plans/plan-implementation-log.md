@@ -6,6 +6,112 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 3: Implement Era and TimeUnit Enums | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 3 tasks and specifications
+- `plans/phase-5.md` - [D04] Operator Overloading decision (lines 486-504)
+- `plans/phase-5.md` - Table T05 Units Module Symbols (lines 951-957)
+- `plans/phase-5.md` - Era Enum specification (lines 959-974)
+- `temporale/units/__init__.py` - Existing module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement Era enum with BCE/CE values and is_before_common_era property | Done |
+| Implement TimeUnit enum with all time unit values | Done |
+| Add to_seconds() method to TimeUnit for unit conversion | Done |
+| Export Era and TimeUnit from temporale/units/__init__.py | Done |
+| Create tests/test_era.py with enum tests | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/units/era.py` - Era enum with BCE/CE values and is_before_common_era property
+- `sample-code/python/temporale/temporale/units/timeunit.py` - TimeUnit enum with 10 time units and to_seconds() method
+- `sample-code/python/temporale/tests/test_era.py` - 19 tests for Era and TimeUnit enums
+- `sample-code/.gitignore` - Prevents per-project .venv creation in sample-code
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/units/__init__.py` - Added Era and TimeUnit exports
+- `sample-code/python/temporale/pyproject.toml` - Removed incorrect pytest dependency (pytest is in shared venv)
+- `plans/phase-5.md` - Updated checkboxes for Step 3 tasks, tests, and checkpoint; fixed test execution documentation
+
+**Test Results:**
+- `pytest tests/test_era.py -v`: 19 tests passed
+- `pytest tests/ -v`: 28 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_era.py -v` passes: PASS (19 tests)
+
+**Key Decisions/Notes:**
+- **Python Environment Architecture Fix**: During implementation, discovered that `uv run pytest` was creating a competing `.venv` in the temporale directory. Used code-architect agent to resolve:
+  - ONE venv at workspace root: `.tug-test-venv/`
+  - NO per-project venvs in sample-code directories
+  - NEVER use `uv run pytest` inside sample-code projects
+  - Canonical test command: `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v`
+- Deleted unwanted `.venv/` from temporale, added sample-code/.gitignore to prevent recreation
+- Installed temporale editable into shared venv: `uv pip install --python .tug-test-venv/bin/python -e sample-code/python/temporale/`
+- TimeUnit.to_seconds() returns None for MONTH and YEAR (variable length units)
+- Era uses simple string values ("BCE", "CE") with is_before_common_era property
+
+---
+
+## [phase-5.md] Step 2: Create Directory Structure and Package Scaffolding | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 2 tasks and specifications
+- `plans/phase-5.md` - [D01] Module structure decision
+- `plans/phase-5.md` - [D06] Error handling/exception hierarchy decision
+- `plans/phase-5.md` - Table T04-T08 module symbol specifications
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create directory structure per [D01] | Done |
+| Create all `__init__.py` files with module docstrings | Done |
+| Create `pyproject.toml` with pytest configuration | Done |
+| Create `temporale/errors.py` with exception hierarchy per [D06] | Done |
+| Create `temporale/_internal/constants.py` with constants per Table T08 | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/pyproject.toml` - Project configuration with pytest settings
+- `sample-code/python/temporale/temporale/__init__.py` - Main package with version and docstring
+- `sample-code/python/temporale/temporale/errors.py` - Exception hierarchy (TemporaleError, ValidationError, ParseError, OverflowError, TimezoneError)
+- `sample-code/python/temporale/temporale/core/__init__.py` - Core module placeholder
+- `sample-code/python/temporale/temporale/units/__init__.py` - Units module placeholder
+- `sample-code/python/temporale/temporale/format/__init__.py` - Format module placeholder
+- `sample-code/python/temporale/temporale/convert/__init__.py` - Convert module placeholder
+- `sample-code/python/temporale/temporale/arithmetic/__init__.py` - Arithmetic module placeholder
+- `sample-code/python/temporale/temporale/_internal/__init__.py` - Internal module placeholder
+- `sample-code/python/temporale/temporale/_internal/constants.py` - Time constants (NANOS_PER_*, SECONDS_PER_*, MIN_YEAR, MAX_YEAR, etc.)
+- `sample-code/python/temporale/tests/__init__.py` - Tests package marker
+- `sample-code/python/temporale/tests/conftest.py` - pytest configuration to add package to sys.path
+- `sample-code/python/temporale/tests/test_imports.py` - 9 tests verifying all modules are importable
+
+**Files Modified:**
+- `plans/phase-5.md` - Updated checkboxes for Step 2 tasks, tests, and checkpoints
+
+**Test Results:**
+- `pytest tests/test_imports.py -v`: 9 tests passed
+
+**Checkpoints Verified:**
+- `python -c "import temporale"` succeeds: PASS
+- `python -c "from temporale._internal.constants import NANOS_PER_SECOND"` succeeds: PASS
+
+**Key Decisions/Notes:**
+- Used standard Python package convention: project-root (`temporale/`) containing package (`temporale/temporale/`)
+- All `__init__.py` files include module docstrings and `__all__` exports
+- Exception hierarchy follows [D06]: TemporaleError base class with ValidationError, ParseError, OverflowError, TimezoneError subclasses
+- Constants module includes MJD_UNIX_EPOCH (40587) for epoch conversions per internal representation spec
+- conftest.py adds project root to sys.path for test imports without package installation
+
+---
+
 ## [phase-5.md] Step 1: Python Environment Prerequisites (Implementation) | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
