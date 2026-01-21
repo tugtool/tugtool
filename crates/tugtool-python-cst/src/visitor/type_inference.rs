@@ -18,12 +18,12 @@
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, TypeInferenceCollector, AssignmentInfo};
+//! use tugtool_python_cst::{parse_module_with_positions, TypeInferenceCollector, AssignmentInfo};
 //!
 //! let source = "x = MyClass()\ny = x";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let assignments = TypeInferenceCollector::collect(&module, source);
+//! let assignments = TypeInferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 //! for assign in &assignments {
 //!     if let Some(t) = &assign.inferred_type {
 //!         println!("{} has type {}", assign.target, t);
@@ -33,6 +33,8 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
+use crate::nodes::traits::NodeId;
 use crate::nodes::{
     Assign, AssignTargetExpression, Call, ClassDef, Expression, FunctionDef, Module, Span,
 };
@@ -169,37 +171,82 @@ impl AssignmentInfo {
 /// # Example
 ///
 /// ```ignore
-/// let assignments = TypeInferenceCollector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let assignments = TypeInferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 /// ```
-pub struct TypeInferenceCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct TypeInferenceCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Collected assignments.
     assignments: Vec<AssignmentInfo>,
     /// Current scope path.
     scope_path: Vec<String>,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> TypeInferenceCollector<'src> {
-    /// Create a new TypeInferenceCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> TypeInferenceCollector<'pos> {
+    /// Create a new TypeInferenceCollector without position tracking.
+    ///
+    /// Assignments will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             assignments: Vec::new(),
             scope_path: vec!["<module>".to_string()],
-            cursor: 0,
         }
+    }
+
+    /// Create a new TypeInferenceCollector with position tracking.
+    ///
+    /// Assignments will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            assignments: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
+        }
+    }
+
+    /// Collect type inference data from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting assignments with accurate spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module
+    /// * `positions` - Position table from `parse_module_with_positions`
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<AssignmentInfo> {
+        let mut collector = TypeInferenceCollector::with_positions(positions);
+        walk_module(&mut collector, module);
+        collector.assignments
     }
 
     /// Collect type inference data from a parsed module.
     ///
-    /// Returns the list of assignments with type information.
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<AssignmentInfo> {
-        let mut collector = TypeInferenceCollector::new(source);
-        walk_module(&mut collector, module);
-        collector.assignments
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored; re-parses for positions)
+    /// * `source` - The original source code
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<AssignmentInfo> {
+        // Re-parse with position tracking to get accurate spans
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector = TypeInferenceCollector::with_positions(&parsed.positions);
+                walk_module(&mut collector, &parsed.module);
+                collector.assignments
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                Vec::new()
+            }
+        }
     }
 
     /// Get the collected assignments, consuming the collector.
@@ -207,21 +254,11 @@ impl<'src> TypeInferenceCollector<'src> {
         self.assignments
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
     /// Check if an expression is a constructor call (Name followed by Call).
@@ -279,8 +316,9 @@ impl<'src> TypeInferenceCollector<'src> {
     }
 
     /// Process an assignment and determine type information.
-    fn process_assignment(&mut self, target: &str, value: &Expression<'_>) {
-        let span = self.find_and_advance(target);
+    fn process_assignment(&mut self, target: &str, value: &Expression<'_>, node_id: Option<NodeId>) {
+        // Look up span from the PositionTable using the node_id
+        let span = self.lookup_span(node_id);
 
         // Check for constructor call: x = MyClass()
         if let Some(class_name) = Self::get_constructor_name(value) {
@@ -327,7 +365,7 @@ impl<'src> TypeInferenceCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for TypeInferenceCollector<'src> {
+impl<'a, 'pos> Visitor<'a> for TypeInferenceCollector<'pos> {
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
         self.scope_path.push(node.name.value.to_string());
         VisitResult::Continue
@@ -351,7 +389,7 @@ impl<'a, 'src> Visitor<'a> for TypeInferenceCollector<'src> {
         for target in &node.targets {
             // Only handle simple name targets for type inference
             if let AssignTargetExpression::Name(name) = &target.target {
-                self.process_assignment(name.value, &node.value);
+                self.process_assignment(name.value, &node.value, name.node_id);
             }
         }
         VisitResult::Continue

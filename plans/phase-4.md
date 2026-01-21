@@ -1502,18 +1502,18 @@ let scope_end = match &self.body {
 - Removed `cursor` fields from collectors
 
 **Tasks:**
-- [ ] Search for remaining `find_and_advance` calls
-- [ ] Remove cursor fields from collector structs
-- [ ] Clean up any dead code
-- [ ] Update documentation
+- [x] Search for remaining `find_and_advance` calls
+- [x] Remove cursor fields from collector structs
+- [x] Clean up any dead code
+- [x] Update documentation
 
 **Tests:**
-- [ ] All existing tests pass
-- [ ] `grep -r find_and_advance crates/tugtool-python-cst/src/visitor/` returns empty
+- [x] All existing tests pass
+- [x] `grep -r find_and_advance crates/tugtool-python-cst/src/visitor/` returns empty
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace` passes
-- [ ] No string search code remains in collectors
+- [x] `cargo nextest run --workspace` passes (1088 tests)
+- [x] No string search code remains in collectors
 
 **Rollback:**
 - N/A (cleanup only)

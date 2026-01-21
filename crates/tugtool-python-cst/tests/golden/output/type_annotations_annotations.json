@@ -8,10 +8,7 @@
       "<module>",
       "transform"
     ],
-    "span": [
-      137,
-      139
-    ]
+    "span": null
   },
   {
     "name": "items",
@@ -23,8 +20,8 @@
       "transform"
     ],
     "span": [
-      192,
-      197
+      103,
+      108
     ]
   },
   {
@@ -36,7 +33,10 @@
       "<module>",
       "transform"
     ],
-    "span": null
+    "span": [
+      121,
+      126
+    ]
   },
   {
     "name": "result",
@@ -48,8 +48,8 @@
       "transform"
     ],
     "span": [
-      207,
-      213
+      159,
+      165
     ]
   }
 ]

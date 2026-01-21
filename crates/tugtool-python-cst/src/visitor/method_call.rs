@@ -16,12 +16,12 @@
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, MethodCallCollector, MethodCallInfo};
+//! use tugtool_python_cst::{parse_module_with_positions, MethodCallCollector, MethodCallInfo};
 //!
 //! let source = "handler = Handler()\nhandler.process()";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let calls = MethodCallCollector::collect(&module, source);
+//! let calls = MethodCallCollector::collect_with_positions(&parsed.module, &parsed.positions);
 //! for call in &calls {
 //!     println!("{}.{}()", call.receiver, call.method);
 //! }
@@ -29,7 +29,9 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
-use crate::nodes::{Attribute, Call, ClassDef, Expression, FunctionDef, Module, Span};
+use crate::inflate_ctx::PositionTable;
+use crate::nodes::traits::NodeId;
+use crate::nodes::{Attribute, Call, ClassDef, Expression, FunctionDef, Module, Name, Span};
 
 /// Information about a method call pattern (`obj.method()`).
 #[derive(Debug, Clone)]
@@ -77,37 +79,82 @@ impl MethodCallInfo {
 /// # Example
 ///
 /// ```ignore
-/// let calls = MethodCallCollector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let calls = MethodCallCollector::collect_with_positions(&parsed.module, &parsed.positions);
 /// ```
-pub struct MethodCallCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct MethodCallCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Collected method calls.
     calls: Vec<MethodCallInfo>,
     /// Current scope path.
     scope_path: Vec<String>,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> MethodCallCollector<'src> {
-    /// Create a new MethodCallCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> MethodCallCollector<'pos> {
+    /// Create a new MethodCallCollector without position tracking.
+    ///
+    /// Calls will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             calls: Vec::new(),
             scope_path: vec!["<module>".to_string()],
-            cursor: 0,
         }
+    }
+
+    /// Create a new MethodCallCollector with position tracking.
+    ///
+    /// Calls will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            calls: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
+        }
+    }
+
+    /// Collect method calls from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting calls with accurate spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module
+    /// * `positions` - Position table from `parse_module_with_positions`
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<MethodCallInfo> {
+        let mut collector = MethodCallCollector::with_positions(positions);
+        walk_module(&mut collector, module);
+        collector.calls
     }
 
     /// Collect method calls from a parsed module.
     ///
-    /// Returns the list of method calls in the order they were encountered.
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<MethodCallInfo> {
-        let mut collector = MethodCallCollector::new(source);
-        walk_module(&mut collector, module);
-        collector.calls
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored; re-parses for positions)
+    /// * `source` - The original source code
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<MethodCallInfo> {
+        // Re-parse with position tracking to get accurate spans
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector = MethodCallCollector::with_positions(&parsed.positions);
+                walk_module(&mut collector, &parsed.module);
+                collector.calls
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                Vec::new()
+            }
+        }
     }
 
     /// Get the collected method calls, consuming the collector.
@@ -115,31 +162,22 @@ impl<'src> MethodCallCollector<'src> {
         self.calls
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
     /// Check if a call expression is a method call (obj.method()) and extract info.
-    fn extract_method_call_info(call: &Call<'_>) -> Option<(String, String)> {
+    /// Returns (receiver_name, method_name, method_name_node_for_span).
+    fn extract_method_call_info<'a>(call: &'a Call<'_>) -> Option<(String, String, &'a Name<'a>)> {
         // Check if the function is an attribute access (obj.method)
         if let Expression::Attribute(attr) = &*call.func {
             // Check if the receiver is a simple name
             if let Some(receiver) = Self::get_receiver_name(attr) {
                 let method = attr.attr.value.to_string();
-                return Some((receiver, method));
+                return Some((receiver, method, &attr.attr));
             }
         }
         None
@@ -157,7 +195,7 @@ impl<'src> MethodCallCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for MethodCallCollector<'src> {
+impl<'a, 'pos> Visitor<'a> for MethodCallCollector<'pos> {
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
         self.scope_path.push(node.name.value.to_string());
         VisitResult::Continue
@@ -177,9 +215,9 @@ impl<'a, 'src> Visitor<'a> for MethodCallCollector<'src> {
     }
 
     fn visit_call(&mut self, node: &Call<'a>) -> VisitResult {
-        if let Some((receiver, method)) = Self::extract_method_call_info(node) {
-            // Find the span for the method name
-            let span = self.find_and_advance(&method);
+        if let Some((receiver, method, method_name_node)) = Self::extract_method_call_info(node) {
+            // Look up span from the Name node's embedded node_id
+            let span = self.lookup_span(method_name_node.node_id);
 
             let info =
                 MethodCallInfo::new(receiver, method, self.scope_path.clone()).with_span(span);

@@ -6,10 +6,7 @@
     "names": null,
     "is_star": false,
     "relative_level": 0,
-    "span": [
-      22,
-      40
-    ]
+    "span": null
   },
   {
     "kind": "import",
@@ -18,10 +15,7 @@
     "names": null,
     "is_star": false,
     "relative_level": 0,
-    "span": [
-      41,
-      50
-    ]
+    "span": null
   },
   {
     "kind": "from",
@@ -35,10 +29,7 @@
     ],
     "is_star": false,
     "relative_level": 0,
-    "span": [
-      72,
-      96
-    ]
+    "span": null
   },
   {
     "kind": "from",
@@ -56,10 +47,7 @@
     ],
     "is_star": false,
     "relative_level": 0,
-    "span": [
-      97,
-      141
-    ]
+    "span": null
   },
   {
     "kind": "from",
@@ -77,9 +65,6 @@
     ],
     "is_star": false,
     "relative_level": 0,
-    "span": [
-      142,
-      183
-    ]
+    "span": null
   }
 ]

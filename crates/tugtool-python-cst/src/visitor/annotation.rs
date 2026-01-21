@@ -18,12 +18,12 @@
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, AnnotationCollector, AnnotationInfo};
+//! use tugtool_python_cst::{parse_module_with_positions, AnnotationCollector, AnnotationInfo};
 //!
 //! let source = "def foo(x: int) -> str:\n    pass";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let annotations = AnnotationCollector::collect(&module, source);
+//! let annotations = AnnotationCollector::collect_with_positions(&parsed.module, &parsed.positions);
 //! for ann in &annotations {
 //!     println!("{}: {} ({:?})", ann.name, ann.type_str, ann.source_kind);
 //! }
@@ -31,6 +31,8 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
+use crate::nodes::traits::NodeId;
 use crate::nodes::{
     AnnAssign, Annotation, AssignTargetExpression, BaseSlice, BinaryOp, ClassDef, Expression,
     FunctionDef, Module, Param, Span, Subscript, SubscriptElement,
@@ -164,40 +166,86 @@ impl AnnotationInfo {
 /// # Example
 ///
 /// ```ignore
-/// let annotations = AnnotationCollector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let annotations = AnnotationCollector::collect_with_positions(&parsed.module, &parsed.positions);
 /// ```
-pub struct AnnotationCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct AnnotationCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Collected annotations.
     annotations: Vec<AnnotationInfo>,
     /// Current scope path for tracking where annotations appear.
     scope_path: Vec<String>,
     /// Whether we're currently inside a class body (for attribute vs variable distinction).
     in_class_body: bool,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> AnnotationCollector<'src> {
-    /// Create a new AnnotationCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> AnnotationCollector<'pos> {
+    /// Create a new AnnotationCollector without position tracking.
+    ///
+    /// Annotations will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             annotations: Vec::new(),
             scope_path: vec!["<module>".to_string()],
             in_class_body: false,
-            cursor: 0,
         }
+    }
+
+    /// Create a new AnnotationCollector with position tracking.
+    ///
+    /// Annotations will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            annotations: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
+            in_class_body: false,
+        }
+    }
+
+    /// Collect annotations from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting annotations with accurate spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module
+    /// * `positions` - Position table from `parse_module_with_positions`
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<AnnotationInfo> {
+        let mut collector = AnnotationCollector::with_positions(positions);
+        walk_module(&mut collector, module);
+        collector.annotations
     }
 
     /// Collect annotations from a parsed module.
     ///
-    /// Returns the list of annotations in the order they were encountered.
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<AnnotationInfo> {
-        let mut collector = AnnotationCollector::new(source);
-        walk_module(&mut collector, module);
-        collector.annotations
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored; re-parses for positions)
+    /// * `source` - The original source code
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<AnnotationInfo> {
+        // Re-parse with position tracking to get accurate spans
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector = AnnotationCollector::with_positions(&parsed.positions);
+                walk_module(&mut collector, &parsed.module);
+                collector.annotations
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                Vec::new()
+            }
+        }
     }
 
     /// Get the collected annotations, consuming the collector.
@@ -205,21 +253,11 @@ impl<'src> AnnotationCollector<'src> {
         self.annotations
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
     /// Extract the type string from an annotation expression.
@@ -324,10 +362,12 @@ impl<'src> AnnotationCollector<'src> {
         name: &str,
         annotation: &Annotation<'_>,
         source_kind: AnnotationSourceKind,
+        node_id: Option<NodeId>,
     ) {
         let type_str = Self::annotation_to_string(&annotation.annotation);
         let annotation_kind = Self::classify_annotation(&annotation.annotation);
-        let span = self.find_and_advance(name);
+        // Look up span from the PositionTable using the node_id
+        let span = self.lookup_span(node_id);
 
         let info = AnnotationInfo::new(
             name.to_string(),
@@ -342,7 +382,7 @@ impl<'src> AnnotationCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for AnnotationCollector<'src> {
+impl<'a, 'pos> Visitor<'a> for AnnotationCollector<'pos> {
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
         // Enter function scope
         self.scope_path.push(node.name.value.to_string());
@@ -354,8 +394,10 @@ impl<'a, 'src> Visitor<'a> for AnnotationCollector<'src> {
             let type_str = Self::annotation_to_string(&returns.annotation);
             let annotation_kind = Self::classify_annotation(&returns.annotation);
 
-            // For return type, we need to find -> in the source
-            let span = self.find_and_advance("->");
+            // Return type annotations don't have a tracked Name node.
+            // The span would be for "->" which is not tracked in PositionTable.
+            // We leave span as None for return type annotations.
+            let span = None;
 
             let info = AnnotationInfo::new(
                 "__return__".to_string(),
@@ -394,15 +436,21 @@ impl<'a, 'src> Visitor<'a> for AnnotationCollector<'src> {
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
         // Process parameter annotation
         if let Some(annotation) = &node.annotation {
-            self.add_annotation(node.name.value, annotation, AnnotationSourceKind::Parameter);
+            // Use the parameter name's node_id for span lookup
+            self.add_annotation(
+                node.name.value,
+                annotation,
+                AnnotationSourceKind::Parameter,
+                node.name.node_id,
+            );
         }
         VisitResult::Continue
     }
 
     fn visit_ann_assign(&mut self, node: &AnnAssign<'a>) -> VisitResult {
-        // Get the target name
-        let name = match &node.target {
-            AssignTargetExpression::Name(name) => name.value.to_string(),
+        // Get the target name and its node_id
+        let (name, node_id) = match &node.target {
+            AssignTargetExpression::Name(name) => (name.value.to_string(), name.node_id),
             _ => return VisitResult::Continue, // Skip complex targets
         };
 
@@ -413,7 +461,7 @@ impl<'a, 'src> Visitor<'a> for AnnotationCollector<'src> {
             AnnotationSourceKind::Variable
         };
 
-        self.add_annotation(&name, &node.annotation, source_kind);
+        self.add_annotation(&name, &node.annotation, source_kind, node_id);
         VisitResult::Continue
     }
 }

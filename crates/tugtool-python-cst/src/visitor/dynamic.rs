@@ -18,12 +18,12 @@
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, DynamicPatternDetector, DynamicPatternInfo};
+//! use tugtool_python_cst::{parse_module_with_positions, DynamicPatternDetector, DynamicPatternInfo};
 //!
 //! let source = "x = getattr(obj, 'foo')";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let patterns = DynamicPatternDetector::collect(&module, source);
+//! let patterns = DynamicPatternDetector::collect_with_positions(&parsed.module, &parsed.positions);
 //! for pattern in &patterns {
 //!     println!("{:?}: {}", pattern.kind, pattern.description);
 //! }
@@ -31,6 +31,8 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
+use crate::nodes::traits::NodeId;
 use crate::nodes::{Call, ClassDef, Expression, FunctionDef, Module, Span, Subscript};
 
 /// The kind of dynamic pattern detected.
@@ -171,40 +173,86 @@ impl DynamicPatternInfo {
 /// # Example
 ///
 /// ```ignore
-/// let patterns = DynamicPatternDetector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let patterns = DynamicPatternDetector::collect_with_positions(&parsed.module, &parsed.positions);
 /// ```
-pub struct DynamicPatternDetector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct DynamicPatternDetector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Collected dynamic patterns.
     patterns: Vec<DynamicPatternInfo>,
     /// Current scope path.
     scope_path: Vec<String>,
     /// Whether we're currently inside a class body (for detecting method definitions).
     in_class: bool,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> DynamicPatternDetector<'src> {
-    /// Create a new DynamicPatternDetector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> DynamicPatternDetector<'pos> {
+    /// Create a new DynamicPatternDetector without position tracking.
+    ///
+    /// Patterns will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             patterns: Vec::new(),
             scope_path: vec!["<module>".to_string()],
             in_class: false,
-            cursor: 0,
         }
+    }
+
+    /// Create a new DynamicPatternDetector with position tracking.
+    ///
+    /// Patterns will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            patterns: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
+            in_class: false,
+        }
+    }
+
+    /// Collect dynamic patterns from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting patterns with accurate spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module
+    /// * `positions` - Position table from `parse_module_with_positions`
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<DynamicPatternInfo> {
+        let mut detector = DynamicPatternDetector::with_positions(positions);
+        walk_module(&mut detector, module);
+        detector.patterns
     }
 
     /// Collect dynamic patterns from a parsed module.
     ///
-    /// Returns the list of detected patterns in the order they were encountered.
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<DynamicPatternInfo> {
-        let mut detector = DynamicPatternDetector::new(source);
-        walk_module(&mut detector, module);
-        detector.patterns
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored; re-parses for positions)
+    /// * `source` - The original source code
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<DynamicPatternInfo> {
+        // Re-parse with position tracking to get accurate spans
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut detector = DynamicPatternDetector::with_positions(&parsed.positions);
+                walk_module(&mut detector, &parsed.module);
+                detector.patterns
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                Vec::new()
+            }
+        }
     }
 
     /// Get the collected patterns, consuming the detector.
@@ -212,21 +260,11 @@ impl<'src> DynamicPatternDetector<'src> {
         self.patterns
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
     /// Check if a call is to one of the dynamic attribute functions (getattr, setattr, etc.).
@@ -246,7 +284,8 @@ impl<'src> DynamicPatternDetector<'src> {
             };
 
             if let Some(kind) = kind {
-                let span = self.find_and_advance(func_name);
+                // Look up span from the Name node's embedded node_id
+                let span = self.lookup_span(name.node_id);
 
                 // Try to extract the attribute name from the second argument if it's a string literal
                 let attr_name = self.extract_attribute_name_from_call(call);
@@ -325,7 +364,8 @@ impl<'src> DynamicPatternDetector<'src> {
                 };
 
                 if let Some(kind) = kind {
-                    let span = self.find_and_advance(func_name);
+                    // Look up span from the Name node's embedded node_id
+                    let span = self.lookup_span(name.node_id);
 
                     let description = match kind {
                         DynamicPatternKind::GlobalsSubscript => {
@@ -361,7 +401,8 @@ impl<'src> DynamicPatternDetector<'src> {
         };
 
         if let Some(kind) = kind {
-            let span = self.find_and_advance(method_name);
+            // Look up span from the Name node's embedded node_id
+            let span = self.lookup_span(func_def.name.node_id);
 
             let description = format!("{} method definition - custom attribute handling", method_name);
 
@@ -372,7 +413,7 @@ impl<'src> DynamicPatternDetector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for DynamicPatternDetector<'src> {
+impl<'a, 'pos> Visitor<'a> for DynamicPatternDetector<'pos> {
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
         // Check for magic methods before entering the scope
         self.check_magic_method(node);

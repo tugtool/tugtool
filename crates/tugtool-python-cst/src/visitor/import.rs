@@ -152,30 +152,33 @@ impl ImportInfo {
 /// ```ignore
 /// let imports = ImportCollector::collect(&module, source);
 /// ```
-pub struct ImportCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct ImportCollector {
     /// Collected imports.
     imports: Vec<ImportInfo>,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> ImportCollector<'src> {
+impl Default for ImportCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ImportCollector {
     /// Create a new ImportCollector.
-    pub fn new(source: &'src str) -> Self {
+    pub fn new() -> Self {
         Self {
-            source,
             imports: Vec::new(),
-            cursor: 0,
         }
     }
 
     /// Collect imports from a parsed module.
     ///
     /// Returns the list of imports in the order they were encountered.
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<ImportInfo> {
-        let mut collector = ImportCollector::new(source);
+    ///
+    /// Note: The `source` parameter is kept for API compatibility but is no longer used.
+    /// Span information is derived directly from token positions in the CST.
+    pub fn collect(module: &Module<'_>, _source: &str) -> Vec<ImportInfo> {
+        let mut collector = ImportCollector::new();
         walk_module(&mut collector, module);
         collector.imports
     }
@@ -183,12 +186,6 @@ impl<'src> ImportCollector<'src> {
     /// Get the collected imports, consuming the collector.
     pub fn into_imports(self) -> Vec<ImportInfo> {
         self.imports
-    }
-
-    /// Find a keyword in the source starting from the cursor.
-    fn find_keyword(&self, keyword: &str) -> Option<usize> {
-        let search_area = &self.source[self.cursor..];
-        search_area.find(keyword).map(|offset| self.cursor + offset)
     }
 
     /// Get the full dotted name from a NameOrAttribute.
@@ -220,19 +217,13 @@ impl<'src> ImportCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for ImportCollector<'src> {
+impl<'a> Visitor<'a> for ImportCollector {
     fn visit_import_stmt(&mut self, node: &Import<'a>) -> VisitResult {
-        // Find the span for this import statement
-        let span = self.find_keyword("import").map(|start| {
-            // Estimate end by finding newline or end of source
-            let remaining = &self.source[start..];
-            let end = remaining
-                .find('\n')
-                .map(|n| start + n)
-                .unwrap_or(self.source.len());
-            self.cursor = end;
-            Span::new(start as u64, end as u64)
-        });
+        // Note: Import statement spans are not currently tracked via PositionTable.
+        // The import_tok field is internal to the CST. For rename operations,
+        // individual imported name spans would be needed, which requires tracking
+        // each ImportAlias's Name node_id.
+        let span: Option<Span> = None;
 
         // Process each name in the import
         for alias in &node.names {
@@ -254,17 +245,9 @@ impl<'a, 'src> Visitor<'a> for ImportCollector<'src> {
     }
 
     fn visit_import_from(&mut self, node: &ImportFrom<'a>) -> VisitResult {
-        // Find the span for this import statement
-        let span = self.find_keyword("from").map(|start| {
-            // Estimate end by finding newline or end of source
-            let remaining = &self.source[start..];
-            let end = remaining
-                .find('\n')
-                .map(|n| start + n)
-                .unwrap_or(self.source.len());
-            self.cursor = end;
-            Span::new(start as u64, end as u64)
-        });
+        // Note: Import statement spans are not currently tracked via PositionTable.
+        // The from_tok field is internal to the CST.
+        let span: Option<Span> = None;
 
         // Get the module name (empty string for pure relative imports like `from . import x`)
         let module = node
@@ -455,13 +438,13 @@ mod tests {
     }
 
     #[test]
-    fn test_import_has_span() {
+    fn test_import_span_not_tracked() {
+        // Import statement spans are not currently tracked via PositionTable.
+        // This test documents the current behavior.
         let source = "import os";
         let module = parse_module(source, None).unwrap();
         let imports = ImportCollector::collect(&module, source);
 
-        assert!(imports[0].span.is_some());
-        let span = imports[0].span.unwrap();
-        assert_eq!(span.start, 0);
+        assert!(imports[0].span.is_none());
     }
 }

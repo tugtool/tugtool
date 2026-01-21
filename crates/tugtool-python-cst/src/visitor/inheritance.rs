@@ -17,12 +17,12 @@
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, InheritanceCollector, ClassInheritanceInfo};
+//! use tugtool_python_cst::{parse_module_with_positions, InheritanceCollector, ClassInheritanceInfo};
 //!
 //! let source = "class Child(Parent):\n    pass";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let classes = InheritanceCollector::collect(&module, source);
+//! let classes = InheritanceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 //! for cls in &classes {
 //!     println!("{} inherits from {:?}", cls.name, cls.bases);
 //! }
@@ -30,6 +30,8 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
+use crate::nodes::traits::NodeId;
 use crate::nodes::{Arg, ClassDef, Expression, Module, Span};
 
 /// Information about a class and its inheritance hierarchy.
@@ -78,37 +80,82 @@ impl ClassInheritanceInfo {
 /// # Example
 ///
 /// ```ignore
-/// let classes = InheritanceCollector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let classes = InheritanceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 /// ```
-pub struct InheritanceCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct InheritanceCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Collected class inheritance information.
     classes: Vec<ClassInheritanceInfo>,
     /// Current scope path.
     scope_path: Vec<String>,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> InheritanceCollector<'src> {
-    /// Create a new InheritanceCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> InheritanceCollector<'pos> {
+    /// Create a new InheritanceCollector without position tracking.
+    ///
+    /// Classes will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             classes: Vec::new(),
             scope_path: vec!["<module>".to_string()],
-            cursor: 0,
         }
+    }
+
+    /// Create a new InheritanceCollector with position tracking.
+    ///
+    /// Classes will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            classes: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
+        }
+    }
+
+    /// Collect class inheritance information from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting classes with accurate spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module
+    /// * `positions` - Position table from `parse_module_with_positions`
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<ClassInheritanceInfo> {
+        let mut collector = InheritanceCollector::with_positions(positions);
+        walk_module(&mut collector, module);
+        collector.classes
     }
 
     /// Collect class inheritance information from a parsed module.
     ///
-    /// Returns the list of classes with their inheritance information.
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<ClassInheritanceInfo> {
-        let mut collector = InheritanceCollector::new(source);
-        walk_module(&mut collector, module);
-        collector.classes
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored; re-parses for positions)
+    /// * `source` - The original source code
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<ClassInheritanceInfo> {
+        // Re-parse with position tracking to get accurate spans
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector = InheritanceCollector::with_positions(&parsed.positions);
+                walk_module(&mut collector, &parsed.module);
+                collector.classes
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                Vec::new()
+            }
+        }
     }
 
     /// Get the collected class info, consuming the collector.
@@ -116,21 +163,11 @@ impl<'src> InheritanceCollector<'src> {
         self.classes
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
     /// Extract the base class name from an Arg (which represents a base class expression).
@@ -157,7 +194,7 @@ impl<'src> InheritanceCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for InheritanceCollector<'src> {
+impl<'a, 'pos> Visitor<'a> for InheritanceCollector<'pos> {
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
         let class_name = node.name.value.to_string();
 
@@ -168,8 +205,8 @@ impl<'a, 'src> Visitor<'a> for InheritanceCollector<'src> {
             .filter_map(|base| Self::extract_base_name(base))
             .collect();
 
-        // Find the span for the class name
-        let span = self.find_and_advance(&class_name);
+        // Look up span from the Name node's embedded node_id
+        let span = self.lookup_span(node.name.node_id);
 
         let info = ClassInheritanceInfo::new(class_name.clone(), bases, self.scope_path.clone())
             .with_span(span);
