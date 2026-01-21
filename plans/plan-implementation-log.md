@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+
+---
+
+## [phase-4.md] Step 14: Remove Legacy Collector APIs That Re-Parse | COMPLETE | 2026-01-20
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Section 4.7 Cleanup After-Work, Step 14
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs`
+- `crates/tugtool-python-cst/src/visitor/binding.rs`
+- `crates/tugtool-python-cst/src/visitor/scope.rs`
+- `crates/tugtool-python-cst/src/visitor/reference.rs`
+- `crates/tugtool-python-cst/tests/golden.rs`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove `SpanCollector::collect(module, source)` method | Done |
+| Remove `BindingCollector::collect(module, source)` method | Done |
+| Remove `ScopeCollector::collect(module, source)` method | Done |
+| Remove `ReferenceCollector::collect(module, source)` method | Done |
+| Update tests in span_collector.rs to use position-aware API | Done |
+| Update tests in binding.rs to use position-aware API | Done |
+| Update tests in scope.rs to use position-aware API | Done |
+| Update tests in reference.rs to use position-aware API | Done |
+| Remove doc comments mentioning "legacy compatibility" | Done |
+| Update module-level doc examples | Done |
+| Verify no external callers remain | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Removed legacy `collect()` method, updated tests to use `from_positions()`
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Removed legacy `collect()` method, updated tests to use `collect_with_positions()`
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Removed legacy `collect()` method, updated tests to use `collect_with_positions()`
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Removed legacy `collect()` method, updated 15 tests to use `collect_with_positions()`
+- `crates/tugtool-python-cst/tests/golden.rs` - Updated `analyze_scopes()` and `analyze_bindings()` to use position-aware APIs
+- `plans/phase-4.md` - Checked off all Step 14 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst reference`: 27 tests passed
+- `cargo nextest run --workspace`: 1084 tests passed
+
+**Checkpoints Verified:**
+- No legacy `collect(module, source)` APIs remain in the four targeted collectors: PASS
+- All migrated tests pass: PASS
+- No compilation errors from external crates: PASS
+
+**Key Decisions/Notes:**
+
+The legacy `collect(module, source)` APIs were dangerous because they silently re-parsed the source internally, ignoring the passed `Module` argument. This created subtle mismatches between CST nodes and position data when callers mixed a `Module` from one parse with spans from the internal re-parse.
+
+The cleanup targeted only the four collectors specified in Step 14 (SpanCollector, BindingCollector, ScopeCollector, ReferenceCollector). Other collectors (ImportCollector, AnnotationCollector, TypeInferenceCollector, etc.) still have similar legacy APIs but were not part of this cleanup scope.
+
+Test migration pattern:
+- Changed imports from `use crate::parse_module;` to `use crate::parse_module_with_positions;`
+- Updated test bodies from `parse_module() + collect()` to `parse_module_with_positions() + collect_with_positions()`
+
+Also updated golden.rs test file which was using the legacy APIs for scope and binding analysis.
+
+---
+
 ## [tooling] update-plan-implementation-log Command Improvement | COMPLETE | 2026-01-20
 
 **Completed:** 2026-01-20

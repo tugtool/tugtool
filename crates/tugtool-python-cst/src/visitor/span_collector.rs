@@ -132,37 +132,6 @@ impl SpanCollector {
         spans
     }
 
-    /// Legacy compatibility: collect spans by parsing source and traversing module.
-    ///
-    /// This method provides backward compatibility with code that calls
-    /// `SpanCollector::collect(module, source)`. It internally uses
-    /// `parse_module_with_positions` to get accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `_module` - Ignored; provided for API compatibility
-    /// * `source` - The source code to parse
-    ///
-    /// # Returns
-    ///
-    /// A SpanTable with identifier spans for all tracked nodes.
-    ///
-    /// # Note
-    ///
-    /// For new code, prefer using `parse_module_with_positions` directly and
-    /// then calling `from_positions` to avoid re-parsing.
-    pub fn collect(_module: &crate::nodes::Module<'_>, source: &str) -> SpanTable {
-        // Parse fresh with position tracking to get accurate token-derived spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => Self::from_positions(&parsed.positions),
-            Err(_) => {
-                // Parsing should not fail for a module that was already parsed,
-                // but return empty table on error to avoid panicking
-                SpanTable::new()
-            }
-        }
-    }
-
     /// Get the node_id from a tracked node, with a debug assertion.
     ///
     /// # Panics
@@ -190,18 +159,17 @@ impl SpanCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
     use crate::parse_module_with_positions;
 
     // ========================================================================
-    // Tests using legacy collect() API (backward compatibility)
+    // Tests using from_positions() API
     // ========================================================================
 
     #[test]
     fn test_span_collector_basic() {
         let source = "x = 1";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Should have collected some spans
         assert!(!span_table.is_empty(), "Expected some spans to be collected");
@@ -210,8 +178,8 @@ mod tests {
     #[test]
     fn test_span_collector_function() {
         let source = "def foo(): pass";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Should have spans for function name
         assert!(!span_table.is_empty());
@@ -228,11 +196,12 @@ mod tests {
     #[test]
     fn test_nodeid_determinism() {
         let source = "x = 1\ny = 2";
-        let module = parse_module(source, None).expect("parse error");
 
-        // Parse and collect twice from the same module
-        let spans1 = SpanCollector::collect(&module, source);
-        let spans2 = SpanCollector::collect(&module, source);
+        // Parse and collect twice
+        let parsed1 = parse_module_with_positions(source, None).expect("parse error");
+        let parsed2 = parse_module_with_positions(source, None).expect("parse error");
+        let spans1 = SpanCollector::from_positions(&parsed1.positions);
+        let spans2 = SpanCollector::from_positions(&parsed2.positions);
 
         // Span collection should be deterministic
         assert_eq!(
@@ -245,8 +214,8 @@ mod tests {
     #[test]
     fn test_span_accuracy_identifiers() {
         let source = "x = 1";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Find the span for "x"
         let x_span = span_table.iter().find(|(_, span)| {
@@ -266,8 +235,8 @@ mod tests {
         // Span recording for literals is follow-on work.
         // This test verifies that the identifier 'x' has a span.
         let source = "x = 42";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Verify we have a span for the identifier 'x'
         let x_span = span_table.iter().find(|(_, span)| {
@@ -284,8 +253,8 @@ mod tests {
     #[test]
     fn test_multiple_identifiers() {
         let source = "x = y";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Should have spans for both x and y
         let spans: Vec<_> = span_table.iter().collect();
@@ -312,8 +281,8 @@ mod tests {
     #[test]
     fn test_function_with_params() {
         let source = "def add(a, b): return a + b";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Should have spans for function name and parameters
         let has_add = span_table
@@ -334,8 +303,8 @@ mod tests {
     #[test]
     fn test_span_table_helpers() {
         let source = "x = 1";
-        let module = parse_module(source, None).expect("parse error");
-        let span_table = SpanCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Test SpanTable methods
         assert!(!span_table.is_empty());
@@ -351,10 +320,6 @@ mod tests {
         assert!(found_span);
     }
 
-    // ========================================================================
-    // Tests using new from_positions() API
-    // ========================================================================
-
     #[test]
     fn test_from_positions_basic() {
         let source = "x = 1";
@@ -363,42 +328,6 @@ mod tests {
 
         // Should have collected some spans
         assert!(!span_table.is_empty(), "Expected some spans from positions");
-    }
-
-    #[test]
-    fn test_from_positions_matches_collect() {
-        // Verify that from_positions produces the same results as collect for simple cases
-        let source = "foo = 42";
-        let module = parse_module(source, None).expect("parse error");
-        let parsed = parse_module_with_positions(source, None).expect("parse error");
-
-        let spans_collect = SpanCollector::collect(&module, source);
-        let spans_positions = SpanCollector::from_positions(&parsed.positions);
-
-        // Should have the same number of spans
-        assert_eq!(
-            spans_collect.len(),
-            spans_positions.len(),
-            "from_positions should produce same number of spans as collect"
-        );
-
-        // Verify that the text at each span is the same
-        let mut collect_texts: Vec<_> = spans_collect
-            .iter()
-            .map(|(_, span)| &source[span.start as usize..span.end as usize])
-            .collect();
-        let mut positions_texts: Vec<_> = spans_positions
-            .iter()
-            .map(|(_, span)| &source[span.start as usize..span.end as usize])
-            .collect();
-
-        collect_texts.sort();
-        positions_texts.sort();
-
-        assert_eq!(
-            collect_texts, positions_texts,
-            "from_positions should capture the same identifier texts"
-        );
     }
 
     #[test]
@@ -485,21 +414,6 @@ mod tests {
             all_spans.len() >= ident_spans.len(),
             "with_lexical should have >= ident-only spans"
         );
-    }
-
-    // ========================================================================
-    // Backward compatibility tests
-    // ========================================================================
-
-    #[test]
-    fn test_collect_api_backward_compatible() {
-        // The collect() API should still work for existing code
-        let source = "x = 1";
-        let module = parse_module(source, None).expect("parse error");
-
-        // This should not panic and should return valid spans
-        let span_table = SpanCollector::collect(&module, source);
-        assert!(!span_table.is_empty());
     }
 
     #[test]

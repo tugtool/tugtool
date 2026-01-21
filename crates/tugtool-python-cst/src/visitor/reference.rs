@@ -206,47 +206,6 @@ impl<'pos> ReferenceCollector<'pos> {
         collector.references
     }
 
-    /// Collect references from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// NOTE: This method re-parses the source internally to get the PositionTable,
-    /// so the `module` parameter is ignored. Consider using
-    /// [`collect_with_positions`] directly if you already have a parsed module.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored, source is re-parsed)
-    /// * `source` - The original source code (used to re-parse for positions)
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let source = "x = 1\nprint(x)";
-    /// let module = parse_module(source, None)?;
-    /// let refs = ReferenceCollector::collect(&module, source);
-    /// let x_refs = refs.get("x");
-    /// ```
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> HashMap<String, Vec<ReferenceInfo>> {
-        // Re-parse with position tracking to get accurate spans
-        // We ignore the passed module and re-parse to get the PositionTable
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut collector = ReferenceCollector::with_positions(&parsed.positions);
-                walk_module(&mut collector, &parsed.module);
-                collector.references
-            }
-            Err(_) => {
-                // Fallback: return empty map if re-parsing fails
-                // This should not happen for valid source
-                HashMap::new()
-            }
-        }
-    }
-
     /// Get all references for a specific name.
     ///
     /// Returns None if the name was never referenced.
@@ -607,13 +566,13 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
+    use crate::parse_module_with_positions;
 
     #[test]
     fn test_reference_name_collected() {
         let source = "x = 1\nprint(x)";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         // x is defined and referenced
         let x_refs = refs.get("x").unwrap();
@@ -629,8 +588,8 @@ mod tests {
     #[test]
     fn test_reference_definition_collected() {
         let source = "def foo():\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -640,8 +599,8 @@ mod tests {
     #[test]
     fn test_reference_call_collected() {
         let source = "foo()";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -651,8 +610,8 @@ mod tests {
     #[test]
     fn test_reference_attribute_collected() {
         let source = "obj.attr";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         // obj is a reference
         let obj_refs = refs.get("obj").unwrap();
@@ -668,8 +627,8 @@ mod tests {
     #[test]
     fn test_reference_import_collected() {
         let source = "import foo";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -679,8 +638,8 @@ mod tests {
     #[test]
     fn test_reference_from_import_collected() {
         let source = "from os import path";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         // path is an import
         let path_refs = refs.get("path").unwrap();
@@ -697,8 +656,8 @@ def foo():
 foo()
 x = foo
 "#;
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 3);
@@ -714,8 +673,8 @@ x = foo
     #[test]
     fn test_reference_class_definition() {
         let source = "class Foo:\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("Foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -725,8 +684,8 @@ x = foo
     #[test]
     fn test_reference_parameter_definition() {
         let source = "def foo(a, b):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let a_refs = refs.get("a").unwrap();
         assert_eq!(a_refs.len(), 1);
@@ -740,8 +699,8 @@ x = foo
     #[test]
     fn test_reference_assignment_definition() {
         let source = "x = 1";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 1);
@@ -751,8 +710,8 @@ x = foo
     #[test]
     fn test_reference_tuple_unpacking_definitions() {
         let source = "a, b, c = values";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         for name in &["a", "b", "c"] {
             let name_refs = refs.get(*name).unwrap();
@@ -769,8 +728,8 @@ x = foo
     #[test]
     fn test_reference_annotated_assignment() {
         let source = "x: int = 5";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 1);
@@ -780,8 +739,8 @@ x = foo
     #[test]
     fn test_reference_method_call() {
         let source = "obj.method()";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         // obj is a reference
         let obj_refs = refs.get("obj").unwrap();
@@ -797,8 +756,8 @@ x = foo
     #[test]
     fn test_reference_chained_calls() {
         let source = "foo().bar()";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         // foo is a call
         let foo_refs = refs.get("foo").unwrap();
@@ -814,10 +773,10 @@ x = foo
     #[test]
     fn test_reference_hashmap_returned() {
         let source = "x = 1\ny = x";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
-        // collect() now returns HashMap directly
+        // collect_with_positions() returns HashMap directly
         assert!(refs.contains_key("x"));
         assert!(refs.contains_key("y"));
     }
@@ -838,8 +797,8 @@ class FileProcessor:
 processor = FileProcessor("test.txt")
 result = processor.process()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         // os is imported
         let os_refs = refs.get("os").unwrap();
@@ -863,8 +822,8 @@ result = processor.process()
     #[test]
     fn test_reference_spans() {
         let source = "x = 1";
-        let module = parse_module(source, None).unwrap();
-        let refs = ReferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 1);

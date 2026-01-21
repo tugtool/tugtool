@@ -213,43 +213,6 @@ impl<'pos> ScopeCollector<'pos> {
         collector.scopes
     }
 
-    /// Collect scopes from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored; re-parses for positions)
-    /// * `source` - The original source code
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let source = "def foo(): pass";
-    /// let module = parse_module(source, None)?;
-    /// let scopes = ScopeCollector::collect(&module, source);
-    /// ```
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<ScopeInfo> {
-        // Re-parse with position tracking to get accurate spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut collector =
-                    ScopeCollector::with_positions(&parsed.positions, source.len());
-                walk_module(&mut collector, &parsed.module);
-                collector.scopes
-            }
-            Err(_) => {
-                // Fallback: collect without spans if re-parsing fails
-                let mut collector = ScopeCollector::new(source.len());
-                walk_module(&mut collector, _module);
-                collector.scopes
-            }
-        }
-    }
-
     /// Get the collected scopes, consuming the collector.
     pub fn into_scopes(self) -> Vec<ScopeInfo> {
         self.scopes
@@ -441,18 +404,17 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
     use crate::parse_module_with_positions;
 
     // ========================================================================
-    // Tests using legacy collect() API (backward compatibility)
+    // Tests using collect_with_positions() API
     // ========================================================================
 
     #[test]
     fn test_scope_simple_function() {
         let source = "def foo():\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -472,8 +434,8 @@ mod tests {
     #[test]
     fn test_scope_nested_functions() {
         let source = "def outer():\n    def inner():\n        pass";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -494,8 +456,8 @@ mod tests {
     #[test]
     fn test_scope_class_with_methods() {
         let source = "class Foo:\n    def bar(self):\n        pass";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -516,8 +478,8 @@ mod tests {
     #[test]
     fn test_scope_comprehensions() {
         let source = "x = [i for i in range(10)]";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -533,8 +495,8 @@ mod tests {
     #[test]
     fn test_scope_lambda() {
         let source = "f = lambda x: x + 1";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -550,8 +512,8 @@ mod tests {
     #[test]
     fn test_scope_global_declaration() {
         let source = "x = 1\ndef foo():\n    global x\n    x = 2";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -566,8 +528,8 @@ mod tests {
     #[test]
     fn test_scope_nonlocal_declaration() {
         let source = "def outer():\n    x = 1\n    def inner():\n        nonlocal x\n        x = 2";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -587,8 +549,8 @@ mod tests {
     #[test]
     fn test_scope_multiple_global_names() {
         let source = "def foo():\n    global x, y, z";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].globals, vec!["x", "y", "z"]);
@@ -597,8 +559,8 @@ mod tests {
     #[test]
     fn test_scope_generator_expression() {
         let source = "g = (x for x in range(10))";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -612,8 +574,8 @@ mod tests {
     #[test]
     fn test_scope_dict_comprehension() {
         let source = "d = {k: v for k, v in items}";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
@@ -622,8 +584,8 @@ mod tests {
     #[test]
     fn test_scope_set_comprehension() {
         let source = "s = {x for x in items}";
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
@@ -637,8 +599,8 @@ mod tests {
     def method(self):
         y = lambda z: z + 1
 "#;
-        let module = parse_module(source, None).unwrap();
-        let scopes = ScopeCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
         // Module, Class, Comprehension, Function, Lambda
         assert_eq!(scopes.len(), 5);
@@ -655,7 +617,7 @@ mod tests {
     }
 
     // ========================================================================
-    // Tests using new collect_with_positions() API
+    // Tests for lexical span verification
     // ========================================================================
 
     #[test]
@@ -795,33 +757,6 @@ mod tests {
             inner_span.end,
             outer_span.end
         );
-    }
-
-    #[test]
-    fn test_scope_collect_matches_collect_with_positions() {
-        // Verify that legacy collect() produces same results as collect_with_positions()
-        let source = "def foo():\n    x = 1";
-        let module = parse_module(source, None).unwrap();
-        let parsed = parse_module_with_positions(source, None).unwrap();
-
-        let scopes_legacy = ScopeCollector::collect(&module, source);
-        let scopes_new =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
-
-        assert_eq!(
-            scopes_legacy.len(),
-            scopes_new.len(),
-            "Both methods should produce same number of scopes"
-        );
-
-        for (legacy, new) in scopes_legacy.iter().zip(scopes_new.iter()) {
-            assert_eq!(legacy.id, new.id);
-            assert_eq!(legacy.kind, new.kind);
-            assert_eq!(legacy.name, new.name);
-            assert_eq!(legacy.parent, new.parent);
-            // Spans should also match (both use PositionTable internally now)
-            assert_eq!(legacy.span, new.span);
-        }
     }
 
     #[test]

@@ -1630,3 +1630,81 @@ let scope_end = match &self.body {
 | Benchmarks pass | No >10% regression documented |
 
 **Commit after all checkpoints pass.**
+
+### 4.7 Cleanup After-Work {#cleanup-after-work}
+
+#### Step 14: Remove Legacy Collector APIs That Re-Parse {#step-14}
+
+**Commit:** `refactor(cst): remove legacy collector collect(module, source) APIs`
+
+**References:** (#strategy), [D11] Ident Span Lives on Name Node Only
+
+**Purpose:** Remove the legacy `collect(module, source)` APIs from all collectors. These APIs are dangerous because they silently re-parse the source internally using `parse_module_with_positions()`, which means:
+
+1. The `Module` argument is **ignored** - creating a false sense of using a consistent parse
+2. Callers can accidentally mix a `Module` from one parse with `NodeId`/spans from the internal re-parse
+3. This creates subtle, hard-to-debug mismatches between CST nodes and position data
+
+The new position-aware APIs (`collect_with_positions`, `from_positions`) provide a single source of truth by accepting both the `Module` and its corresponding `PositionTable` from the same parse.
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/span_collector.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/binding.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/scope.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/reference.rs`
+- Modified tests in all four files
+
+**Tasks:**
+- [x] Remove `SpanCollector::collect(module, source)` method
+- [x] Remove `BindingCollector::collect(module, source)` method
+- [x] Remove `ScopeCollector::collect(module, source)` method
+- [x] Remove `ReferenceCollector::collect(module, source)` method
+- [x] Update tests in span_collector.rs to use `parse_module_with_positions` + `from_positions`
+- [x] Update tests in binding.rs to use `parse_module_with_positions` + `collect_with_positions`
+- [x] Update tests in scope.rs to use `parse_module_with_positions` + `collect_with_positions`
+- [x] Update tests in reference.rs to use `parse_module_with_positions` + `collect_with_positions`
+- [x] Remove doc comments mentioning "legacy compatibility" from the deleted methods
+- [x] Update module-level doc examples in each file to show only the position-aware API
+- [x] Verify no external callers remain (tugtool-python already uses position-aware APIs)
+
+**Test Migration Example:**
+
+Before:
+```rust
+#[test]
+fn test_span_collector_basic() {
+    let source = "x = 1";
+    let module = parse_module(source, None).expect("parse error");
+    let span_table = SpanCollector::collect(&module, source);
+    assert!(!span_table.is_empty());
+}
+```
+
+After:
+```rust
+#[test]
+fn test_span_collector_basic() {
+    let source = "x = 1";
+    let parsed = parse_module_with_positions(source, None).expect("parse error");
+    let span_table = SpanCollector::from_positions(&parsed.positions);
+    assert!(!span_table.is_empty());
+}
+```
+
+**Tests:**
+- [x] `cargo nextest run -p tugtool-python-cst span_collector` passes
+- [x] `cargo nextest run -p tugtool-python-cst binding` passes
+- [x] `cargo nextest run -p tugtool-python-cst scope` passes
+- [x] `cargo nextest run -p tugtool-python-cst reference` passes
+- [x] `cargo nextest run --workspace` passes (all tests) - 1084 tests pass
+
+**Checkpoint:**
+- [x] No legacy APIs remain in the four targeted collectors (SpanCollector, BindingCollector, ScopeCollector, ReferenceCollector)
+- [x] All migrated tests pass
+- [x] No compilation errors from external crates
+
+**Rollback:**
+- Revert the four collector file changes
+- Tests are independent per file, so partial rollback is possible if one collector has issues
+
+---

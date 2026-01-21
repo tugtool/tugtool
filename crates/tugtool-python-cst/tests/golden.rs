@@ -217,8 +217,8 @@ fn assert_golden<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt
 // =============================================================================
 
 fn analyze_scopes(source: &str) -> Vec<GoldenScope> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let scopes = ScopeCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 
     scopes
         .into_iter()
@@ -235,8 +235,8 @@ fn analyze_scopes(source: &str) -> Vec<GoldenScope> {
 }
 
 fn analyze_bindings(source: &str) -> Vec<GoldenBinding> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let bindings = BindingCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
     bindings
         .into_iter()
