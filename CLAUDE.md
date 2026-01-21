@@ -87,6 +87,12 @@ cargo install --path crates/tugtool
 
 ## Test Commands
 
+**CRITICAL: Tests must NEVER silently skip.** If a test requires an environment or setup (Python, pytest, etc.), it must either:
+1. Work correctly because the environment is properly configured
+2. **Fail loudly** with a clear error message explaining what's missing and how to fix it
+
+No "graceful degradation." No "skip if unavailable." Tests pass or they fail. When they fail, we fix the environment so they pass. This is a pillar of how we work on this project.
+
 **IMPORTANT:** Use nextest for running tests (faster, parallel execution).
 
 ```bash

@@ -14,6 +14,7 @@ dist/
 build/
 *.whl
 .venv/
+.tug-test-venv/
 
 # IDE
 .idea/

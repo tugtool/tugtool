@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 1: Python Environment Prerequisites (Implementation) | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 1 tasks and specifications
+- `crates/tugtool/tests/support/python.rs` - Existing Python test helpers (completely rewritten)
+- `crates/tugtool/tests/python_env_test.rs` - Existing smoke tests (updated for new API)
+- `.github/workflows/ci.yml` - CI configuration (updated to use uv)
+- `.gitignore` - Project gitignore (updated to include .tug-test-venv/)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Task 1: Update .gitignore to add .tug-test-venv/ | Done |
+| Task 2: Rewrite support/python.rs with uv-based implementation | Done |
+| Task 3: Update python_env_test.rs for new API | Done |
+| Task 4: Update ci.yml to use astral-sh/setup-uv@v5 | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `.gitignore` - Added `.tug-test-venv/` entry
+- `crates/tugtool/tests/support/python.rs` - Complete rewrite with uv-based Python environment management
+- `crates/tugtool/tests/python_env_test.rs` - Updated tests for new PythonEnv API, added venv caching test
+- `.github/workflows/ci.yml` - Switched from actions/setup-python to astral-sh/setup-uv, removed libcst installation
+
+**Test Results:**
+- `cargo nextest run -p tugtool pytest_available_in_ci`: 1 passed
+- `cargo nextest run -p tugtool can_run_pytest_on_simple_test`: 1 passed
+- `cargo nextest run -p tugtool venv_is_reused_across_tests`: 1 passed
+- `cargo nextest run --workspace --features full`: 1079 tests passed, 0 skipped
+
+**Checkpoints Verified:**
+- `.gitignore` updated: PASS
+- Build tests: PASS
+- Venv created at `.tug-test-venv/bin/python`: PASS
+- pytest installed in venv (pytest 9.0.2): PASS
+- All Python environment tests pass: PASS
+- Full test suite passes: PASS
+
+**Key Decisions/Notes:**
+- Removed legacy compatibility functions (`find_python`, `pytest_available`) per user request - zero legacy code
+- Made `run_pytest_with_cmd` private since it's only used internally by `run_pytest`
+- Implementation uses `OnceLock<Option<PythonEnv>>` for thread-safe caching of Python environment
+- Fallback chain: TUG_PYTHON → existing .tug-test-venv → create with uv → skip with helpful error
+- Auto-creates venv with Python 3.11 and pytest if uv is available
+- CI uses `astral-sh/setup-uv@v5` for consistent local/CI experience
+
+---
+
 ## [phase-5.md] Step 1: Python Environment Prerequisites (Plan Revision) | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

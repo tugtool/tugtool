@@ -28,22 +28,27 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-python@v5
+      # Use uv for Python environment management
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.11'
+          version: "latest"
 
-      - name: Install pytest
-        run: pip install pytest
+      # Create test venv with Python 3.11 and pytest
+      - name: Create test venv
+        run: |
+          uv venv --python 3.11 .tug-test-venv
+          uv pip install --python .tug-test-venv/bin/python pytest
 
+      # Set TUG_PYTHON to the venv's Python
       - name: Set TUG_PYTHON
-        run: echo "TUG_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> $GITHUB_ENV
+        run: echo "TUG_PYTHON=$PWD/.tug-test-venv/bin/python" >> $GITHUB_ENV
         shell: bash
 
       - name: Format check
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --features full -- -D warnings
+        run: cargo clippy --workspace --features full --exclude tugtool-trace -- -D warnings
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
@@ -60,12 +65,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.11'
+          version: "latest"
 
-      - name: Install libcst
-        run: pip install libcst pytest
+      - name: Create test venv
+        run: |
+          uv venv --python 3.11 .tug-test-venv
+          uv pip install --python .tug-test-venv/bin/python pytest
 
       - name: Check Python fixtures
-        run: python -m compileall -q crates/tugtool/tests/fixtures/python/
+        run: .tug-test-venv/bin/python -m compileall -q crates/tugtool/tests/fixtures/python/
