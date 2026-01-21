@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 11: Implement Arithmetic Module | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 11 tasks and specifications (lines 2393-2420)
+- `plans/phase-5.md` - [D04] Operator Overloading decision (lines 486-503)
+- Existing Duration, Date, DateTime, Time class implementations with operator methods
+- `temporale/arithmetic/__init__.py` - Existing module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement standalone functions: `add()`, `subtract()`, `multiply()`, `divide()` | Done |
+| Handle type combinations: DateTime+Duration, Date+Duration, Duration+Duration | Done |
+| Implement comparison helpers for mixed-type comparisons | Done |
+| Ensure operators delegate to these functions (DRY) | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/arithmetic/ops.py` - Standalone arithmetic functions (`add`, `subtract`, `multiply`, `divide`, `floor_divide`, `negate`, `absolute`)
+- `sample-code/python/temporale/temporale/arithmetic/comparisons.py` - Comparison helpers (`equal`, `not_equal`, `less_than`, `less_equal`, `greater_than`, `greater_equal`, `compare`, `min_value`, `max_value`, `clamp`)
+- `sample-code/python/temporale/tests/test_arithmetic.py` - 94 comprehensive arithmetic tests
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/arithmetic/__init__.py` - Added exports for all arithmetic and comparison functions
+
+**Test Results:**
+- `pytest tests/test_arithmetic.py -v`: 94 tests passed
+- `pytest tests/ -v`: 720 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_arithmetic.py -v` passes: PASS (94 tests)
+
+**Key Decisions/Notes:**
+- Arithmetic module provides functional API complementing operator-based API on classes
+- Functions in `ops.py` handle all type combinations: DateTime±Duration, Date±Duration, Duration±Duration, Duration×int, Duration÷scalar
+- Comparison helpers in `comparisons.py` implement Q07 naive/aware DateTime comparison semantics
+- Integration tests verify functional API produces same results as operators (`add(date, duration)` == `date + duration`)
+- Added utility functions: `min_value`, `max_value`, `clamp` for common use cases
+- The existing class operators remain unchanged (already working correctly); functional API provides alternative access pattern
+
+---
+
 ## [phase-5.md] Step 10: Implement JSON Serialization | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

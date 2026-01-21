@@ -2402,18 +2402,18 @@ cargo nextest run -p tugtool pytest
 - `tests/test_arithmetic.py` with comprehensive arithmetic tests
 
 **Tasks:**
-- [ ] Implement standalone functions: `add()`, `subtract()`, `multiply()`, `divide()`
-- [ ] Handle type combinations: DateTime+Duration, Date+Duration, Duration+Duration
-- [ ] Implement comparison helpers for mixed-type comparisons
-- [ ] Ensure operators delegate to these functions (DRY)
+- [x] Implement standalone functions: `add()`, `subtract()`, `multiply()`, `divide()`
+- [x] Handle type combinations: DateTime+Duration, Date+Duration, Duration+Duration
+- [x] Implement comparison helpers for mixed-type comparisons
+- [x] Ensure operators delegate to these functions (DRY)
 
 **Tests:**
-- [ ] Unit test: All arithmetic operation combinations
-- [ ] Unit test: Edge cases (zero duration, negative duration, overflow)
-- [ ] Unit test: Mixed type operations
+- [x] Unit test: All arithmetic operation combinations
+- [x] Unit test: Edge cases (zero duration, negative duration, overflow)
+- [x] Unit test: Mixed type operations
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_arithmetic.py -v` passes
+- [x] `python -m pytest tests/test_arithmetic.py -v` passes
 
 **Rollback:** Remove arithmetic module files
 
@@ -2600,7 +2600,7 @@ After completing Steps 1-14, you will have:
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Infer module that adds heuristics to parsing to make it easier to work with Temporale objects in "the real world"
-- [ ] IANA timezone database support for Timnezones
+- [ ] IANA timezone database support for Timezones
 - [ ] Temporal arithmetic extensions (periods, intervals)
 - [ ] Calendar system support (Julian, Islamic, OS/Gregorian calendar switch, etc.)
 - [ ] Leap second support
