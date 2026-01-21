@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 13: Implement Interval Type and Range Operations | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 13 specification (lines 2876-3007)
+- `plans/phase-5.md` - [IC02] Interval Boundary Semantics (half-open intervals)
+- `plans/phase-5.md` - [IC04] Interval Type Variants (Generic Interval[T])
+- `sample-code/python/temporale/temporale/core/date.py` - Date class patterns
+- `sample-code/python/temporale/temporale/core/datetime.py` - DateTime class patterns
+- `sample-code/python/temporale/temporale/core/duration.py` - Duration for gap/duration calculations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `Interval` class with `start`, `end`, and bound type | Done |
+| Implement half-open interval semantics `[start, end)` by default | Done |
+| Add factory methods for unbounded intervals (since, until, empty) | Done |
+| Implement containment: `contains(point)`, `contains(interval)` | Done |
+| Implement overlap: `overlaps(interval)` | Done |
+| Implement gap: `gap(interval)` returns Duration or None | Done |
+| Implement union: `union(interval)` for overlapping intervals | Done |
+| Implement intersection: `intersection(interval)` | Done |
+| Export from `temporale/core/__init__.py` and `temporale/__init__.py` | Done |
+| Write comprehensive test suite (73 tests) | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/core/interval.py` - Generic Interval class with half-open semantics, bounded/unbounded support, containment, overlap, gap, union, intersection operations
+- `sample-code/python/temporale/temporale/arithmetic/range_ops.py` - Range operation helpers: merge_intervals, span_intervals, find_gaps, total_duration
+- `sample-code/python/temporale/tests/test_interval.py` - 73 comprehensive tests covering all Interval functionality
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/__init__.py` - Added Interval export and docstring update
+- `sample-code/python/temporale/temporale/__init__.py` - Added Interval export and docstring update
+
+**Test Results:**
+- `pytest tests/test_interval.py -v`: 73 tests passed
+- Full test suite: 889 tests passed (816 + 73 new)
+
+**Checkpoints Verified:**
+- `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_interval.py -v` passes: PASS
+- Interval overlap detection works correctly: PASS
+
+**Key Decisions/Notes:**
+- Interval uses Generic[T] with TypeVar bound to Date and DateTime per [IC04]
+- Half-open semantics `[start, end)` per [IC02]: start is inclusive, end is exclusive
+- Empty intervals tracked via `_is_empty` flag (distinct from unbounded)
+- Adjacent intervals (where one ends exactly where other starts) don't overlap but can be unioned
+- `__contains__` supports `point in interval` syntax for point containment
+- String representation uses mathematical notation: `[start, end)`, `[start, ∞)`, `(-∞, end)`, `∅`
+- Range ops module provides collection-level operations (merge, span, gaps, total duration)
+
+---
+
 ## [phase-5.md] Step 12.5: Add Quarters Support to Period | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

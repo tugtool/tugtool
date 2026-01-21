@@ -2887,15 +2887,15 @@ class Period:
 - `tests/test_interval.py` - Interval tests
 
 **Tasks:**
-- [ ] Create `Interval` class with `start`, `end`, and bound type
-- [ ] Implement half-open interval semantics `[start, end)` by default
-- [ ] Add factory methods for unbounded intervals
-- [ ] Implement containment: `contains(point)`, `contains(interval)`
-- [ ] Implement overlap: `overlaps(interval)`
-- [ ] Implement gap: `gap(interval)` returns Duration or None
-- [ ] Implement union: `union(interval)` for overlapping intervals
-- [ ] Implement intersection: `intersection(interval)`
-- [ ] Export from `temporale/core/__init__.py` and `temporale/__init__.py`
+- [x] Create `Interval` class with `start`, `end`, and bound type
+- [x] Implement half-open interval semantics `[start, end)` by default
+- [x] Add factory methods for unbounded intervals
+- [x] Implement containment: `contains(point)`, `contains(interval)`
+- [x] Implement overlap: `overlaps(interval)`
+- [x] Implement gap: `gap(interval)` returns Duration or None
+- [x] Implement union: `union(interval)` for overlapping intervals
+- [x] Implement intersection: `intersection(interval)`
+- [x] Export from `temporale/core/__init__.py` and `temporale/__init__.py`
 
 **Interval class specification:**
 ```python
@@ -2987,20 +2987,20 @@ class Interval(Generic[T]):
 ```
 
 **Tests:**
-- [ ] Unit test: Interval construction and validation
-- [ ] Unit test: Bounded interval contains point
-- [ ] Unit test: Bounded interval contains sub-interval
-- [ ] Unit test: Unbounded intervals (since, until)
-- [ ] Unit test: Overlapping intervals
-- [ ] Unit test: Non-overlapping intervals with gap
-- [ ] Unit test: Union of overlapping intervals
-- [ ] Unit test: Intersection of overlapping intervals
-- [ ] Unit test: Empty interval handling
-- [ ] Unit test: Interval with Date vs DateTime
+- [x] Unit test: Interval construction and validation
+- [x] Unit test: Bounded interval contains point
+- [x] Unit test: Bounded interval contains sub-interval
+- [x] Unit test: Unbounded intervals (since, until)
+- [x] Unit test: Overlapping intervals
+- [x] Unit test: Non-overlapping intervals with gap
+- [x] Unit test: Union of overlapping intervals
+- [x] Unit test: Intersection of overlapping intervals
+- [x] Unit test: Empty interval handling
+- [x] Unit test: Interval with Date vs DateTime
 
 **Checkpoint:**
-- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_interval.py -v` passes
-- [ ] Interval overlap detection works correctly
+- [x] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_interval.py -v` passes
+- [x] Interval overlap detection works correctly
 
 **Rollback:** Remove interval.py, range_ops.py, and test_interval.py
 

@@ -9,6 +9,7 @@ Core Types:
     DateTime: Combined date and time with optional timezone
     Duration: Time span with nanosecond precision
     Period: Calendar-based duration (years, months, weeks, days)
+    Interval: Time span between two points [start, end)
 
 Units:
     Era: BCE/CE era designation
@@ -41,6 +42,7 @@ __version__ = "0.1.0"
 from temporale.core.date import Date
 from temporale.core.datetime import DateTime
 from temporale.core.duration import Duration
+from temporale.core.interval import Interval
 from temporale.core.period import Period
 from temporale.core.time import Time
 
@@ -67,6 +69,7 @@ __all__: list[str] = [
     "Date",
     "DateTime",
     "Duration",
+    "Interval",
     "Period",
     "Time",
     # Units
