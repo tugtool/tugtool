@@ -2048,19 +2048,19 @@ cargo nextest run -p tugtool pytest
 - Empty placeholder modules
 
 **Tasks:**
-- [ ] Create directory structure per [D01]
-- [ ] Create all `__init__.py` files with module docstrings
-- [ ] Create `pyproject.toml` with pytest configuration
-- [ ] Create `temporale/errors.py` with exception hierarchy per [D06]
-- [ ] Create `temporale/_internal/constants.py` with constants per Table T08
+- [x] Create directory structure per [D01]
+- [x] Create all `__init__.py` files with module docstrings
+- [x] Create `pyproject.toml` with pytest configuration
+- [x] Create `temporale/errors.py` with exception hierarchy per [D06]
+- [x] Create `temporale/_internal/constants.py` with constants per Table T08
 
 **Tests:**
-- [ ] Unit test: Import `temporale` succeeds
-- [ ] Unit test: All submodules importable
+- [x] Unit test: Import `temporale` succeeds
+- [x] Unit test: All submodules importable
 
 **Checkpoint:**
-- [ ] `python -c "import temporale"` succeeds
-- [ ] `python -c "from temporale._internal.constants import NANOS_PER_SECOND"` succeeds
+- [x] `python -c "import temporale"` succeeds
+- [x] `python -c "from temporale._internal.constants import NANOS_PER_SECOND"` succeeds
 
 **Rollback:** `rm -rf sample-code/python/temporale`
 
