@@ -3492,10 +3492,10 @@ def parse_relative(
 - `tests/test_edge_cases.py` with edge case tests
 
 **Tasks:**
-- [ ] Implement `@deprecated(message)` parameterized decorator
-- [ ] Implement `@validate_range(min, max)` parameterized decorator
-- [ ] Add edge case tests for boundary conditions
-- [ ] Add tests for error conditions and exceptions
+- [x] Implement `@deprecated(message)` parameterized decorator
+- [x] Implement `@validate_range(min, max)` parameterized decorator
+- [x] Add edge case tests for boundary conditions
+- [x] Add tests for error conditions and exceptions
 
 **Decorator implementation:**
 ```python
@@ -3513,15 +3513,15 @@ def deprecated(message: str):
 ```
 
 **Tests:**
-- [ ] Unit test: @deprecated emits warning
-- [ ] Unit test: @validate_range raises ValidationError
-- [ ] Unit test: Year 1 and Year 9999 boundaries
-- [ ] Unit test: Month transition edge cases
-- [ ] Unit test: Leap second handling (or explicit non-support)
+- [x] Unit test: @deprecated emits warning
+- [x] Unit test: @validate_range raises ValidationError
+- [x] Unit test: Year 1 and Year 9999 boundaries
+- [x] Unit test: Month transition edge cases
+- [x] Unit test: Leap second handling (or explicit non-support)
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_edge_cases.py -v` passes
-- [ ] Full test suite: `python -m pytest tests/ -v` passes
+- [x] `python -m pytest tests/test_edge_cases.py -v` passes
+- [x] Full test suite: `python -m pytest tests/ -v` passes
 
 **Rollback:** Remove decorators.py and edge case tests
 

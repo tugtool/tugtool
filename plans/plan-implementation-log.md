@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 16: Add Custom Decorators and Edge Cases | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 16 specification (lines 3484-3528)
+- `plans/phase-5.md` - [D05] Decorator Usage: Varied Patterns
+- `plans/phase-5.md` - [D06] Error Handling: Custom Exception Hierarchy
+- `plans/phase-5.md` - Table T01: Python Constructs in Temporale
+- `sample-code/python/temporale/temporale/_internal/validation.py` - Existing @validate_range decorator
+- `sample-code/python/temporale/temporale/_internal/constants.py` - MIN_YEAR, MAX_YEAR constants
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `@deprecated(message)` parameterized decorator | Done |
+| Implement `@validate_range(min, max)` parameterized decorator | Done (already existed) |
+| Add edge case tests for boundary conditions | Done |
+| Add tests for error conditions and exceptions | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/_internal/decorators.py` - Custom decorators: @deprecated(message) emits DeprecationWarning, @memoize for caching
+- `sample-code/python/temporale/tests/test_edge_cases.py` - 74 comprehensive edge case tests
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/_internal/__init__.py` - Added exports for deprecated, memoize, and validation functions
+- `sample-code/python/temporale/temporale/core/period.py` - Reverted auto-normalization (see Key Decisions)
+- `sample-code/python/temporale/tests/test_period.py` - Reverted 21 tests to expect non-normalized behavior
+
+**Test Results:**
+- `pytest tests/test_edge_cases.py -v`: 74 tests passed
+- Full test suite: 1091 tests passed
+
+**Checkpoints Verified:**
+- `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_edge_cases.py -v` passes: PASS
+- Full test suite passes: PASS
+
+**Key Decisions/Notes:**
+- **Period Normalization Design Change:** Initially implemented auto-normalization on construction, but after architectural analysis (using code-architect agent), reverted to manual normalization via `normalized()` method. This matches industry practice (Java Period, NodaTime, Joda-Time, Pendulum) and preserves user intent (e.g., "14 months" stays "14 months").
+- @deprecated decorator: Preserves function metadata via functools.wraps, adds _deprecated and _deprecation_message attributes for introspection
+- @memoize decorator: Simple caching with exposed _cache and _clear_cache for testing
+- @validate_range already existed in validation.py - verified it works correctly
+- Edge case tests cover: decorator behavior, year boundaries (1, 9999, MIN_YEAR, MAX_YEAR), month transitions, leap years, time boundaries, leap second non-support, timezone edge cases, exception hierarchy, interval/duration/period edge cases, validation functions
+
+---
+
 ## [phase-5.md] Step 15: Implement Relative and Natural Date Parsing | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

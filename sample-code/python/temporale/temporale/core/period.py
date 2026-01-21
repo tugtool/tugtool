@@ -24,9 +24,12 @@ class Period:
     - 4 quarters = 1 year
     - 1 quarter = 3 months
 
-    The components are stored as-is without normalization. For example,
+    Components are stored as-is without automatic normalization. For example,
     Period(months=14) remains 14 months rather than being converted to
-    1 year and 2 months. Use normalize() if you want normalized form.
+    1 year and 2 months. Use normalized() to get the canonical form.
+
+    This matches the behavior of Java's java.time.Period, NodaTime, Joda-Time,
+    and Pendulum, which all use explicit normalization.
 
     Attributes:
         years: Number of years (can be negative).
@@ -42,9 +45,11 @@ class Period:
         >>> p.quarters
         2
 
-        >>> p = Period.of_quarters(4)
-        >>> p.total_quarters
-        4
+        >>> p = Period(months=14)  # Stored as-is
+        >>> p.months
+        14
+        >>> p.normalized().months  # Use normalized() for canonical form
+        2
 
         >>> from temporale.core.date import Date
         >>> Date(2024, 1, 31) + Period(months=1)  # Clamps to Feb 29
@@ -63,7 +68,8 @@ class Period:
     ) -> None:
         """Create a Period from component parts.
 
-        All parameters can be positive, negative, or zero.
+        All parameters can be positive, negative, or zero. Values are
+        stored as provided without normalization.
 
         Args:
             years: Number of years.
@@ -76,11 +82,14 @@ class Period:
             >>> Period(years=1, months=6)
             Period(years=1, quarters=0, months=6, weeks=0, days=0)
 
-            >>> Period(quarters=2)  # 2 quarters = 6 months
-            Period(years=0, quarters=2, months=0, weeks=0, days=0)
+            >>> Period(months=14)  # Stored as-is
+            Period(years=0, quarters=0, months=14, weeks=0, days=0)
 
-            >>> Period(months=-3)  # 3 months ago
-            Period(years=0, quarters=0, months=-3, weeks=0, days=0)
+            >>> Period(quarters=5)  # Stored as-is
+            Period(years=0, quarters=5, months=0, weeks=0, days=0)
+
+            >>> Period(days=10)  # Stored as-is
+            Period(years=0, quarters=0, months=0, weeks=0, days=10)
         """
         self._years = years
         self._quarters = quarters
