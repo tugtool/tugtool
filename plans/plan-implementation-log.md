@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 17: Public API and Exports | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 17 specification (lines 3532-3576)
+- `plans/phase-5.md` - [D01] Module Structure: Flat vs Deep Hierarchy
+- `sample-code/python/temporale/temporale/__init__.py` - Top-level package exports
+- All module `__init__.py` files for `__all__` verification
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Export all public classes from top-level `temporale` package | Done (already complete) |
+| Define `__all__` in all modules | Done (already complete in all 34 modules) |
+| Verify import patterns work as expected | Done |
+| Add module-level `__version__` | Done (already present: "0.1.0") |
+| Unit test: All expected exports available | Done |
+| Unit test: `__all__` lists match actual exports | Done |
+| Unit test: No private symbols accidentally exported | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/tests/test_api.py` - 47 comprehensive tests verifying public API exports, `__all__` consistency, import patterns, and functional API usage
+
+**Files Modified:**
+- `plans/phase-5.md` - Checked off all Step 17 tasks and checkpoints
+
+**Test Results:**
+- `pytest tests/test_api.py -v`: 47 tests passed
+- Full test suite: 1138 tests passed in 0.31s
+
+**Checkpoints Verified:**
+- `python -c "from temporale import *; print(DateTime.now())"` works: PASS (output: 2026-01-21T14:10:21.933176)
+
+**Key Decisions/Notes:**
+- All public API exports were already correctly implemented in prior steps
+- All 34 Python modules have `__all__` defined
+- Public API includes: Core types (Date, Time, DateTime, Duration, Period, Interval), Units (Era, TimeUnit, Timezone), Exceptions (TemporaleError, ValidationError, ParseError, OverflowError, TimezoneError), Format functions (parse_iso8601, format_iso8601), Infer functions (parse_fuzzy, parse_relative, InferOptions, DateOrder), Constants (__version__)
+- Test coverage includes: export availability, `__all__` consistency across all modules, no private symbol leakage, various import patterns (star imports, submodule imports, deep imports), functional API verification
+
+---
+
 ## [phase-5.md] Step 16: Add Custom Decorators and Edge Cases | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

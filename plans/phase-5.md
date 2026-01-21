@@ -3540,10 +3540,10 @@ def deprecated(message: str):
 - `tests/test_api.py` verifying public API
 
 **Tasks:**
-- [ ] Export all public classes from top-level `temporale` package
-- [ ] Define `__all__` in all modules
-- [ ] Verify import patterns work as expected
-- [ ] Add module-level `__version__`
+- [x] Export all public classes from top-level `temporale` package
+- [x] Define `__all__` in all modules
+- [x] Verify import patterns work as expected
+- [x] Add module-level `__version__`
 
 **Public API:**
 ```python
@@ -3564,12 +3564,12 @@ from temporale import (
 ```
 
 **Tests:**
-- [ ] Unit test: All expected exports available
-- [ ] Unit test: `__all__` lists match actual exports
-- [ ] Unit test: No private symbols accidentally exported
+- [x] Unit test: All expected exports available
+- [x] Unit test: `__all__` lists match actual exports
+- [x] Unit test: No private symbols accidentally exported
 
 **Checkpoint:**
-- [ ] `python -c "from temporale import *; print(DateTime.now())"` works
+- [x] `python -c "from temporale import *; print(DateTime.now())"` works
 
 **Rollback:** Revert __init__.py changes
 
@@ -3609,7 +3609,7 @@ from temporale import (
 
 ---
 
-#### Step 18 Summary {#step-18-summary}
+#### Step 19 Summary {#step-19-summary}
 
 After completing Steps 1-18, you will have:
 - A complete Temporale datetime library with 20+ Python modules
@@ -3682,13 +3682,3 @@ After completing Steps 1-18, you will have:
 | Integration works | `cargo nextest run temporale` exits 0 |
 
 **Commit after all checkpoints pass.**
-
----
-
-### Implementation Log {#implementation-log}
-
-<!-- Record implementation progress here -->
-
-| Date | Step | Status | Notes |
-|------|------|--------|-------|
-| | | | |
