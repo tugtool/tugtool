@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 5: Implement Duration Class | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 5 tasks and specifications (lines 2148-2179)
+- `plans/phase-5.md` - Duration class API specification (lines 843-945)
+- `plans/phase-5.md` - [S07] Duration Normalization specification
+- `plans/phase-5.md` - [D02] Immutability decision
+- `temporale/_internal/constants.py` - Time constants (SECONDS_PER_DAY, NANOS_PER_SECOND, etc.)
+- `temporale/core/__init__.py` - Core module export structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement Duration class with `__slots__` (`_days`, `_seconds`, `_nanos`) | Done |
+| Implement normalization logic per [S07] specification | Done |
+| Add factory methods: `zero()`, `from_days()`, `from_hours()`, `from_minutes()`, `from_seconds()`, `from_milliseconds()`, `from_microseconds()`, `from_nanoseconds()` | Done |
+| Add properties: `days`, `seconds`, `nanoseconds`, `total_seconds`, `total_nanoseconds`, `is_negative`, `is_zero` | Done |
+| Implement arithmetic operators: `+`, `-`, `*`, `/`, `//`, unary `-`, `abs`, `+` (unary) | Done |
+| Implement comparison operators: `==`, `!=`, `<`, `<=`, `>`, `>=` | Done |
+| Export from `temporale/core/__init__.py` | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/core/duration.py` - Duration class with nanosecond precision, normalization logic, factory methods, arithmetic and comparison operators (500+ lines)
+- `sample-code/python/temporale/tests/test_duration.py` - 85 comprehensive tests across 10 test classes
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/__init__.py` - Added Duration export
+- `plans/phase-5.md` - Updated checkboxes for Step 5 tasks, tests, and checkpoints
+
+**Test Results:**
+- `pytest tests/test_duration.py -v`: 85 tests passed
+- `pytest tests/ -v`: 167 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_duration.py -v` passes: PASS (85 tests)
+- `analyze_files()` on duration.py finds Duration class and methods: PASS (sym_28, 9 references)
+
+**Key Decisions/Notes:**
+- Duration uses `__slots__` with `_days`, `_seconds`, `_nanos` for memory efficiency
+- Normalization maintains invariants: `0 <= _seconds < 86400`, `0 <= _nanos < 1_000_000_000`
+- For negative durations, borrowing algorithm ensures `_seconds` and `_nanos` remain non-negative while `_days` becomes negative
+- Duration constructor accepts `days`, `seconds`, `nanoseconds` parameters (not `minutes` or `hours` - use factory methods)
+- All arithmetic operations return new Duration instances (immutable design)
+- Validated via `tug analyze-impact rename-symbol` which successfully found Duration class
+
+---
+
 ## [phase-5.md] Step 4: Implement Timezone Class | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

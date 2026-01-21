@@ -2156,24 +2156,24 @@ cargo nextest run -p tugtool pytest
 - `tests/test_duration.py` with duration tests
 
 **Tasks:**
-- [ ] Implement Duration with `_days`, `_seconds`, `_nanos` slots
-- [ ] Add normalization logic to ensure consistent representation
-- [ ] Implement all factory methods: `zero()`, `from_days()`, `from_hours()`, etc.
-- [ ] Implement properties: `days`, `seconds`, `total_seconds`, `nanoseconds`
-- [ ] Implement arithmetic operators: `+`, `-`, `*`, `/`, `//`, unary `-`, `abs`
-- [ ] Implement comparison operators: `<`, `<=`, `>`, `>=`, `==`, `!=`
-- [ ] Export from `temporale/core/__init__.py`
+- [x] Implement Duration with `_days`, `_seconds`, `_nanos` slots
+- [x] Add normalization logic to ensure consistent representation
+- [x] Implement all factory methods: `zero()`, `from_days()`, `from_hours()`, etc.
+- [x] Implement properties: `days`, `seconds`, `total_seconds`, `nanoseconds`
+- [x] Implement arithmetic operators: `+`, `-`, `*`, `/`, `//`, unary `-`, `abs`
+- [x] Implement comparison operators: `<`, `<=`, `>`, `>=`, `==`, `!=`
+- [x] Export from `temporale/core/__init__.py`
 
 **Tests:**
-- [ ] Unit test: Duration construction with various units
-- [ ] Unit test: Normalization (e.g., 90 seconds -> 1 minute 30 seconds)
-- [ ] Unit test: Arithmetic operations
-- [ ] Unit test: Comparison operations
-- [ ] Unit test: Negative durations
+- [x] Unit test: Duration construction with various units
+- [x] Unit test: Normalization (e.g., 90 seconds -> 1 minute 30 seconds)
+- [x] Unit test: Arithmetic operations
+- [x] Unit test: Comparison operations
+- [x] Unit test: Negative durations
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_duration.py -v` passes
-- [ ] `analyze_files()` on duration.py finds Duration and all operators
+- [x] `python -m pytest tests/test_duration.py -v` passes
+- [x] `analyze_files()` on duration.py finds Duration and all operators
 
 **Rollback:** Remove duration.py and test file
 
@@ -2578,6 +2578,7 @@ After completing Steps 1-14, you will have:
 - [ ] Property-based testing with Hypothesis
 - [ ] Performance benchmarks
 - [ ] Additional refactoring scenarios
+- [ ] IANA timezone database support for Timnezones
 - [ ] Temporal arithmetic extensions (periods, intervals)
 - [ ] Calendar system support (Julian, Islamic, etc.)
 
