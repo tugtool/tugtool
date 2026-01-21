@@ -3609,6 +3609,151 @@ from temporale import (
 
 ---
 
+#### Step 18 Fixup: `__all__` Export String Literal Rename Support {#step-18-fixup}
+
+**Problem:** The rename operation does not update string literals in `__all__` export lists. When renaming `Date` to `CalendarDate`, the class definition, imports, and references are updated, but `__all__ = ["Date", ...]` remains unchanged. This breaks the module's public API - `from temporale import Date` fails after rename.
+
+**Root Cause:** The `ReferenceCollector` operates on Name nodes (identifiers), not string literals. Python's `__all__` is a "stringly-typed" reference pattern that needs special handling.
+
+**Solution:** Create an `ExportCollector` visitor that identifies string literals in `__all__` assignments and provides their spans for inclusion in rename operations.
+
+---
+
+##### Fixup Task 1: Create ExportCollector visitor
+
+**File:** `crates/tugtool-python-cst/src/visitor/exports.rs` (new file)
+
+**Implementation:**
+- [ ] Create `ExportKind` enum: `AllList` (for `__all__` assignments)
+- [ ] Create `ExportInfo` struct with fields:
+  - `name: String` - the exported symbol name (string content without quotes)
+  - `kind: ExportKind`
+  - `span: Option<Span>` - byte span of the string literal (including quotes, for precise replacement)
+  - `content_span: Option<Span>` - byte span of just the string content (excluding quotes)
+- [ ] Implement `ExportCollector` visitor that:
+  - Detects `__all__ = [...]` assignments (simple assignment)
+  - Detects `__all__: list[str] = [...]` (annotated assignment)
+  - Detects `__all__ += [...]` (augmented assignment)
+  - Extracts string literals from List, Tuple, or Set values
+  - Records spans using PositionTable lookup
+- [ ] Implement `collect()` method following established pattern
+- [ ] Add unit tests for:
+  - Simple `__all__ = ["foo", "bar"]`
+  - Annotated `__all__: list[str] = ["foo"]`
+  - Augmented `__all__ += ["baz"]`
+  - Nested/concatenated strings (should handle gracefully)
+  - Empty `__all__` list
+  - Non-string elements in list (should be ignored)
+
+**Success Criteria:**
+- `ExportCollector::collect()` returns all string literals in `__all__` with accurate spans
+- String content span allows precise text replacement
+
+---
+
+##### Fixup Task 2: Export the collector from visitor module
+
+**File:** `crates/tugtool-python-cst/src/visitor/mod.rs`
+
+**Implementation:**
+- [ ] Add `mod exports;` declaration
+- [ ] Add public exports: `pub use exports::{ExportCollector, ExportInfo, ExportKind};`
+
+**Success Criteria:**
+- `ExportCollector` is accessible from `tugtool_python_cst::visitor`
+
+---
+
+##### Fixup Task 3: Integrate ExportCollector into cst_bridge analysis
+
+**File:** `crates/tugtool-python/src/cst_bridge.rs`
+
+**Implementation:**
+- [ ] Import `ExportCollector` and related types
+- [ ] Add `exports: Vec<ExportInfo>` field to `NativeAnalysisResult`
+- [ ] In `parse_and_analyze()`, run `ExportCollector::collect()` and populate the exports field
+- [ ] Create bridge types if needed for export info
+
+**Success Criteria:**
+- `parse_and_analyze()` returns export information in result
+- Export spans are accurate and can be used for rewriting
+
+---
+
+##### Fixup Task 4: Include `__all__` exports in rename operation
+
+**File:** `crates/tugtool-python/src/ops/rename.rs`
+
+**Implementation:**
+- [ ] In `run()` function, after collecting symbol references:
+  - Get exports from analysis result for each file
+  - For each export where `export.name == old_name`, add an edit to rename the string content
+  - Handle quote types correctly (preserve `"` vs `'`)
+- [ ] In `analyze_impact()`, include matching exports in reference count
+- [ ] Add a new `ReferenceKind::Export` or similar for tracking export-related edits
+
+**Key Implementation Detail:**
+When renaming string literals in `__all__`:
+- If the original is `"Date"`, replace with `"CalendarDate"`
+- If the original is `'Date'`, replace with `'CalendarDate'`
+- The content_span should be used to replace just the text between quotes
+
+**Success Criteria:**
+- Renaming a symbol also renames matching strings in `__all__`
+- Quote style is preserved
+- Edit count includes `__all__` string replacements
+
+---
+
+##### Fixup Task 5: Update integration tests
+
+**File:** `crates/tugtool/tests/temporale_integration.rs`
+
+**Implementation:**
+- [ ] Remove the workaround comment about `__all__` not being updated
+- [ ] Update `temporale_refactor_rename_date_class` test to use full pytest verification (not just syntax)
+- [ ] Add specific test case that verifies `__all__` exports are updated
+- [ ] Add test that verifies `from temporale import CalendarDate` works after rename
+
+**Success Criteria:**
+- Integration test runs full pytest after rename, not just syntax check
+- All tests pass including those that test `__all__` consistency
+
+---
+
+##### Fixup Task 6: Add Rust unit tests for export rename
+
+**File:** `crates/tugtool-python/src/ops/rename.rs` (in `mod tests`)
+
+**Implementation:**
+- [ ] Add test: `native_rename_updates_all_export`
+  ```python
+  __all__ = ["foo", "bar"]
+  def foo(): pass
+  ```
+  After renaming `foo` to `baz`, verify `__all__` becomes `["baz", "bar"]`
+- [ ] Add test: `native_rename_preserves_quote_style`
+  Verify single quotes and double quotes are preserved
+- [ ] Add test: `native_rename_multiple_all_entries`
+  Verify multiple occurrences of the same name in `__all__` are all updated
+
+**Success Criteria:**
+- Unit tests cover export rename scenarios
+- Tests verify correctness of string literal replacement
+
+---
+
+##### Fixup Checkpoint
+
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (new ExportCollector tests)
+- [ ] `cargo nextest run -p tugtool-python` passes (rename with exports)
+- [ ] `cargo nextest run -p tugtool temporale` passes with full pytest verification
+- [ ] Manual verification: after renaming `Date` to `CalendarDate`, `from temporale import CalendarDate` works
+
+**Commit after fixup checkpoint passes:** `fix(python): rename string literals in __all__ exports`
+
+---
+
 #### Step 19 Summary {#step-19-summary}
 
 After completing Steps 1-18, you will have:

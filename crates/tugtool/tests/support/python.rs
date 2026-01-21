@@ -22,6 +22,7 @@ static PYTHON_ENV: OnceLock<PythonEnv> = OnceLock::new();
 
 /// A validated Python environment with pytest available.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PythonEnv {
     /// Path to the Python executable
     pub python_path: PathBuf,
