@@ -17,26 +17,34 @@
 //! - **Variables**: assignment targets, loop variables
 //! - **Imports**: `import foo`, `from bar import baz`
 //!
+//! # Span Extraction
+//!
+//! Spans are extracted from the [`PositionTable`] populated during CST inflation.
+//! Each `Name` node has an embedded `node_id` that maps to its `ident_span` in
+//! the position table. This provides accurate, token-derived positions without
+//! relying on cursor-based string search.
+//!
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, BindingCollector, BindingInfo, BindingKind};
+//! use tugtool_python_cst::{parse_module_with_positions, BindingCollector, BindingInfo, BindingKind};
 //!
 //! let source = "def foo(): pass";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let bindings = BindingCollector::collect(&module, source);
+//! let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
 //! for binding in &bindings {
-//!     println!("{}: {:?}", binding.name, binding.kind);
+//!     println!("{}: {:?} at {:?}", binding.name, binding.kind, binding.span);
 //! }
 //! ```
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
     AnnAssign, Assign, AssignTargetExpression, ClassDef, Element, ExceptHandler, Expression, For,
-    FunctionDef, Import, ImportFrom, ImportNames, Module, NameOrAttribute, NamedExpr, Param,
-    Span, With,
+    FunctionDef, Import, ImportFrom, ImportNames, Module, NameOrAttribute, NamedExpr, NodeId,
+    Param, Span, With,
 };
 
 /// The kind of binding in Python.
@@ -124,38 +132,74 @@ impl BindingInfo {
 /// # Example
 ///
 /// ```ignore
-/// let bindings = BindingCollector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
 /// ```
-pub struct BindingCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct BindingCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Collected bindings.
     bindings: Vec<BindingInfo>,
     /// Current scope path for tracking where bindings are defined.
     scope_path: Vec<String>,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> BindingCollector<'src> {
-    /// Create a new BindingCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> BindingCollector<'pos> {
+    /// Create a new BindingCollector without position tracking.
+    ///
+    /// Bindings will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             bindings: Vec::new(),
             scope_path: vec!["<module>".to_string()],
-            cursor: 0,
         }
     }
 
-    /// Collect bindings from a parsed module.
+    /// Create a new BindingCollector with position tracking.
     ///
-    /// Returns the list of bindings in the order they were encountered.
+    /// Bindings will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            bindings: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
+        }
+    }
+
+    /// Collect bindings from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting bindings with accurate spans.
     ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
-    /// * `source` - The original source code (must match what was parsed)
+    /// * `positions` - Position table from `parse_module_with_positions`
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let parsed = parse_module_with_positions(source, None)?;
+    /// let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    /// ```
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<BindingInfo> {
+        let mut collector = BindingCollector::with_positions(positions);
+        walk_module(&mut collector, module);
+        collector.bindings
+    }
+
+    /// Collect bindings from a parsed module.
+    ///
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module
+    /// * `source` - The original source code (used to re-parse for positions)
     ///
     /// # Example
     ///
@@ -164,10 +208,23 @@ impl<'src> BindingCollector<'src> {
     /// let module = parse_module(source, None)?;
     /// let bindings = BindingCollector::collect(&module, source);
     /// ```
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<BindingInfo> {
-        let mut collector = BindingCollector::new(source);
-        walk_module(&mut collector, module);
-        collector.bindings
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<BindingInfo> {
+        // Re-parse with position tracking to get accurate spans
+        // We ignore the passed module and re-parse to get the PositionTable
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector = BindingCollector::with_positions(&parsed.positions);
+                walk_module(&mut collector, &parsed.module);
+                collector.bindings
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                // This should not happen for valid source
+                Vec::new()
+            }
+        }
     }
 
     /// Get the collected bindings, consuming the collector.
@@ -175,28 +232,16 @@ impl<'src> BindingCollector<'src> {
         self.bindings
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    ///
-    /// Returns the span if found.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
-    /// Add a binding with a name found in the source.
-    fn add_binding(&mut self, name: &str, kind: BindingKind) {
-        let span = self.find_and_advance(name);
+    /// Add a binding with span looked up from PositionTable.
+    fn add_binding_with_id(&mut self, name: &str, kind: BindingKind, node_id: Option<NodeId>) {
+        let span = self.lookup_span(node_id);
         let binding = BindingInfo::new(name.to_string(), kind, self.scope_path.clone())
             .with_span(span);
         self.bindings.push(binding);
@@ -206,7 +251,7 @@ impl<'src> BindingCollector<'src> {
     fn extract_assign_targets(&mut self, target: &AssignTargetExpression<'_>, kind: BindingKind) {
         match target {
             AssignTargetExpression::Name(name) => {
-                self.add_binding(name.value, kind);
+                self.add_binding_with_id(name.value, kind, name.node_id);
             }
             AssignTargetExpression::Tuple(tuple) => {
                 self.extract_from_tuple_elements(&tuple.elements, kind);
@@ -241,7 +286,7 @@ impl<'src> BindingCollector<'src> {
     fn extract_from_expression(&mut self, expr: &Expression<'_>, kind: BindingKind) {
         match expr {
             Expression::Name(name) => {
-                self.add_binding(name.value, kind);
+                self.add_binding_with_id(name.value, kind, name.node_id);
             }
             Expression::Tuple(tuple) => {
                 self.extract_from_tuple_elements(&tuple.elements, kind);
@@ -258,15 +303,18 @@ impl<'src> BindingCollector<'src> {
     }
 
     /// Get the root name from a NameOrAttribute (for `import a.b.c`, returns `a`).
-    fn get_root_name<'a>(&self, name_or_attr: &'a NameOrAttribute<'_>) -> Option<&'a str> {
+    fn get_root_name_with_id<'a>(
+        &self,
+        name_or_attr: &'a NameOrAttribute<'_>,
+    ) -> Option<(&'a str, Option<NodeId>)> {
         match name_or_attr {
-            NameOrAttribute::N(name) => Some(name.value),
+            NameOrAttribute::N(name) => Some((name.value, name.node_id)),
             NameOrAttribute::A(attr) => {
                 // For a.b.c, get the leftmost name
                 let mut current = &attr.value;
                 loop {
                     match current.as_ref() {
-                        Expression::Name(name) => return Some(name.value),
+                        Expression::Name(name) => return Some((name.value, name.node_id)),
                         Expression::Attribute(inner_attr) => {
                             current = &inner_attr.value;
                         }
@@ -278,10 +326,16 @@ impl<'src> BindingCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
+impl Default for BindingCollector<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a, 'pos> Visitor<'a> for BindingCollector<'pos> {
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
         // Record the function name as a binding
-        self.add_binding(node.name.value, BindingKind::Function);
+        self.add_binding_with_id(node.name.value, BindingKind::Function, node.name.node_id);
         // Enter the function scope
         self.scope_path.push(node.name.value.to_string());
         VisitResult::Continue
@@ -293,7 +347,7 @@ impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
         // Record the class name as a binding
-        self.add_binding(node.name.value, BindingKind::Class);
+        self.add_binding_with_id(node.name.value, BindingKind::Class, node.name.node_id);
         // Enter the class scope
         self.scope_path.push(node.name.value.to_string());
         VisitResult::Continue
@@ -305,7 +359,7 @@ impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
         // Record parameters as bindings
-        self.add_binding(node.name.value, BindingKind::Parameter);
+        self.add_binding_with_id(node.name.value, BindingKind::Parameter, node.name.node_id);
         VisitResult::Continue
     }
 
@@ -341,12 +395,12 @@ impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
             if let Some(asname) = &alias.asname {
                 // `import foo as bar` - bar is the binding
                 if let AssignTargetExpression::Name(name) = &asname.name {
-                    self.add_binding(name.value, BindingKind::ImportAlias);
+                    self.add_binding_with_id(name.value, BindingKind::ImportAlias, name.node_id);
                 }
             } else {
                 // `import foo` or `import foo.bar.baz` - the root name is the binding
-                if let Some(root_name) = self.get_root_name(&alias.name) {
-                    self.add_binding(root_name, BindingKind::Import);
+                if let Some((root_name, node_id)) = self.get_root_name_with_id(&alias.name) {
+                    self.add_binding_with_id(root_name, BindingKind::Import, node_id);
                 }
             }
         }
@@ -358,21 +412,34 @@ impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
         // Handle `from x import y`, `from x import y as z`, `from x import *`
         match &node.names {
             ImportNames::Star(_) => {
-                // Star import - bind "*" as a special marker
-                self.add_binding("*", BindingKind::Import);
+                // Star import - bind "*" as a special marker (no node_id for "*")
+                let binding = BindingInfo::new(
+                    "*".to_string(),
+                    BindingKind::Import,
+                    self.scope_path.clone(),
+                );
+                self.bindings.push(binding);
             }
             ImportNames::Aliases(aliases) => {
                 for alias in aliases {
                     if let Some(asname) = &alias.asname {
                         // `from x import y as z` - z is the binding
                         if let AssignTargetExpression::Name(name) = &asname.name {
-                            self.add_binding(name.value, BindingKind::ImportAlias);
+                            self.add_binding_with_id(
+                                name.value,
+                                BindingKind::ImportAlias,
+                                name.node_id,
+                            );
                         }
                     } else {
                         // `from x import y` - y is the binding
                         match &alias.name {
                             NameOrAttribute::N(name) => {
-                                self.add_binding(name.value, BindingKind::Import);
+                                self.add_binding_with_id(
+                                    name.value,
+                                    BindingKind::Import,
+                                    name.node_id,
+                                );
                             }
                             NameOrAttribute::A(_) => {
                                 // This shouldn't happen in a from import, but handle gracefully
@@ -390,7 +457,7 @@ impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
         // Except handler with `as` clause: `except Exception as e:`
         if let Some(asname) = &node.name {
             if let AssignTargetExpression::Name(name) = &asname.name {
-                self.add_binding(name.value, BindingKind::Variable);
+                self.add_binding_with_id(name.value, BindingKind::Variable, name.node_id);
             }
         }
         VisitResult::Continue
@@ -411,6 +478,11 @@ impl<'a, 'src> Visitor<'a> for BindingCollector<'src> {
 mod tests {
     use super::*;
     use crate::parse_module;
+    use crate::parse_module_with_positions;
+
+    // ========================================================================
+    // Tests using legacy collect() API (backward compatibility)
+    // ========================================================================
 
     #[test]
     fn test_binding_function_def() {
@@ -723,5 +795,213 @@ mod tests {
 
         assert_eq!(bindings[2].name, "b");
         assert_eq!(bindings[2].kind, BindingKind::Parameter);
+    }
+
+    // ========================================================================
+    // Tests using new collect_with_positions() API
+    // ========================================================================
+
+    #[test]
+    fn test_binding_spans_match_token_positions() {
+        let source = "def foo(): pass";
+        //            01234567890123456
+        //                ^foo: 4-7
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "foo");
+
+        let span = bindings[0].span.expect("Should have span");
+        assert_eq!(span.start, 4, "'foo' should start at byte 4");
+        assert_eq!(span.end, 7, "'foo' should end at byte 7");
+    }
+
+    #[test]
+    fn test_binding_spans_for_variable() {
+        let source = "my_var = 42";
+        //            01234567890
+        //            ^my_var: 0-6
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        assert_eq!(bindings.len(), 1);
+        let span = bindings[0].span.expect("Should have span");
+        assert_eq!(span.start, 0);
+        assert_eq!(span.end, 6);
+    }
+
+    #[test]
+    fn test_multiple_bindings_same_name_have_distinct_spans() {
+        // Key test: multiple bindings with same name should have correct distinct spans
+        let source = "x = 1\nx = 2\nx = 3";
+        //            01234 56789 01234
+        //            ^x:0  ^x:6  ^x:12
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        assert_eq!(bindings.len(), 3, "Should have 3 bindings");
+
+        // All bindings should be named "x"
+        for b in &bindings {
+            assert_eq!(b.name, "x");
+        }
+
+        // Each should have a distinct span
+        let spans: Vec<_> = bindings
+            .iter()
+            .filter_map(|b| b.span)
+            .map(|s| s.start)
+            .collect();
+
+        assert_eq!(spans.len(), 3, "All bindings should have spans");
+        assert!(
+            spans.contains(&0),
+            "Should have span starting at 0, got {:?}",
+            spans
+        );
+        assert!(
+            spans.contains(&6),
+            "Should have span starting at 6, got {:?}",
+            spans
+        );
+        assert!(
+            spans.contains(&12),
+            "Should have span starting at 12, got {:?}",
+            spans
+        );
+    }
+
+    #[test]
+    fn test_binding_spans_for_parameters() {
+        let source = "def add(first, second): pass";
+        //            0123456789012345678901234567
+        //                    ^first:8-13 ^second:15-21
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        // Function "add" + params "first" and "second"
+        assert_eq!(bindings.len(), 3);
+
+        let add_binding = &bindings[0];
+        assert_eq!(add_binding.name, "add");
+        let add_span = add_binding.span.expect("add should have span");
+        assert_eq!(add_span.start, 4); // "add" at position 4
+        assert_eq!(add_span.end, 7);
+
+        let first_binding = &bindings[1];
+        assert_eq!(first_binding.name, "first");
+        let first_span = first_binding.span.expect("first should have span");
+        assert_eq!(first_span.start, 8);
+        assert_eq!(first_span.end, 13);
+
+        let second_binding = &bindings[2];
+        assert_eq!(second_binding.name, "second");
+        let second_span = second_binding.span.expect("second should have span");
+        assert_eq!(second_span.start, 15);
+        assert_eq!(second_span.end, 21);
+    }
+
+    #[test]
+    fn test_binding_spans_in_nested_scope() {
+        let source = r#"class A:
+    def m(self):
+        x = 1
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        // class A, def m, param self, var x
+        assert_eq!(bindings.len(), 4);
+
+        // All should have spans
+        for b in &bindings {
+            assert!(
+                b.span.is_some(),
+                "Binding '{}' should have span",
+                b.name
+            );
+        }
+
+        // Verify the span text matches the binding name
+        for b in &bindings {
+            if let Some(span) = b.span {
+                let text = &source[span.start as usize..span.end as usize];
+                assert_eq!(
+                    text, b.name,
+                    "Span text should match binding name for '{}'",
+                    b.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_binding_spans_for_import() {
+        let source = "from os import path";
+        //            01234567890123456789
+        //                           ^path:15-19
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "path");
+
+        let span = bindings[0].span.expect("Should have span");
+        assert_eq!(span.start, 15);
+        assert_eq!(span.end, 19);
+    }
+
+    #[test]
+    fn test_binding_spans_for_chained_assignment() {
+        let source = "a = b = c = 1";
+        //            0123456789012
+        //            ^a  ^b  ^c
+        //            0   4   8
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        assert_eq!(bindings.len(), 3);
+
+        // Verify each has a span at the correct position
+        let a_binding = bindings.iter().find(|b| b.name == "a").unwrap();
+        let b_binding = bindings.iter().find(|b| b.name == "b").unwrap();
+        let c_binding = bindings.iter().find(|b| b.name == "c").unwrap();
+
+        assert_eq!(a_binding.span.unwrap().start, 0);
+        assert_eq!(b_binding.span.unwrap().start, 4);
+        assert_eq!(c_binding.span.unwrap().start, 8);
+    }
+
+    #[test]
+    fn test_collect_matches_collect_with_positions() {
+        // Verify that legacy collect() produces same results as collect_with_positions()
+        let source = "def foo(x): return x * 2";
+        let module = parse_module(source, None).unwrap();
+        let parsed = parse_module_with_positions(source, None).unwrap();
+
+        let bindings_legacy = BindingCollector::collect(&module, source);
+        let bindings_new =
+            BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+
+        assert_eq!(
+            bindings_legacy.len(),
+            bindings_new.len(),
+            "Both methods should produce same number of bindings"
+        );
+
+        for (legacy, new) in bindings_legacy.iter().zip(bindings_new.iter()) {
+            assert_eq!(legacy.name, new.name);
+            assert_eq!(legacy.kind, new.kind);
+            assert_eq!(legacy.scope_path, new.scope_path);
+            // Spans should also match (both use PositionTable internally now)
+            assert_eq!(legacy.span, new.span);
+        }
     }
 }

@@ -2978,3 +2978,69 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 5. **Zero-overhead when not needed**: SpanCollector is now a unit struct (zero-sized type), with all state stored in the PositionTable which is only created when using `parse_module_with_positions()`.
 
 ---
+
+### Step 8: Update BindingCollector to Use PositionTable - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 8 specification (lines 1383-1408)
+- (#identifier-span) - Identifier span definitions
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Original BindingCollector implementation
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Reference for PositionTable integration pattern
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - PositionTable and NodePosition types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Change BindingCollector to accept `PositionTable` | Done |
+| Remove `find_and_advance()` from BindingCollector | Done |
+| Update binding span assignment to use `PositionTable` lookup via `node.node_id` | Done |
+| Verify all bindings have correct spans from `NodePosition.ident_span` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Complete rewrite to use PositionTable; removed find_and_advance(), source, cursor fields; added positions field; added lookup_span(), add_binding_with_id() methods; added collect_with_positions() API; added with_positions() constructor; added 8 new tests
+- `crates/tugtool-python-cst/tests/golden/python/lambdas.bindings.json` - Updated with correct token-derived spans (fixed incorrect spans from string search)
+- `plans/phase-4.md` - Checked off all Step 8 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst binding`: 42 tests passed
+- `cargo nextest run --workspace`: 1079 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst binding` passes: PASS (42 tests)
+- `grep find_and_advance crates/tugtool-python-cst/src/visitor/binding.rs` returns empty: PASS
+
+**Unit Tests Added:**
+- `test_binding_spans_match_token_positions` - Verifies spans match token positions for function names
+- `test_binding_spans_for_variable` - Tests variable binding spans
+- `test_multiple_bindings_same_name_have_distinct_spans` - Key test: verifies token-derived spans correctly handle repeated identifiers with same name
+- `test_binding_spans_for_parameters` - Tests function parameter spans
+- `test_binding_spans_in_nested_scope` - Tests spans in nested scopes
+- `test_binding_spans_for_import` - Tests import binding spans
+- `test_binding_spans_for_chained_assignment` - Tests chained assignment spans
+- `test_collect_matches_collect_with_positions` - Verifies backward compatibility between old and new APIs
+
+**Key Implementation Details:**
+
+1. **Architecture change**: BindingCollector still uses the Visitor pattern for scope tracking and binding discovery, but span computation now uses PositionTable lookup instead of cursor-based string search.
+
+2. **New fields and methods**:
+   - `positions: Option<&'pos PositionTable>` - Reference to PositionTable for span lookups
+   - `lookup_span(node_id) -> Option<Span>` - Looks up spans via node.node_id in PositionTable
+   - `add_binding_with_id(name, kind, node_id)` - Replaces add_binding(), uses node_id for span lookup
+   - `get_root_name_with_id()` - Returns both name and node_id for imports
+
+3. **New API methods**:
+   - `with_positions(&PositionTable) -> Self`: Creates collector with PositionTable reference
+   - `collect_with_positions(&Module, &PositionTable) -> Vec<BindingInfo>`: Preferred method for collecting bindings with accurate spans
+   - `collect(&Module, &str) -> Vec<BindingInfo>`: Legacy API that internally re-parses with position tracking
+
+4. **Golden test fix**: The `golden_lambdas_bindings` test was updated because the new token-derived spans are **more accurate**. The old string-search approach incorrectly found 'a' at position 80 (inside the word "lambda") instead of position 86 (the actual parameter 'a'). This demonstrates the correctness improvement from token-derived positions.
+
+5. **Star import handling**: The special case `from x import *` doesn't have a node_id (there's no Name node for "*"), so it creates a binding without a span.
+
+6. **Lifetime handling**: The `collect()` legacy API creates a local `ParsedModule` and walks its module with a collector that references its positions. This required careful lifetime management to ensure the positions outlive the collector.
+
+---

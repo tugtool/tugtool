@@ -1390,18 +1390,18 @@ let scope_end = match &self.body {
 - Modified `crates/tugtool-python-cst/src/visitor/binding.rs`
 
 **Tasks:**
-- [ ] Change BindingCollector to accept `PositionTable`
-- [ ] Remove `find_and_advance()` from BindingCollector
-- [ ] Update binding span assignment to use `PositionTable` lookup via `node.node_id`
-- [ ] Verify all bindings have correct spans from `NodePosition.ident_span`
+- [x] Change BindingCollector to accept `PositionTable`
+- [x] Remove `find_and_advance()` from BindingCollector
+- [x] Update binding span assignment to use `PositionTable` lookup via `node.node_id`
+- [x] Verify all bindings have correct spans from `NodePosition.ident_span`
 
 **Tests:**
-- [ ] Unit test: Binding spans match token positions
-- [ ] Unit test: Multiple bindings with same name have distinct correct spans
+- [x] Unit test: Binding spans match token positions
+- [x] Unit test: Multiple bindings with same name have distinct correct spans
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst binding` passes
-- [ ] `grep find_and_advance crates/tugtool-python-cst/src/visitor/binding.rs` returns empty
+- [x] `cargo nextest run -p tugtool-python-cst binding` passes
+- [x] `grep find_and_advance crates/tugtool-python-cst/src/visitor/binding.rs` returns empty
 
 **Rollback:**
 - Revert BindingCollector changes
