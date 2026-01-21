@@ -2255,20 +2255,20 @@ cargo nextest run -p tugtool pytest
 - `tests/test_time.py` with time tests
 
 **Tasks:**
-- [ ] Implement Time with `_nanos` slot (nanoseconds since midnight)
-- [ ] Implement construction: `__init__`, `now()`, `from_iso_format()`
-- [ ] Implement properties: `hour`, `minute`, `second`, `millisecond`, `microsecond`, `nanosecond`
-- [ ] Implement transformations: `replace()`, `with_nanosecond()`
-- [ ] Implement operators: comparisons, hash
+- [x] Implement Time with `_nanos` slot (nanoseconds since midnight)
+- [x] Implement construction: `__init__`, `now()`, `from_iso_format()`
+- [x] Implement properties: `hour`, `minute`, `second`, `millisecond`, `microsecond`, `nanosecond`
+- [x] Implement transformations: `replace()`, `with_nanosecond()`
+- [x] Implement operators: comparisons, hash
 
 **Tests:**
-- [ ] Unit test: Time construction and validation
-- [ ] Unit test: Subsecond precision access
-- [ ] Unit test: Midnight and end-of-day boundaries
-- [ ] Unit test: ISO format parsing
+- [x] Unit test: Time construction and validation
+- [x] Unit test: Subsecond precision access
+- [x] Unit test: Midnight and end-of-day boundaries
+- [x] Unit test: ISO format parsing
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_time.py -v` passes
+- [x] `python -m pytest tests/test_time.py -v` passes
 
 **Rollback:** Remove time.py and test file
 
@@ -2604,7 +2604,8 @@ After completing Steps 1-14, you will have:
 - [ ] Additional refactoring scenarios
 - [ ] IANA timezone database support for Timnezones
 - [ ] Temporal arithmetic extensions (periods, intervals)
-- [ ] Calendar system support (Julian, Islamic, etc.)
+- [ ] Calendar system support (Julian, Islamic, OS/Gregorian calendar switch, etc.)
+- [ ] Leap second support
 
 | Checkpoint | Verification |
 |------------|--------------|

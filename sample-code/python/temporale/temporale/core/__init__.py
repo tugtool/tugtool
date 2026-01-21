@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from temporale.core.date import Date
 from temporale.core.duration import Duration
+from temporale.core.time import Time
 
 __all__: list[str] = [
     "Date",
     "Duration",
+    "Time",
 ]

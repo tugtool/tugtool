@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 7: Implement Time Class | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 7 tasks and specifications (lines 2247-2275)
+- `plans/phase-5.md` - [D02] Immutability decision (lines 439-453)
+- `plans/phase-5.md` - [D07] Subsecond Precision specification (lines 577-610)
+- `plans/phase-5.md` - Module core section with Time description (lines 776-786)
+- `temporale/_internal/constants.py` - Nanosecond-related constants
+- `temporale/core/duration.py` - Existing pattern reference for subsecond handling
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement Time with `_nanos` slot (nanoseconds since midnight) | Done |
+| Implement construction: `__init__`, `now()`, `from_iso_format()` | Done |
+| Implement properties: `hour`, `minute`, `second`, `millisecond`, `microsecond`, `nanosecond` | Done |
+| Implement transformations: `replace()`, `with_nanosecond()` | Done |
+| Implement operators: comparisons, hash | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/core/time.py` - Time class with `_nanos` slot, full subsecond precision, ISO format support
+- `sample-code/python/temporale/tests/test_time.py` - 89 comprehensive tests across 17 test classes
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/__init__.py` - Added Time export
+- `plans/phase-5.md` - Updated checkboxes for Step 7 tasks, tests, and checkpoints
+
+**Test Results:**
+- `pytest tests/test_time.py -v`: 89 tests passed
+- `pytest tests/ -v`: 355 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_time.py -v` passes: PASS (89 tests)
+
+**Key Decisions/Notes:**
+- Time uses single `_nanos` slot storing nanoseconds since midnight for efficient storage and comparison
+- Added convenience factories: `midnight()`, `noon()` in addition to required `now()` and `from_iso_format()`
+- Added extra transformation methods: `with_millisecond()`, `with_microsecond()` for usability
+- Microsecond parameter accepts 0-999999 (matching Python stdlib), millisecond accepts 0-999
+- Subsecond constructor parameters are additive (like Duration), allowing combined precision
+- Immutability is by convention (like Python stdlib datetime), not enforced at runtime
+- ISO format parsing supports extended (HH:MM:SS) and compact (HHMMSS) formats with variable precision fractional seconds
+
+---
+
 ## [phase-5.md] Step 6: Implement Date Class | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
