@@ -11,9 +11,8 @@
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::facts::{
-    FactsStore, File, Import, Language, Reference, ReferenceKind,
-    ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind as CoreScopeKind, Symbol,
-    SymbolId, SymbolKind,
+    FactsStore, File, Import, Language, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    ScopeInfo as CoreScopeInfo, ScopeKind as CoreScopeKind, Symbol, SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -24,6 +23,10 @@ use thiserror::Error;
 
 // Native CST bridge
 use crate::cst_bridge;
+
+/// Type alias for scope-to-symbols index: (FileId, ScopeId) -> Vec<(name, SymbolId, SymbolKind)>
+/// Uses the local ScopeId type (not CoreScopeId) as the map key.
+type ScopeSymbolsMap = HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>;
 
 // ============================================================================
 // Error Types
@@ -416,8 +419,7 @@ pub fn analyze_files(
     // - Paths normalized with forward slashes (Rust handles this via String comparison)
     // - Case-sensitive comparison (no lowercasing - case matters on Linux/macOS)
     // - Lexicographic ordering
-    let mut sorted_files: Vec<(&String, &String)> =
-        files.iter().map(|(p, c)| (p, c)).collect();
+    let mut sorted_files: Vec<(&String, &String)> = files.iter().map(|(p, c)| (p, c)).collect();
     sorted_files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
 
     // ====================================================================
@@ -431,7 +433,10 @@ pub fn analyze_files(
     // We track all paths regardless of analysis success/failure because:
     // - A file that failed to parse still exists and can be an import target
     // - Pass 3 needs to know which paths exist in the workspace
-    bundle.workspace_files = sorted_files.iter().map(|(path, _)| (*path).clone()).collect();
+    bundle.workspace_files = sorted_files
+        .iter()
+        .map(|(path, _)| (*path).clone())
+        .collect();
 
     // Keep a map of file_id -> content for content hash computation in Pass 2
     let mut file_contents: HashMap<FileId, &str> = HashMap::new();
@@ -550,8 +555,7 @@ pub fn analyze_files(
             // Link container for methods
             // A method is a function defined inside a class scope
             if let Some(container_name) = &symbol.container {
-                if let Some(&container_id) = class_symbols.get(&(file_id, container_name.clone()))
-                {
+                if let Some(&container_id) = class_symbols.get(&(file_id, container_name.clone())) {
                     sym = sym.with_container(container_id);
                 }
             }
@@ -589,8 +593,7 @@ pub fn analyze_files(
 
     // Build scope-to-symbols index for each file (for scope chain resolution)
     // Maps (FileId, ScopeId) -> Vec of (name, SymbolId, SymbolKind)
-    let mut scope_symbols: HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>> =
-        HashMap::new();
+    let mut scope_symbols: ScopeSymbolsMap = HashMap::new();
 
     // Rebuild scope_symbols from symbols (we need to know which symbols are in which scope)
     // This is populated from the symbols we just registered
@@ -616,10 +619,8 @@ pub fn analyze_files(
         let file_id = analysis.file_id;
 
         // Build per-file import resolver
-        let import_resolver = FileImportResolver::from_imports(
-            &analysis.imports,
-            &bundle.workspace_files,
-        );
+        let import_resolver =
+            FileImportResolver::from_imports(&analysis.imports, &bundle.workspace_files);
 
         // Process imports first - insert Import records
         for local_import in &analysis.imports {
@@ -630,12 +631,8 @@ pub fn analyze_files(
             if local_import.kind == "from" && !local_import.is_star {
                 for imported_name in &local_import.names {
                     let name_import_id = store.next_import_id();
-                    let mut import = Import::new(
-                        name_import_id,
-                        file_id,
-                        span,
-                        &local_import.module_path,
-                    );
+                    let mut import =
+                        Import::new(name_import_id, file_id, span, &local_import.module_path);
                     import.imported_name = Some(imported_name.name.clone());
                     import.alias = imported_name.alias.clone();
                     import.is_star = false;
@@ -643,22 +640,12 @@ pub fn analyze_files(
                 }
             } else if local_import.is_star {
                 // Star import
-                let mut import = Import::new(
-                    import_id,
-                    file_id,
-                    span,
-                    &local_import.module_path,
-                );
+                let mut import = Import::new(import_id, file_id, span, &local_import.module_path);
                 import.is_star = true;
                 store.insert_import(import);
             } else {
                 // Regular module import
-                let mut import = Import::new(
-                    import_id,
-                    file_id,
-                    span,
-                    &local_import.module_path,
-                );
+                let mut import = Import::new(import_id, file_id, span, &local_import.module_path);
                 import.alias = local_import.alias.clone();
                 store.insert_import(import);
             }
@@ -685,13 +672,8 @@ pub fn analyze_files(
             if let Some(symbol_id) = resolved_symbol_id {
                 // Create reference
                 let ref_id = store.next_reference_id();
-                let reference = Reference::new(
-                    ref_id,
-                    symbol_id,
-                    file_id,
-                    ref_span,
-                    local_ref.kind,
-                );
+                let reference =
+                    Reference::new(ref_id, symbol_id, file_id, ref_span, local_ref.kind);
                 store.insert_reference(reference);
             }
             // Note: Unresolved references are silently dropped.
@@ -728,7 +710,8 @@ pub fn analyze_files(
     let mut type_trackers: HashMap<FileId, TypeTracker> = HashMap::new();
 
     // Collect all class inheritance info across files for building InheritanceInfo
-    let mut all_class_inheritance: Vec<(FileId, tugtool_python_cst::ClassInheritanceInfo)> = Vec::new();
+    let mut all_class_inheritance: Vec<(FileId, tugtool_python_cst::ClassInheritanceInfo)> =
+        Vec::new();
 
     // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
     for (path, content) in files {
@@ -763,13 +746,10 @@ pub fn analyze_files(
                 inferred_type: a.inferred_type.clone(),
                 rhs_name: a.rhs_name.clone(),
                 callee_name: a.callee_name.clone(),
-                span: a
-                    .span
-                    .as_ref()
-                    .map(|s| crate::types::SpanInfo {
-                        start: s.start as usize,
-                        end: s.end as usize,
-                    }),
+                span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                    start: s.start as usize,
+                    end: s.end as usize,
+                }),
                 line: a.line,
                 col: a.col,
             })
@@ -785,13 +765,10 @@ pub fn analyze_files(
                 source_kind: a.source_kind.as_str().to_string(),
                 type_str: a.type_str.clone(),
                 scope_path: a.scope_path.clone(),
-                span: a
-                    .span
-                    .as_ref()
-                    .map(|s| crate::types::SpanInfo {
-                        start: s.start as usize,
-                        end: s.end as usize,
-                    }),
+                span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                    start: s.start as usize,
+                    end: s.end as usize,
+                }),
                 line: a.line,
                 col: a.col,
             })
@@ -805,10 +782,7 @@ pub fn analyze_files(
 
         // Build MethodCallIndex from method calls
         // First, get the FileAnalysis to access scope information
-        let analysis = bundle
-            .file_analyses
-            .iter()
-            .find(|a| a.file_id == file_id);
+        let analysis = bundle.file_analyses.iter().find(|a| a.file_id == file_id);
 
         for mc in &native_result.method_calls {
             // Resolve receiver type using TypeTracker
@@ -868,9 +842,7 @@ pub fn analyze_files(
         // For each base class, try to resolve it to a symbol
         for base_name in &ci.bases {
             // Try to find the base class in the same file first
-            if let Some(&parent_id) =
-                class_name_to_symbol.get(&(*file_id, base_name.clone()))
-            {
+            if let Some(&parent_id) = class_name_to_symbol.get(&(*file_id, base_name.clone())) {
                 inheritance_to_insert.push(tugtool_core::facts::InheritanceInfo::new(
                     child_id, parent_id,
                 ));
@@ -879,32 +851,24 @@ pub fn analyze_files(
 
             // Try to resolve via imports
             // Find the FileAnalysis for this file to get import info
-            if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id)
-            {
+            if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id) {
                 // Use FileImportResolver which resolves imports against workspace_files
-                let import_resolver = FileImportResolver::from_imports(
-                    &analysis.imports,
-                    &bundle.workspace_files,
-                );
+                let import_resolver =
+                    FileImportResolver::from_imports(&analysis.imports, &bundle.workspace_files);
 
-                if let Some((qualified_name, resolved_file)) =
+                if let Some((qualified_name, Some(resolved_path))) =
                     import_resolver.resolve(base_name)
                 {
-                    // If we have a resolved file, look for the class there
-                    if let Some(resolved_path) = resolved_file {
-                        if let Some(&target_file_id) = file_path_to_id.get(resolved_path) {
-                            // Extract the actual class name from the qualified path
-                            let target_class_name =
-                                qualified_name.rsplit('.').next().unwrap_or(base_name);
-                            if let Some(&parent_id) = class_name_to_symbol
-                                .get(&(target_file_id, target_class_name.to_string()))
-                            {
-                                inheritance_to_insert.push(
-                                    tugtool_core::facts::InheritanceInfo::new(
-                                        child_id, parent_id,
-                                    ),
-                                );
-                            }
+                    if let Some(&target_file_id) = file_path_to_id.get(resolved_path) {
+                        // Extract the actual class name from the qualified path
+                        let target_class_name =
+                            qualified_name.rsplit('.').next().unwrap_or(base_name);
+                        if let Some(&parent_id) = class_name_to_symbol
+                            .get(&(target_file_id, target_class_name.to_string()))
+                        {
+                            inheritance_to_insert.push(tugtool_core::facts::InheritanceInfo::new(
+                                child_id, parent_id,
+                            ));
                         }
                     }
                 }
@@ -952,10 +916,7 @@ pub fn analyze_files(
 
             // Also check if receiver is "self" or "cls" and we're in a method of this class
             let is_self_call = (call.receiver == "self" || call.receiver == "cls")
-                && call
-                    .scope_path
-                    .iter()
-                    .any(|s| s == &class_name);
+                && call.scope_path.iter().any(|s| s == &class_name);
 
             if type_matches || is_self_call {
                 // Insert a reference from this call site to the method
@@ -1002,11 +963,7 @@ pub fn analyze_files(
 /// assert!(!analysis.scopes.is_empty());
 /// assert!(!analysis.symbols.is_empty());
 /// ```
-pub fn analyze_file(
-    file_id: FileId,
-    path: &str,
-    content: &str,
-) -> AnalyzerResult<FileAnalysis> {
+pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResult<FileAnalysis> {
     // Parse and analyze using native CST
     let native_result = cst_bridge::parse_and_analyze(content)?;
 
@@ -1053,9 +1010,7 @@ pub fn analyze_file(
 }
 
 /// Build scope structure from native scope info.
-fn build_scopes(
-    native_scopes: &[ScopeInfo],
-) -> (Vec<Scope>, HashMap<String, ScopeId>) {
+fn build_scopes(native_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, ScopeId>) {
     let mut scope_map = HashMap::new();
 
     // Pass 1: Assign ScopeIds to all scopes
@@ -1089,10 +1044,7 @@ fn build_scopes(
 }
 
 /// Collect symbols from native bindings.
-fn collect_symbols(
-    bindings: &[BindingInfo],
-    scopes: &[Scope],
-) -> Vec<LocalSymbol> {
+fn collect_symbols(bindings: &[BindingInfo], scopes: &[Scope]) -> Vec<LocalSymbol> {
     let mut symbols = Vec::new();
 
     for binding in bindings {
@@ -1223,10 +1175,8 @@ impl FileImportResolver {
 
                     // `from foo import bar` or `from foo import bar as b`
                     for imported_name in &import.names {
-                        let local_name = imported_name
-                            .alias
-                            .as_ref()
-                            .unwrap_or(&imported_name.name);
+                        let local_name =
+                            imported_name.alias.as_ref().unwrap_or(&imported_name.name);
                         let qualified_path =
                             format!("{}.{}", import.module_path, imported_name.name);
 
@@ -1234,10 +1184,9 @@ impl FileImportResolver {
                         let resolved_file =
                             resolve_module_to_file(&import.module_path, workspace_files);
 
-                        resolver.aliases.insert(
-                            local_name.clone(),
-                            (qualified_path, resolved_file),
-                        );
+                        resolver
+                            .aliases
+                            .insert(local_name.clone(), (qualified_path, resolved_file));
                     }
                 }
                 "import" => {
@@ -1338,7 +1287,7 @@ fn resolve_reference(
     scopes: &[Scope],
     global_symbols: &GlobalSymbolMap,
     import_bindings: &ImportBindingsSet,
-    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
     _ref_kind: ReferenceKind,
@@ -1445,11 +1394,14 @@ fn find_symbol_in_scope(
     name: &str,
     file_id: FileId,
     scope_id: ScopeId,
-    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    scope_symbols: &ScopeSymbolsMap,
 ) -> Option<SymbolId> {
-    scope_symbols
-        .get(&(file_id, scope_id))
-        .and_then(|symbols| symbols.iter().find(|(n, _, _)| n == name).map(|(_, id, _)| *id))
+    scope_symbols.get(&(file_id, scope_id)).and_then(|symbols| {
+        symbols
+            .iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, id, _)| *id)
+    })
 }
 
 /// Find a symbol in a specific scope, returning both ID and kind.
@@ -1457,16 +1409,14 @@ fn find_symbol_in_scope_with_kind(
     name: &str,
     file_id: FileId,
     scope_id: ScopeId,
-    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    scope_symbols: &ScopeSymbolsMap,
 ) -> Option<(SymbolId, SymbolKind)> {
-    scope_symbols
-        .get(&(file_id, scope_id))
-        .and_then(|symbols| {
-            symbols
-                .iter()
-                .find(|(n, _, _)| n == name)
-                .map(|(_, id, kind)| (*id, *kind))
-        })
+    scope_symbols.get(&(file_id, scope_id)).and_then(|symbols| {
+        symbols
+            .iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, id, kind)| (*id, *kind))
+    })
 }
 
 /// Resolve an imported name to its original definition.
@@ -1523,7 +1473,7 @@ fn resolve_in_module_scope(
     _scopes: &[Scope],
     global_symbols: &GlobalSymbolMap,
     import_bindings: &ImportBindingsSet,
-    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
 ) -> Option<SymbolId> {
@@ -1577,7 +1527,7 @@ fn resolve_in_enclosing_function(
     scopes: &[Scope],
     global_symbols: &GlobalSymbolMap,
     import_bindings: &ImportBindingsSet,
-    scope_symbols: &HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>,
+    scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
 ) -> Option<SymbolId> {
@@ -2660,7 +2610,6 @@ mod tests {
         }
     }
 
-
     mod analysis_tests {
         use super::*;
 
@@ -2671,7 +2620,10 @@ mod tests {
                 .expect("should analyze successfully");
 
             // Check scopes
-            assert!(result.scopes.len() >= 2, "should have module and function scopes");
+            assert!(
+                result.scopes.len() >= 2,
+                "should have module and function scopes"
+            );
             let module_scope = result.scopes.iter().find(|s| s.kind == ScopeKind::Module);
             assert!(module_scope.is_some(), "should have module scope");
 
@@ -2720,7 +2672,10 @@ mod tests {
                 .expect("should analyze successfully");
 
             // Should have at least 3 scopes: module, outer, inner
-            assert!(result.scopes.len() >= 3, "should have module, outer, and inner scopes");
+            assert!(
+                result.scopes.len() >= 3,
+                "should have module, outer, and inner scopes"
+            );
 
             // Check function scopes
             let outer_fn = result.symbols.iter().find(|s| s.name == "outer");
@@ -2737,7 +2692,10 @@ mod tests {
                 .expect("should analyze successfully");
 
             // Comprehensions create their own scope
-            let comp_scope = result.scopes.iter().find(|s| s.kind == ScopeKind::Comprehension);
+            let comp_scope = result
+                .scopes
+                .iter()
+                .find(|s| s.kind == ScopeKind::Comprehension);
             assert!(comp_scope.is_some(), "should have comprehension scope");
         }
 
@@ -2754,7 +2712,7 @@ mod tests {
 
         #[test]
         fn analyze_parse_error_returns_error() {
-            let content = "def foo(\n";  // Invalid syntax
+            let content = "def foo(\n"; // Invalid syntax
             let result = analyze_file(FileId::new(0), "test.py", content);
 
             assert!(result.is_err(), "should return error for invalid syntax");
@@ -2855,7 +2813,10 @@ mod tests {
             // FileAnalysis should have symbols
             assert_eq!(bundle.file_analyses.len(), 1);
             let analysis = &bundle.file_analyses[0];
-            assert!(!analysis.symbols.is_empty(), "should have at least one symbol (foo)");
+            assert!(
+                !analysis.symbols.is_empty(),
+                "should have at least one symbol (foo)"
+            );
 
             // Find the function symbol
             let foo_symbol = analysis
@@ -2875,7 +2836,10 @@ mod tests {
             let mut store = FactsStore::new();
             let files = vec![
                 ("first.py".to_string(), "def first_func(): pass".to_string()),
-                ("second.py".to_string(), "class SecondClass: pass".to_string()),
+                (
+                    "second.py".to_string(),
+                    "class SecondClass: pass".to_string(),
+                ),
                 ("third.py".to_string(), "x = 1".to_string()),
             ];
 
@@ -3141,7 +3105,10 @@ mod tests {
 
             // Verify scopes are in store
             let scopes: Vec<_> = store.scopes().collect();
-            assert!(scopes.len() >= 3, "should have module, outer, and inner scopes");
+            assert!(
+                scopes.len() >= 3,
+                "should have module, outer, and inner scopes"
+            );
 
             // Find module scope (should have no parent)
             let module_scope = scopes
@@ -3233,10 +3200,7 @@ mod tests {
                 .iter()
                 .filter(|r| r.symbol_id == foo_sym.symbol_id)
                 .collect();
-            assert!(
-                !foo_refs.is_empty(),
-                "should have references to foo symbol"
-            );
+            assert!(!foo_refs.is_empty(), "should have references to foo symbol");
         }
 
         #[test]
@@ -3318,10 +3282,15 @@ mod tests {
                 .expect("should have utils.py");
 
             // Should have helper function in utils.py (the original definition)
-            let helper_original = symbols
-                .iter()
-                .find(|s| s.name == "helper" && s.decl_file_id == utils_file.file_id && s.kind == SymbolKind::Function);
-            assert!(helper_original.is_some(), "should have original helper definition");
+            let helper_original = symbols.iter().find(|s| {
+                s.name == "helper"
+                    && s.decl_file_id == utils_file.file_id
+                    && s.kind == SymbolKind::Function
+            });
+            assert!(
+                helper_original.is_some(),
+                "should have original helper definition"
+            );
         }
 
         #[test]
@@ -3403,7 +3372,8 @@ mod tests {
             let mut store = FactsStore::new();
             let files = vec![(
                 "test.py".to_string(),
-                "def outer():\n    x = 1\n    def inner():\n        nonlocal x\n        x = 2".to_string(),
+                "def outer():\n    x = 1\n    def inner():\n        nonlocal x\n        x = 2"
+                    .to_string(),
             )];
 
             let bundle = analyze_files(&files, &mut store).expect("should succeed");
@@ -3417,7 +3387,10 @@ mod tests {
                 .collect();
 
             // Should have both outer and inner function scopes
-            assert!(func_scopes.len() >= 2, "should have at least 2 function scopes");
+            assert!(
+                func_scopes.len() >= 2,
+                "should have at least 2 function scopes"
+            );
 
             // One of them should have x as nonlocal
             let has_nonlocal = func_scopes.iter().any(|s| s.nonlocals.contains("x"));
@@ -3455,7 +3428,9 @@ mod tests {
 
             // Should have a comprehension scope
             let scopes: Vec<_> = store.scopes().collect();
-            let comprehension_scope = scopes.iter().find(|s| s.kind == CoreScopeKind::Comprehension);
+            let comprehension_scope = scopes
+                .iter()
+                .find(|s| s.kind == CoreScopeKind::Comprehension);
             assert!(
                 comprehension_scope.is_some(),
                 "should have comprehension scope"
@@ -3470,16 +3445,15 @@ mod tests {
         fn analyze_files_pass3_ac4_import_foo_binds_foo() {
             // Test: `import foo` binds `foo`
             let mut store = FactsStore::new();
-            let files = vec![(
-                "test.py".to_string(),
-                "import os".to_string(),
-            )];
+            let files = vec![("test.py".to_string(), "import os".to_string())];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Should have os as an import binding
             let symbols: Vec<_> = store.symbols().collect();
-            let os_sym = symbols.iter().find(|s| s.name == "os" && s.kind == SymbolKind::Import);
+            let os_sym = symbols
+                .iter()
+                .find(|s| s.name == "os" && s.kind == SymbolKind::Import);
             assert!(os_sym.is_some(), "should have os import binding");
         }
 
@@ -3487,16 +3461,15 @@ mod tests {
         fn analyze_files_pass3_ac4_import_foo_bar_binds_root_only() {
             // Test: `import foo.bar` binds `foo` only (NOT `foo.bar`) - critical Python semantics
             let mut store = FactsStore::new();
-            let files = vec![(
-                "test.py".to_string(),
-                "import os.path".to_string(),
-            )];
+            let files = vec![("test.py".to_string(), "import os.path".to_string())];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Should have os as an import binding, NOT os.path
             let symbols: Vec<_> = store.symbols().collect();
-            let os_sym = symbols.iter().find(|s| s.name == "os" && s.kind == SymbolKind::Import);
+            let os_sym = symbols
+                .iter()
+                .find(|s| s.name == "os" && s.kind == SymbolKind::Import);
             assert!(os_sym.is_some(), "should have os import binding");
 
             // Should NOT have os.path as a binding
@@ -3517,22 +3490,26 @@ mod tests {
 
             // Should have operating_system as an import binding
             let symbols: Vec<_> = store.symbols().collect();
-            let alias_sym = symbols.iter().find(|s| s.name == "operating_system" && s.kind == SymbolKind::Import);
-            assert!(alias_sym.is_some(), "should have operating_system import binding");
+            let alias_sym = symbols
+                .iter()
+                .find(|s| s.name == "operating_system" && s.kind == SymbolKind::Import);
+            assert!(
+                alias_sym.is_some(),
+                "should have operating_system import binding"
+            );
         }
 
         #[test]
         fn analyze_files_pass3_ac4_from_foo_import_bar_binds_bar() {
             // Test: `from foo import bar` binds `bar` with resolved file
             let mut store = FactsStore::new();
-            let files = vec![(
-                "main.py".to_string(),
-                "from utils import helper".to_string(),
-            ),
-            (
-                "utils.py".to_string(),
-                "def helper(): pass".to_string(),
-            )];
+            let files = vec![
+                (
+                    "main.py".to_string(),
+                    "from utils import helper".to_string(),
+                ),
+                ("utils.py".to_string(), "def helper(): pass".to_string()),
+            ];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
@@ -3541,26 +3518,28 @@ mod tests {
             let files_in_store: Vec<_> = store.files().collect();
             let main_file = files_in_store.iter().find(|f| f.path == "main.py").unwrap();
 
-            let helper_import = symbols.iter().find(|s|
-                s.name == "helper" &&
-                s.decl_file_id == main_file.file_id &&
-                s.kind == SymbolKind::Import
+            let helper_import = symbols.iter().find(|s| {
+                s.name == "helper"
+                    && s.decl_file_id == main_file.file_id
+                    && s.kind == SymbolKind::Import
+            });
+            assert!(
+                helper_import.is_some(),
+                "should have helper import binding in main.py"
             );
-            assert!(helper_import.is_some(), "should have helper import binding in main.py");
         }
 
         #[test]
         fn analyze_files_pass3_ac4_from_foo_import_bar_as_b_binds_b() {
             // Test: `from foo import bar as b` binds `b`
             let mut store = FactsStore::new();
-            let files = vec![(
-                "main.py".to_string(),
-                "from utils import helper as h".to_string(),
-            ),
-            (
-                "utils.py".to_string(),
-                "def helper(): pass".to_string(),
-            )];
+            let files = vec![
+                (
+                    "main.py".to_string(),
+                    "from utils import helper as h".to_string(),
+                ),
+                ("utils.py".to_string(), "def helper(): pass".to_string()),
+            ];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
@@ -3569,11 +3548,9 @@ mod tests {
             let files_in_store: Vec<_> = store.files().collect();
             let main_file = files_in_store.iter().find(|f| f.path == "main.py").unwrap();
 
-            let h_import = symbols.iter().find(|s|
-                s.name == "h" &&
-                s.decl_file_id == main_file.file_id &&
-                s.kind == SymbolKind::Import
-            );
+            let h_import = symbols.iter().find(|s| {
+                s.name == "h" && s.decl_file_id == main_file.file_id && s.kind == SymbolKind::Import
+            });
             assert!(h_import.is_some(), "should have 'h' import binding");
         }
 
@@ -3581,10 +3558,7 @@ mod tests {
         fn analyze_files_pass3_ac4_relative_imports_return_none() {
             // Test: relative imports return None (documented limitation)
             let mut store = FactsStore::new();
-            let files = vec![(
-                "pkg/main.py".to_string(),
-                "from . import utils".to_string(),
-            )];
+            let files = vec![("pkg/main.py".to_string(), "from . import utils".to_string())];
 
             // Should succeed (not error on relative imports)
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
@@ -3596,10 +3570,7 @@ mod tests {
         fn analyze_files_pass3_ac4_star_imports_return_none() {
             // Test: star imports return None (documented limitation)
             let mut store = FactsStore::new();
-            let files = vec![(
-                "test.py".to_string(),
-                "from os import *".to_string(),
-            )];
+            let files = vec![("test.py".to_string(), "from os import *".to_string())];
 
             // Should succeed (not error on star imports)
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
@@ -3614,13 +3585,17 @@ mod tests {
         fn analyze_files_pass3_ac4_module_resolution_prefers_py_file() {
             // Test: module resolution "foo" → "foo.py" wins over "foo/__init__.py"
             // We test this with the resolve_module_to_file function
-            let workspace_files: HashSet<String> = vec![
-                "utils.py".to_string(),
-                "utils/__init__.py".to_string(),
-            ].into_iter().collect();
+            let workspace_files: HashSet<String> =
+                vec!["utils.py".to_string(), "utils/__init__.py".to_string()]
+                    .into_iter()
+                    .collect();
 
             let resolved = resolve_module_to_file("utils", &workspace_files);
-            assert_eq!(resolved, Some("utils.py".to_string()), "should prefer utils.py over utils/__init__.py");
+            assert_eq!(
+                resolved,
+                Some("utils.py".to_string()),
+                "should prefer utils.py over utils/__init__.py"
+            );
         }
 
         // ====================================================================
@@ -3639,14 +3614,17 @@ class Handler:
         pass
 
 h = Handler()
-"#.to_string(),
+"#
+                .to_string(),
             )];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Should have type info for 'h' variable
             let symbols: Vec<_> = store.symbols().collect();
-            let h_symbol = symbols.iter().find(|s| s.name == "h" && s.kind == SymbolKind::Variable);
+            let h_symbol = symbols
+                .iter()
+                .find(|s| s.name == "h" && s.kind == SymbolKind::Variable);
 
             assert!(h_symbol.is_some(), "should have h symbol");
 
@@ -3655,7 +3633,11 @@ h = Handler()
 
             // Type info should be populated from constructor call
             assert!(type_info.is_some(), "should have type info for h");
-            assert_eq!(type_info.unwrap().type_repr, "Handler", "h should have type Handler");
+            assert_eq!(
+                type_info.unwrap().type_repr,
+                "Handler",
+                "h should have type Handler"
+            );
         }
 
         #[test]
@@ -3671,15 +3653,20 @@ class Base:
 
 class Child(Base):
     pass
-"#.to_string(),
+"#
+                .to_string(),
             )];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Find class symbols
             let symbols: Vec<_> = store.symbols().collect();
-            let base_sym = symbols.iter().find(|s| s.name == "Base" && s.kind == SymbolKind::Class);
-            let child_sym = symbols.iter().find(|s| s.name == "Child" && s.kind == SymbolKind::Class);
+            let base_sym = symbols
+                .iter()
+                .find(|s| s.name == "Base" && s.kind == SymbolKind::Class);
+            let child_sym = symbols
+                .iter()
+                .find(|s| s.name == "Child" && s.kind == SymbolKind::Class);
 
             assert!(base_sym.is_some(), "should have Base class");
             assert!(child_sym.is_some(), "should have Child class");
@@ -3691,8 +3678,14 @@ class Child(Base):
             let children = store.children_of_class(base_id);
             let parents = store.parents_of_class(child_id);
 
-            assert!(children.contains(&child_id), "Base should have Child as child");
-            assert!(parents.contains(&base_id), "Child should have Base as parent");
+            assert!(
+                children.contains(&child_id),
+                "Base should have Child as child"
+            );
+            assert!(
+                parents.contains(&base_id),
+                "Child should have Base as parent"
+            );
         }
 
         #[test]
@@ -3708,21 +3701,27 @@ class Handler:
 
 h = Handler()
 h.process()
-"#.to_string(),
+"#
+                .to_string(),
             )];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Find the process method symbol
             let symbols: Vec<_> = store.symbols().collect();
-            let process_sym = symbols.iter().find(|s| s.name == "process" && s.kind == SymbolKind::Function);
+            let process_sym = symbols
+                .iter()
+                .find(|s| s.name == "process" && s.kind == SymbolKind::Function);
 
             assert!(process_sym.is_some(), "should have process method");
 
             let process_id = process_sym.unwrap().symbol_id;
 
             // Check that there's a Call reference to the process method
-            let refs: Vec<_> = store.references().filter(|r| r.symbol_id == process_id).collect();
+            let refs: Vec<_> = store
+                .references()
+                .filter(|r| r.symbol_id == process_id)
+                .collect();
 
             assert!(
                 refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
@@ -3743,21 +3742,27 @@ class Handler:
 
     def helper(self):
         pass
-"#.to_string(),
+"#
+                .to_string(),
             )];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Find the helper method symbol
             let symbols: Vec<_> = store.symbols().collect();
-            let helper_sym = symbols.iter().find(|s| s.name == "helper" && s.kind == SymbolKind::Function);
+            let helper_sym = symbols
+                .iter()
+                .find(|s| s.name == "helper" && s.kind == SymbolKind::Function);
 
             assert!(helper_sym.is_some(), "should have helper method");
 
             let helper_id = helper_sym.unwrap().symbol_id;
 
             // Check that there's a Call reference to helper from self.helper()
-            let refs: Vec<_> = store.references().filter(|r| r.symbol_id == helper_id).collect();
+            let refs: Vec<_> = store
+                .references()
+                .filter(|r| r.symbol_id == helper_id)
+                .collect();
 
             assert!(
                 refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
@@ -3784,8 +3789,12 @@ class Handler:
 
             // Find class symbols
             let symbols: Vec<_> = store.symbols().collect();
-            let base_sym = symbols.iter().find(|s| s.name == "Base" && s.kind == SymbolKind::Class);
-            let child_sym = symbols.iter().find(|s| s.name == "Child" && s.kind == SymbolKind::Class);
+            let base_sym = symbols
+                .iter()
+                .find(|s| s.name == "Base" && s.kind == SymbolKind::Class);
+            let child_sym = symbols
+                .iter()
+                .find(|s| s.name == "Child" && s.kind == SymbolKind::Class);
 
             assert!(base_sym.is_some(), "should have Base class");
             assert!(child_sym.is_some(), "should have Child class");
@@ -3797,8 +3806,14 @@ class Handler:
             let children = store.children_of_class(base_id);
             let parents = store.parents_of_class(child_id);
 
-            assert!(children.contains(&child_id), "Base should have Child as child (cross-file)");
-            assert!(parents.contains(&base_id), "Child should have Base as parent (cross-file)");
+            assert!(
+                children.contains(&child_id),
+                "Base should have Child as child (cross-file)"
+            );
+            assert!(
+                parents.contains(&base_id),
+                "Child should have Base as parent (cross-file)"
+            );
         }
 
         #[test]
@@ -3814,21 +3829,27 @@ class Handler:
 
 def call_handler(h: Handler):
     h.process()
-"#.to_string(),
+"#
+                .to_string(),
             )];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             // Find the process method symbol
             let symbols: Vec<_> = store.symbols().collect();
-            let process_sym = symbols.iter().find(|s| s.name == "process" && s.kind == SymbolKind::Function);
+            let process_sym = symbols
+                .iter()
+                .find(|s| s.name == "process" && s.kind == SymbolKind::Function);
 
             assert!(process_sym.is_some(), "should have process method");
 
             let process_id = process_sym.unwrap().symbol_id;
 
             // Check that there's a Call reference to process from the annotated h.process()
-            let refs: Vec<_> = store.references().filter(|r| r.symbol_id == process_id).collect();
+            let refs: Vec<_> = store
+                .references()
+                .filter(|r| r.symbol_id == process_id)
+                .collect();
 
             assert!(
                 refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),

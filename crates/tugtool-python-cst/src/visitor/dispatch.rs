@@ -20,46 +20,148 @@
 
 use super::traits::{VisitResult, Visitor};
 use crate::nodes::{
+    AnnAssign,
+    // Annotation
+    Annotation,
+    Arg,
+    AsName,
+    Assert,
+    Assign,
+    AssignTarget,
+    AssignTargetExpression,
+    Attribute,
+    AugAssign,
+    // Async
+    Await,
+    // Slicing
+    BaseSlice,
+    BinaryOperation,
+    BooleanOperation,
+    Break,
+    Call,
+    ClassDef,
+    CompFor,
+    CompIf,
+    Comparison,
+    ComparisonTarget,
+    CompoundStatement,
+    ConcatenatedString,
+    Continue,
+    Decorator,
+    Del,
+    DelTargetExpression,
+    Dict,
+    DictComp,
+    DictElement,
+    Element,
+    Ellipsis,
+    Else,
+    // Exception handling
+    ExceptHandler,
+    ExceptStarHandler,
+    Expr,
+    // Expressions
+    Expression,
+    Finally,
+    Float,
+    For,
+    FormattedString,
+    FormattedStringContent,
+    FormattedStringExpression,
+    FormattedStringText,
+    From as YieldFrom,
+    FunctionDef,
+    // Comprehensions
+    GeneratorExp,
+    Global,
+    If,
+    IfExp,
+    Imaginary,
+    Import,
+    ImportAlias,
+    ImportFrom,
+    ImportNames,
+    IndentedBlock,
+    Index,
+    // Literals
+    Integer,
+    Lambda,
+    List,
+    ListComp,
+    Match,
+    MatchAs,
+    // Match statements
+    MatchCase,
+    MatchClass,
+    MatchKeywordElement,
+    MatchList,
+    MatchMapping,
+    MatchMappingElement,
+    MatchOr,
+    MatchOrElement,
+    MatchPattern,
+    MatchSequence,
+    MatchSequenceElement,
+    MatchSingleton,
+    MatchStar,
+    MatchTuple,
+    MatchValue,
     // Module
     Module,
-    // Statements
-    Statement, CompoundStatement, Suite, IndentedBlock, SimpleStatementLine, SimpleStatementSuite,
-    SmallStatement, FunctionDef, ClassDef, If, For, While, Try, TryStar, With, Match,
-    // Simple statements
-    Pass, Break, Continue, Return, Raise, Assert, Del, Global, Nonlocal, Import, ImportFrom,
-    ImportAlias, ImportNames, AsName, Assign, AnnAssign, AugAssign, Expr, Decorator,
-    // Exception handling
-    ExceptHandler, ExceptStarHandler, Else, Finally, OrElse, WithItem,
-    // Match statements
-    MatchCase, MatchPattern, MatchAs, MatchOr, MatchOrElement, MatchValue, MatchSingleton,
-    MatchSequence, MatchSequenceElement, StarrableMatchSequenceElement, MatchStar, MatchMapping,
-    MatchMappingElement, MatchClass, MatchKeywordElement, MatchList, MatchTuple,
-    // Type parameters
-    TypeAlias, TypeParameters, TypeParam, TypeVar, TypeVarTuple, TypeVarLike,
-    // Expressions
-    Expression, Name, Attribute, Call, Subscript, BinaryOperation, UnaryOperation,
-    BooleanOperation, Comparison, ComparisonTarget, IfExp, Lambda, NamedExpr,
-    Tuple, List, Set, Dict, DictElement, StarredDictElement, Element, StarredElement,
-    // Comprehensions
-    GeneratorExp, ListComp, SetComp, DictComp, CompFor, CompIf,
-    // Strings
-    SimpleString, ConcatenatedString, FormattedString, FormattedStringContent,
-    FormattedStringExpression, FormattedStringText, TemplatedString, TemplatedStringContent,
-    TemplatedStringExpression,
-    // Literals
-    Integer, Float, Imaginary, Ellipsis,
-    // Function-related
-    Parameters, Param, ParamStar, ParamSlash, Arg, StarArg,
-    // Slicing
-    BaseSlice, Index, Slice, SubscriptElement,
-    // Async
-    Await, Yield, YieldValue, From as YieldFrom,
-    // Annotation
-    Annotation, AssignTarget, AssignTargetExpression, DelTargetExpression, NameItem,
+    Name,
+    NameItem,
     // Operators
     NameOrAttribute,
+    NamedExpr,
+    Nonlocal,
+    OrElse,
+    Param,
+    ParamSlash,
+    ParamStar,
+    // Function-related
+    Parameters,
+    // Simple statements
+    Pass,
+    Raise,
+    Return,
+    Set,
+    SetComp,
+    SimpleStatementLine,
+    SimpleStatementSuite,
+    // Strings
+    SimpleString,
+    Slice,
+    SmallStatement,
+    StarArg,
+    StarrableMatchSequenceElement,
+    StarredDictElement,
+    StarredElement,
+    // Statements
+    Statement,
+    Subscript,
+    SubscriptElement,
+    Suite,
+    TemplatedString,
+    TemplatedStringContent,
+    TemplatedStringExpression,
     // Templated string text
     TemplatedStringText,
+    Try,
+    TryStar,
+    Tuple,
+    // Type parameters
+    TypeAlias,
+    TypeParam,
+    TypeParameters,
+    TypeVar,
+    TypeVarLike,
+    TypeVarTuple,
+    UnaryOperation,
+    While,
+    With,
+    WithItem,
+    Yield,
+    YieldValue,
 };
 
 // ============================================================================

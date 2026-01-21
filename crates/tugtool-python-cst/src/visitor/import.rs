@@ -225,13 +225,9 @@ impl<'a> Visitor<'a> for ImportCollector {
         // Process each name in the import
         for alias in &node.names {
             let module = Self::get_full_name(&alias.name);
-            let import_alias = alias.asname.as_ref().and_then(|asname| {
-                match &asname.name {
-                    crate::nodes::AssignTargetExpression::Name(name) => {
-                        Some(name.value.to_string())
-                    }
-                    _ => None,
-                }
+            let import_alias = alias.asname.as_ref().and_then(|asname| match &asname.name {
+                crate::nodes::AssignTargetExpression::Name(name) => Some(name.value.to_string()),
+                _ => None,
             });
 
             let import = ImportInfo::new_import(module, import_alias).with_span(span);
@@ -266,14 +262,13 @@ impl<'a> Visitor<'a> for ImportCollector {
                     .iter()
                     .map(|alias| {
                         let name = Self::get_full_name(&alias.name);
-                        let import_alias = alias.asname.as_ref().and_then(|asname| {
-                            match &asname.name {
+                        let import_alias =
+                            alias.asname.as_ref().and_then(|asname| match &asname.name {
                                 crate::nodes::AssignTargetExpression::Name(n) => {
                                     Some(n.value.to_string())
                                 }
                                 _ => None,
-                            }
-                        });
+                            });
                         ImportedName {
                             name,
                             alias: import_alias,

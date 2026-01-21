@@ -935,18 +935,39 @@ fn test_token_position_data_availability() {
     let tokens = tokenize(source).expect("tokenize should succeed");
 
     // Find the Name token 'x'
-    let x_token = tokens.iter().find(|t| t.string == "x").expect("should find 'x' token");
-    assert_eq!(x_token.start_pos.byte_idx(), 0, "'x' should start at byte 0");
+    let x_token = tokens
+        .iter()
+        .find(|t| t.string == "x")
+        .expect("should find 'x' token");
+    assert_eq!(
+        x_token.start_pos.byte_idx(),
+        0,
+        "'x' should start at byte 0"
+    );
     assert_eq!(x_token.end_pos.byte_idx(), 1, "'x' should end at byte 1");
 
     // Find the '=' operator token
-    let eq_token = tokens.iter().find(|t| t.string == "=").expect("should find '=' token");
-    assert_eq!(eq_token.start_pos.byte_idx(), 2, "'=' should start at byte 2");
+    let eq_token = tokens
+        .iter()
+        .find(|t| t.string == "=")
+        .expect("should find '=' token");
+    assert_eq!(
+        eq_token.start_pos.byte_idx(),
+        2,
+        "'=' should start at byte 2"
+    );
     assert_eq!(eq_token.end_pos.byte_idx(), 3, "'=' should end at byte 3");
 
     // Find the Number token '1'
-    let one_token = tokens.iter().find(|t| t.string == "1").expect("should find '1' token");
-    assert_eq!(one_token.start_pos.byte_idx(), 4, "'1' should start at byte 4");
+    let one_token = tokens
+        .iter()
+        .find(|t| t.string == "1")
+        .expect("should find '1' token");
+    assert_eq!(
+        one_token.start_pos.byte_idx(),
+        4,
+        "'1' should start at byte 4"
+    );
     assert_eq!(one_token.end_pos.byte_idx(), 5, "'1' should end at byte 5");
 }
 
@@ -970,18 +991,43 @@ fn test_token_position_with_utf8() {
     let tokens = tokenize(source).expect("tokenize should succeed");
 
     // Find the Name token 'café'
-    let cafe_token = tokens.iter().find(|t| t.string == "café").expect("should find 'café' token");
-    assert_eq!(cafe_token.start_pos.byte_idx(), 0, "'café' should start at byte 0");
-    assert_eq!(cafe_token.end_pos.byte_idx(), 5, "'café' should end at byte 5 (4 chars, 5 bytes)");
+    let cafe_token = tokens
+        .iter()
+        .find(|t| t.string == "café")
+        .expect("should find 'café' token");
+    assert_eq!(
+        cafe_token.start_pos.byte_idx(),
+        0,
+        "'café' should start at byte 0"
+    );
+    assert_eq!(
+        cafe_token.end_pos.byte_idx(),
+        5,
+        "'café' should end at byte 5 (4 chars, 5 bytes)"
+    );
 
     // Find the '=' operator token
-    let eq_token = tokens.iter().find(|t| t.string == "=").expect("should find '=' token");
-    assert_eq!(eq_token.start_pos.byte_idx(), 6, "'=' should start at byte 6");
+    let eq_token = tokens
+        .iter()
+        .find(|t| t.string == "=")
+        .expect("should find '=' token");
+    assert_eq!(
+        eq_token.start_pos.byte_idx(),
+        6,
+        "'=' should start at byte 6"
+    );
     assert_eq!(eq_token.end_pos.byte_idx(), 7, "'=' should end at byte 7");
 
     // Find the Number token '1'
-    let one_token = tokens.iter().find(|t| t.string == "1").expect("should find '1' token");
-    assert_eq!(one_token.start_pos.byte_idx(), 8, "'1' should start at byte 8");
+    let one_token = tokens
+        .iter()
+        .find(|t| t.string == "1")
+        .expect("should find '1' token");
+    assert_eq!(
+        one_token.start_pos.byte_idx(),
+        8,
+        "'1' should start at byte 8"
+    );
     assert_eq!(one_token.end_pos.byte_idx(), 9, "'1' should end at byte 9");
 }
 
@@ -1002,23 +1048,66 @@ fn test_token_position_function_def() {
     let source = "def foo():";
     let tokens = tokenize(source).expect("tokenize should succeed");
 
-    let def_token = tokens.iter().find(|t| t.string == "def").expect("should find 'def' token");
-    assert_eq!(def_token.start_pos.byte_idx(), 0, "'def' should start at byte 0");
-    assert_eq!(def_token.end_pos.byte_idx(), 3, "'def' should end at byte 3");
+    let def_token = tokens
+        .iter()
+        .find(|t| t.string == "def")
+        .expect("should find 'def' token");
+    assert_eq!(
+        def_token.start_pos.byte_idx(),
+        0,
+        "'def' should start at byte 0"
+    );
+    assert_eq!(
+        def_token.end_pos.byte_idx(),
+        3,
+        "'def' should end at byte 3"
+    );
 
-    let foo_token = tokens.iter().find(|t| t.string == "foo").expect("should find 'foo' token");
-    assert_eq!(foo_token.start_pos.byte_idx(), 4, "'foo' should start at byte 4");
-    assert_eq!(foo_token.end_pos.byte_idx(), 7, "'foo' should end at byte 7");
+    let foo_token = tokens
+        .iter()
+        .find(|t| t.string == "foo")
+        .expect("should find 'foo' token");
+    assert_eq!(
+        foo_token.start_pos.byte_idx(),
+        4,
+        "'foo' should start at byte 4"
+    );
+    assert_eq!(
+        foo_token.end_pos.byte_idx(),
+        7,
+        "'foo' should end at byte 7"
+    );
 
-    let open_paren = tokens.iter().find(|t| t.string == "(").expect("should find '(' token");
-    assert_eq!(open_paren.start_pos.byte_idx(), 7, "'(' should start at byte 7");
+    let open_paren = tokens
+        .iter()
+        .find(|t| t.string == "(")
+        .expect("should find '(' token");
+    assert_eq!(
+        open_paren.start_pos.byte_idx(),
+        7,
+        "'(' should start at byte 7"
+    );
     assert_eq!(open_paren.end_pos.byte_idx(), 8, "'(' should end at byte 8");
 
-    let close_paren = tokens.iter().find(|t| t.string == ")").expect("should find ')' token");
-    assert_eq!(close_paren.start_pos.byte_idx(), 8, "')' should start at byte 8");
-    assert_eq!(close_paren.end_pos.byte_idx(), 9, "')' should end at byte 9");
+    let close_paren = tokens
+        .iter()
+        .find(|t| t.string == ")")
+        .expect("should find ')' token");
+    assert_eq!(
+        close_paren.start_pos.byte_idx(),
+        8,
+        "')' should start at byte 8"
+    );
+    assert_eq!(
+        close_paren.end_pos.byte_idx(),
+        9,
+        "')' should end at byte 9"
+    );
 
-    let colon = tokens.iter().find(|t| t.string == ":").expect("should find ':' token");
+    let colon = tokens
+        .iter()
+        .find(|t| t.string == ":")
+        .expect("should find ':' token");
     assert_eq!(colon.start_pos.byte_idx(), 9, "':' should start at byte 9");
     assert_eq!(colon.end_pos.byte_idx(), 10, "':' should end at byte 10");
 }

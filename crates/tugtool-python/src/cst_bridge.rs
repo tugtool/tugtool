@@ -18,23 +18,38 @@
 //! seamless integration with the rest of the analyzer infrastructure.
 
 use thiserror::Error;
-use tugtool_python_cst::{
-    parse_module_with_positions, prettify_error,
-    // P0 visitors
-    BindingCollector, BindingInfo as CstBindingInfo, BindingKind as CstBindingKind,
-    ReferenceCollector, ReferenceInfo as CstReferenceInfo, ReferenceKind as CstReferenceKind,
-    RenameError, RenameRequest, RenameTransformer, ScopeCollector,
-    ScopeInfo as CstScopeInfo, ScopeKind as CstScopeKind,
-    // P1 visitors
-    AnnotationCollector, AnnotationInfo as CstAnnotationInfo,
-    ImportCollector, ImportInfo as CstImportInfo,
-    InheritanceCollector, ClassInheritanceInfo as CstClassInheritanceInfo,
-    MethodCallCollector, MethodCallInfo as CstMethodCallInfo,
-    TypeInferenceCollector, AssignmentInfo as CstAssignmentInfo,
-    // P2 visitors
-    DynamicPatternDetector, DynamicPatternInfo as CstDynamicPatternInfo,
-};
 use tugtool_core::patch::Span;
+use tugtool_python_cst::{
+    parse_module_with_positions,
+    prettify_error,
+    // P1 visitors
+    AnnotationCollector,
+    AnnotationInfo as CstAnnotationInfo,
+    AssignmentInfo as CstAssignmentInfo,
+    // P0 visitors
+    BindingCollector,
+    BindingInfo as CstBindingInfo,
+    BindingKind as CstBindingKind,
+    ClassInheritanceInfo as CstClassInheritanceInfo,
+    // P2 visitors
+    DynamicPatternDetector,
+    DynamicPatternInfo as CstDynamicPatternInfo,
+    ImportCollector,
+    ImportInfo as CstImportInfo,
+    InheritanceCollector,
+    MethodCallCollector,
+    MethodCallInfo as CstMethodCallInfo,
+    ReferenceCollector,
+    ReferenceInfo as CstReferenceInfo,
+    ReferenceKind as CstReferenceKind,
+    RenameError,
+    RenameRequest,
+    RenameTransformer,
+    ScopeCollector,
+    ScopeInfo as CstScopeInfo,
+    ScopeKind as CstScopeKind,
+    TypeInferenceCollector,
+};
 
 use crate::types::{BindingInfo, ReferenceInfo, ScopeInfo, ScopeSpanInfo, SpanInfo};
 
@@ -212,9 +227,10 @@ impl From<CstReferenceInfo> for ReferenceInfo {
 pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> {
     // Parse the source into a CST with position information
     // This provides accurate token-derived spans for all tracked nodes
-    let parsed = parse_module_with_positions(source, None).map_err(|e| CstBridgeError::ParseError {
-        message: prettify_error(e, "source"),
-    })?;
+    let parsed =
+        parse_module_with_positions(source, None).map_err(|e| CstBridgeError::ParseError {
+            message: prettify_error(e, "source"),
+        })?;
 
     // P0: Collect scopes
     let cst_scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
@@ -229,8 +245,7 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     let references: Vec<(String, Vec<ReferenceInfo>)> = cst_refs
         .into_iter()
         .map(|(name, refs)| {
-            let converted_refs: Vec<ReferenceInfo> =
-                refs.into_iter().map(|r| r.into()).collect();
+            let converted_refs: Vec<ReferenceInfo> = refs.into_iter().map(|r| r.into()).collect();
             (name, converted_refs)
         })
         .collect();
@@ -332,7 +347,10 @@ mod tests {
         let result = parse_and_analyze(source).expect("parse should succeed");
 
         // Check scopes
-        assert!(result.scopes.len() >= 2, "should have module and function scopes");
+        assert!(
+            result.scopes.len() >= 2,
+            "should have module and function scopes"
+        );
         let module_scope = result.scopes.iter().find(|s| s.kind == "module");
         assert!(module_scope.is_some(), "should have module scope");
 
@@ -416,14 +434,17 @@ mod tests {
         let rewrites: Vec<(Span, String)> = vec![];
 
         let result = rewrite_batch(source, &rewrites).expect("rewrite should succeed");
-        assert_eq!(result, source, "empty rewrites should return unchanged source");
+        assert_eq!(
+            result, source,
+            "empty rewrites should return unchanged source"
+        );
     }
 
     #[test]
     fn test_rewrite_batch_multiple_renames() {
         let source = "x = 1\ny = x";
         let rewrites = vec![
-            (Span::new(0, 1), "a".to_string()), // x -> a
+            (Span::new(0, 1), "a".to_string()),   // x -> a
             (Span::new(10, 11), "a".to_string()), // x -> a
         ];
 
@@ -437,7 +458,10 @@ mod tests {
         let rewrites = vec![(Span::new(100, 105), "a".to_string())];
 
         let result = rewrite_batch(source, &rewrites);
-        assert!(result.is_err(), "should return error for out of bounds span");
+        assert!(
+            result.is_err(),
+            "should return error for out of bounds span"
+        );
     }
 
     #[test]
@@ -446,25 +470,43 @@ mod tests {
         assert_eq!(scope_kind_to_string(CstScopeKind::Class), "class");
         assert_eq!(scope_kind_to_string(CstScopeKind::Function), "function");
         assert_eq!(scope_kind_to_string(CstScopeKind::Lambda), "lambda");
-        assert_eq!(scope_kind_to_string(CstScopeKind::Comprehension), "comprehension");
+        assert_eq!(
+            scope_kind_to_string(CstScopeKind::Comprehension),
+            "comprehension"
+        );
     }
 
     #[test]
     fn test_binding_kind_conversion() {
         assert_eq!(binding_kind_to_string(CstBindingKind::Function), "function");
         assert_eq!(binding_kind_to_string(CstBindingKind::Class), "class");
-        assert_eq!(binding_kind_to_string(CstBindingKind::Parameter), "parameter");
+        assert_eq!(
+            binding_kind_to_string(CstBindingKind::Parameter),
+            "parameter"
+        );
         assert_eq!(binding_kind_to_string(CstBindingKind::Variable), "variable");
         assert_eq!(binding_kind_to_string(CstBindingKind::Import), "import");
-        assert_eq!(binding_kind_to_string(CstBindingKind::ImportAlias), "import_alias");
+        assert_eq!(
+            binding_kind_to_string(CstBindingKind::ImportAlias),
+            "import_alias"
+        );
     }
 
     #[test]
     fn test_reference_kind_conversion() {
-        assert_eq!(reference_kind_to_string(CstReferenceKind::Definition), "definition");
-        assert_eq!(reference_kind_to_string(CstReferenceKind::Reference), "reference");
+        assert_eq!(
+            reference_kind_to_string(CstReferenceKind::Definition),
+            "definition"
+        );
+        assert_eq!(
+            reference_kind_to_string(CstReferenceKind::Reference),
+            "reference"
+        );
         assert_eq!(reference_kind_to_string(CstReferenceKind::Call), "call");
-        assert_eq!(reference_kind_to_string(CstReferenceKind::Attribute), "attribute");
+        assert_eq!(
+            reference_kind_to_string(CstReferenceKind::Attribute),
+            "attribute"
+        );
         assert_eq!(reference_kind_to_string(CstReferenceKind::Import), "import");
     }
 
@@ -488,7 +530,10 @@ mod tests {
 
         assert!(!result.annotations.is_empty(), "should have annotations");
         // Parameter annotation (x: int), return annotation (-> str), variable annotation (y: float)
-        assert!(result.annotations.len() >= 3, "should have at least 3 annotations");
+        assert!(
+            result.annotations.len() >= 3,
+            "should have at least 3 annotations"
+        );
     }
 
     #[test]
@@ -505,7 +550,10 @@ mod tests {
         let source = "class Parent:\n    pass\n\nclass Child(Parent):\n    pass";
         let result = parse_and_analyze(source).expect("parse should succeed");
 
-        assert!(!result.class_inheritance.is_empty(), "should have class inheritance info");
+        assert!(
+            !result.class_inheritance.is_empty(),
+            "should have class inheritance info"
+        );
         assert_eq!(result.class_inheritance.len(), 2, "should have 2 classes");
 
         let child = result.class_inheritance.iter().find(|c| c.name == "Child");
@@ -551,17 +599,28 @@ def use_handler():
         assert!(!result.references.is_empty());
 
         // P1 assertions
-        assert!(!result.imports.is_empty(), "should have imports (from typing)");
+        assert!(
+            !result.imports.is_empty(),
+            "should have imports (from typing)"
+        );
         assert!(!result.annotations.is_empty(), "should have annotations");
         assert!(!result.assignments.is_empty(), "should have assignments");
-        assert!(!result.class_inheritance.is_empty(), "should have class inheritance");
+        assert!(
+            !result.class_inheritance.is_empty(),
+            "should have class inheritance"
+        );
         assert!(!result.method_calls.is_empty(), "should have method calls");
 
         // Verify inheritance relationship
-        let json_handler = result.class_inheritance.iter()
+        let json_handler = result
+            .class_inheritance
+            .iter()
             .find(|c| c.name == "JsonHandler");
         assert!(json_handler.is_some());
-        assert!(json_handler.unwrap().bases.contains(&"BaseHandler".to_string()));
+        assert!(json_handler
+            .unwrap()
+            .bases
+            .contains(&"BaseHandler".to_string()));
     }
 
     // ========================================================================
@@ -577,8 +636,15 @@ result = eval('1 + 2')
 "#;
         let result = parse_and_analyze(source).expect("parse should succeed");
 
-        assert!(!result.dynamic_patterns.is_empty(), "should have dynamic patterns");
-        assert_eq!(result.dynamic_patterns.len(), 3, "should have 3 dynamic patterns");
+        assert!(
+            !result.dynamic_patterns.is_empty(),
+            "should have dynamic patterns"
+        );
+        assert_eq!(
+            result.dynamic_patterns.len(),
+            3,
+            "should have 3 dynamic patterns"
+        );
     }
 
     #[test]
@@ -594,7 +660,11 @@ class Proxy:
         let result = parse_and_analyze(source).expect("parse should succeed");
 
         // Should detect: __getattr__, getattr, __setattr__, setattr
-        assert_eq!(result.dynamic_patterns.len(), 4, "should have 4 dynamic patterns");
+        assert_eq!(
+            result.dynamic_patterns.len(),
+            4,
+            "should have 4 dynamic patterns"
+        );
     }
 
     #[test]
@@ -605,7 +675,11 @@ y = locals()['name']
 "#;
         let result = parse_and_analyze(source).expect("parse should succeed");
 
-        assert_eq!(result.dynamic_patterns.len(), 2, "should have 2 dynamic patterns");
+        assert_eq!(
+            result.dynamic_patterns.len(),
+            2,
+            "should have 2 dynamic patterns"
+        );
     }
 
     #[test]
@@ -632,8 +706,14 @@ def dynamic_operations():
         assert!(!result.imports.is_empty());
 
         // P2 assertions
-        assert!(!result.dynamic_patterns.is_empty(), "should have dynamic patterns");
+        assert!(
+            !result.dynamic_patterns.is_empty(),
+            "should have dynamic patterns"
+        );
         // __getattr__, getattr, setattr, eval, exec, globals[]
-        assert!(result.dynamic_patterns.len() >= 6, "should have at least 6 dynamic patterns");
+        assert!(
+            result.dynamic_patterns.len() >= 6,
+            "should have at least 6 dynamic patterns"
+        );
     }
 }

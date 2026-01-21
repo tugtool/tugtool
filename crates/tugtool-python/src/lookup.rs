@@ -170,7 +170,10 @@ fn resolve_import_to_original<'a>(
 /// 1. `module_path.py` (e.g., "x" -> "x.py")
 /// 2. `module_path/__init__.py` (e.g., "x" -> "x/__init__.py")
 /// 3. Nested modules: `pkg/mod.py` or `pkg/mod/__init__.py`
-fn resolve_module_to_file<'a>(store: &'a FactsStore, module_path: &str) -> Option<&'a tugtool_core::facts::File> {
+fn resolve_module_to_file<'a>(
+    store: &'a FactsStore,
+    module_path: &str,
+) -> Option<&'a tugtool_core::facts::File> {
     // Convert module path to file path candidates
     // "x" -> "x.py", "x/__init__.py"
     // "pkg.mod" -> "pkg/mod.py", "pkg/mod/__init__.py"

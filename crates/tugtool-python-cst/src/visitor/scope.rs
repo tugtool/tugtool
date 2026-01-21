@@ -243,7 +243,12 @@ impl<'pos> ScopeCollector<'pos> {
     }
 
     /// Enter a new scope with node_id for span lookup.
-    fn enter_scope_with_id(&mut self, kind: ScopeKind, name: Option<&str>, node_id: Option<NodeId>) {
+    fn enter_scope_with_id(
+        &mut self,
+        kind: ScopeKind,
+        name: Option<&str>,
+        node_id: Option<NodeId>,
+    ) {
         let scope_id = self.generate_scope_id();
         let parent = self.current_parent();
 
@@ -631,8 +636,7 @@ mod tests {
         //                      ^def starts at byte 11
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -659,8 +663,7 @@ mod tests {
         //            ^class starts at 0
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -680,8 +683,7 @@ mod tests {
         //                      ^class starts at byte 11
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -699,8 +701,7 @@ mod tests {
         let source = "x = 1\ny = 2\n";
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 1);
 
@@ -724,8 +725,7 @@ mod tests {
         //            0123456789012345678901234567890123456789012345
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -768,8 +768,7 @@ mod tests {
         //                              ^def starts at byte 18
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -789,8 +788,7 @@ mod tests {
         //            ^async starts at 0
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -813,8 +811,7 @@ mod tests {
         //                      ^async starts at byte 11
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes =
-            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 

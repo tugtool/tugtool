@@ -22,8 +22,8 @@
 //! Python-based implementation for typical workloads.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::hint::black_box;
 use std::fs;
+use std::hint::black_box;
 use std::path::PathBuf;
 use tugtool_python_cst::{
     parse_module, parse_module_with_positions, AnnotationCollector, BindingCollector, Codegen,
@@ -182,7 +182,10 @@ fn bench_parse_fixtures(c: &mut Criterion) {
     // Benchmark on real fixture files
     let fixtures = [
         ("expr.py", load_fixture("expr.py")),
-        ("fun_with_func_defs.py", load_fixture("fun_with_func_defs.py")),
+        (
+            "fun_with_func_defs.py",
+            load_fixture("fun_with_func_defs.py"),
+        ),
         ("class_craziness.py", load_fixture("class_craziness.py")),
     ];
 
@@ -315,17 +318,39 @@ fn bench_full_analysis(c: &mut Criterion) {
                 b.iter(|| {
                     let parsed = parse_module_with_positions(code, None).unwrap();
                     // Run all P0 collectors
-                    let _ = black_box(ScopeCollector::collect(&parsed.module, &parsed.positions, code));
+                    let _ = black_box(ScopeCollector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                        code,
+                    ));
                     let _ = black_box(BindingCollector::collect(&parsed.module, &parsed.positions));
-                    let _ = black_box(ReferenceCollector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(ReferenceCollector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
                     // Run all P1 collectors
                     let _ = black_box(ImportCollector::collect(&parsed.module));
-                    let _ = black_box(AnnotationCollector::collect(&parsed.module, &parsed.positions));
-                    let _ = black_box(TypeInferenceCollector::collect(&parsed.module, &parsed.positions));
-                    let _ = black_box(InheritanceCollector::collect(&parsed.module, &parsed.positions));
-                    let _ = black_box(MethodCallCollector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(AnnotationCollector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
+                    let _ = black_box(TypeInferenceCollector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
+                    let _ = black_box(InheritanceCollector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
+                    let _ = black_box(MethodCallCollector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
                     // Run P2 collector
-                    let _ = black_box(DynamicPatternDetector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(DynamicPatternDetector::collect(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
                 });
             },
         );
@@ -354,10 +379,7 @@ fn bench_analysis_with_positions(c: &mut Criterion) {
                         &parsed.positions,
                         code,
                     ));
-                    let _ = black_box(BindingCollector::collect(
-                        &parsed.module,
-                        &parsed.positions,
-                    ));
+                    let _ = black_box(BindingCollector::collect(&parsed.module, &parsed.positions));
                     let _ = black_box(ReferenceCollector::collect(
                         &parsed.module,
                         &parsed.positions,
@@ -414,7 +436,9 @@ fn bench_rename_batch(c: &mut Criterion) {
         .iter()
         .filter(|b| b.kind.as_str() == "function")
         .filter_map(|b| {
-            b.span.map(|sp| RenameRequest::from_offsets(sp.start, sp.end, format!("renamed_{}", b.name)))
+            b.span.map(|sp| {
+                RenameRequest::from_offsets(sp.start, sp.end, format!("renamed_{}", b.name))
+            })
         })
         .collect();
 

@@ -6,61 +6,187 @@
 //! Visitor and transformer trait definitions for CST traversal.
 
 use crate::nodes::{
+    AnnAssign,
+    // Annotation
+    Annotation,
+    Arg,
+    AsName,
+    Assert,
+    Assign,
+    // Operators
+    AssignEqual,
+    AssignTarget,
+    AssignTargetExpression,
+    Asynchronous,
+    Attribute,
+    AugAssign,
+    AugOp,
+    // Async - note: "From" is renamed to avoid conflict with std::convert::From
+    Await,
+    // Slicing
+    BaseSlice,
+    BinaryOp,
+    BinaryOperation,
+    BitOr,
+    BooleanOp,
+    BooleanOperation,
+    Break,
+    Call,
+    ClassDef,
+    Colon,
+    Comma,
+    // Whitespace
+    Comment,
+    CompFor,
+    CompIf,
+    CompOp,
+    Comparison,
+    ComparisonTarget,
+    CompoundStatement,
+    ConcatenatedString,
+    Continue,
+    Decorator,
+    Del,
+    DelTargetExpression,
+    Dict,
+    DictComp,
+    DictElement,
+    Dot,
+    Element,
+    Ellipsis,
+    Else,
+    EmptyLine,
+    // Exception handling
+    ExceptHandler,
+    ExceptStarHandler,
+    Expr,
+    // Expressions
+    Expression,
+    Finally,
+    Float,
+    For,
+    FormattedString,
+    FormattedStringContent,
+    FormattedStringExpression,
+    FormattedStringText,
+    From as YieldFrom,
+    FunctionDef,
+    // Comprehensions
+    GeneratorExp,
+    Global,
+    If,
+    IfExp,
+    Imaginary,
+    Import,
+    ImportAlias,
+    ImportFrom,
+    ImportNames,
+    ImportStar,
+    IndentedBlock,
+    Index,
+    // Literals
+    Integer,
+    Lambda,
+    LeftCurlyBrace,
+    // Parentheses and brackets
+    LeftParen,
+    LeftSquareBracket,
+    List,
+    ListComp,
+    Match,
+    MatchAs,
+    // Match statements
+    MatchCase,
+    MatchClass,
+    MatchKeywordElement,
+    MatchList,
+    MatchMapping,
+    MatchMappingElement,
+    MatchOr,
+    MatchOrElement,
+    MatchPattern,
+    MatchSequence,
+    MatchSequenceElement,
+    MatchSingleton,
+    MatchStar,
+    MatchTuple,
+    MatchValue,
     // Module
     Module,
-    // Statements
-    Statement, CompoundStatement, Suite, IndentedBlock, SimpleStatementLine, SimpleStatementSuite,
-    SmallStatement, FunctionDef, ClassDef, If, For, While, Try, TryStar, With, Match,
-    // Simple statements
-    Pass, Break, Continue, Return, Raise, Assert, Del, Global, Nonlocal, Import, ImportFrom,
-    ImportAlias, ImportNames, AsName, Assign, AnnAssign, AugAssign, Expr, Decorator,
-    // Exception handling
-    ExceptHandler, ExceptStarHandler, Else, Finally, OrElse, WithItem,
-    // Match statements
-    MatchCase, MatchPattern, MatchAs, MatchOr, MatchOrElement, MatchValue, MatchSingleton,
-    MatchSequence, MatchSequenceElement, StarrableMatchSequenceElement, MatchStar, MatchMapping,
-    MatchMappingElement, MatchClass, MatchKeywordElement, MatchList, MatchTuple,
-    // Type parameters
-    TypeAlias, TypeParameters, TypeParam, TypeVar, TypeVarTuple, TypeVarLike,
-    // Expressions
-    Expression, Name, Attribute, Call, Subscript, BinaryOperation, UnaryOperation,
-    BooleanOperation, Comparison, ComparisonTarget, IfExp, Lambda, NamedExpr,
-    Tuple, List, Set, Dict, DictElement, StarredDictElement, Element, StarredElement,
-    // Comprehensions
-    GeneratorExp, ListComp, SetComp, DictComp, CompFor, CompIf,
-    // Strings
-    SimpleString, ConcatenatedString, FormattedString, FormattedStringContent,
-    FormattedStringExpression, FormattedStringText, TemplatedString, TemplatedStringContent,
-    TemplatedStringExpression, TemplatedStringText,
-    // Literals
-    Integer, Float, Imaginary, Ellipsis,
+    Name,
+    NameItem,
+    NameOrAttribute,
+    NamedExpr,
+    Newline,
+    Nonlocal,
+    OrElse,
+    Param,
+    ParamSlash,
+    ParamStar,
     // Function-related
-    Parameters, Param, ParamStar, ParamSlash, Arg, StarArg,
-    // Slicing
-    BaseSlice, Index, Slice, SubscriptElement,
-    // Async - note: "From" is renamed to avoid conflict with std::convert::From
-    Await, Yield, YieldValue, From as YieldFrom, Asynchronous,
-    // Annotation
-    Annotation, AssignTarget, AssignTargetExpression, DelTargetExpression, NameItem,
-    // Parentheses and brackets
-    LeftParen, RightParen, LeftSquareBracket, RightSquareBracket, LeftCurlyBrace, RightCurlyBrace,
-    // Operators
-    AssignEqual, AugOp, BinaryOp, BooleanOp, CompOp, UnaryOp, BitOr,
-    Colon, Comma, Dot, Semicolon, ImportStar, NameOrAttribute,
-    // Whitespace
-    Comment, EmptyLine, Newline, ParenthesizableWhitespace, ParenthesizedWhitespace,
-    SimpleWhitespace, TrailingWhitespace,
+    Parameters,
+    ParenthesizableWhitespace,
+    ParenthesizedWhitespace,
+    // Simple statements
+    Pass,
+    Raise,
+    Return,
+    RightCurlyBrace,
+    RightParen,
+    RightSquareBracket,
+    Semicolon,
+    Set,
+    SetComp,
+    SimpleStatementLine,
+    SimpleStatementSuite,
+    // Strings
+    SimpleString,
+    SimpleWhitespace,
+    Slice,
+    SmallStatement,
+    StarArg,
+    StarrableMatchSequenceElement,
+    StarredDictElement,
+    StarredElement,
+    // Statements
+    Statement,
+    Subscript,
+    SubscriptElement,
+    Suite,
+    TemplatedString,
+    TemplatedStringContent,
+    TemplatedStringExpression,
+    TemplatedStringText,
+    TrailingWhitespace,
+    Try,
+    TryStar,
+    Tuple,
+    // Type parameters
+    TypeAlias,
+    TypeParam,
+    TypeParameters,
+    TypeVar,
+    TypeVarLike,
+    TypeVarTuple,
+    UnaryOp,
+    UnaryOperation,
+    While,
+    With,
+    WithItem,
+    Yield,
+    YieldValue,
 };
 
 /// Result of visiting a node - controls traversal behavior.
 ///
 /// When a visitor method returns a `VisitResult`, it controls how the walker
 /// proceeds with traversal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum VisitResult {
     /// Continue traversal into children.
     ///
     /// After visiting children, `leave_*` will be called for this node.
+    #[default]
     Continue,
 
     /// Skip children, continue with siblings.
@@ -74,12 +200,6 @@ pub enum VisitResult {
     /// No further `visit_*` or `leave_*` methods will be called. The walk
     /// function will return immediately.
     Stop,
-}
-
-impl Default for VisitResult {
-    fn default() -> Self {
-        Self::Continue
-    }
 }
 
 /// Generic transform result for list-like contexts.
@@ -806,12 +926,14 @@ mod tests {
 
     impl<'a> Visitor<'a> for OrderTracker {
         fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
-            self.events.push(format!("function_def:{}", node.name.value));
+            self.events
+                .push(format!("function_def:{}", node.name.value));
             VisitResult::Continue
         }
 
         fn leave_function_def(&mut self, node: &FunctionDef<'a>) {
-            self.events.push(format!("leave_function_def:{}", node.name.value));
+            self.events
+                .push(format!("leave_function_def:{}", node.name.value));
         }
 
         fn visit_name(&mut self, node: &Name<'a>) -> VisitResult {

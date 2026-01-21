@@ -187,6 +187,12 @@ pub struct DynamicPatternDetector<'pos> {
     in_class: bool,
 }
 
+impl<'pos> Default for DynamicPatternDetector<'pos> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'pos> DynamicPatternDetector<'pos> {
     /// Create a new DynamicPatternDetector without position tracking.
     ///
@@ -218,10 +224,7 @@ impl<'pos> DynamicPatternDetector<'pos> {
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect(
-        module: &Module<'_>,
-        positions: &'pos PositionTable,
-    ) -> Vec<DynamicPatternInfo> {
+    pub fn collect(module: &Module<'_>, positions: &'pos PositionTable) -> Vec<DynamicPatternInfo> {
         let mut detector = DynamicPatternDetector::with_positions(positions);
         walk_module(&mut detector, module);
         detector.patterns
@@ -343,7 +346,9 @@ impl<'pos> DynamicPatternDetector<'pos> {
                         DynamicPatternKind::GlobalsSubscript => {
                             "globals() subscript access".to_string()
                         }
-                        DynamicPatternKind::LocalsSubscript => "locals() subscript access".to_string(),
+                        DynamicPatternKind::LocalsSubscript => {
+                            "locals() subscript access".to_string()
+                        }
                         _ => format!("{} access", kind),
                     };
 
@@ -376,10 +381,13 @@ impl<'pos> DynamicPatternDetector<'pos> {
             // Look up span from the Name node's embedded node_id
             let span = self.lookup_span(func_def.name.node_id);
 
-            let description = format!("{} method definition - custom attribute handling", method_name);
+            let description = format!(
+                "{} method definition - custom attribute handling",
+                method_name
+            );
 
-            let info = DynamicPatternInfo::new(kind, description, self.scope_path.clone())
-                .with_span(span);
+            let info =
+                DynamicPatternInfo::new(kind, description, self.scope_path.clone()).with_span(span);
             self.patterns.push(info);
         }
     }

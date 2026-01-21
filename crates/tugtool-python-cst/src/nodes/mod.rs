@@ -59,10 +59,10 @@ pub(crate) mod inflate_helpers;
 pub(crate) mod deflated {
     pub use super::expression::{
         DeflatedArg as Arg, DeflatedAttribute as Attribute, DeflatedAwait as Await,
-        DeflatedBaseSlice as BaseSlice,
-        DeflatedBinaryOperation as BinaryOperation, DeflatedBooleanOperation as BooleanOperation,
-        DeflatedCall as Call, DeflatedCompFor as CompFor, DeflatedCompIf as CompIf,
-        DeflatedComparison as Comparison, DeflatedComparisonTarget as ComparisonTarget,
+        DeflatedBaseSlice as BaseSlice, DeflatedBinaryOperation as BinaryOperation,
+        DeflatedBooleanOperation as BooleanOperation, DeflatedCall as Call,
+        DeflatedCompFor as CompFor, DeflatedCompIf as CompIf, DeflatedComparison as Comparison,
+        DeflatedComparisonTarget as ComparisonTarget,
         DeflatedConcatenatedString as ConcatenatedString, DeflatedDict as Dict,
         DeflatedDictComp as DictComp, DeflatedDictElement as DictElement,
         DeflatedElement as Element, DeflatedEllipsis as Ellipsis, DeflatedExpression as Expression,
@@ -92,8 +92,8 @@ pub(crate) mod deflated {
     pub use super::op::{
         DeflatedAssignEqual as AssignEqual, DeflatedAugOp as AugOp, DeflatedBinaryOp as BinaryOp,
         DeflatedBitOr as BitOr, DeflatedBooleanOp as BooleanOp, DeflatedColon as Colon,
-        DeflatedComma as Comma, DeflatedCompOp as CompOp, DeflatedDot as Dot, DeflatedSemicolon as Semicolon,
-        DeflatedUnaryOp as UnaryOp,
+        DeflatedComma as Comma, DeflatedCompOp as CompOp, DeflatedDot as Dot,
+        DeflatedSemicolon as Semicolon, DeflatedUnaryOp as UnaryOp,
     };
     pub use super::statement::{
         DeflatedAnnAssign as AnnAssign, DeflatedAnnotation as Annotation, DeflatedAsName as AsName,

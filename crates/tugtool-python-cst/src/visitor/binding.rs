@@ -182,10 +182,7 @@ impl<'pos> BindingCollector<'pos> {
     /// let parsed = parse_module_with_positions(source, None)?;
     /// let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
     /// ```
-    pub fn collect(
-        module: &Module<'_>,
-        positions: &'pos PositionTable,
-    ) -> Vec<BindingInfo> {
+    pub fn collect(module: &Module<'_>, positions: &'pos PositionTable) -> Vec<BindingInfo> {
         let mut collector = BindingCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.bindings
@@ -206,8 +203,8 @@ impl<'pos> BindingCollector<'pos> {
     /// Add a binding with span looked up from PositionTable.
     fn add_binding_with_id(&mut self, name: &str, kind: BindingKind, node_id: Option<NodeId>) {
         let span = self.lookup_span(node_id);
-        let binding = BindingInfo::new(name.to_string(), kind, self.scope_path.clone())
-            .with_span(span);
+        let binding =
+            BindingInfo::new(name.to_string(), kind, self.scope_path.clone()).with_span(span);
         self.bindings.push(binding);
     }
 
@@ -883,11 +880,7 @@ mod tests {
 
         // All should have spans
         for b in &bindings {
-            assert!(
-                b.span.is_some(),
-                "Binding '{}' should have span",
-                b.name
-            );
+            assert!(b.span.is_some(), "Binding '{}' should have span", b.name);
         }
 
         // Verify the span text matches the binding name

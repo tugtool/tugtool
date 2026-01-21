@@ -92,6 +92,12 @@ pub struct InheritanceCollector<'pos> {
     scope_path: Vec<String>,
 }
 
+impl<'pos> Default for InheritanceCollector<'pos> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'pos> InheritanceCollector<'pos> {
     /// Create a new InheritanceCollector without position tracking.
     ///

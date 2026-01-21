@@ -166,11 +166,7 @@ fn resolve_python_path(explicit_path: Option<PathBuf>) -> Result<PathBuf, TugErr
         if let Ok(path) = std::process::Command::new("which")
             .arg(name)
             .output()
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .trim()
-                    .to_string()
-            })
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
         {
             if !path.is_empty() {
                 return Ok(PathBuf::from(path));

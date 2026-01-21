@@ -68,15 +68,9 @@ impl RenameRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenameError {
     /// A span extends beyond the source text length.
-    SpanOutOfBounds {
-        span: Span,
-        source_len: u64,
-    },
+    SpanOutOfBounds { span: Span, source_len: u64 },
     /// Two spans overlap, which is not allowed.
-    OverlappingSpans {
-        span1: Span,
-        span2: Span,
-    },
+    OverlappingSpans { span1: Span, span2: Span },
     /// Empty request list (nothing to rename).
     EmptyRequests,
 }
@@ -314,7 +308,7 @@ mod tests {
         // Verify that renames work correctly when the new name has different length
         let source = "x = foo; y = foo";
         let requests = vec![
-            RenameRequest::from_offsets(4, 7, "longer_name"),  // first foo
+            RenameRequest::from_offsets(4, 7, "longer_name"), // first foo
             RenameRequest::from_offsets(13, 16, "longer_name"), // second foo
         ];
 
@@ -350,7 +344,7 @@ mod tests {
     fn test_overlapping_spans() {
         let source = "hello world";
         let requests = vec![
-            RenameRequest::from_offsets(0, 7, "hi"),   // "hello w"
+            RenameRequest::from_offsets(0, 7, "hi"),     // "hello w"
             RenameRequest::from_offsets(5, 11, "there"), // " world"
         ];
 
@@ -418,7 +412,11 @@ mod tests {
         // Starts at byte 4
         let start = 4;
         let end = start + "函数".len();
-        let requests = vec![RenameRequest::from_offsets(start as u64, end as u64, "func")];
+        let requests = vec![RenameRequest::from_offsets(
+            start as u64,
+            end as u64,
+            "func",
+        )];
 
         let transformer = RenameTransformer::new(source, requests);
         let result = transformer.apply().unwrap();

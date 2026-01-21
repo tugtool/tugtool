@@ -183,6 +183,12 @@ pub struct TypeInferenceCollector<'pos> {
     scope_path: Vec<String>,
 }
 
+impl<'pos> Default for TypeInferenceCollector<'pos> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'pos> TypeInferenceCollector<'pos> {
     /// Create a new TypeInferenceCollector without position tracking.
     ///
@@ -212,10 +218,7 @@ impl<'pos> TypeInferenceCollector<'pos> {
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect(
-        module: &Module<'_>,
-        positions: &'pos PositionTable,
-    ) -> Vec<AssignmentInfo> {
+    pub fn collect(module: &Module<'_>, positions: &'pos PositionTable) -> Vec<AssignmentInfo> {
         let mut collector = TypeInferenceCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.assignments
@@ -250,7 +253,7 @@ impl<'pos> TypeInferenceCollector<'pos> {
             Expression::Name(name) => {
                 let value = name.value;
                 // Check if it starts with uppercase (convention for class names)
-                if value.chars().next().map_or(false, |c| c.is_uppercase()) {
+                if value.chars().next().is_some_and(|c| c.is_uppercase()) {
                     Some(value.to_string())
                 } else {
                     None
@@ -259,7 +262,7 @@ impl<'pos> TypeInferenceCollector<'pos> {
             Expression::Attribute(attr) => {
                 // module.ClassName() - check if the attribute is capitalized
                 let attr_name = attr.attr.value;
-                if attr_name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                if attr_name.chars().next().is_some_and(|c| c.is_uppercase()) {
                     Some(attr_name.to_string())
                 } else {
                     None
@@ -288,7 +291,12 @@ impl<'pos> TypeInferenceCollector<'pos> {
     }
 
     /// Process an assignment and determine type information.
-    fn process_assignment(&mut self, target: &str, value: &Expression<'_>, node_id: Option<NodeId>) {
+    fn process_assignment(
+        &mut self,
+        target: &str,
+        value: &Expression<'_>,
+        node_id: Option<NodeId>,
+    ) {
         // Look up span from the PositionTable using the node_id
         let span = self.lookup_span(node_id);
 
@@ -306,12 +314,9 @@ impl<'pos> TypeInferenceCollector<'pos> {
 
         // Check for variable reference: y = x
         if let Some(rhs_name) = Self::get_variable_name(value) {
-            let info = AssignmentInfo::new_variable(
-                target.to_string(),
-                rhs_name,
-                self.scope_path.clone(),
-            )
-            .with_span(span);
+            let info =
+                AssignmentInfo::new_variable(target.to_string(), rhs_name, self.scope_path.clone())
+                    .with_span(span);
             self.assignments.push(info);
             return;
         }
@@ -331,8 +336,8 @@ impl<'pos> TypeInferenceCollector<'pos> {
         }
 
         // Unknown type source
-        let info =
-            AssignmentInfo::new_unknown(target.to_string(), self.scope_path.clone()).with_span(span);
+        let info = AssignmentInfo::new_unknown(target.to_string(), self.scope_path.clone())
+            .with_span(span);
         self.assignments.push(info);
     }
 }
@@ -495,7 +500,10 @@ mod tests {
         assert_eq!(handler.type_source, TypeSource::Constructor);
         assert_eq!(handler.inferred_type, Some("MyHandler".to_string()));
 
-        let processor = assignments.iter().find(|a| a.target == "processor").unwrap();
+        let processor = assignments
+            .iter()
+            .find(|a| a.target == "processor")
+            .unwrap();
         assert_eq!(processor.type_source, TypeSource::Variable);
         assert_eq!(processor.rhs_name, Some("handler".to_string()));
 

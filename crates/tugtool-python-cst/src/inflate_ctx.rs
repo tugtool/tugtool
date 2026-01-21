@@ -79,7 +79,7 @@ pub type PositionTable = HashMap<NodeId, NodePosition>;
 ///
 /// This struct replaces the previous `&Config<'a>` parameter in the `Inflate` trait,
 /// providing mutable access needed for:
-/// - NodeId assignment via `ids.next()`
+/// - NodeId assignment via `ids.next_id()`
 /// - Position recording via `record_*_span()` methods
 ///
 /// # Construction
@@ -124,7 +124,7 @@ impl<'a> InflateCtx<'a> {
     ///
     /// NodeIds are assigned sequentially in pre-order traversal order.
     pub fn next_id(&mut self) -> NodeId {
-        self.ids.next()
+        self.ids.next_id()
     }
 
     /// Record an identifier span for a node (if position tracking enabled).

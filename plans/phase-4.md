@@ -1585,41 +1585,6 @@ let scope_end = match &self.body {
 - [x] tugtool-python uses new infrastructure
 - [x] All tests pass
 
-#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
-
-**Variable/Import Statement-Level Spans (Follow-on):**
-- [ ] Variable "full statement spans" (e.g., `x = 1` entire line as def_span)
-- [ ] Import "full statement spans" (e.g., `from foo import bar, baz` entire line)
-- [ ] Covers extracting/moving entire statements
-
-**Parameter Full Spans (Follow-on):**
-- [ ] Tuple unpacking: `def f((a, b)): ...` - span for entire `(a, b)`
-- [ ] Chained assignment: `a = b = 1` - multiple bindings from one statement
-- [ ] `with ... as x`: binding in context manager statement
-- [ ] `except E as e`: exception binding in except clause
-- [ ] Multi-import lines: `import a, b, c` - statement-level spans
-
-**Line/Col Output Enrichment (Follow-on):**
-- [ ] Compute line/col at presentation boundaries when needed
-- [ ] Add optional line/col to CLI/JSON output
-- [ ] LSP-style position output
-
-**Scope Tracking Expansion (Follow-on):**
-- [ ] Lambda scope tracking - `lambda_tok` to end of lambda expression
-- [ ] Comprehension scope tracking - opening bracket to closing bracket
-- [ ] Module-level scope in `PositionTable` (currently synthesizable, but could be explicit)
-
-**Literal Span Recording (Follow-on):**
-- [ ] Record `ident_span` for `Integer`, `Float`, `SimpleString` nodes
-- [ ] Enable string literal renaming, constant extraction use cases
-
-**Other Follow-ons:**
-- [ ] Expose def_span in output schemas for "complete definition" extraction
-- [ ] Add position data to more node types (all expressions, all statements)
-- [ ] Consider caching parsed modules with positions for repeated analysis
-- [ ] Evaluate whether inflation should always capture positions (no separate API)
-- [ ] **PositionTable optimization:** Replace `HashMap<NodeId, NodePosition>` with `Vec<Option<NodePosition>>` indexed by `NodeId.0` (faster, simpler since IDs are sequential)
-
 | Checkpoint | Verification |
 |------------|--------------|
 | InflateCtx works | `InflateCtx::with_positions()` creates valid context |
@@ -1758,3 +1723,39 @@ fn test_span_collector_basic() {
 - [x] All tests pass
 
 ---
+
+### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+**Variable/Import Statement-Level Spans (Follow-on):**
+- [ ] Variable "full statement spans" (e.g., `x = 1` entire line as def_span)
+- [ ] Import "full statement spans" (e.g., `from foo import bar, baz` entire line)
+- [ ] Covers extracting/moving entire statements
+
+**Parameter Full Spans (Follow-on):**
+- [ ] Tuple unpacking: `def f((a, b)): ...` - span for entire `(a, b)`
+- [ ] Chained assignment: `a = b = 1` - multiple bindings from one statement
+- [ ] `with ... as x`: binding in context manager statement
+- [ ] `except E as e`: exception binding in except clause
+- [ ] Multi-import lines: `import a, b, c` - statement-level spans
+
+**Line/Col Output Enrichment (Follow-on):**
+- [ ] Compute line/col at presentation boundaries when needed
+- [ ] Add optional line/col to CLI/JSON output
+- [ ] LSP-style position output
+
+**Scope Tracking Expansion (Follow-on):**
+- [ ] Lambda scope tracking - `lambda_tok` to end of lambda expression
+- [ ] Comprehension scope tracking - opening bracket to closing bracket
+- [ ] Module-level scope in `PositionTable` (currently synthesizable, but could be explicit)
+
+**Literal Span Recording (Follow-on):**
+- [ ] Record `ident_span` for `Integer`, `Float`, `SimpleString` nodes
+- [ ] Enable string literal renaming, constant extraction use cases
+
+**Other Follow-ons:**
+- [ ] Expose def_span in output schemas for "complete definition" extraction
+- [ ] Add position data to more node types (all expressions, all statements)
+- [ ] Consider caching parsed modules with positions for repeated analysis
+- [ ] Evaluate whether inflation should always capture positions (no separate API)
+- [ ] **PositionTable optimization:** Replace `HashMap<NodeId, NodePosition>` with `Vec<Option<NodePosition>>` indexed by `NodeId.0` (faster, simpler since IDs are sequential)
+

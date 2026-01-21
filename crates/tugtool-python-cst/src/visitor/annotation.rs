@@ -180,6 +180,12 @@ pub struct AnnotationCollector<'pos> {
     in_class_body: bool,
 }
 
+impl<'pos> Default for AnnotationCollector<'pos> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'pos> AnnotationCollector<'pos> {
     /// Create a new AnnotationCollector without position tracking.
     ///
@@ -211,10 +217,7 @@ impl<'pos> AnnotationCollector<'pos> {
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect(
-        module: &Module<'_>,
-        positions: &'pos PositionTable,
-    ) -> Vec<AnnotationInfo> {
+    pub fn collect(module: &Module<'_>, positions: &'pos PositionTable) -> Vec<AnnotationInfo> {
         let mut collector = AnnotationCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.annotations
@@ -269,13 +272,11 @@ impl<'pos> AnnotationCollector<'pos> {
                 let parts: Vec<String> = tuple
                     .elements
                     .iter()
-                    .filter_map(|elem| {
-                        match elem {
-                            crate::nodes::Element::Simple { value, .. } => {
-                                Some(Self::annotation_to_string(value))
-                            }
-                            _ => None,
+                    .filter_map(|elem| match elem {
+                        crate::nodes::Element::Simple { value, .. } => {
+                            Some(Self::annotation_to_string(value))
                         }
+                        _ => None,
                     })
                     .collect();
                 parts.join(", ")

@@ -243,7 +243,10 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
                 if let Some(ref span_info) = ref_info.span {
                     let span = Span::new(span_info.start as u64, span_info.end as u64);
                     // Avoid duplicates
-                    if !rewrites.iter().any(|(s, _)| s.start == span.start && s.end == span.end) {
+                    if !rewrites
+                        .iter()
+                        .any(|(s, _)| s.start == span.start && s.end == span.end)
+                    {
                         rewrites.push((span, new_name.to_string()));
                     }
                 }
@@ -401,8 +404,8 @@ pub fn analyze_impact(
     location: &Location,
     new_name: &str,
 ) -> RenameResult<ImpactAnalysis> {
-    use crate::lookup::{find_symbol_at_location, symbol_to_info};
     use crate::files::read_file;
+    use crate::lookup::{find_symbol_at_location, symbol_to_info};
     use tugtool_core::facts::ReferenceKind;
 
     // Validate new name
@@ -486,12 +489,11 @@ pub fn analyze_impact(
     }
 
     // Build symbol info
-    let decl_file =
-        store
-            .file(symbol.decl_file_id)
-            .ok_or_else(|| RenameError::AnalyzerError {
-                message: "declaration file not found".to_string(),
-            })?;
+    let decl_file = store
+        .file(symbol.decl_file_id)
+        .ok_or_else(|| RenameError::AnalyzerError {
+            message: "declaration file not found".to_string(),
+        })?;
     let decl_content = read_file(workspace_root, &decl_file.path)?;
     let symbol_info = symbol_to_info(&symbol, decl_file, &decl_content);
 
@@ -869,7 +871,6 @@ mod tests {
         }
     }
 
-
     // Native CST rename tests
     mod rename_tests {
         use super::*;
@@ -878,7 +879,10 @@ mod tests {
         fn native_rename_simple_function() {
             let content = "def foo():\n    pass\n\nfoo()\n";
             let result = rename_in_file(content, "foo", "bar").expect("rename should succeed");
-            assert!(result.contains("def bar()"), "function definition not renamed");
+            assert!(
+                result.contains("def bar()"),
+                "function definition not renamed"
+            );
             assert!(result.contains("bar()"), "function call not renamed");
             assert!(!result.contains("foo"), "old name still present");
         }
@@ -896,8 +900,12 @@ mod tests {
         #[test]
         fn native_rename_class() {
             let content = "class MyClass:\n    pass\n\nobj = MyClass()\n";
-            let result = rename_in_file(content, "MyClass", "NewClass").expect("rename should succeed");
-            assert!(result.contains("class NewClass:"), "class definition not renamed");
+            let result =
+                rename_in_file(content, "MyClass", "NewClass").expect("rename should succeed");
+            assert!(
+                result.contains("class NewClass:"),
+                "class definition not renamed"
+            );
             assert!(result.contains("NewClass()"), "instantiation not renamed");
             assert!(!result.contains("MyClass"), "old name still present");
         }
@@ -907,15 +915,25 @@ mod tests {
             let content = "def foo():\n    # Comment\n    return 42\n\nresult = foo()\n";
             let result = rename_in_file(content, "foo", "bar").expect("rename should succeed");
             assert!(result.contains("# Comment"), "comment should be preserved");
-            assert!(result.contains("return 42"), "return statement should be preserved");
-            assert!(result.contains("result = bar()"), "variable and call should be renamed");
+            assert!(
+                result.contains("return 42"),
+                "return statement should be preserved"
+            );
+            assert!(
+                result.contains("result = bar()"),
+                "variable and call should be renamed"
+            );
         }
 
         #[test]
         fn native_rename_no_match() {
             let content = "def foo():\n    pass\n";
-            let result = rename_in_file(content, "nonexistent", "something").expect("rename should succeed");
-            assert_eq!(result, content, "content should be unchanged when no matches");
+            let result =
+                rename_in_file(content, "nonexistent", "something").expect("rename should succeed");
+            assert_eq!(
+                result, content,
+                "content should be unchanged when no matches"
+            );
         }
 
         #[test]
@@ -954,17 +972,27 @@ mod tests {
 outer()
 "#;
             // Rename outer function
-            let result = rename_in_file(content, "outer", "wrapper").expect("rename should succeed");
-            assert!(result.contains("def wrapper():"), "outer function should be renamed");
+            let result =
+                rename_in_file(content, "outer", "wrapper").expect("rename should succeed");
+            assert!(
+                result.contains("def wrapper():"),
+                "outer function should be renamed"
+            );
             assert!(result.contains("wrapper()"), "outer call should be renamed");
-            assert!(result.contains("def inner():"), "inner function should be unchanged");
+            assert!(
+                result.contains("def inner():"),
+                "inner function should be unchanged"
+            );
         }
 
         #[test]
         fn native_rename_parameter() {
             let content = "def greet(name):\n    return f\"Hello, {name}!\"\n";
             let result = rename_in_file(content, "name", "person").expect("rename should succeed");
-            assert!(result.contains("def greet(person):"), "parameter should be renamed");
+            assert!(
+                result.contains("def greet(person):"),
+                "parameter should be renamed"
+            );
             // Note: f-string interpolation may or may not be renamed depending on reference collector
         }
     }

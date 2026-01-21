@@ -62,16 +62,24 @@ pub use version::{ParseOptions, PythonVersion};
 /// Visitor and transformer infrastructure for CST traversal.
 pub mod visitor;
 // P0 visitor exports
-pub use visitor::{BindingCollector, BindingInfo, BindingKind, ReferenceCollector, ReferenceInfo, ReferenceKind, RenameError, RenameRequest, RenameResult, RenameTransformer, ScopeCollector, ScopeInfo, ScopeKind, Transform, Transformer, VisitResult, Visitor};
+pub use visitor::{
+    BindingCollector, BindingInfo, BindingKind, ReferenceCollector, ReferenceInfo, ReferenceKind,
+    RenameError, RenameRequest, RenameResult, RenameTransformer, ScopeCollector, ScopeInfo,
+    ScopeKind, Transform, Transformer, VisitResult, Visitor,
+};
 // P1 visitor exports
-pub use visitor::{AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind, AssignmentInfo, ClassInheritanceInfo, ImportCollector, ImportInfo, ImportKind, ImportedName, InheritanceCollector, MethodCallCollector, MethodCallInfo, TypeInferenceCollector, TypeSource};
+pub use visitor::{
+    AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind, AssignmentInfo,
+    ClassInheritanceInfo, ImportCollector, ImportInfo, ImportKind, ImportedName,
+    InheritanceCollector, MethodCallCollector, MethodCallInfo, TypeInferenceCollector, TypeSource,
+};
 // P2 visitor exports
 pub use visitor::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};
 // Re-export walk functions for CST traversal
 pub use visitor::{
     walk_annotation, walk_arg, walk_as_name, walk_assert, walk_assign, walk_assign_target,
     walk_attribute, walk_aug_assign, walk_await, walk_binary_operation, walk_boolean_operation,
-    walk_break, walk_call, walk_class_def, walk_comparison, walk_comp_for, walk_comp_if,
+    walk_break, walk_call, walk_class_def, walk_comp_for, walk_comp_if, walk_comparison,
     walk_concatenated_string, walk_continue, walk_decorator, walk_del, walk_dict, walk_dict_comp,
     walk_dict_element, walk_element, walk_ellipsis, walk_except_handler, walk_except_star_handler,
     walk_expression, walk_finally, walk_float, walk_for, walk_formatted_string,
@@ -82,7 +90,7 @@ pub use visitor::{
     walk_match_list, walk_match_mapping, walk_match_mapping_element, walk_match_or,
     walk_match_pattern, walk_match_sequence, walk_match_sequence_element, walk_match_singleton,
     walk_match_star, walk_match_tuple, walk_match_value, walk_module, walk_name, walk_named_expr,
-    walk_nonlocal, walk_param, walk_parameters, walk_param_star, walk_pass, walk_raise,
+    walk_nonlocal, walk_param, walk_param_star, walk_parameters, walk_pass, walk_raise,
     walk_return, walk_set, walk_set_comp, walk_simple_statement_line, walk_simple_string,
     walk_slice, walk_small_statement, walk_starred_dict_element, walk_starred_element,
     walk_statement, walk_subscript, walk_suite, walk_templated_string_text, walk_try,
@@ -93,8 +101,8 @@ pub use visitor::{
 
 /// Tokenizer for Python source code.
 pub mod tokenizer;
-pub use tokenizer::whitespace_parser::Config;
 use nodes::Inflate;
+pub use tokenizer::whitespace_parser::Config;
 use tokenizer::{whitespace_parser, TokConfig, Token, TokenIterator};
 
 mod inflate_ctx;
@@ -210,10 +218,7 @@ pub fn parse_module_with_options<'a>(
 ///
 /// let module = parse_module("x = 1", None).expect("parse error");
 /// ```
-pub fn parse_module<'a>(
-    module_text: &'a str,
-    encoding: Option<&str>,
-) -> Result<'a, Module<'a>> {
+pub fn parse_module<'a>(module_text: &'a str, encoding: Option<&str>) -> Result<'a, Module<'a>> {
     let options = match encoding {
         Some(enc) => ParseOptions::default().with_encoding(enc),
         None => ParseOptions::default(),
@@ -364,7 +369,9 @@ pub fn parse_module_with_positions<'a>(
 
     Ok(ParsedModule {
         module,
-        positions: ctx.positions.expect("InflateCtx::with_positions should set positions"),
+        positions: ctx
+            .positions
+            .expect("InflateCtx::with_positions should set positions"),
         tracked_node_count: ctx.ids.count(),
     })
 }
@@ -605,9 +612,8 @@ mod test {
 
         let module_permissive =
             parse_module_with_options(source, ParseOptions::default()).expect("parse error");
-        let module_v38 =
-            parse_module_with_options(source, ParseOptions::new(PythonVersion::V3_8))
-                .expect("parse error");
+        let module_v38 = parse_module_with_options(source, ParseOptions::new(PythonVersion::V3_8))
+            .expect("parse error");
         let module_v312 =
             parse_module_with_options(source, ParseOptions::new(PythonVersion::V3_12))
                 .expect("parse error");
@@ -762,7 +768,10 @@ mod test {
 
         if let Statement::Compound(compound) = &module.body[0] {
             if let CompoundStatement::FunctionDef(func_def) = compound {
-                assert!(!func_def.decorators.is_empty(), "Function should have decorator");
+                assert!(
+                    !func_def.decorators.is_empty(),
+                    "Function should have decorator"
+                );
                 let decorator = &func_def.decorators[0];
                 assert!(
                     decorator.node_id.is_some(),
@@ -855,14 +864,26 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
             assert!(func.node_id.is_some(), "FunctionDef missing node_id");
-            assert!(func.name.node_id.is_some(), "FunctionDef name missing node_id");
+            assert!(
+                func.name.node_id.is_some(),
+                "FunctionDef name missing node_id"
+            );
 
             assert!(!func.decorators.is_empty(), "Expected decorator");
-            assert!(func.decorators[0].node_id.is_some(), "Decorator missing node_id");
+            assert!(
+                func.decorators[0].node_id.is_some(),
+                "Decorator missing node_id"
+            );
 
             assert!(!func.params.params.is_empty(), "Expected param");
-            assert!(func.params.params[0].node_id.is_some(), "Param missing node_id");
-            assert!(func.params.params[0].name.node_id.is_some(), "Param name missing node_id");
+            assert!(
+                func.params.params[0].node_id.is_some(),
+                "Param missing node_id"
+            );
+            assert!(
+                func.params.params[0].name.node_id.is_some(),
+                "Param name missing node_id"
+            );
         } else {
             panic!("Expected FunctionDef");
         }
@@ -873,7 +894,10 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::ClassDef(class)) = &module.body[0] {
             assert!(class.node_id.is_some(), "ClassDef missing node_id");
-            assert!(class.name.node_id.is_some(), "ClassDef name missing node_id");
+            assert!(
+                class.name.node_id.is_some(),
+                "ClassDef name missing node_id"
+            );
         } else {
             panic!("Expected ClassDef");
         }
@@ -950,11 +974,16 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
             let node_id = func.node_id.expect("FunctionDef should have node_id");
-            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+            let pos = positions
+                .get(&node_id)
+                .expect("FunctionDef should have position");
 
             let lexical_span = pos.lexical_span.expect("Should have lexical_span");
             // 'def' starts at byte 5 (after "@dec\n")
-            assert_eq!(lexical_span.start, 5, "lexical_span should start at 'def', not '@'");
+            assert_eq!(
+                lexical_span.start, 5,
+                "lexical_span should start at 'def', not '@'"
+            );
         } else {
             panic!("Expected FunctionDef");
         }
@@ -969,11 +998,16 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
             let node_id = func.node_id.expect("FunctionDef should have node_id");
-            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+            let pos = positions
+                .get(&node_id)
+                .expect("FunctionDef should have position");
 
             let def_span = pos.def_span.expect("Should have def_span");
             // '@' starts at byte 0
-            assert_eq!(def_span.start, 0, "def_span should start at first decorator '@'");
+            assert_eq!(
+                def_span.start, 0,
+                "def_span should start at first decorator '@'"
+            );
         } else {
             panic!("Expected FunctionDef");
         }
@@ -988,7 +1022,9 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
             let node_id = func.node_id.expect("FunctionDef should have node_id");
-            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+            let pos = positions
+                .get(&node_id)
+                .expect("FunctionDef should have position");
 
             let lexical_span = pos.lexical_span.expect("Should have lexical_span");
             let def_span = pos.def_span.expect("Should have def_span");
@@ -1014,26 +1050,36 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(outer)) = &module.body[0] {
             let outer_id = outer.node_id.expect("outer should have node_id");
-            let outer_pos = positions.get(&outer_id).expect("outer should have position");
-            let outer_lexical = outer_pos.lexical_span.expect("outer should have lexical_span");
+            let outer_pos = positions
+                .get(&outer_id)
+                .expect("outer should have position");
+            let outer_lexical = outer_pos
+                .lexical_span
+                .expect("outer should have lexical_span");
 
             // Find inner function in outer's body
             if let Suite::IndentedBlock(block) = &outer.body {
                 if let Statement::Compound(CompoundStatement::FunctionDef(inner)) = &block.body[0] {
                     let inner_id = inner.node_id.expect("inner should have node_id");
-                    let inner_pos = positions.get(&inner_id).expect("inner should have position");
-                    let inner_lexical = inner_pos.lexical_span.expect("inner should have lexical_span");
+                    let inner_pos = positions
+                        .get(&inner_id)
+                        .expect("inner should have position");
+                    let inner_lexical = inner_pos
+                        .lexical_span
+                        .expect("inner should have lexical_span");
 
                     // Inner function's span should be contained within outer's span
                     assert!(
                         inner_lexical.start >= outer_lexical.start,
                         "inner start {} should be >= outer start {}",
-                        inner_lexical.start, outer_lexical.start
+                        inner_lexical.start,
+                        outer_lexical.start
                     );
                     assert!(
                         inner_lexical.end <= outer_lexical.end,
                         "inner end {} should be <= outer end {}",
-                        inner_lexical.end, outer_lexical.end
+                        inner_lexical.end,
+                        outer_lexical.end
                     );
 
                     // They should have different starts
@@ -1062,14 +1108,19 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::ClassDef(class)) = &module.body[0] {
             let node_id = class.node_id.expect("ClassDef should have node_id");
-            let pos = positions.get(&node_id).expect("ClassDef should have position");
+            let pos = positions
+                .get(&node_id)
+                .expect("ClassDef should have position");
 
             let lexical_span = pos.lexical_span.expect("Should have lexical_span");
             let def_span = pos.def_span.expect("Should have def_span");
 
             // def_span starts at '@', lexical_span starts at 'class'
             assert_eq!(def_span.start, 0, "def_span should start at decorator '@'");
-            assert_eq!(lexical_span.start, 11, "lexical_span should start at 'class'");
+            assert_eq!(
+                lexical_span.start, 11,
+                "lexical_span should start at 'class'"
+            );
             assert!(
                 def_span.start < lexical_span.start,
                 "def_span should start before lexical_span for decorated class"
@@ -1090,11 +1141,16 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
             let node_id = func.node_id.expect("FunctionDef should have node_id");
-            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+            let pos = positions
+                .get(&node_id)
+                .expect("FunctionDef should have position");
 
             let lexical_span = pos.lexical_span.expect("Should have lexical_span");
             // Scope should end at end of newline (byte 14, which is len of source)
-            assert_eq!(lexical_span.end, 14, "scope_end should be at end of newline token");
+            assert_eq!(
+                lexical_span.end, 14,
+                "scope_end should be at end of newline token"
+            );
             assert_eq!(lexical_span.start, 0, "scope should start at 'def'");
         } else {
             panic!("Expected FunctionDef");
@@ -1158,11 +1214,16 @@ mod test {
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
             let node_id = func.node_id.expect("FunctionDef should have node_id");
-            let pos = positions.get(&node_id).expect("FunctionDef should have position");
+            let pos = positions
+                .get(&node_id)
+                .expect("FunctionDef should have position");
 
             let lexical_span = pos.lexical_span.expect("Should have lexical_span");
             // Async function's lexical span should start at 'async', not 'def'
-            assert_eq!(lexical_span.start, 0, "lexical_span should start at 'async'");
+            assert_eq!(
+                lexical_span.start, 0,
+                "lexical_span should start at 'async'"
+            );
         } else {
             panic!("Expected FunctionDef");
         }
@@ -1182,7 +1243,10 @@ mod test {
         assert!(!parsed.module.body.is_empty(), "Module should have body");
 
         // Should have positions for tracked nodes
-        assert!(!parsed.positions.is_empty(), "PositionTable should not be empty");
+        assert!(
+            !parsed.positions.is_empty(),
+            "PositionTable should not be empty"
+        );
 
         // Should have tracked some nodes
         assert!(
@@ -1202,7 +1266,11 @@ mod test {
         // Round-trip should work
         let mut state = CodegenState::default();
         module.codegen(&mut state);
-        assert_eq!(state.to_string(), source, "Round-trip should preserve source");
+        assert_eq!(
+            state.to_string(),
+            source,
+            "Round-trip should preserve source"
+        );
 
         // FunctionDef should still have node_id (inflation still assigns IDs)
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &module.body[0] {
@@ -1230,13 +1298,21 @@ mod test {
                 // Check target 'foo'
                 if let AssignTargetExpression::Name(target_name) = &assign.targets[0].target {
                     let target_id = target_name.node_id.expect("target should have node_id");
-                    let target_pos = parsed.positions.get(&target_id).expect("target should have position");
-                    let target_span = target_pos.ident_span.expect("target should have ident_span");
+                    let target_pos = parsed
+                        .positions
+                        .get(&target_id)
+                        .expect("target should have position");
+                    let target_span = target_pos
+                        .ident_span
+                        .expect("target should have ident_span");
 
                     // Verify exact positions
                     assert_eq!(target_span.start, 0, "foo should start at byte 0");
                     assert_eq!(target_span.end, 3, "foo should end at byte 3");
-                    assert_eq!(&source[target_span.start as usize..target_span.end as usize], "foo");
+                    assert_eq!(
+                        &source[target_span.start as usize..target_span.end as usize],
+                        "foo"
+                    );
                 } else {
                     panic!("Expected Name target");
                 }
@@ -1244,13 +1320,19 @@ mod test {
                 // Check value 'bar'
                 if let Expression::Name(value_name) = &assign.value {
                     let value_id = value_name.node_id.expect("value should have node_id");
-                    let value_pos = parsed.positions.get(&value_id).expect("value should have position");
+                    let value_pos = parsed
+                        .positions
+                        .get(&value_id)
+                        .expect("value should have position");
                     let value_span = value_pos.ident_span.expect("value should have ident_span");
 
                     // Verify exact positions
                     assert_eq!(value_span.start, 6, "bar should start at byte 6");
                     assert_eq!(value_span.end, 9, "bar should end at byte 9");
-                    assert_eq!(&source[value_span.start as usize..value_span.end as usize], "bar");
+                    assert_eq!(
+                        &source[value_span.start as usize..value_span.end as usize],
+                        "bar"
+                    );
                 } else {
                     panic!("Expected Name value");
                 }
@@ -1307,7 +1389,10 @@ mod test {
         let source = "x = 1";
         let parsed = parse_module_with_positions(source, Some("utf-8")).expect("parse error");
 
-        assert!(!parsed.module.body.is_empty(), "Module should have body with encoding");
+        assert!(
+            !parsed.module.body.is_empty(),
+            "Module should have body with encoding"
+        );
     }
 
     #[test]
@@ -1316,7 +1401,10 @@ mod test {
         let source_with_bom = "\u{feff}x = 1";
 
         let parsed = parse_module_with_positions(source_with_bom, None).expect("parse error");
-        assert!(!parsed.module.body.is_empty(), "Module should parse with BOM");
+        assert!(
+            !parsed.module.body.is_empty(),
+            "Module should parse with BOM"
+        );
 
         // Position data should be relative to after BOM
         // BOM is 3 bytes, so 'x' should be at position 0 in the stripped source
@@ -1325,11 +1413,17 @@ mod test {
             if let SmallStatement::Assign(assign) = &simple.body[0] {
                 if let AssignTargetExpression::Name(name) = &assign.targets[0].target {
                     let node_id = name.node_id.expect("Name should have node_id");
-                    let pos = parsed.positions.get(&node_id).expect("Name should have position");
+                    let pos = parsed
+                        .positions
+                        .get(&node_id)
+                        .expect("Name should have position");
                     let span = pos.ident_span.expect("Name should have ident_span");
 
                     // Position should be 0 (relative to stripped source)
-                    assert_eq!(span.start, 0, "Position should be relative to stripped source");
+                    assert_eq!(
+                        span.start, 0,
+                        "Position should be relative to stripped source"
+                    );
                 }
             }
         }

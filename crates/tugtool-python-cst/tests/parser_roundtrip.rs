@@ -5,8 +5,8 @@
 
 use difference::assert_diff;
 use itertools::Itertools;
-use tugtool_python_cst::{parse_module, prettify_error, Codegen};
 use std::path::PathBuf;
+use tugtool_python_cst::{parse_module, prettify_error, Codegen};
 
 fn all_fixtures() -> impl Iterator<Item = (PathBuf, String)> {
     // Use CARGO_MANIFEST_DIR which points to the crate root

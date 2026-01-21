@@ -20,8 +20,8 @@
 
 use difference::assert_diff;
 use itertools::Itertools;
-use tugtool_python_cst::{parse_module, prettify_error, Codegen};
 use std::path::PathBuf;
+use tugtool_python_cst::{parse_module, prettify_error, Codegen};
 
 /// Helper to visualize whitespace differences in test output
 fn visualize(s: &str) -> String {

@@ -117,13 +117,22 @@ mod ac1_find_symbol_at_location {
         let location = Location::new("y.py", 1, foo_col as u32);
         let result = find_symbol_at_location(&store, &location, &file_list);
 
-        assert!(result.is_ok(), "Expected symbol via import binding, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected symbol via import binding, got: {:?}",
+            result
+        );
         let symbol = result.unwrap();
         // Should return the ORIGINAL definition from x.py, not an import binding
         assert_eq!(symbol.name, "foo");
         // Verify symbol is from x.py by looking up the file path via decl_file_id
-        let decl_file = store.file(symbol.decl_file_id).expect("decl_file should exist");
-        assert_eq!(decl_file.path, "x.py", "Should return the original definition from x.py");
+        let decl_file = store
+            .file(symbol.decl_file_id)
+            .expect("decl_file should exist");
+        assert_eq!(
+            decl_file.path, "x.py",
+            "Should return the original definition from x.py"
+        );
     }
 
     #[test]
@@ -146,12 +155,21 @@ mod ac1_find_symbol_at_location {
         let location = Location::new("x.py", 1, foo_col as u32);
         let result = find_symbol_at_location(&store, &location, &file_list);
 
-        assert!(result.is_ok(), "Expected symbol at definition site, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected symbol at definition site, got: {:?}",
+            result
+        );
         let symbol = result.unwrap();
         assert_eq!(symbol.name, "foo");
         // Verify symbol is from x.py by looking up the file path via decl_file_id
-        let decl_file = store.file(symbol.decl_file_id).expect("decl_file should exist");
-        assert_eq!(decl_file.path, "x.py", "Definition click should return the same symbol");
+        let decl_file = store
+            .file(symbol.decl_file_id)
+            .expect("decl_file should exist");
+        assert_eq!(
+            decl_file.path, "x.py",
+            "Definition click should return the same symbol"
+        );
     }
 
     #[test]
@@ -207,7 +225,11 @@ x.bar()
         let location = Location::new("test.py", 2, 9); // "inner" in "def inner(self):"
         let result = find_symbol_at_location(&store, &location, &file_list);
 
-        assert!(result.is_ok(), "Expected inner method symbol, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected inner method symbol, got: {:?}",
+            result
+        );
         let symbol = result.unwrap();
         assert_eq!(symbol.name, "inner");
     }
@@ -297,7 +319,10 @@ class B:
         let symbol_b = result_b.unwrap();
         assert_eq!(symbol_a.name, "method");
         assert_eq!(symbol_b.name, "method");
-        assert_ne!(symbol_a.symbol_id, symbol_b.symbol_id, "Should be different symbols");
+        assert_ne!(
+            symbol_a.symbol_id, symbol_b.symbol_id,
+            "Should be different symbols"
+        );
     }
 
     #[test]
@@ -329,8 +354,14 @@ class B:
         let outer_span_len = outer.decl_span.end - outer.decl_span.start;
         let inner_span_len = inner.decl_span.end - inner.decl_span.start;
 
-        assert_eq!(outer_span_len, 5, "Outer span should be 5 bytes (name only)");
-        assert_eq!(inner_span_len, 5, "inner span should be 5 bytes (name only)");
+        assert_eq!(
+            outer_span_len, 5,
+            "Outer span should be 5 bytes (name only)"
+        );
+        assert_eq!(
+            inner_span_len, 5,
+            "inner span should be 5 bytes (name only)"
+        );
 
         // Verify spans DON'T overlap - inner's span should be completely outside outer's span
         // This proves that clicking on "inner" won't accidentally match "Outer"
@@ -361,8 +392,14 @@ class B:
 
         // Verify error message contains both candidates
         let msg = err.to_string();
-        assert!(msg.contains("foo (1)"), "Error should contain first candidate");
-        assert!(msg.contains("foo (2)"), "Error should contain second candidate");
+        assert!(
+            msg.contains("foo (1)"),
+            "Error should contain first candidate"
+        );
+        assert!(
+            msg.contains("foo (2)"),
+            "Error should contain second candidate"
+        );
         assert!(msg.contains("ambiguous"), "Error should mention ambiguity");
     }
 }
@@ -403,7 +440,11 @@ mod ac2_cross_file_reference_resolution {
         // Get all references to this symbol
         let refs = store.refs_of_symbol(original_symbol.symbol_id);
         // Should have at least 2: the definition and the call in z.py
-        assert!(refs.len() >= 1, "Expected at least 1 reference, got {}", refs.len());
+        assert!(
+            refs.len() >= 1,
+            "Expected at least 1 reference, got {}",
+            refs.len()
+        );
     }
 
     #[test]
@@ -657,7 +698,10 @@ mod ac4_import_resolution {
         let main_file = store.file_by_path("main.py");
         assert!(main_file.is_some(), "Expected main.py in store");
 
-        let imports: Vec<_> = store.imports().filter(|i| i.file_id == main_file.unwrap().file_id).collect();
+        let imports: Vec<_> = store
+            .imports()
+            .filter(|i| i.file_id == main_file.unwrap().file_id)
+            .collect();
         assert!(!imports.is_empty(), "Expected import in main.py");
     }
 
@@ -705,7 +749,10 @@ mod ac4_import_resolution {
         assert!(main_file.is_some(), "Expected main.py in store");
 
         // Check that an import exists
-        let imports: Vec<_> = store.imports().filter(|i| i.file_id == main_file.unwrap().file_id).collect();
+        let imports: Vec<_> = store
+            .imports()
+            .filter(|i| i.file_id == main_file.unwrap().file_id)
+            .collect();
         assert!(!imports.is_empty(), "Expected import in main.py");
     }
 
@@ -854,7 +901,10 @@ x.bar()
 
         // Check for call references to bar
         let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs.iter().filter(|r| r.ref_kind == ReferenceKind::Call).collect();
+        let call_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Call)
+            .collect();
 
         // x.bar() should create a call reference to Foo.bar
         assert!(!call_refs.is_empty(), "Expected call reference to Foo.bar");
@@ -882,10 +932,16 @@ y.bar()
 
         let bar_symbol = bar.unwrap();
         let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs.iter().filter(|r| r.ref_kind == ReferenceKind::Call).collect();
+        let call_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Call)
+            .collect();
 
         // y.bar() should resolve to Foo.bar via type propagation
-        assert!(!call_refs.is_empty(), "Expected call reference via type propagation");
+        assert!(
+            !call_refs.is_empty(),
+            "Expected call reference via type propagation"
+        );
     }
 
     #[test]
@@ -908,10 +964,16 @@ def f(x: Foo):
 
         let bar_symbol = bar.unwrap();
         let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs.iter().filter(|r| r.ref_kind == ReferenceKind::Call).collect();
+        let call_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Call)
+            .collect();
 
         // x.bar() in f should resolve to Foo.bar via annotation
-        assert!(!call_refs.is_empty(), "Expected call reference via annotation");
+        assert!(
+            !call_refs.is_empty(),
+            "Expected call reference via annotation"
+        );
     }
 
     #[test]
@@ -934,7 +996,10 @@ def f(x: Foo):
 
         let bar_symbol = bar.unwrap();
         let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs.iter().filter(|r| r.ref_kind == ReferenceKind::Call).collect();
+        let call_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Call)
+            .collect();
 
         // self.bar() should resolve to Foo.bar
         assert!(!call_refs.is_empty(), "Expected self.bar() call reference");
@@ -1050,8 +1115,14 @@ class C(A, B):
             .map(|s| s.name.clone())
             .collect();
 
-        assert!(parent_names.contains(&"A".to_string()), "Expected A as parent");
-        assert!(parent_names.contains(&"B".to_string()), "Expected B as parent");
+        assert!(
+            parent_names.contains(&"A".to_string()),
+            "Expected A as parent"
+        );
+        assert!(
+            parent_names.contains(&"B".to_string()),
+            "Expected B as parent"
+        );
     }
 
     #[test]
@@ -1075,7 +1146,11 @@ class Child(Base):
 
         // Find Child.method
         let methods: Vec<_> = store.symbols().filter(|s| s.name == "method").collect();
-        assert_eq!(methods.len(), 2, "Expected 2 method symbols (Base.method and Child.method)");
+        assert_eq!(
+            methods.len(),
+            2,
+            "Expected 2 method symbols (Base.method and Child.method)"
+        );
     }
 
     #[test]
@@ -1130,10 +1205,7 @@ mod ac7_deterministic_id_assignment {
     #[test]
     fn same_files_produce_identical_symbol_ids() {
         // Analyze same files twice, verify SymbolIds match
-        let file_list = files(&[
-            ("a.py", "def foo(): pass\n"),
-            ("b.py", "def bar(): pass\n"),
-        ]);
+        let file_list = files(&[("a.py", "def foo(): pass\n"), ("b.py", "def bar(): pass\n")]);
 
         let mut store1 = FactsStore::new();
         let result1 = analyze_files(&file_list, &mut store1);
@@ -1159,9 +1231,7 @@ mod ac7_deterministic_id_assignment {
     #[test]
     fn same_files_produce_identical_reference_ids() {
         // Analyze same files twice, verify ReferenceIds match
-        let file_list = files(&[
-            ("a.py", "def foo(): pass\nfoo()\n"),
-        ]);
+        let file_list = files(&[("a.py", "def foo(): pass\nfoo()\n")]);
 
         let mut store1 = FactsStore::new();
         let result1 = analyze_files(&file_list, &mut store1);
@@ -1272,9 +1342,15 @@ mod ac7_deterministic_id_assignment {
 
         // Verify FileIds are assigned in sorted path order (a.py=0, b.py=1, c.py=2)
         // Regardless of input order, a.py should always be FileId(0)
-        let file_a_1 = store1.file_by_path("a.py").expect("a.py should exist in store1");
-        let file_a_2 = store2.file_by_path("a.py").expect("a.py should exist in store2");
-        let file_a_3 = store3.file_by_path("a.py").expect("a.py should exist in store3");
+        let file_a_1 = store1
+            .file_by_path("a.py")
+            .expect("a.py should exist in store1");
+        let file_a_2 = store2
+            .file_by_path("a.py")
+            .expect("a.py should exist in store2");
+        let file_a_3 = store3
+            .file_by_path("a.py")
+            .expect("a.py should exist in store3");
         assert_eq!(
             file_a_1.file_id, file_a_2.file_id,
             "FileId for a.py should match between order1 and order2"
@@ -1376,20 +1452,24 @@ def third(): pass
 
         // All stores should have the same symbol count
         let counts: Vec<_> = stores.iter().map(|s| s.symbols().count()).collect();
-        assert!(counts.iter().all(|&c| c == counts[0]), "Symbol counts should match");
+        assert!(
+            counts.iter().all(|&c| c == counts[0]),
+            "Symbol counts should match"
+        );
 
         // All stores should have the same reference count
         let ref_counts: Vec<_> = stores.iter().map(|s| s.references().count()).collect();
-        assert!(ref_counts.iter().all(|&c| c == ref_counts[0]), "Reference counts should match");
+        assert!(
+            ref_counts.iter().all(|&c| c == ref_counts[0]),
+            "Reference counts should match"
+        );
     }
 
     #[test]
     fn cross_platform_path_normalization() {
         // Paths should be normalized (forward slashes, etc.)
         // This test just verifies paths are stored consistently
-        let file_list = files(&[
-            ("pkg/module.py", "x = 1\n"),
-        ]);
+        let file_list = files(&[("pkg/module.py", "x = 1\n")]);
 
         let mut store = FactsStore::new();
         let result = analyze_files(&file_list, &mut store);
@@ -1424,22 +1504,32 @@ mod ac8_partial_analysis_error_handling {
         // Analysis should complete for good.py and another_good.py
         let file_list = files(&[
             ("good.py", "def foo(): pass\n"),
-            ("bad.py", "def broken(\n"),  // Syntax error - unclosed paren
+            ("bad.py", "def broken(\n"), // Syntax error - unclosed paren
             ("another_good.py", "def bar(): pass\n"),
         ]);
 
         let mut store = FactsStore::new();
         let result = analyze_files(&file_list, &mut store);
 
-        assert!(result.is_ok(), "analyze_files should return Ok even with parse errors");
+        assert!(
+            result.is_ok(),
+            "analyze_files should return Ok even with parse errors"
+        );
         let bundle = result.unwrap();
 
         // Should have 2 successful files
-        assert_eq!(bundle.file_analyses.len(), 2, "Expected 2 successfully analyzed files");
+        assert_eq!(
+            bundle.file_analyses.len(),
+            2,
+            "Expected 2 successfully analyzed files"
+        );
 
         // Should have 1 failed file
         assert_eq!(bundle.failed_files.len(), 1, "Expected 1 failed file");
-        assert_eq!(bundle.failed_files[0].0, "bad.py", "bad.py should be the failed file");
+        assert_eq!(
+            bundle.failed_files[0].0, "bad.py",
+            "bad.py should be the failed file"
+        );
     }
 
     #[test]
@@ -1447,8 +1537,8 @@ mod ac8_partial_analysis_error_handling {
         // Files with parse errors should be tracked in FileAnalysisBundle.failed_files
         let file_list = files(&[
             ("good.py", "x = 1\n"),
-            ("bad1.py", "class\n"),  // Syntax error
-            ("bad2.py", "def (\n"),  // Syntax error
+            ("bad1.py", "class\n"), // Syntax error
+            ("bad2.py", "def (\n"), // Syntax error
         ]);
 
         let mut store = FactsStore::new();
@@ -1458,7 +1548,11 @@ mod ac8_partial_analysis_error_handling {
         let bundle = result.unwrap();
         assert_eq!(bundle.failed_files.len(), 2, "Expected 2 failed files");
 
-        let failed_paths: Vec<_> = bundle.failed_files.iter().map(|(p, _)| p.as_str()).collect();
+        let failed_paths: Vec<_> = bundle
+            .failed_files
+            .iter()
+            .map(|(p, _)| p.as_str())
+            .collect();
         assert!(failed_paths.contains(&"bad1.py"));
         assert!(failed_paths.contains(&"bad2.py"));
     }
@@ -1474,14 +1568,20 @@ mod ac8_partial_analysis_error_handling {
         let result1 = analyze_files(&good_files, &mut store1);
         assert!(result1.is_ok());
         let bundle1 = result1.unwrap();
-        assert!(bundle1.is_complete(), "All good files should result in complete bundle");
+        assert!(
+            bundle1.is_complete(),
+            "All good files should result in complete bundle"
+        );
 
         // With a bad file
         let mut store2 = FactsStore::new();
         let result2 = analyze_files(&bad_files, &mut store2);
         assert!(result2.is_ok());
         let bundle2 = result2.unwrap();
-        assert!(!bundle2.is_complete(), "Bad file should result in incomplete bundle");
+        assert!(
+            !bundle2.is_complete(),
+            "Bad file should result in incomplete bundle"
+        );
     }
 
     #[test]
@@ -1525,9 +1625,12 @@ mod ac8_partial_analysis_error_handling {
 
         // Symbols should only be from good.py
         let symbols: Vec<_> = store.symbols().collect();
-        assert!(symbols.iter().all(|s| {
-            let file = store.file(s.decl_file_id);
-            file.map(|f| f.path != "bad.py").unwrap_or(true)
-        }), "No symbols should be from bad.py");
+        assert!(
+            symbols.iter().all(|s| {
+                let file = store.file(s.decl_file_id);
+                file.map(|f| f.path != "bad.py").unwrap_or(true)
+            }),
+            "No symbols should be from bad.py"
+        );
     }
 }

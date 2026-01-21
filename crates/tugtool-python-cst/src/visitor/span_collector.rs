@@ -144,7 +144,7 @@ impl SpanCollector {
             "SpanCollector: {} node missing node_id - only use with parse-produced CSTs",
             node_type
         );
-        node_id.unwrap_or_else(|| {
+        node_id.unwrap_or({
             // In release builds, use a sentinel value to avoid panics
             // This should never happen with parse-produced trees
             NodeId(u32::MAX)
@@ -172,7 +172,10 @@ mod tests {
         let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Should have collected some spans
-        assert!(!span_table.is_empty(), "Expected some spans to be collected");
+        assert!(
+            !span_table.is_empty(),
+            "Expected some spans to be collected"
+        );
     }
 
     #[test]
@@ -352,7 +355,11 @@ mod tests {
         // Verify they have different start positions
         let mut starts: Vec<_> = x_spans.iter().map(|(_, span)| span.start).collect();
         starts.sort();
-        assert_eq!(starts, vec![0, 4, 8], "Each 'x' should have correct position");
+        assert_eq!(
+            starts,
+            vec![0, 4, 8],
+            "Each 'x' should have correct position"
+        );
     }
 
     #[test]
@@ -388,9 +395,9 @@ mod tests {
         let span_table = SpanCollector::from_positions(&parsed.positions);
 
         // Find the span for "my_func"
-        let func_span = span_table.iter().find(|(_, span)| {
-            &source[span.start as usize..span.end as usize] == "my_func"
-        });
+        let func_span = span_table
+            .iter()
+            .find(|(_, span)| &source[span.start as usize..span.end as usize] == "my_func");
 
         assert!(func_span.is_some(), "Should have span for 'my_func'");
         let (_, span) = func_span.unwrap();
@@ -429,7 +436,10 @@ mod tests {
         {
             // FunctionDef stores lexical/def spans, not ident spans
             // The function NAME stores the ident span
-            let name_id = func.name.node_id.expect("Name should have embedded node_id");
+            let name_id = func
+                .name
+                .node_id
+                .expect("Name should have embedded node_id");
 
             // Build span table
             let span_table = SpanCollector::from_positions(&parsed.positions);

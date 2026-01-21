@@ -91,6 +91,12 @@ pub struct MethodCallCollector<'pos> {
     scope_path: Vec<String>,
 }
 
+impl<'pos> Default for MethodCallCollector<'pos> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'pos> MethodCallCollector<'pos> {
     /// Create a new MethodCallCollector without position tracking.
     ///
@@ -120,10 +126,7 @@ impl<'pos> MethodCallCollector<'pos> {
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect(
-        module: &Module<'_>,
-        positions: &'pos PositionTable,
-    ) -> Vec<MethodCallInfo> {
+    pub fn collect(module: &Module<'_>, positions: &'pos PositionTable) -> Vec<MethodCallInfo> {
         let mut collector = MethodCallCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.calls
@@ -283,10 +286,7 @@ data.validate()
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].receiver, "self");
         assert_eq!(calls[0].method, "helper");
-        assert_eq!(
-            calls[0].scope_path,
-            vec!["<module>", "MyClass", "method"]
-        );
+        assert_eq!(calls[0].scope_path, vec!["<module>", "MyClass", "method"]);
     }
 
     #[test]

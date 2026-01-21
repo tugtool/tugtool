@@ -164,7 +164,7 @@ impl NodeIdGenerator {
     }
 
     /// Generate the next NodeId.
-    pub fn next(&mut self) -> NodeId {
+    pub fn next_id(&mut self) -> NodeId {
         let id = NodeId(self.next_id);
         self.next_id += 1;
         id
@@ -271,7 +271,7 @@ impl<'a, T: Inflate<'a>> Inflate<'a> for Option<T> {
     }
 }
 
-impl<'a, T: Inflate<'a> + ?Sized> Inflate<'a> for Box<T> {
+impl<'a, T: Inflate<'a>> Inflate<'a> for Box<T> {
     type Inflated = Box<T::Inflated>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         match (*self).inflate(ctx) {

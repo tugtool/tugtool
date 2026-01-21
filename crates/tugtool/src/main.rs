@@ -772,10 +772,7 @@ fn execute_python_toolchain(_global: &GlobalArgs, action: ToolchainAction) -> Re
 #[cfg(feature = "python")]
 fn find_python_in_path() -> Option<String> {
     for name in &["python3", "python"] {
-        if let Ok(output) = std::process::Command::new("which")
-            .arg(name)
-            .output()
-        {
+        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
                 return Some(path);
@@ -845,11 +842,11 @@ fn resolve_toolchain(
     let resolved_path = match lang {
         "python" => {
             // Find Python in PATH (libcst no longer required with native CST)
-            find_python_in_path()
-                .map(PathBuf::from)
-                .ok_or_else(|| TugError::internal(
+            find_python_in_path().map(PathBuf::from).ok_or_else(|| {
+                TugError::internal(
                     "Could not find Python interpreter in PATH. Python is needed for verification.",
-                ))?
+                )
+            })?
         }
         "rust" => {
             // Future: find rust-analyzer in PATH

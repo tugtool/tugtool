@@ -6,13 +6,13 @@
 use std::mem::swap;
 
 use crate::inflate_ctx::InflateCtx;
-use crate::tokenizer::whitespace_parser::parse_empty_lines;
-use crate::tokenizer::Token;
 use crate::nodes::{
     codegen::{Codegen, CodegenState},
     statement::*,
     whitespace::EmptyLine,
 };
+use crate::tokenizer::whitespace_parser::parse_empty_lines;
+use crate::tokenizer::Token;
 use tugtool_python_cst_derive::cst_node;
 
 use super::traits::{Inflate, Result, WithLeadingLines};
@@ -56,7 +56,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedModule<'r, 'a> {
         let mut body = self.body.inflate(ctx)?;
         let mut footer = parse_empty_lines(
             &ctx.ws,
-            &mut (*self.eof_tok).whitespace_before.borrow_mut(),
+            &mut self.eof_tok.whitespace_before.borrow_mut(),
             Some(""),
         )?;
         let mut header = vec![];

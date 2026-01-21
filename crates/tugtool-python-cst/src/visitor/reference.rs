@@ -481,7 +481,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     // =========================================================================
 
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
-        self.add_reference_with_id(node.name.value, ReferenceKind::Definition, node.name.node_id);
+        self.add_reference_with_id(
+            node.name.value,
+            ReferenceKind::Definition,
+            node.name.node_id,
+        );
         // Push skip context so the Name node inside isn't double-counted
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
@@ -499,7 +503,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
-        self.add_reference_with_id(node.name.value, ReferenceKind::Definition, node.name.node_id);
+        self.add_reference_with_id(
+            node.name.value,
+            ReferenceKind::Definition,
+            node.name.node_id,
+        );
         // Push skip context so the Name node inside isn't double-counted
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
@@ -517,7 +525,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     }
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
-        self.add_reference_with_id(node.name.value, ReferenceKind::Definition, node.name.node_id);
+        self.add_reference_with_id(
+            node.name.value,
+            ReferenceKind::Definition,
+            node.name.node_id,
+        );
         // Push skip context so the Name node inside isn't double-counted
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
@@ -815,7 +827,9 @@ result = processor.process()
 
         // processor is defined and referenced
         let proc_refs = refs.get("processor").unwrap();
-        assert!(proc_refs.iter().any(|r| r.kind == ReferenceKind::Definition));
+        assert!(proc_refs
+            .iter()
+            .any(|r| r.kind == ReferenceKind::Definition));
         assert!(proc_refs.iter().any(|r| r.kind == ReferenceKind::Reference));
     }
 

@@ -24,7 +24,10 @@ fn main() {
             let mut state = CodegenState::default();
             module.codegen(&mut state);
             println!("   Parsed successfully!");
-            println!("   Round-trip output matches: {}", state.to_string() == source);
+            println!(
+                "   Round-trip output matches: {}",
+                state.to_string() == source
+            );
         }
         Err(e) => println!("   Error: {}", prettify_error(e, "example")),
     }
@@ -43,14 +46,20 @@ fn main() {
 
     let options = ParseOptions::new(PythonVersion::V3_10);
     println!("   Target version: {}", options.version);
-    println!("   has_match_statements(): {}", options.version.has_match_statements());
+    println!(
+        "   has_match_statements(): {}",
+        options.version.has_match_statements()
+    );
 
     match parse_module_with_options(match_source, options) {
         Ok(module) => {
             let mut state = CodegenState::default();
             module.codegen(&mut state);
             println!("   Parsed match statement successfully!");
-            println!("   Round-trip preserved: {}", state.to_string() == match_source);
+            println!(
+                "   Round-trip preserved: {}",
+                state.to_string() == match_source
+            );
         }
         Err(e) => println!("   Error: {}", prettify_error(e, "match_example")),
     }
