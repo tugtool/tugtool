@@ -296,7 +296,7 @@ pub struct SessionConfig {
 pub struct WorkerInfo {
     /// Process ID.
     pub pid: u32,
-    /// Worker name (e.g., "libcst", "rust_analyzer").
+    /// Worker name (e.g., "python_verifier", "rust_analyzer").
     pub name: String,
     /// When the worker was started.
     pub started_at: String,

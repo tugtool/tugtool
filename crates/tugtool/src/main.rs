@@ -192,16 +192,6 @@ enum Command {
     /// The server communicates via JSON-RPC 2.0 over stdin/stdout.
     #[cfg(feature = "mcp")]
     Mcp,
-    /// Manage language toolchains.
-    ///
-    /// Set up, query, or verify toolchain environments for supported languages.
-    /// Currently supports: python
-    Toolchain {
-        /// Target language (e.g., python).
-        lang: String,
-        #[command(subcommand)]
-        action: ToolchainAction,
-    },
 }
 
 /// Refactoring operations (used by analyze-impact and run).
@@ -271,31 +261,6 @@ enum SessionAction {
     Status,
 }
 
-/// Toolchain management actions.
-#[derive(Subcommand, Clone)]
-enum ToolchainAction {
-    /// Set up the toolchain environment.
-    ///
-    /// Creates a managed virtual environment with required dependencies.
-    /// For Python: creates .tug/venv with libcst installed.
-    Setup {
-        /// Force recreation of existing environment.
-        #[arg(long)]
-        recreate: bool,
-        /// Use global location (~/.tug/) instead of workspace.
-        #[arg(long)]
-        global: bool,
-    },
-    /// Show current toolchain configuration.
-    ///
-    /// Displays resolved toolchain path, version, and resolution source.
-    Info,
-    /// Verify toolchain is correctly configured.
-    ///
-    /// Exits 0 if valid, 1 if not. Useful for CI scripts.
-    Check,
-}
-
 // ============================================================================
 // Main Entry Point
 // ============================================================================
@@ -361,7 +326,6 @@ fn execute(cli: Cli) -> Result<(), TugError> {
         Command::Clean { workers, cache } => execute_clean(&cli.global, workers, cache),
         #[cfg(feature = "mcp")]
         Command::Mcp => execute_mcp(),
-        Command::Toolchain { lang, action } => execute_toolchain(&cli.global, &lang, action),
     }
 }
 
@@ -677,97 +641,6 @@ fn execute_mcp() -> Result<(), TugError> {
     runtime.block_on(tugtool::mcp::run_mcp_server())
 }
 
-/// Execute toolchain command.
-///
-/// Dispatches to language-specific toolchain handlers.
-#[cfg(feature = "python")]
-fn execute_toolchain(
-    global: &GlobalArgs,
-    lang: &str,
-    action: ToolchainAction,
-) -> Result<(), TugError> {
-    match lang {
-        "python" => execute_python_toolchain(global, action),
-        _ => Err(TugError::invalid_args(format!(
-            "Unknown language '{}'. Supported: python",
-            lang
-        ))),
-    }
-}
-
-/// Execute toolchain command (Python not available).
-#[cfg(not(feature = "python"))]
-fn execute_toolchain(
-    _global: &GlobalArgs,
-    lang: &str,
-    _action: ToolchainAction,
-) -> Result<(), TugError> {
-    match lang {
-        "python" => Err(tugtool::cli::python_not_available()),
-        _ => Err(TugError::invalid_args(format!(
-            "Unknown language '{}'. No languages compiled in.\n\n\
-             To enable Python: cargo install tugtool --features python",
-            lang
-        ))),
-    }
-}
-
-/// Execute Python toolchain command.
-///
-/// With native CST, toolchain setup is no longer required. Python is only needed
-/// for verification (running `python -m compileall` or tests).
-#[cfg(feature = "python")]
-fn execute_python_toolchain(_global: &GlobalArgs, action: ToolchainAction) -> Result<(), TugError> {
-    match action {
-        ToolchainAction::Setup { .. } => {
-            let response = serde_json::json!({
-                "status": "ok",
-                "schema_version": SCHEMA_VERSION,
-                "language": "python",
-                "message": "Toolchain setup is no longer required. Tugtool now uses native Rust CST parsing.",
-                "note": "Python is only needed for verification (syntax checking with compileall or running tests).",
-            });
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
-            Ok(())
-        }
-        ToolchainAction::Info => {
-            // Try to find Python in PATH for verification purposes
-            let python_path = find_python_in_path();
-            let response = serde_json::json!({
-                "status": "ok",
-                "schema_version": SCHEMA_VERSION,
-                "language": "python",
-                "python_path": python_path,
-                "message": "Native CST is used for analysis. Python shown is for verification only.",
-            });
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
-            Ok(())
-        }
-        ToolchainAction::Check => {
-            // Check if Python is available (for verification)
-            let python_path = find_python_in_path();
-            let valid = python_path.is_some();
-
-            let response = serde_json::json!({
-                "status": if valid { "ok" } else { "error" },
-                "schema_version": SCHEMA_VERSION,
-                "language": "python",
-                "valid": valid,
-                "python_path": python_path,
-                "message": if valid {
-                    "Python found for verification."
-                } else {
-                    "Python not found. Verification will be skipped."
-                },
-            });
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
-
-            // Always return Ok - Python is optional for native CST
-            Ok(())
-        }
-    }
-}
-
 /// Find Python interpreter in PATH (for verification purposes).
 #[cfg(feature = "python")]
 fn find_python_in_path() -> Option<String> {
@@ -841,7 +714,7 @@ fn resolve_toolchain(
     #[cfg(feature = "python")]
     let resolved_path = match lang {
         "python" => {
-            // Find Python in PATH (libcst no longer required with native CST)
+            // Find Python in PATH (needed for verification only)
             find_python_in_path().map(PathBuf::from).ok_or_else(|| {
                 TugError::internal(
                     "Could not find Python interpreter in PATH. Python is needed for verification.",
@@ -1346,152 +1219,6 @@ mod tests {
             assert!(matches!(cli.command, Command::Mcp));
         }
 
-        #[test]
-        fn parse_toolchain_python_setup() {
-            let args = ["tug", "toolchain", "python", "setup"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    match action {
-                        ToolchainAction::Setup { recreate, global } => {
-                            assert!(!recreate);
-                            assert!(!global);
-                        }
-                        _ => panic!("expected Setup"),
-                    }
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_python_setup_recreate() {
-            let args = ["tug", "toolchain", "python", "setup", "--recreate"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    match action {
-                        ToolchainAction::Setup { recreate, global } => {
-                            assert!(recreate);
-                            assert!(!global);
-                        }
-                        _ => panic!("expected Setup"),
-                    }
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_python_setup_global() {
-            let args = ["tug", "toolchain", "python", "setup", "--global"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    match action {
-                        ToolchainAction::Setup { recreate, global } => {
-                            assert!(!recreate);
-                            assert!(global);
-                        }
-                        _ => panic!("expected Setup"),
-                    }
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_python_setup_all_flags() {
-            let args = [
-                "tug",
-                "toolchain",
-                "python",
-                "setup",
-                "--recreate",
-                "--global",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    match action {
-                        ToolchainAction::Setup { recreate, global } => {
-                            assert!(recreate);
-                            assert!(global);
-                        }
-                        _ => panic!("expected Setup"),
-                    }
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_python_info() {
-            let args = ["tug", "toolchain", "python", "info"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    assert!(matches!(action, ToolchainAction::Info));
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_python_check() {
-            let args = ["tug", "toolchain", "python", "check"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    assert!(matches!(action, ToolchainAction::Check));
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_other_language() {
-            // The CLI should accept any language string (validation happens at execution)
-            let args = ["tug", "toolchain", "rust", "check"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "rust");
-                    assert!(matches!(action, ToolchainAction::Check));
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
-
-        #[test]
-        fn parse_toolchain_with_global_flags() {
-            let args = [
-                "tug",
-                "--workspace",
-                "/home/user/project",
-                "toolchain",
-                "python",
-                "info",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert_eq!(
-                cli.global.workspace,
-                Some(PathBuf::from("/home/user/project"))
-            );
-            match cli.command {
-                Command::Toolchain { lang, action } => {
-                    assert_eq!(lang, "python");
-                    assert!(matches!(action, ToolchainAction::Info));
-                }
-                _ => panic!("expected Toolchain"),
-            }
-        }
     }
 
     mod global_args {

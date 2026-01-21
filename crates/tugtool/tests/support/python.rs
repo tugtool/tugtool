@@ -13,6 +13,7 @@ use std::process::Command;
 
 /// Result of a pytest execution.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct PytestResult {
     pub success: bool,
     pub stdout: String,

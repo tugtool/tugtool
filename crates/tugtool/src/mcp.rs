@@ -1096,7 +1096,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Find Python in PATH for tests (libcst no longer required with native CST)
+    /// Find Python in PATH for tests.
     fn find_python_for_tests() -> std::path::PathBuf {
         for name in &["python3", "python"] {
             if let Ok(output) = std::process::Command::new("which").arg(name).output() {

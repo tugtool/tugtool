@@ -17,8 +17,8 @@
 //! git diff tests/golden/  # Review changes
 //! ```
 //!
-//! **CI Behavior:** Tests panic if libcst is unavailable in CI environments.
-//! **Local Behavior:** Tests skip gracefully if libcst is unavailable.
+//! **CI Behavior:** Tests panic if Python is unavailable in CI environments.
+//! **Local Behavior:** Tests skip gracefully if Python is unavailable.
 //!
 //! ## Feature Requirements
 //!
@@ -33,7 +33,7 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-/// Find Python in PATH for tests (libcst no longer required with native CST)
+/// Find Python in PATH for tests.
 fn find_python_for_tests() -> PathBuf {
     for name in &["python3", "python"] {
         if let Ok(output) = std::process::Command::new("which").arg(name).output() {
@@ -151,7 +151,7 @@ fn compare_json(expected: &Value, actual: &Value) -> Result<(), String> {
 /// - `command_args`: CLI arguments to run
 /// - `golden_file`: Name of golden file in output_schema/
 /// - `fixture_name`: Optional fixture directory to copy to temp workspace
-/// - `python_path`: Path to Python interpreter with libcst
+/// - `python_path`: Path to Python interpreter
 fn run_golden_test(
     command_args: &[&str],
     golden_file: &str,
