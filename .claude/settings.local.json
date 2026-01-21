@@ -1,6 +1,13 @@
 {
   "permissions": {
     "allow": [
+      "Write(//tmp/**)",
+      "Edit(//tmp/**)",
+      "Write(./plans/plan-implementation-log.md)",
+      "Edit(./plans/plan-implementation-log.md)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(cat:*)",
       "Edit(/Users/kocienda/.claude/plans/**)",
       "Write(/Users/kocienda/.claude/plans/**)",
       "Bash(llm-git:*)",
