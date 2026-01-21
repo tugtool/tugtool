@@ -11,11 +11,13 @@ This module provides the fundamental temporal types:
 from __future__ import annotations
 
 from temporale.core.date import Date
+from temporale.core.datetime import DateTime
 from temporale.core.duration import Duration
 from temporale.core.time import Time
 
 __all__: list[str] = [
     "Date",
+    "DateTime",
     "Duration",
     "Time",
 ]

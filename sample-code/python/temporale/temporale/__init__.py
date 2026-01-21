@@ -31,7 +31,41 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-# Public API exports will be added as classes are implemented
+# Core types
+from temporale.core.date import Date
+from temporale.core.datetime import DateTime
+from temporale.core.duration import Duration
+from temporale.core.time import Time
+
+# Units
+from temporale.units.era import Era
+from temporale.units.timezone import Timezone
+from temporale.units.timeunit import TimeUnit
+
+# Exceptions
+from temporale.errors import (
+    OverflowError,
+    ParseError,
+    TemporaleError,
+    TimezoneError,
+    ValidationError,
+)
+
 __all__: list[str] = [
     "__version__",
+    # Core types
+    "Date",
+    "DateTime",
+    "Duration",
+    "Time",
+    # Units
+    "Era",
+    "Timezone",
+    "TimeUnit",
+    # Exceptions
+    "TemporaleError",
+    "ValidationError",
+    "ParseError",
+    "OverflowError",
+    "TimezoneError",
 ]

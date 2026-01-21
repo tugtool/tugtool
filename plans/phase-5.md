@@ -2288,23 +2288,23 @@ cargo nextest run -p tugtool pytest
 - `tests/test_datetime.py` with datetime tests
 
 **Tasks:**
-- [ ] Implement DateTime with `_days`, `_nanos`, `_tz` slots
-- [ ] Implement construction: `__init__`, `now()`, `utc_now()`, `from_timestamp()`, `from_iso_format()`
-- [ ] Delegate to Date and Time for component access
-- [ ] Implement timezone handling: `astimezone()`, `to_utc()`, `replace_timezone()`
-- [ ] Implement arithmetic: `+` (Duration), `-` (Duration or DateTime)
-- [ ] Handle TYPE_CHECKING import for Duration to avoid circular import
+- [x] Implement DateTime with `_days`, `_nanos`, `_tz` slots
+- [x] Implement construction: `__init__`, `now()`, `utc_now()`, `from_timestamp()`, `from_iso_format()`
+- [x] Delegate to Date and Time for component access
+- [x] Implement timezone handling: `astimezone()`, `to_utc()`, `replace_timezone()`
+- [x] Implement arithmetic: `+` (Duration), `-` (Duration or DateTime)
+- [x] Handle TYPE_CHECKING import for Duration to avoid circular import
 
 **Tests:**
-- [ ] Unit test: DateTime construction
-- [ ] Unit test: Component access (year, month, day, hour, minute, second, nanosecond)
-- [ ] Unit test: Timezone conversion
-- [ ] Unit test: Arithmetic with Duration
-- [ ] Unit test: DateTime subtraction yields Duration
+- [x] Unit test: DateTime construction
+- [x] Unit test: Component access (year, month, day, hour, minute, second, nanosecond)
+- [x] Unit test: Timezone conversion
+- [x] Unit test: Arithmetic with Duration
+- [x] Unit test: DateTime subtraction yields Duration
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_datetime.py -v` passes
-- [ ] Circular import avoided: `from temporale import DateTime, Duration` works
+- [x] `python -m pytest tests/test_datetime.py -v` passes
+- [x] Circular import avoided: `from temporale import DateTime, Duration` works
 
 **Rollback:** Remove datetime.py, instant.py, and test file
 

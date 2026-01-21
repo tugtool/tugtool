@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 8: Implement DateTime Class | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 8 tasks and specifications (lines 2279-2311)
+- `plans/phase-5.md` - [D02] Class Design: Immutability
+- `plans/phase-5.md` - [D03] Type Annotations: Full Coverage
+- `plans/phase-5.md` - [D04] Operator Overloading: Comprehensive
+- `plans/phase-5.md` - [D07] Subsecond Precision Convenience Methods
+- `plans/phase-5.md` - Spec S01: Timestamp Storage Format (`_days`, `_nanos`, `_tz`)
+- `plans/phase-5.md` - Spec S02: Precision Requirements
+- `plans/phase-5.md` - Spec S03: Format Roundtrip Guarantee
+- Existing Date, Time, Duration, and Timezone class implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement DateTime with `_days`, `_nanos`, `_tz` slots | Done |
+| Implement construction: `__init__`, `now()`, `utc_now()`, `from_timestamp()`, `from_iso_format()` | Done |
+| Delegate to Date and Time for component access | Done |
+| Implement timezone handling: `astimezone()`, `to_utc()`, `replace_timezone()` | Done |
+| Implement arithmetic: `+` (Duration), `-` (Duration or DateTime) | Done |
+| Handle TYPE_CHECKING import for Duration to avoid circular import | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/core/datetime.py` - DateTime class (778 lines) with slots-based storage, timezone support, ISO format parsing, Unix timestamp conversions, and full operator overloading
+- `sample-code/python/temporale/tests/test_datetime.py` - 106 comprehensive tests covering construction, validation, timezone handling, arithmetic, comparison, and circular import verification
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/__init__.py` - Added DateTime export
+- `sample-code/python/temporale/temporale/__init__.py` - Added full public API exports for all core types (Date, DateTime, Duration, Time), units (Era, Timezone, TimeUnit), and exceptions
+- `plans/phase-5.md` - Updated checkboxes for Step 8 tasks, tests, and checkpoints
+
+**Test Results:**
+- `pytest tests/test_datetime.py -v`: 106 tests passed
+- `pytest tests/ -v`: 461 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_datetime.py -v` passes: PASS (106 tests)
+- Circular import avoided: `from temporale import DateTime, Duration` works: PASS
+
+**Key Decisions/Notes:**
+- DateTime uses `__slots__ = ("_days", "_nanos", "_tz")` following Spec S01 for efficient storage
+- Validation is delegated to Date and Time classes during construction (reusing existing validation)
+- TYPE_CHECKING import pattern used for Duration to avoid circular imports at runtime
+- Naive vs aware datetime comparison follows Q07 decision: equality returns False, ordering raises TypeError
+- `astimezone()` preserves the instant (same point on timeline), `replace_timezone()` preserves local time
+- Added extra Unix timestamp conversions: `from_unix_millis()`, `from_unix_nanos()`, `to_unix_millis()`, `to_unix_nanos()`
+- Updated top-level `temporale/__init__.py` to export all public API types (was previously just a placeholder)
+- `combine()` class method added for creating DateTime from separate Date and Time objects
+
+---
+
 ## [phase-5.md] Step 7: Implement Time Class | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
