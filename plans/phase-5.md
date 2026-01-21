@@ -1052,6 +1052,30 @@ class Timezone:
 
 **Spec S04: Python Test Execution** {#s04-test-execution}
 
+---
+
+**⚠️⚠️⚠️ CRITICAL WARNING: READ THIS BEFORE RUNNING ANY PYTHON TESTS ⚠️⚠️⚠️**
+
+**THE ONE AND ONLY CORRECT WAY TO RUN PYTHON TESTS:**
+
+```bash
+# Absolute path (always works):
+/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
+
+# Or from workspace root:
+.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
+```
+
+**ABSOLUTELY FORBIDDEN - NEVER DO THESE:**
+- ❌ `uv run python -m pytest ...` - AUTO-CREATES UNWANTED VENVS, BREAKS EVERYTHING
+- ❌ `python -m pytest ...` - WRONG PYTHON, MISSING DEPENDENCIES
+- ❌ `pytest ...` - MAY USE SYSTEM PYTEST WITHOUT TEMPORALE
+- ❌ Looking in `sample-code/python/temporale/.tug-test-venv/` - WRONG LOCATION
+
+**THE VENV IS AT THE WORKSPACE ROOT:** `/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/`
+
+---
+
 Temporale tests are run via pytest. Two testing approaches:
 
 **Approach 1: Standalone pytest (library validation)**
@@ -2193,26 +2217,26 @@ cargo nextest run -p tugtool pytest
 - `tests/test_date.py` with date tests
 
 **Tasks:**
-- [ ] Implement Date with `_days` slot (MJD)
-- [ ] Add MJD conversion utilities in `_internal/`
-- [ ] Implement construction: `__init__`, `today()`, `from_ordinal()`, `from_iso_format()`
-- [ ] Implement properties: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `era`, `is_leap_year`
-- [ ] Implement transformations: `replace()`, `add_days()`, `add_months()`, `add_years()`
-- [ ] Implement operators: `+` (Duration), `-` (Duration or Date), comparisons, hash
-- [ ] Implement `@validate_range` decorator for construction validation
+- [x] Implement Date with `_days` slot (MJD)
+- [x] Add MJD conversion utilities in `_internal/`
+- [x] Implement construction: `__init__`, `today()`, `from_ordinal()`, `from_iso_format()`
+- [x] Implement properties: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `era`, `is_leap_year`
+- [x] Implement transformations: `replace()`, `add_days()`, `add_months()`, `add_years()`
+- [x] Implement operators: `+` (Duration), `-` (Duration or Date), comparisons, hash
+- [x] Implement `@validate_range` decorator for construction validation
 
 **Tests:**
-- [ ] Unit test: Date construction and validation
-- [ ] Unit test: Property accessors
-- [ ] Unit test: Leap year detection
-- [ ] Unit test: BCE dates (negative years)
-- [ ] Unit test: Arithmetic with Duration
-- [ ] Unit test: Date subtraction yields Duration
-- [ ] Unit test: Comparison and ordering
+- [x] Unit test: Date construction and validation
+- [x] Unit test: Property accessors
+- [x] Unit test: Leap year detection
+- [x] Unit test: BCE dates (negative years)
+- [x] Unit test: Arithmetic with Duration
+- [x] Unit test: Date subtraction yields Duration
+- [x] Unit test: Comparison and ordering
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_date.py -v` passes
-- [ ] BCE date: `Date(-44, 3, 15)` (Ides of March, 44 BCE) works correctly
+- [x] `python -m pytest tests/test_date.py -v` passes
+- [x] BCE date: `Date(-44, 3, 15)` (Ides of March, 44 BCE) works correctly
 
 **Rollback:** Remove date.py, validation.py, and test file
 

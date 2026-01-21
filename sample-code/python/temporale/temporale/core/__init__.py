@@ -10,8 +10,10 @@ This module provides the fundamental temporal types:
 
 from __future__ import annotations
 
+from temporale.core.date import Date
 from temporale.core.duration import Duration
 
 __all__: list[str] = [
+    "Date",
     "Duration",
 ]

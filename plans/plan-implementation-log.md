@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 6: Implement Date Class | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 6 tasks and specifications (lines 2184-2219)
+- `plans/phase-5.md` - Date class API specification (lines 788-842)
+- `plans/phase-5.md` - [D02] Immutability decision, [D03] Type annotations
+- `plans/phase-5.md` - Spec S01 (MJD storage specification)
+- `temporale/core/duration.py` - Existing pattern reference
+- `temporale/units/era.py` - Era enum for BCE/CE support
+- `temporale/_internal/constants.py` - Time constants
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement Date with `_days` slot (MJD) | Done |
+| Add MJD conversion utilities in `_internal/` | Done |
+| Implement construction: `__init__`, `today()`, `from_ordinal()`, `from_iso_format()` | Done |
+| Implement properties: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `era`, `is_leap_year` | Done |
+| Implement transformations: `replace()`, `add_days()`, `add_months()`, `add_years()` | Done |
+| Implement operators: `+` (Duration), `-` (Duration or Date), comparisons, hash | Done |
+| Implement `@validate_range` decorator for construction validation | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/core/date.py` - Date class with MJD internal representation, full calendar operations
+- `sample-code/python/temporale/temporale/_internal/calendar.py` - Calendar utilities including MJD conversion, ordinal conversion, leap year logic
+- `sample-code/python/temporale/temporale/_internal/validation.py` - Validation decorator and utilities
+- `sample-code/python/temporale/tests/test_date.py` - 99 comprehensive tests across 15 test classes
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/__init__.py` - Added Date export
+- `plans/phase-5.md` - Updated checkboxes for Step 6 tasks, tests, and checkpoints
+
+**Test Results:**
+- `pytest tests/test_date.py -v`: 99 tests passed
+- `pytest tests/ -v`: 266 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_date.py -v` passes: PASS (99 tests)
+- BCE date `Date(-44, 3, 15)` (Ides of March, 44 BCE) works correctly: PASS
+- `tug analyze-impact rename-symbol` finds Date class: PASS (sym_26268, 5 references)
+
+**Key Decisions/Notes:**
+- Date uses `__slots__` with `_days` storing MJD (Modified Julian Day) for efficient date arithmetic
+- Created comprehensive calendar utilities in `_internal/calendar.py` for ordinal/MJD conversions
+- Proleptic Gregorian calendar with full BCE support using astronomical year numbering (year 0 = 1 BCE)
+- `day_of_week` uses `mjd_to_day_of_week()` function for correct Monday=0 convention
+- Negative ordinal handling required careful algorithm for BCE date conversions
+- `@validate_range` decorator provides flexible parameter validation for construction
+
+---
+
 ## [phase-5.md] Step 5: Implement Duration Class | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21

@@ -93,6 +93,8 @@ cargo install --path crates/tugtool
 
 No "graceful degradation." No "skip if unavailable." Tests pass or they fail. When they fail, we fix the environment so they pass. This is a pillar of how we work on this project.
 
+### Rust Tests
+
 **IMPORTANT:** Use nextest for running tests (faster, parallel execution).
 
 ```bash
@@ -110,6 +112,40 @@ cargo nextest run -- --nocapture
 
 # Update golden files (when making intentional schema changes)
 TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
+```
+
+### Python Tests (Temporale sample code)
+
+**⚠️ CRITICAL: USE THE INSTALLED VENV - NEVER USE `uv run` ⚠️**
+
+Python tests for the Temporale sample code library MUST be run using the pre-installed virtual environment at the **workspace root**:
+
+```bash
+# CORRECT - The ONE AND ONLY way to run Python tests:
+/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
+
+# Or from workspace root with relative path:
+.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
+```
+
+**ABSOLUTELY FORBIDDEN:**
+- ❌ `uv run python -m pytest ...` - Creates unwanted venvs, breaks project structure
+- ❌ `python -m pytest ...` - Uses wrong Python, missing dependencies
+- ❌ `pytest ...` - May use system pytest without temporale installed
+- ❌ Looking for venv in `sample-code/python/temporale/.tug-test-venv/` - WRONG LOCATION
+
+**Why this matters:**
+- The `.tug-test-venv/` is at the **tugtool workspace root**, NOT in sample-code
+- This venv has temporale installed in editable mode (`-e`)
+- This venv has pytest and all test dependencies
+- Using `uv run` auto-creates new venvs and breaks the testing setup
+
+**If the venv doesn't exist, create it:**
+```bash
+cd /Users/kocienda/Mounts/u/src/tugtool
+uv venv --python 3.11 .tug-test-venv
+uv pip install --python .tug-test-venv/bin/python pytest
+uv pip install --python .tug-test-venv/bin/python -e sample-code/python/temporale/
 ```
 
 ## Quality Checks
