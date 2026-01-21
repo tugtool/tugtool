@@ -11,7 +11,7 @@ test:
     cargo nextest run --workspace
 
 test-all:
-    cargo nextest run --workspace --all-features
+    cargo nextest run --workspace --features full
 
 # Quality
 fmt:
