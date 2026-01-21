@@ -18,7 +18,7 @@ fmt:
     cargo fmt --all
 
 lint:
-    cargo clippy --workspace --all-features -- -D warnings
+    cargo clippy --workspace --features full -- -D warnings
 
 # CI (runs all checks)
 ci: fmt lint test
