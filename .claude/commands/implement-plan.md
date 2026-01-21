@@ -107,6 +107,7 @@ As you work, provide:
 ## Critical Reminders
 
 - **NEVER USE GIT** - No `git add`, `git commit`, `git push`, or any git commands. You implement code; the user commits.
+- **DO NOT UPDATE THE IMPLEMENTATION LOG** - This is the responsibility of another facility in the system
 - **UPDATE THE PLAN FILE** - Check off `- [ ]` → `- [x]` in the plan file as you complete each task and checkpoint. This is how progress is tracked.
 - The plan-skeleton.md defines the structure—actual content comes from the specific plan-N.md file
 - Phase numbers (like X.Y.5) are organizational markers for the plan, not code comments
