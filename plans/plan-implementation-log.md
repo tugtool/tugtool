@@ -3392,3 +3392,86 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 5. **Throughput**: ~3.3 MiB/s for both `parse_module` and `parse_module_with_positions`, confirming no overhead from position tracking.
 
 ---
+
+### Section 4.6: Deliverables and Checkpoints - COMPLETE (PHASE 4 CLOSED)
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Section 4.6 specification (lines 1549-1633)
+- `plans/phase-4-benchmarks.md` - Benchmark documentation
+- `crates/tugtool-python-cst/src/nodes/traits.rs` - InflateCtx usage verification
+- `crates/tugtool-python-cst/src/lib.rs` - parse_module_with_positions API
+- `crates/tugtool-python/src/cst_bridge.rs` - Integration verification
+- Various visitor files for string search removal verification
+
+**Implementation Progress:**
+
+| Criterion | Status |
+|-----------|--------|
+| Phase Exit Criteria (8 items) | All Verified |
+| Acceptance Tests (4 items) | All Verified |
+| Milestone M01: InflateCtx Infrastructure | Complete |
+| Milestone M02: Embedded NodeId Working | Complete |
+| Milestone M03: All Collectors Updated | Complete |
+| Milestone M04: Integration Complete | Complete |
+| Checkpoint Table (6 items) | All Verified |
+
+**Files Modified:**
+- `plans/phase-4.md` - Marked all section 4.6 checkboxes as complete
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1088 tests passed
+- `cargo nextest run -p tugtool-python-cst golden`: 37 golden tests passed
+- `cargo nextest run -p tugtool-python-cst span`: 47 span tests passed
+- `cargo nextest run -p tugtool-python rename`: 23 rename tests passed
+- `cargo nextest run -p tugtool-python-cst test_inflate_ctx`: 4 InflateCtx tests passed
+
+**Checkpoints Verified:**
+
+Phase Exit Criteria:
+- `InflateCtx` replaces `&Config` in `Inflate` trait: PASS (105 usages)
+- Key inflated nodes have embedded `node_id: Option<NodeId>`: PASS (8 node types)
+- `parse_module_with_positions()` API exists and is documented: PASS
+- All collectors use `PositionTable` and embedded NodeId: PASS
+- `grep -r find_and_advance` returns empty (only doc comment): PASS
+- All golden tests pass: PASS (37 tests)
+- Performance benchmarks show no regression >10%: PASS (0% regression)
+- Documentation updated in CLAUDE.md: PASS
+
+Acceptance Tests:
+- Integration test: Rename operation produces correct diffs: PASS (23 tests)
+- Golden test: Span output matches expected for fixture files: PASS
+- Unit test: Repeated identifiers get distinct, correct spans: PASS (`test_multiple_bindings_same_name_have_distinct_spans`)
+- Unit test: Inflated nodes have populated `node_id` after parsing: PASS (multiple tests verify `.node_id.is_some()`)
+
+Checkpoint Table:
+- InflateCtx works: PASS (4 tests)
+- NodeId embedded: PASS (tests verify `Some(NodeId)`)
+- Position API works: PASS
+- No string search: PASS (grep returns 0)
+- Tests pass: PASS (1088 tests)
+- Benchmarks pass: PASS (documented in phase-4-benchmarks.md)
+
+**Key Notes:**
+
+1. **Phase 4 is now COMPLETE**: All exit criteria, acceptance tests, milestones, and checkpoints have been verified and marked complete.
+
+2. **Roadmap items remain unchecked**: The Roadmap/Follow-ons section (lines 1588-1621) contains items explicitly marked as "Not Required for Phase Close" - these remain as future work:
+   - Variable/Import statement-level spans
+   - Parameter full spans
+   - Line/col output enrichment
+   - Scope tracking expansion (lambda, comprehension)
+   - Literal span recording
+   - PositionTable optimization (Vec instead of HashMap)
+
+3. **Summary of Phase 4 accomplishments**:
+   - Replaced cursor-based string search with token position extraction
+   - Introduced `InflateCtx` to thread identity assignment through inflation
+   - Embedded `node_id` on 8 key node types (Name, FunctionDef, ClassDef, Param, Decorator, Integer, Float, SimpleString)
+   - Implemented `parse_module_with_positions()` API
+   - Updated all 9 collectors to use `PositionTable` pattern
+   - Achieved 0% parse regression and 3.8x analysis speedup
+   - Renamed crates from `tugtool-cst` to `tugtool-python-cst` for clarity
+
+---

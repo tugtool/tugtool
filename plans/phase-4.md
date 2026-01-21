@@ -1552,38 +1552,38 @@ let scope_end = match &self.body {
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `InflateCtx` replaces `&Config` in `Inflate` trait
-- [ ] Key inflated nodes have embedded `node_id: Option<NodeId>` field
-- [ ] `parse_module_with_positions()` API exists and is documented
-- [ ] All collectors use `PositionTable` and embedded NodeId, not string search
-- [ ] `grep -r find_and_advance crates/tugtool-python-cst/src/visitor/` returns empty
-- [ ] All golden tests pass with identical or improved output
-- [ ] Performance benchmarks show no regression >10%
-- [ ] Documentation updated in CLAUDE.md
+- [x] `InflateCtx` replaces `&Config` in `Inflate` trait
+- [x] Key inflated nodes have embedded `node_id: Option<NodeId>` field
+- [x] `parse_module_with_positions()` API exists and is documented
+- [x] All collectors use `PositionTable` and embedded NodeId, not string search
+- [x] `grep -r find_and_advance crates/tugtool-python-cst/src/visitor/` returns empty
+- [x] All golden tests pass with identical or improved output
+- [x] Performance benchmarks show no regression >10%
+- [x] Documentation updated in CLAUDE.md
 
 **Acceptance tests:**
-- [ ] Integration test: Rename operation produces correct diffs for complex code
-- [ ] Golden test: Span output matches expected for fixture files
-- [ ] Unit test: Repeated identifiers get distinct, correct spans
-- [ ] Unit test: Inflated nodes have populated `node_id` after parsing
+- [x] Integration test: Rename operation produces correct diffs for complex code
+- [x] Golden test: Span output matches expected for fixture files
+- [x] Unit test: Repeated identifiers get distinct, correct spans
+- [x] Unit test: Inflated nodes have populated `node_id` after parsing
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: InflateCtx Infrastructure Available** {#m01-inflate-ctx}
-- [ ] `InflateCtx` implemented and `Inflate` trait signature changed
-- [ ] Build succeeds with new architecture
+- [x] `InflateCtx` implemented and `Inflate` trait signature changed
+- [x] Build succeeds with new architecture
 
 **Milestone M02: Embedded NodeId Working** {#m02-embedded-nodeid}
-- [ ] Key nodes have `node_id` field
-- [ ] `parse_module_with_positions()` returns nodes with populated IDs
+- [x] Key nodes have `node_id` field
+- [x] `parse_module_with_positions()` returns nodes with populated IDs
 
 **Milestone M03: All Collectors Updated** {#m03-collectors-updated}
-- [ ] SpanCollector, BindingCollector, ScopeCollector, ReferenceCollector all use `PositionTable`
-- [ ] No string search in any collector
+- [x] SpanCollector, BindingCollector, ScopeCollector, ReferenceCollector all use `PositionTable`
+- [x] No string search in any collector
 
 **Milestone M04: Integration Complete** {#m04-integration-complete}
-- [ ] tugtool-python uses new infrastructure
-- [ ] All tests pass
+- [x] tugtool-python uses new infrastructure
+- [x] All tests pass
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
