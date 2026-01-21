@@ -26,9 +26,10 @@ use std::hint::black_box;
 use std::fs;
 use std::path::PathBuf;
 use tugtool_python_cst::{
-    parse_module, AnnotationCollector, BindingCollector, Codegen, CodegenState,
-    DynamicPatternDetector, ImportCollector, InheritanceCollector, MethodCallCollector,
-    ReferenceCollector, RenameRequest, RenameTransformer, ScopeCollector, TypeInferenceCollector,
+    parse_module, parse_module_with_positions, AnnotationCollector, BindingCollector, Codegen,
+    CodegenState, DynamicPatternDetector, ImportCollector, InheritanceCollector,
+    MethodCallCollector, ReferenceCollector, RenameRequest, RenameTransformer, ScopeCollector,
+    TypeInferenceCollector,
 };
 
 // =============================================================================
@@ -198,6 +199,42 @@ fn bench_parse_fixtures(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark parse_module vs parse_module_with_positions to measure position tracking overhead.
+fn bench_parse_with_positions(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parse_with_positions");
+
+    for size in [50, 100, 200].iter() {
+        let code = generate_class_code(*size);
+        let bytes = code.len();
+
+        group.throughput(Throughput::Bytes(bytes as u64));
+
+        // Benchmark parse_module (without position tracking)
+        group.bench_with_input(
+            BenchmarkId::new("parse_module", format!("{}_classes", size)),
+            &code,
+            |b, code| {
+                b.iter(|| {
+                    let _ = black_box(parse_module(code, None).unwrap());
+                });
+            },
+        );
+
+        // Benchmark parse_module_with_positions (with position tracking)
+        group.bench_with_input(
+            BenchmarkId::new("parse_with_positions", format!("{}_classes", size)),
+            &code,
+            |b, code| {
+                b.iter(|| {
+                    let _ = black_box(parse_module_with_positions(code, None).unwrap());
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 // =============================================================================
 // Analysis Benchmarks
 // =============================================================================
@@ -289,6 +326,62 @@ fn bench_full_analysis(c: &mut Criterion) {
                     let _ = black_box(MethodCallCollector::collect(&module, code));
                     // Run P2 collector
                     let _ = black_box(DynamicPatternDetector::collect(&module, code));
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark analysis using position-aware parsing vs legacy collect() methods.
+/// This compares the new approach (single parse + position table) vs old approach
+/// (parse_module + each collector's internal re-parse for positions).
+fn bench_analysis_with_positions(c: &mut Criterion) {
+    let mut group = c.benchmark_group("analysis_with_positions");
+
+    for size in [50, 100].iter() {
+        let code = generate_class_code(*size);
+
+        // Benchmark the legacy approach: parse_module + collect() methods
+        // Note: The collect() methods internally call parse_module_with_positions
+        // for each collector that needs positions, resulting in multiple parses.
+        group.bench_with_input(
+            BenchmarkId::new("legacy_collect", format!("{}_classes", size)),
+            &code,
+            |b, code| {
+                b.iter(|| {
+                    let module = parse_module(code, None).unwrap();
+                    // P0 collectors (each internally parses with positions)
+                    let _ = black_box(ScopeCollector::collect(&module, code));
+                    let _ = black_box(BindingCollector::collect(&module, code));
+                    let _ = black_box(ReferenceCollector::collect(&module, code));
+                });
+            },
+        );
+
+        // Benchmark the new approach: single parse_module_with_positions + collect_with_positions
+        // This parses once and shares the PositionTable across all collectors.
+        group.bench_with_input(
+            BenchmarkId::new("position_aware", format!("{}_classes", size)),
+            &code,
+            |b, code| {
+                b.iter(|| {
+                    let parsed = parse_module_with_positions(code, None).unwrap();
+                    // P0 collectors using shared PositionTable
+                    let _ = black_box(ScopeCollector::collect_with_positions(
+                        &parsed.module,
+                        &parsed.positions,
+                        code,
+                    ));
+                    let _ = black_box(BindingCollector::collect_with_positions(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
+                    let _ = black_box(ReferenceCollector::collect_with_positions(
+                        &parsed.module,
+                        &parsed.positions,
+                    ));
                 });
             },
         );
@@ -424,6 +517,7 @@ criterion_group!(
     bench_parse_classes,
     bench_parse_comprehensions,
     bench_parse_fixtures,
+    bench_parse_with_positions,
 );
 
 criterion_group!(
@@ -432,6 +526,7 @@ criterion_group!(
     bench_binding_analysis,
     bench_reference_analysis,
     bench_full_analysis,
+    bench_analysis_with_positions,
 );
 
 criterion_group!(rename, bench_rename_single, bench_rename_batch,);

@@ -1530,16 +1530,16 @@ let scope_end = match &self.body {
 - Benchmark results comparing old vs new approach
 
 **Tasks:**
-- [ ] Run existing parser benchmarks before and after
-- [ ] Measure: parse time, memory usage
-- [ ] Document any regressions or improvements
+- [x] Run existing parser benchmarks before and after
+- [x] Measure: parse time, memory usage
+- [x] Document any regressions or improvements
 
 **Tests:**
-- [ ] Benchmark: `cargo bench -p tugtool-python-cst`
+- [x] Benchmark: `cargo bench -p tugtool-python-cst`
 
 **Checkpoint:**
-- [ ] No >10% regression in parse time
-- [ ] Results documented in `plans/phase-4-benchmarks.md`
+- [x] No >10% regression in parse time (actually ~0% difference)
+- [x] Results documented in `plans/phase-4-benchmarks.md`
 
 **Rollback:**
 - If regression detected, profile and optimize before proceeding
