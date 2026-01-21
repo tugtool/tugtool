@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 10: Implement JSON Serialization | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Section 5.0.8 Step 10 tasks and specifications (lines 2351-2389)
+- `plans/phase-5.md` - Spec S03: Format Roundtrip Guarantee
+- `plans/phase-5.md` - Table T07: Convert Module Symbols
+- `plans/phase-5.md` - Q09: JSON Encoding Style decision (ISO strings with type tags)
+- Existing Date, Time, DateTime, Duration class implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `to_json()` returning dict with `_type`, `value`, and component fields | Done |
+| Implement `from_json()` reconstructing objects from dicts | Done |
+| Add epoch conversions: Unix seconds, Unix millis, Unix nanos | Done |
+| Integrate with core classes via methods | Done |
+
+**Files Created:**
+- `sample-code/python/temporale/temporale/convert/json.py` - `to_json()` and `from_json()` functions with polymorphic deserialization
+- `sample-code/python/temporale/temporale/convert/epoch.py` - Unix epoch conversion utilities (seconds, millis, nanos)
+- `sample-code/python/temporale/tests/test_json.py` - 67 comprehensive JSON serialization tests
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/convert/__init__.py` - Added exports for json and epoch functions
+- `sample-code/python/temporale/temporale/core/date.py` - Updated `to_json()` to Q09 format, added `from_json()`
+- `sample-code/python/temporale/temporale/core/time.py` - Added `to_json()` and `from_json()` methods
+- `sample-code/python/temporale/temporale/core/datetime.py` - Added `to_json()` and `from_json()` methods
+- `sample-code/python/temporale/temporale/core/duration.py` - Added `to_json()` and `from_json()` methods
+- `sample-code/python/temporale/tests/test_date.py` - Updated `test_to_json` assertions to match new Q09 format
+
+**Test Results:**
+- `pytest tests/test_json.py -v`: 67 tests passed
+- `pytest tests/ -v`: 626 tests passed (full temporale test suite)
+
+**Checkpoints Verified:**
+- `python -m pytest tests/test_json.py -v` passes: PASS (67 tests)
+
+**Key Decisions/Notes:**
+- JSON format uses ISO 8601 strings with `_type` tag per Q09 decision
+- `from_json()` supports polymorphic deserialization - detects type from `_type` field
+- Duration includes both ISO 8601 period string (`value`) and `total_nanos` for exact precision
+- Updated existing Date.to_json() from component-based format to Q09 format (breaking change)
+- Epoch conversion functions delegate to existing DateTime methods
+- All roundtrip tests verify Spec S03: `from_json(to_json(x)) == x`
+
+---
+
 ## [phase-5.md] Step 9: Implement Formatting Module | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
@@ -4241,3 +4291,4 @@ Added `#[cfg(feature = "python")]` and `#[cfg(feature = "rust")]` guards to lang
 - `cargo install --path crates/tugtool` works
 
 **Phase 2 Complete - Milestone M04 Achieved**
+

@@ -737,13 +737,13 @@ class TestDateConversion:
         """Test to_json method."""
         d = Date(2024, 1, 15)
         j = d.to_json()
-        assert j == {"year": 2024, "month": 1, "day": 15}
+        assert j == {"_type": "Date", "value": "2024-01-15"}
 
     def test_to_json_bce(self) -> None:
         """Test to_json for BCE dates."""
         d = Date(-44, 3, 15)
         j = d.to_json()
-        assert j == {"year": -44, "month": 3, "day": 15}
+        assert j == {"_type": "Date", "value": "-0044-03-15"}
 
 
 class TestDateImmutability:

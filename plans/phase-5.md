@@ -2360,10 +2360,10 @@ cargo nextest run -p tugtool pytest
 - `tests/test_json.py` with JSON roundtrip tests
 
 **Tasks:**
-- [ ] Implement `to_json()` returning dict with `_type`, `value`, and component fields
-- [ ] Implement `from_json()` reconstructing objects from dicts
-- [ ] Add epoch conversions: Unix seconds, Unix millis, Unix nanos
-- [ ] Integrate with core classes via methods
+- [x] Implement `to_json()` returning dict with `_type`, `value`, and component fields
+- [x] Implement `from_json()` reconstructing objects from dicts
+- [x] Add epoch conversions: Unix seconds, Unix millis, Unix nanos
+- [x] Integrate with core classes via methods
 
 **JSON Format:**
 ```json
@@ -2376,13 +2376,13 @@ cargo nextest run -p tugtool pytest
 ```
 
 **Tests:**
-- [ ] Unit test: DateTime to JSON and back
-- [ ] Unit test: Date to JSON and back
-- [ ] Unit test: Duration to JSON and back
-- [ ] Unit test: Epoch conversions
+- [x] Unit test: DateTime to JSON and back
+- [x] Unit test: Date to JSON and back
+- [x] Unit test: Duration to JSON and back
+- [x] Unit test: Epoch conversions
 
 **Checkpoint:**
-- [ ] `python -m pytest tests/test_json.py -v` passes
+- [x] `python -m pytest tests/test_json.py -v` passes
 
 **Rollback:** Remove json.py, epoch.py, and test file
 

@@ -760,6 +760,49 @@ class DateTime:
 
     # ISO format
 
+    def to_json(self) -> dict:
+        """Return the datetime as a JSON-serializable dictionary.
+
+        The format uses ISO 8601 string with type tag for polymorphic
+        deserialization.
+
+        Returns:
+            Dictionary with _type and value keys.
+
+        Examples:
+            >>> DateTime(2024, 1, 15, 14, 30, 45).to_json()
+            {'_type': 'DateTime', 'value': '2024-01-15T14:30:45'}
+        """
+        return {"_type": "DateTime", "value": self.to_iso_format()}
+
+    @classmethod
+    def from_json(cls, data: dict) -> "DateTime":
+        """Create a DateTime from a JSON dictionary.
+
+        Args:
+            data: Dictionary with _type and value keys.
+
+        Returns:
+            A DateTime parsed from the dictionary.
+
+        Raises:
+            ParseError: If the data is invalid.
+
+        Examples:
+            >>> DateTime.from_json({'_type': 'DateTime', 'value': '2024-01-15T14:30:45'})
+            DateTime(2024, 1, 15, 14, 30, 45, nanosecond=0)
+        """
+        from temporale.errors import ParseError
+
+        if not isinstance(data, dict):
+            raise ParseError(f"expected dict, got {type(data).__name__}")
+
+        value = data.get("value")
+        if not value:
+            raise ParseError("missing 'value' field for DateTime")
+
+        return cls.from_iso_format(value)
+
     def to_iso_format(self, *, precision: str = "auto") -> str:
         """Return the datetime as an ISO 8601 string.
 

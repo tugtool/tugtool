@@ -466,15 +466,45 @@ class Date:
     def to_json(self) -> dict:
         """Return the date as a JSON-serializable dictionary.
 
+        The format uses ISO 8601 string with type tag for polymorphic
+        deserialization.
+
         Returns:
-            Dictionary with year, month, and day keys.
+            Dictionary with _type and value keys.
 
         Examples:
             >>> Date(2024, 1, 15).to_json()
-            {'year': 2024, 'month': 1, 'day': 15}
+            {'_type': 'Date', 'value': '2024-01-15'}
         """
-        year, month, day = mjd_to_ymd(self._days)
-        return {"year": year, "month": month, "day": day}
+        return {"_type": "Date", "value": self.to_iso_format()}
+
+    @classmethod
+    def from_json(cls, data: dict) -> Date:
+        """Create a Date from a JSON dictionary.
+
+        Args:
+            data: Dictionary with _type and value keys.
+
+        Returns:
+            A Date parsed from the dictionary.
+
+        Raises:
+            ParseError: If the data is invalid.
+
+        Examples:
+            >>> Date.from_json({'_type': 'Date', 'value': '2024-01-15'})
+            Date(2024, 1, 15)
+        """
+        from temporale.errors import ParseError
+
+        if not isinstance(data, dict):
+            raise ParseError(f"expected dict, got {type(data).__name__}")
+
+        value = data.get("value")
+        if not value:
+            raise ParseError("missing 'value' field for Date")
+
+        return cls.from_iso_format(value)
 
     @overload
     def __add__(self, other: Duration) -> Date: ...

@@ -484,6 +484,47 @@ class Time:
             )
         return self.replace(nanosecond=microsecond * NANOS_PER_MICROSECOND)
 
+    def to_json(self) -> dict:
+        """Return the time as a JSON-serializable dictionary.
+
+        The format uses ISO 8601 string with type tag for polymorphic
+        deserialization.
+
+        Returns:
+            Dictionary with _type and value keys.
+
+        Examples:
+            >>> Time(14, 30, 45).to_json()
+            {'_type': 'Time', 'value': '14:30:45'}
+        """
+        return {"_type": "Time", "value": self.to_iso_format()}
+
+    @classmethod
+    def from_json(cls, data: dict) -> "Time":
+        """Create a Time from a JSON dictionary.
+
+        Args:
+            data: Dictionary with _type and value keys.
+
+        Returns:
+            A Time parsed from the dictionary.
+
+        Raises:
+            ParseError: If the data is invalid.
+
+        Examples:
+            >>> Time.from_json({'_type': 'Time', 'value': '14:30:45'})
+            Time(14, 30, 45, nanosecond=0)
+        """
+        if not isinstance(data, dict):
+            raise ParseError(f"expected dict, got {type(data).__name__}")
+
+        value = data.get("value")
+        if not value:
+            raise ParseError("missing 'value' field for Time")
+
+        return cls.from_iso_format(value)
+
     def to_iso_format(self, *, precision: str = "auto") -> str:
         """Return the time as an ISO 8601 string.
 

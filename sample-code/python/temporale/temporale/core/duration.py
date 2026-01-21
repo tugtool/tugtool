@@ -371,6 +371,65 @@ class Duration:
         """
         return self._days == 0 and self._seconds == 0 and self._nanos == 0
 
+    def to_json(self) -> dict:
+        """Return the duration as a JSON-serializable dictionary.
+
+        The format uses ISO 8601 period string with type tag for polymorphic
+        deserialization. Also includes total_nanos for exact precision.
+
+        Returns:
+            Dictionary with _type, value, and total_nanos keys.
+
+        Examples:
+            >>> Duration(days=1, seconds=9000).to_json()
+            {'_type': 'Duration', 'value': 'P1DT2H30M', 'total_nanos': 95400000000000}
+        """
+        from temporale.convert.json import _duration_to_iso8601
+
+        return {
+            "_type": "Duration",
+            "value": _duration_to_iso8601(self),
+            "total_nanos": self.total_nanoseconds,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -> "Duration":
+        """Create a Duration from a JSON dictionary.
+
+        Prefers total_nanos for exact precision, falls back to parsing
+        the ISO 8601 period string.
+
+        Args:
+            data: Dictionary with _type and either total_nanos or value.
+
+        Returns:
+            A Duration from the dictionary.
+
+        Raises:
+            ParseError: If the data is invalid.
+
+        Examples:
+            >>> Duration.from_json({'_type': 'Duration', 'value': 'P1D', 'total_nanos': 86400000000000})
+            Duration(days=1, seconds=0, nanoseconds=0)
+        """
+        from temporale.errors import ParseError
+        from temporale.convert.json import _duration_from_iso8601
+
+        if not isinstance(data, dict):
+            raise ParseError(f"expected dict, got {type(data).__name__}")
+
+        # Prefer total_nanos for exact precision
+        total_nanos = data.get("total_nanos")
+        if total_nanos is not None:
+            return cls(nanoseconds=total_nanos)
+
+        # Fall back to ISO 8601 period
+        value = data.get("value")
+        if not value:
+            raise ParseError("missing 'value' or 'total_nanos' field for Duration")
+
+        return _duration_from_iso8601(value)
+
     def __add__(self, other: object) -> Duration:
         """Add two durations.
 
