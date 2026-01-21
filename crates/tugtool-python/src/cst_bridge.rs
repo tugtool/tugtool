@@ -224,14 +224,13 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     let bindings: Vec<BindingInfo> = cst_bindings.into_iter().map(|b| b.into()).collect();
 
     // P0: Collect references
-    let cst_collector = ReferenceCollector::collect(&module, source);
-    let references: Vec<(String, Vec<ReferenceInfo>)> = cst_collector
-        .all_references()
-        .iter()
+    let cst_refs = ReferenceCollector::collect(&module, source);
+    let references: Vec<(String, Vec<ReferenceInfo>)> = cst_refs
+        .into_iter()
         .map(|(name, refs)| {
             let converted_refs: Vec<ReferenceInfo> =
-                refs.iter().map(|r| r.clone().into()).collect();
-            (name.clone(), converted_refs)
+                refs.into_iter().map(|r| r.into()).collect();
+            (name, converted_refs)
         })
         .collect();
 

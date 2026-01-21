@@ -43,7 +43,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use tugtool_python_cst::{
-    parse_module,
+    parse_module, parse_module_with_positions,
     visitor::{
         AnnotationCollector, BindingCollector, DynamicPatternDetector, ImportCollector,
         InheritanceCollector, MethodCallCollector, ReferenceCollector, ScopeCollector,
@@ -250,14 +250,12 @@ fn analyze_bindings(source: &str) -> Vec<GoldenBinding> {
 }
 
 fn analyze_references(source: &str) -> BTreeMap<String, Vec<GoldenReference>> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let collector = ReferenceCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
 
-    collector
-        .all_references()
-        .iter()
-        .map(|(name, refs)| {
-            let golden_refs: Vec<_> = refs
+    refs.iter()
+        .map(|(name, ref_list)| {
+            let golden_refs: Vec<_> = ref_list
                 .iter()
                 .map(|r| GoldenReference {
                     kind: r.kind.as_str().to_string(),

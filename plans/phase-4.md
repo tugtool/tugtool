@@ -1448,15 +1448,15 @@ let scope_end = match &self.body {
 - Modified `crates/tugtool-python-cst/src/visitor/reference.rs` (if exists)
 
 **Tasks:**
-- [ ] Check if ReferenceCollector uses `find_and_advance()`
-- [ ] If so, update to use `PositionTable` with `node.node_id` lookup
-- [ ] Remove string search code
+- [x] Check if ReferenceCollector uses `find_and_advance()`
+- [x] If so, update to use `PositionTable` with `node.node_id` lookup
+- [x] Remove string search code
 
 **Tests:**
-- [ ] Unit test: Reference spans are accurate
+- [x] Unit test: Reference spans are accurate
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst reference` passes
+- [x] `cargo nextest run -p tugtool-python-cst reference` passes
 
 **Rollback:**
 - Revert ReferenceCollector changes

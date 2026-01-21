@@ -3,15 +3,15 @@
     {
       "kind": "definition",
       "span": [
-        80,
-        81
+        86,
+        87
       ]
     },
     {
       "kind": "reference",
       "span": [
-        84,
-        85
+        92,
+        93
       ]
     }
   ],
@@ -28,15 +28,15 @@
     {
       "kind": "definition",
       "span": [
-        82,
-        83
+        89,
+        90
       ]
     },
     {
       "kind": "reference",
       "span": [
-        89,
-        90
+        96,
+        97
       ]
     }
   ],

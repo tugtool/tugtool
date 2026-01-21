@@ -17,17 +17,24 @@
 //! - **Attributes**: attribute access names (`obj.attr`)
 //! - **Imports**: names in import statements
 //!
+//! # Span Extraction
+//!
+//! Spans are extracted from the [`PositionTable`] populated during CST inflation.
+//! Each `Name` node has an embedded `node_id` that maps to its `ident_span` in
+//! the position table. This provides accurate, token-derived positions without
+//! relying on cursor-based string search.
+//!
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, ReferenceCollector, ReferenceInfo, ReferenceKind};
+//! use tugtool_python_cst::{parse_module_with_positions, ReferenceCollector, ReferenceInfo, ReferenceKind};
 //!
 //! let source = "x = 1\nprint(x)";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let collector = ReferenceCollector::collect(&module, source);
-//! for (name, refs) in collector.all_references() {
-//!     println!("{}: {:?}", name, refs);
+//! let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! for (name, ref_list) in &refs {
+//!     println!("{}: {:?}", name, ref_list);
 //! }
 //! ```
 
@@ -35,9 +42,10 @@ use std::collections::HashMap;
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
     AnnAssign, Assign, AssignTargetExpression, Attribute, Call, ClassDef, Element, Expression,
-    FunctionDef, Import, ImportFrom, Module, Name, Param, Span,
+    FunctionDef, Import, ImportFrom, Module, Name, NodeId, Param, Span,
 };
 
 /// The kind of reference in Python.
@@ -132,54 +140,111 @@ struct ContextEntry {
 /// # Example
 ///
 /// ```ignore
-/// let collector = ReferenceCollector::collect(&module, source);
-/// let refs = collector.references_for("x");
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let x_refs = refs.get("x");
 /// ```
-pub struct ReferenceCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct ReferenceCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
     /// Map of name -> list of references.
     references: HashMap<String, Vec<ReferenceInfo>>,
     /// Context stack for determining reference kinds.
     context_stack: Vec<ContextEntry>,
-    /// Current search cursor position in the source.
-    cursor: usize,
     /// Stack tracking how many skip contexts were pushed by each assignment.
     assign_skip_counts: Vec<usize>,
 }
 
-impl<'src> ReferenceCollector<'src> {
-    /// Create a new ReferenceCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> ReferenceCollector<'pos> {
+    /// Create a new ReferenceCollector without position tracking.
+    ///
+    /// References will be collected but spans will be None.
+    pub fn new() -> Self {
         Self {
-            source,
+            positions: None,
             references: HashMap::new(),
             context_stack: Vec::new(),
-            cursor: 0,
             assign_skip_counts: Vec::new(),
         }
     }
 
-    /// Collect references from a parsed module.
+    /// Create a new ReferenceCollector with position tracking.
     ///
-    /// Returns the collector with populated reference data.
+    /// References will include spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable) -> Self {
+        Self {
+            positions: Some(positions),
+            references: HashMap::new(),
+            context_stack: Vec::new(),
+            assign_skip_counts: Vec::new(),
+        }
+    }
+
+    /// Collect references from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting references with accurate spans.
+    /// Returns a HashMap mapping names to their reference information.
     ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
-    /// * `source` - The original source code (must match what was parsed)
+    /// * `positions` - Position table from `parse_module_with_positions`
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let parsed = parse_module_with_positions(source, None)?;
+    /// let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    /// let x_refs = refs.get("x");
+    /// ```
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &PositionTable,
+    ) -> HashMap<String, Vec<ReferenceInfo>> {
+        let mut collector = ReferenceCollector::with_positions(positions);
+        walk_module(&mut collector, module);
+        collector.references
+    }
+
+    /// Collect references from a parsed module.
+    ///
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// NOTE: This method re-parses the source internally to get the PositionTable,
+    /// so the `module` parameter is ignored. Consider using
+    /// [`collect_with_positions`] directly if you already have a parsed module.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored, source is re-parsed)
+    /// * `source` - The original source code (used to re-parse for positions)
     ///
     /// # Example
     ///
     /// ```ignore
     /// let source = "x = 1\nprint(x)";
     /// let module = parse_module(source, None)?;
-    /// let collector = ReferenceCollector::collect(&module, source);
+    /// let refs = ReferenceCollector::collect(&module, source);
+    /// let x_refs = refs.get("x");
     /// ```
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Self {
-        let mut collector = ReferenceCollector::new(source);
-        walk_module(&mut collector, module);
-        collector
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> HashMap<String, Vec<ReferenceInfo>> {
+        // Re-parse with position tracking to get accurate spans
+        // We ignore the passed module and re-parse to get the PositionTable
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector = ReferenceCollector::with_positions(&parsed.positions);
+                walk_module(&mut collector, &parsed.module);
+                collector.references
+            }
+            Err(_) => {
+                // Fallback: return empty map if re-parsing fails
+                // This should not happen for valid source
+                HashMap::new()
+            }
+        }
     }
 
     /// Get all references for a specific name.
@@ -199,23 +264,11 @@ impl<'src> ReferenceCollector<'src> {
         &self.references
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    ///
-    /// Returns the span if found.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the span for a node from the PositionTable.
+    fn lookup_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.ident_span)
     }
 
     /// Get the current reference kind based on context stack.
@@ -244,9 +297,9 @@ impl<'src> ReferenceCollector<'src> {
         Some(ReferenceKind::Reference)
     }
 
-    /// Add a reference for a name.
-    fn add_reference(&mut self, name: &str, kind: ReferenceKind) {
-        let span = self.find_and_advance(name);
+    /// Add a reference for a name with span looked up from PositionTable.
+    fn add_reference_with_id(&mut self, name: &str, kind: ReferenceKind, node_id: Option<NodeId>) {
+        let span = self.lookup_span(node_id);
         let info = ReferenceInfo::new(kind).with_span(span);
 
         self.references
@@ -258,15 +311,16 @@ impl<'src> ReferenceCollector<'src> {
     /// Mark assignment targets as definitions and add skip contexts.
     /// Returns the names that were marked for later context cleanup.
     fn mark_assign_definitions(&mut self, target: &AssignTargetExpression<'_>) -> Vec<String> {
-        let mut names = Vec::new();
-        self.collect_assign_names(target, &mut names);
+        let mut names_with_ids: Vec<(String, Option<NodeId>)> = Vec::new();
+        self.collect_assign_names_with_ids(target, &mut names_with_ids);
 
         // Add all definitions first
-        for name in &names {
-            self.add_reference(name, ReferenceKind::Definition);
+        for (name, node_id) in &names_with_ids {
+            self.add_reference_with_id(name, ReferenceKind::Definition, *node_id);
         }
 
         // Push skip contexts for all names
+        let names: Vec<String> = names_with_ids.into_iter().map(|(n, _)| n).collect();
         for name in &names {
             self.context_stack.push(ContextEntry {
                 kind: ContextKind::SkipName,
@@ -277,60 +331,72 @@ impl<'src> ReferenceCollector<'src> {
         names
     }
 
-    /// Collect all names from an assignment target.
-    fn collect_assign_names(&self, target: &AssignTargetExpression<'_>, names: &mut Vec<String>) {
+    /// Collect all names with their NodeIds from an assignment target.
+    fn collect_assign_names_with_ids(
+        &self,
+        target: &AssignTargetExpression<'_>,
+        names: &mut Vec<(String, Option<NodeId>)>,
+    ) {
         match target {
             AssignTargetExpression::Name(name) => {
-                names.push(name.value.to_string());
+                names.push((name.value.to_string(), name.node_id));
             }
             AssignTargetExpression::Tuple(tuple) => {
                 for element in &tuple.elements {
-                    self.collect_element_names(element, names);
+                    self.collect_element_names_with_ids(element, names);
                 }
             }
             AssignTargetExpression::List(list) => {
                 for element in &list.elements {
-                    self.collect_element_names(element, names);
+                    self.collect_element_names_with_ids(element, names);
                 }
             }
             AssignTargetExpression::StarredElement(starred) => {
-                self.collect_expression_names(&starred.value, names);
+                self.collect_expression_names_with_ids(&starred.value, names);
             }
             // Attribute and Subscript don't create local definitions
             AssignTargetExpression::Attribute(_) | AssignTargetExpression::Subscript(_) => {}
         }
     }
 
-    /// Collect names from tuple/list elements.
-    fn collect_element_names(&self, element: &Element<'_>, names: &mut Vec<String>) {
+    /// Collect names with NodeIds from tuple/list elements.
+    fn collect_element_names_with_ids(
+        &self,
+        element: &Element<'_>,
+        names: &mut Vec<(String, Option<NodeId>)>,
+    ) {
         match element {
             Element::Simple { value, .. } => {
-                self.collect_expression_names(value, names);
+                self.collect_expression_names_with_ids(value, names);
             }
             Element::Starred(starred) => {
-                self.collect_expression_names(&starred.value, names);
+                self.collect_expression_names_with_ids(&starred.value, names);
             }
         }
     }
 
-    /// Collect names from expressions (for nested tuple unpacking).
-    fn collect_expression_names(&self, expr: &Expression<'_>, names: &mut Vec<String>) {
+    /// Collect names with NodeIds from expressions (for nested tuple unpacking).
+    fn collect_expression_names_with_ids(
+        &self,
+        expr: &Expression<'_>,
+        names: &mut Vec<(String, Option<NodeId>)>,
+    ) {
         match expr {
             Expression::Name(name) => {
-                names.push(name.value.to_string());
+                names.push((name.value.to_string(), name.node_id));
             }
             Expression::Tuple(tuple) => {
                 for element in &tuple.elements {
-                    self.collect_element_names(element, names);
+                    self.collect_element_names_with_ids(element, names);
                 }
             }
             Expression::List(list) => {
                 for element in &list.elements {
-                    self.collect_element_names(element, names);
+                    self.collect_element_names_with_ids(element, names);
                 }
             }
             Expression::StarredElement(starred) => {
-                self.collect_expression_names(&starred.value, names);
+                self.collect_expression_names_with_ids(&starred.value, names);
             }
             _ => {}
         }
@@ -348,7 +414,13 @@ impl<'src> ReferenceCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for ReferenceCollector<'src> {
+impl Default for ReferenceCollector<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     // =========================================================================
     // Context tracking for Call nodes
     // =========================================================================
@@ -439,7 +511,7 @@ impl<'a, 'src> Visitor<'a> for ReferenceCollector<'src> {
     fn visit_name(&mut self, node: &Name<'a>) -> VisitResult {
         let name = node.value;
         if let Some(kind) = self.get_current_kind(name) {
-            self.add_reference(name, kind);
+            self.add_reference_with_id(name, kind, node.node_id);
         }
         // Don't visit children of Name (there are none meaningful)
         VisitResult::SkipChildren
@@ -450,7 +522,7 @@ impl<'a, 'src> Visitor<'a> for ReferenceCollector<'src> {
     // =========================================================================
 
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
-        self.add_reference(node.name.value, ReferenceKind::Definition);
+        self.add_reference_with_id(node.name.value, ReferenceKind::Definition, node.name.node_id);
         // Push skip context so the Name node inside isn't double-counted
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
@@ -468,7 +540,7 @@ impl<'a, 'src> Visitor<'a> for ReferenceCollector<'src> {
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
-        self.add_reference(node.name.value, ReferenceKind::Definition);
+        self.add_reference_with_id(node.name.value, ReferenceKind::Definition, node.name.node_id);
         // Push skip context so the Name node inside isn't double-counted
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
@@ -486,7 +558,7 @@ impl<'a, 'src> Visitor<'a> for ReferenceCollector<'src> {
     }
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
-        self.add_reference(node.name.value, ReferenceKind::Definition);
+        self.add_reference_with_id(node.name.value, ReferenceKind::Definition, node.name.node_id);
         // Push skip context so the Name node inside isn't double-counted
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
@@ -541,54 +613,54 @@ mod tests {
     fn test_reference_name_collected() {
         let source = "x = 1\nprint(x)";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         // x is defined and referenced
-        let refs = collector.references_for("x").unwrap();
-        assert_eq!(refs.len(), 2);
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
 
         // First is definition
-        assert_eq!(refs[0].kind, ReferenceKind::Definition);
+        assert_eq!(x_refs[0].kind, ReferenceKind::Definition);
 
         // Second is reference (argument to print)
-        assert_eq!(refs[1].kind, ReferenceKind::Reference);
+        assert_eq!(x_refs[1].kind, ReferenceKind::Reference);
     }
 
     #[test]
     fn test_reference_definition_collected() {
         let source = "def foo():\n    pass";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("foo").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Definition);
+        let foo_refs = refs.get("foo").unwrap();
+        assert_eq!(foo_refs.len(), 1);
+        assert_eq!(foo_refs[0].kind, ReferenceKind::Definition);
     }
 
     #[test]
     fn test_reference_call_collected() {
         let source = "foo()";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("foo").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Call);
+        let foo_refs = refs.get("foo").unwrap();
+        assert_eq!(foo_refs.len(), 1);
+        assert_eq!(foo_refs[0].kind, ReferenceKind::Call);
     }
 
     #[test]
     fn test_reference_attribute_collected() {
         let source = "obj.attr";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         // obj is a reference
-        let obj_refs = collector.references_for("obj").unwrap();
+        let obj_refs = refs.get("obj").unwrap();
         assert_eq!(obj_refs.len(), 1);
         assert_eq!(obj_refs[0].kind, ReferenceKind::Reference);
 
         // attr is an attribute
-        let attr_refs = collector.references_for("attr").unwrap();
+        let attr_refs = refs.get("attr").unwrap();
         assert_eq!(attr_refs.len(), 1);
         assert_eq!(attr_refs[0].kind, ReferenceKind::Attribute);
     }
@@ -597,23 +669,23 @@ mod tests {
     fn test_reference_import_collected() {
         let source = "import foo";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("foo").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Import);
+        let foo_refs = refs.get("foo").unwrap();
+        assert_eq!(foo_refs.len(), 1);
+        assert_eq!(foo_refs[0].kind, ReferenceKind::Import);
     }
 
     #[test]
     fn test_reference_from_import_collected() {
         let source = "from os import path";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         // path is an import
-        let refs = collector.references_for("path").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Import);
+        let path_refs = refs.get("path").unwrap();
+        assert_eq!(path_refs.len(), 1);
+        assert_eq!(path_refs[0].kind, ReferenceKind::Import);
     }
 
     #[test]
@@ -626,41 +698,41 @@ foo()
 x = foo
 "#;
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("foo").unwrap();
-        assert_eq!(refs.len(), 3);
+        let foo_refs = refs.get("foo").unwrap();
+        assert_eq!(foo_refs.len(), 3);
 
         // Definition from def
-        assert_eq!(refs[0].kind, ReferenceKind::Definition);
+        assert_eq!(foo_refs[0].kind, ReferenceKind::Definition);
         // Call
-        assert_eq!(refs[1].kind, ReferenceKind::Call);
+        assert_eq!(foo_refs[1].kind, ReferenceKind::Call);
         // Reference in assignment
-        assert_eq!(refs[2].kind, ReferenceKind::Reference);
+        assert_eq!(foo_refs[2].kind, ReferenceKind::Reference);
     }
 
     #[test]
     fn test_reference_class_definition() {
         let source = "class Foo:\n    pass";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("Foo").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Definition);
+        let foo_refs = refs.get("Foo").unwrap();
+        assert_eq!(foo_refs.len(), 1);
+        assert_eq!(foo_refs[0].kind, ReferenceKind::Definition);
     }
 
     #[test]
     fn test_reference_parameter_definition() {
         let source = "def foo(a, b):\n    pass";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let a_refs = collector.references_for("a").unwrap();
+        let a_refs = refs.get("a").unwrap();
         assert_eq!(a_refs.len(), 1);
         assert_eq!(a_refs[0].kind, ReferenceKind::Definition);
 
-        let b_refs = collector.references_for("b").unwrap();
+        let b_refs = refs.get("b").unwrap();
         assert_eq!(b_refs.len(), 1);
         assert_eq!(b_refs[0].kind, ReferenceKind::Definition);
     }
@@ -669,55 +741,55 @@ x = foo
     fn test_reference_assignment_definition() {
         let source = "x = 1";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("x").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Definition);
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 1);
+        assert_eq!(x_refs[0].kind, ReferenceKind::Definition);
     }
 
     #[test]
     fn test_reference_tuple_unpacking_definitions() {
         let source = "a, b, c = values";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         for name in &["a", "b", "c"] {
-            let refs = collector.references_for(name).unwrap();
-            assert_eq!(refs.len(), 1);
-            assert_eq!(refs[0].kind, ReferenceKind::Definition);
+            let name_refs = refs.get(*name).unwrap();
+            assert_eq!(name_refs.len(), 1);
+            assert_eq!(name_refs[0].kind, ReferenceKind::Definition);
         }
 
         // values is a reference
-        let refs = collector.references_for("values").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Reference);
+        let values_refs = refs.get("values").unwrap();
+        assert_eq!(values_refs.len(), 1);
+        assert_eq!(values_refs[0].kind, ReferenceKind::Reference);
     }
 
     #[test]
     fn test_reference_annotated_assignment() {
         let source = "x: int = 5";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("x").unwrap();
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].kind, ReferenceKind::Definition);
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 1);
+        assert_eq!(x_refs[0].kind, ReferenceKind::Definition);
     }
 
     #[test]
     fn test_reference_method_call() {
         let source = "obj.method()";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         // obj is a reference
-        let obj_refs = collector.references_for("obj").unwrap();
+        let obj_refs = refs.get("obj").unwrap();
         assert_eq!(obj_refs.len(), 1);
         assert_eq!(obj_refs[0].kind, ReferenceKind::Reference);
 
         // method is an attribute (the attr part of Attribute node)
-        let method_refs = collector.references_for("method").unwrap();
+        let method_refs = refs.get("method").unwrap();
         assert_eq!(method_refs.len(), 1);
         assert_eq!(method_refs[0].kind, ReferenceKind::Attribute);
     }
@@ -726,26 +798,26 @@ x = foo
     fn test_reference_chained_calls() {
         let source = "foo().bar()";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         // foo is a call
-        let foo_refs = collector.references_for("foo").unwrap();
+        let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
         assert_eq!(foo_refs[0].kind, ReferenceKind::Call);
 
         // bar is an attribute
-        let bar_refs = collector.references_for("bar").unwrap();
+        let bar_refs = refs.get("bar").unwrap();
         assert_eq!(bar_refs.len(), 1);
         assert_eq!(bar_refs[0].kind, ReferenceKind::Attribute);
     }
 
     #[test]
-    fn test_reference_into_references() {
+    fn test_reference_hashmap_returned() {
         let source = "x = 1\ny = x";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.into_references();
+        // collect() now returns HashMap directly
         assert!(refs.contains_key("x"));
         assert!(refs.contains_key("y"));
     }
@@ -767,23 +839,23 @@ processor = FileProcessor("test.txt")
 result = processor.process()
 "#;
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
         // os is imported
-        let os_refs = collector.references_for("os").unwrap();
+        let os_refs = refs.get("os").unwrap();
         assert!(os_refs.iter().any(|r| r.kind == ReferenceKind::Import));
 
         // Path is imported
-        let path_refs = collector.references_for("Path").unwrap();
+        let path_refs = refs.get("Path").unwrap();
         assert!(path_refs.iter().any(|r| r.kind == ReferenceKind::Import));
 
         // FileProcessor is defined and then called
-        let fp_refs = collector.references_for("FileProcessor").unwrap();
+        let fp_refs = refs.get("FileProcessor").unwrap();
         assert!(fp_refs.iter().any(|r| r.kind == ReferenceKind::Definition));
         assert!(fp_refs.iter().any(|r| r.kind == ReferenceKind::Call));
 
         // processor is defined and referenced
-        let proc_refs = collector.references_for("processor").unwrap();
+        let proc_refs = refs.get("processor").unwrap();
         assert!(proc_refs.iter().any(|r| r.kind == ReferenceKind::Definition));
         assert!(proc_refs.iter().any(|r| r.kind == ReferenceKind::Reference));
     }
@@ -792,13 +864,13 @@ result = processor.process()
     fn test_reference_spans() {
         let source = "x = 1";
         let module = parse_module(source, None).unwrap();
-        let collector = ReferenceCollector::collect(&module, source);
+        let refs = ReferenceCollector::collect(&module, source);
 
-        let refs = collector.references_for("x").unwrap();
-        assert_eq!(refs.len(), 1);
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 1);
 
         // x is at position 0
-        let span = refs[0].span.as_ref().unwrap();
+        let span = x_refs[0].span.as_ref().unwrap();
         assert_eq!(span.start, 0);
         assert_eq!(span.end, 1);
     }

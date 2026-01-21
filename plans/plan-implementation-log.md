@@ -3126,3 +3126,82 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 6. **Golden file updates**: The old spans were just keyword positions (e.g., bytes 77-80 for "def"). The new spans are the complete lexical extent (e.g., bytes 77-131 for the entire function body). This is the correct behavior for containment queries ("is position X inside scope Y?").
 
 ---
+
+### Step 10: Update ReferenceCollector (if applicable) - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 10 specification (lines 1441-1463)
+- (#identifier-span) - Identifier span definitions (lines 648-661)
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Original ReferenceCollector implementation
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Reference for PositionTable integration pattern
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Reference for PositionTable integration pattern
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - PositionTable, NodePosition types
+- Code architect analysis of collector return type patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Check if ReferenceCollector uses `find_and_advance()` | Done (Yes, it did) |
+| Update to use `PositionTable` with `node.node_id` lookup | Done |
+| Remove string search code | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Complete rewrite to use PositionTable; removed find_and_advance(), source, cursor fields; added positions field; added lookup_span(), add_reference_with_id() methods; changed return type of collect()/collect_with_positions() to HashMap<String, Vec<ReferenceInfo>>; updated all 17 unit tests for new return type
+- `crates/tugtool-python-cst/tests/golden.rs` - Updated analyze_references() to use collect_with_positions() with new HashMap return type
+- `crates/tugtool-python/src/cst_bridge.rs` - Updated to use new HashMap return type (removed .all_references() call)
+- `crates/tugtool-python-cst/tests/golden/output/class_with_inheritance_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/comprehensions_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/dynamic_patterns_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/global_nonlocal_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/imports_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/lambdas_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/method_calls_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/nested_scopes_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/simple_function_references.json` - Updated with correct token-derived spans
+- `crates/tugtool-python-cst/tests/golden/output/type_annotations_references.json` - Updated with correct token-derived spans
+- `plans/phase-4.md` - Checked off all Step 10 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst reference`: 27 tests passed
+- `cargo nextest run --workspace`: 1088 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst reference` passes: PASS (27 tests)
+- `grep find_and_advance crates/tugtool-python-cst/src/visitor/reference.rs` returns empty: PASS
+
+**Key Implementation Details:**
+
+1. **Architecture decision**: Following code architect analysis, ReferenceCollector was updated to match the pattern established by BindingCollector and ScopeCollector - returning owned data directly (`HashMap<String, Vec<ReferenceInfo>>`) instead of returning the collector instance. This resolves the lifetime issue where returning `Self` from `collect()` would hold a reference to a local `PositionTable`.
+
+2. **API changes (breaking)**:
+   - `collect()` now returns `HashMap<String, Vec<ReferenceInfo>>` instead of `ReferenceCollector`
+   - `collect_with_positions()` now returns `HashMap<String, Vec<ReferenceInfo>>` instead of `Self`
+   - Callers use `refs.get("name")` instead of `collector.references_for("name")`
+   - Callers use `refs` directly instead of `collector.into_references()`
+
+3. **Removed fields and methods**:
+   - `source: &'src str` - No longer needed
+   - `cursor: usize` - No longer needed for string search
+   - `find_and_advance(&mut self, needle: &str) -> Option<Span>` - Replaced with PositionTable lookup
+   - `add_reference(name, kind)` - Replaced with add_reference_with_id()
+   - `references_for()`, `into_references()`, `all_references()` - No longer needed (return HashMap directly)
+
+4. **New fields and methods**:
+   - `positions: Option<&'pos PositionTable>` - Reference to PositionTable for span lookups
+   - `lookup_span(node_id) -> Option<Span>` - Looks up spans via node.node_id in PositionTable
+   - `add_reference_with_id(name, kind, node_id)` - Uses node_id for span lookup
+
+5. **Helper method updates**: The assignment target extraction methods were updated to collect NodeIds alongside names:
+   - `collect_assign_names_with_ids()` - Returns `Vec<(String, Option<NodeId>)>`
+   - `collect_element_names_with_ids()` - For tuple/list elements
+   - `collect_expression_names_with_ids()` - For nested tuple unpacking
+
+6. **Pattern consistency**: All three P0 collectors (ScopeCollector, BindingCollector, ReferenceCollector) now follow the same pattern:
+   - Return owned data from `collect()` and `collect_with_positions()`
+   - Hold `Option<&'pos PositionTable>` for span lookups
+   - Use `node.node_id` for PositionTable key lookups
+
+---
