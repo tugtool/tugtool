@@ -18,7 +18,7 @@
     "parent": "scope_0",
     "span": [
       77,
-      80
+      131
     ],
     "globals": [
       "counter"
@@ -32,7 +32,7 @@
     "parent": "scope_0",
     "span": [
       131,
-      134
+      264
     ],
     "globals": [],
     "nonlocals": []
@@ -44,7 +44,7 @@
     "parent": "scope_2",
     "span": [
       170,
-      173
+      251
     ],
     "globals": [],
     "nonlocals": [

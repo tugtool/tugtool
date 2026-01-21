@@ -24,15 +24,24 @@
 //! - `global x` - `x` refers to module-level binding
 //! - `nonlocal x` - `x` refers to enclosing function scope binding
 //!
+//! # Span Extraction
+//!
+//! Lexical spans for scopes are extracted from the [`PositionTable`] populated
+//! during CST inflation. `FunctionDef` and `ClassDef` nodes have `lexical_span`
+//! recorded during inflation, which defines where variables resolve to that scope.
+//!
+//! **Important:** Lexical spans do NOT include decorators. Decorators execute
+//! before the scope exists, so the lexical span starts at `def` or `class`.
+//!
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module, ScopeCollector, ScopeInfo, ScopeKind};
+//! use tugtool_python_cst::{parse_module_with_positions, ScopeCollector, ScopeInfo, ScopeKind};
 //!
 //! let source = "def foo(): pass";
-//! let module = parse_module(source, None)?;
+//! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let scopes = ScopeCollector::collect(&module, source);
+//! let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 //! for scope in &scopes {
 //!     println!("Scope: {:?} kind={:?}", scope.id, scope.kind);
 //! }
@@ -40,9 +49,10 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
-    ClassDef, DictComp, FunctionDef, GeneratorExp, Global, Lambda, ListComp, Module, Nonlocal,
-    SetComp, Span,
+    ClassDef, DictComp, FunctionDef, GeneratorExp, Global, Lambda, ListComp, Module, NodeId,
+    Nonlocal, SetComp, Span,
 };
 
 /// The kind of scope in Python.
@@ -129,45 +139,89 @@ impl ScopeInfo {
 /// - Scope hierarchy (parent-child relationships)
 /// - Scope kinds (module, class, function, lambda, comprehension)
 /// - Global and nonlocal declarations within each scope
+/// - Lexical spans for each scope (from PositionTable)
 ///
 /// # Example
 ///
 /// ```ignore
-/// let scopes = ScopeCollector::collect(&module, source);
+/// let parsed = parse_module_with_positions(source, None)?;
+/// let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
 /// ```
-pub struct ScopeCollector<'src> {
-    /// The original source text (for span calculation).
-    source: &'src str,
+pub struct ScopeCollector<'pos> {
+    /// Reference to position table for span lookups.
+    positions: Option<&'pos PositionTable>,
+    /// Length of source (for module scope span).
+    source_len: usize,
     /// Collected scopes.
     scopes: Vec<ScopeInfo>,
     /// Stack of scope IDs for tracking the current scope.
     scope_stack: Vec<String>,
     /// Counter for generating unique scope IDs.
     next_scope_id: u32,
-    /// Current search cursor position in the source.
-    cursor: usize,
 }
 
-impl<'src> ScopeCollector<'src> {
-    /// Create a new ScopeCollector.
-    pub fn new(source: &'src str) -> Self {
+impl<'pos> ScopeCollector<'pos> {
+    /// Create a new ScopeCollector without position tracking.
+    ///
+    /// Scopes will be collected but spans will be None (except module scope).
+    pub fn new(source_len: usize) -> Self {
         Self {
-            source,
+            positions: None,
+            source_len,
             scopes: Vec::new(),
             scope_stack: Vec::new(),
             next_scope_id: 0,
-            cursor: 0,
         }
     }
 
-    /// Collect scopes from a parsed module.
+    /// Create a new ScopeCollector with position tracking.
     ///
-    /// Returns the list of scopes in the order they were encountered.
+    /// Scopes will include lexical spans from the PositionTable.
+    pub fn with_positions(positions: &'pos PositionTable, source_len: usize) -> Self {
+        Self {
+            positions: Some(positions),
+            source_len,
+            scopes: Vec::new(),
+            scope_stack: Vec::new(),
+            next_scope_id: 0,
+        }
+    }
+
+    /// Collect scopes from a parsed module with position information.
+    ///
+    /// This is the preferred method for collecting scopes with accurate lexical spans.
     ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
-    /// * `source` - The original source code (must match what was parsed)
+    /// * `positions` - Position table from `parse_module_with_positions`
+    /// * `source` - The original source code (for module span length)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let parsed = parse_module_with_positions(source, None)?;
+    /// let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+    /// ```
+    pub fn collect_with_positions(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+        source: &str,
+    ) -> Vec<ScopeInfo> {
+        let mut collector = ScopeCollector::with_positions(positions, source.len());
+        walk_module(&mut collector, module);
+        collector.scopes
+    }
+
+    /// Collect scopes from a parsed module.
+    ///
+    /// This is a legacy compatibility method. For new code, prefer
+    /// [`collect_with_positions`] which provides accurate token-derived spans.
+    ///
+    /// # Arguments
+    ///
+    /// * `module` - The parsed CST module (ignored; re-parses for positions)
+    /// * `source` - The original source code
     ///
     /// # Example
     ///
@@ -176,10 +230,24 @@ impl<'src> ScopeCollector<'src> {
     /// let module = parse_module(source, None)?;
     /// let scopes = ScopeCollector::collect(&module, source);
     /// ```
-    pub fn collect(module: &Module<'_>, source: &'src str) -> Vec<ScopeInfo> {
-        let mut collector = ScopeCollector::new(source);
-        walk_module(&mut collector, module);
-        collector.scopes
+    ///
+    /// [`collect_with_positions`]: Self::collect_with_positions
+    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<ScopeInfo> {
+        // Re-parse with position tracking to get accurate spans
+        match crate::parse_module_with_positions(source, None) {
+            Ok(parsed) => {
+                let mut collector =
+                    ScopeCollector::with_positions(&parsed.positions, source.len());
+                walk_module(&mut collector, &parsed.module);
+                collector.scopes
+            }
+            Err(_) => {
+                // Fallback: collect without spans if re-parsing fails
+                let mut collector = ScopeCollector::new(source.len());
+                walk_module(&mut collector, _module);
+                collector.scopes
+            }
+        }
     }
 
     /// Get the collected scopes, consuming the collector.
@@ -204,40 +272,37 @@ impl<'src> ScopeCollector<'src> {
         self.scope_stack.last().map(|s| s.as_str())
     }
 
-    /// Find a string in the source starting from the cursor, and advance cursor past it.
-    ///
-    /// Returns the span if found.
-    fn find_and_advance(&mut self, needle: &str) -> Option<Span> {
-        if needle.is_empty() {
-            return None;
-        }
-
-        let search_area = &self.source[self.cursor..];
-        if let Some(offset) = search_area.find(needle) {
-            let start = (self.cursor + offset) as u64;
-            let end = start + needle.len() as u64;
-            self.cursor = self.cursor + offset + needle.len();
-            Some(Span::new(start, end))
-        } else {
-            None
-        }
+    /// Look up the lexical span for a node from the PositionTable.
+    fn lookup_lexical_span(&self, node_id: Option<NodeId>) -> Option<Span> {
+        let positions = self.positions?;
+        let id = node_id?;
+        positions.get(&id).and_then(|pos| pos.lexical_span)
     }
 
-    /// Enter a new scope.
-    fn enter_scope(&mut self, kind: ScopeKind, name: Option<&str>, keyword: &str) {
+    /// Enter a new scope with node_id for span lookup.
+    fn enter_scope_with_id(&mut self, kind: ScopeKind, name: Option<&str>, node_id: Option<NodeId>) {
         let scope_id = self.generate_scope_id();
         let parent = self.current_parent();
 
-        // Find the span for this scope by looking for the keyword
-        let span = self.find_and_advance(keyword);
+        // Look up the lexical span from the PositionTable
+        let span = self.lookup_lexical_span(node_id);
 
-        let scope = ScopeInfo::new(
-            scope_id.clone(),
-            kind,
-            name.map(|s| s.to_string()),
-            parent,
-        )
-        .with_span(span);
+        let scope = ScopeInfo::new(scope_id.clone(), kind, name.map(|s| s.to_string()), parent)
+            .with_span(span);
+
+        self.scopes.push(scope);
+        self.scope_stack.push(scope_id);
+    }
+
+    /// Enter a new scope without node_id (for comprehensions, lambdas which don't have lexical_span yet).
+    ///
+    /// These scope types don't have lexical_span recorded during inflation (follow-on work).
+    fn enter_scope(&mut self, kind: ScopeKind, name: Option<&str>) {
+        let scope_id = self.generate_scope_id();
+        let parent = self.current_parent();
+
+        // No span for these scope types (lambda/comprehension spans are follow-on work)
+        let scope = ScopeInfo::new(scope_id.clone(), kind, name.map(|s| s.to_string()), parent);
 
         self.scopes.push(scope);
         self.scope_stack.push(scope_id);
@@ -249,12 +314,12 @@ impl<'src> ScopeCollector<'src> {
     }
 }
 
-impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
+impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
     fn visit_module(&mut self, _node: &Module<'a>) -> VisitResult {
-        // Module scope - no keyword to find, starts at beginning
+        // Module scope - spans from byte 0 to end of source
         let scope_id = self.generate_scope_id();
         let scope = ScopeInfo::new(scope_id.clone(), ScopeKind::Module, None, None)
-            .with_span(Some(Span::new(0, self.source.len() as u64)));
+            .with_span(Some(Span::new(0, self.source_len as u64)));
 
         self.scopes.push(scope);
         self.scope_stack.push(scope_id);
@@ -266,7 +331,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
     }
 
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
-        self.enter_scope(ScopeKind::Function, Some(node.name.value), "def");
+        // Look up lexical span from PositionTable using FunctionDef's node_id
+        self.enter_scope_with_id(ScopeKind::Function, Some(node.name.value), node.node_id);
         VisitResult::Continue
     }
 
@@ -275,7 +341,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
-        self.enter_scope(ScopeKind::Class, Some(node.name.value), "class");
+        // Look up lexical span from PositionTable using ClassDef's node_id
+        self.enter_scope_with_id(ScopeKind::Class, Some(node.name.value), node.node_id);
         VisitResult::Continue
     }
 
@@ -284,7 +351,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
     }
 
     fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
-        self.enter_scope(ScopeKind::Lambda, None, "lambda");
+        // Lambda spans are follow-on work (no lexical_span recorded yet)
+        self.enter_scope(ScopeKind::Lambda, None);
         VisitResult::Continue
     }
 
@@ -294,7 +362,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
 
     fn visit_list_comp(&mut self, _node: &ListComp<'a>) -> VisitResult {
         // List comprehensions create their own scope in Python 3
-        self.enter_scope(ScopeKind::Comprehension, None, "[");
+        // Comprehension spans are follow-on work (no lexical_span recorded yet)
+        self.enter_scope(ScopeKind::Comprehension, None);
         VisitResult::Continue
     }
 
@@ -303,7 +372,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
     }
 
     fn visit_set_comp(&mut self, _node: &SetComp<'a>) -> VisitResult {
-        self.enter_scope(ScopeKind::Comprehension, None, "{");
+        // Comprehension spans are follow-on work
+        self.enter_scope(ScopeKind::Comprehension, None);
         VisitResult::Continue
     }
 
@@ -312,7 +382,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
     }
 
     fn visit_dict_comp(&mut self, _node: &DictComp<'a>) -> VisitResult {
-        self.enter_scope(ScopeKind::Comprehension, None, "{");
+        // Comprehension spans are follow-on work
+        self.enter_scope(ScopeKind::Comprehension, None);
         VisitResult::Continue
     }
 
@@ -321,7 +392,8 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
     }
 
     fn visit_generator_exp(&mut self, _node: &GeneratorExp<'a>) -> VisitResult {
-        self.enter_scope(ScopeKind::Comprehension, None, "(");
+        // Comprehension spans are follow-on work
+        self.enter_scope(ScopeKind::Comprehension, None);
         VisitResult::Continue
     }
 
@@ -370,6 +442,11 @@ impl<'a, 'src> Visitor<'a> for ScopeCollector<'src> {
 mod tests {
     use super::*;
     use crate::parse_module;
+    use crate::parse_module_with_positions;
+
+    // ========================================================================
+    // Tests using legacy collect() API (backward compatibility)
+    // ========================================================================
 
     #[test]
     fn test_scope_simple_function() {
@@ -575,5 +652,243 @@ mod tests {
         assert_eq!(scopes[3].name, Some("method".to_string()));
         assert_eq!(scopes[4].kind, ScopeKind::Lambda);
         assert_eq!(scopes[4].parent, Some("scope_3".to_string())); // Inside method
+    }
+
+    // ========================================================================
+    // Tests using new collect_with_positions() API
+    // ========================================================================
+
+    #[test]
+    fn test_scope_function_lexical_span_starts_at_def_not_decorator() {
+        // Key test: lexical span should start at 'def', not at decorator '@'
+        let source = "@decorator\ndef foo():\n    pass\n";
+        //            0123456789 012345678901234567890
+        //            @decorator\ndef foo():\n    pass
+        //            0         1111111111122222222223
+        //            0         1234567890123456789012
+        //                      ^def starts at byte 11
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Module scope
+        assert_eq!(scopes[0].kind, ScopeKind::Module);
+        let module_span = scopes[0].span.expect("Module should have span");
+        assert_eq!(module_span.start, 0);
+        assert_eq!(module_span.end, source.len() as u64);
+
+        // Function scope - lexical span should start at 'def', not '@'
+        assert_eq!(scopes[1].kind, ScopeKind::Function);
+        let func_span = scopes[1].span.expect("Function should have lexical span");
+        // The 'def' keyword starts at byte 11 (after "@decorator\n")
+        assert_eq!(
+            func_span.start, 11,
+            "Lexical span should start at 'def' (byte 11), not at decorator '@' (byte 0)"
+        );
+    }
+
+    #[test]
+    fn test_scope_class_lexical_span_starts_at_class() {
+        let source = "class Foo:\n    pass\n";
+        //            01234567890123456789
+        //            ^class starts at 0
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Class scope - lexical span should start at 'class'
+        assert_eq!(scopes[1].kind, ScopeKind::Class);
+        let class_span = scopes[1].span.expect("Class should have lexical span");
+        assert_eq!(class_span.start, 0, "Lexical span should start at 'class'");
+    }
+
+    #[test]
+    fn test_scope_decorated_class_lexical_span_excludes_decorator() {
+        let source = "@dataclass\nclass Foo:\n    pass\n";
+        //            012345678901234567890123456789012
+        //            @dataclass\nclass Foo:\n    pass
+        //            0         1111111111122222222223
+        //            0         1234567890123456789012
+        //                      ^class starts at byte 11
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Class scope - lexical span should start at 'class', not '@'
+        assert_eq!(scopes[1].kind, ScopeKind::Class);
+        let class_span = scopes[1].span.expect("Class should have lexical span");
+        assert_eq!(
+            class_span.start, 11,
+            "Lexical span should start at 'class' (byte 11), not at decorator '@' (byte 0)"
+        );
+    }
+
+    #[test]
+    fn test_scope_module_spans_entire_file() {
+        let source = "x = 1\ny = 2\n";
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 1);
+
+        // Module scope should span entire file
+        assert_eq!(scopes[0].kind, ScopeKind::Module);
+        let module_span = scopes[0].span.expect("Module should have span");
+        assert_eq!(module_span.start, 0, "Module span should start at 0");
+        assert_eq!(
+            module_span.end,
+            source.len() as u64,
+            "Module span should end at source length"
+        );
+    }
+
+    #[test]
+    fn test_scope_nested_functions_have_correct_containment() {
+        let source = "def outer():\n    def inner():\n        pass\n";
+        //            0123456789012345678901234567890123456789012345
+        //            def outer():\n    def inner():\n        pass
+        //            0         1111111111122222222223333333333444444
+        //            0123456789012345678901234567890123456789012345
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 3);
+
+        // Module scope
+        let module_span = scopes[0].span.expect("Module should have span");
+
+        // Outer function scope
+        let outer_span = scopes[1].span.expect("outer should have lexical span");
+        assert_eq!(scopes[1].name, Some("outer".to_string()));
+
+        // Inner function scope
+        let inner_span = scopes[2].span.expect("inner should have lexical span");
+        assert_eq!(scopes[2].name, Some("inner".to_string()));
+
+        // Verify containment: module contains outer, outer contains inner
+        assert!(
+            module_span.start <= outer_span.start && outer_span.end <= module_span.end,
+            "outer should be contained within module"
+        );
+        assert!(
+            outer_span.start <= inner_span.start && inner_span.end <= outer_span.end,
+            "inner should be contained within outer"
+        );
+
+        // Inner should NOT extend past outer
+        assert!(
+            inner_span.end <= outer_span.end,
+            "inner span end ({}) should not exceed outer span end ({})",
+            inner_span.end,
+            outer_span.end
+        );
+    }
+
+    #[test]
+    fn test_scope_collect_matches_collect_with_positions() {
+        // Verify that legacy collect() produces same results as collect_with_positions()
+        let source = "def foo():\n    x = 1";
+        let module = parse_module(source, None).unwrap();
+        let parsed = parse_module_with_positions(source, None).unwrap();
+
+        let scopes_legacy = ScopeCollector::collect(&module, source);
+        let scopes_new =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(
+            scopes_legacy.len(),
+            scopes_new.len(),
+            "Both methods should produce same number of scopes"
+        );
+
+        for (legacy, new) in scopes_legacy.iter().zip(scopes_new.iter()) {
+            assert_eq!(legacy.id, new.id);
+            assert_eq!(legacy.kind, new.kind);
+            assert_eq!(legacy.name, new.name);
+            assert_eq!(legacy.parent, new.parent);
+            // Spans should also match (both use PositionTable internally now)
+            assert_eq!(legacy.span, new.span);
+        }
+    }
+
+    #[test]
+    fn test_scope_function_with_multiple_decorators() {
+        let source = "@dec1\n@dec2\n@dec3\ndef foo():\n    pass\n";
+        //            01234 56789 01234 567890123456789012345
+        //            @dec1\n@dec2\n@dec3\ndef foo():\n    pass
+        //            0    5     11    17
+        //                              ^def starts at byte 18
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Function scope - lexical span should start at 'def', not at first decorator
+        assert_eq!(scopes[1].kind, ScopeKind::Function);
+        let func_span = scopes[1].span.expect("Function should have lexical span");
+        assert_eq!(
+            func_span.start, 18,
+            "Lexical span should start at 'def' (byte 18), not at first decorator '@dec1' (byte 0)"
+        );
+    }
+
+    #[test]
+    fn test_scope_async_function_lexical_span_starts_at_async() {
+        let source = "async def foo():\n    pass\n";
+        //            0123456789012345678901234567
+        //            ^async starts at 0
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Function scope - lexical span should start at 'async'
+        assert_eq!(scopes[1].kind, ScopeKind::Function);
+        let func_span = scopes[1].span.expect("Function should have lexical span");
+        assert_eq!(
+            func_span.start, 0,
+            "Lexical span for async function should start at 'async'"
+        );
+    }
+
+    #[test]
+    fn test_scope_decorated_async_function() {
+        let source = "@decorator\nasync def foo():\n    pass\n";
+        //            0123456789 0123456789012345678901234567
+        //            @decorator\nasync def foo():\n    pass
+        //            0         1111111111122222222223333333
+        //            0         1234567890123456789012345678
+        //                      ^async starts at byte 11
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes =
+            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Function scope - lexical span should start at 'async', not '@'
+        assert_eq!(scopes[1].kind, ScopeKind::Function);
+        let func_span = scopes[1].span.expect("Function should have lexical span");
+        assert_eq!(
+            func_span.start, 11,
+            "Lexical span should start at 'async' (byte 11), not at decorator '@' (byte 0)"
+        );
     }
 }

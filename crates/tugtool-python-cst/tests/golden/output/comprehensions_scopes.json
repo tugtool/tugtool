@@ -16,10 +16,7 @@
     "kind": "comprehension",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      61,
-      62
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   },
@@ -28,10 +25,7 @@
     "kind": "comprehension",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      96,
-      97
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   },
@@ -40,10 +34,7 @@
     "kind": "comprehension",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      141,
-      142
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   },
@@ -52,10 +43,7 @@
     "kind": "comprehension",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      165,
-      166
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   }

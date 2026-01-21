@@ -18,7 +18,7 @@
     "parent": "scope_0",
     "span": [
       58,
-      61
+      245
     ],
     "globals": [],
     "nonlocals": []
@@ -30,7 +30,7 @@
     "parent": "scope_0",
     "span": [
       245,
-      250
+      311
     ],
     "globals": [],
     "nonlocals": []
@@ -42,7 +42,7 @@
     "parent": "scope_2",
     "span": [
       262,
-      265
+      311
     ],
     "globals": [],
     "nonlocals": []

@@ -1418,20 +1418,20 @@ let scope_end = match &self.body {
 - Modified `crates/tugtool-python-cst/src/visitor/scope.rs`
 
 **Tasks:**
-- [ ] Change ScopeCollector to accept `PositionTable`
-- [ ] Remove `find_and_advance()` from ScopeCollector
-- [ ] Use `NodePosition.lexical_span` from `PositionTable` for scope spans
-- [ ] Verify decorated functions have correct lexical spans (excluding decorators)
+- [x] Change ScopeCollector to accept `PositionTable`
+- [x] Remove `find_and_advance()` from ScopeCollector
+- [x] Use `NodePosition.lexical_span` from `PositionTable` for scope spans
+- [x] Verify decorated functions have correct lexical spans (excluding decorators)
 
 **Tests:**
-- [ ] Unit test: Function lexical span starts at `def`, not decorator
-- [ ] Unit test: Class lexical span starts at `class`
-- [ ] Unit test: Module scope spans entire file
-- [ ] Unit test: Nested scopes have correct containment
+- [x] Unit test: Function lexical span starts at `def`, not decorator
+- [x] Unit test: Class lexical span starts at `class`
+- [x] Unit test: Module scope spans entire file
+- [x] Unit test: Nested scopes have correct containment
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst scope` passes
-- [ ] `grep find_and_advance crates/tugtool-python-cst/src/visitor/scope.rs` returns empty
+- [x] `cargo nextest run -p tugtool-python-cst scope` passes
+- [x] `grep find_and_advance crates/tugtool-python-cst/src/visitor/scope.rs` returns empty
 
 **Rollback:**
 - Revert ScopeCollector changes

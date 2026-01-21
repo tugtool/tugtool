@@ -16,10 +16,7 @@
     "kind": "lambda",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      22,
-      28
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   },
@@ -28,10 +25,7 @@
     "kind": "lambda",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      57,
-      63
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   },
@@ -40,10 +34,7 @@
     "kind": "lambda",
     "name": null,
     "parent": "scope_0",
-    "span": [
-      79,
-      85
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   },
@@ -52,10 +43,7 @@
     "kind": "lambda",
     "name": null,
     "parent": "scope_3",
-    "span": [
-      107,
-      113
-    ],
+    "span": null,
     "globals": [],
     "nonlocals": []
   }

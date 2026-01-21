@@ -3044,3 +3044,85 @@ This follows the same pattern as `Param.star_tok: Option<TokenRef<'a>>` for the 
 6. **Lifetime handling**: The `collect()` legacy API creates a local `ParsedModule` and walks its module with a collector that references its positions. This required careful lifetime management to ensure the positions outlive the collector.
 
 ---
+
+### Step 9: Update ScopeCollector to Use PositionTable - COMPLETE
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 9 specification (lines 1411-1438)
+- (#lexical-span) - Lexical span definitions (lines 663-693)
+- Table T02: Lexical Span Boundaries by Scope Kind
+- [D06] Scope end boundary semantics
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Original ScopeCollector implementation
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - PositionTable, NodePosition types
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Reference for PositionTable integration pattern
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Change ScopeCollector to accept `PositionTable` | Done |
+| Remove `find_and_advance()` from ScopeCollector | Done |
+| Use `NodePosition.lexical_span` from `PositionTable` for scope spans | Done |
+| Verify decorated functions have correct lexical spans (excluding decorators) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Complete rewrite to use PositionTable; removed find_and_advance(), source, cursor fields; added positions field, source_len field; added lookup_lexical_span(), enter_scope_with_id() methods; added collect_with_positions() API; added with_positions() constructor; added 9 new tests
+- `crates/tugtool-python-cst/tests/golden/output/class_with_inheritance_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/comprehensions_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/dynamic_patterns_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/global_nonlocal_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/lambdas_scopes.json` - Updated with correct lexical spans (lambda spans now None)
+- `crates/tugtool-python-cst/tests/golden/output/method_calls_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/nested_scopes_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/simple_function_scopes.json` - Updated with correct lexical spans
+- `crates/tugtool-python-cst/tests/golden/output/type_annotations_scopes.json` - Updated with correct lexical spans
+- `plans/phase-4.md` - Checked off all Step 9 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst scope`: 39 tests passed
+- `cargo nextest run --workspace`: 1088 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst scope` passes: PASS (39 tests)
+- `grep find_and_advance crates/tugtool-python-cst/src/visitor/scope.rs` returns empty: PASS
+
+**Unit Tests Added:**
+- `test_scope_function_lexical_span_starts_at_def_not_decorator` - Key test: verifies decorated function lexical span starts at `def`, not at decorator `@`
+- `test_scope_class_lexical_span_starts_at_class` - Verifies class lexical span starts at `class` keyword
+- `test_scope_decorated_class_lexical_span_excludes_decorator` - Verifies decorated class lexical span excludes decorator
+- `test_scope_module_spans_entire_file` - Verifies module scope spans from byte 0 to source length
+- `test_scope_nested_functions_have_correct_containment` - Verifies nested scopes have proper containment (inner within outer)
+- `test_scope_collect_matches_collect_with_positions` - Verifies backward compatibility between old and new APIs
+- `test_scope_function_with_multiple_decorators` - Verifies handling of functions with multiple decorators
+- `test_scope_async_function_lexical_span_starts_at_async` - Verifies async function lexical span starts at `async`
+- `test_scope_decorated_async_function` - Verifies decorated async function lexical span excludes decorator
+
+**Key Implementation Details:**
+
+1. **Architecture change**: ScopeCollector no longer uses cursor-based string search. Instead, it looks up `lexical_span` from the PositionTable using the node's embedded `node_id`. The Visitor pattern is retained for scope hierarchy tracking (parent-child relationships, globals, nonlocals).
+
+2. **New fields and methods**:
+   - `positions: Option<&'pos PositionTable>` - Reference to PositionTable for span lookups
+   - `source_len: usize` - For computing module scope span (byte 0 to EOF)
+   - `lookup_lexical_span(node_id) -> Option<Span>` - Looks up lexical spans via node.node_id in PositionTable
+   - `enter_scope_with_id(kind, name, node_id)` - For FunctionDef/ClassDef that have lexical_span recorded
+   - `enter_scope(kind, name)` - For Lambda/Comprehension (no lexical_span in Phase 4)
+
+3. **New API methods**:
+   - `with_positions(&PositionTable, source_len) -> Self`: Creates collector with PositionTable reference
+   - `collect_with_positions(&Module, &PositionTable, &str) -> Vec<ScopeInfo>`: Preferred method for collecting scopes with accurate lexical spans
+   - `collect(&Module, &str) -> Vec<ScopeInfo>`: Legacy API that internally re-parses with position tracking
+
+4. **Lexical span semantics**: 
+   - **Critical rule**: Lexical spans do NOT include decorators. Decorators execute before the scope exists.
+   - For functions: starts at `def` (or `async` for async functions), ends at dedent
+   - For classes: starts at `class`, ends at dedent
+   - For module: spans byte 0 to source length (trivially synthesizable)
+
+5. **Lambda/Comprehension spans**: Per the phase-4 plan, Lambda and Comprehension scopes have `span: None` in Phase 4. Recording lexical_span for these is follow-on work listed in the roadmap.
+
+6. **Golden file updates**: The old spans were just keyword positions (e.g., bytes 77-80 for "def"). The new spans are the complete lexical extent (e.g., bytes 77-131 for the entire function body). This is the correct behavior for containment queries ("is position X inside scope Y?").
+
+---
