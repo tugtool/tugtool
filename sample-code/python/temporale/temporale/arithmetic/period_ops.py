@@ -7,11 +7,14 @@ Clamping behavior:
     When adding a Period results in an invalid date (e.g., Jan 31 + 1 month),
     the day is clamped to the last valid day of the target month.
 
+Quarters are converted to months (1 quarter = 3 months) for arithmetic.
+
 Examples:
     Date(2024, 1, 31) + Period(months=1) -> Date(2024, 2, 29)  # leap year
     Date(2023, 1, 31) + Period(months=1) -> Date(2023, 2, 28)
     Date(2024, 3, 31) + Period(months=1) -> Date(2024, 4, 30)
     Date(2024, 2, 29) + Period(years=1)  -> Date(2025, 2, 28)
+    Date(2024, 1, 15) + Period(quarters=1) -> Date(2024, 4, 15)
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ def add_period_to_date(date: Date, period: Period) -> Date:
 
     The components are applied in order:
     1. Years
-    2. Months
+    2. Quarters and Months (quarters converted to months: 1Q = 3M)
     3. Weeks and days (as total_days)
 
     Args:
@@ -53,6 +56,9 @@ def add_period_to_date(date: Date, period: Period) -> Date:
 
         >>> add_period_to_date(Date(2024, 2, 29), Period(years=1))
         Date(2025, 2, 28)
+
+        >>> add_period_to_date(Date(2024, 1, 15), Period(quarters=1))
+        Date(2024, 4, 15)
     """
     from temporale.core.date import Date
 
@@ -64,8 +70,9 @@ def add_period_to_date(date: Date, period: Period) -> Date:
     # Step 1: Add years
     year += period.years
 
-    # Step 2: Add months (with year overflow)
-    total_months = year * 12 + (month - 1) + period.months
+    # Step 2: Add months (quarters * 3 + months, with year overflow)
+    total_period_months = period.quarters * 3 + period.months
+    total_months = year * 12 + (month - 1) + total_period_months
     year = total_months // 12
     month = (total_months % 12) + 1
 

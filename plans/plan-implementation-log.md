@@ -6,6 +6,57 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 12.5: Add Quarters Support to Period | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Step 12.5 specification (lines 2708-2872)
+- `sample-code/python/temporale/temporale/core/period.py` - Existing Period implementation
+- `sample-code/python/temporale/temporale/arithmetic/period_ops.py` - Period arithmetic helpers
+- `sample-code/python/temporale/tests/test_period.py` - Existing Period tests
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `_quarters` slot to Period class | Done |
+| Update `__init__` to accept `quarters: int = 0` parameter | Done |
+| Add `Period.of_quarters(n)` factory method | Done |
+| Add `@property quarters` accessor | Done |
+| Add `@property total_quarters` computed property | Done |
+| Update `normalized()` to handle quarters (4Q → 1Y) | Done |
+| Update `total_months` to include quarters (Q = 3M) | Done |
+| Update `__add__`, `__sub__`, `__neg__`, `__mul__` for quarters | Done |
+| Update `__eq__`, `__hash__` to include quarters | Done |
+| Update `__repr__` and `__str__` with Q notation | Done |
+| Update `is_zero` to check quarters | Done |
+| Update `period_ops.py` for quarters | Done |
+| Add quarter-specific tests (39 new tests) | Done |
+
+**Files Modified:**
+- `sample-code/python/temporale/temporale/core/period.py` - Extended Period class with quarters support: new `_quarters` slot, `quarters` parameter, `of_quarters()` factory, `total_quarters` property, updated `total_months`, `normalized()`, arithmetic operators, equality/hashing, string representations
+- `sample-code/python/temporale/temporale/arithmetic/period_ops.py` - Updated `add_period_to_date()` to convert quarters to months (1Q = 3M) for date arithmetic
+- `sample-code/python/temporale/tests/test_period.py` - Added 39 new quarter-specific tests across 10 test classes, updated `test_repr` for new format
+
+**Test Results:**
+- `pytest tests/test_period.py -v`: 96 tests passed (57 original + 39 new quarter tests)
+- Full test suite: 816 tests passed
+
+**Checkpoints Verified:**
+- `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes: PASS
+- `Period.of_quarters(4).normalized() == Period(years=1)` works: PASS
+- `Date(2024, 1, 15) + Period(quarters=1) == Date(2024, 4, 15)` works: PASS
+
+**Key Decisions/Notes:**
+- Quarters follow financial calendar convention (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
+- 1 quarter = 3 months for all conversions and arithmetic
+- Normalization extracts quarters from months (12→years, 3→quarters, remainder→months)
+- ISO 8601-like string format uses `Q` notation (e.g., `P1Y2Q` for 1 year 2 quarters)
+- Date arithmetic converts quarters to months before applying to avoid ambiguity
+
+---
+
 ## [phase-5.md] Steps 12.5 & 13.5: Plan Quarters and Navigation Operations | PLANNED | 2026-01-21
 
 **Completed:** 2026-01-21

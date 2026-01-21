@@ -2718,17 +2718,17 @@ Date(2024, 2, 29) + Period(years=1)   # -> Date(2025, 2, 28)
 - `tests/test_period.py` - Additional quarter-specific tests
 
 **Tasks:**
-- [ ] Add `_quarters` slot to Period class
-- [ ] Update `__init__` to accept `quarters: int = 0` parameter
-- [ ] Add `Period.of_quarters(n)` factory method
-- [ ] Add `@property quarters` accessor
-- [ ] Add `@property total_quarters` computed property (years * 4 + quarters)
-- [ ] Update `normalized()` to handle quarters (4 quarters -> 1 year, remainder stays as quarters)
-- [ ] Update `total_months` to include quarters (years * 12 + quarters * 3 + months)
-- [ ] Update `__add__`, `__sub__`, `__neg__`, `__mul__` to handle quarters component
-- [ ] Update `__eq__`, `__hash__` to include quarters
-- [ ] Update `__repr__` and `__str__` to include quarters (ISO 8601 extension: use Q notation)
-- [ ] Update `is_zero` to check quarters component
+- [x] Add `_quarters` slot to Period class
+- [x] Update `__init__` to accept `quarters: int = 0` parameter
+- [x] Add `Period.of_quarters(n)` factory method
+- [x] Add `@property quarters` accessor
+- [x] Add `@property total_quarters` computed property (years * 4 + quarters)
+- [x] Update `normalized()` to handle quarters (4 quarters -> 1 year, remainder stays as quarters)
+- [x] Update `total_months` to include quarters (years * 12 + quarters * 3 + months)
+- [x] Update `__add__`, `__sub__`, `__neg__`, `__mul__` to handle quarters component
+- [x] Update `__eq__`, `__hash__` to include quarters
+- [x] Update `__repr__` and `__str__` to include quarters (ISO 8601 extension: use Q notation)
+- [x] Update `is_zero` to check quarters component
 
 **Period class changes:**
 ```python
@@ -2850,22 +2850,22 @@ class Period:
 ```
 
 **Tests:**
-- [ ] Unit test: Period construction with quarters
-- [ ] Unit test: Period.of_quarters factory method
-- [ ] Unit test: quarters property accessor
-- [ ] Unit test: total_quarters property
-- [ ] Unit test: total_months includes quarters (Q1 = 3 months)
-- [ ] Unit test: normalized() converts 4 quarters to 1 year
-- [ ] Unit test: normalized() handles mixed quarters and months
-- [ ] Unit test: Period arithmetic with quarters
-- [ ] Unit test: Period equality and hashing with quarters
-- [ ] Unit test: Date + Period with quarters (e.g., + 1 quarter = + 3 months)
-- [ ] Unit test: String representation includes quarters
+- [x] Unit test: Period construction with quarters
+- [x] Unit test: Period.of_quarters factory method
+- [x] Unit test: quarters property accessor
+- [x] Unit test: total_quarters property
+- [x] Unit test: total_months includes quarters (Q1 = 3 months)
+- [x] Unit test: normalized() converts 4 quarters to 1 year
+- [x] Unit test: normalized() handles mixed quarters and months
+- [x] Unit test: Period arithmetic with quarters
+- [x] Unit test: Period equality and hashing with quarters
+- [x] Unit test: Date + Period with quarters (e.g., + 1 quarter = + 3 months)
+- [x] Unit test: String representation includes quarters
 
 **Checkpoint:**
-- [ ] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes
-- [ ] `Period.of_quarters(4).normalized() == Period(years=1)` works
-- [ ] `Date(2024, 1, 15) + Period(quarters=1) == Date(2024, 4, 15)` works
+- [x] `.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/test_period.py -v` passes
+- [x] `Period.of_quarters(4).normalized() == Period(years=1)` works
+- [x] `Date(2024, 1, 15) + Period(quarters=1) == Date(2024, 4, 15)` works
 
 **Rollback:** Revert period.py to Step 12 version, remove quarter tests from test_period.py
 

@@ -14,11 +14,15 @@ if TYPE_CHECKING:
 
 
 class Period:
-    """A calendar-based duration with year, month, week, and day components.
+    """A calendar-based duration with year, quarter, month, week, and day components.
 
     Unlike Duration (which is exact nanoseconds), Period represents calendar
     concepts like "1 month" that vary by context. Adding 1 month to Jan 31
     yields Feb 28/29, not exactly 30 or 31 days.
+
+    Quarters are treated as 3 months for conversion purposes:
+    - 4 quarters = 1 year
+    - 1 quarter = 3 months
 
     The components are stored as-is without normalization. For example,
     Period(months=14) remains 14 months rather than being converted to
@@ -26,31 +30,33 @@ class Period:
 
     Attributes:
         years: Number of years (can be negative).
+        quarters: Number of quarters (can be negative).
         months: Number of months (can be negative).
         weeks: Number of weeks (can be negative).
         days: Number of days (can be negative).
 
     Examples:
-        >>> p = Period(years=1, months=2)
+        >>> p = Period(years=1, quarters=2)
         >>> p.years
         1
-        >>> p.months
+        >>> p.quarters
         2
 
-        >>> p = Period.of_months(14)
-        >>> p.total_months
-        14
+        >>> p = Period.of_quarters(4)
+        >>> p.total_quarters
+        4
 
         >>> from temporale.core.date import Date
         >>> Date(2024, 1, 31) + Period(months=1)  # Clamps to Feb 29
         Date(2024, 2, 29)
     """
 
-    __slots__ = ("_years", "_months", "_weeks", "_days")
+    __slots__ = ("_years", "_quarters", "_months", "_weeks", "_days")
 
     def __init__(
         self,
         years: int = 0,
+        quarters: int = 0,
         months: int = 0,
         weeks: int = 0,
         days: int = 0,
@@ -61,18 +67,23 @@ class Period:
 
         Args:
             years: Number of years.
+            quarters: Number of quarters (1 quarter = 3 months).
             months: Number of months.
             weeks: Number of weeks.
             days: Number of days.
 
         Examples:
             >>> Period(years=1, months=6)
-            Period(years=1, months=6, weeks=0, days=0)
+            Period(years=1, quarters=0, months=6, weeks=0, days=0)
+
+            >>> Period(quarters=2)  # 2 quarters = 6 months
+            Period(years=0, quarters=2, months=0, weeks=0, days=0)
 
             >>> Period(months=-3)  # 3 months ago
-            Period(years=0, months=-3, weeks=0, days=0)
+            Period(years=0, quarters=0, months=-3, weeks=0, days=0)
         """
         self._years = years
+        self._quarters = quarters
         self._months = months
         self._weeks = weeks
         self._days = days
@@ -89,9 +100,28 @@ class Period:
 
         Examples:
             >>> Period.of_years(2)
-            Period(years=2, months=0, weeks=0, days=0)
+            Period(years=2, quarters=0, months=0, weeks=0, days=0)
         """
         return cls(years=years)
+
+    @classmethod
+    def of_quarters(cls, quarters: int) -> Period:
+        """Create a Period of a given number of quarters.
+
+        Args:
+            quarters: Number of quarters (can be negative).
+
+        Returns:
+            A Period representing the specified quarters.
+
+        Examples:
+            >>> Period.of_quarters(2)
+            Period(years=0, quarters=2, months=0, weeks=0, days=0)
+
+            >>> Period.of_quarters(6)  # 1.5 years
+            Period(years=0, quarters=6, months=0, weeks=0, days=0)
+        """
+        return cls(quarters=quarters)
 
     @classmethod
     def of_months(cls, months: int) -> Period:
@@ -105,7 +135,7 @@ class Period:
 
         Examples:
             >>> Period.of_months(6)
-            Period(years=0, months=6, weeks=0, days=0)
+            Period(years=0, quarters=0, months=6, weeks=0, days=0)
         """
         return cls(months=months)
 
@@ -121,7 +151,7 @@ class Period:
 
         Examples:
             >>> Period.of_weeks(2)
-            Period(years=0, months=0, weeks=2, days=0)
+            Period(years=0, quarters=0, months=0, weeks=2, days=0)
         """
         return cls(weeks=weeks)
 
@@ -137,7 +167,7 @@ class Period:
 
         Examples:
             >>> Period.of_days(10)
-            Period(years=0, months=0, weeks=0, days=10)
+            Period(years=0, quarters=0, months=0, weeks=0, days=10)
         """
         return cls(days=days)
 
@@ -150,7 +180,7 @@ class Period:
 
         Examples:
             >>> Period.zero()
-            Period(years=0, months=0, weeks=0, days=0)
+            Period(years=0, quarters=0, months=0, weeks=0, days=0)
         """
         return cls()
 
@@ -162,6 +192,15 @@ class Period:
             Number of years (can be negative).
         """
         return self._years
+
+    @property
+    def quarters(self) -> int:
+        """Return the quarters component.
+
+        Returns:
+            Number of quarters (can be negative).
+        """
+        return self._quarters
 
     @property
     def months(self) -> int:
@@ -191,21 +230,36 @@ class Period:
         return self._days
 
     @property
+    def total_quarters(self) -> int:
+        """Return the total quarters (years * 4 + quarters).
+
+        Note: months, weeks, and days are not included in this calculation.
+
+        Returns:
+            Total quarters from years and quarters components.
+
+        Examples:
+            >>> Period(years=1, quarters=2).total_quarters
+            6
+        """
+        return self._years * 4 + self._quarters
+
+    @property
     def total_months(self) -> int:
-        """Return the total months (years * 12 + months).
+        """Return the total months (years * 12 + quarters * 3 + months).
 
         Note: weeks and days are not included in this calculation.
 
         Returns:
-            Total months from years and months components.
+            Total months from years, quarters, and months components.
 
         Examples:
-            >>> Period(years=1, months=2).total_months
-            14
+            >>> Period(years=1, quarters=1, months=2).total_months
+            17  # 12 + 3 + 2
             >>> Period(years=-1, months=3).total_months
             -9
         """
-        return self._years * 12 + self._months
+        return self._years * 12 + self._quarters * 3 + self._months
 
     @property
     def total_days(self) -> int:
@@ -234,44 +288,59 @@ class Period:
             True
             >>> Period(days=1).is_zero
             False
+            >>> Period(quarters=1).is_zero
+            False
         """
         return (
             self._years == 0
+            and self._quarters == 0
             and self._months == 0
             and self._weeks == 0
             and self._days == 0
         )
 
     def normalized(self) -> Period:
-        """Return a normalized Period with months < 12 and days < 7.
+        """Return a normalized Period.
 
         Normalizes:
-        - Months to years + remaining months
+        - Total months (years * 12 + quarters * 3 + months) to years + quarters + months
+          where quarters < 4 and months < 3
         - Days to weeks + remaining days
 
         The signs are preserved within each category:
-        - Years and months have consistent sign
+        - Years, quarters, and months have consistent sign
         - Weeks and days have consistent sign
 
         Returns:
             A new Period with normalized components.
 
         Examples:
+            >>> Period(quarters=6).normalized()
+            Period(years=1, quarters=2, months=0, weeks=0, days=0)
+
             >>> Period(months=14).normalized()
-            Period(years=1, months=2, weeks=0, days=0)
+            Period(years=1, quarters=0, months=2, weeks=0, days=0)
+
+            >>> Period(quarters=3, months=4).normalized()  # 9 + 4 = 13 months
+            Period(years=1, quarters=0, months=1, weeks=0, days=0)
 
             >>> Period(days=10).normalized()
-            Period(years=0, months=0, weeks=1, days=3)
+            Period(years=0, quarters=0, months=0, weeks=1, days=3)
         """
-        # Normalize months to years
-        total_months = self._years * 12 + self._months
-        years, months = divmod(total_months, 12)
+        # Convert everything to total months first
+        total_months = self._years * 12 + self._quarters * 3 + self._months
+
+        # Extract years (12 months each)
+        years, remaining_months = divmod(total_months, 12)
+
+        # Extract quarters (3 months each) from remaining months
+        quarters, months = divmod(remaining_months, 3)
 
         # Normalize days to weeks
         total_days = self._weeks * 7 + self._days
         weeks, days = divmod(total_days, 7)
 
-        return Period(years=years, months=months, weeks=weeks, days=days)
+        return Period(years=years, quarters=quarters, months=months, weeks=weeks, days=days)
 
     def to_duration(self, reference: Date) -> Duration:
         """Convert this Period to an exact Duration using a reference date.
@@ -317,12 +386,13 @@ class Period:
 
         Examples:
             >>> Period(years=1, months=3) + Period(months=6)
-            Period(years=1, months=9, weeks=0, days=0)
+            Period(years=1, quarters=0, months=9, weeks=0, days=0)
         """
         if not isinstance(other, Period):
             return NotImplemented
         return Period(
             years=self._years + other._years,
+            quarters=self._quarters + other._quarters,
             months=self._months + other._months,
             weeks=self._weeks + other._weeks,
             days=self._days + other._days,
@@ -348,12 +418,13 @@ class Period:
 
         Examples:
             >>> Period(years=2) - Period(months=6)
-            Period(years=2, months=-6, weeks=0, days=0)
+            Period(years=2, quarters=0, months=-6, weeks=0, days=0)
         """
         if not isinstance(other, Period):
             return NotImplemented
         return Period(
             years=self._years - other._years,
+            quarters=self._quarters - other._quarters,
             months=self._months - other._months,
             weeks=self._weeks - other._weeks,
             days=self._days - other._days,
@@ -367,10 +438,11 @@ class Period:
 
         Examples:
             >>> -Period(years=1, months=2)
-            Period(years=-1, months=-2, weeks=0, days=0)
+            Period(years=-1, quarters=0, months=-2, weeks=0, days=0)
         """
         return Period(
             years=-self._years,
+            quarters=-self._quarters,
             months=-self._months,
             weeks=-self._weeks,
             days=-self._days,
@@ -384,6 +456,7 @@ class Period:
         """
         return Period(
             years=self._years,
+            quarters=self._quarters,
             months=self._months,
             weeks=self._weeks,
             days=self._days,
@@ -403,12 +476,13 @@ class Period:
 
         Examples:
             >>> Period(months=3) * 2
-            Period(years=0, months=6, weeks=0, days=0)
+            Period(years=0, quarters=0, months=6, weeks=0, days=0)
         """
         if not isinstance(other, int):
             return NotImplemented
         return Period(
             years=self._years * other,
+            quarters=self._quarters * other,
             months=self._months * other,
             weeks=self._weeks * other,
             days=self._days * other,
@@ -436,11 +510,14 @@ class Period:
             True
             >>> Period(months=12) == Period(years=1)
             False
+            >>> Period(quarters=4) == Period(years=1)
+            False
         """
         if not isinstance(other, Period):
             return NotImplemented
         return (
             self._years == other._years
+            and self._quarters == other._quarters
             and self._months == other._months
             and self._weeks == other._weeks
             and self._days == other._days
@@ -459,7 +536,7 @@ class Period:
         Returns:
             Hash based on all components.
         """
-        return hash((self._years, self._months, self._weeks, self._days))
+        return hash((self._years, self._quarters, self._months, self._weeks, self._days))
 
     def __repr__(self) -> str:
         """Return a detailed string representation.
@@ -468,24 +545,36 @@ class Period:
             String showing all component values.
         """
         return (
-            f"Period(years={self._years}, months={self._months}, "
+            f"Period(years={self._years}, quarters={self._quarters}, months={self._months}, "
             f"weeks={self._weeks}, days={self._days})"
         )
 
     def __str__(self) -> str:
         """Return a human-readable string representation.
 
+        Uses ISO 8601-like format with Q for quarters.
+
         Returns:
-            String like "1 year, 2 months" or "P1Y2M" in ISO 8601 format.
+            String like "P1Y2Q" or "P1Y2M3D" in ISO 8601 format.
+
+        Examples:
+            >>> str(Period(years=1, quarters=2))
+            'P1Y2Q'
+            >>> str(Period(quarters=3, months=1))
+            'P3Q1M'
+            >>> str(Period.of_quarters(4))
+            'P4Q'
         """
         if self.is_zero:
             return "P0D"
 
         parts = []
 
-        # Date part (years, months, days including weeks)
+        # Date part (years, quarters, months, days including weeks)
         if self._years != 0:
             parts.append(f"{self._years}Y")
+        if self._quarters != 0:
+            parts.append(f"{self._quarters}Q")
         if self._months != 0:
             parts.append(f"{self._months}M")
 

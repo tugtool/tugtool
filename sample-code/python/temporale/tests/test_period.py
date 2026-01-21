@@ -269,7 +269,7 @@ class TestPeriodStringRepresentation:
     def test_repr(self):
         """Test __repr__ method."""
         p = Period(years=1, months=2, weeks=3, days=4)
-        assert repr(p) == "Period(years=1, months=2, weeks=3, days=4)"
+        assert repr(p) == "Period(years=1, quarters=0, months=2, weeks=3, days=4)"
 
     def test_str_zero(self):
         """Test __str__ for zero period."""
@@ -483,3 +483,293 @@ class TestPeriodEdgeCases:
         from temporale import Period as PeriodFromMain
         p = PeriodFromMain(months=1)
         assert p.months == 1
+
+
+# =============================================================================
+# Quarters Support Tests
+# =============================================================================
+
+
+class TestPeriodQuartersConstruction:
+    """Tests for Period construction with quarters."""
+
+    def test_construction_with_quarters(self):
+        """Test construction with quarters parameter."""
+        p = Period(quarters=2)
+        assert p.years == 0
+        assert p.quarters == 2
+        assert p.months == 0
+        assert p.weeks == 0
+        assert p.days == 0
+
+    def test_construction_with_all_components_including_quarters(self):
+        """Test construction with all components including quarters."""
+        p = Period(years=1, quarters=2, months=3, weeks=4, days=5)
+        assert p.years == 1
+        assert p.quarters == 2
+        assert p.months == 3
+        assert p.weeks == 4
+        assert p.days == 5
+
+    def test_construction_with_negative_quarters(self):
+        """Test construction with negative quarters."""
+        p = Period(quarters=-2)
+        assert p.quarters == -2
+
+
+class TestPeriodQuartersFactoryMethod:
+    """Tests for Period.of_quarters factory method."""
+
+    def test_of_quarters(self):
+        """Test Period.of_quarters factory method."""
+        p = Period.of_quarters(4)
+        assert p.years == 0
+        assert p.quarters == 4
+        assert p.months == 0
+        assert p.weeks == 0
+        assert p.days == 0
+
+    def test_of_quarters_negative(self):
+        """Test Period.of_quarters with negative value."""
+        p = Period.of_quarters(-2)
+        assert p.quarters == -2
+
+    def test_of_quarters_zero(self):
+        """Test Period.of_quarters(0)."""
+        p = Period.of_quarters(0)
+        assert p.is_zero
+
+
+class TestPeriodQuartersProperties:
+    """Tests for Period quarter-related properties."""
+
+    def test_quarters_property(self):
+        """Test quarters property accessor."""
+        p = Period(quarters=3)
+        assert p.quarters == 3
+
+    def test_total_quarters(self):
+        """Test total_quarters property."""
+        p = Period(years=1, quarters=2)
+        assert p.total_quarters == 6  # 1*4 + 2
+
+    def test_total_quarters_years_only(self):
+        """Test total_quarters with only years."""
+        p = Period(years=2)
+        assert p.total_quarters == 8  # 2*4
+
+    def test_total_quarters_negative(self):
+        """Test total_quarters with negative values."""
+        p = Period(years=-1, quarters=2)
+        assert p.total_quarters == -2  # -1*4 + 2
+
+    def test_total_months_includes_quarters(self):
+        """Test total_months includes quarters (Q1 = 3 months)."""
+        p = Period(years=1, quarters=1, months=2)
+        assert p.total_months == 17  # 12 + 3 + 2
+
+    def test_total_months_quarters_only(self):
+        """Test total_months with only quarters."""
+        p = Period(quarters=4)
+        assert p.total_months == 12  # 4*3
+
+
+class TestPeriodQuartersNormalization:
+    """Tests for Period normalization with quarters."""
+
+    def test_normalized_4_quarters_to_1_year(self):
+        """Test normalizing 4 quarters to 1 year."""
+        p = Period(quarters=4)
+        norm = p.normalized()
+        assert norm.years == 1
+        assert norm.quarters == 0
+        assert norm.months == 0
+
+    def test_normalized_6_quarters(self):
+        """Test normalizing 6 quarters."""
+        p = Period(quarters=6)
+        norm = p.normalized()
+        assert norm.years == 1
+        assert norm.quarters == 2
+        assert norm.months == 0
+
+    def test_normalized_mixed_quarters_and_months(self):
+        """Test normalizing mixed quarters and months."""
+        # 3 quarters = 9 months, + 4 months = 13 months = 1 year + 1 month
+        p = Period(quarters=3, months=4)
+        norm = p.normalized()
+        assert norm.years == 1
+        assert norm.quarters == 0
+        assert norm.months == 1
+
+    def test_normalized_preserves_weeks_and_days(self):
+        """Test that normalization handles weeks and days independently."""
+        p = Period(quarters=5, days=10)  # 15 months, 10 days
+        norm = p.normalized()
+        assert norm.years == 1
+        assert norm.quarters == 1
+        assert norm.months == 0
+        assert norm.weeks == 1
+        assert norm.days == 3
+
+
+class TestPeriodQuartersArithmetic:
+    """Tests for Period arithmetic with quarters."""
+
+    def test_add_periods_with_quarters(self):
+        """Test adding periods with quarters."""
+        p1 = Period(quarters=2)
+        p2 = Period(quarters=1)
+        result = p1 + p2
+        assert result.quarters == 3
+
+    def test_subtract_periods_with_quarters(self):
+        """Test subtracting periods with quarters."""
+        p1 = Period(quarters=3)
+        p2 = Period(quarters=1)
+        result = p1 - p2
+        assert result.quarters == 2
+
+    def test_negate_period_with_quarters(self):
+        """Test negating a period with quarters."""
+        p = Period(quarters=2)
+        neg = -p
+        assert neg.quarters == -2
+
+    def test_multiply_period_with_quarters(self):
+        """Test multiplying a period with quarters."""
+        p = Period(quarters=2)
+        result = p * 3
+        assert result.quarters == 6
+
+
+class TestPeriodQuartersEqualityAndHashing:
+    """Tests for Period equality and hashing with quarters."""
+
+    def test_equal_periods_with_quarters(self):
+        """Test equality of periods with quarters."""
+        p1 = Period(quarters=2)
+        p2 = Period(quarters=2)
+        assert p1 == p2
+
+    def test_unequal_quarters_vs_months(self):
+        """Test that quarters and equivalent months are not equal."""
+        p1 = Period(quarters=4)  # Not normalized
+        p2 = Period(months=12)
+        assert p1 != p2  # Structurally different
+
+    def test_hash_periods_with_quarters(self):
+        """Test hashing periods with quarters."""
+        p1 = Period(quarters=2)
+        p2 = Period(quarters=2)
+        assert hash(p1) == hash(p2)
+
+    def test_periods_with_quarters_in_sets(self):
+        """Test periods with quarters can be used in sets."""
+        s = {Period(quarters=1), Period(quarters=2), Period(quarters=1)}
+        assert len(s) == 2
+
+
+class TestPeriodQuartersStringRepresentation:
+    """Tests for Period string representations with quarters."""
+
+    def test_repr_with_quarters(self):
+        """Test __repr__ includes quarters."""
+        p = Period(years=1, quarters=2, months=3, weeks=4, days=5)
+        assert repr(p) == "Period(years=1, quarters=2, months=3, weeks=4, days=5)"
+
+    def test_str_with_quarters(self):
+        """Test __str__ uses Q notation for quarters."""
+        p = Period(years=1, quarters=2)
+        assert str(p) == "P1Y2Q"
+
+    def test_str_quarters_only(self):
+        """Test __str__ with only quarters."""
+        p = Period.of_quarters(4)
+        assert str(p) == "P4Q"
+
+    def test_str_quarters_and_months(self):
+        """Test __str__ with quarters and months."""
+        p = Period(quarters=3, months=1)
+        assert str(p) == "P3Q1M"
+
+    def test_str_all_components(self):
+        """Test __str__ with all components."""
+        p = Period(years=1, quarters=2, months=1, weeks=1, days=3)
+        # weeks=1, days=3 -> 10 days
+        assert str(p) == "P1Y2Q1M10D"
+
+
+class TestDatePlusQuarters:
+    """Tests for Date + Period with quarters."""
+
+    def test_add_one_quarter(self):
+        """Test adding 1 quarter = 3 months."""
+        d = Date(2024, 1, 15)
+        result = d + Period(quarters=1)
+        assert result == Date(2024, 4, 15)
+
+    def test_add_four_quarters(self):
+        """Test adding 4 quarters = 1 year."""
+        d = Date(2024, 1, 15)
+        result = d + Period(quarters=4)
+        assert result == Date(2025, 1, 15)
+
+    def test_add_quarter_with_clamping(self):
+        """Test adding a quarter that requires day clamping."""
+        # Jan 31 + 1 quarter = Apr 30 (April has 30 days)
+        d = Date(2024, 1, 31)
+        result = d + Period(quarters=1)
+        assert result == Date(2024, 4, 30)
+
+    def test_add_quarter_leap_year_edge(self):
+        """Test adding a quarter from February 29."""
+        d = Date(2024, 2, 29)  # Leap year
+        result = d + Period(quarters=1)
+        assert result == Date(2024, 5, 29)
+
+    def test_subtract_quarter(self):
+        """Test subtracting a quarter."""
+        d = Date(2024, 4, 15)
+        result = d - Period(quarters=1)
+        assert result == Date(2024, 1, 15)
+
+    def test_negative_quarters(self):
+        """Test adding negative quarters."""
+        d = Date(2024, 7, 15)
+        result = d + Period(quarters=-2)
+        assert result == Date(2024, 1, 15)
+
+
+class TestDateTimePlusQuarters:
+    """Tests for DateTime + Period with quarters."""
+
+    def test_datetime_add_quarter_preserves_time(self):
+        """Test that DateTime + Period with quarters preserves time."""
+        dt = DateTime(2024, 1, 15, 14, 30, 45)
+        result = dt + Period(quarters=1)
+        assert result.year == 2024
+        assert result.month == 4
+        assert result.day == 15
+        assert result.hour == 14
+        assert result.minute == 30
+        assert result.second == 45
+
+
+class TestPeriodQuartersIsZero:
+    """Tests for is_zero with quarters."""
+
+    def test_is_zero_with_only_quarters(self):
+        """Test that Period with only quarters is not zero."""
+        p = Period(quarters=1)
+        assert not p.is_zero
+
+    def test_is_zero_with_zero_quarters(self):
+        """Test that Period with zero quarters is zero."""
+        p = Period(quarters=0)
+        assert p.is_zero
+
+    def test_bool_with_quarters(self):
+        """Test __bool__ with quarters."""
+        assert bool(Period(quarters=1))
+        assert not bool(Period(quarters=0))
