@@ -6,6 +6,111 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-5.md] Step 1: Python Environment Prerequisites (Plan Revision) | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Original Step 1 content
+- `plans/step-1-python-env-prerequisites.md` - Detailed uv-based plan (now deleted, integrated into phase-5.md)
+- `crates/tugtool/tests/support/python.rs` - Current Python test helper implementation
+- `crates/tugtool/tests/python_env_test.rs` - Current smoke tests
+- `.github/workflows/ci.yml` - Current CI configuration
+- Code-architect research on uv, astral-sh/setup-uv, Python environment best practices
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Identify fragility in current PATH-based Python discovery approach | Done |
+| Research uv as Python environment manager via code-architect agent | Done |
+| Design uv-based approach with project-local venv (.tug-test-venv/) | Done |
+| Create detailed implementation plan via code-planner agent | Done |
+| Integrate detailed plan directly into phase-5.md Step 1 | Done |
+| Delete separate step-1-python-env-prerequisites.md file | Done |
+
+**Files Created:**
+- None (planning revision only)
+
+**Files Modified:**
+- `plans/phase-5.md` - Complete rewrite of Step 1 (lines 1336-2036) with uv-based approach
+
+**Test Results:**
+- N/A (planning revision - no code written yet)
+
+**Checkpoints Verified:**
+- Step 1 now uses uv instead of PATH-based Python discovery
+- Fallback chain documented: TUG_PYTHON → existing venv → create with uv → skip with helpful error
+- CI configuration uses astral-sh/setup-uv@v5 instead of actions/setup-python
+- Edge cases documented (no uv, invalid TUG_PYTHON, corrupted venv, parallel tests, Windows)
+- Developer experience: one-time `curl -LsSf https://astral.sh/uv/install.sh | sh` then auto-bootstrap
+- One complete, definitive plan in phase-5.md (no separate files)
+
+**Key Decisions/Notes:**
+- **[SD01] Use uv for Python Environment Management** - Fast, single binary, handles Python version management
+- **[SD02] Project-Local Virtual Environment** - `.tug-test-venv/` at workspace root, gitignored
+- **[SD03] Pinned Python 3.11** - Explicit version to avoid drift between local and CI
+- **[SD04] Fallback Chain** - Graceful degradation with helpful error messages
+- **[SD05] CI Uses astral-sh/setup-uv** - Consistent with local development workflow
+- Previous approach using `python3`/`python` from PATH was fragile on macOS with Homebrew due to multiple Python versions and unpredictable PATH order
+- Complete rewrite of support/python.rs with OnceLock caching and PythonEnv struct
+- New test `venv_is_reused_across_tests` verifies caching behavior
+
+---
+
+## [phase-5.md] Phase 5 Plan: Temporale Sample Code Library | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Full plan document
+- `.github/workflows/ci.yml` - CI configuration for Python setup
+- `crates/tugtool/tests/golden_tests.rs` - Existing Python discovery patterns
+- `justfile` - Build and test commands
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create comprehensive plan for Temporale datetime library | Done |
+| Define epoch choice (Modified Julian Day with nanosecond precision) | Done |
+| Define module structure (15+ Python files across core/, units/, format/, convert/, arithmetic/, _internal/) | Done |
+| Define Python version support (3.10, 3.11, 3.12) | Done |
+| Document 25+ Python constructs for refactoring test coverage | Done |
+| Document 10 refactoring scenarios (List L01) | Done |
+| Resolve Q01-Q05 (Python versions, epoch, era naming, timezone model, leap seconds) | Done |
+| Add Step 1: Python Environment Prerequisites with concrete Rust test helpers | Done |
+| Define CI changes for vanilla Python + pytest (remove libcst dependency) | Done |
+| Number steps 1-14 for implementation phases | Done |
+
+**Files Created:**
+- None (planning phase only)
+
+**Files Modified:**
+- `plans/phase-5.md` - Complete plan document (1700+ lines)
+
+**Test Results:**
+- N/A (planning phase - no code written yet)
+
+**Checkpoints Verified:**
+- Plan includes all required sections (context, strategy, scope, non-goals, dependencies, constraints)
+- All open questions resolved (Q01-Q05)
+- Design decisions documented (D01-D07)
+- Concrete Step 1 with Rust code for Python test helpers
+- CI configuration changes specified (vanilla Python + pytest only)
+- 14 implementation steps with commit messages, tasks, tests, checkpoints, and rollback instructions
+
+**Key Decisions/Notes:**
+- **Epoch:** Modified Julian Day (MJD) with `(days: int, nanos: int)` internal representation
+- **Era:** BCE/CE only, no BC/AD aliases
+- **Timezone:** Simplified UTC offset model, no IANA database
+- **Leap seconds:** Ignored entirely
+- **Python deps:** Vanilla Python only - pytest for testing, no libcst or other runtime dependencies
+- **CI integration:** Remove libcst, install only pytest; Rust tests skip gracefully when pytest unavailable locally but assert in CI
+- Plan designed as refactoring test bed with 100+ symbols, 50+ cross-module references, and 10 documented refactoring scenarios
+
+---
+
 ## [phase-4.md] Step 14b: Complete Collector API Cleanup and Rename | COMPLETE | 2026-01-20
 
 **Completed:** 2026-01-20

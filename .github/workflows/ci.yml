@@ -32,8 +32,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install libcst
-        run: pip install libcst
+      - name: Install pytest
+        run: pip install pytest
 
       - name: Set TUG_PYTHON
         run: echo "TUG_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> $GITHUB_ENV
