@@ -299,7 +299,7 @@ pub fn collect_dynamic_warnings(
     symbol_name: &str,
     mode: DynamicMode,
 ) -> Result<Vec<DynamicWarning>, std::io::Error> {
-    use tugtool_python_cst::{parse_module, DynamicPatternDetector};
+    use tugtool_python_cst::{parse_module_with_positions, DynamicPatternDetector};
 
     let mut all_warnings = Vec::new();
 
@@ -310,14 +310,14 @@ pub fn collect_dynamic_warnings(
             Err(_) => continue, // Skip files we can't read
         };
 
-        // Parse the file using native CST
-        let module = match parse_module(&content, None) {
-            Ok(m) => m,
+        // Parse the file using native CST with positions
+        let parsed = match parse_module_with_positions(&content, None) {
+            Ok(p) => p,
             Err(_) => continue, // Skip files with parse errors
         };
 
         // Get dynamic patterns using native detector
-        let cst_patterns = DynamicPatternDetector::collect(&module, &content);
+        let cst_patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         // Convert CST patterns to our types
         let patterns: Vec<DynamicPatternInfo> = cst_patterns

@@ -23,7 +23,7 @@
 //! let source = "def foo(x: int) -> str:\n    pass";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let annotations = AnnotationCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 //! for ann in &annotations {
 //!     println!("{}: {} ({:?})", ann.name, ann.type_str, ann.source_kind);
 //! }
@@ -167,7 +167,7 @@ impl AnnotationInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let annotations = AnnotationCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 /// ```
 pub struct AnnotationCollector<'pos> {
     /// Reference to position table for span lookups.
@@ -207,45 +207,17 @@ impl<'pos> AnnotationCollector<'pos> {
 
     /// Collect annotations from a parsed module with position information.
     ///
-    /// This is the preferred method for collecting annotations with accurate spans.
-    ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
     ) -> Vec<AnnotationInfo> {
         let mut collector = AnnotationCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.annotations
-    }
-
-    /// Collect annotations from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored; re-parses for positions)
-    /// * `source` - The original source code
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<AnnotationInfo> {
-        // Re-parse with position tracking to get accurate spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut collector = AnnotationCollector::with_positions(&parsed.positions);
-                walk_module(&mut collector, &parsed.module);
-                collector.annotations
-            }
-            Err(_) => {
-                // Fallback: collect without spans if re-parsing fails
-                Vec::new()
-            }
-        }
     }
 
     /// Get the collected annotations, consuming the collector.
@@ -469,13 +441,13 @@ impl<'a, 'pos> Visitor<'a> for AnnotationCollector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
+    use crate::parse_module_with_positions;
 
     #[test]
     fn test_annotation_parameter_simple() {
         let source = "def foo(x: int):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].name, "x");
@@ -487,8 +459,8 @@ mod tests {
     #[test]
     fn test_annotation_parameter_multiple() {
         let source = "def foo(x: int, y: str, z: bool):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 3);
         assert_eq!(annotations[0].name, "x");
@@ -502,8 +474,8 @@ mod tests {
     #[test]
     fn test_annotation_return_type() {
         let source = "def foo() -> int:\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].name, "__return__");
@@ -514,8 +486,8 @@ mod tests {
     #[test]
     fn test_annotation_subscript() {
         let source = "def foo(x: List[int]):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].type_str, "List[int]");
@@ -525,8 +497,8 @@ mod tests {
     #[test]
     fn test_annotation_dict() {
         let source = "def foo(x: Dict[str, int]):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].type_str, "Dict[str, int]");
@@ -535,8 +507,8 @@ mod tests {
     #[test]
     fn test_annotation_union() {
         let source = "def foo(x: int | str):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].type_str, "int | str");
@@ -546,8 +518,8 @@ mod tests {
     #[test]
     fn test_annotation_variable() {
         let source = "x: int = 5";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].name, "x");
@@ -558,8 +530,8 @@ mod tests {
     #[test]
     fn test_annotation_class_attribute() {
         let source = "class Foo:\n    x: int";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].name, "x");
@@ -573,8 +545,8 @@ mod tests {
     z: float = 1.0
     pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         // x, y, __return__, z
         assert_eq!(annotations.len(), 4);
@@ -589,8 +561,8 @@ mod tests {
     #[test]
     fn test_annotation_attribute_type() {
         let source = "def foo(x: typing.List):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].type_str, "typing.List");
@@ -600,8 +572,8 @@ mod tests {
     #[test]
     fn test_annotation_string_forward_ref() {
         let source = "def foo(x: \"MyClass\"):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].type_str, "MyClass");
@@ -614,8 +586,8 @@ mod tests {
     def method(self, x: int):
         pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let annotations = AnnotationCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].name, "x");

@@ -32,7 +32,7 @@
 //! let source = "x = 1\nprint(x)";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 //! for (name, ref_list) in &refs {
 //!     println!("{}: {:?}", name, ref_list);
 //! }
@@ -141,7 +141,7 @@ struct ContextEntry {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 /// let x_refs = refs.get("x");
 /// ```
 pub struct ReferenceCollector<'pos> {
@@ -194,10 +194,10 @@ impl<'pos> ReferenceCollector<'pos> {
     ///
     /// ```ignore
     /// let parsed = parse_module_with_positions(source, None)?;
-    /// let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    /// let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
     /// let x_refs = refs.get("x");
     /// ```
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &PositionTable,
     ) -> HashMap<String, Vec<ReferenceInfo>> {
@@ -572,7 +572,7 @@ mod tests {
     fn test_reference_name_collected() {
         let source = "x = 1\nprint(x)";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // x is defined and referenced
         let x_refs = refs.get("x").unwrap();
@@ -589,7 +589,7 @@ mod tests {
     fn test_reference_definition_collected() {
         let source = "def foo():\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -600,7 +600,7 @@ mod tests {
     fn test_reference_call_collected() {
         let source = "foo()";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -611,7 +611,7 @@ mod tests {
     fn test_reference_attribute_collected() {
         let source = "obj.attr";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // obj is a reference
         let obj_refs = refs.get("obj").unwrap();
@@ -628,7 +628,7 @@ mod tests {
     fn test_reference_import_collected() {
         let source = "import foo";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -639,7 +639,7 @@ mod tests {
     fn test_reference_from_import_collected() {
         let source = "from os import path";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // path is an import
         let path_refs = refs.get("path").unwrap();
@@ -657,7 +657,7 @@ foo()
 x = foo
 "#;
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("foo").unwrap();
         assert_eq!(foo_refs.len(), 3);
@@ -674,7 +674,7 @@ x = foo
     fn test_reference_class_definition() {
         let source = "class Foo:\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let foo_refs = refs.get("Foo").unwrap();
         assert_eq!(foo_refs.len(), 1);
@@ -685,7 +685,7 @@ x = foo
     fn test_reference_parameter_definition() {
         let source = "def foo(a, b):\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let a_refs = refs.get("a").unwrap();
         assert_eq!(a_refs.len(), 1);
@@ -700,7 +700,7 @@ x = foo
     fn test_reference_assignment_definition() {
         let source = "x = 1";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 1);
@@ -711,7 +711,7 @@ x = foo
     fn test_reference_tuple_unpacking_definitions() {
         let source = "a, b, c = values";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         for name in &["a", "b", "c"] {
             let name_refs = refs.get(*name).unwrap();
@@ -729,7 +729,7 @@ x = foo
     fn test_reference_annotated_assignment() {
         let source = "x: int = 5";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 1);
@@ -740,7 +740,7 @@ x = foo
     fn test_reference_method_call() {
         let source = "obj.method()";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // obj is a reference
         let obj_refs = refs.get("obj").unwrap();
@@ -757,7 +757,7 @@ x = foo
     fn test_reference_chained_calls() {
         let source = "foo().bar()";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // foo is a call
         let foo_refs = refs.get("foo").unwrap();
@@ -774,9 +774,9 @@ x = foo
     fn test_reference_hashmap_returned() {
         let source = "x = 1\ny = x";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
-        // collect_with_positions() returns HashMap directly
+        // collect() returns HashMap directly
         assert!(refs.contains_key("x"));
         assert!(refs.contains_key("y"));
     }
@@ -798,7 +798,7 @@ processor = FileProcessor("test.txt")
 result = processor.process()
 "#;
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // os is imported
         let os_refs = refs.get("os").unwrap();
@@ -823,7 +823,7 @@ result = processor.process()
     fn test_reference_spans() {
         let source = "x = 1";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 1);

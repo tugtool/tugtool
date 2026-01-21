@@ -43,7 +43,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use tugtool_python_cst::{
-    parse_module, parse_module_with_positions,
+    parse_module_with_positions,
     visitor::{
         AnnotationCollector, BindingCollector, DynamicPatternDetector, ImportCollector,
         InheritanceCollector, MethodCallCollector, ReferenceCollector, ScopeCollector,
@@ -218,7 +218,7 @@ fn assert_golden<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt
 
 fn analyze_scopes(source: &str) -> Vec<GoldenScope> {
     let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
-    let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+    let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
     scopes
         .into_iter()
@@ -236,7 +236,7 @@ fn analyze_scopes(source: &str) -> Vec<GoldenScope> {
 
 fn analyze_bindings(source: &str) -> Vec<GoldenBinding> {
     let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
-    let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
     bindings
         .into_iter()
@@ -251,7 +251,7 @@ fn analyze_bindings(source: &str) -> Vec<GoldenBinding> {
 
 fn analyze_references(source: &str) -> BTreeMap<String, Vec<GoldenReference>> {
     let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
-    let refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
 
     refs.iter()
         .map(|(name, ref_list)| {
@@ -268,8 +268,8 @@ fn analyze_references(source: &str) -> BTreeMap<String, Vec<GoldenReference>> {
 }
 
 fn analyze_imports(source: &str) -> Vec<GoldenImport> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let imports = ImportCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let imports = ImportCollector::collect(&parsed.module);
 
     imports
         .into_iter()
@@ -294,8 +294,8 @@ fn analyze_imports(source: &str) -> Vec<GoldenImport> {
 }
 
 fn analyze_annotations(source: &str) -> Vec<GoldenAnnotation> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let annotations = AnnotationCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
     annotations
         .into_iter()
@@ -311,8 +311,8 @@ fn analyze_annotations(source: &str) -> Vec<GoldenAnnotation> {
 }
 
 fn analyze_inheritance(source: &str) -> Vec<GoldenInheritance> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let classes = InheritanceCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
     classes
         .into_iter()
@@ -326,8 +326,8 @@ fn analyze_inheritance(source: &str) -> Vec<GoldenInheritance> {
 }
 
 fn analyze_method_calls(source: &str) -> Vec<GoldenMethodCall> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let calls = MethodCallCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
     calls
         .into_iter()
@@ -341,8 +341,8 @@ fn analyze_method_calls(source: &str) -> Vec<GoldenMethodCall> {
 }
 
 fn analyze_type_inference(source: &str) -> Vec<GoldenTypeInference> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let inferences = TypeInferenceCollector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let inferences = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
     inferences
         .into_iter()
@@ -359,8 +359,8 @@ fn analyze_type_inference(source: &str) -> Vec<GoldenTypeInference> {
 }
 
 fn analyze_dynamic_patterns(source: &str) -> Vec<GoldenDynamicPattern> {
-    let module = parse_module(source, None).expect("Failed to parse");
-    let patterns = DynamicPatternDetector::collect(&module, source);
+    let parsed = parse_module_with_positions(source, None).expect("Failed to parse");
+    let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
     patterns
         .into_iter()

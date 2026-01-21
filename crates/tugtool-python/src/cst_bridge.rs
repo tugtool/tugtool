@@ -216,16 +216,16 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         message: prettify_error(e, "source"),
     })?;
 
-    // P0: Collect scopes (using position-aware parsing)
-    let cst_scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+    // P0: Collect scopes
+    let cst_scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
     let scopes: Vec<ScopeInfo> = cst_scopes.into_iter().map(|s| s.into()).collect();
 
-    // P0: Collect bindings (using position-aware parsing)
-    let cst_bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    // P0: Collect bindings
+    let cst_bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
     let bindings: Vec<BindingInfo> = cst_bindings.into_iter().map(|b| b.into()).collect();
 
-    // P0: Collect references (using position-aware parsing)
-    let cst_refs = ReferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    // P0: Collect references
+    let cst_refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
     let references: Vec<(String, Vec<ReferenceInfo>)> = cst_refs
         .into_iter()
         .map(|(name, refs)| {
@@ -236,22 +236,22 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         .collect();
 
     // P1: Collect imports
-    let imports = ImportCollector::collect(&parsed.module, source);
+    let imports = ImportCollector::collect(&parsed.module);
 
     // P1: Collect type annotations
-    let annotations = AnnotationCollector::collect(&parsed.module, source);
+    let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
     // P1: Collect assignment patterns for type inference
-    let assignments = TypeInferenceCollector::collect(&parsed.module, source);
+    let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
     // P1: Collect class inheritance information
-    let class_inheritance = InheritanceCollector::collect(&parsed.module, source);
+    let class_inheritance = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
     // P1: Collect method call patterns
-    let method_calls = MethodCallCollector::collect(&parsed.module, source);
+    let method_calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
     // P2: Collect dynamic patterns
-    let dynamic_patterns = DynamicPatternDetector::collect(&parsed.module, source);
+    let dynamic_patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
     Ok(NativeAnalysisResult {
         // P0

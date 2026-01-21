@@ -23,7 +23,7 @@
 //! let source = "x = getattr(obj, 'foo')";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let patterns = DynamicPatternDetector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 //! for pattern in &patterns {
 //!     println!("{:?}: {}", pattern.kind, pattern.description);
 //! }
@@ -174,7 +174,7 @@ impl DynamicPatternInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let patterns = DynamicPatternDetector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 /// ```
 pub struct DynamicPatternDetector<'pos> {
     /// Reference to position table for span lookups.
@@ -214,45 +214,17 @@ impl<'pos> DynamicPatternDetector<'pos> {
 
     /// Collect dynamic patterns from a parsed module with position information.
     ///
-    /// This is the preferred method for collecting patterns with accurate spans.
-    ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
     ) -> Vec<DynamicPatternInfo> {
         let mut detector = DynamicPatternDetector::with_positions(positions);
         walk_module(&mut detector, module);
         detector.patterns
-    }
-
-    /// Collect dynamic patterns from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored; re-parses for positions)
-    /// * `source` - The original source code
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<DynamicPatternInfo> {
-        // Re-parse with position tracking to get accurate spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut detector = DynamicPatternDetector::with_positions(&parsed.positions);
-                walk_module(&mut detector, &parsed.module);
-                detector.patterns
-            }
-            Err(_) => {
-                // Fallback: collect without spans if re-parsing fails
-                Vec::new()
-            }
-        }
     }
 
     /// Get the collected patterns, consuming the detector.
@@ -451,13 +423,13 @@ impl<'a, 'pos> Visitor<'a> for DynamicPatternDetector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
+    use crate::parse_module_with_positions;
 
     #[test]
     fn test_detect_getattr() {
         let source = "x = getattr(obj, 'foo')";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Getattr);
@@ -467,8 +439,8 @@ mod tests {
     #[test]
     fn test_detect_getattr_dynamic() {
         let source = "x = getattr(obj, name)";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Getattr);
@@ -478,8 +450,8 @@ mod tests {
     #[test]
     fn test_detect_setattr() {
         let source = "setattr(obj, 'bar', value)";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Setattr);
@@ -489,8 +461,8 @@ mod tests {
     #[test]
     fn test_detect_delattr() {
         let source = "delattr(obj, 'baz')";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Delattr);
@@ -500,8 +472,8 @@ mod tests {
     #[test]
     fn test_detect_hasattr() {
         let source = "if hasattr(obj, 'method'): pass";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Hasattr);
@@ -511,8 +483,8 @@ mod tests {
     #[test]
     fn test_detect_eval() {
         let source = "result = eval('1 + 2')";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Eval);
@@ -522,8 +494,8 @@ mod tests {
     #[test]
     fn test_detect_exec() {
         let source = "exec('x = 1')";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::Exec);
@@ -533,8 +505,8 @@ mod tests {
     #[test]
     fn test_detect_globals_subscript() {
         let source = "x = globals()['foo']";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::GlobalsSubscript);
@@ -544,8 +516,8 @@ mod tests {
     #[test]
     fn test_detect_locals_subscript() {
         let source = "x = locals()['bar']";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::LocalsSubscript);
@@ -558,8 +530,8 @@ mod tests {
     def __getattr__(self, name):
         return None
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::GetAttrMethod);
@@ -572,8 +544,8 @@ mod tests {
     def __setattr__(self, name, value):
         pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::SetAttrMethod);
@@ -585,8 +557,8 @@ mod tests {
     def __delattr__(self, name):
         pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::DelAttrMethod);
@@ -598,8 +570,8 @@ mod tests {
     def __getattribute__(self, name):
         return super().__getattribute__(name)
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(patterns[0].kind, DynamicPatternKind::GetAttributeMethod);
@@ -611,8 +583,8 @@ mod tests {
         let source = r#"def __getattr__(name):
     return None
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         // Should not be detected because it's not inside a class
         assert!(patterns.is_empty());
@@ -630,8 +602,8 @@ mod tests {
         else:
             setattr(self._target, name, value)
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         // Should detect: __getattr__, getattr, __setattr__, setattr
         assert_eq!(patterns.len(), 4);
@@ -649,8 +621,8 @@ mod tests {
     def method(self):
         x = getattr(obj, 'foo')
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert_eq!(
@@ -662,8 +634,8 @@ mod tests {
     #[test]
     fn test_pattern_has_span() {
         let source = "getattr(obj, 'foo')";
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(patterns.len(), 1);
         assert!(patterns[0].span.is_some());
@@ -688,8 +660,8 @@ x = obj.attr
 # Normal subscript
 data = items[0]
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         assert!(patterns.is_empty());
     }
@@ -720,8 +692,8 @@ class Dynamic:
     def __getattribute__(self, name):
         pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let patterns = DynamicPatternDetector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
         // Should detect all patterns
         // getattr, setattr, delattr, hasattr, eval, exec, globals[], locals[]

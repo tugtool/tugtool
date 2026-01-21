@@ -23,7 +23,7 @@
 //! let source = "import os\nfrom sys import path";
 //! let module = parse_module(source, None)?;
 //!
-//! let imports = ImportCollector::collect(&module, source);
+//! let imports = ImportCollector::collect(&module);
 //! for import in &imports {
 //!     println!("{}: {:?}", import.module, import.kind);
 //! }
@@ -150,7 +150,7 @@ impl ImportInfo {
 /// # Example
 ///
 /// ```ignore
-/// let imports = ImportCollector::collect(&module, source);
+/// let imports = ImportCollector::collect(&module);
 /// ```
 pub struct ImportCollector {
     /// Collected imports.
@@ -174,10 +174,7 @@ impl ImportCollector {
     /// Collect imports from a parsed module.
     ///
     /// Returns the list of imports in the order they were encountered.
-    ///
-    /// Note: The `source` parameter is kept for API compatibility but is no longer used.
-    /// Span information is derived directly from token positions in the CST.
-    pub fn collect(module: &Module<'_>, _source: &str) -> Vec<ImportInfo> {
+    pub fn collect(module: &Module<'_>) -> Vec<ImportInfo> {
         let mut collector = ImportCollector::new();
         walk_module(&mut collector, module);
         collector.imports
@@ -302,7 +299,7 @@ mod tests {
     fn test_import_simple() {
         let source = "import os";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].kind, ImportKind::Import);
@@ -314,7 +311,7 @@ mod tests {
     fn test_import_dotted() {
         let source = "import os.path.join";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].module, "os.path.join");
@@ -324,7 +321,7 @@ mod tests {
     fn test_import_as() {
         let source = "import numpy as np";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].module, "numpy");
@@ -335,7 +332,7 @@ mod tests {
     fn test_import_multiple() {
         let source = "import os, sys, json";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 3);
         assert_eq!(imports[0].module, "os");
@@ -347,7 +344,7 @@ mod tests {
     fn test_from_import_simple() {
         let source = "from os import path";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].kind, ImportKind::From);
@@ -364,7 +361,7 @@ mod tests {
     fn test_from_import_as() {
         let source = "from os import path as p";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         let names = imports[0].names.as_ref().unwrap();
@@ -376,7 +373,7 @@ mod tests {
     fn test_from_import_multiple() {
         let source = "from os import path, getcwd, listdir";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         let names = imports[0].names.as_ref().unwrap();
@@ -390,7 +387,7 @@ mod tests {
     fn test_from_import_star() {
         let source = "from os import *";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert!(imports[0].is_star);
@@ -401,7 +398,7 @@ mod tests {
     fn test_relative_import() {
         let source = "from . import utils";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].relative_level, 1);
@@ -412,7 +409,7 @@ mod tests {
     fn test_relative_import_with_module() {
         let source = "from ..utils import helper";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 1);
         assert_eq!(imports[0].relative_level, 2);
@@ -423,7 +420,7 @@ mod tests {
     fn test_multiple_imports() {
         let source = "import os\nfrom sys import path\nimport json as j";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert_eq!(imports.len(), 3);
         assert_eq!(imports[0].kind, ImportKind::Import);
@@ -443,7 +440,7 @@ mod tests {
         // This test documents the current behavior.
         let source = "import os";
         let module = parse_module(source, None).unwrap();
-        let imports = ImportCollector::collect(&module, source);
+        let imports = ImportCollector::collect(&module);
 
         assert!(imports[0].span.is_none());
     }

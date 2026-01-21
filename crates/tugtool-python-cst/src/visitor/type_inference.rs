@@ -23,7 +23,7 @@
 //! let source = "x = MyClass()\ny = x";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let assignments = TypeInferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 //! for assign in &assignments {
 //!     if let Some(t) = &assign.inferred_type {
 //!         println!("{} has type {}", assign.target, t);
@@ -172,7 +172,7 @@ impl AssignmentInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let assignments = TypeInferenceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 /// ```
 pub struct TypeInferenceCollector<'pos> {
     /// Reference to position table for span lookups.
@@ -208,45 +208,17 @@ impl<'pos> TypeInferenceCollector<'pos> {
 
     /// Collect type inference data from a parsed module with position information.
     ///
-    /// This is the preferred method for collecting assignments with accurate spans.
-    ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
     ) -> Vec<AssignmentInfo> {
         let mut collector = TypeInferenceCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.assignments
-    }
-
-    /// Collect type inference data from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored; re-parses for positions)
-    /// * `source` - The original source code
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<AssignmentInfo> {
-        // Re-parse with position tracking to get accurate spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut collector = TypeInferenceCollector::with_positions(&parsed.positions);
-                walk_module(&mut collector, &parsed.module);
-                collector.assignments
-            }
-            Err(_) => {
-                // Fallback: collect without spans if re-parsing fails
-                Vec::new()
-            }
-        }
     }
 
     /// Get the collected assignments, consuming the collector.
@@ -399,13 +371,13 @@ impl<'a, 'pos> Visitor<'a> for TypeInferenceCollector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
+    use crate::parse_module_with_positions;
 
     #[test]
     fn test_type_inference_constructor() {
         let source = "x = MyClass()";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].target, "x");
@@ -416,8 +388,8 @@ mod tests {
     #[test]
     fn test_type_inference_variable() {
         let source = "x = MyClass()\ny = x";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 2);
 
@@ -432,8 +404,8 @@ mod tests {
     #[test]
     fn test_type_inference_function_call() {
         let source = "x = get_handler()";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].target, "x");
@@ -444,8 +416,8 @@ mod tests {
     #[test]
     fn test_type_inference_module_constructor() {
         let source = "x = module.MyClass()";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].target, "x");
@@ -456,8 +428,8 @@ mod tests {
     #[test]
     fn test_type_inference_unknown() {
         let source = "x = 1 + 2";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].target, "x");
@@ -470,8 +442,8 @@ mod tests {
     def method(self):
         handler = Handler()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].target, "handler");
@@ -484,8 +456,8 @@ mod tests {
     #[test]
     fn test_type_inference_chained_assignment() {
         let source = "x = y = MyClass()";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         // Both x and y should be tracked
         assert_eq!(assignments.len(), 2);
@@ -498,8 +470,8 @@ mod tests {
     fn test_type_inference_lowercase_not_constructor() {
         // Lowercase function names are not treated as constructors
         let source = "x = my_class()";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 1);
         assert_eq!(assignments[0].type_source, TypeSource::FunctionCall);
@@ -514,8 +486,8 @@ mod tests {
     processor = handler
     result = process()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(assignments.len(), 3);
 
@@ -535,8 +507,8 @@ mod tests {
     #[test]
     fn test_type_inference_has_span() {
         let source = "x = MyClass()";
-        let module = parse_module(source, None).unwrap();
-        let assignments = TypeInferenceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
 
         assert!(assignments[0].span.is_some());
         let span = assignments[0].span.unwrap();

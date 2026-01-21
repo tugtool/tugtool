@@ -313,19 +313,19 @@ fn bench_full_analysis(c: &mut Criterion) {
             &code,
             |b, code| {
                 b.iter(|| {
-                    let module = parse_module(code, None).unwrap();
+                    let parsed = parse_module_with_positions(code, None).unwrap();
                     // Run all P0 collectors
-                    let _ = black_box(ScopeCollector::collect(&module, code));
-                    let _ = black_box(BindingCollector::collect(&module, code));
-                    let _ = black_box(ReferenceCollector::collect(&module, code));
+                    let _ = black_box(ScopeCollector::collect(&parsed.module, &parsed.positions, code));
+                    let _ = black_box(BindingCollector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(ReferenceCollector::collect(&parsed.module, &parsed.positions));
                     // Run all P1 collectors
-                    let _ = black_box(ImportCollector::collect(&module, code));
-                    let _ = black_box(AnnotationCollector::collect(&module, code));
-                    let _ = black_box(TypeInferenceCollector::collect(&module, code));
-                    let _ = black_box(InheritanceCollector::collect(&module, code));
-                    let _ = black_box(MethodCallCollector::collect(&module, code));
+                    let _ = black_box(ImportCollector::collect(&parsed.module));
+                    let _ = black_box(AnnotationCollector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(TypeInferenceCollector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(InheritanceCollector::collect(&parsed.module, &parsed.positions));
+                    let _ = black_box(MethodCallCollector::collect(&parsed.module, &parsed.positions));
                     // Run P2 collector
-                    let _ = black_box(DynamicPatternDetector::collect(&module, code));
+                    let _ = black_box(DynamicPatternDetector::collect(&parsed.module, &parsed.positions));
                 });
             },
         );
@@ -334,51 +334,31 @@ fn bench_full_analysis(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark analysis using position-aware parsing vs legacy collect() methods.
-/// This compares the new approach (single parse + position table) vs old approach
-/// (parse_module + each collector's internal re-parse for positions).
+/// Benchmark P0 collectors (Scope, Binding, Reference) with position-aware parsing.
 fn bench_analysis_with_positions(c: &mut Criterion) {
     let mut group = c.benchmark_group("analysis_with_positions");
 
     for size in [50, 100].iter() {
         let code = generate_class_code(*size);
 
-        // Benchmark the legacy approach: parse_module + collect() methods
-        // Note: The collect() methods internally call parse_module_with_positions
-        // for each collector that needs positions, resulting in multiple parses.
+        // Benchmark position-aware parsing + P0 collectors
         group.bench_with_input(
-            BenchmarkId::new("legacy_collect", format!("{}_classes", size)),
-            &code,
-            |b, code| {
-                b.iter(|| {
-                    let module = parse_module(code, None).unwrap();
-                    // P0 collectors (each internally parses with positions)
-                    let _ = black_box(ScopeCollector::collect(&module, code));
-                    let _ = black_box(BindingCollector::collect(&module, code));
-                    let _ = black_box(ReferenceCollector::collect(&module, code));
-                });
-            },
-        );
-
-        // Benchmark the new approach: single parse_module_with_positions + collect_with_positions
-        // This parses once and shares the PositionTable across all collectors.
-        group.bench_with_input(
-            BenchmarkId::new("position_aware", format!("{}_classes", size)),
+            BenchmarkId::new("p0_collectors", format!("{}_classes", size)),
             &code,
             |b, code| {
                 b.iter(|| {
                     let parsed = parse_module_with_positions(code, None).unwrap();
                     // P0 collectors using shared PositionTable
-                    let _ = black_box(ScopeCollector::collect_with_positions(
+                    let _ = black_box(ScopeCollector::collect(
                         &parsed.module,
                         &parsed.positions,
                         code,
                     ));
-                    let _ = black_box(BindingCollector::collect_with_positions(
+                    let _ = black_box(BindingCollector::collect(
                         &parsed.module,
                         &parsed.positions,
                     ));
-                    let _ = black_box(ReferenceCollector::collect_with_positions(
+                    let _ = black_box(ReferenceCollector::collect(
                         &parsed.module,
                         &parsed.positions,
                     ));

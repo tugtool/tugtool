@@ -41,7 +41,7 @@
 //! let source = "def foo(): pass";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+//! let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 //! for scope in &scopes {
 //!     println!("Scope: {:?} kind={:?}", scope.id, scope.kind);
 //! }
@@ -145,7 +145,7 @@ impl ScopeInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+/// let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 /// ```
 pub struct ScopeCollector<'pos> {
     /// Reference to position table for span lookups.
@@ -201,9 +201,9 @@ impl<'pos> ScopeCollector<'pos> {
     ///
     /// ```ignore
     /// let parsed = parse_module_with_positions(source, None)?;
-    /// let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+    /// let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
     /// ```
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
         source: &str,
@@ -407,14 +407,14 @@ mod tests {
     use crate::parse_module_with_positions;
 
     // ========================================================================
-    // Tests using collect_with_positions() API
+    // Tests using collect() API
     // ========================================================================
 
     #[test]
     fn test_scope_simple_function() {
         let source = "def foo():\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -435,7 +435,7 @@ mod tests {
     fn test_scope_nested_functions() {
         let source = "def outer():\n    def inner():\n        pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -457,7 +457,7 @@ mod tests {
     fn test_scope_class_with_methods() {
         let source = "class Foo:\n    def bar(self):\n        pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -479,7 +479,7 @@ mod tests {
     fn test_scope_comprehensions() {
         let source = "x = [i for i in range(10)]";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -496,7 +496,7 @@ mod tests {
     fn test_scope_lambda() {
         let source = "f = lambda x: x + 1";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -513,7 +513,7 @@ mod tests {
     fn test_scope_global_declaration() {
         let source = "x = 1\ndef foo():\n    global x\n    x = 2";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -529,7 +529,7 @@ mod tests {
     fn test_scope_nonlocal_declaration() {
         let source = "def outer():\n    x = 1\n    def inner():\n        nonlocal x\n        x = 2";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -550,7 +550,7 @@ mod tests {
     fn test_scope_multiple_global_names() {
         let source = "def foo():\n    global x, y, z";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].globals, vec!["x", "y", "z"]);
@@ -560,7 +560,7 @@ mod tests {
     fn test_scope_generator_expression() {
         let source = "g = (x for x in range(10))";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -575,7 +575,7 @@ mod tests {
     fn test_scope_dict_comprehension() {
         let source = "d = {k: v for k, v in items}";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
@@ -585,7 +585,7 @@ mod tests {
     fn test_scope_set_comprehension() {
         let source = "s = {x for x in items}";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
@@ -600,7 +600,7 @@ mod tests {
         y = lambda z: z + 1
 "#;
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let scopes = ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         // Module, Class, Comprehension, Function, Lambda
         assert_eq!(scopes.len(), 5);
@@ -632,7 +632,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -660,7 +660,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -681,7 +681,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -700,7 +700,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 1);
 
@@ -725,7 +725,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 3);
 
@@ -769,7 +769,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -790,7 +790,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 
@@ -814,7 +814,7 @@ mod tests {
 
         let parsed = parse_module_with_positions(source, None).unwrap();
         let scopes =
-            ScopeCollector::collect_with_positions(&parsed.module, &parsed.positions, source);
+            ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
 

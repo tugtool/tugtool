@@ -22,7 +22,7 @@
 //! let source = "class Child(Parent):\n    pass";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let classes = InheritanceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 //! for cls in &classes {
 //!     println!("{} inherits from {:?}", cls.name, cls.bases);
 //! }
@@ -81,7 +81,7 @@ impl ClassInheritanceInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let classes = InheritanceCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 /// ```
 pub struct InheritanceCollector<'pos> {
     /// Reference to position table for span lookups.
@@ -117,45 +117,17 @@ impl<'pos> InheritanceCollector<'pos> {
 
     /// Collect class inheritance information from a parsed module with position information.
     ///
-    /// This is the preferred method for collecting classes with accurate spans.
-    ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
     ) -> Vec<ClassInheritanceInfo> {
         let mut collector = InheritanceCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.classes
-    }
-
-    /// Collect class inheritance information from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored; re-parses for positions)
-    /// * `source` - The original source code
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<ClassInheritanceInfo> {
-        // Re-parse with position tracking to get accurate spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut collector = InheritanceCollector::with_positions(&parsed.positions);
-                walk_module(&mut collector, &parsed.module);
-                collector.classes
-            }
-            Err(_) => {
-                // Fallback: collect without spans if re-parsing fails
-                Vec::new()
-            }
-        }
     }
 
     /// Get the collected class info, consuming the collector.
@@ -226,13 +198,13 @@ impl<'a, 'pos> Visitor<'a> for InheritanceCollector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
+    use crate::parse_module_with_positions;
 
     #[test]
     fn test_inheritance_no_bases() {
         let source = "class Foo:\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].name, "Foo");
@@ -242,8 +214,8 @@ mod tests {
     #[test]
     fn test_inheritance_single_base() {
         let source = "class Child(Parent):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].name, "Child");
@@ -253,8 +225,8 @@ mod tests {
     #[test]
     fn test_inheritance_multiple_bases() {
         let source = "class Child(Parent1, Parent2, Parent3):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].name, "Child");
@@ -264,8 +236,8 @@ mod tests {
     #[test]
     fn test_inheritance_dotted_base() {
         let source = "class Child(module.Parent):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].bases, vec!["module.Parent"]);
@@ -274,8 +246,8 @@ mod tests {
     #[test]
     fn test_inheritance_generic_subscript() {
         let source = "class MyList(Generic[T]):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].bases, vec!["Generic"]);
@@ -284,8 +256,8 @@ mod tests {
     #[test]
     fn test_inheritance_list_subscript() {
         let source = "class IntList(List[int]):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].bases, vec!["List"]);
@@ -294,8 +266,8 @@ mod tests {
     #[test]
     fn test_inheritance_mixed_bases() {
         let source = "class Child(Parent, Generic[T], mixin.Mixin):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].bases, vec!["Parent", "Generic", "mixin.Mixin"]);
@@ -309,8 +281,8 @@ mod tests {
 class Child(Parent):
     pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 2);
 
@@ -327,8 +299,8 @@ class Child(Parent):
     class Inner(Base):
         pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 2);
 
@@ -343,8 +315,8 @@ class Child(Parent):
     #[test]
     fn test_inheritance_has_span() {
         let source = "class Foo(Bar):\n    pass";
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert!(classes[0].span.is_some());
         let span = classes[0].span.unwrap();
@@ -368,8 +340,8 @@ class XmlHandler(BaseHandler):
     def process(self):
         pass
 "#;
-        let module = parse_module(source, None).unwrap();
-        let classes = InheritanceCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let classes = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(classes.len(), 3);
 

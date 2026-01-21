@@ -21,7 +21,7 @@
 //! let source = "handler = Handler()\nhandler.process()";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let calls = MethodCallCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 //! for call in &calls {
 //!     println!("{}.{}()", call.receiver, call.method);
 //! }
@@ -80,7 +80,7 @@ impl MethodCallInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let calls = MethodCallCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 /// ```
 pub struct MethodCallCollector<'pos> {
     /// Reference to position table for span lookups.
@@ -116,45 +116,17 @@ impl<'pos> MethodCallCollector<'pos> {
 
     /// Collect method calls from a parsed module with position information.
     ///
-    /// This is the preferred method for collecting calls with accurate spans.
-    ///
     /// # Arguments
     ///
     /// * `module` - The parsed CST module
     /// * `positions` - Position table from `parse_module_with_positions`
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
     ) -> Vec<MethodCallInfo> {
         let mut collector = MethodCallCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.calls
-    }
-
-    /// Collect method calls from a parsed module.
-    ///
-    /// This is a legacy compatibility method. For new code, prefer
-    /// [`collect_with_positions`] which provides accurate token-derived spans.
-    ///
-    /// # Arguments
-    ///
-    /// * `module` - The parsed CST module (ignored; re-parses for positions)
-    /// * `source` - The original source code
-    ///
-    /// [`collect_with_positions`]: Self::collect_with_positions
-    pub fn collect(_module: &Module<'_>, source: &str) -> Vec<MethodCallInfo> {
-        // Re-parse with position tracking to get accurate spans
-        match crate::parse_module_with_positions(source, None) {
-            Ok(parsed) => {
-                let mut collector = MethodCallCollector::with_positions(&parsed.positions);
-                walk_module(&mut collector, &parsed.module);
-                collector.calls
-            }
-            Err(_) => {
-                // Fallback: collect without spans if re-parsing fails
-                Vec::new()
-            }
-        }
     }
 
     /// Get the collected method calls, consuming the collector.
@@ -230,13 +202,13 @@ impl<'a, 'pos> Visitor<'a> for MethodCallCollector<'pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_module;
+    use crate::parse_module_with_positions;
 
     #[test]
     fn test_method_call_simple() {
         let source = "obj.method()";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].receiver, "obj");
@@ -246,8 +218,8 @@ mod tests {
     #[test]
     fn test_method_call_with_args() {
         let source = "obj.method(1, 2, 3)";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].receiver, "obj");
@@ -257,8 +229,8 @@ mod tests {
     #[test]
     fn test_method_call_self() {
         let source = "self.process()";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].receiver, "self");
@@ -271,8 +243,8 @@ mod tests {
 result.save()
 data.validate()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(calls.len(), 3);
         assert_eq!(calls[0].receiver, "handler");
@@ -289,8 +261,8 @@ data.validate()
     handler = Handler()
     handler.process()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         // The Handler() call is not a method call, only handler.process() is
         assert_eq!(calls.len(), 1);
@@ -305,8 +277,8 @@ data.validate()
     def method(self):
         self.helper()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].receiver, "self");
@@ -320,8 +292,8 @@ data.validate()
     #[test]
     fn test_plain_function_call_not_collected() {
         let source = "print('hello')";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         // Plain function calls are not method calls
         assert!(calls.is_empty());
@@ -330,8 +302,8 @@ data.validate()
     #[test]
     fn test_constructor_call_not_collected() {
         let source = "obj = MyClass()";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         // Constructor calls are not method calls
         assert!(calls.is_empty());
@@ -341,8 +313,8 @@ data.validate()
     fn test_chained_call_only_first() {
         // For chained calls, we only collect the first one where receiver is a simple name
         let source = "obj.method1().method2()";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         // Only obj.method1() is collected because method2()'s receiver is a call expression
         assert_eq!(calls.len(), 1);
@@ -353,8 +325,8 @@ data.validate()
     #[test]
     fn test_method_call_has_span() {
         let source = "obj.method()";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert!(calls[0].method_span.is_some());
         let span = calls[0].method_span.unwrap();
@@ -373,8 +345,8 @@ data.validate()
     other = handler
     other.process()
 "#;
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(calls.len(), 2);
 
@@ -389,8 +361,8 @@ data.validate()
     fn test_module_function_not_collected() {
         // Module-level attribute access that's a function call, not a method call
         let source = "os.path.join('a', 'b')";
-        let module = parse_module(source, None).unwrap();
-        let calls = MethodCallCollector::collect(&module, source);
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
         // os.path.join - "path" is an attribute, not a simple name receiver
         // We should collect os.path since os is a simple name

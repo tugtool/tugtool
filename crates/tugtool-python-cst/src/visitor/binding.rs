@@ -32,7 +32,7 @@
 //! let source = "def foo(): pass";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+//! let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 //! for binding in &bindings {
 //!     println!("{}: {:?} at {:?}", binding.name, binding.kind, binding.span);
 //! }
@@ -133,7 +133,7 @@ impl BindingInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+/// let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 /// ```
 pub struct BindingCollector<'pos> {
     /// Reference to position table for span lookups.
@@ -180,9 +180,9 @@ impl<'pos> BindingCollector<'pos> {
     ///
     /// ```ignore
     /// let parsed = parse_module_with_positions(source, None)?;
-    /// let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+    /// let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
     /// ```
-    pub fn collect_with_positions(
+    pub fn collect(
         module: &Module<'_>,
         positions: &'pos PositionTable,
     ) -> Vec<BindingInfo> {
@@ -444,14 +444,14 @@ mod tests {
     use crate::parse_module_with_positions;
 
     // ========================================================================
-    // Tests using collect_with_positions() API
+    // Tests using collect() API
     // ========================================================================
 
     #[test]
     fn test_binding_function_def() {
         let source = "def foo():\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "foo");
@@ -463,7 +463,7 @@ mod tests {
     fn test_binding_class_def() {
         let source = "class Foo:\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "Foo");
@@ -475,7 +475,7 @@ mod tests {
     fn test_binding_parameters() {
         let source = "def foo(a, b, c):\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         // Function + 3 parameters
         assert_eq!(bindings.len(), 4);
@@ -497,7 +497,7 @@ mod tests {
     fn test_binding_simple_assignment() {
         let source = "x = 1";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "x");
@@ -508,7 +508,7 @@ mod tests {
     fn test_binding_tuple_unpacking() {
         let source = "a, b, c = values";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 3);
         assert_eq!(bindings[0].name, "a");
@@ -523,7 +523,7 @@ mod tests {
     fn test_binding_nested_tuple_unpacking() {
         let source = "(a, (b, c)), d = values";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 4);
         let names: Vec<_> = bindings.iter().map(|b| b.name.as_str()).collect();
@@ -537,7 +537,7 @@ mod tests {
     fn test_binding_import() {
         let source = "import foo";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "foo");
@@ -548,7 +548,7 @@ mod tests {
     fn test_binding_import_dotted() {
         let source = "import foo.bar.baz";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         // `import foo.bar.baz` binds `foo` (the root)
         assert_eq!(bindings.len(), 1);
@@ -560,7 +560,7 @@ mod tests {
     fn test_binding_import_as() {
         let source = "import foo as bar";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "bar");
@@ -571,7 +571,7 @@ mod tests {
     fn test_binding_from_import() {
         let source = "from os import path";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "path");
@@ -582,7 +582,7 @@ mod tests {
     fn test_binding_from_import_as() {
         let source = "from os import path as p";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "p");
@@ -593,7 +593,7 @@ mod tests {
     fn test_binding_from_import_star() {
         let source = "from os import *";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "*");
@@ -604,7 +604,7 @@ mod tests {
     fn test_binding_for_loop() {
         let source = "for i in range(10):\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "i");
@@ -615,7 +615,7 @@ mod tests {
     fn test_binding_for_loop_tuple_unpacking() {
         let source = "for k, v in items:\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].name, "k");
@@ -629,7 +629,7 @@ mod tests {
     fn test_binding_except_handler() {
         let source = "try:\n    pass\nexcept Exception as e:\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "e");
@@ -640,7 +640,7 @@ mod tests {
     fn test_binding_with_statement() {
         let source = "with open('f') as file:\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "file");
@@ -651,7 +651,7 @@ mod tests {
     fn test_binding_with_statement_tuple() {
         let source = "with ctx() as (a, b):\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].name, "a");
@@ -662,7 +662,7 @@ mod tests {
     fn test_binding_annotated_assignment() {
         let source = "x: int = 5";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "x");
@@ -673,7 +673,7 @@ mod tests {
     fn test_binding_walrus_operator() {
         let source = "if (x := 5) > 0:\n    pass";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "x");
@@ -687,7 +687,7 @@ mod tests {
         x = 1
 "#;
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         // class Outer, def method, param self, var x
         assert_eq!(bindings.len(), 4);
@@ -709,7 +709,7 @@ mod tests {
     fn test_binding_multiple_imports() {
         let source = "from os import path, getcwd";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].name, "path");
@@ -720,7 +720,7 @@ mod tests {
     fn test_binding_chained_assignment() {
         let source = "x = y = z = 1";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 3);
         let names: Vec<_> = bindings.iter().map(|b| b.name.as_str()).collect();
@@ -733,7 +733,7 @@ mod tests {
     fn test_binding_starred_assignment() {
         let source = "first, *rest, last = items";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 3);
         let names: Vec<_> = bindings.iter().map(|b| b.name.as_str()).collect();
@@ -746,7 +746,7 @@ mod tests {
     fn test_binding_lambda_params() {
         let source = "f = lambda a, b: a + b";
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         // var f, params a and b
         assert_eq!(bindings.len(), 3);
@@ -771,7 +771,7 @@ mod tests {
         //                ^foo: 4-7
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "foo");
@@ -788,7 +788,7 @@ mod tests {
         //            ^my_var: 0-6
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         let span = bindings[0].span.expect("Should have span");
@@ -804,7 +804,7 @@ mod tests {
         //            ^x:0  ^x:6  ^x:12
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 3, "Should have 3 bindings");
 
@@ -845,7 +845,7 @@ mod tests {
         //                    ^first:8-13 ^second:15-21
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         // Function "add" + params "first" and "second"
         assert_eq!(bindings.len(), 3);
@@ -876,7 +876,7 @@ mod tests {
         x = 1
 "#;
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         // class A, def m, param self, var x
         assert_eq!(bindings.len(), 4);
@@ -910,7 +910,7 @@ mod tests {
         //                           ^path:15-19
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "path");
@@ -928,7 +928,7 @@ mod tests {
         //            0   4   8
 
         let parsed = parse_module_with_positions(source, None).unwrap();
-        let bindings = BindingCollector::collect_with_positions(&parsed.module, &parsed.positions);
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(bindings.len(), 3);
 

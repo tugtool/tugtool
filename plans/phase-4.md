@@ -1708,3 +1708,53 @@ fn test_span_collector_basic() {
 - Tests are independent per file, so partial rollback is possible if one collector has issues
 
 ---
+
+#### Step 14b: Complete Collector API Cleanup and Rename {#step-14b}
+
+**Commit:** `refactor(cst): rename collect_with_positions to collect`
+
+**Purpose:** Complete the API cleanup by:
+1. Removing legacy `collect(module, source)` from remaining collectors
+2. Renaming `collect_with_positions` → `collect` across all collectors for a cleaner API
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/import.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/annotation.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/type_inference.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/method_call.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/inheritance.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/dynamic.rs`
+- Modified all collector files: rename `collect_with_positions` → `collect`
+- Modified `crates/tugtool-python-cst/tests/golden.rs`
+- Modified `crates/tugtool-python/src/cst_bridge.rs`
+
+**Tasks:**
+- [x] Remove `ImportCollector::collect(module, source)` method (simplified to `collect(module)`)
+- [x] Remove `AnnotationCollector::collect(module, source)` method
+- [x] Remove `TypeInferenceCollector::collect(module, source)` method
+- [x] Remove `MethodCallCollector::collect(module, source)` method
+- [x] Remove `InheritanceCollector::collect(module, source)` method
+- [x] Remove `DynamicPatternDetector::collect(module, source)` method
+- [x] Rename `collect_with_positions` → `collect` in SpanCollector (kept `from_positions`)
+- [x] Rename `collect_with_positions` → `collect` in BindingCollector
+- [x] Rename `collect_with_positions` → `collect` in ScopeCollector
+- [x] Rename `collect_with_positions` → `collect` in ReferenceCollector
+- [x] ImportCollector has no positions, signature simplified to `collect(module)`
+- [x] Rename `collect_with_positions` → `collect` in AnnotationCollector
+- [x] Rename `collect_with_positions` → `collect` in TypeInferenceCollector
+- [x] Rename `collect_with_positions` → `collect` in MethodCallCollector
+- [x] Rename `collect_with_positions` → `collect` in InheritanceCollector
+- [x] Rename `collect_with_positions` → `collect` in DynamicPatternDetector
+- [x] Update golden.rs to use new `collect()` API
+- [x] Update cst_bridge.rs to use new `collect()` API
+- [x] Update all tests
+
+**Tests:**
+- [x] `cargo nextest run --workspace` passes - 1084 tests pass
+
+**Checkpoint:**
+- [x] `grep -r "collect_with_positions" crates/tugtool-python-cst/` returns empty
+- [x] `grep -r "pub fn collect.*module.*source" crates/tugtool-python-cst/src/visitor/` returns empty
+- [x] All tests pass
+
+---

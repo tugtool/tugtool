@@ -6,6 +6,73 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-4.md] Step 14b: Complete Collector API Cleanup and Rename | COMPLETE | 2026-01-20
+
+**Completed:** 2026-01-20
+
+**References Reviewed:**
+- `plans/phase-4.md` - Step 14b specification
+- All collector files in `crates/tugtool-python-cst/src/visitor/`
+- `crates/tugtool-python/src/cst_bridge.rs`
+- `crates/tugtool-python-cst/tests/golden.rs`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove `ImportCollector::collect(module, source)` method | Done |
+| Remove `AnnotationCollector::collect(module, source)` method | Done |
+| Remove `TypeInferenceCollector::collect(module, source)` method | Done |
+| Remove `MethodCallCollector::collect(module, source)` method | Done |
+| Remove `InheritanceCollector::collect(module, source)` method | Done |
+| Remove `DynamicPatternDetector::collect(module, source)` method | Done |
+| Rename `collect_with_positions` → `collect` in BindingCollector | Done |
+| Rename `collect_with_positions` → `collect` in ScopeCollector | Done |
+| Rename `collect_with_positions` → `collect` in ReferenceCollector | Done |
+| Rename `collect_with_positions` → `collect` in AnnotationCollector | Done |
+| Rename `collect_with_positions` → `collect` in TypeInferenceCollector | Done |
+| Rename `collect_with_positions` → `collect` in MethodCallCollector | Done |
+| Rename `collect_with_positions` → `collect` in InheritanceCollector | Done |
+| Rename `collect_with_positions` → `collect` in DynamicPatternDetector | Done |
+| ImportCollector simplified to `collect(module)` - no positions needed | Done |
+| SpanCollector kept `from_positions()` - not a visitor | Done |
+| Update golden.rs to use new `collect()` API | Done |
+| Update cst_bridge.rs to use new `collect()` API | Done |
+| Update parser_bench.rs to use new API | Done |
+| Update dynamic.rs in tugtool-python to use new API | Done |
+| Update all tests in collector files | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - removed legacy API, renamed to `collect()`
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - renamed `collect_with_positions` → `collect`
+- `crates/tugtool-python-cst/src/visitor/dynamic.rs` - removed legacy API, renamed to `collect()`
+- `crates/tugtool-python-cst/src/visitor/import.rs` - simplified to `collect(module)` only
+- `crates/tugtool-python-cst/src/visitor/inheritance.rs` - removed legacy API, renamed to `collect()`
+- `crates/tugtool-python-cst/src/visitor/method_call.rs` - removed legacy API, renamed to `collect()`
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - renamed `collect_with_positions` → `collect`
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - renamed `collect_with_positions` → `collect`
+- `crates/tugtool-python-cst/src/visitor/type_inference.rs` - removed legacy API, renamed to `collect()`
+- `crates/tugtool-python-cst/tests/golden.rs` - updated all analyze_* helpers to use new API
+- `crates/tugtool-python-cst/benches/parser_bench.rs` - updated to use new API
+- `crates/tugtool-python/src/cst_bridge.rs` - updated all collector calls
+- `crates/tugtool-python/src/dynamic.rs` - updated DynamicPatternDetector call
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1084 tests passed
+
+**Checkpoints Verified:**
+- `grep -r "collect_with_positions" crates/tugtool-python-cst/`: PASS (no results)
+- `grep -r "pub fn collect.*module.*source" crates/tugtool-python-cst/src/visitor/`: PASS (no results)
+- All tests pass: PASS
+
+**Key Decisions/Notes:**
+- SpanCollector retained `from_positions()` name because it's fundamentally different from other collectors - it doesn't traverse the CST, just transforms PositionTable → SpanTable
+- ImportCollector simplified to `collect(module)` - it doesn't need positions at all
+- ScopeCollector has unique signature `collect(module, positions, source)` - needs source for scope context
+- The legacy `collect(module, source)` API was dangerous because it silently re-parsed source, ignoring the passed Module
+- New unified API pattern: `Collector::collect(&module, &positions)` for most collectors
+
+---
 
 ---
 
