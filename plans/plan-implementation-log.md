@@ -8,6 +8,59 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step A4: Add Integration Tests | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum Step A4 (lines 1756-1784)
+- Spec S07, S08: CLI command specifications
+- Test scenarios from (#addendum-test-scenarios)
+- `crates/tugtool/tests/temporale_integration.rs` - existing integration test patterns
+- `crates/tugtool/tests/support/fixtures.rs` - fixture test support utilities
+- `crates/tugtool/src/fixture.rs` - fixture module with state detection
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add integration test for list with temporale fixture | Done |
+| Add integration test for status when fixture is fetched | Done |
+| Add integration test for status when fixture is missing | Done |
+| Add integration test for status with specific fixture name | Done |
+| Add integration test for status with unknown fixture name (error case) | Done |
+
+**Files Created:**
+- `crates/tugtool/tests/fixture_list_status_integration.rs`:
+  - 12 integration tests covering list and status functionality
+  - Tests for list: returns temporale info, by-name lookup, sorted results
+  - Tests for status: fetched, missing, not-a-git-repo, sha-mismatch states
+  - Tests for filtering by name and error handling for unknown fixtures
+  - Tests for FixtureState JSON serialization/deserialization
+
+**Files Modified:**
+- `plans/phase-7.md`:
+  - Checked off all 5 tasks for Step A4
+  - Checked off all 5 tests
+  - Checked off both checkpoints with test counts
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture_list`: 4 tests passed
+- `cargo nextest run -p tugtool fixture_status`: 9 tests passed
+- `cargo nextest run -p tugtool`: 256 tests passed (all tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixture_list` - list tests pass: PASS (4 tests)
+- `cargo nextest run -p tugtool fixture_status` - status tests pass: PASS (9 tests)
+
+**Key Decisions/Notes:**
+- Used standalone workspace root detection instead of importing `mod support` to avoid dead code warnings from python.rs
+- Tests use tempfile crate for isolated test directories
+- Tests cover both positive cases (expected states) and error cases (unknown fixtures)
+- SHA mismatch test creates a real git repo to verify state detection works correctly
+
+---
+
 ## [phase-7.md] Step A3: Add CLI Commands | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

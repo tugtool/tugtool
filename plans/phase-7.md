@@ -1763,22 +1763,22 @@ enum FixtureAction {
 - Integration tests in `crates/tugtool/tests/`
 
 **Tasks:**
-- [ ] Add integration test for list with temporale fixture
-- [ ] Add integration test for status when fixture is fetched
-- [ ] Add integration test for status when fixture is missing
-- [ ] Add integration test for status with specific fixture name
-- [ ] Add integration test for status with unknown fixture name (error case)
+- [x] Add integration test for list with temporale fixture
+- [x] Add integration test for status when fixture is fetched
+- [x] Add integration test for status when fixture is missing
+- [x] Add integration test for status with specific fixture name
+- [x] Add integration test for status with unknown fixture name (error case)
 
 **Tests:**
-- [ ] Integration: list returns temporale fixture info
-- [ ] Integration: status shows "fetched" for existing fixture
-- [ ] Integration: status shows "missing" when fixture directory absent
-- [ ] Integration: status with name filters to single fixture
-- [ ] Integration: status with unknown name returns error
+- [x] Integration: list returns temporale fixture info
+- [x] Integration: status shows "fetched" for existing fixture
+- [x] Integration: status shows "missing" when fixture directory absent
+- [x] Integration: status with name filters to single fixture
+- [x] Integration: status with unknown name returns error
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixture_list` - list tests pass
-- [ ] `cargo nextest run -p tugtool fixture_status` - status tests pass
+- [x] `cargo nextest run -p tugtool fixture_list` - list tests pass (4 passed)
+- [x] `cargo nextest run -p tugtool fixture_status` - status tests pass (9 passed)
 
 **Commit after all checkpoints pass.**
 
