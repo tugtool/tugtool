@@ -1,5 +1,9 @@
 # Tugtool Development Guide
 
+## Critical Rules
+
+**NEVER commit code.** The user handles all git commits. You may stage changes, but do not run `git commit`.
+
 ## Project Overview
 
 Tugtool is an AI-native code transformation engine for verified, deterministic refactors. It provides semantic refactoring operations that understand code structure rather than just text patterns.
