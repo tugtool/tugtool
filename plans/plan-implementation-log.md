@@ -8,6 +8,53 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step A2: Add Fixture State Logic | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum Step A2 (lines 1565-1686)
+- Design decision D08: Status reports discrete states
+- Design decision D09: Status works entirely offline
+- Existing `crates/tugtool/src/fixture.rs` patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `FixtureState` enum (Fetched, Missing, ShaMismatch, NotAGitRepo, Error) | Done |
+| Add `FixtureStateInfo` struct (state, actual_sha option, error option) | Done |
+| Implement `get_fixture_state()` function | Done |
+| Implement `get_all_fixture_states()` function | Done |
+| Add unit tests for state detection | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/fixture.rs`:
+  - Added `FixtureState` enum with kebab-case serde serialization
+  - Added `FixtureStateInfo` struct with convenience constructors
+  - Added `get_fixture_state()` function for single fixture state detection
+  - Added `get_all_fixture_states()` function for all fixtures
+  - Added `get_fixture_state_by_name()` for single-fixture queries by name
+  - Added 9 unit tests for state detection
+- `plans/phase-7.md`:
+  - Checked off all 5 tasks for Step A2
+  - Checked off all 5 tests
+  - Checked off checkpoint with test count
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture`: 51 tests passed (9 new state detection tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixture` - fixture tests pass: PASS (51 tests)
+
+**Key Decisions/Notes:**
+- Added `Display` impl for `FixtureState` for string conversion
+- Added convenience constructors on `FixtureStateInfo` for cleaner API
+- Added `get_fixture_state_by_name()` function (not in plan) to support single-fixture status queries in CLI
+- State detection is entirely offline - only uses local filesystem and `git rev-parse`
+
+---
+
 ## [phase-7.md] Step A1: Add Response Types | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

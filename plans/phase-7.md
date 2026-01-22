@@ -1572,11 +1572,11 @@ pub struct FixtureStatusItem {
 - Extended `crates/tugtool/src/fixture.rs` with state detection
 
 **Tasks:**
-- [ ] Add `FixtureState` enum (Fetched, Missing, ShaMismatch, NotAGitRepo, Error)
-- [ ] Add `FixtureStateInfo` struct (state, actual_sha option, error option)
-- [ ] Implement `get_fixture_state()` function
-- [ ] Implement `get_all_fixture_states()` function
-- [ ] Add unit tests for state detection
+- [x] Add `FixtureState` enum (Fetched, Missing, ShaMismatch, NotAGitRepo, Error)
+- [x] Add `FixtureStateInfo` struct (state, actual_sha option, error option)
+- [x] Implement `get_fixture_state()` function
+- [x] Implement `get_all_fixture_states()` function
+- [x] Add unit tests for state detection
 
 **Implementation:**
 ```rust
@@ -1673,14 +1673,14 @@ pub fn get_all_fixture_states(
 ```
 
 **Tests:**
-- [ ] Unit: get_fixture_state returns Missing when directory absent
-- [ ] Unit: get_fixture_state returns NotAGitRepo when no .git
-- [ ] Unit: get_fixture_state returns Fetched when SHA matches
-- [ ] Unit: get_fixture_state returns ShaMismatch when SHA differs
-- [ ] Unit: FixtureState serializes to kebab-case strings
+- [x] Unit: get_fixture_state returns Missing when directory absent
+- [x] Unit: get_fixture_state returns NotAGitRepo when no .git
+- [x] Unit: get_fixture_state returns Fetched when SHA matches
+- [x] Unit: get_fixture_state returns ShaMismatch when SHA differs
+- [x] Unit: FixtureState serializes to kebab-case strings
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixture` - fixture tests pass
+- [x] `cargo nextest run -p tugtool fixture` - fixture tests pass (51 tests)
 
 **Commit after all checkpoints pass.**
 

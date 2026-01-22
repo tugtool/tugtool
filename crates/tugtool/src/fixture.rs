@@ -518,6 +518,189 @@ pub fn fetch_fixture_by_name(
 }
 
 // ============================================================================
+// State Detection Types and Functions
+// ============================================================================
+
+/// State of a fixture on the filesystem.
+///
+/// Used by `tug fixture status` to report the current state of each fixture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FixtureState {
+    /// Directory exists and SHA matches lock file.
+    Fetched,
+    /// Directory does not exist.
+    Missing,
+    /// Directory exists but SHA differs from lock file.
+    ShaMismatch,
+    /// Directory exists but is not a git repository.
+    NotAGitRepo,
+    /// Could not determine state (e.g., git command failed).
+    Error,
+}
+
+impl std::fmt::Display for FixtureState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FixtureState::Fetched => write!(f, "fetched"),
+            FixtureState::Missing => write!(f, "missing"),
+            FixtureState::ShaMismatch => write!(f, "sha-mismatch"),
+            FixtureState::NotAGitRepo => write!(f, "not-a-git-repo"),
+            FixtureState::Error => write!(f, "error"),
+        }
+    }
+}
+
+/// Information about a fixture's state.
+///
+/// Contains the state enum plus optional additional info depending on state.
+#[derive(Debug, Clone)]
+pub struct FixtureStateInfo {
+    /// The fixture's current state.
+    pub state: FixtureState,
+    /// Actual SHA if fixture exists and is a git repo.
+    pub actual_sha: Option<String>,
+    /// Error message if state is Error.
+    pub error: Option<String>,
+}
+
+impl FixtureStateInfo {
+    /// Create a new state info for a fetched fixture.
+    pub fn fetched(sha: String) -> Self {
+        Self {
+            state: FixtureState::Fetched,
+            actual_sha: Some(sha),
+            error: None,
+        }
+    }
+
+    /// Create a new state info for a missing fixture.
+    pub fn missing() -> Self {
+        Self {
+            state: FixtureState::Missing,
+            actual_sha: None,
+            error: None,
+        }
+    }
+
+    /// Create a new state info for a SHA mismatch.
+    pub fn sha_mismatch(actual_sha: String) -> Self {
+        Self {
+            state: FixtureState::ShaMismatch,
+            actual_sha: Some(actual_sha),
+            error: None,
+        }
+    }
+
+    /// Create a new state info for a non-git directory.
+    pub fn not_a_git_repo() -> Self {
+        Self {
+            state: FixtureState::NotAGitRepo,
+            actual_sha: None,
+            error: None,
+        }
+    }
+
+    /// Create a new state info for an error.
+    pub fn error(message: String) -> Self {
+        Self {
+            state: FixtureState::Error,
+            actual_sha: None,
+            error: Some(message),
+        }
+    }
+}
+
+/// Get the state of a fixture on the filesystem.
+///
+/// This function checks:
+/// 1. Does the fixture directory exist?
+/// 2. Is it a git repository (has .git)?
+/// 3. Does the HEAD SHA match the lock file?
+///
+/// # Arguments
+/// - `workspace_root`: Path to the workspace root
+/// - `info`: Fixture information from the lock file
+///
+/// # Returns
+/// `FixtureStateInfo` with the state and optional additional info.
+///
+/// This function does not require network access - it only inspects
+/// the local filesystem and runs `git rev-parse` locally.
+pub fn get_fixture_state(workspace_root: &Path, info: &FixtureInfo) -> FixtureStateInfo {
+    let target_path = fixture_path(workspace_root, &info.name);
+
+    // Check if directory exists
+    if !target_path.exists() {
+        return FixtureStateInfo::missing();
+    }
+
+    // Check if it's a git repo
+    let git_dir = target_path.join(".git");
+    if !git_dir.exists() {
+        return FixtureStateInfo::not_a_git_repo();
+    }
+
+    // Get the actual SHA
+    match get_repo_sha(&target_path) {
+        Ok(sha) => {
+            if sha == info.sha {
+                FixtureStateInfo::fetched(sha)
+            } else {
+                FixtureStateInfo::sha_mismatch(sha)
+            }
+        }
+        Err(e) => FixtureStateInfo::error(e),
+    }
+}
+
+/// Get states for all fixtures defined by lock files.
+///
+/// # Arguments
+/// - `workspace_root`: Path to the workspace root
+///
+/// # Returns
+/// - `Ok(Vec<(FixtureInfo, FixtureStateInfo)>)`: Info and state for each fixture
+/// - `Err(FixtureError)`: Error if lock files can't be read
+///
+/// This function does not require network access.
+pub fn get_all_fixture_states(
+    workspace_root: &Path,
+) -> Result<Vec<(FixtureInfo, FixtureStateInfo)>, FixtureError> {
+    let lock_files =
+        discover_lock_files(workspace_root).map_err(|e| FixtureError::without_name(e))?;
+
+    let mut results = Vec::with_capacity(lock_files.len());
+
+    for lock_path in lock_files {
+        let info = read_lock_file(&lock_path).map_err(|e| FixtureError::without_name(e))?;
+        let state = get_fixture_state(workspace_root, &info);
+        results.push((info, state));
+    }
+
+    Ok(results)
+}
+
+/// Get the state of a single fixture by name.
+///
+/// # Arguments
+/// - `workspace_root`: Path to the workspace root
+/// - `name`: Fixture name (must have a corresponding lock file)
+///
+/// # Returns
+/// - `Ok((FixtureInfo, FixtureStateInfo))`: Info and state for the fixture
+/// - `Err(FixtureError)`: Error if lock file doesn't exist or can't be read
+pub fn get_fixture_state_by_name(
+    workspace_root: &Path,
+    name: &str,
+) -> Result<(FixtureInfo, FixtureStateInfo), FixtureError> {
+    let info =
+        read_lock_file_by_name(workspace_root, name).map_err(|e| FixtureError::with_name(name, e))?;
+    let state = get_fixture_state(workspace_root, &info);
+    Ok((info, state))
+}
+
+// ============================================================================
 // Update Operation Types and Functions
 // ============================================================================
 
@@ -1674,5 +1857,287 @@ sha = "{}"
         let content = std::fs::read_to_string(&lock_path).unwrap();
         assert!(content.contains("# myfix fixture pin"));
         assert!(content.contains("tug fixture update myfix"));
+    }
+
+    // ========================================================================
+    // State Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_fixture_state_serializes_to_kebab_case() {
+        // Test serialization to kebab-case
+        assert_eq!(
+            serde_json::to_string(&FixtureState::Fetched).unwrap(),
+            "\"fetched\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FixtureState::Missing).unwrap(),
+            "\"missing\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FixtureState::ShaMismatch).unwrap(),
+            "\"sha-mismatch\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FixtureState::NotAGitRepo).unwrap(),
+            "\"not-a-git-repo\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FixtureState::Error).unwrap(),
+            "\"error\""
+        );
+
+        // Test deserialization
+        let state: FixtureState = serde_json::from_str("\"sha-mismatch\"").unwrap();
+        assert_eq!(state, FixtureState::ShaMismatch);
+    }
+
+    #[test]
+    fn test_fixture_state_display() {
+        assert_eq!(FixtureState::Fetched.to_string(), "fetched");
+        assert_eq!(FixtureState::Missing.to_string(), "missing");
+        assert_eq!(FixtureState::ShaMismatch.to_string(), "sha-mismatch");
+        assert_eq!(FixtureState::NotAGitRepo.to_string(), "not-a-git-repo");
+        assert_eq!(FixtureState::Error.to_string(), "error");
+    }
+
+    #[test]
+    fn test_get_fixture_state_returns_missing_when_directory_absent() {
+        let dir = TempDir::new().unwrap();
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        // Create a lock file but don't fetch the fixture
+        let lock_content = r#"
+[fixture]
+name = "test-fixture"
+repository = "https://github.com/example/test"
+ref = "v1.0.0"
+sha = "abc123def456"
+"#;
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        let info = read_lock_file_by_name(dir.path(), "test-fixture").unwrap();
+        let state_info = get_fixture_state(dir.path(), &info);
+
+        assert_eq!(state_info.state, FixtureState::Missing);
+        assert!(state_info.actual_sha.is_none());
+        assert!(state_info.error.is_none());
+    }
+
+    #[test]
+    fn test_get_fixture_state_returns_not_a_git_repo_when_no_git() {
+        let dir = TempDir::new().unwrap();
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        // Create a lock file
+        let lock_content = r#"
+[fixture]
+name = "test-fixture"
+repository = "https://github.com/example/test"
+ref = "v1.0.0"
+sha = "abc123def456"
+"#;
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        // Create fixture directory WITHOUT .git
+        let fixture_dir = dir.path().join(".tug").join("fixtures").join("test-fixture");
+        std::fs::create_dir_all(&fixture_dir).unwrap();
+        std::fs::write(fixture_dir.join("file.txt"), "content").unwrap();
+
+        let info = read_lock_file_by_name(dir.path(), "test-fixture").unwrap();
+        let state_info = get_fixture_state(dir.path(), &info);
+
+        assert_eq!(state_info.state, FixtureState::NotAGitRepo);
+        assert!(state_info.actual_sha.is_none());
+        assert!(state_info.error.is_none());
+    }
+
+    #[test]
+    fn test_get_fixture_state_returns_fetched_when_sha_matches() {
+        let dir = TempDir::new().unwrap();
+
+        // Create a git repo to use as fixture
+        let fixture_dir = dir.path().join(".tug").join("fixtures").join("test-fixture");
+        std::fs::create_dir_all(&fixture_dir).unwrap();
+        std::fs::write(fixture_dir.join("file.txt"), "content").unwrap();
+
+        // Initialize git repo
+        let _ = Command::new("git")
+            .args(["init"])
+            .current_dir(&fixture_dir)
+            .output()
+            .unwrap();
+
+        let _ = Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&fixture_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&fixture_dir)
+            .output();
+
+        let _ = Command::new("git")
+            .args(["add", "."])
+            .current_dir(&fixture_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(&fixture_dir)
+            .output();
+
+        let actual_sha = get_repo_sha(&fixture_dir).unwrap();
+
+        // Create lock file with matching SHA
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let lock_content = format!(
+            r#"
+[fixture]
+name = "test-fixture"
+repository = "https://github.com/example/test"
+ref = "v1.0.0"
+sha = "{}"
+"#,
+            actual_sha
+        );
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        let info = read_lock_file_by_name(dir.path(), "test-fixture").unwrap();
+        let state_info = get_fixture_state(dir.path(), &info);
+
+        assert_eq!(state_info.state, FixtureState::Fetched);
+        assert_eq!(state_info.actual_sha, Some(actual_sha));
+        assert!(state_info.error.is_none());
+    }
+
+    #[test]
+    fn test_get_fixture_state_returns_sha_mismatch_when_sha_differs() {
+        let dir = TempDir::new().unwrap();
+
+        // Create a git repo to use as fixture
+        let fixture_dir = dir.path().join(".tug").join("fixtures").join("test-fixture");
+        std::fs::create_dir_all(&fixture_dir).unwrap();
+        std::fs::write(fixture_dir.join("file.txt"), "content").unwrap();
+
+        // Initialize git repo
+        let _ = Command::new("git")
+            .args(["init"])
+            .current_dir(&fixture_dir)
+            .output()
+            .unwrap();
+
+        let _ = Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&fixture_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&fixture_dir)
+            .output();
+
+        let _ = Command::new("git")
+            .args(["add", "."])
+            .current_dir(&fixture_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(&fixture_dir)
+            .output();
+
+        let actual_sha = get_repo_sha(&fixture_dir).unwrap();
+
+        // Create lock file with DIFFERENT SHA
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let lock_content = r#"
+[fixture]
+name = "test-fixture"
+repository = "https://github.com/example/test"
+ref = "v1.0.0"
+sha = "0000000000000000000000000000000000000000"
+"#;
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        let info = read_lock_file_by_name(dir.path(), "test-fixture").unwrap();
+        let state_info = get_fixture_state(dir.path(), &info);
+
+        assert_eq!(state_info.state, FixtureState::ShaMismatch);
+        assert_eq!(state_info.actual_sha, Some(actual_sha));
+        assert!(state_info.error.is_none());
+    }
+
+    #[test]
+    fn test_get_all_fixture_states() {
+        let dir = TempDir::new().unwrap();
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        // Create two lock files
+        let lock1 = r#"
+[fixture]
+name = "alpha"
+repository = "https://github.com/example/alpha"
+ref = "v1.0.0"
+sha = "abc123"
+"#;
+        let lock2 = r#"
+[fixture]
+name = "beta"
+repository = "https://github.com/example/beta"
+ref = "v2.0.0"
+sha = "def456"
+"#;
+        std::fs::write(fixtures_dir.join("alpha.lock"), lock1).unwrap();
+        std::fs::write(fixtures_dir.join("beta.lock"), lock2).unwrap();
+
+        // Don't create any fixture directories - both should be Missing
+
+        let results = get_all_fixture_states(dir.path()).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Results should be sorted alphabetically
+        assert_eq!(results[0].0.name, "alpha");
+        assert_eq!(results[0].1.state, FixtureState::Missing);
+        assert_eq!(results[1].0.name, "beta");
+        assert_eq!(results[1].1.state, FixtureState::Missing);
+    }
+
+    #[test]
+    fn test_get_fixture_state_by_name() {
+        let dir = TempDir::new().unwrap();
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let lock_content = r#"
+[fixture]
+name = "test-fixture"
+repository = "https://github.com/example/test"
+ref = "v1.0.0"
+sha = "abc123"
+"#;
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        let (info, state_info) = get_fixture_state_by_name(dir.path(), "test-fixture").unwrap();
+
+        assert_eq!(info.name, "test-fixture");
+        assert_eq!(state_info.state, FixtureState::Missing);
+    }
+
+    #[test]
+    fn test_get_fixture_state_by_name_fails_on_nonexistent() {
+        let dir = TempDir::new().unwrap();
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let result = get_fixture_state_by_name(dir.path(), "nonexistent");
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert_eq!(err.name.as_deref(), Some("nonexistent"));
     }
 }
