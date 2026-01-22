@@ -8,6 +8,52 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step A1: Add Response Types | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum Step A1 (lines 1480-1564)
+- Spec S09: fixture list Response Schema
+- Spec S10: fixture status Response Schema
+- Design decisions D07, D08
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `FixtureListResponse` struct with `fixtures: Vec<FixtureListItem>` | Done |
+| Add `FixtureListItem` struct (name, repository, ref, sha, lock_file) | Done |
+| Add `FixtureStatusResponse` struct with `fixtures: Vec<FixtureStatusItem>` | Done |
+| Add `FixtureStatusItem` struct (name, state, path, repository, ref, expected_sha, actual_sha?, error?) | Done |
+| Add impl blocks with `new()` constructors for both response types | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/output.rs`:
+  - Added `FixtureListResponse` struct with `new()` constructor
+  - Added `FixtureListItem` struct with `new()` constructor
+  - Added `FixtureStatusResponse` struct with `new()` constructor
+  - Added `FixtureStatusItem` struct with `new()` and convenience constructors (`fetched()`, `missing()`, `sha_mismatch()`, `not_a_git_repo()`, `error()`)
+  - Added 7 unit tests in `fixture_list_tests` and `fixture_status_tests` modules
+- `plans/phase-7.md`:
+  - Checked off all 5 tasks for Step A1
+  - Checked off all 3 tests
+  - Checked off both checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core output`: 36 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-core` - builds without errors: PASS
+- `cargo nextest run -p tugtool-core output` - output tests pass: PASS (36 tests)
+
+**Key Decisions/Notes:**
+- Added convenience constructors for `FixtureStatusItem` to make creating status items for each state easier
+- Optional fields (`actual_sha`, `error`) use `#[serde(skip_serializing_if = "Option::is_none")]` per spec to omit absent fields from JSON output
+- Field `git_ref` is renamed to "ref" in JSON via `#[serde(rename = "ref")]` to match the spec
+
+---
+
 ## [phase-7.md] Section 7.5: Deliverables and Checkpoints | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

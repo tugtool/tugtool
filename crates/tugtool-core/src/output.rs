@@ -770,6 +770,245 @@ impl FixtureUpdateResult {
     }
 }
 
+/// Response for fixture list command.
+///
+/// Per Phase 7 Addendum Spec S09: fixture list Response Schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureListResponse {
+    /// Status: "ok".
+    pub status: String,
+    /// Schema version for compatibility.
+    pub schema_version: String,
+    /// List of fixtures from lock files.
+    pub fixtures: Vec<FixtureListItem>,
+}
+
+impl FixtureListResponse {
+    /// Create a new fixture list response.
+    pub fn new(fixtures: Vec<FixtureListItem>) -> Self {
+        FixtureListResponse {
+            status: "ok".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            fixtures,
+        }
+    }
+}
+
+/// Individual fixture in list response.
+///
+/// Per Phase 7 Addendum Spec S09.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureListItem {
+    /// Fixture name.
+    pub name: String,
+    /// Git repository URL.
+    pub repository: String,
+    /// Git ref (tag/branch).
+    #[serde(rename = "ref")]
+    pub git_ref: String,
+    /// Expected commit SHA.
+    pub sha: String,
+    /// Relative path to lock file.
+    pub lock_file: String,
+}
+
+impl FixtureListItem {
+    /// Create a new fixture list item.
+    pub fn new(
+        name: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        sha: impl Into<String>,
+        lock_file: impl Into<String>,
+    ) -> Self {
+        FixtureListItem {
+            name: name.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            sha: sha.into(),
+            lock_file: lock_file.into(),
+        }
+    }
+}
+
+/// Response for fixture status command.
+///
+/// Per Phase 7 Addendum Spec S10: fixture status Response Schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureStatusResponse {
+    /// Status: "ok".
+    pub status: String,
+    /// Schema version for compatibility.
+    pub schema_version: String,
+    /// List of fixture statuses.
+    pub fixtures: Vec<FixtureStatusItem>,
+}
+
+impl FixtureStatusResponse {
+    /// Create a new fixture status response.
+    pub fn new(fixtures: Vec<FixtureStatusItem>) -> Self {
+        FixtureStatusResponse {
+            status: "ok".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            fixtures,
+        }
+    }
+}
+
+/// Individual fixture in status response.
+///
+/// Per Phase 7 Addendum Spec S10.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureStatusItem {
+    /// Fixture name.
+    pub name: String,
+    /// State: "fetched", "missing", "sha-mismatch", "not-a-git-repo", "error".
+    pub state: String,
+    /// Expected path to fixture directory.
+    pub path: String,
+    /// Git repository URL.
+    pub repository: String,
+    /// Git ref (tag/branch).
+    #[serde(rename = "ref")]
+    pub git_ref: String,
+    /// SHA from lock file.
+    pub expected_sha: String,
+    /// Actual SHA if fixture exists and is a git repo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_sha: Option<String>,
+    /// Error message if state is "error".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl FixtureStatusItem {
+    /// Create a new fixture status item.
+    pub fn new(
+        name: impl Into<String>,
+        state: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        expected_sha: impl Into<String>,
+        actual_sha: Option<String>,
+        error: Option<String>,
+    ) -> Self {
+        FixtureStatusItem {
+            name: name.into(),
+            state: state.into(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            expected_sha: expected_sha.into(),
+            actual_sha,
+            error,
+        }
+    }
+
+    /// Create a fixture status item for a fetched fixture.
+    pub fn fetched(
+        name: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        sha: impl Into<String>,
+    ) -> Self {
+        let sha_str = sha.into();
+        FixtureStatusItem {
+            name: name.into(),
+            state: "fetched".to_string(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            expected_sha: sha_str.clone(),
+            actual_sha: Some(sha_str),
+            error: None,
+        }
+    }
+
+    /// Create a fixture status item for a missing fixture.
+    pub fn missing(
+        name: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        expected_sha: impl Into<String>,
+    ) -> Self {
+        FixtureStatusItem {
+            name: name.into(),
+            state: "missing".to_string(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            expected_sha: expected_sha.into(),
+            actual_sha: None,
+            error: None,
+        }
+    }
+
+    /// Create a fixture status item for a SHA mismatch.
+    pub fn sha_mismatch(
+        name: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        expected_sha: impl Into<String>,
+        actual_sha: impl Into<String>,
+    ) -> Self {
+        FixtureStatusItem {
+            name: name.into(),
+            state: "sha-mismatch".to_string(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            expected_sha: expected_sha.into(),
+            actual_sha: Some(actual_sha.into()),
+            error: None,
+        }
+    }
+
+    /// Create a fixture status item for a directory that is not a git repo.
+    pub fn not_a_git_repo(
+        name: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        expected_sha: impl Into<String>,
+    ) -> Self {
+        FixtureStatusItem {
+            name: name.into(),
+            state: "not-a-git-repo".to_string(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            expected_sha: expected_sha.into(),
+            actual_sha: None,
+            error: None,
+        }
+    }
+
+    /// Create a fixture status item for an error state.
+    pub fn error(
+        name: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        expected_sha: impl Into<String>,
+        error_msg: impl Into<String>,
+    ) -> Self {
+        FixtureStatusItem {
+            name: name.into(),
+            state: "error".to_string(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            expected_sha: expected_sha.into(),
+            actual_sha: None,
+            error: Some(error_msg.into()),
+        }
+    }
+}
+
 /// Error response.
 ///
 /// Per 26.0.7 spec #error-response.
@@ -1325,6 +1564,161 @@ mod tests {
             let json = serde_json::to_string(&v).unwrap();
             assert!(json.contains("\"status\":\"skipped\""));
             assert!(json.contains("\"mode\":\"none\""));
+        }
+    }
+
+    mod fixture_list_tests {
+        use super::*;
+
+        #[test]
+        fn fixture_list_response_serializes_to_expected_json() {
+            let fixtures = vec![FixtureListItem::new(
+                "temporale",
+                "https://github.com/tugtool/temporale",
+                "v0.1.0",
+                "9f21df0322b7aa39ca7f599b128f66c07ecec42f",
+                "fixtures/temporale.lock",
+            )];
+
+            let response = FixtureListResponse::new(fixtures);
+            let json = serde_json::to_string(&response).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["status"], "ok");
+            assert_eq!(parsed["schema_version"], "1");
+            assert_eq!(parsed["fixtures"].as_array().unwrap().len(), 1);
+
+            let fixture = &parsed["fixtures"][0];
+            assert_eq!(fixture["name"], "temporale");
+            assert_eq!(fixture["repository"], "https://github.com/tugtool/temporale");
+            assert_eq!(fixture["ref"], "v0.1.0");
+            assert_eq!(fixture["sha"], "9f21df0322b7aa39ca7f599b128f66c07ecec42f");
+            assert_eq!(fixture["lock_file"], "fixtures/temporale.lock");
+        }
+
+        #[test]
+        fn fixture_list_response_empty_fixtures() {
+            let response = FixtureListResponse::new(vec![]);
+            let json = serde_json::to_string(&response).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["status"], "ok");
+            assert_eq!(parsed["fixtures"].as_array().unwrap().len(), 0);
+        }
+    }
+
+    mod fixture_status_tests {
+        use super::*;
+
+        #[test]
+        fn fixture_status_response_serializes_to_expected_json() {
+            let fixtures = vec![FixtureStatusItem::fetched(
+                "temporale",
+                ".tug/fixtures/temporale",
+                "https://github.com/tugtool/temporale",
+                "v0.1.0",
+                "9f21df0322b7aa39ca7f599b128f66c07ecec42f",
+            )];
+
+            let response = FixtureStatusResponse::new(fixtures);
+            let json = serde_json::to_string(&response).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["status"], "ok");
+            assert_eq!(parsed["schema_version"], "1");
+            assert_eq!(parsed["fixtures"].as_array().unwrap().len(), 1);
+
+            let fixture = &parsed["fixtures"][0];
+            assert_eq!(fixture["name"], "temporale");
+            assert_eq!(fixture["state"], "fetched");
+            assert_eq!(fixture["path"], ".tug/fixtures/temporale");
+            assert_eq!(fixture["repository"], "https://github.com/tugtool/temporale");
+            assert_eq!(fixture["ref"], "v0.1.0");
+            assert_eq!(
+                fixture["expected_sha"],
+                "9f21df0322b7aa39ca7f599b128f66c07ecec42f"
+            );
+            assert_eq!(
+                fixture["actual_sha"],
+                "9f21df0322b7aa39ca7f599b128f66c07ecec42f"
+            );
+        }
+
+        #[test]
+        fn fixture_status_item_with_optional_fields_serializes_correctly() {
+            // Test missing state - no actual_sha or error
+            let missing = FixtureStatusItem::missing(
+                "temporale",
+                ".tug/fixtures/temporale",
+                "https://github.com/tugtool/temporale",
+                "v0.1.0",
+                "9f21df0322b7aa39ca7f599b128f66c07ecec42f",
+            );
+
+            let json = serde_json::to_string(&missing).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["state"], "missing");
+            // actual_sha and error should be absent (not null)
+            assert!(parsed.get("actual_sha").is_none());
+            assert!(parsed.get("error").is_none());
+        }
+
+        #[test]
+        fn fixture_status_item_sha_mismatch() {
+            let mismatch = FixtureStatusItem::sha_mismatch(
+                "temporale",
+                ".tug/fixtures/temporale",
+                "https://github.com/tugtool/temporale",
+                "v0.1.0",
+                "expected123",
+                "actual456",
+            );
+
+            let json = serde_json::to_string(&mismatch).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["state"], "sha-mismatch");
+            assert_eq!(parsed["expected_sha"], "expected123");
+            assert_eq!(parsed["actual_sha"], "actual456");
+            assert!(parsed.get("error").is_none());
+        }
+
+        #[test]
+        fn fixture_status_item_not_a_git_repo() {
+            let not_git = FixtureStatusItem::not_a_git_repo(
+                "temporale",
+                ".tug/fixtures/temporale",
+                "https://github.com/tugtool/temporale",
+                "v0.1.0",
+                "expected123",
+            );
+
+            let json = serde_json::to_string(&not_git).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["state"], "not-a-git-repo");
+            assert!(parsed.get("actual_sha").is_none());
+            assert!(parsed.get("error").is_none());
+        }
+
+        #[test]
+        fn fixture_status_item_error_state() {
+            let error = FixtureStatusItem::error(
+                "temporale",
+                ".tug/fixtures/temporale",
+                "https://github.com/tugtool/temporale",
+                "v0.1.0",
+                "expected123",
+                "git command failed: exit code 128",
+            );
+
+            let json = serde_json::to_string(&error).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["state"], "error");
+            assert!(parsed.get("actual_sha").is_none());
+            assert_eq!(parsed["error"], "git command failed: exit code 128");
         }
     }
 }

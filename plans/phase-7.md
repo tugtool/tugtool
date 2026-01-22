@@ -1150,8 +1150,8 @@ This bypasses the fixture fetch system entirely.
 - [ ] Add fixture caching in CI (GitHub Actions cache)
 - [ ] Support authenticated repositories (private fixtures)
 - [ ] Automatic fixture version checking (warn on outdated)
-- [ ] `tug fixture list` command to show available fixtures
-- [ ] `tug fixture status` command to show fetch state
+- [ ] `tug fixture list` command to show available fixtures → See Addendum below
+- [ ] `tug fixture status` command to show fetch state → See Addendum below
 - [ ] Parallel fixture fetching for multiple fixtures
 
 | Checkpoint | Verification |
@@ -1162,5 +1162,698 @@ This bypasses the fixture fetch system entirely.
 | JSON output valid | `tug fixture fetch \| jq .` parses |
 | Tests pass | `cargo nextest run -p tugtool` exits 0 |
 | Docs updated | CLAUDE.md contains fixture commands |
+
+**Commit after all checkpoints pass.**
+
+---
+
+## Phase 7 Addendum: List and Status Commands {#phase-7-addendum}
+
+**Purpose:** Add `tug fixture list` and `tug fixture status` CLI commands to provide visibility into available fixtures and their current state, completing the fixture management CLI interface.
+
+---
+
+### Plan Metadata {#addendum-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | TBD |
+| Status | draft |
+| Target branch | main |
+| Tracking issue/PR | TBD |
+| Last updated | 2026-01-22 |
+
+---
+
+### Addendum Overview {#addendum-overview}
+
+#### Context {#addendum-context}
+
+Phase 7 delivered `tug fixture fetch` and `tug fixture update` commands for managing test fixtures. However, users currently have no way to:
+1. Discover what fixtures are available (which lock files exist)
+2. Inspect the current state of fixtures (fetched, missing, SHA mismatch)
+
+This addendum adds two read-only commands that provide this visibility, making fixture management more intuitive and enabling better debugging when fixtures are in unexpected states.
+
+#### Strategy {#addendum-strategy}
+
+1. **Reuse existing infrastructure** - The `fixture.rs` module already has `discover_lock_files()`, `read_lock_file()`, `fixture_path()`, and `get_repo_sha()` - no new low-level functionality needed
+2. **Add list command first** - Simpler command, just reads lock files
+3. **Add status command second** - Builds on list, adds filesystem/git inspection
+4. **Match existing patterns** - Follow the same CLI and response schema patterns as fetch/update
+5. **Keep commands lightweight** - These are inspection commands, not actions
+
+#### Success Criteria {#addendum-success-criteria}
+
+- `tug fixture list` outputs all fixtures from lock files (verification: parse JSON, check fixtures array)
+- `tug fixture status` shows state of each fixture (verification: fetch fixture, run status, verify "fetched" state)
+- Status detects SHA mismatches (verification: manually change commit in fixture dir, run status, verify "sha-mismatch" state)
+- All commands produce valid JSON output (verification: pipe to `jq .`)
+- Existing tests continue to pass (verification: `cargo nextest run -p tugtool`)
+
+---
+
+### A.0 Design Decisions {#addendum-design-decisions}
+
+#### [D07] List Command Shows Lock File Info Only (DECIDED) {#d07-list-info}
+
+**Decision:** `tug fixture list` reads only from lock files and does not inspect the filesystem or git state.
+
+**Rationale:**
+- Keeps the command fast and simple
+- Clear separation of concerns: list shows what's defined, status shows what's actual
+- No network or filesystem operations beyond reading lock files
+
+**Implications:**
+- List command has no dependencies on git or fixture directories
+- Status command is the one that shows actual state
+
+---
+
+#### [D08] Status Command Reports Discrete States (DECIDED) {#d08-status-states}
+
+**Decision:** `tug fixture status` reports one of these discrete states for each fixture:
+- `fetched` - Fixture directory exists and SHA matches lock file
+- `missing` - Fixture directory does not exist
+- `sha-mismatch` - Fixture directory exists but SHA differs from lock file
+- `not-a-git-repo` - Fixture directory exists but is not a git repository (no .git)
+- `error` - Could not determine state (e.g., git command failed)
+
+**Rationale:**
+- Discrete states are machine-parseable and unambiguous
+- Covers all realistic scenarios users encounter
+- Aligns with fetch command behavior (which auto-handles mismatch/missing)
+
+**Implications:**
+- Response schema includes `state` field with enum values
+- Additional fields may be present depending on state (e.g., `expected_sha`, `actual_sha` for mismatches)
+
+---
+
+#### [D09] Status Command Does Not Require Network (DECIDED) {#d09-status-offline}
+
+**Decision:** `tug fixture status` works entirely offline - it only inspects local filesystem and git state.
+
+**Rationale:**
+- Status is a diagnostic command, should work even when offline
+- Network operations would slow down the command
+- Checking remote state is a different operation (could be a future `tug fixture check-remote`)
+
+**Implications:**
+- Status cannot detect if the lock file ref has been updated on the remote
+- This is acceptable - that's what `update` is for
+
+---
+
+### A.1 Specification {#addendum-specification}
+
+#### A.1.1 CLI Commands {#addendum-cli-commands}
+
+##### Command: `tug fixture list` {#cmd-fixture-list}
+
+**Spec S07: fixture list Command** {#s07-fixture-list}
+
+**Synopsis:**
+```
+tug fixture list
+```
+
+**Arguments:**
+- None
+
+**Options:**
+- None (global options like `--workspace` apply)
+
+**Behavior:**
+1. Discover all lock files in `fixtures/` directory
+2. Parse each lock file to extract fixture info
+3. Output JSON response listing all fixtures
+
+**Exit codes:**
+- 0: Success (even if no fixtures found)
+- 2: Invalid arguments
+- 10: Internal error (fixtures directory missing, lock file parse error)
+
+---
+
+##### Command: `tug fixture status` {#cmd-fixture-status}
+
+**Spec S08: fixture status Command** {#s08-fixture-status}
+
+**Synopsis:**
+```
+tug fixture status [NAME]
+```
+
+**Arguments:**
+- `[NAME]` - Optional fixture name. If omitted, show status of all fixtures.
+
+**Options:**
+- None (global options like `--workspace` apply)
+
+**Behavior:**
+1. If NAME provided, locate single lock file; otherwise discover all lock files
+2. For each fixture:
+   a. Parse lock file to get expected info
+   b. Check if fixture directory exists at `.tug/fixtures/<name>/`
+   c. If exists, verify it's a git repo and get current SHA
+   d. Compare actual SHA with expected SHA
+   e. Determine state: fetched, missing, sha-mismatch, not-a-git-repo, error
+3. Output JSON response with status for each fixture
+
+**Exit codes:**
+- 0: Success (even if fixtures are missing or mismatched - these are informational states)
+- 2: Invalid arguments (unknown fixture name)
+- 10: Internal error (fixtures directory missing, lock file parse error)
+
+---
+
+#### A.1.2 Response Schemas {#addendum-response-schemas}
+
+##### Fixture List Response {#fixture-list-response}
+
+**Spec S09: fixture list Response Schema** {#s09-list-response}
+
+**Success response:**
+```json
+{
+  "status": "ok",
+  "schema_version": "1",
+  "fixtures": [
+    {
+      "name": "temporale",
+      "repository": "https://github.com/tugtool/temporale",
+      "ref": "v0.1.0",
+      "sha": "9f21df0322b7aa39ca7f599b128f66c07ecec42f",
+      "lock_file": "fixtures/temporale.lock"
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string | yes | "ok" for success |
+| `schema_version` | string | yes | Schema version |
+| `fixtures` | array | yes | List of fixture info (may be empty) |
+| `fixtures[].name` | string | yes | Fixture name |
+| `fixtures[].repository` | string | yes | Git repository URL |
+| `fixtures[].ref` | string | yes | Git ref (tag/branch) |
+| `fixtures[].sha` | string | yes | Expected commit SHA |
+| `fixtures[].lock_file` | string | yes | Relative path to lock file |
+
+---
+
+##### Fixture Status Response {#fixture-status-response}
+
+**Spec S10: fixture status Response Schema** {#s10-status-response}
+
+**Success response:**
+```json
+{
+  "status": "ok",
+  "schema_version": "1",
+  "fixtures": [
+    {
+      "name": "temporale",
+      "state": "fetched",
+      "path": ".tug/fixtures/temporale",
+      "repository": "https://github.com/tugtool/temporale",
+      "ref": "v0.1.0",
+      "expected_sha": "9f21df0322b7aa39ca7f599b128f66c07ecec42f",
+      "actual_sha": "9f21df0322b7aa39ca7f599b128f66c07ecec42f"
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string | yes | "ok" for success |
+| `schema_version` | string | yes | Schema version |
+| `fixtures` | array | yes | List of fixture statuses |
+| `fixtures[].name` | string | yes | Fixture name |
+| `fixtures[].state` | string | yes | One of: "fetched", "missing", "sha-mismatch", "not-a-git-repo", "error" |
+| `fixtures[].path` | string | yes | Expected path to fixture directory |
+| `fixtures[].repository` | string | yes | Git repository URL |
+| `fixtures[].ref` | string | yes | Git ref (tag/branch) |
+| `fixtures[].expected_sha` | string | yes | SHA from lock file |
+| `fixtures[].actual_sha` | string | no | Actual SHA if fixture exists and is a git repo |
+| `fixtures[].error` | string | no | Error message if state is "error" |
+
+**State values:**
+
+| State | Meaning | `actual_sha` present | `error` present |
+|-------|---------|----------------------|-----------------|
+| `fetched` | Directory exists, SHA matches | yes | no |
+| `missing` | Directory does not exist | no | no |
+| `sha-mismatch` | Directory exists, SHA differs | yes | no |
+| `not-a-git-repo` | Directory exists but no .git | no | no |
+| `error` | Could not determine state | maybe | yes |
+
+---
+
+### A.2 Symbol Inventory {#addendum-symbol-inventory}
+
+#### A.2.1 New Files {#addendum-new-files}
+
+None - all changes are in existing files.
+
+#### A.2.2 Modified Files {#addendum-modified-files}
+
+| File | Changes |
+|------|---------|
+| `crates/tugtool/src/main.rs` | Add `List` and `Status` variants to `FixtureAction` enum |
+| `crates/tugtool/src/fixture.rs` | Add `get_fixture_state()` and `FixtureState` enum |
+| `crates/tugtool-core/src/output.rs` | Add `FixtureListResponse` and `FixtureStatusResponse` types |
+
+#### A.2.3 Symbols to Add {#addendum-symbols}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `FixtureAction::List` | variant | `main.rs` | CLI subcommand variant |
+| `FixtureAction::Status` | variant | `main.rs` | CLI subcommand variant |
+| `FixtureState` | enum | `fixture.rs` | Fetched, Missing, ShaMismatch, NotAGitRepo, Error |
+| `FixtureStateInfo` | struct | `fixture.rs` | Holds state + optional actual_sha + optional error |
+| `get_fixture_state` | fn | `fixture.rs` | Determine state of a single fixture |
+| `get_all_fixture_states` | fn | `fixture.rs` | Get states for all fixtures |
+| `FixtureListResponse` | struct | `output.rs` | JSON response for list command |
+| `FixtureListItem` | struct | `output.rs` | Individual fixture in list response |
+| `FixtureStatusResponse` | struct | `output.rs` | JSON response for status command |
+| `FixtureStatusItem` | struct | `output.rs` | Individual fixture in status response |
+| `execute_fixture_list` | fn | `main.rs` | Execute list subcommand |
+| `execute_fixture_status` | fn | `main.rs` | Execute status subcommand |
+
+---
+
+### A.3 Test Plan Concepts {#addendum-test-plan}
+
+#### Test Categories {#addendum-test-categories}
+
+| Category | What to Test | How |
+|----------|--------------|-----|
+| **Unit** | State detection logic | Unit tests for `get_fixture_state` with mocked filesystem |
+| **Integration** | Full CLI roundtrip | CLI integration tests with temp directories |
+| **CLI Parsing** | Command parsing | Verify clap parses `list` and `status` correctly |
+
+#### Test Scenarios {#addendum-test-scenarios}
+
+**List command:**
+- List with no fixtures (empty fixtures directory) - returns empty array
+- List with one fixture - returns array with one item
+- List with multiple fixtures - returns array sorted by name
+- List with malformed lock file - returns error
+
+**Status command:**
+- Status when fixture is fetched and matches - state: "fetched"
+- Status when fixture directory missing - state: "missing"
+- Status when fixture SHA differs from lock file - state: "sha-mismatch"
+- Status when fixture directory exists but is not a git repo - state: "not-a-git-repo"
+- Status with specific fixture name - returns status for just that fixture
+- Status with unknown fixture name - returns error
+- Status with multiple fixtures in mixed states - returns correct state for each
+
+---
+
+### A.4 Execution Steps {#addendum-execution-steps}
+
+#### Step A1: Add Response Types {#step-a1}
+
+**Commit:** `feat(output): add fixture list and status response types`
+
+**References:** [D07], [D08], Spec S09, Spec S10, (#addendum-response-schemas)
+
+**Artifacts:**
+- Extended `crates/tugtool-core/src/output.rs` with new response types
+
+**Tasks:**
+- [x] Add `FixtureListResponse` struct with `fixtures: Vec<FixtureListItem>`
+- [x] Add `FixtureListItem` struct (name, repository, ref, sha, lock_file)
+- [x] Add `FixtureStatusResponse` struct with `fixtures: Vec<FixtureStatusItem>`
+- [x] Add `FixtureStatusItem` struct (name, state, path, repository, ref, expected_sha, actual_sha?, error?)
+- [x] Add impl blocks with `new()` constructors for both response types
+
+**Response type implementations:**
+```rust
+/// Response for fixture list command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureListResponse {
+    pub status: String,
+    pub schema_version: String,
+    pub fixtures: Vec<FixtureListItem>,
+}
+
+impl FixtureListResponse {
+    pub fn new(fixtures: Vec<FixtureListItem>) -> Self {
+        FixtureListResponse {
+            status: "ok".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            fixtures,
+        }
+    }
+}
+
+/// Individual fixture in list response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureListItem {
+    pub name: String,
+    pub repository: String,
+    #[serde(rename = "ref")]
+    pub git_ref: String,
+    pub sha: String,
+    pub lock_file: String,
+}
+
+/// Response for fixture status command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureStatusResponse {
+    pub status: String,
+    pub schema_version: String,
+    pub fixtures: Vec<FixtureStatusItem>,
+}
+
+/// Individual fixture in status response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureStatusItem {
+    pub name: String,
+    pub state: String,
+    pub path: String,
+    pub repository: String,
+    #[serde(rename = "ref")]
+    pub git_ref: String,
+    pub expected_sha: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_sha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+```
+
+**Tests:**
+- [x] Unit: FixtureListResponse serializes to expected JSON
+- [x] Unit: FixtureStatusResponse serializes to expected JSON
+- [x] Unit: FixtureStatusItem with optional fields serializes correctly
+
+**Checkpoint:**
+- [x] `cargo build -p tugtool-core` - builds without errors
+- [x] `cargo nextest run -p tugtool-core output` - output tests pass
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step A2: Add Fixture State Logic {#step-a2}
+
+**Commit:** `feat(fixture): add fixture state detection`
+
+**References:** [D08], [D09], Spec S08, (#d08-status-states)
+
+**Artifacts:**
+- Extended `crates/tugtool/src/fixture.rs` with state detection
+
+**Tasks:**
+- [ ] Add `FixtureState` enum (Fetched, Missing, ShaMismatch, NotAGitRepo, Error)
+- [ ] Add `FixtureStateInfo` struct (state, actual_sha option, error option)
+- [ ] Implement `get_fixture_state()` function
+- [ ] Implement `get_all_fixture_states()` function
+- [ ] Add unit tests for state detection
+
+**Implementation:**
+```rust
+/// State of a fixture on the filesystem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FixtureState {
+    /// Directory exists and SHA matches lock file.
+    Fetched,
+    /// Directory does not exist.
+    Missing,
+    /// Directory exists but SHA differs from lock file.
+    ShaMismatch,
+    /// Directory exists but is not a git repository.
+    NotAGitRepo,
+    /// Could not determine state.
+    Error,
+}
+
+/// Information about a fixture's state.
+#[derive(Debug, Clone)]
+pub struct FixtureStateInfo {
+    pub state: FixtureState,
+    pub actual_sha: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Get the state of a fixture on the filesystem.
+pub fn get_fixture_state(workspace_root: &Path, info: &FixtureInfo) -> FixtureStateInfo {
+    let target_path = fixture_path(workspace_root, &info.name);
+
+    // Check if directory exists
+    if !target_path.exists() {
+        return FixtureStateInfo {
+            state: FixtureState::Missing,
+            actual_sha: None,
+            error: None,
+        };
+    }
+
+    // Check if it's a git repo
+    let git_dir = target_path.join(".git");
+    if !git_dir.exists() {
+        return FixtureStateInfo {
+            state: FixtureState::NotAGitRepo,
+            actual_sha: None,
+            error: None,
+        };
+    }
+
+    // Get the actual SHA
+    match get_repo_sha(&target_path) {
+        Ok(sha) => {
+            if sha == info.sha {
+                FixtureStateInfo {
+                    state: FixtureState::Fetched,
+                    actual_sha: Some(sha),
+                    error: None,
+                }
+            } else {
+                FixtureStateInfo {
+                    state: FixtureState::ShaMismatch,
+                    actual_sha: Some(sha),
+                    error: None,
+                }
+            }
+        }
+        Err(e) => FixtureStateInfo {
+            state: FixtureState::Error,
+            actual_sha: None,
+            error: Some(e),
+        },
+    }
+}
+
+/// Get states for all fixtures.
+pub fn get_all_fixture_states(
+    workspace_root: &Path,
+) -> Result<Vec<(FixtureInfo, FixtureStateInfo)>, FixtureError> {
+    let lock_files = discover_lock_files(workspace_root)
+        .map_err(|e| FixtureError::without_name(e))?;
+
+    let mut results = Vec::with_capacity(lock_files.len());
+
+    for lock_path in lock_files {
+        let info = read_lock_file(&lock_path)
+            .map_err(|e| FixtureError::without_name(e))?;
+        let state = get_fixture_state(workspace_root, &info);
+        results.push((info, state));
+    }
+
+    Ok(results)
+}
+```
+
+**Tests:**
+- [ ] Unit: get_fixture_state returns Missing when directory absent
+- [ ] Unit: get_fixture_state returns NotAGitRepo when no .git
+- [ ] Unit: get_fixture_state returns Fetched when SHA matches
+- [ ] Unit: get_fixture_state returns ShaMismatch when SHA differs
+- [ ] Unit: FixtureState serializes to kebab-case strings
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool fixture` - fixture tests pass
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step A3: Add CLI Commands {#step-a3}
+
+**Commit:** `feat(cli): add tug fixture list and status commands`
+
+**References:** [D07], [D08], [D09], Spec S07, Spec S08, Spec S09, Spec S10, (#addendum-cli-commands)
+
+**Artifacts:**
+- Extended `crates/tugtool/src/main.rs` with list and status subcommands
+- Updated `FixtureAction` enum
+
+**Tasks:**
+- [ ] Add `FixtureAction::List` variant (no arguments)
+- [ ] Add `FixtureAction::Status` variant (optional name argument)
+- [ ] Implement `execute_fixture_list()` function
+- [ ] Implement `execute_fixture_status()` function
+- [ ] Update `execute_fixture()` to dispatch to new commands
+- [ ] Add CLI parsing tests
+
+**CLI structure updates:**
+```rust
+/// Fixture management actions.
+#[derive(Subcommand)]
+enum FixtureAction {
+    /// Fetch fixtures according to lock files.
+    Fetch {
+        /// Specific fixture to fetch (fetches all if omitted).
+        name: Option<String>,
+        /// Re-fetch even if fixture exists and SHA matches.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Update a fixture lock file to a new ref.
+    Update {
+        /// Fixture name to update.
+        name: String,
+        /// New ref (tag or branch).
+        #[arg(long = "ref")]
+        git_ref: String,
+    },
+    /// List available fixtures from lock files.
+    List,
+    /// Show fetch state of fixtures.
+    Status {
+        /// Specific fixture to check (checks all if omitted).
+        name: Option<String>,
+    },
+}
+```
+
+**Tests:**
+- [ ] CLI: parse `tug fixture list`
+- [ ] CLI: parse `tug fixture status`
+- [ ] CLI: parse `tug fixture status temporale`
+- [ ] Integration: list command produces valid JSON
+- [ ] Integration: status command produces valid JSON
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass
+- [ ] `cargo run -p tugtool -- fixture list --help` shows correct usage
+- [ ] `cargo run -p tugtool -- fixture status --help` shows correct usage
+- [ ] `cargo run -p tugtool -- fixture list 2>&1 | jq .` produces valid JSON
+- [ ] `cargo run -p tugtool -- fixture status 2>&1 | jq .` produces valid JSON
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step A4: Add Integration Tests {#step-a4}
+
+**Commit:** `test(fixture): add list and status integration tests`
+
+**References:** Spec S07, Spec S08, (#addendum-test-scenarios)
+
+**Artifacts:**
+- Integration tests in `crates/tugtool/tests/`
+
+**Tasks:**
+- [ ] Add integration test for list with temporale fixture
+- [ ] Add integration test for status when fixture is fetched
+- [ ] Add integration test for status when fixture is missing
+- [ ] Add integration test for status with specific fixture name
+- [ ] Add integration test for status with unknown fixture name (error case)
+
+**Tests:**
+- [ ] Integration: list returns temporale fixture info
+- [ ] Integration: status shows "fetched" for existing fixture
+- [ ] Integration: status shows "missing" when fixture directory absent
+- [ ] Integration: status with name filters to single fixture
+- [ ] Integration: status with unknown name returns error
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool fixture_list` - list tests pass
+- [ ] `cargo nextest run -p tugtool fixture_status` - status tests pass
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step A5: Update Documentation {#step-a5}
+
+**Commit:** `docs: add fixture list and status command documentation`
+
+**References:** Spec S07, Spec S08, (#addendum-success-criteria)
+
+**Artifacts:**
+- Updated CLAUDE.md with new commands
+
+**Tasks:**
+- [ ] Add `tug fixture list` to CLAUDE.md fixture commands section
+- [ ] Add `tug fixture status` to CLAUDE.md fixture commands section
+- [ ] Add examples showing typical usage
+
+**CLAUDE.md additions:**
+```markdown
+# List available fixtures
+tug fixture list
+
+# Show status of all fixtures
+tug fixture status
+
+# Show status of specific fixture
+tug fixture status temporale
+```
+
+**Checkpoint:**
+- [ ] CLAUDE.md contains complete fixture list/status documentation
+
+**Commit after all checkpoints pass.**
+
+---
+
+### A.5 Deliverables and Checkpoints {#addendum-deliverables}
+
+**Deliverable:** CLI commands `tug fixture list` and `tug fixture status` for inspecting fixture availability and state.
+
+#### Addendum Exit Criteria {#addendum-exit-criteria}
+
+- [ ] `tug fixture list` outputs fixtures from lock files
+- [ ] `tug fixture status` shows state of each fixture
+- [ ] Status detects fetched, missing, sha-mismatch states correctly
+- [ ] All commands produce valid JSON output
+- [ ] All existing Phase 7 tests continue to pass
+- [ ] CLAUDE.md documents new commands
+
+**Acceptance tests:**
+- [ ] Integration: `cargo nextest run -p tugtool fixture_list` passes
+- [ ] Integration: `cargo nextest run -p tugtool fixture_status` passes
+- [ ] CLI: `tug fixture list 2>&1 | jq .status` outputs "ok"
+- [ ] CLI: `tug fixture status 2>&1 | jq .status` outputs "ok"
+
+#### Milestones {#addendum-milestones}
+
+**Milestone M04: List Command Working** {#m04-list-working}
+- [ ] `tug fixture list` returns fixture info from lock files
+- [ ] JSON output includes all required fields
+
+**Milestone M05: Status Command Working** {#m05-status-working}
+- [ ] `tug fixture status` correctly identifies fixture states
+- [ ] SHA mismatch detection works
+- [ ] Missing fixture detection works
+
+| Checkpoint | Verification |
+|------------|--------------|
+| Response types compile | `cargo build -p tugtool-core` |
+| State detection works | `cargo nextest run -p tugtool fixture_state` |
+| List command works | `tug fixture list \| jq .` parses |
+| Status command works | `tug fixture status \| jq .` parses |
+| Tests pass | `cargo nextest run -p tugtool` exits 0 |
+| Docs updated | CLAUDE.md contains list/status commands |
 
 **Commit after all checkpoints pass.**
