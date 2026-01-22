@@ -34,6 +34,7 @@ use tugtool_core::output::VerifyResponse;
 use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::output::{
     emit_response, ErrorInfo, ErrorResponse, FixtureFetchResponse, FixtureFetchResult,
+    FixtureListItem, FixtureListResponse, FixtureStatusItem, FixtureStatusResponse,
     FixtureUpdateResponse, FixtureUpdateResult, SnapshotResponse,
 };
 use tugtool_core::session::{Session, SessionOptions};
@@ -287,6 +288,13 @@ enum FixtureAction {
         /// New ref (tag or branch).
         #[arg(long = "ref")]
         git_ref: String,
+    },
+    /// List available fixtures from lock files.
+    List,
+    /// Show fetch state of fixtures.
+    Status {
+        /// Specific fixture to check (checks all if omitted).
+        name: Option<String>,
     },
 }
 
@@ -673,11 +681,13 @@ fn execute_mcp() -> Result<(), TugError> {
 
 /// Execute fixture command.
 ///
-/// Handles fixture fetch and update subcommands.
+/// Handles fixture fetch, update, list, and status subcommands.
 fn execute_fixture(global: &GlobalArgs, action: FixtureAction) -> Result<(), TugError> {
     match action {
         FixtureAction::Fetch { name, force } => execute_fixture_fetch(global, name, force),
         FixtureAction::Update { name, git_ref } => execute_fixture_update(global, &name, &git_ref),
+        FixtureAction::List => execute_fixture_list(global),
+        FixtureAction::Status { name } => execute_fixture_status(global, name),
     }
 }
 
@@ -768,6 +778,100 @@ fn execute_fixture_update(global: &GlobalArgs, name: &str, git_ref: &str) -> Res
 
     let response = FixtureUpdateResponse::new(fixture_result, result.warning);
 
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = io::stdout().flush();
+
+    Ok(())
+}
+
+/// Execute fixture list subcommand.
+///
+/// Lists all fixtures defined by lock files in the fixtures/ directory.
+fn execute_fixture_list(global: &GlobalArgs) -> Result<(), TugError> {
+    let workspace = global
+        .workspace
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    // Discover and read all lock files
+    let lock_files = tugtool::fixture::discover_lock_files(&workspace)
+        .map_err(|e| TugError::internal(e.to_string()))?;
+
+    let mut fixtures = Vec::with_capacity(lock_files.len());
+
+    for lock_path in lock_files {
+        let info = tugtool::fixture::read_lock_file(&lock_path)
+            .map_err(|e| TugError::internal(e.to_string()))?;
+
+        // Make lock_file path relative to workspace
+        let lock_file_relative = lock_path
+            .strip_prefix(&workspace)
+            .unwrap_or(&lock_path)
+            .to_string_lossy()
+            .to_string();
+
+        fixtures.push(FixtureListItem::new(
+            info.name,
+            info.repository,
+            info.git_ref,
+            info.sha,
+            lock_file_relative,
+        ));
+    }
+
+    let response = FixtureListResponse::new(fixtures);
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = io::stdout().flush();
+
+    Ok(())
+}
+
+/// Execute fixture status subcommand.
+///
+/// Shows the fetch state of fixtures on the filesystem.
+fn execute_fixture_status(global: &GlobalArgs, name: Option<String>) -> Result<(), TugError> {
+    let workspace = global
+        .workspace
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    let results = if let Some(fixture_name) = name {
+        // Get state of specific fixture
+        let (info, state) =
+            tugtool::fixture::get_fixture_state_by_name(&workspace, &fixture_name)
+                .map_err(|e| TugError::internal(e.to_string()))?;
+        vec![(info, state)]
+    } else {
+        // Get states of all fixtures
+        tugtool::fixture::get_all_fixture_states(&workspace)
+            .map_err(|e| TugError::internal(e.to_string()))?
+    };
+
+    // Convert to response format
+    let fixtures: Vec<FixtureStatusItem> = results
+        .into_iter()
+        .map(|(info, state_info)| {
+            let path = tugtool::fixture::fixture_path(&workspace, &info.name);
+            let relative_path = path
+                .strip_prefix(&workspace)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+
+            FixtureStatusItem::new(
+                info.name,
+                state_info.state.to_string(),
+                relative_path,
+                info.repository,
+                info.git_ref,
+                info.sha,
+                state_info.actual_sha,
+                state_info.error,
+            )
+        })
+        .collect();
+
+    let response = FixtureStatusResponse::new(fixtures);
     emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
     let _ = io::stdout().flush();
 
@@ -1424,6 +1528,46 @@ mod tests {
                     assert_eq!(git_ref, "v0.2.0");
                 }
                 _ => panic!("expected Fixture Update"),
+            }
+        }
+
+        #[test]
+        fn parse_fixture_list() {
+            let args = ["tug", "fixture", "list"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert!(matches!(
+                cli.command,
+                Command::Fixture {
+                    action: FixtureAction::List
+                }
+            ));
+        }
+
+        #[test]
+        fn parse_fixture_status() {
+            let args = ["tug", "fixture", "status"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Status { name },
+                } => {
+                    assert!(name.is_none());
+                }
+                _ => panic!("expected Fixture Status"),
+            }
+        }
+
+        #[test]
+        fn parse_fixture_status_with_name() {
+            let args = ["tug", "fixture", "status", "temporale"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Status { name },
+                } => {
+                    assert_eq!(name, Some("temporale".to_string()));
+                }
+                _ => panic!("expected Fixture Status"),
             }
         }
     }

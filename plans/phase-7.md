@@ -1697,12 +1697,12 @@ pub fn get_all_fixture_states(
 - Updated `FixtureAction` enum
 
 **Tasks:**
-- [ ] Add `FixtureAction::List` variant (no arguments)
-- [ ] Add `FixtureAction::Status` variant (optional name argument)
-- [ ] Implement `execute_fixture_list()` function
-- [ ] Implement `execute_fixture_status()` function
-- [ ] Update `execute_fixture()` to dispatch to new commands
-- [ ] Add CLI parsing tests
+- [x] Add `FixtureAction::List` variant (no arguments)
+- [x] Add `FixtureAction::Status` variant (optional name argument)
+- [x] Implement `execute_fixture_list()` function
+- [x] Implement `execute_fixture_status()` function
+- [x] Update `execute_fixture()` to dispatch to new commands
+- [x] Add CLI parsing tests
 
 **CLI structure updates:**
 ```rust
@@ -1736,18 +1736,18 @@ enum FixtureAction {
 ```
 
 **Tests:**
-- [ ] CLI: parse `tug fixture list`
-- [ ] CLI: parse `tug fixture status`
-- [ ] CLI: parse `tug fixture status temporale`
-- [ ] Integration: list command produces valid JSON
-- [ ] Integration: status command produces valid JSON
+- [x] CLI: parse `tug fixture list`
+- [x] CLI: parse `tug fixture status`
+- [x] CLI: parse `tug fixture status temporale`
+- [x] Integration: list command produces valid JSON
+- [x] Integration: status command produces valid JSON
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass
-- [ ] `cargo run -p tugtool -- fixture list --help` shows correct usage
-- [ ] `cargo run -p tugtool -- fixture status --help` shows correct usage
-- [ ] `cargo run -p tugtool -- fixture list 2>&1 | jq .` produces valid JSON
-- [ ] `cargo run -p tugtool -- fixture status 2>&1 | jq .` produces valid JSON
+- [x] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass (32 passed)
+- [x] `cargo run -p tugtool -- fixture list --help` shows correct usage
+- [x] `cargo run -p tugtool -- fixture status --help` shows correct usage
+- [x] `cargo run -p tugtool -- fixture list 2>&1 | jq .` produces valid JSON
+- [x] `cargo run -p tugtool -- fixture status 2>&1 | jq .` produces valid JSON
 
 **Commit after all checkpoints pass.**
 

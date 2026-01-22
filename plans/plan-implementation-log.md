@@ -8,6 +8,63 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step A3: Add CLI Commands | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum Step A3 (lines 1689-1755)
+- Design decisions D07, D08, D09: List/Status command behavior
+- Spec S07, S08: CLI command specifications
+- Spec S09, S10: Response schemas
+- `crates/tugtool/src/main.rs` - existing CLI structure and patterns
+- `crates/tugtool/src/fixture.rs` - state detection functions from Step A2
+- `crates/tugtool-core/src/output.rs` - response types from Step A1
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `FixtureAction::List` variant (no arguments) | Done |
+| Add `FixtureAction::Status` variant (optional name argument) | Done |
+| Implement `execute_fixture_list()` function | Done |
+| Implement `execute_fixture_status()` function | Done |
+| Update `execute_fixture()` to dispatch to new commands | Done |
+| Add CLI parsing tests | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs`:
+  - Added `FixtureAction::List` and `FixtureAction::Status` enum variants
+  - Added imports for `FixtureListItem`, `FixtureListResponse`, `FixtureStatusItem`, `FixtureStatusResponse`
+  - Updated `execute_fixture()` to dispatch to `List` and `Status` commands
+  - Added `execute_fixture_list()` function - discovers lock files, parses, returns JSON
+  - Added `execute_fixture_status()` function - gets fixture states, returns JSON
+  - Added 4 CLI parsing tests: `parse_fixture_list`, `parse_fixture_status`, `parse_fixture_status_with_name`
+- `plans/phase-7.md`:
+  - Checked off all 6 tasks for Step A3
+  - Checked off all 5 tests
+  - Checked off all 5 checkpoints with verification results
+
+**Test Results:**
+- `cargo nextest run -p tugtool cli_parsing`: 32 tests passed
+- `cargo nextest run -p tugtool fixture`: 54 tests passed
+- `cargo nextest run -p tugtool`: 244 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool cli_parsing` - CLI tests pass: PASS (32 tests)
+- `cargo run -p tugtool -- fixture list --help` shows correct usage: PASS
+- `cargo run -p tugtool -- fixture status --help` shows correct usage: PASS
+- `cargo run -p tugtool -- fixture list | jq .` produces valid JSON: PASS
+- `cargo run -p tugtool -- fixture status | jq .` produces valid JSON: PASS
+
+**Key Decisions/Notes:**
+- Used existing `discover_lock_files()` and `read_lock_file()` for list command
+- Used `get_all_fixture_states()` and `get_fixture_state_by_name()` from Step A2 for status command
+- Paths in responses are relative to workspace (consistent with fetch/update commands)
+- Status command shows all fixture states including `fetched`, `missing`, `sha-mismatch`, etc.
+
+---
+
 ## [phase-7.md] Step A2: Add Fixture State Logic | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
