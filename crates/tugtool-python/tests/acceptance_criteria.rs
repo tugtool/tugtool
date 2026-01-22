@@ -799,23 +799,167 @@ mod ac4_import_resolution {
 
     #[test]
     fn relative_imports_handled() {
-        // from . import foo  # relative imports are documented limitation
-        // from ..x import y  # returns None
+        // from .utils import x  # relative imports should create cross-file references
+        // This test verifies that relative imports properly resolve to definitions
         let file_list = files(&[
             ("pkg/__init__.py", ""),
-            ("pkg/foo.py", "x = 1\n"),
-            ("pkg/bar.py", "from . import foo\n"),
+            ("pkg/utils.py", "x = 1\n"),
+            ("pkg/bar.py", "from .utils import x\nprint(x)\n"),
         ]);
         let store = analyze_test_files(&file_list);
 
         // Should not crash - relative imports are handled gracefully
         let bar_file = store.file_by_path("pkg/bar.py");
         assert!(bar_file.is_some(), "Expected pkg/bar.py to be analyzed");
+
+        // Find the 'x' symbol DEFINED in pkg/utils.py (not the import binding in bar.py)
+        let utils_file = store.file_by_path("pkg/utils.py");
+        assert!(utils_file.is_some(), "Expected pkg/utils.py to be analyzed");
+        let utils_file_id = utils_file.unwrap().file_id;
+
+        let x_in_utils = store
+            .symbols()
+            .find(|s| s.name == "x" && s.decl_file_id == utils_file_id);
+
+        assert!(
+            x_in_utils.is_some(),
+            "Expected 'x' symbol to be defined in pkg/utils.py"
+        );
+
+        let x = x_in_utils.unwrap();
+
+        // PHASE 8 REQUIREMENT: Relative imports should create cross-file references.
+        // Get references to x - should include bar.py (import site and/or usage site)
+        let refs = store.refs_of_symbol(x.symbol_id);
+
+        let bar_file_id = bar_file.unwrap().file_id;
+        let refs_in_bar: Vec<_> = refs.iter().filter(|r| r.file_id == bar_file_id).collect();
+
+        // This will FAIL until relative import resolution is implemented
+        assert!(
+            !refs_in_bar.is_empty(),
+            "Expected reference to 'x' in pkg/bar.py (via 'from .utils import x'), but found none. \
+             This indicates relative import resolution is not creating cross-file references."
+        );
+    }
+
+    #[test]
+    fn relative_import_from_utils_creates_reference() {
+        // Test the spike scenario: from .utils import process_data
+        // This mirrors the spikes/interop-spike/ setup
+        let file_list = files(&[
+            ("lib/__init__.py", "from .utils import process_data\n"),
+            ("lib/utils.py", "def process_data(): pass\n"),
+            (
+                "lib/processor.py",
+                "from .utils import process_data\nprocess_data()\n",
+            ),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // Find the process_data DEFINITION in lib/utils.py (not an import binding)
+        let utils_file = store.file_by_path("lib/utils.py");
+        assert!(utils_file.is_some(), "Expected lib/utils.py to be analyzed");
+        let utils_file_id = utils_file.unwrap().file_id;
+
+        let process_data_in_utils = store
+            .symbols()
+            .find(|s| s.name == "process_data" && s.decl_file_id == utils_file_id);
+
+        assert!(
+            process_data_in_utils.is_some(),
+            "Expected process_data DEFINITION in lib/utils.py"
+        );
+
+        let process_data_symbol = process_data_in_utils.unwrap();
+
+        // PHASE 8 REQUIREMENT: References should exist from files that import process_data
+        // Get all references to this symbol
+        let refs = store.refs_of_symbol(process_data_symbol.symbol_id);
+
+        // We expect at least 2 references:
+        // 1. from lib/__init__.py (import site)
+        // 2. from lib/processor.py (import site + call site)
+        // This will FAIL until relative import resolution is implemented
+        assert!(
+            refs.len() >= 2,
+            "Expected at least 2 cross-file references to process_data (from __init__.py and processor.py), \
+             but found {}. This indicates relative import resolution is not creating cross-file references.",
+            refs.len()
+        );
+
+        // Verify references come from different files
+        let ref_file_ids: std::collections::HashSet<_> =
+            refs.iter().map(|r| r.file_id).collect();
+
+        assert!(
+            ref_file_ids.len() >= 2,
+            "Expected references from at least 2 different files, but found references from {} file(s). \
+             Relative imports are not creating cross-file references.",
+            ref_file_ids.len()
+        );
+    }
+
+    #[test]
+    fn relative_import_creates_cross_file_reference() {
+        // This is the KEY test for Phase 8: verify that relative imports
+        // actually create cross-file references that enable rename operations.
+        //
+        // Scenario:
+        // - pkg/utils.py defines foo()
+        // - pkg/consumer.py imports foo via "from .utils import foo" and calls foo()
+        // - A rename of foo in utils.py should find the reference in consumer.py
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            ("pkg/utils.py", "def foo(): pass\n"),
+            ("pkg/consumer.py", "from .utils import foo\nfoo()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // Find the foo DEFINITION in pkg/utils.py (not an import binding)
+        let utils_file = store.file_by_path("pkg/utils.py");
+        assert!(utils_file.is_some(), "Expected pkg/utils.py to be analyzed");
+        let utils_file_id = utils_file.unwrap().file_id;
+
+        let foo_in_utils = store
+            .symbols()
+            .find(|s| s.name == "foo" && s.decl_file_id == utils_file_id);
+
+        assert!(
+            foo_in_utils.is_some(),
+            "Expected foo DEFINITION in pkg/utils.py"
+        );
+
+        let foo = foo_in_utils.unwrap();
+
+        // PHASE 8 REQUIREMENT: Get references to foo - should include consumer.py
+        let refs = store.refs_of_symbol(foo.symbol_id);
+
+        // Find reference in consumer.py (either import site or call site)
+        let consumer_file = store.file_by_path("pkg/consumer.py");
+        assert!(consumer_file.is_some(), "Expected pkg/consumer.py in store");
+        let consumer_file_id = consumer_file.unwrap().file_id;
+
+        let refs_in_consumer: Vec<_> = refs
+            .iter()
+            .filter(|r| r.file_id == consumer_file_id)
+            .collect();
+
+        // This will FAIL until relative import resolution is implemented
+        assert!(
+            !refs_in_consumer.is_empty(),
+            "Expected at least one reference to foo in pkg/consumer.py (via 'from .utils import foo'), \
+             but found none. Cross-file reference resolution for relative imports is not working."
+        );
     }
 
     #[test]
     fn star_imports_handled() {
-        // from foo import *  # star imports are documented limitation
+        // from foo import *  # star imports are recorded
+        // Note: Full expansion of star imports (resolving to each exported symbol)
+        // is a future enhancement (see Phase 8 Q02). For now, we verify:
+        // 1. Star imports are recorded with is_star = true
+        // 2. Star imports don't crash analysis
         let file_list = files(&[
             ("foo.py", "x = 1\ny = 2\n"),
             ("main.py", "from foo import *\n"),
@@ -828,6 +972,32 @@ mod ac4_import_resolution {
         // Star import should be recorded
         let imports: Vec<_> = store.imports().filter(|i| i.is_star).collect();
         assert!(!imports.is_empty(), "Expected star import to be recorded");
+    }
+
+    #[test]
+    fn relative_star_import_handled() {
+        // from .utils import *  # relative star imports should at minimum not crash
+        // Full expansion is future work (Phase 8 Q02)
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            ("pkg/utils.py", "x = 1\n__all__ = ['x']\n"),
+            ("pkg/consumer.py", "from .utils import *\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // Should not crash - relative star imports are handled gracefully
+        let consumer_file = store.file_by_path("pkg/consumer.py");
+        assert!(
+            consumer_file.is_some(),
+            "Expected pkg/consumer.py to be analyzed"
+        );
+
+        // Star import should be recorded
+        let imports: Vec<_> = store.imports().filter(|i| i.is_star).collect();
+        assert!(
+            !imports.is_empty(),
+            "Expected relative star import to be recorded"
+        );
     }
 
     #[test]

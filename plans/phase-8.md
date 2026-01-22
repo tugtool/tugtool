@@ -385,20 +385,20 @@ pub fn resolve_module_to_file(
 - Updated `crates/tugtool-python/tests/acceptance_criteria.rs`
 
 **Tasks:**
-- [ ] Modify `relative_imports_handled` test to assert references ARE created
-- [ ] Modify `star_imports_handled` test to assert references or star marker exists
-- [ ] Add new test `relative_import_creates_cross_file_reference` that:
+- [x] Modify `relative_imports_handled` test to assert references ARE created
+- [x] Modify `star_imports_handled` test to assert references or star marker exists
+- [x] Add new test `relative_import_creates_cross_file_reference` that:
   - Creates `pkg/utils.py` with `def foo(): pass`
   - Creates `pkg/consumer.py` with `from .utils import foo; foo()`
   - Verifies that `foo` reference in consumer.py resolves to definition in utils.py
-- [ ] Run tests and verify they FAIL (documenting the gap)
+- [x] Run tests and verify they FAIL (documenting the gap)
 
 **Tests:**
-- [ ] Acceptance: `cargo nextest run -p tugtool-python relative_import` (expect FAIL)
+- [x] Acceptance: `cargo nextest run -p tugtool-python relative_import` (expect FAIL)
 
 **Checkpoint:**
-- [ ] New tests exist and fail with clear "expected reference not found" messages
-- [ ] Existing tests still pass: `cargo nextest run -p tugtool-python -- --exclude relative`
+- [x] New tests exist and fail with clear "expected reference not found" messages
+- [x] Existing tests still pass: `cargo nextest run -p tugtool-python -- --exclude relative`
 
 **Rollback:**
 - Revert test changes
@@ -694,7 +694,7 @@ pub fn resolve_module_to_file(
 
 | Step | Status | Date | Notes |
 |------|--------|------|-------|
-| Step 0 | pending | | Add failing tests |
+| Step 0 | complete | 2026-01-22 | Add failing tests - 4 tests fail as expected |
 | Step 1 | pending | | Relative path helper |
 | Step 2 | pending | | LocalImport changes |
 | Step 3 | pending | | FileImportResolver changes |

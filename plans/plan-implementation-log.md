@@ -8,6 +8,50 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 0: Add Failing Tests for Relative Imports | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 0 specification and task list
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Existing test structure
+- `crates/tugtool-core/src/facts/mod.rs` - Import struct definition
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Modify `relative_imports_handled` test to assert references ARE created | Done |
+| Modify `star_imports_handled` test to assert references or star marker exists | Done |
+| Add `relative_import_creates_cross_file_reference` test | Done |
+| Add `relative_import_from_utils_creates_reference` test (spike scenario) | Done |
+| Add `relative_star_import_handled` test | Done |
+| Run tests and verify they FAIL (documenting the gap) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Added 4 new tests, enhanced 2 existing tests
+- `plans/phase-8.md` - Checked off Step 0 tasks, updated implementation log
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 258 passed, 4 failed (as expected)
+- Failed tests with clear error messages:
+  - `relative_imports_handled` - "This indicates relative import resolution is not creating cross-file references"
+  - `relative_import_creates_cross_file_reference` - "Cross-file reference resolution for relative imports is not working"
+  - `relative_import_from_utils_creates_reference` - "Expected at least 2 cross-file references"
+  - `relative_star_import_handled` - "Expected relative star import to be recorded"
+
+**Checkpoints Verified:**
+- New tests exist and fail with clear "expected reference not found" messages: PASS
+- Existing tests still pass (258 tests): PASS
+
+**Key Decisions/Notes:**
+- Tests are designed to find the DEFINITION in the source file (e.g., `pkg/utils.py`) and verify that references exist from the consumer file (e.g., `pkg/consumer.py`)
+- The Import struct doesn't have a `resolved_file_id` field - cross-file resolution is tracked via Reference entries
+- Added bonus test `relative_import_from_utils_creates_reference` that mirrors the exact `spikes/interop-spike/` scenario
+- Step 0 is complete - these failing tests will become passing tests once Steps 1-4 implement relative import resolution
+
+---
+
 ## [phase-8.md] Phase 8 Plan Creation (Spike Test Fixups) | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
