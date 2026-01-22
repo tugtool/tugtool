@@ -1875,7 +1875,7 @@ tug fixture status temporale
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | TBD |
 | Last updated | 2026-01-22 |
@@ -2298,35 +2298,35 @@ fn test_fixture_list_returns_exit_0() {
 
 #### Addendum B Exit Criteria {#addendum-b-exit-criteria}
 
-- [ ] `tug fixture fetch nonexistent` returns exit code 2
-- [ ] `tug fixture update temporale --ref nonexistent-xyz` returns exit code 3
-- [ ] `tug fixture update nonexistent --ref v1.0.0` returns exit code 2
-- [ ] CLI E2E test file exists with tests for all fixture commands
-- [ ] All E2E tests pass
-- [ ] Spec updated with lock file regeneration note
-- [ ] Spec updated with raw SHA limitation note
-- [ ] All existing tests continue to pass
+- [x] `tug fixture fetch nonexistent` returns exit code 2
+- [x] `tug fixture update temporale --ref nonexistent-xyz` returns exit code 3
+- [x] `tug fixture update nonexistent --ref v1.0.0` returns exit code 2
+- [x] CLI E2E test file exists with tests for all fixture commands
+- [x] All E2E tests pass (7 passed)
+- [x] Spec updated with lock file regeneration note
+- [x] Spec updated with raw SHA limitation note
+- [x] All existing tests continue to pass (265 passed)
 
 **Acceptance tests:**
-- [ ] `cargo nextest run -p tugtool fixture_cli_e2e` passes
-- [ ] `cargo nextest run -p tugtool` passes (all tests)
-- [ ] Manual: `tug fixture fetch bad-name; echo $?` outputs 2
-- [ ] Manual: `tug fixture update temporale --ref no-such-ref; echo $?` outputs 3
+- [x] `cargo nextest run -p tugtool fixture_cli_e2e` passes (7 passed)
+- [x] `cargo nextest run -p tugtool` passes (265 tests)
+- [x] Manual: `tug fixture fetch bad-name; echo $?` outputs 2
+- [x] Manual: `tug fixture update temporale --ref no-such-ref; echo $?` outputs 3
 
 #### Milestones {#addendum-b-milestones}
 
 **Milestone M06: Error Codes Fixed** {#m06-error-codes}
-- [ ] FixtureError has kind classification
-- [ ] CLI uses appropriate exit codes based on error kind
+- [x] FixtureError has kind classification
+- [x] CLI uses appropriate exit codes based on error kind
 
 **Milestone M07: CLI E2E Tests Added** {#m07-cli-e2e}
-- [ ] `fixture_cli_e2e.rs` exists with comprehensive tests
-- [ ] Tests cover all fixture subcommands
-- [ ] Tests validate both exit codes and JSON output
+- [x] `fixture_cli_e2e.rs` exists with comprehensive tests
+- [x] Tests cover all fixture subcommands
+- [x] Tests validate both exit codes and JSON output
 
 **Milestone M08: Spec Updated** {#m08-spec-updated}
-- [ ] Lock file regeneration documented
-- [ ] Raw SHA limitation documented
+- [x] Lock file regeneration documented
+- [x] Raw SHA limitation documented
 
 | Checkpoint | Verification |
 |------------|--------------|
