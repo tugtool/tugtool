@@ -994,18 +994,18 @@ pub fn update_fixture_lock(
 - Refactored `crates/tugtool/tests/support/fixtures.rs`
 
 **Tasks:**
-- [ ] Update test support to use `tugtool::fixture` module
-- [ ] Remove duplicated code
-- [ ] Keep test-specific helpers (e.g., panic with instructions)
-- [ ] Ensure all existing tests still pass
+- [x] Update test support to use `tugtool::fixture` module
+- [x] Remove duplicated code
+- [x] Keep test-specific helpers (e.g., panic with instructions)
+- [x] Ensure all existing tests still pass
 
 **Tests:**
-- [ ] All existing fixture tests pass
-- [ ] All Temporale integration tests pass
+- [x] All existing fixture tests pass (42 passed)
+- [x] All Temporale integration tests pass (8 passed)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool` - all tests pass
-- [ ] No duplicated fixture logic between modules
+- [x] `cargo nextest run -p tugtool` - all tests pass (232 passed)
+- [x] No duplicated fixture logic between modules
 
 **Commit after all checkpoints pass.**
 

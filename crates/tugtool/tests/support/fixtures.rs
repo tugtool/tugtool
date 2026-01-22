@@ -82,10 +82,6 @@ pub fn get_fixture_path(name: &str, env_var: &str) -> PathBuf {
     }
 
     // 3. Fixture not available - fail loudly with instructions
-    let info = read_lock_file(name).unwrap_or_else(|e| {
-        panic!("Failed to read lock file for fixture '{}': {}", name, e);
-    });
-
     panic!(
         "\n\
         ============================================================\n\
@@ -95,18 +91,19 @@ pub fn get_fixture_path(name: &str, env_var: &str) -> PathBuf {
         \n\
         To fetch the fixture, run from workspace root:\n\
         \n\
-        mkdir -p .tug/fixtures\n\
-        git clone --depth 1 --branch {} \\\n\
-            {} \\\n\
-            .tug/fixtures/{}\n\
+            cargo run -p tugtool -- fixture fetch {}\n\
+        \n\
+        Or fetch all fixtures:\n\
+        \n\
+            cargo run -p tugtool -- fixture fetch\n\
         \n\
         Or set {} to point to a local checkout:\n\
         \n\
-        export {}=/path/to/your/{}\n\
+            export {}=/path/to/your/{}\n\
         \n\
         See fixtures/{}.lock for the pinned version.\n\
         ============================================================\n",
-        name, info.git_ref, info.repository, name, env_var, env_var, name, name
+        name, name, env_var, env_var, name, name
     );
 }
 

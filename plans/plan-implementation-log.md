@@ -8,6 +8,46 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 6: Update Test Support Module | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Step 6 specification (lines 987-1010)
+- `crates/tugtool/tests/support/fixtures.rs` - Current test support module
+- `crates/tugtool/src/fixture.rs` - Shared fixture module public API
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update test support to use `tugtool::fixture` module | Done (already delegating) |
+| Remove duplicated code | Done (no duplication found) |
+| Keep test-specific helpers (panic with instructions) | Done |
+| Ensure all existing tests still pass | Done |
+
+**Files Modified:**
+- `crates/tugtool/tests/support/fixtures.rs`:
+  - Updated panic message in `get_fixture_path()` to use `tug fixture fetch` instead of manual git clone
+  - Module already properly delegated to shared `tugtool::fixture` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture`: 42 tests passed
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+- `cargo nextest run -p tugtool`: 232 tests passed (full suite)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool` - all tests pass: PASS (232 passed)
+- No duplicated fixture logic between modules: PASS
+
+**Key Decisions/Notes:**
+- The test support module was already well-structured with proper delegation to `tugtool::fixture`
+- Re-exports `FixtureInfo`, delegates parsing to `read_lock_file_by_name`, delegates paths to `fixture_path`
+- Test-specific logic kept separate: `workspace_root()` (CARGO_MANIFEST_DIR), `get_fixture_path()` (env var + panic)
+- Updated panic message to recommend `cargo run -p tugtool -- fixture fetch` instead of manual git clone
+
+---
+
 ## [phase-7.md] Step 5: Add Fixture Update CLI Command | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
