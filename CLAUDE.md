@@ -129,23 +129,22 @@ Temporale is an external fixture fetched from https://github.com/tugtool/tempora
 Before running Temporale integration tests locally, fetch the fixture:
 
 ```bash
-# Read the pinned version from lock file
-cat fixtures/temporale.lock
+# Fetch all fixtures according to lock files
+cargo run -p tugtool -- fixture fetch
 
-# Fetch the fixture (adjust tag as needed)
-mkdir -p .tug/fixtures
-git clone --depth 1 --branch v0.1.0 \
-  https://github.com/tugtool/temporale \
-  .tug/fixtures/temporale
+# Or fetch specific fixture
+cargo run -p tugtool -- fixture fetch temporale
 
 # Install in test venv
 .tug-test-venv/bin/pip install -e .tug/fixtures/temporale/
 ```
 
-Or use a local checkout for development:
+For local fixture development, use the environment variable override:
 ```bash
 export TUG_TEMPORALE_PATH=/path/to/your/temporale
 ```
+
+This bypasses the fixture fetch system entirely and uses your local checkout instead.
 
 #### Running Python Tests
 
@@ -244,6 +243,29 @@ Tools exposed via MCP:
 - `tug_analyze_impact` - Analyze refactoring impact
 - `tug_rename_symbol` - Execute rename operation
 - `tug_verify` - Run verification
+
+## Fixture Commands
+
+Manage test fixtures (external repositories used for integration tests).
+
+```bash
+# Fetch all fixtures according to lock files
+tug fixture fetch
+
+# Fetch specific fixture
+tug fixture fetch temporale
+
+# Force re-fetch even if up-to-date
+tug fixture fetch --force
+
+# Update lock file to new version
+tug fixture update temporale --ref v0.2.0
+
+# After updating, fetch the new version
+tug fixture fetch temporale
+```
+
+All fixture commands produce JSON output for agent integration.
 
 ## Adding New Features
 

@@ -1021,10 +1021,10 @@ pub fn update_fixture_lock(
 - Updated CLAUDE.md with fixture command documentation
 
 **Tasks:**
-- [ ] Add fixture command section to CLAUDE.md
-- [ ] Update fixture setup instructions to use new commands
-- [ ] Add examples for common workflows
-- [ ] Remove manual git clone instructions (or mark as alternative)
+- [x] Add fixture command section to CLAUDE.md
+- [x] Update fixture setup instructions to use new commands
+- [x] Add examples for common workflows
+- [x] Remove manual git clone instructions (or mark as alternative)
 
 **CLAUDE.md additions:**
 ```markdown
@@ -1059,8 +1059,8 @@ export TUG_TEMPORALE_PATH=/path/to/your/temporale
 This bypasses the fixture fetch system entirely.
 
 **Checkpoint:**
-- [ ] CLAUDE.md contains complete fixture command documentation
-- [ ] Instructions are clear and accurate
+- [x] CLAUDE.md contains complete fixture command documentation
+- [x] Instructions are clear and accurate
 
 **Commit after all checkpoints pass.**
 

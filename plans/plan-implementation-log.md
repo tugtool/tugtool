@@ -8,6 +8,48 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 7: Update Documentation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Step 7 specification (lines 1014-1065)
+- `plans/phase-7.md` - Spec S01 fixture fetch command (lines 330-364)
+- `plans/phase-7.md` - Spec S02 fixture update command (lines 367-393)
+- `CLAUDE.md` - Current documentation structure and fixture setup section
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add fixture command section to CLAUDE.md | Done |
+| Update fixture setup instructions to use new commands | Done |
+| Add examples for common workflows | Done |
+| Remove manual git clone instructions (or mark as alternative) | Done |
+
+**Files Modified:**
+- `CLAUDE.md`:
+  - Updated "Fixture Setup" section (lines 127-147) to use `cargo run -p tugtool -- fixture fetch` instead of manual git clone
+  - Added new "## Fixture Commands" section (lines 247-268) with all command examples
+  - Local development override (`TUG_TEMPORALE_PATH`) documented as alternative workflow
+
+**Test Results:**
+- `cargo run -p tugtool -- fixture fetch --help`: Shows correct usage
+- `cargo run -p tugtool -- fixture update --help`: Shows correct usage
+- `cargo run -p tugtool --quiet -- fixture fetch | jq .status`: Returns `"ok"` (valid JSON)
+
+**Checkpoints Verified:**
+- CLAUDE.md contains complete fixture command documentation: PASS
+- Instructions are clear and accurate: PASS
+
+**Key Decisions/Notes:**
+- Removed manual git clone instructions entirely (not kept as alternative)
+- Local fixture development uses env var override (`TUG_TEMPORALE_PATH`) which bypasses fetch system
+- Added note that all fixture commands produce JSON output for agent integration
+- Fixture Commands section placed after MCP Server, before Adding New Features
+
+---
+
 ## [phase-7.md] Step 6: Update Test Support Module | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
