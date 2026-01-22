@@ -6,6 +6,66 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-6.md] Phase 6 Plan Creation: Make Temporale Standalone | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-5.md` - Context on Temporale sample code library
+- `crates/tugtool/tests/temporale_integration.rs` - Current test infrastructure
+- `crates/tugtool/tests/support/mod.rs` - Current support modules
+- `.github/workflows/ci.yml` - Current CI configuration
+- `.claude/` directory - Commands and agents to mirror in Temporale
+- `crates/tugtool/Cargo.toml` - Dev dependencies
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Investigate migration requirements | Done |
+| Check PyPI name availability ("temporale") | Done - Available |
+| Create comprehensive Phase 6 plan using code-planner agent | Done |
+| Decide repository location (tugtool/temporale) | Done |
+| Decide PyPI publication strategy | Done |
+| Decide fixture fetch mechanism (git shallow clone) | Done |
+| Decide pin file format (TOML) | Done |
+| Decide fixture cache location (.tug/fixtures/) | Done |
+| Decide venv handling (editable install from fixture) | Done |
+| Review and fix plan holes: TOML parsing correctness | Done |
+| Review and fix plan holes: read_lock_file_from testability | Done |
+| Review and fix plan holes: explicit toml dev-dependency | Done |
+| Review and fix plan holes: .claude/ migration specifics | Done |
+| Update plan with tugtool/temporale repo location | Done |
+
+**Files Created:**
+- `plans/phase-6.md` - Comprehensive plan for making Temporale standalone (1393 lines)
+
+**Files Modified:**
+- None (planning phase only)
+
+**Test Results:**
+- N/A (planning phase)
+
+**Checkpoints Verified:**
+- Plan structure follows established format: PASS
+- All open questions resolved (Q01-Q06): PASS
+- All design decisions documented (D01-D06): PASS
+- Execution steps defined (Steps 0-8): PASS
+- Success criteria measurable: PASS
+- Milestones defined (M01-M04): PASS
+
+**Key Decisions/Notes:**
+- Temporale will be published to PyPI as "temporale" (name confirmed available)
+- Repository will be at `tugtool/temporale` (same GitHub org)
+- Fixture fetch uses git shallow clone with SHA verification
+- Pin file uses TOML format at `fixtures/temporale.lock`
+- Fixtures cached at `.tug/fixtures/` (gitignored, refetchable)
+- `read_lock_file_from()` function added for unit test testability
+- `.claude/` commands will be fully mirrored with Python-context adaptations
+- Tests fail loudly if fixture unavailable (no silent skips)
+
+---
+
 ## [phase-5.md] Phase 5 Final: Step 19 Summary + Deliverables + Milestones | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
