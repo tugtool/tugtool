@@ -475,21 +475,21 @@ pub fn resolve_module_to_file(
 - Updated `resolve_module_to_file`
 
 **Tasks:**
-- [ ] Add `importing_file_path: &str` parameter to `from_imports`
-- [ ] Add `context_path: Option<&str>` and `relative_level: u32` to `resolve_module_to_file`
-- [ ] In `from_imports`, handle relative imports:
+- [x] Add `importing_file_path: &str` parameter to `from_imports`
+- [x] Add `context_path: Option<&str>` and `relative_level: u32` to `resolve_module_to_file`
+- [x] In `from_imports`, handle relative imports:
   - Use `resolve_relative_path` to convert to absolute module path
   - Then proceed with normal resolution logic
-- [ ] REMOVE the `if import.module_path.starts_with('.') { continue; }` skip
-- [ ] Update all call sites in `analyze_files` to pass the importing file path
+- [x] REMOVE the `if import.module_path.starts_with('.') { continue; }` skip
+- [x] Update all call sites in `analyze_files` to pass the importing file path
 
 **Tests:**
-- [ ] Integration: Relative import creates resolver alias
-- [ ] Integration: Resolver resolves relative import to correct file
+- [x] Integration: Relative import creates resolver alias
+- [x] Integration: Resolver resolves relative import to correct file
 
 **Checkpoint:**
-- [ ] `cargo build --workspace` succeeds
-- [ ] `cargo nextest run -p tugtool-python` passes
+- [x] `cargo build --workspace` succeeds
+- [x] `cargo nextest run -p tugtool-python` passes
 
 **Rollback:**
 - Revert commit
@@ -697,7 +697,7 @@ pub fn resolve_module_to_file(
 | Step 0 | complete | 2026-01-22 | Add failing tests - 4 tests fail as expected |
 | Step 1 | complete | 2026-01-22 | Added resolve_relative_path with 10 unit tests passing |
 | Step 2 | complete | 2026-01-22 | LocalImport now tracks relative_level; relative imports no longer skipped; one Step 0 test now passes |
-| Step 3 | pending | | FileImportResolver changes |
+| Step 3 | complete | 2026-01-22 | FileImportResolver + resolve_module_to_file now handle relative imports; all 288 tests pass |
 | Step 4 | pending | | Verify tests pass |
 | Step 5 | pending | | Spike validation |
 | Step 6 | pending | | Additional scenarios |

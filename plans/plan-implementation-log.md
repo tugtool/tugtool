@@ -8,6 +8,48 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 3: Update FileImportResolver for Relative Imports | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 3 specification, Spec S02 (FileImportResolver API), Spec S03 (resolve_module_to_file API)
+- `crates/tugtool-python/src/analyzer.rs` - FileImportResolver, resolve_module_to_file, convert_imports
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `importing_file_path: &str` parameter to `from_imports` | Done |
+| Add `context_path: Option<&str>` and `relative_level: u32` to `resolve_module_to_file` | Done |
+| Handle relative imports in `from_imports` using `resolve_relative_path` | Done |
+| REMOVE the `if import.module_path.starts_with('.') { continue; }` skip | Done |
+| Update all call sites in `analyze_files` to pass the importing file path | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Updated `resolve_module_to_file` signature and logic; updated `FileImportResolver::from_imports` with new parameter; updated `convert_imports` with file path parameter; added `file_import_resolver_tests` module with 4 tests
+
+**Test Results:**
+- `cargo build --workspace`: SUCCESS
+- `cargo nextest run -p tugtool-python`: 288 tests run: 288 passed
+
+**Tests Added:**
+- `relative_import_creates_resolver_alias` - verifies `from .utils import foo` creates correct alias
+- `relative_import_resolves_to_correct_file` - verifies resolution to workspace file
+- `from_package_itself_import` - verifies `from . import utils` resolves submodule
+- `nested_relative_import` - verifies `from .sub.utils import helper`
+
+**Checkpoints Verified:**
+- `cargo build --workspace` succeeds: PASS
+- `cargo nextest run -p tugtool-python` passes: PASS (288/288)
+
+**Key Decisions/Notes:**
+- For `from . import utils`, the imported name IS the module to resolve (submodule import), requiring special handling
+- The 3 failing acceptance criteria tests from Step 0 now all PASS - relative imports create cross-file references
+- Test count increased from 284 to 288 (4 new FileImportResolver tests)
+
+---
+
 ## [phase-8.md] Step 2: Update LocalImport to Track Relative Level | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

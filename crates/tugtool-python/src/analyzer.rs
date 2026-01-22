@@ -620,9 +620,12 @@ pub fn analyze_files(
     for analysis in &bundle.file_analyses {
         let file_id = analysis.file_id;
 
-        // Build per-file import resolver
-        let import_resolver =
-            FileImportResolver::from_imports(&analysis.imports, &bundle.workspace_files);
+        // Build per-file import resolver (with file path for relative import resolution)
+        let import_resolver = FileImportResolver::from_imports(
+            &analysis.imports,
+            &bundle.workspace_files,
+            &analysis.path,
+        );
 
         // Process imports first - insert Import records
         for local_import in &analysis.imports {
@@ -855,8 +858,11 @@ pub fn analyze_files(
             // Find the FileAnalysis for this file to get import info
             if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id) {
                 // Use FileImportResolver which resolves imports against workspace_files
-                let import_resolver =
-                    FileImportResolver::from_imports(&analysis.imports, &bundle.workspace_files);
+                let import_resolver = FileImportResolver::from_imports(
+                    &analysis.imports,
+                    &bundle.workspace_files,
+                    &analysis.path,
+                );
 
                 if let Some((qualified_name, Some(resolved_path))) =
                     import_resolver.resolve(base_name)
@@ -998,7 +1004,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
     // Note: We use an empty workspace_files set here since single-file analysis
     // doesn't have access to the workspace. The caller (analyze_files) handles
     // workspace-aware import resolution.
-    let imports = convert_imports(&native_result.imports, &HashSet::new());
+    let imports = convert_imports(&native_result.imports, &HashSet::new(), path);
 
     Ok(FileAnalysis {
         file_id,
@@ -1159,32 +1165,69 @@ impl FileImportResolver {
     }
 
     /// Build from a list of local imports, resolving to workspace files.
-    pub fn from_imports(imports: &[LocalImport], workspace_files: &HashSet<String>) -> Self {
+    ///
+    /// # Arguments
+    /// * `imports` - List of imports from the file
+    /// * `workspace_files` - Set of all workspace file paths
+    /// * `importing_file_path` - Path of the file containing these imports (for relative import resolution)
+    pub fn from_imports(
+        imports: &[LocalImport],
+        workspace_files: &HashSet<String>,
+        importing_file_path: &str,
+    ) -> Self {
         let mut resolver = Self::new();
 
         for import in imports {
-            // Skip relative imports (Contract C3: unsupported)
-            if import.module_path.starts_with('.') {
-                continue;
-            }
-
             match import.kind.as_str() {
                 "from" => {
-                    // Skip star imports (Contract C3: unsupported)
+                    // Skip star imports (Contract C3: unsupported for name resolution)
                     if import.is_star {
                         continue;
                     }
 
                     // `from foo import bar` or `from foo import bar as b`
+                    // Also handles relative: `from .utils import bar` and `from . import utils`
                     for imported_name in &import.names {
                         let local_name =
                             imported_name.alias.as_ref().unwrap_or(&imported_name.name);
-                        let qualified_path =
-                            format!("{}.{}", import.module_path, imported_name.name);
 
-                        // Try to resolve the module to a workspace file
-                        let resolved_file =
-                            resolve_module_to_file(&import.module_path, workspace_files);
+                        // Build qualified path - for relative imports, resolve to absolute first
+                        let base_module_path = if import.relative_level > 0 {
+                            resolve_relative_path(
+                                importing_file_path,
+                                import.relative_level,
+                                &import.module_path,
+                            )
+                            .replace('/', ".")
+                        } else {
+                            import.module_path.clone()
+                        };
+
+                        let qualified_path = if base_module_path.is_empty() {
+                            // from . import utils -> qualified path is just the imported name
+                            imported_name.name.clone()
+                        } else {
+                            format!("{}.{}", base_module_path, imported_name.name)
+                        };
+
+                        // Resolve the module to a workspace file
+                        // For `from . import utils`, we need to resolve the imported_name as
+                        // a submodule, not the empty module_path
+                        let module_to_resolve = if import.module_path.is_empty()
+                            && import.relative_level > 0
+                        {
+                            // `from . import utils` - resolve the imported name as a module
+                            &imported_name.name
+                        } else {
+                            &import.module_path
+                        };
+
+                        let resolved_file = resolve_module_to_file(
+                            module_to_resolve,
+                            workspace_files,
+                            Some(importing_file_path),
+                            import.relative_level,
+                        );
 
                         resolver
                             .aliases
@@ -1194,8 +1237,12 @@ impl FileImportResolver {
                 "import" => {
                     if let Some(alias) = &import.alias {
                         // `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved)
-                        let resolved_file =
-                            resolve_module_to_file(&import.module_path, workspace_files);
+                        let resolved_file = resolve_module_to_file(
+                            &import.module_path,
+                            workspace_files,
+                            Some(importing_file_path),
+                            import.relative_level,
+                        );
                         resolver
                             .aliases
                             .insert(alias.clone(), (import.module_path.clone(), resolved_file));
@@ -1235,29 +1282,42 @@ impl FileImportResolver {
 /// Resolve a module path to a workspace file path.
 ///
 /// Per Contract C3 module resolution algorithm:
-/// 1. If module_path starts with '.': return None (relative import)
+/// 1. For relative imports (relative_level > 0), use context_path to resolve
 /// 2. Convert to candidate file paths: "foo.bar" → ["foo/bar.py", "foo/bar/__init__.py"]
 /// 3. Search workspace_files for first match (module file wins over package)
+///
+/// # Arguments
+/// * `module_path` - The module path (e.g., "utils" or "foo.bar")
+/// * `workspace_files` - Set of all workspace file paths
+/// * `context_path` - Path of the importing file (for relative imports)
+/// * `relative_level` - Number of leading dots (0 = absolute, 1 = from ., etc.)
 pub fn resolve_module_to_file(
     module_path: &str,
     workspace_files: &HashSet<String>,
+    context_path: Option<&str>,
+    relative_level: u32,
 ) -> Option<String> {
-    // Skip relative imports
-    if module_path.starts_with('.') {
-        return None;
-    }
-
-    // Convert module path to file path
-    let file_path = module_path.replace('.', "/");
+    // For relative imports, use resolve_relative_path to get the absolute path
+    let resolved_path = if relative_level > 0 {
+        if let Some(ctx) = context_path {
+            resolve_relative_path(ctx, relative_level, module_path)
+        } else {
+            // Can't resolve relative import without context
+            return None;
+        }
+    } else {
+        // Absolute import: convert dots to slashes
+        module_path.replace('.', "/")
+    };
 
     // Try as .py file first (per Contract C3: module file wins)
-    let py_path = format!("{}.py", file_path);
+    let py_path = format!("{}.py", resolved_path);
     if workspace_files.contains(&py_path) {
         return Some(py_path);
     }
 
     // Try as package (__init__.py)
-    let init_path = format!("{}/__init__.py", file_path);
+    let init_path = format!("{}/__init__.py", resolved_path);
     if workspace_files.contains(&init_path) {
         return Some(init_path);
     }
@@ -1639,9 +1699,15 @@ fn resolve_in_enclosing_function(
 }
 
 /// Convert local imports from native CST analysis to LocalImport format.
+///
+/// # Arguments
+/// * `imports` - List of imports from CST analysis
+/// * `workspace_files` - Set of all workspace file paths
+/// * `importing_file_path` - Path of the file containing these imports (for relative resolution)
 fn convert_imports(
     imports: &[tugtool_python_cst::ImportInfo],
     workspace_files: &HashSet<String>,
+    importing_file_path: &str,
 ) -> Vec<LocalImport> {
     let mut result = Vec::new();
 
@@ -1662,10 +1728,13 @@ fn convert_imports(
             })
             .unwrap_or_default();
 
-        // Resolve import to workspace file
-        // Note: For relative imports, this will return None until Step 3 updates
-        // resolve_module_to_file to handle relative paths
-        let resolved_file = resolve_module_to_file(&import.module, workspace_files);
+        // Resolve import to workspace file (with context for relative imports)
+        let resolved_file = resolve_module_to_file(
+            &import.module,
+            workspace_files,
+            Some(importing_file_path),
+            relative_level,
+        );
 
         let kind = match import.kind {
             tugtool_python_cst::ImportKind::Import => "import",
@@ -2450,7 +2519,8 @@ mod tests {
                 },
             ];
 
-            let local_imports = convert_imports(&cst_imports, &workspace_files);
+            // Pass a dummy file path for relative import context
+            let local_imports = convert_imports(&cst_imports, &workspace_files, "pkg/test.py");
 
             // Verify all imports are converted (no skipping!)
             assert_eq!(
@@ -2492,7 +2562,8 @@ mod tests {
                 relative_level: 1, // from .utils import *
             }];
 
-            let local_imports = convert_imports(&cst_imports, &workspace_files);
+            // Pass a dummy file path for relative import context
+            let local_imports = convert_imports(&cst_imports, &workspace_files, "pkg/test.py");
 
             assert_eq!(local_imports.len(), 1, "Relative star import should be included");
             assert!(local_imports[0].is_star, "Should be marked as star import");
@@ -2872,6 +2943,151 @@ mod tests {
             );
             assert!(resolver.resolved_file("External").is_none());
             assert!(resolver.resolved_file("Unknown").is_none());
+        }
+    }
+
+    mod file_import_resolver_tests {
+        use super::*;
+
+        #[test]
+        fn relative_import_creates_resolver_alias() {
+            // Test that from .utils import foo creates the correct alias
+            let workspace_files: HashSet<String> =
+                vec!["pkg/utils.py".to_string()].into_iter().collect();
+
+            let imports = vec![LocalImport {
+                kind: "from".to_string(),
+                module_path: "utils".to_string(),
+                names: vec![ImportedName {
+                    name: "foo".to_string(),
+                    alias: None,
+                }],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: Some(1),
+                resolved_file: None,
+                relative_level: 1, // from .utils
+            }];
+
+            let resolver =
+                FileImportResolver::from_imports(&imports, &workspace_files, "pkg/consumer.py");
+
+            // Verify alias is created
+            assert!(resolver.is_imported("foo"), "foo should be imported");
+
+            // Verify it resolves correctly
+            let (qualified, resolved) = resolver.resolve("foo").unwrap();
+            assert_eq!(qualified, "pkg.utils.foo", "qualified name should be pkg.utils.foo");
+            assert_eq!(
+                resolved,
+                Some("pkg/utils.py"),
+                "should resolve to pkg/utils.py"
+            );
+        }
+
+        #[test]
+        fn relative_import_resolves_to_correct_file() {
+            // Test that relative import resolution finds the correct workspace file
+            let workspace_files: HashSet<String> = vec![
+                "lib/utils.py".to_string(),
+                "lib/__init__.py".to_string(),
+                "lib/processor.py".to_string(),
+            ]
+            .into_iter()
+            .collect();
+
+            // from .utils import process_data in lib/processor.py
+            let imports = vec![LocalImport {
+                kind: "from".to_string(),
+                module_path: "utils".to_string(),
+                names: vec![ImportedName {
+                    name: "process_data".to_string(),
+                    alias: None,
+                }],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: Some(1),
+                resolved_file: None,
+                relative_level: 1,
+            }];
+
+            let resolver =
+                FileImportResolver::from_imports(&imports, &workspace_files, "lib/processor.py");
+
+            let (qualified, resolved) = resolver.resolve("process_data").unwrap();
+            assert_eq!(qualified, "lib.utils.process_data");
+            assert_eq!(resolved, Some("lib/utils.py"));
+        }
+
+        #[test]
+        fn from_package_itself_import() {
+            // Test: from . import utils in pkg/__init__.py
+            let workspace_files: HashSet<String> = vec![
+                "pkg/__init__.py".to_string(),
+                "pkg/utils.py".to_string(),
+            ]
+            .into_iter()
+            .collect();
+
+            let imports = vec![LocalImport {
+                kind: "from".to_string(),
+                module_path: "".to_string(), // from . import utils -> module is empty
+                names: vec![ImportedName {
+                    name: "utils".to_string(),
+                    alias: None,
+                }],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: Some(1),
+                resolved_file: None,
+                relative_level: 1,
+            }];
+
+            let resolver =
+                FileImportResolver::from_imports(&imports, &workspace_files, "pkg/__init__.py");
+
+            // utils should be importable
+            assert!(resolver.is_imported("utils"));
+            let (qualified, resolved) = resolver.resolve("utils").unwrap();
+            // For `from . import utils`, the qualified path includes the package
+            // base_module_path becomes "pkg" (from resolve_relative_path("pkg/__init__.py", 1, ""))
+            // Then qualified_path = "pkg.utils"
+            assert_eq!(qualified, "pkg.utils");
+            // resolve_module_to_file with empty module_path still works because
+            // it uses the context path to resolve
+            assert_eq!(resolved, Some("pkg/utils.py"));
+        }
+
+        #[test]
+        fn nested_relative_import() {
+            // Test: from .sub.utils import helper in pkg/main.py
+            let workspace_files: HashSet<String> =
+                vec!["pkg/sub/utils.py".to_string()].into_iter().collect();
+
+            let imports = vec![LocalImport {
+                kind: "from".to_string(),
+                module_path: "sub.utils".to_string(),
+                names: vec![ImportedName {
+                    name: "helper".to_string(),
+                    alias: None,
+                }],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: Some(1),
+                resolved_file: None,
+                relative_level: 1,
+            }];
+
+            let resolver =
+                FileImportResolver::from_imports(&imports, &workspace_files, "pkg/main.py");
+
+            let (qualified, resolved) = resolver.resolve("helper").unwrap();
+            assert_eq!(qualified, "pkg.sub.utils.helper");
+            assert_eq!(resolved, Some("pkg/sub/utils.py"));
         }
     }
 
@@ -3855,7 +4071,8 @@ mod tests {
                     .into_iter()
                     .collect();
 
-            let resolved = resolve_module_to_file("utils", &workspace_files);
+            // Absolute import (relative_level = 0)
+            let resolved = resolve_module_to_file("utils", &workspace_files, None, 0);
             assert_eq!(
                 resolved,
                 Some("utils.py".to_string()),
