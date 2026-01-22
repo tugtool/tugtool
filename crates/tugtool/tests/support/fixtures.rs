@@ -1,42 +1,28 @@
 //! Fixture resolution infrastructure for integration tests.
 //!
-//! Provides utilities to locate test fixtures, either from:
-//! - Environment variable override (for local development)
-//! - Pre-fetched fixture directory (for CI)
+//! This module provides test-specific fixture utilities built on top of
+//! the shared `tugtool::fixture` module. The key difference is that this
+//! module:
+//! - Uses `CARGO_MANIFEST_DIR` to find the workspace root (only available during tests)
+//! - Panics with helpful instructions when fixtures are missing
+//! - Provides env var override support for local development
 //!
-//! Fixtures are NOT automatically fetched. Tests fail loudly with
-//! instructions if a fixture is unavailable.
+//! For the core fixture types and functions, see `tugtool::fixture`.
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use serde::Deserialize;
+// Re-export the shared FixtureInfo type for convenience
+pub use tugtool::fixture::FixtureInfo;
 
 /// Cached workspace root.
-#[allow(dead_code)]
 static WORKSPACE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
-/// Information parsed from a fixture lock file.
-#[derive(Debug, Clone, Deserialize)]
-pub struct FixtureInfo {
-    #[serde(rename = "name")]
-    pub name: String,
-    #[serde(rename = "repository")]
-    pub repository: String,
-    #[serde(rename = "ref")]
-    pub git_ref: String,
-    #[serde(rename = "sha")]
-    pub sha: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct LockFile {
-    fixture: FixtureInfo,
-}
-
 /// Get the workspace root directory.
-#[allow(dead_code)]
+///
+/// Uses `CARGO_MANIFEST_DIR` which is only set during cargo test/build.
+/// For CLI usage, use a different workspace discovery mechanism.
 pub fn workspace_root() -> &'static PathBuf {
     WORKSPACE_ROOT.get_or_init(|| {
         let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -52,17 +38,9 @@ pub fn workspace_root() -> &'static PathBuf {
 /// Read and parse a fixture lock file from an explicit root directory.
 ///
 /// This is the testable version - unit tests can pass a temp directory.
-pub fn read_lock_file_from(root: &Path, name: &str) -> Result<FixtureInfo, String> {
-    let lock_path = root.join("fixtures").join(format!("{}.lock", name));
-
-    let content = std::fs::read_to_string(&lock_path)
-        .map_err(|e| format!("Failed to read {}: {}", lock_path.display(), e))?;
-
-    // IMPORTANT: Use a real TOML parser. Ad-hoc parsing breaks on valid TOML,
-    // especially inline comments (e.g. `ref = "v0.1.0"  # tag`).
-    let lock: LockFile = toml::from_str(&content)
-        .map_err(|e| format!("Invalid TOML in {}: {}", lock_path.display(), e))?;
-    Ok(lock.fixture)
+/// Delegates to the shared `tugtool::fixture::read_lock_file_by_name`.
+pub fn read_lock_file_from(root: &std::path::Path, name: &str) -> Result<FixtureInfo, String> {
+    tugtool::fixture::read_lock_file_by_name(root, name)
 }
 
 /// Read and parse a fixture lock file from the workspace root.
@@ -83,7 +61,8 @@ pub fn read_lock_file(name: &str) -> Result<FixtureInfo, String> {
 /// PathBuf to the fixture directory.
 ///
 /// # Panics
-/// If fixture is not available and env var is not set.
+/// If fixture is not available and env var is not set. The panic message
+/// includes instructions for fetching the fixture.
 #[allow(dead_code)]
 pub fn get_fixture_path(name: &str, env_var: &str) -> PathBuf {
     // 1. Check environment variable override
@@ -94,7 +73,7 @@ pub fn get_fixture_path(name: &str, env_var: &str) -> PathBuf {
     }
 
     // 2. Check fixture directory
-    let fixture_path = workspace_root().join(".tug").join("fixtures").join(name);
+    let fixture_path = tugtool::fixture::fixture_path(workspace_root(), name);
 
     // Validate fixture exists and looks correct
     let marker = fixture_path.join("pyproject.toml");
@@ -102,7 +81,7 @@ pub fn get_fixture_path(name: &str, env_var: &str) -> PathBuf {
         return fixture_path;
     }
 
-    // 3. Fixture not available - fail loudly
+    // 3. Fixture not available - fail loudly with instructions
     let info = read_lock_file(name).unwrap_or_else(|e| {
         panic!("Failed to read lock file for fixture '{}': {}", name, e);
     });

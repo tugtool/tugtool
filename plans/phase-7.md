@@ -677,15 +677,16 @@ fixtures/fixture-test/
 - Updated `crates/tugtool/src/lib.rs` - Export fixture module
 
 **Tasks:**
-- [ ] Create `crates/tugtool/src/fixture.rs` with:
+- [x] Create `crates/tugtool/src/fixture.rs` with:
   - `FixtureInfo` struct (refactor from test support)
   - `discover_lock_files()` function
-  - `read_lock_file()` and `read_lock_file_from()` functions
+  - `read_lock_file()` and `read_lock_file_by_name()` functions
   - `verify_git_available()` function
-  - `get_fixture_path()` function
-- [ ] Add `pub mod fixture;` to `crates/tugtool/src/lib.rs`
-- [ ] Update `crates/tugtool/tests/support/fixtures.rs` to re-export or wrap shared module
-- [ ] Add unit tests for lock file discovery and parsing
+  - `fixture_path()` function
+  - `get_repo_sha()` function (for SHA verification)
+- [x] Add `pub mod fixture;` to `crates/tugtool/src/lib.rs`
+- [x] Update `crates/tugtool/tests/support/fixtures.rs` to re-export or wrap shared module
+- [x] Add unit tests for lock file discovery and parsing
 
 **fixture.rs structure:**
 ```rust
@@ -730,16 +731,16 @@ pub fn fixture_path(workspace_root: &Path, name: &str) -> PathBuf {
 ```
 
 **Tests:**
-- [ ] Unit: discover_lock_files finds temporale.lock
-- [ ] Unit: read_lock_file parses valid lock file
-- [ ] Unit: read_lock_file rejects malformed TOML
-- [ ] Unit: verify_git_available succeeds on dev machines
-- [ ] Unit: fixture_path returns correct path
+- [x] Unit: discover_lock_files finds temporale.lock
+- [x] Unit: read_lock_file parses valid lock file
+- [x] Unit: read_lock_file rejects malformed TOML
+- [x] Unit: verify_git_available succeeds on dev machines
+- [x] Unit: fixture_path returns correct path
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixture` - new tests pass
-- [ ] `cargo build -p tugtool` - builds without errors
-- [ ] Existing temporale tests still pass
+- [x] `cargo nextest run -p tugtool fixture` - new tests pass (18 tests passed)
+- [x] `cargo build -p tugtool` - builds without errors
+- [x] Existing temporale tests still pass (8 tests passed)
 
 **Commit after all checkpoints pass.**
 

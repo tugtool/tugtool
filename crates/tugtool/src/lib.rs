@@ -44,6 +44,7 @@ pub use tugtool_core::workspace;
 // ============================================================================
 
 pub mod cli;
+pub mod fixture;
 pub mod testcmd;
 
 #[cfg(feature = "mcp")]

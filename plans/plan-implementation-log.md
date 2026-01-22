@@ -8,6 +8,53 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 1: Create Fixture Module with Shared Logic | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Design decisions D01, D02; Spec S05; Symbol inventory
+- `crates/tugtool/tests/support/fixtures.rs` - Existing implementation to refactor
+- `crates/tugtool/src/lib.rs` - Module structure
+- `crates/tugtool/Cargo.toml` - Dependencies
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `crates/tugtool/src/fixture.rs` with core types and functions | Done |
+| Add `pub mod fixture;` to `crates/tugtool/src/lib.rs` | Done |
+| Update `crates/tugtool/tests/support/fixtures.rs` to use shared module | Done |
+| Add unit tests for lock file discovery and parsing | Done |
+
+**Files Created:**
+- `crates/tugtool/src/fixture.rs` - Shared fixture module with `FixtureInfo`, `discover_lock_files()`, `read_lock_file()`, `read_lock_file_by_name()`, `verify_git_available()`, `fixture_path()`, `get_repo_sha()`
+
+**Files Modified:**
+- `crates/tugtool/Cargo.toml` - Added `toml = "0.8"` to regular dependencies (was only in dev-dependencies)
+- `crates/tugtool/src/lib.rs` - Added `pub mod fixture;`
+- `crates/tugtool/tests/support/fixtures.rs` - Refactored to delegate to shared `tugtool::fixture` module, re-exports `FixtureInfo`
+- `plans/phase-7.md` - Checked off Step 1 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture`: 18 tests passed
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+- `cargo build -p tugtool`: Builds without errors
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixture` - new tests pass: PASS (18 passed)
+- `cargo build -p tugtool` - builds without errors: PASS
+- Existing temporale tests still pass: PASS (8 passed)
+
+**Key Decisions/Notes:**
+- Added `get_repo_sha()` function for SHA verification (needed in later steps)
+- Test support module (`tests/support/fixtures.rs`) remains thin wrapper with test-specific functionality:
+  - `workspace_root()` using `CARGO_MANIFEST_DIR` (only available during tests)
+  - `get_fixture_path()` with panic instructions for missing fixtures
+- Shared module uses explicit path parameters (no global state) for CLI compatibility
+
+---
+
 ## [phase-7.md] Step 0: Verify Current State | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
