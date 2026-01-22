@@ -694,18 +694,19 @@ fixtures/fixture-test/
 - `.claude/` directory copied from tugtool with the same commands + agents (updated only where necessary for a standalone Python library)
 
 **Tasks:**
-- [ ] Create new GitHub repository
-- [ ] Copy contents from `sample-code/python/temporale/` to repo root
-- [ ] Update `pyproject.toml` with proper metadata for PyPI
-- [ ] Create `.github/workflows/ci.yml` for Temporale repo
-- [ ] Create `README.md` documenting Temporale
-- [ ] Copy tugtool's `.claude/` into the Temporale repo (full mirror: all agents and commands)
-- [ ] Adapt `.claude/` commands for Python context while keeping the same structure:
+- [x] Create new GitHub repository: `https://github.com/tugtool/temporale`: DONE
+- [x] Local checkout of new repo at `/u/src/temporale`
+- [x] Copy contents from `sample-code/python/temporale/` to repo root
+- [x] Update `pyproject.toml` with proper metadata for PyPI
+- [x] Create `.github/workflows/ci.yml` for Temporale repo
+- [x] Create `README.md` documenting Temporale
+- [x] Copy tugtool's `.claude/` into the Temporale repo (full mirror: all agents and commands)
+- [x] Adapt `.claude/` commands for Python context while keeping the same structure:
   - Replace `cargo nextest run` with `.tug-test-venv/bin/python -m pytest tests/ -v`
   - Replace `cargo build` / `cargo clippy` references with appropriate Python equivalents (e.g., `python -m compileall`)
   - Update plan templates to reference Python module structure instead of Rust crates
   - Keep command names identical (`/create-plan`, `/implement-plan`, `/prepare-git-commit-message`, etc.)
-- [ ] Add `LICENSE` file (match tugtool license)
+- [x] Add `LICENSE` file (match tugtool license)
 - [ ] Create initial tag `v0.1.0`
 - [ ] Verify CI passes on new repo
 
