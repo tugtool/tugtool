@@ -8,6 +8,61 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-6.md] Phase 6 Complete: Make Temporale Standalone | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**Summary:** Phase 6 is fully complete. Temporale has been migrated from a vendored sample-code directory to a standalone PyPI-published library with its own repository.
+
+### Step 8: Final Documentation and Cleanup
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Ensure CLAUDE.md has complete fixture setup instructions | Done |
+| Remove any stale references to `sample-code/python/temporale/` | Done |
+| Add note about future fixtures (Rust, etc.) | Done |
+
+**Files Modified:**
+- `CLAUDE.md` - Added "Test Fixtures" section documenting fixture pattern for future languages
+- `plans/phase-6.md` - Checked off Step 8 tasks and checkpoints
+
+**Checkpoints Verified:**
+- `grep -r "sample-code/python/temporale" . --include="*.md"` - no results (outside plans/): PASS
+- CLAUDE.md contains fixture setup instructions: PASS
+
+### Section 6.5: Deliverables and Checkpoints
+
+**Phase Exit Criteria Verified:**
+
+| Criterion | Status |
+|-----------|--------|
+| Temporale repository exists at `https://github.com/tugtool/temporale` | PASS |
+| Temporale is published on PyPI: `pip install temporale` works | PASS |
+| `fixtures/temporale.lock` exists in tugtool with pinned SHA | PASS |
+| CI fetches Temporale fixture and tests pass | PASS |
+| `TUG_TEMPORALE_PATH` override works for local development | PASS |
+| `sample-code/python/temporale/` directory does not exist in tugtool | PASS |
+| All existing Temporale integration tests pass | PASS (8 tests) |
+| Missing fixture causes loud failure with instructions | PASS |
+
+**Milestones:**
+- M01: Standalone Repo Created - COMPLETE
+- M02: PyPI Published - COMPLETE
+- M03: Fixture Infrastructure Working - COMPLETE
+- M04: Vendored Code Removed - COMPLETE
+
+**Test Results:**
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+
+**Key Notes:**
+- Plan status updated from "draft" to "complete"
+- All 8 execution steps (0-8) completed successfully
+- Fixture infrastructure is now the established pattern for future language fixtures
+
+---
+
 ## [phase-6.md] Step 7: Remove Vendored Temporale | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

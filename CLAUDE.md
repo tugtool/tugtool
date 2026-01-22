@@ -197,6 +197,15 @@ cargo doc --workspace --open
 Tugtool stores session data in `.tug/` within the workspace:
 - `session.json` - Session metadata
 - `snapshots/` - Workspace snapshots
+- `fixtures/` - Fetched test fixtures (e.g., Temporale)
+
+### Test Fixtures
+
+Test fixtures are external repositories fetched at test time. Each fixture has a lock file in `fixtures/` that pins the exact version:
+
+- `fixtures/temporale.lock` - Python datetime library for refactoring tests
+
+Future fixtures (Rust, JavaScript, Go) will follow the same pattern: a `.lock` file in `fixtures/` and fetched code in `.tug/fixtures/`.
 
 ### Environment Variables
 

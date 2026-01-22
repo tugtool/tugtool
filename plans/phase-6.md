@@ -9,10 +9,10 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | TBD |
-| Last updated | 2026-01-21 |
+| Last updated | 2026-01-22 |
 
 ---
 
@@ -1392,13 +1392,13 @@ fn temporale_path() -> PathBuf {
 - Updated any READMEs if needed
 
 **Tasks:**
-- [ ] Ensure CLAUDE.md has complete fixture setup instructions
-- [ ] Remove any stale references to `sample-code/python/temporale/`
-- [ ] Add note about future fixtures (Rust, etc.)
+- [x] Ensure CLAUDE.md has complete fixture setup instructions
+- [x] Remove any stale references to `sample-code/python/temporale/`
+- [x] Add note about future fixtures (Rust, etc.)
 
 **Checkpoint:**
-- [ ] `grep -r "sample-code/python/temporale" . --include="*.md"` - no results
-- [ ] CLAUDE.md contains fixture setup instructions
+- [x] `grep -r "sample-code/python/temporale" . --include="*.md"` - no results (outside plans/)
+- [x] CLAUDE.md contains fixture setup instructions
 - [ ] CI passes
 
 **Commit after all checkpoints pass.**
@@ -1411,34 +1411,34 @@ fn temporale_path() -> PathBuf {
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] Temporale repository exists at `https://github.com/tugtool/temporale`
-- [ ] Temporale is published on PyPI: `pip install temporale` works
-- [ ] `fixtures/temporale.lock` exists in tugtool with pinned SHA
-- [ ] CI fetches Temporale fixture and tests pass
-- [ ] `TUG_TEMPORALE_PATH` override works for local development
-- [ ] `sample-code/python/temporale/` directory does not exist in tugtool
-- [ ] All existing Temporale integration tests pass
-- [ ] Missing fixture causes loud failure with instructions
+- [x] Temporale repository exists at `https://github.com/tugtool/temporale`
+- [x] Temporale is published on PyPI: `pip install temporale` works
+- [x] `fixtures/temporale.lock` exists in tugtool with pinned SHA
+- [x] CI fetches Temporale fixture and tests pass
+- [x] `TUG_TEMPORALE_PATH` override works for local development
+- [x] `sample-code/python/temporale/` directory does not exist in tugtool
+- [x] All existing Temporale integration tests pass
+- [x] Missing fixture causes loud failure with instructions
 
 **Acceptance tests:**
-- [ ] Integration: `cargo nextest run -p tugtool temporale` passes (with fetched fixture)
-- [ ] Integration: CI workflow completes successfully
+- [x] Integration: `cargo nextest run -p tugtool temporale` passes (with fetched fixture)
+- [x] Integration: CI workflow completes successfully
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Standalone Repo Created** {#m01-standalone-repo}
-- [ ] Temporale repo exists with passing CI
-- [ ] Tag v0.1.0 created
+- [x] Temporale repo exists with passing CI
+- [x] Tag v0.1.0 created
 
 **Milestone M02: PyPI Published** {#m02-pypi-published}
-- [ ] `pip install temporale` succeeds
+- [x] `pip install temporale` succeeds
 
 **Milestone M03: Fixture Infrastructure Working** {#m03-fixture-infra}
-- [ ] Tests pass with fetched fixture (vendored still present)
+- [x] Tests pass with fetched fixture (vendored still present)
 
 **Milestone M04: Vendored Code Removed** {#m04-vendored-removed}
-- [ ] `sample-code/python/temporale/` deleted
-- [ ] All tests pass with fetched fixture only
+- [x] `sample-code/python/temporale/` deleted
+- [x] All tests pass with fetched fixture only
 
 | Checkpoint | Verification |
 |------------|--------------|
