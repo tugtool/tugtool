@@ -8,7 +8,53 @@ Entries are sorted newest-first.
 
 ---
 
-## [phase-6.md] Phase 6 Plan Creation: Make Temporale Standalone | COMPLETE | 2026-01-21
+## [phase-6.md] Step 2: Publish Temporale to PyPI | COMPLETE | 2026-01-21
+
+**Completed:** 2026-01-21
+
+**References Reviewed:**
+- `plans/phase-6.md` - Step 2 specification (lines 784-827)
+- `/Users/kocienda/Mounts/u/src/temporale/pyproject.toml` - Package metadata
+- `/Users/kocienda/Mounts/u/src/temporale/.github/workflows/ci.yml` - Existing CI workflow
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create PyPI account if needed | Done (user action) |
+| Configure trusted publishing (GitHub Actions OIDC) | Done (user action) |
+| Add publish workflow to Temporale repo | Done |
+| Trigger first release | Done (v0.1.0) |
+
+**Files Created:**
+- `/Users/kocienda/Mounts/u/src/temporale/.github/workflows/publish.yml` - PyPI publish workflow with trusted publishing
+
+**Files Modified:**
+- `/Users/kocienda/Mounts/u/src/temporale/temporale/core/time.py` - Removed unused `Self` import for Python 3.10 compatibility
+- `plans/phase-6.md` - Checked off Step 1 and Step 2 tasks and checkpoints
+
+**Test Results:**
+- PyPI installation: `pip install temporale` succeeded
+- Version verification: `import temporale; print(temporale.__version__)` returned `0.1.0`
+- CI status: Latest runs show success on tugtool/temporale repo
+
+**Checkpoints Verified:**
+- `pip install temporale` succeeds: PASS
+- `python -c "import temporale; print(temporale.__version__)"` prints `0.1.0`: PASS
+- (Step 1) New repo exists and is accessible: PASS
+- (Step 1) `git clone https://github.com/tugtool/temporale` succeeds: PASS
+- (Step 1) CI badge is green: PASS
+- (Step 1) Tag `v0.1.0` exists (SHA: 9f21df0322b7aa39ca7f599b128f66c07ecec42f): PASS
+
+**Key Decisions/Notes:**
+- Used PyPI trusted publishing (OIDC) instead of API tokens for better security
+- Fixed Python 3.10 compatibility issue: `Self` type hint was imported from `typing` but is only available in 3.11+; removed the unused import
+- Workflow triggers on GitHub release publication
+- v0.1.0 is marked as pre-release on GitHub
+
+---
+
+## [phase-5.md] Phase 6 Plan Creation: Make Temporale Standalone | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
 

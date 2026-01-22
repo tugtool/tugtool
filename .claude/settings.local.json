@@ -242,7 +242,9 @@
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip list:*)",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale/.venv/bin/pip list:*)",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale/.venv/bin/python -m pip:*)",
-      "Bash(.tug-test-venv/bin/python -m pytest:*)"
+      "Bash(.tug-test-venv/bin/python -m pytest:*)",
+      "Bash(gh api:*)",
+      "Bash(git ls-remote:*)"
     ],
     "deny": [],
     "ask": []

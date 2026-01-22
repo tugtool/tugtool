@@ -707,8 +707,8 @@ fixtures/fixture-test/
   - Update plan templates to reference Python module structure instead of Rust crates
   - Keep command names identical (`/create-plan`, `/implement-plan`, `/prepare-git-commit-message`, etc.)
 - [x] Add `LICENSE` file (match tugtool license)
-- [ ] Create initial tag `v0.1.0`
-- [ ] Verify CI passes on new repo
+- [x] Create initial tag `v0.1.0`
+- [x] Verify CI passes on new repo
 
 **Temporale pyproject.toml updates:**
 ```toml
@@ -772,10 +772,10 @@ jobs:
 ```
 
 **Checkpoint:**
-- [ ] New repo exists and is accessible
-- [ ] `git clone https://github.com/tugtool/temporale` succeeds
-- [ ] CI badge is green
-- [ ] Tag `v0.1.0` exists
+- [x] New repo exists and is accessible
+- [x] `git clone https://github.com/tugtool/temporale` succeeds
+- [x] CI badge is green
+- [x] Tag `v0.1.0` exists (SHA: 9f21df0322b7aa39ca7f599b128f66c07ecec42f)
 
 **This is external work - no tugtool commit.**
 
@@ -791,10 +791,10 @@ jobs:
 - Temporale package on PyPI
 
 **Tasks:**
-- [ ] Create PyPI account if needed
-- [ ] Configure trusted publishing (GitHub Actions OIDC)
-- [ ] Add publish workflow to Temporale repo
-- [ ] Trigger first release
+- [x] Create PyPI account if needed
+- [x] Configure trusted publishing (GitHub Actions OIDC)
+- [x] Add publish workflow to Temporale repo
+- [x] Trigger first release
 
 **Temporale publish workflow (`.github/workflows/publish.yml`):**
 ```yaml
@@ -819,8 +819,8 @@ jobs:
 ```
 
 **Checkpoint:**
-- [ ] `pip install temporale` succeeds
-- [ ] `python -c "import temporale; print(temporale.__version__)"` prints `0.1.0`
+- [x] `pip install temporale` succeeds
+- [x] `python -c "import temporale; print(temporale.__version__)"` prints `0.1.0`
 
 **This is external work - no tugtool commit.**
 
