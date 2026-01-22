@@ -58,7 +58,9 @@ full = ["python", "rust", "mcp"]
 
 [dev-dependencies]
 regex = "1"
+serde = { version = "1.0", features = ["derive"] }
 tempfile = "3"
+toml = "0.8"
 walkdir = "2"
 
 [lints]

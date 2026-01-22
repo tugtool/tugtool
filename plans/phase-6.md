@@ -837,12 +837,12 @@ jobs:
 - `crates/tugtool/tests/support/fixtures.rs` - Fixture helpers
 
 **Tasks:**
-- [ ] Create `fixtures/` directory at workspace root
-- [ ] Create `fixtures/temporale.lock` with pinned SHA
-- [ ] Create `crates/tugtool/tests/support/fixtures.rs`
-- [ ] Update `crates/tugtool/tests/support/mod.rs` to include new module
-- [ ] Add unit tests for fixture resolution
-- [ ] Add dev-dependencies needed for robust lock parsing and deterministic env-var tests (see notes below)
+- [x] Create `fixtures/` directory at workspace root
+- [x] Create `fixtures/temporale.lock` with pinned SHA
+- [x] Create `crates/tugtool/tests/support/fixtures.rs`
+- [x] Update `crates/tugtool/tests/support/mod.rs` to include new module
+- [x] Add unit tests for fixture resolution
+- [x] Add dev-dependencies needed for robust lock parsing and deterministic env-var tests (see notes below)
 
 **Notes on dependencies and determinism:**
 - Use a real TOML parser (`toml` crate) for `fixtures/*.lock`. Ad-hoc parsing will break on valid TOML (inline comments, whitespace, ordering).
@@ -1112,15 +1112,15 @@ pub mod python;
 ```
 
 **Tests:**
-- [ ] Unit: env var override returns env var path
-- [ ] Unit: lock file parsing extracts all fields
-- [ ] Unit: missing lock file field returns error
-- [ ] Unit: lock file parsing tolerates inline comments (proves we are not using ad-hoc parsing)
-- [ ] Unit: env var mutation tests are serialized (no flakes under parallel test execution)
+- [x] Unit: env var override returns env var path
+- [x] Unit: lock file parsing extracts all fields
+- [x] Unit: missing lock file field returns error
+- [x] Unit: lock file parsing tolerates inline comments (proves we are not using ad-hoc parsing)
+- [x] Unit: env var mutation tests are serialized (no flakes under parallel test execution)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixtures` - new tests pass
-- [ ] `fixtures/temporale.lock` exists with valid content
+- [x] `cargo nextest run -p tugtool fixtures` - new tests pass (8 tests passed)
+- [x] `fixtures/temporale.lock` exists with valid content
 
 **Commit after all checkpoints pass.**
 

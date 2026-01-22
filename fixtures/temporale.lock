@@ -1,0 +1,18 @@
+# Temporale fixture pin for tugtool integration tests
+#
+# To update:
+#   1. Check available versions: git ls-remote https://github.com/tugtool/temporale refs/tags/v*
+#   2. Update ref below
+#   3. Get SHA: git ls-remote https://github.com/tugtool/temporale refs/tags/<tag>
+#   4. Update sha below
+#   5. Delete .tug/fixtures/temporale/ and re-fetch
+
+[fixture]
+name = "temporale"
+repository = "https://github.com/tugtool/temporale"
+ref = "v0.1.0"
+sha = "9f21df0322b7aa39ca7f599b128f66c07ecec42f"
+
+[fixture.metadata]
+python_requires = ">=3.10"
+description = "Python datetime library for refactoring tests"

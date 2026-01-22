@@ -8,6 +8,49 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-6.md] Step 3: Create Fixture Infrastructure in Tugtool | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-6.md` - Step 3 specification (lines 829-1126)
+- `crates/tugtool/tests/support/mod.rs` - Existing support module structure
+- `crates/tugtool/Cargo.toml` - Dev-dependencies section
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `fixtures/` directory at workspace root | Done |
+| Create `fixtures/temporale.lock` with pinned SHA | Done |
+| Create `crates/tugtool/tests/support/fixtures.rs` | Done |
+| Update `crates/tugtool/tests/support/mod.rs` to include new module | Done |
+| Add unit tests for fixture resolution | Done |
+| Add dev-dependencies for TOML parsing and tests | Done |
+
+**Files Created:**
+- `fixtures/temporale.lock` - Lock file with pinned SHA (9f21df0322b7aa39ca7f599b128f66c07ecec42f)
+- `crates/tugtool/tests/support/fixtures.rs` - Fixture resolution infrastructure
+
+**Files Modified:**
+- `crates/tugtool/tests/support/mod.rs` - Added `pub mod fixtures;`
+- `crates/tugtool/Cargo.toml` - Added `toml = "0.8"` and `serde` to dev-dependencies
+- `plans/phase-6.md` - Checked off Step 3 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixtures`: 8 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixtures` - new tests pass: PASS (8 tests)
+- `fixtures/temporale.lock` exists with valid content: PASS
+
+**Key Decisions/Notes:**
+- Added `#[allow(dead_code)]` to public functions since they're not yet used by other tests (will be used in Step 4)
+- Used `toml` crate for robust TOML parsing instead of ad-hoc string parsing
+- Functions are designed for testability: `read_lock_file_from()` accepts explicit root path for unit tests
+
+---
+
 ## [phase-6.md] Step 2: Publish Temporale to PyPI | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
