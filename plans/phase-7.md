@@ -2261,7 +2261,7 @@ fn test_fixture_list_returns_exit_0() {
 - [x] E2E: status nonexistent -> exit 2
 
 **Checkpoint:**
-- [x] `cargo nextest run -p tugtool fixture_cli_e2e` - E2E tests pass (7 passed)
+- [x] `cargo nextest run -p tugtool -E 'binary(fixture_cli_e2e)'` - E2E tests pass (7 passed)
 - [x] All tests validate both exit code and JSON structure
 
 **Commit after all checkpoints pass.**
@@ -2308,7 +2308,7 @@ fn test_fixture_list_returns_exit_0() {
 - [x] All existing tests continue to pass (265 passed)
 
 **Acceptance tests:**
-- [x] `cargo nextest run -p tugtool fixture_cli_e2e` passes (7 passed)
+- [x] `cargo nextest run -p tugtool -E 'binary(fixture_cli_e2e)'` passes (7 passed)
 - [x] `cargo nextest run -p tugtool` passes (265 tests)
 - [x] Manual: `tug fixture fetch bad-name; echo $?` outputs 2
 - [x] Manual: `tug fixture update temporale --ref no-such-ref; echo $?` outputs 3

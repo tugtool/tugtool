@@ -72,7 +72,10 @@ fn fetch_valid_returns_exit_0_and_valid_json() {
     assert_eq!(exit_code, 0, "list should succeed first");
 
     let list_json: Value = serde_json::from_str(&stdout).expect("list should produce valid JSON");
-    if list_json["fixtures"].as_array().map_or(true, |a| a.is_empty()) {
+    if list_json["fixtures"]
+        .as_array()
+        .map_or(true, |a| a.is_empty())
+    {
         // No fixtures to fetch, skip this test
         return;
     }
@@ -104,8 +107,13 @@ fn fetch_valid_returns_exit_0_and_valid_json() {
 /// This tests the case where the fixture exists but the ref cannot be resolved.
 #[test]
 fn update_bad_ref_returns_exit_3() {
-    let (stdout, _stderr, exit_code) =
-        run_tug(&["fixture", "update", "temporale", "--ref", "nonexistent-tag-xyz-12345"]);
+    let (stdout, _stderr, exit_code) = run_tug(&[
+        "fixture",
+        "update",
+        "temporale",
+        "--ref",
+        "nonexistent-tag-xyz-12345",
+    ]);
 
     assert_eq!(
         exit_code, 3,
@@ -123,8 +131,13 @@ fn update_bad_ref_returns_exit_3() {
 /// This tests the case where the fixture name doesn't exist.
 #[test]
 fn update_nonexistent_fixture_returns_exit_2() {
-    let (stdout, _stderr, exit_code) =
-        run_tug(&["fixture", "update", "nonexistent-fixture-xyz", "--ref", "v1.0.0"]);
+    let (stdout, _stderr, exit_code) = run_tug(&[
+        "fixture",
+        "update",
+        "nonexistent-fixture-xyz",
+        "--ref",
+        "v1.0.0",
+    ]);
 
     assert_eq!(
         exit_code, 2,
