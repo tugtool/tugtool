@@ -883,6 +883,7 @@ pub struct FixtureStatusItem {
 
 impl FixtureStatusItem {
     /// Create a new fixture status item.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: impl Into<String>,
         state: impl Into<String>,
@@ -1590,7 +1591,10 @@ mod tests {
 
             let fixture = &parsed["fixtures"][0];
             assert_eq!(fixture["name"], "temporale");
-            assert_eq!(fixture["repository"], "https://github.com/tugtool/temporale");
+            assert_eq!(
+                fixture["repository"],
+                "https://github.com/tugtool/temporale"
+            );
             assert_eq!(fixture["ref"], "v0.1.0");
             assert_eq!(fixture["sha"], "9f21df0322b7aa39ca7f599b128f66c07ecec42f");
             assert_eq!(fixture["lock_file"], "fixtures/temporale.lock");
@@ -1632,7 +1636,10 @@ mod tests {
             assert_eq!(fixture["name"], "temporale");
             assert_eq!(fixture["state"], "fetched");
             assert_eq!(fixture["path"], ".tug/fixtures/temporale");
-            assert_eq!(fixture["repository"], "https://github.com/tugtool/temporale");
+            assert_eq!(
+                fixture["repository"],
+                "https://github.com/tugtool/temporale"
+            );
             assert_eq!(fixture["ref"], "v0.1.0");
             assert_eq!(
                 fixture["expected_sha"],

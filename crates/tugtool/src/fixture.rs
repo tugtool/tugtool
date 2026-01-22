@@ -71,11 +71,7 @@ pub fn discover_lock_files(workspace_root: &Path) -> Result<Vec<PathBuf>, String
     let mut lock_files: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .map(|ext| ext == "lock")
-                .unwrap_or(false)
-        })
+        .filter(|path| path.extension().map(|ext| ext == "lock").unwrap_or(false))
         .collect();
 
     // Sort for deterministic ordering
@@ -480,14 +476,12 @@ pub fn fetch_all_fixtures(
     workspace_root: &Path,
     force: bool,
 ) -> Result<Vec<FetchResult>, FixtureError> {
-    let lock_files = discover_lock_files(workspace_root)
-        .map_err(|e| FixtureError::without_name(e))?;
+    let lock_files = discover_lock_files(workspace_root).map_err(FixtureError::without_name)?;
 
     let mut results = Vec::with_capacity(lock_files.len());
 
     for lock_path in lock_files {
-        let info = read_lock_file(&lock_path)
-            .map_err(|e| FixtureError::without_name(e))?;
+        let info = read_lock_file(&lock_path).map_err(FixtureError::without_name)?;
 
         let result = fetch_fixture(workspace_root, &info, force)?;
         results.push(result);
@@ -667,13 +661,12 @@ pub fn get_fixture_state(workspace_root: &Path, info: &FixtureInfo) -> FixtureSt
 pub fn get_all_fixture_states(
     workspace_root: &Path,
 ) -> Result<Vec<(FixtureInfo, FixtureStateInfo)>, FixtureError> {
-    let lock_files =
-        discover_lock_files(workspace_root).map_err(|e| FixtureError::without_name(e))?;
+    let lock_files = discover_lock_files(workspace_root).map_err(FixtureError::without_name)?;
 
     let mut results = Vec::with_capacity(lock_files.len());
 
     for lock_path in lock_files {
-        let info = read_lock_file(&lock_path).map_err(|e| FixtureError::without_name(e))?;
+        let info = read_lock_file(&lock_path).map_err(FixtureError::without_name)?;
         let state = get_fixture_state(workspace_root, &info);
         results.push((info, state));
     }
@@ -694,8 +687,8 @@ pub fn get_fixture_state_by_name(
     workspace_root: &Path,
     name: &str,
 ) -> Result<(FixtureInfo, FixtureStateInfo), FixtureError> {
-    let info =
-        read_lock_file_by_name(workspace_root, name).map_err(|e| FixtureError::with_name(name, e))?;
+    let info = read_lock_file_by_name(workspace_root, name)
+        .map_err(|e| FixtureError::with_name(name, e))?;
     let state = get_fixture_state(workspace_root, &info);
     Ok((info, state))
 }
@@ -756,7 +749,7 @@ pub struct ResolvedRef {
 /// Direct SHA lookups or other refs are treated as non-branches.
 pub fn resolve_ref_to_sha(repository: &str, git_ref: &str) -> Result<ResolvedRef, FixtureError> {
     // Verify git is available
-    verify_git_available().map_err(|e| FixtureError::without_name(e))?;
+    verify_git_available().map_err(FixtureError::without_name)?;
 
     // Query the remote for the ref
     let output = Command::new("git")
@@ -812,7 +805,9 @@ pub fn resolve_ref_to_sha(repository: &str, git_ref: &str) -> Result<ResolvedRef
         // Exact match on the ref name
         if ref_name == git_ref || ref_path == git_ref {
             // Prefer tags over branches if both exist
-            if best_match.is_none() || (is_tag && best_match.as_ref().map(|(_, b)| *b).unwrap_or(false)) {
+            if best_match.is_none()
+                || (is_tag && best_match.as_ref().map(|(_, b)| *b).unwrap_or(false))
+            {
                 best_match = Some((sha.to_string(), is_branch));
             }
         }
@@ -914,8 +909,7 @@ pub fn update_fixture_lock(
         .join("fixtures")
         .join(format!("{}.lock", name));
 
-    let existing_info = read_lock_file(&lock_path)
-        .map_err(|e| FixtureError::with_name(name, e))?;
+    let existing_info = read_lock_file(&lock_path).map_err(|e| FixtureError::with_name(name, e))?;
 
     // 2. Resolve new ref to SHA
     let resolved = resolve_ref_to_sha(&existing_info.repository, new_ref)
@@ -939,8 +933,7 @@ pub fn update_fixture_lock(
         sha: resolved.sha.clone(),
     };
 
-    write_lock_file(&lock_path, &updated_info)
-        .map_err(|e| FixtureError::with_name(name, e))?;
+    write_lock_file(&lock_path, &updated_info).map_err(|e| FixtureError::with_name(name, e))?;
 
     // 5. Return result
     Ok(UpdateResult {
@@ -966,8 +959,16 @@ mod tests {
         std::fs::create_dir_all(&fixtures_dir).unwrap();
 
         // Create some lock files
-        std::fs::write(fixtures_dir.join("alpha.lock"), "[fixture]\nname = \"alpha\"\nrepository = \"url\"\nref = \"v1\"\nsha = \"abc\"").unwrap();
-        std::fs::write(fixtures_dir.join("beta.lock"), "[fixture]\nname = \"beta\"\nrepository = \"url\"\nref = \"v1\"\nsha = \"def\"").unwrap();
+        std::fs::write(
+            fixtures_dir.join("alpha.lock"),
+            "[fixture]\nname = \"alpha\"\nrepository = \"url\"\nref = \"v1\"\nsha = \"abc\"",
+        )
+        .unwrap();
+        std::fs::write(
+            fixtures_dir.join("beta.lock"),
+            "[fixture]\nname = \"beta\"\nrepository = \"url\"\nref = \"v1\"\nsha = \"def\"",
+        )
+        .unwrap();
         // Create a non-lock file that should be ignored
         std::fs::write(fixtures_dir.join("readme.txt"), "not a lock file").unwrap();
 
@@ -1657,7 +1658,10 @@ sha = "abc123"
 
         let resolved = result.unwrap();
         assert_eq!(resolved.sha, v1_sha);
-        assert!(!resolved.is_branch, "v1.0.0 should be detected as a tag, not a branch");
+        assert!(
+            !resolved.is_branch,
+            "v1.0.0 should be detected as a tag, not a branch"
+        );
     }
 
     #[test]
@@ -1742,7 +1746,10 @@ sha = "{}"
         assert_eq!(update_result.previous_sha, v1_sha);
         assert_eq!(update_result.new_ref, "v2.0.0");
         assert_eq!(update_result.new_sha, v2_sha);
-        assert!(update_result.warning.is_none(), "tag should not produce warning");
+        assert!(
+            update_result.warning.is_none(),
+            "tag should not produce warning"
+        );
 
         // Verify lock file was updated
         let updated_info = read_lock_file_by_name(&workspace_dir, "test-fixture").unwrap();
@@ -1780,11 +1787,17 @@ sha = "{}"
         let update_result = result.unwrap();
         assert_eq!(update_result.new_ref, "develop");
         assert_eq!(update_result.new_sha, v2_sha);
-        assert!(update_result.warning.is_some(), "branch should produce warning");
+        assert!(
+            update_result.warning.is_some(),
+            "branch should produce warning"
+        );
 
         let warning = update_result.warning.unwrap();
         assert!(warning.contains("branch"), "warning should mention branch");
-        assert!(warning.contains("develop"), "warning should mention the ref name");
+        assert!(
+            warning.contains("develop"),
+            "warning should mention the ref name"
+        );
     }
 
     #[test]
@@ -1829,7 +1842,10 @@ sha = "{}"
         assert!(result.is_err(), "should fail for invalid ref");
 
         let err = result.unwrap_err();
-        assert!(err.message.contains("not found"), "error should mention ref not found");
+        assert!(
+            err.message.contains("not found"),
+            "error should mention ref not found"
+        );
     }
 
     #[test]
@@ -1942,7 +1958,11 @@ sha = "abc123def456"
         std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
 
         // Create fixture directory WITHOUT .git
-        let fixture_dir = dir.path().join(".tug").join("fixtures").join("test-fixture");
+        let fixture_dir = dir
+            .path()
+            .join(".tug")
+            .join("fixtures")
+            .join("test-fixture");
         std::fs::create_dir_all(&fixture_dir).unwrap();
         std::fs::write(fixture_dir.join("file.txt"), "content").unwrap();
 
@@ -1959,7 +1979,11 @@ sha = "abc123def456"
         let dir = TempDir::new().unwrap();
 
         // Create a git repo to use as fixture
-        let fixture_dir = dir.path().join(".tug").join("fixtures").join("test-fixture");
+        let fixture_dir = dir
+            .path()
+            .join(".tug")
+            .join("fixtures")
+            .join("test-fixture");
         std::fs::create_dir_all(&fixture_dir).unwrap();
         std::fs::write(fixture_dir.join("file.txt"), "content").unwrap();
 
@@ -2019,7 +2043,11 @@ sha = "{}"
         let dir = TempDir::new().unwrap();
 
         // Create a git repo to use as fixture
-        let fixture_dir = dir.path().join(".tug").join("fixtures").join("test-fixture");
+        let fixture_dir = dir
+            .path()
+            .join(".tug")
+            .join("fixtures")
+            .join("test-fixture");
         std::fs::create_dir_all(&fixture_dir).unwrap();
         std::fs::write(fixture_dir.join("file.txt"), "content").unwrap();
 

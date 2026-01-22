@@ -53,9 +53,11 @@ fn fixture_list_returns_temporale_fixture_info() {
     );
 
     // Find the temporale lock file
-    let temporale_lock = lock_files
-        .iter()
-        .find(|p| p.file_name().map(|n| n == "temporale.lock").unwrap_or(false));
+    let temporale_lock = lock_files.iter().find(|p| {
+        p.file_name()
+            .map(|n| n == "temporale.lock")
+            .unwrap_or(false)
+    });
 
     assert!(
         temporale_lock.is_some(),
@@ -128,8 +130,7 @@ fn fixture_status_shows_fetched_for_existing_fixture() {
     let workspace = workspace_root();
 
     // Read the temporale lock file
-    let info =
-        read_lock_file_by_name(&workspace, "temporale").expect("should read temporale lock");
+    let info = read_lock_file_by_name(&workspace, "temporale").expect("should read temporale lock");
 
     // Get the fixture state
     let state_info = get_fixture_state(&workspace, &info);
@@ -358,7 +359,10 @@ fn fixture_status_get_all_returns_all_fixtures() {
     // Each result should have valid info and state
     for (info, state_info) in &results {
         assert!(!info.name.is_empty(), "Fixture name should not be empty");
-        assert!(!info.repository.is_empty(), "Repository should not be empty");
+        assert!(
+            !info.repository.is_empty(),
+            "Repository should not be empty"
+        );
         assert!(!info.git_ref.is_empty(), "Git ref should not be empty");
         assert_eq!(info.sha.len(), 40, "SHA should be 40 characters");
 

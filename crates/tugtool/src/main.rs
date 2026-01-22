@@ -837,9 +837,8 @@ fn execute_fixture_status(global: &GlobalArgs, name: Option<String>) -> Result<(
 
     let results = if let Some(fixture_name) = name {
         // Get state of specific fixture
-        let (info, state) =
-            tugtool::fixture::get_fixture_state_by_name(&workspace, &fixture_name)
-                .map_err(|e| TugError::internal(e.to_string()))?;
+        let (info, state) = tugtool::fixture::get_fixture_state_by_name(&workspace, &fixture_name)
+            .map_err(|e| TugError::internal(e.to_string()))?;
         vec![(info, state)]
     } else {
         // Get states of all fixtures
