@@ -757,16 +757,16 @@ pub fn fixture_path(workspace_root: &Path, name: &str) -> PathBuf {
 - `FetchAction` enum and `FixtureResult` struct
 
 **Tasks:**
-- [ ] Add `FetchAction` enum (Fetched, UpToDate, Updated)
-- [ ] Add `FixtureResult` struct for operation results
-- [ ] Implement `fetch_fixture()` function:
+- [x] Add `FetchAction` enum (Fetched, UpToDate, Updated)
+- [x] Add `FetchResult` struct for operation results
+- [x] Implement `fetch_fixture()` function:
   - Check if fixture exists
   - If exists, verify SHA matches
   - If mismatch or not exists, clone to temp then move
-- [ ] Implement `fetch_all_fixtures()` function
-- [ ] Implement SHA verification via `git rev-parse HEAD`
-- [ ] Add `--force` handling (delete existing before fetch)
-- [ ] Add unit and integration tests
+- [x] Implement `fetch_all_fixtures()` function
+- [x] Implement SHA verification via `git rev-parse HEAD`
+- [x] Add `--force` handling (delete existing before fetch)
+- [x] Add unit and integration tests
 
 **Key implementation details:**
 ```rust
@@ -808,15 +808,15 @@ pub fn fetch_fixture(
 ```
 
 **Tests:**
-- [ ] Integration: fetch_fixture clones new fixture
-- [ ] Integration: fetch_fixture skips up-to-date fixture
-- [ ] Integration: fetch_fixture with force re-fetches
-- [ ] Unit: SHA verification detects mismatch
-- [ ] Integration: atomic fetch cleans up on failure
+- [x] Integration: fetch_fixture clones new fixture
+- [x] Integration: fetch_fixture skips up-to-date fixture
+- [x] Integration: fetch_fixture with force re-fetches
+- [x] Unit: SHA verification detects mismatch
+- [x] Integration: atomic fetch cleans up on failure
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixture` - all tests pass
-- [ ] Manual: delete `.tug/fixtures/temporale/`, call fetch, fixture restored
+- [x] `cargo nextest run -p tugtool fixture` - all tests pass (28 tests passed)
+- [x] Manual: delete `.tug/fixtures/temporale/`, call fetch, fixture restored (verified tests fail without fixture, pass after re-fetch)
 
 **Commit after all checkpoints pass.**
 

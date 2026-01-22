@@ -8,6 +8,60 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 2: Implement Fetch Operation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Design decisions D02 (Git subprocess), D03 (Atomic fetch), Spec S01 (fetch command)
+- `crates/tugtool/src/fixture.rs` - Existing fixture module from Step 1
+- `crates/tugtool-core/src/error.rs` - Error type patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `FetchAction` enum (Fetched, UpToDate, Updated) | Done |
+| Add `FetchResult` struct for operation results | Done |
+| Add `FixtureError` struct for error handling | Done |
+| Implement `fetch_fixture()` function with atomic fetch | Done |
+| Implement `fetch_all_fixtures()` function | Done |
+| Implement `fetch_fixture_by_name()` convenience function | Done |
+| Add `clone_repository()` helper function | Done |
+| Implement SHA verification via `git rev-parse HEAD` | Done |
+| Add `--force` handling (delete existing before fetch) | Done |
+| Add unit and integration tests | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/fixture.rs` - Extended with ~400 lines of fetch operation code:
+  - `FetchAction` enum with serde serialization
+  - `FetchResult` struct for operation results
+  - `FixtureError` struct for error handling
+  - `clone_repository()` helper function
+  - `fetch_fixture()` main fetch function with atomic temp-dir pattern
+  - `fetch_all_fixtures()` for fetching all lock files
+  - `fetch_fixture_by_name()` convenience wrapper
+  - 10 new test functions for fetch operations
+- `plans/phase-7.md` - Checked off Step 2 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture`: 28 tests passed (10 new fetch tests)
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixture` - all tests pass: PASS (28 passed)
+- Manual: delete `.tug/fixtures/temporale/`, verify tests fail, re-fetch, verify tests pass: PASS
+
+**Key Decisions/Notes:**
+- `FetchAction` uses `serde(rename_all = "kebab-case")` for JSON output compatibility
+- Atomic fetch pattern: clone to `.tug/fixtures/.tmp-<name>-<pid>/`, verify SHA, then `rename()` to final location
+- SHA verification happens *after* clone to catch refs that have been force-pushed
+- Temp directories cleaned up on any failure (clone failure, SHA mismatch, move failure)
+- `FixtureError` includes optional fixture name for clear error context
+- All fetch functions take explicit `workspace_root` parameter (no global state) for CLI compatibility
+
+---
+
 ## [phase-7.md] Step 1: Create Fixture Module with Shared Logic | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
