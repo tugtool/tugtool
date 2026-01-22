@@ -1857,3 +1857,496 @@ tug fixture status temporale
 | Docs updated | CLAUDE.md contains list/status commands |
 
 **Commit after all checkpoints pass.**
+
+---
+
+## Phase 7 Addendum B: Error Codes and CLI Tests {#phase-7-addendum-b}
+
+**Purpose:** Address gaps between the Phase 7 specification and implementation identified during post-implementation review: improve error-code fidelity, clarify lock-file rewrite behavior, and add true CLI end-to-end tests.
+
+---
+
+### Plan Metadata {#addendum-b-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | TBD |
+| Status | draft |
+| Target branch | main |
+| Tracking issue/PR | TBD |
+| Last updated | 2026-01-22 |
+
+---
+
+### Addendum Overview {#addendum-b-overview}
+
+#### Context {#addendum-b-context}
+
+Phase 7 and Addendum A successfully delivered the fixture management CLI (`fetch`, `update`, `list`, `status`). A post-implementation review identified several gaps between the original specification and the actual implementation:
+
+1. **Error-code fidelity** - Most fixture failures map to `TugError::internal()` (exit code 10), but the spec distinguished between invalid arguments (code 2), resolution errors (code 3), and internal errors (code 10). This makes it harder for agents and CI to distinguish "user gave bad input" from "network/git failure."
+
+2. **Lock-file rewrite policy** - The `write_lock_file()` function overwrites the entire file with a fresh template, dropping any user comments. The spec stated "Update preserves lock file comments and formatting." The implementation is simpler but differs from spec.
+
+3. **CLI end-to-end tests** - The "integration tests" for `list` and `status` are module-level tests calling `tugtool::fixture::*` directly. True CLI tests that spawn the `tug` binary, pass arguments, and validate stdout JSON + exit codes are missing.
+
+Additionally, the review identified items to document/accept rather than fix:
+
+4. **`toml` runtime dependency** - Lock files are TOML; the crate is small and appropriate. Accept deviation from "no new runtime dependencies."
+
+5. **Raw SHA in update command** - `git ls-remote <repo> <sha>` does not resolve raw SHAs. The update command requires tag or branch refs. Document this limitation.
+
+6. **SHA enforcement in test helper** - The `temporale_path()` helper does not verify SHA (low priority, tests already verify via separate mechanisms).
+
+#### Strategy {#addendum-b-strategy}
+
+1. **Map fixture errors to appropriate exit codes** - Introduce error variants that distinguish bad input from resolution failures from internal errors
+2. **Accept lock-file rewrite behavior** - Update spec to match reality rather than complicate the implementation
+3. **Add CLI end-to-end tests** - Create a new test file that spawns the `tug` binary and validates output/exit codes
+4. **Document accepted limitations** - Update spec sections to note raw SHA limitation
+
+#### Success Criteria {#addendum-b-success-criteria}
+
+- `tug fixture fetch nonexistent` returns exit code 2 (invalid arguments), not 10
+- `tug fixture update temporale --ref nonexistent-tag` returns exit code 3 (resolution error), not 10
+- Internal errors (git not available, network timeout) still return exit code 10
+- CLI E2E tests exist that spawn the actual `tug` binary and verify stdout + exit codes
+- Spec is updated to document that lock-file comments are not preserved
+- Spec is updated to document that `--ref` requires a tag or branch (not raw SHA)
+- All existing tests continue to pass
+
+---
+
+### B.0 Design Decisions {#addendum-b-design-decisions}
+
+#### [D10] Fixture Error Variants (DECIDED) {#d10-fixture-error-variants}
+
+**Decision:** Introduce specific fixture error types that map to appropriate exit codes:
+- `FixtureNotFound` -> exit code 2 (invalid arguments)
+- `RefNotFound` -> exit code 3 (resolution error)
+- `FixtureInternal` -> exit code 10 (internal error, git failures, network)
+
+**Rationale:**
+- Matches the exit codes specified in Spec S01 and Spec S02
+- Allows agents/CI to programmatically distinguish error categories
+- Follows established TugError patterns in `tugtool-core`
+
+**Implications:**
+- Update `execute_fixture_*` functions to return appropriate error types
+- May need to add methods to `FixtureError` or create new `TugError` variants
+- Error mapping happens at CLI boundary (in main.rs)
+
+---
+
+#### [D11] Accept Lock-File Rewrite Behavior (DECIDED) {#d11-lockfile-rewrite}
+
+**Decision:** Accept that `write_lock_file()` regenerates the entire file from a template, discarding any user comments. Update the spec to document this behavior.
+
+**Rationale:**
+- Preserving comments requires parsing TOML while retaining formatting (complex)
+- Lock files are machine-managed; comments are rarely needed
+- Simpler implementation is more maintainable
+- Users can re-add comments after update if needed
+
+**Implications:**
+- Update Spec S02 test scenario: remove "Update preserves lock file comments and formatting"
+- Add note in spec that lock files are regenerated on update
+- No code changes required
+
+---
+
+#### [D12] CLI E2E Test Approach (DECIDED) {#d12-cli-e2e-tests}
+
+**Decision:** Add a new test file `crates/tugtool/tests/fixture_cli_e2e.rs` that uses `std::process::Command` to spawn the `tug` binary and validate:
+- Stdout contains valid JSON
+- Exit codes match expected values
+- JSON fields have expected values
+
+**Rationale:**
+- True E2E tests catch issues that module-level tests miss (argument parsing, output formatting)
+- Using `std::process::Command` is straightforward and well-understood
+- Tests can use `cargo build` artifacts via `env!("CARGO_BIN_EXE_tug")`
+
+**Implications:**
+- Tests require the binary to be built (use `#[cfg(test)]` and cargo test integration)
+- Tests may be slower than unit tests (acceptable for E2E)
+- Need to handle workspace root discovery in tests
+
+---
+
+### B.1 Specification Updates {#addendum-b-spec-updates}
+
+#### B.1.1 Exit Code Clarification {#exit-code-clarification}
+
+**Update to Spec S01 (fixture fetch):**
+
+Current text specifies exit codes but implementation does not follow them. Clarify the mapping:
+
+| Exit Code | Condition | Example |
+|-----------|-----------|---------|
+| 0 | Success | All fixtures fetched or up-to-date |
+| 2 | Invalid arguments | Unknown fixture name, missing lock file |
+| 10 | Internal error | Git not available, clone failed, network error |
+
+**Update to Spec S02 (fixture update):**
+
+| Exit Code | Condition | Example |
+|-----------|-----------|---------|
+| 0 | Success | Lock file updated |
+| 2 | Invalid arguments | Unknown fixture name, missing lock file |
+| 3 | Resolution error | Ref not found in repository |
+| 10 | Internal error | Git not available, ls-remote failed, write error |
+
+---
+
+#### B.1.2 Lock File Rewrite Policy {#lockfile-rewrite-policy}
+
+**Update to Spec S05 (Lock File Format):**
+
+Add note after the format example:
+
+> **Note:** When `tug fixture update` modifies a lock file, it regenerates the entire file from a template. Any user-added comments will not be preserved. The comment header shown above is automatically regenerated.
+
+**Update to Test Scenarios (Section 7.3):**
+
+Remove or modify this test scenario:
+- ~~Update preserves lock file comments and formatting~~
+- Update regenerates lock file (comments not preserved)
+
+---
+
+#### B.1.3 Raw SHA Limitation {#raw-sha-limitation}
+
+**Update to Spec S02 (fixture update):**
+
+Add note in Behavior section:
+
+> **Limitation:** The `--ref` argument must be a tag name or branch name, not a raw SHA. This is because `git ls-remote <repository> <sha>` does not resolve raw commit SHAs. To pin to a specific commit, first identify a tag or branch that points to that commit.
+
+---
+
+### B.2 Symbol Inventory {#addendum-b-symbol-inventory}
+
+#### B.2.1 New Files {#addendum-b-new-files}
+
+| File | Purpose |
+|------|---------|
+| `crates/tugtool/tests/fixture_cli_e2e.rs` | CLI end-to-end tests for fixture commands |
+
+#### B.2.2 Modified Files {#addendum-b-modified-files}
+
+| File | Changes |
+|------|---------|
+| `crates/tugtool/src/main.rs` | Update `execute_fixture_*` functions to return appropriate error types |
+| `crates/tugtool/src/fixture.rs` | Add error kind variants or helper methods for error classification |
+| `plans/phase-7.md` | Spec updates per B.1 |
+
+#### B.2.3 Symbols to Add/Modify {#addendum-b-symbols}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `FixtureErrorKind` | enum | `fixture.rs` | NotFound, RefNotFound, Internal (if not already present) |
+| `FixtureError::exit_code()` | method | `fixture.rs` | Returns appropriate exit code based on error kind |
+| `fixture_cli_e2e` | test module | `tests/fixture_cli_e2e.rs` | CLI E2E tests |
+
+---
+
+### B.3 Test Plan {#addendum-b-test-plan}
+
+#### Test Categories {#addendum-b-test-categories}
+
+| Category | What to Test | How |
+|----------|--------------|-----|
+| **CLI E2E** | Binary spawning, stdout, exit codes | `std::process::Command` with assertions |
+| **Unit** | Error kind classification | Unit tests for error type methods |
+
+#### Test Scenarios {#addendum-b-test-scenarios}
+
+**Exit code tests:**
+- `tug fixture fetch nonexistent` -> exit code 2, JSON error response
+- `tug fixture fetch` (valid) -> exit code 0, JSON success response
+- `tug fixture update temporale --ref nonexistent-tag-xyz` -> exit code 3, JSON error response
+- `tug fixture update nonexistent --ref v1.0.0` -> exit code 2, JSON error response
+- `tug fixture list` -> exit code 0, JSON success response
+- `tug fixture status` -> exit code 0, JSON success response
+- `tug fixture status nonexistent` -> exit code 2, JSON error response
+
+**JSON output validation:**
+- All commands produce parseable JSON on stdout
+- Success responses have `"status": "ok"`
+- Error responses have `"status": "error"` and `"message"` field
+
+---
+
+### B.4 Execution Steps {#addendum-b-execution-steps}
+
+#### Step B1: Update Error Handling in fixture.rs {#step-b1}
+
+**Commit:** `fix(fixture): improve error classification for exit codes`
+
+**References:** [D10], (#exit-code-clarification)
+
+**Artifacts:**
+- Updated `crates/tugtool/src/fixture.rs` with error classification
+
+**Tasks:**
+- [x] Review existing `FixtureError` structure
+- [x] Add `kind` field or method to classify errors (NotFound, RefNotFound, Internal)
+- [x] Add `exit_code()` method that returns 2, 3, or 10 based on kind
+- [x] Update error construction in `fetch_fixture`, `update_fixture_lock`, etc.
+- [x] Add unit tests for error classification
+
+**Implementation approach:**
+```rust
+/// Classification of fixture errors for exit code mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixtureErrorKind {
+    /// Fixture or lock file not found (exit code 2).
+    NotFound,
+    /// Git ref could not be resolved (exit code 3).
+    RefNotFound,
+    /// Internal error - git failure, network, I/O (exit code 10).
+    Internal,
+}
+
+impl FixtureError {
+    /// Get the appropriate exit code for this error.
+    pub fn exit_code(&self) -> i32 {
+        match self.kind {
+            FixtureErrorKind::NotFound => 2,
+            FixtureErrorKind::RefNotFound => 3,
+            FixtureErrorKind::Internal => 10,
+        }
+    }
+}
+```
+
+**Tests:**
+- [x] Unit: FixtureError with NotFound kind returns exit code 2
+- [x] Unit: FixtureError with RefNotFound kind returns exit code 3
+- [x] Unit: FixtureError with Internal kind returns exit code 10
+
+**Checkpoint:**
+- [x] `cargo build -p tugtool` - builds without errors
+- [x] `cargo nextest run -p tugtool fixture` - fixture tests pass (68 passed)
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step B2: Update CLI Error Handling in main.rs {#step-b2}
+
+**Commit:** `fix(cli): use fixture error exit codes`
+
+**References:** [D10], Spec S01, Spec S02, (#exit-code-clarification)
+
+**Artifacts:**
+- Updated `crates/tugtool/src/main.rs` error handling
+
+**Tasks:**
+- [ ] Update `execute_fixture_fetch` to propagate fixture errors with correct exit codes
+- [ ] Update `execute_fixture_update` to propagate fixture errors with correct exit codes
+- [ ] Update `execute_fixture_list` to return exit code 2 for invalid fixture name
+- [ ] Update `execute_fixture_status` to return exit code 2 for invalid fixture name
+- [ ] Ensure error responses include appropriate JSON structure
+
+**Implementation approach:**
+```rust
+fn execute_fixture_fetch(...) -> Result<(), TugError> {
+    match fixture::fetch_fixture(...) {
+        Ok(result) => { /* success handling */ },
+        Err(e) => {
+            // Convert FixtureError to TugError with appropriate exit code
+            let exit_code = e.exit_code();
+            return Err(TugError::with_exit_code(e.message, exit_code));
+        }
+    }
+}
+```
+
+**Tests:**
+- [ ] Verify error paths return correct error types (covered by E2E tests in B3)
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool` - builds without errors
+- [ ] `cargo nextest run -p tugtool` - all tests pass
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step B3: Add CLI End-to-End Tests {#step-b3}
+
+**Commit:** `test(fixture): add CLI end-to-end tests`
+
+**References:** [D12], (#addendum-b-test-scenarios)
+
+**Artifacts:**
+- New `crates/tugtool/tests/fixture_cli_e2e.rs`
+
+**Tasks:**
+- [ ] Create test file with helper function to run tug binary
+- [ ] Add test: `fetch nonexistent` returns exit code 2
+- [ ] Add test: `fetch` (valid) returns exit code 0 and valid JSON
+- [ ] Add test: `update temporale --ref nonexistent-xyz` returns exit code 3
+- [ ] Add test: `update nonexistent --ref v1.0.0` returns exit code 2
+- [ ] Add test: `list` returns exit code 0 and valid JSON
+- [ ] Add test: `status` returns exit code 0 and valid JSON
+- [ ] Add test: `status nonexistent` returns exit code 2
+
+**Test file structure:**
+```rust
+//! CLI end-to-end tests for fixture commands.
+//!
+//! These tests spawn the actual `tug` binary and validate stdout/exit codes.
+
+use std::process::Command;
+use serde_json::Value;
+
+/// Run tug with given arguments and return (stdout, stderr, exit_code).
+fn run_tug(args: &[&str]) -> (String, String, i32) {
+    let output = Command::new(env!("CARGO_BIN_EXE_tug"))
+        .args(args)
+        .current_dir(workspace_root())
+        .output()
+        .expect("failed to execute tug");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    (stdout, stderr, exit_code)
+}
+
+fn workspace_root() -> std::path::PathBuf {
+    // Find workspace root from CARGO_MANIFEST_DIR
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir.parent().unwrap().parent().unwrap().to_path_buf()
+}
+
+#[test]
+fn test_fixture_fetch_nonexistent_returns_exit_2() {
+    let (stdout, _stderr, exit_code) = run_tug(&["fixture", "fetch", "nonexistent"]);
+    assert_eq!(exit_code, 2, "expected exit code 2 for unknown fixture");
+
+    let json: Value = serde_json::from_str(&stdout)
+        .expect("stdout should be valid JSON");
+    assert_eq!(json["status"], "error");
+}
+
+#[test]
+fn test_fixture_list_returns_exit_0() {
+    let (stdout, _stderr, exit_code) = run_tug(&["fixture", "list"]);
+    assert_eq!(exit_code, 0, "expected exit code 0 for list");
+
+    let json: Value = serde_json::from_str(&stdout)
+        .expect("stdout should be valid JSON");
+    assert_eq!(json["status"], "ok");
+}
+
+// ... more tests
+```
+
+**Tests:**
+- [ ] E2E: fetch nonexistent -> exit 2
+- [ ] E2E: fetch valid -> exit 0, JSON ok
+- [ ] E2E: update bad ref -> exit 3
+- [ ] E2E: update nonexistent fixture -> exit 2
+- [ ] E2E: list -> exit 0, JSON ok
+- [ ] E2E: status -> exit 0, JSON ok
+- [ ] E2E: status nonexistent -> exit 2
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool fixture_cli_e2e` - E2E tests pass
+- [ ] All tests validate both exit code and JSON structure
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step B4: Update Spec Documentation {#step-b4}
+
+**Commit:** `docs: update Phase 7 spec with implementation notes`
+
+**References:** [D11], (#lockfile-rewrite-policy), (#raw-sha-limitation)
+
+**Artifacts:**
+- Updated `plans/phase-7.md` with spec clarifications
+
+**Tasks:**
+- [ ] Add note to Spec S05 about lock file regeneration (comments not preserved)
+- [ ] Add note to Spec S02 about raw SHA limitation
+- [ ] Update test scenario in Section 7.3 to remove "preserves comments" requirement
+- [ ] Add "Accepted Deviations" section documenting `toml` dependency
+
+**Checkpoint:**
+- [ ] Spec S05 includes lock file regeneration note
+- [ ] Spec S02 includes raw SHA limitation note
+- [ ] Test scenarios updated
+
+**Commit after all checkpoints pass.**
+
+---
+
+### B.5 Deliverables and Checkpoints {#addendum-b-deliverables}
+
+**Deliverable:** Improved error-code fidelity for fixture commands and true CLI end-to-end tests.
+
+#### Addendum B Exit Criteria {#addendum-b-exit-criteria}
+
+- [ ] `tug fixture fetch nonexistent` returns exit code 2
+- [ ] `tug fixture update temporale --ref nonexistent-xyz` returns exit code 3
+- [ ] `tug fixture update nonexistent --ref v1.0.0` returns exit code 2
+- [ ] CLI E2E test file exists with tests for all fixture commands
+- [ ] All E2E tests pass
+- [ ] Spec updated with lock file regeneration note
+- [ ] Spec updated with raw SHA limitation note
+- [ ] All existing tests continue to pass
+
+**Acceptance tests:**
+- [ ] `cargo nextest run -p tugtool fixture_cli_e2e` passes
+- [ ] `cargo nextest run -p tugtool` passes (all tests)
+- [ ] Manual: `tug fixture fetch bad-name; echo $?` outputs 2
+- [ ] Manual: `tug fixture update temporale --ref no-such-ref; echo $?` outputs 3
+
+#### Milestones {#addendum-b-milestones}
+
+**Milestone M06: Error Codes Fixed** {#m06-error-codes}
+- [ ] FixtureError has kind classification
+- [ ] CLI uses appropriate exit codes based on error kind
+
+**Milestone M07: CLI E2E Tests Added** {#m07-cli-e2e}
+- [ ] `fixture_cli_e2e.rs` exists with comprehensive tests
+- [ ] Tests cover all fixture subcommands
+- [ ] Tests validate both exit codes and JSON output
+
+**Milestone M08: Spec Updated** {#m08-spec-updated}
+- [ ] Lock file regeneration documented
+- [ ] Raw SHA limitation documented
+
+| Checkpoint | Verification |
+|------------|--------------|
+| Error classification works | Unit tests for FixtureError.exit_code() |
+| CLI uses correct exit codes | E2E tests pass |
+| E2E tests exist | `fixture_cli_e2e.rs` compiles and runs |
+| Spec updated | Phase 7 doc includes new notes |
+| All tests pass | `cargo nextest run -p tugtool` exits 0 |
+
+**Commit after all checkpoints pass.**
+
+---
+
+### B.6 Accepted Deviations {#addendum-b-accepted-deviations}
+
+The following items were identified during review but accepted as-is:
+
+1. **`toml` runtime dependency** - The Phase 7 constraints stated "no new runtime dependencies." The `toml` crate was added for lock file parsing. This is accepted because:
+   - Lock files are TOML format (established in Phase 6)
+   - The `toml` crate is small, well-maintained, and appropriate for this use
+   - Alternatives (manual parsing) would be more error-prone
+
+2. **SHA enforcement in test helper** - The `temporale_path()` helper function does not verify that the fixture SHA matches the lock file. This is accepted because:
+   - `tug fixture fetch` verifies SHA during fetch
+   - `tug fixture status` can detect mismatches
+   - CI workflow runs `fixture fetch` before tests
+   - Adding SHA verification to the helper would require git operations in test setup

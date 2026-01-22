@@ -8,6 +8,59 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step B1: Update Error Handling in fixture.rs | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum B Step B1 (lines 2083-2134)
+- (#exit-code-clarification) - Exit code mapping requirements
+- `crates/tugtool/src/fixture.rs` - Existing FixtureError implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Review existing `FixtureError` structure | Done |
+| Add `kind` field to classify errors (NotFound, RefNotFound, Internal) | Done |
+| Add `exit_code()` method that returns 2, 3, or 10 based on kind | Done |
+| Update error construction in `fetch_fixture`, `update_fixture_lock`, etc. | Done |
+| Add unit tests for error classification | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool/src/fixture.rs`:
+  - Added `FixtureErrorKind` enum with `NotFound`, `RefNotFound`, `Internal` variants
+  - Added `kind` field to `FixtureError` struct
+  - Added `exit_code()` method to `FixtureError`
+  - Added new constructors: `not_found()`, `ref_not_found()`, `internal()`
+  - Updated `fetch_fixture_by_name` to use `FixtureError::not_found`
+  - Updated `get_fixture_state_by_name` to use `FixtureError::not_found`
+  - Updated `update_fixture_lock` to use appropriate error kinds
+  - Updated `resolve_ref_to_sha` to use `FixtureError::ref_not_found`
+  - Added 3 unit tests for error classification exit codes
+- `plans/phase-7.md`:
+  - Checked off all 5 tasks for Step B1
+  - Checked off all 3 unit test assertions
+  - Checked off both checkpoint items
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture`: 68 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool` - builds without errors: PASS
+- `cargo nextest run -p tugtool fixture` - fixture tests pass (68 passed): PASS
+
+**Key Decisions/Notes:**
+- Existing constructors (`with_name`, `without_name`) default to `Internal` kind for backward compatibility
+- Exit code mapping: NotFound→2, RefNotFound→3, Internal→10 (per Table T26 in spec)
+- Error classification is done at construction time, not at exit code lookup time
+- The `exit_code()` method is on `FixtureError`, while `FixtureErrorKind` also has its own `exit_code()` method for convenience
+
+---
+
 ## [phase-7.md] Step A5: Update Documentation | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

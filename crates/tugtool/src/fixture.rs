@@ -232,6 +232,42 @@ pub struct FetchResult {
     pub sha: String,
 }
 
+/// Classification of fixture errors for exit code mapping.
+///
+/// Maps to specific exit codes for better agent/CI integration:
+/// - `NotFound` -> exit code 2 (invalid arguments)
+/// - `RefNotFound` -> exit code 3 (resolution error)
+/// - `Internal` -> exit code 10 (internal error)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixtureErrorKind {
+    /// Fixture or lock file not found (exit code 2).
+    ///
+    /// Used when the user specifies a fixture name that doesn't exist
+    /// or when the lock file cannot be found.
+    NotFound,
+    /// Git ref could not be resolved (exit code 3).
+    ///
+    /// Used during `fixture update` when the specified ref
+    /// doesn't exist in the repository.
+    RefNotFound,
+    /// Internal error - git failure, network, I/O (exit code 10).
+    ///
+    /// Used for git command failures, network errors, filesystem errors,
+    /// and other internal issues.
+    Internal,
+}
+
+impl FixtureErrorKind {
+    /// Get the exit code for this error kind.
+    pub fn exit_code(self) -> i32 {
+        match self {
+            FixtureErrorKind::NotFound => 2,
+            FixtureErrorKind::RefNotFound => 3,
+            FixtureErrorKind::Internal => 10,
+        }
+    }
+}
+
 /// Error during fixture operations.
 #[derive(Debug, Clone)]
 pub struct FixtureError {
@@ -239,6 +275,8 @@ pub struct FixtureError {
     pub name: Option<String>,
     /// Error message.
     pub message: String,
+    /// Error classification for exit code mapping.
+    pub kind: FixtureErrorKind,
 }
 
 impl std::fmt::Display for FixtureError {
@@ -254,28 +292,67 @@ impl std::fmt::Display for FixtureError {
 impl std::error::Error for FixtureError {}
 
 impl FixtureError {
-    /// Create a new fixture error.
-    pub fn new(name: impl Into<Option<String>>, message: impl Into<String>) -> Self {
+    /// Create a new fixture error with explicit kind.
+    pub fn new(
+        name: impl Into<Option<String>>,
+        message: impl Into<String>,
+        kind: FixtureErrorKind,
+    ) -> Self {
         Self {
             name: name.into(),
             message: message.into(),
+            kind,
         }
     }
 
-    /// Create a fixture error with a name.
+    /// Create a fixture error with a name (defaults to Internal kind).
     pub fn with_name(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             name: Some(name.into()),
             message: message.into(),
+            kind: FixtureErrorKind::Internal,
         }
     }
 
-    /// Create a fixture error without a name.
+    /// Create a fixture error without a name (defaults to Internal kind).
     pub fn without_name(message: impl Into<String>) -> Self {
         Self {
             name: None,
             message: message.into(),
+            kind: FixtureErrorKind::Internal,
         }
+    }
+
+    /// Create a "not found" error for a fixture or lock file.
+    pub fn not_found(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            name: Some(name.into()),
+            message: message.into(),
+            kind: FixtureErrorKind::NotFound,
+        }
+    }
+
+    /// Create a "ref not found" error for update operations.
+    pub fn ref_not_found(name: impl Into<Option<String>>, message: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            message: message.into(),
+            kind: FixtureErrorKind::RefNotFound,
+        }
+    }
+
+    /// Create an internal error.
+    pub fn internal(name: impl Into<Option<String>>, message: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            message: message.into(),
+            kind: FixtureErrorKind::Internal,
+        }
+    }
+
+    /// Get the appropriate exit code for this error.
+    pub fn exit_code(&self) -> i32 {
+        self.kind.exit_code()
     }
 }
 
@@ -506,7 +583,7 @@ pub fn fetch_fixture_by_name(
     force: bool,
 ) -> Result<FetchResult, FixtureError> {
     let info = read_lock_file_by_name(workspace_root, name)
-        .map_err(|e| FixtureError::with_name(name, e))?;
+        .map_err(|e| FixtureError::not_found(name, e))?;
 
     fetch_fixture(workspace_root, &info, force)
 }
@@ -688,7 +765,7 @@ pub fn get_fixture_state_by_name(
     name: &str,
 ) -> Result<(FixtureInfo, FixtureStateInfo), FixtureError> {
     let info = read_lock_file_by_name(workspace_root, name)
-        .map_err(|e| FixtureError::with_name(name, e))?;
+        .map_err(|e| FixtureError::not_found(name, e))?;
     let state = get_fixture_state(workspace_root, &info);
     Ok((info, state))
 }
@@ -769,10 +846,10 @@ pub fn resolve_ref_to_sha(repository: &str, git_ref: &str) -> Result<ResolvedRef
     let stdout = stdout.trim();
 
     if stdout.is_empty() {
-        return Err(FixtureError::without_name(format!(
-            "Ref '{}' not found in repository '{}'",
-            git_ref, repository
-        )));
+        return Err(FixtureError::ref_not_found(
+            None::<String>,
+            format!("Ref '{}' not found in repository '{}'", git_ref, repository),
+        ));
     }
 
     // Parse the ls-remote output
@@ -909,11 +986,13 @@ pub fn update_fixture_lock(
         .join("fixtures")
         .join(format!("{}.lock", name));
 
-    let existing_info = read_lock_file(&lock_path).map_err(|e| FixtureError::with_name(name, e))?;
+    let existing_info = read_lock_file(&lock_path).map_err(|e| FixtureError::not_found(name, e))?;
 
     // 2. Resolve new ref to SHA
-    let resolved = resolve_ref_to_sha(&existing_info.repository, new_ref)
-        .map_err(|e| FixtureError::with_name(name, e.message))?;
+    let resolved = resolve_ref_to_sha(&existing_info.repository, new_ref).map_err(|e| {
+        // Preserve the error kind from resolve_ref_to_sha (RefNotFound or Internal)
+        FixtureError::new(Some(name.to_string()), e.message, e.kind)
+    })?;
 
     // 3. Check if branch (for warning)
     let warning = if resolved.is_branch {
@@ -1130,6 +1209,41 @@ sha = "deadbeef"
 
         let err = FixtureError::without_name("generic error");
         assert_eq!(err.to_string(), "generic error");
+    }
+
+    #[test]
+    fn test_fixture_error_kind_exit_codes() {
+        // NotFound kind returns exit code 2
+        let err = FixtureError::not_found("missing-fixture", "lock file not found");
+        assert_eq!(err.kind, FixtureErrorKind::NotFound);
+        assert_eq!(err.exit_code(), 2);
+
+        // RefNotFound kind returns exit code 3
+        let err = FixtureError::ref_not_found(Some("test".to_string()), "ref not found");
+        assert_eq!(err.kind, FixtureErrorKind::RefNotFound);
+        assert_eq!(err.exit_code(), 3);
+
+        // Internal kind returns exit code 10
+        let err = FixtureError::internal(Some("test".to_string()), "git failed");
+        assert_eq!(err.kind, FixtureErrorKind::Internal);
+        assert_eq!(err.exit_code(), 10);
+
+        // Default constructors use Internal kind
+        let err = FixtureError::with_name("test", "error");
+        assert_eq!(err.kind, FixtureErrorKind::Internal);
+        assert_eq!(err.exit_code(), 10);
+
+        let err = FixtureError::without_name("error");
+        assert_eq!(err.kind, FixtureErrorKind::Internal);
+        assert_eq!(err.exit_code(), 10);
+    }
+
+    #[test]
+    fn test_fixture_error_kind_enum_values() {
+        // Verify enum exit_code method directly
+        assert_eq!(FixtureErrorKind::NotFound.exit_code(), 2);
+        assert_eq!(FixtureErrorKind::RefNotFound.exit_code(), 3);
+        assert_eq!(FixtureErrorKind::Internal.exit_code(), 10);
     }
 
     #[test]
