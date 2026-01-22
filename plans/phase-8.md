@@ -1,6 +1,6 @@
-## Phase 8: Editor Interop - MCP Removal and Claude Code / Cursor Integration {#phase-8}
+## Phase 8: Claude Code Spike Test Fixups {#phase-8}
 
-**Purpose:** Remove all MCP support from tugtool (clean break) and implement the "one kernel, many front doors" editor interop strategy via Claude Code commands/rules and Cursor configuration.
+**Purpose:** Fix cross-file rename for relative imports so that the Claude Code interop spike test passes, unblocking Phase 9 (Editor Interop).
 
 ---
 
@@ -20,92 +20,122 @@
 
 #### Context {#context}
 
-MCP (Model Context Protocol) was originally designed as a generic RPC layer for AI agent integration. However, the reality is that editor-native workflows (Claude Code commands, Cursor rules) provide a more direct, simpler integration path. MCP adds complexity without proportional benefit:
+During spike testing for Phase 9 (Claude Code interop), we discovered that tug's cross-file rename is broken for relative imports - a common Python package pattern. The spike test in `spikes/interop-spike/` demonstrates this failure:
 
-- Requires running a separate server process
-- Adds async runtime overhead
-- Introduces dependency on the `rmcp` crate and its transitive dependencies
-- The CLI already provides all needed functionality with stable JSON output and exit codes
+```
+# Before rename: process_data appears in 8 locations across 4 files
+# After rename: only 2 locations were updated, code is broken
 
-The CLI is the "kernel" - stable, well-tested, feature-complete. Editor-specific commands and rules are the "front doors" that orchestrate the kernel for specific workflows.
+$ tug run --apply --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data
+# Result: 2 files changed, 2 edits (should have been 4 files, ~8 edits)
+
+$ python3 main.py
+# ImportError: cannot import name 'process_data' from 'lib.utils'
+```
+
+The root cause is documented in `crates/tugtool-python/tests/acceptance_criteria.rs` (lines 682-683):
+- "Relative imports return None (documented limitation)"
+- "Star imports return None (documented limitation)"
+
+The tests verify parsing doesn't crash, but they do NOT verify that cross-file references are created. Since existing tests use absolute imports exclusively, they pass despite the broken relative import handling.
+
+**The gap:**
+- Absolute imports (`from x import foo`) - cross-file references work
+- Relative imports (`from .utils import foo`) - NO cross-file references created
+- Real Python packages commonly use relative imports
+
+This is a **blocker** for Phase 9. Before implementing Claude Code interop, tug itself must correctly rename symbols across files.
 
 #### Strategy {#strategy}
 
-- **Part 1: Clean MCP Removal** - Delete all MCP code, dependencies, and documentation references. No deprecation period, no stub commands - complete removal.
-- **Part 2: Claude Code Front Door** - Create `.claude/commands/` for tug workflows (`/tug-rename`, `/tug-rename-plan`, `/tug-fixtures-ensure`). Agent behavior rules are documented in CLAUDE.md.
-- **Part 3: Cursor Front Door** - Create `.cursor/rules/tug.mdc` with agent rules (rules-only, no Cursor commands in Phase 8).
-- **Part 4: Documentation Updates** - Update CLAUDE.md, README.md, and docs/ to reflect the new interop strategy.
+1. **Fix relative import resolution first** - Update `FileImportResolver` and `resolve_module_to_file` to handle relative imports
+2. **Create failing tests before fixing** - Write tests that expose the gap, then fix the implementation
+3. **Validate with spike test** - Use `spikes/interop-spike/` as the acceptance test
+4. **Add additional spike scenarios** - Star imports, aliased imports, re-exports
+5. **Update acceptance criteria tests** - Change from "doesn't crash" to "creates correct references"
+6. **Keep scope tight** - Only fix what's needed for the spike; comprehensive import support is future work
 
 #### Stakeholders / Primary Customers {#stakeholders}
 
-1. Developers using Claude Code with tug
-2. Developers using Cursor with tug
-3. Maintainers of the tugtool codebase (simpler build, fewer dependencies)
+1. Developers using tug for Python refactoring (via Claude Code or CLI)
+2. Phase 9 implementation (blocked by this fix)
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- `cargo build -p tugtool` succeeds without any MCP-related code or dependencies
-- `grep -r "mcp\|MCP\|rmcp" --include="*.rs" crates/` returns no matches
-- `/tug-rename` command in Claude Code successfully executes the analyze -> dry-run -> apply workflow
-- All existing tests pass (`cargo nextest run --workspace`)
-- User-facing documentation (`CLAUDE.md`, `README.md`, `docs/`) contains no references to MCP server
-  - Note: `plans/` may retain historical MCP references and is excluded from this criterion
+- `tug run --apply --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data` in `spikes/interop-spike/` produces 4 files changed, approximately 8 edits
+- After rename, `python3 spikes/interop-spike/main.py` executes without ImportError
+- `cargo nextest run --workspace` passes (all existing tests still pass)
+- New acceptance criteria tests verify relative import references are created (not just "doesn't crash")
 
 #### Scope {#scope}
 
-1. Delete `crates/tugtool/src/mcp.rs` and all MCP-related code
-2. Remove `mcp` feature flag and dependencies from Cargo.toml (including `tokio` if MCP-only)
-3. Update all user-facing documentation to remove MCP references
-4. Create Claude Code commands in `.claude/commands/`
-5. Document agent rules in CLAUDE.md
-6. Create Cursor rules in `.cursor/rules/tug.mdc` (rules-only, no Cursor commands)
-7. Update CLAUDE.md with new editor integration strategy
+1. Fix `FileImportResolver` to handle relative imports (`from .utils import foo`)
+2. Fix `resolve_module_to_file` to resolve relative paths
+3. Add support for star imports (`from .utils import *`) - at minimum, track them; full reference expansion is optional
+4. Make the `spikes/interop-spike/` scenario pass completely
+5. Add 2-3 additional spike scenarios for edge cases
+6. Update `acceptance_criteria.rs` tests to verify reference creation
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Providing MCP as an optional feature for other editors
-- Building a generic plugin system
-- Supporting editors other than Claude Code and Cursor
-- Implementing new tug CLI features (this phase is interop only)
+- Comprehensive import resolution for all Python edge cases
+- Supporting imports from installed packages (only workspace files)
+- Re-implementing Python's full `importlib` semantics
+- Performance optimization of import resolution
+- Supporting Python 2 import semantics
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- Stable CLI with JSON output (already complete)
-- Exit codes per Table T26 (already implemented)
-- All refactoring operations working via CLI (already complete)
+- Working CLI with JSON output (already complete)
+- Native CST parser with import collection (already complete via `ImportCollector`)
+- Existing spike test setup at `spikes/interop-spike/`
 
 #### Constraints {#constraints}
 
-- Must not break existing CLI functionality
-- Must maintain backward compatibility for all existing JSON output schemas
-- Claude Code commands must work with the current command system
+- Must not break existing tests - all current tests must continue to pass
+- Must maintain backward compatibility for absolute imports
+- Implementation must work without Python runtime (native Rust only)
+- Relative import resolution requires knowing the importing file's location
 
 #### Assumptions {#assumptions}
 
-- Claude Code supports `.claude/commands/` directory for custom commands
-- Cursor supports `.cursor/rules/*.mdc` format for project rules (confirmed via documentation)
-- Users have `tug` binary in PATH or will configure it
+- Relative imports are resolved relative to the importing file's directory
+- Package structure follows standard Python conventions (`__init__.py` for packages)
+- All files in the workspace are available for resolution
 
 ---
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Cursor rules file format (RESOLVED) {#q01-cursor-rules}
+#### [Q01] Relative Import Level Handling (OPEN) {#q01-relative-levels}
 
-**Question:** What is the exact file format and location for Cursor rules?
+**Question:** How should we handle multi-level relative imports (`from ..utils import foo`)?
 
-**Why it matters:** Need to create valid Cursor configuration that actually works.
+**Why it matters:** Python supports `..` (parent), `...` (grandparent), etc. The spike only uses `.` (current package), but real code uses deeper levels.
 
-**Options considered:**
-- `.cursor/rules/*.mdc` files (new format, recommended)
-- `.cursorrules` file in project root (legacy, deprecated but still supported)
+**Options:**
+1. Support all relative levels (comprehensive)
+2. Support only `.` (single-level) for Phase 8, defer deeper levels
+3. Fail loudly on unsupported levels with clear error message
 
-**Resolution:** Use `.cursor/rules/tug.mdc` (the new `.mdc` format). This is the current recommended approach per Cursor documentation. The legacy `.cursorrules` format is deprecated and will be removed in future Cursor versions.
+**Plan to resolve:** Implement single-level (`.`) first. If multi-level imports are encountered in practice, add support incrementally.
 
-**Sources:**
-- [awesome-cursorrules](https://github.com/PatrickJS/awesome-cursorrules)
-- [dotcursorrules.com](https://dotcursorrules.com/)
-- [Cursor Community Forum](https://forum.cursor.com/t/good-examples-of-cursorrules-file/4346)
+**Resolution:** OPEN - will resolve during implementation based on spike requirements.
+
+#### [Q02] Star Import Reference Expansion (OPEN) {#q02-star-imports}
+
+**Question:** Should `from .utils import *` expand to individual references for each exported symbol?
+
+**Why it matters:** Full expansion requires analyzing the source module's `__all__` or public symbols. This is complex and may not be needed for the spike.
+
+**Options:**
+1. Full expansion - resolve to each individual symbol
+2. Track star import but don't expand - no references created
+3. Track star import and create a single "star reference" marker
+
+**Plan to resolve:** Analyze the spike test to see if star imports are used. If not, defer to future work.
+
+**Resolution:** OPEN - depends on spike requirements.
 
 ---
 
@@ -113,1047 +143,550 @@ The CLI is the "kernel" - stable, well-tested, feature-complete. Editor-specific
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Claude Code command format changes | med | med | Keep commands simple, document format | Claude Code update |
-| Cursor config format changes | low | med | Use new `.mdc` format, document fallback | Cursor update |
+| Relative import resolution is more complex than expected | med | med | Start with simplest case (single `.`), expand incrementally | Implementation takes > 2 days |
+| Fix breaks existing absolute import tests | high | low | Run full test suite after each change; comprehensive golden tests | Any test failure |
+| Performance regression from additional path resolution | low | low | Profile if needed; path operations are fast | Noticeable slowdown in CLI |
 
-**Note:** MCP removal has no risk - this project has zero users. Clean break with no deprecation period.
+**Risk R01: Breaking Existing Import Resolution** {#r01-breaking-imports}
+
+- **Risk:** Changes to `FileImportResolver` may break existing absolute import resolution.
+- **Mitigation:**
+  - Add new code path for relative imports, don't modify existing absolute import logic
+  - Run acceptance criteria tests after each change
+  - Use feature flag if needed for rollback
+- **Residual risk:** Minor edge cases may be affected; comprehensive test coverage mitigates this.
 
 ---
 
 ### 8.0 Design Decisions {#design-decisions}
 
-#### [D01] Complete MCP Removal (DECIDED) {#d01-mcp-removal}
+#### [D01] Relative Import Resolution via File Path Context (DECIDED) {#d01-relative-resolution}
 
-**Decision:** Remove all MCP code, dependencies, and documentation in a clean break. No deprecation period, no stub commands, no migration path.
-
-**Rationale:**
-- MCP adds significant complexity (async runtime, extra dependencies)
-- CLI provides all functionality with simpler integration
-- Project has zero users - no backwards compatibility concerns
-- Clean removal is simpler than maintenance burden
-
-**Implications:**
-- Delete `mcp.rs` and all conditional compilation
-- Remove `rmcp` and `schemars` dependencies
-- Remove `tokio` if audit confirms it's MCP-only (see [D05])
-- Update feature flags to remove `mcp`
-- Update all documentation
-
-#### [D02] CLI as Kernel, Editors as Front Doors (DECIDED) {#d02-one-kernel}
-
-**Decision:** The tug CLI with stable JSON + exit codes is the integration kernel. Editor-specific commands/rules are front doors that orchestrate the kernel.
+**Decision:** Pass the importing file's path to `FileImportResolver` and use it to resolve relative imports to absolute workspace paths.
 
 **Rationale:**
-- CLI is already stable and well-tested
-- JSON output is deterministic and versioned
-- Exit codes provide error handling contract
-- No need for additional RPC layer
+- Python's relative imports are resolved relative to the importing file's package location
+- We already have the file path available during analysis
+- Converting relative to absolute paths allows reuse of existing resolution logic
 
 **Implications:**
-- Claude Code commands call CLI via Bash tool
-- Cursor commands call CLI via terminal
-- All front doors share the same contract (Table T26)
+- `FileImportResolver::from_imports` needs an additional `importing_file_path` parameter
+- `resolve_module_to_file` needs a `context_path` parameter for relative imports
+- All relative paths converted to workspace-relative absolute paths before lookup
 
-#### [D03] Three Decision Gates (DECIDED) {#d03-decision-gates}
+#### [D02] Single-Level Relative Import First (DECIDED) {#d02-single-level-first}
 
-**Decision:** All rename workflows must pass through three decision gates: Gate A (risk threshold), Gate B (patch review), Gate C (verification).
+**Decision:** Implement single-level relative imports (`from .module import x`) first. Multi-level (`from ..module import x`) can be added later if needed.
 
 **Rationale:**
-- Prevents accidental large-scale changes
-- Ensures human review before apply
-- Verification catches syntax errors before they reach the workspace
+- The spike test only uses single-level relative imports
+- Single-level is sufficient for most package-internal imports
+- Keeps implementation simple and focused
 
 **Implications:**
-- Commands must implement gate logic
-- Approval required before apply
-- Clear thresholds defined (files > 50 or edits > 500 requires explicit approval)
+- Skip imports with `relative_level > 1` initially (log warning)
+- Track in test coverage which levels are supported
+- Clear path to extend support later
 
-#### [D04] No Apply Without Approval (DECIDED) {#d04-no-apply-without-approval}
+#### [D03] Update Acceptance Criteria Tests to Verify References (DECIDED) {#d03-acceptance-tests}
 
-**Decision:** Claude Code commands must never call `tug run --apply` without explicit user approval after showing the patch summary.
+**Decision:** Change acceptance criteria tests from "parsing doesn't crash" to "references are actually created" for import scenarios.
 
 **Rationale:**
-- Safety: changes should be reviewed before application
-- Trust: users must opt-in to modifications
-- Reversibility: easier to prevent than to undo
+- Current tests pass even though cross-file references are broken
+- Tests should verify the observable behavior (references exist), not just absence of errors
+- This aligns tests with actual user expectations
 
 **Implications:**
-- Commands must pause and wait for approval
-- Summary must show files/edits count
-- Apply is separate step from dry-run
+- Update `ac4_import_resolution::relative_imports_handled` to assert reference count > 0
+- Update `ac4_import_resolution::star_imports_handled` similarly
+- Add new tests specifically for cross-file reference verification
 
-#### [D05] Remove Tokio If MCP-Only (DECIDED) {#d05-tokio-removal}
+#### [D04] Spike Test as Acceptance Gate (DECIDED) {#d04-spike-acceptance}
 
-**Decision:** Audit `tokio` usage during MCP removal. If `tokio` is only used by MCP code, remove it entirely.
+**Decision:** The `spikes/interop-spike/` scenario serves as the primary acceptance test for Phase 8 completion.
 
 **Rationale:**
-- Simpler build with fewer dependencies
-- Faster compile times
-- If the async runtime is only for MCP, it's dead weight
+- The spike represents a real-world use case
+- It exercises the exact code path that was broken
+- Success is easily verifiable (run tug, then run Python)
 
 **Implications:**
-- Step 1 includes tokio audit task
-- If tokio is used elsewhere, keep it with updated comments
-- If tokio is MCP-only, remove dependency entirely
-
-#### [D06] Syntax Verification Only (DECIDED) {#d06-syntax-verify}
-
-**Decision:** Editor commands use `--verify syntax` only. Test verification is out of scope for Phase 8.
-
-**Rationale:**
-- Syntax verification is fast and always available
-- Test verification can be slow and requires fixture setup
-- Keep Phase 8 focused on interop, not verification enhancements
-
-**Implications:**
-- All command examples use `--verify syntax`
-- No mention of `--verify tests` in Phase 8 commands
-- Future phases may add test verification as opt-in
+- Phase 8 is not complete until the spike passes end-to-end
+- Spike should be run as part of CI or at minimum before merge
+- Document the spike test procedure in the plan
 
 ---
 
 ### 8.1 Specification {#specification}
 
-#### 8.1.1 Files to Delete (MCP Removal) {#files-to-delete}
+#### 8.1.1 Current Behavior (Broken) {#current-behavior}
 
-**List L01: Files to Delete** {#l01-files-delete}
+**File:** `crates/tugtool-python/src/analyzer.rs`
 
-| File | Reason |
-|------|--------|
-| `crates/tugtool/src/mcp.rs` | MCP server implementation |
+In `FileImportResolver::from_imports` (line ~1163):
 
-#### 8.1.2 Files to Modify (MCP Removal) {#files-to-modify}
+```rust
+// Skip relative imports (Contract C3: unsupported)
+if import.module_path.starts_with('.') {
+    continue;
+}
+```
 
-**List L02: Files to Modify for MCP Removal** {#l02-files-modify}
+In `convert_imports` (line ~1570):
+
+```rust
+// Skip relative imports
+if import.relative_level > 0 {
+    continue;
+}
+```
+
+These explicit skips mean:
+1. Relative imports are never added to the resolver's aliases map
+2. Cross-file references for relative imports are never created
+3. Symbols imported via relative imports are never linked to their definitions
+
+#### 8.1.2 Target Behavior (Fixed) {#target-behavior}
+
+**Relative Import Resolution Algorithm:**
+
+1. When processing `from .utils import foo` in file `lib/processor.py`:
+   - Determine the importing file's directory: `lib/`
+   - Resolve `.utils` relative to `lib/`: `lib/utils` (module path)
+   - Convert to file path: `lib/utils.py` or `lib/utils/__init__.py`
+   - Look up in workspace files
+   - If found, create alias: `foo` -> `("lib.utils.foo", "lib/utils.py")`
+
+2. When processing `from . import utils` in file `lib/__init__.py`:
+   - Determine the importing file's directory: `lib/`
+   - Resolve `.` to `lib/` (the package itself)
+   - `utils` is a submodule: `lib/utils`
+   - Convert to file path: `lib/utils.py`
+   - If found, create alias: `utils` -> `("lib.utils", "lib/utils.py")`
+
+**Spec S01: Relative Import Path Resolution** {#s01-relative-path}
+
+```
+resolve_relative_import(importing_file, relative_level, module_name):
+    1. Let dir = directory_of(importing_file)
+    2. For i in 0..relative_level:
+        dir = parent_of(dir)
+    3. If module_name is not empty:
+        path = join(dir, module_name.replace('.', '/'))
+    4. Else:
+        path = dir
+    5. Try path + ".py" first
+    6. If not found, try path + "/__init__.py"
+    7. Return resolved file path or None
+```
+
+#### 8.1.3 Files to Modify {#files-to-modify}
+
+**List L01: Files Requiring Changes** {#l01-files}
 
 | File | Changes |
 |------|---------|
-| `crates/tugtool/Cargo.toml` | Remove `rmcp`, `schemars` deps; remove `mcp` feature |
-| `crates/tugtool/src/lib.rs` | Remove `#[cfg(feature = "mcp")] pub mod mcp;` |
-| `crates/tugtool/src/main.rs` | Remove `Command::Mcp` variant and `execute_mcp()` |
-| `crates/tugtool/tests/golden_tests.rs` | Remove `#[cfg(feature = "mcp")] mod mcp_parity` |
-| `crates/tugtool/tests/api_surface.rs` | Remove `#[cfg(feature = "mcp")] use tugtool::mcp;` |
-| `CLAUDE.md` | Remove MCP references |
-| `README.md` | Remove MCP section and commands table entry |
-| `docs/AGENT_API.md` | Remove MCP Server section |
-| `docs/AGENT_PLAYBOOK.md` | Remove MCP configuration section |
-| `Justfile` | Remove `mcp` recipe |
+| `crates/tugtool-python/src/analyzer.rs` | Update `FileImportResolver`, `convert_imports`, `resolve_module_to_file` |
+| `crates/tugtool-python/tests/acceptance_criteria.rs` | Update import tests to verify references |
+| `spikes/interop-spike/` | Add verification scripts |
 
-#### 8.1.3 Claude Code Commands {#claude-commands}
+#### 8.1.4 API Changes {#api-changes}
 
-**Spec S01: Claude Code Command Specifications** {#s01-claude-commands}
+**Spec S02: Updated FileImportResolver API** {#s02-resolver-api}
 
-##### Command: `/tug-rename` {#cmd-tug-rename}
-
-**Purpose:** Full analyze -> dry-run -> review -> apply workflow for symbol rename.
-
-**File:** `.claude/commands/tug-rename.md`
-
-**Inputs (prompted or inferred):**
-- `new_name` (required): New name for the symbol
-- Location inferred from current file and cursor position
-
-**Workflow:**
-1. Determine `<file:line:col>` from editor context
-2. Run `tug analyze-impact rename-symbol --at <loc> --to <new_name>`
-3. Parse JSON, apply Gate A (risk threshold)
-4. Run `tug run --verify syntax rename-symbol --at <loc> --to <new_name>` (dry-run)
-5. Parse JSON, show summary, apply Gate B (patch review) and Gate C (verification)
-6. If approved: run `tug run --apply --verify syntax rename-symbol --at <loc> --to <new_name>`
-7. Show final result
-
-**Decision Gates:**
-- **Gate A:** If `files_affected > 50` OR `edits_estimated > 500`, require explicit approval
-- **Gate A:** If `references_count == 0`, stop and request new location
-- **Gate B:** Show files changed count, edits count, top N files; require explicit "apply" decision
-- **Gate C:** If verification status is not "passed", do not proceed to apply
-
-##### Command: `/tug-rename-plan` {#cmd-tug-rename-plan}
-
-**Purpose:** Analyze + dry-run only (no apply), for cautious review workflows.
-
-**File:** `.claude/commands/tug-rename-plan.md`
-
-**Workflow:**
-1. Same as `/tug-rename` steps 1-5
-2. Stop after showing summary (do not offer apply)
-
-##### Command: `/tug-fixtures-ensure` {#cmd-tug-fixtures-ensure}
-
-**Purpose:** Ensure test fixtures are fetched and ready.
-
-**File:** `.claude/commands/tug-fixtures-ensure.md`
-
-**Workflow:**
-1. Run `tug fixture status`
-2. Parse JSON, identify missing or sha-mismatch fixtures
-3. If any need fetching: run `tug fixture fetch`
-4. Report final status
-
-#### 8.1.4 Claude Code Rules {#claude-rules}
-
-**Spec S02: Claude Code Agent Rules** {#s02-claude-rules}
-
-Rules to add to CLAUDE.md or `.claude/rules/`:
-
-1. **Review before apply:** Always run `analyze-impact` and dry-run before any `--apply`
-2. **Approval required:** Require explicit user confirmation for apply
-3. **Exit-code driven:** If exit code is nonzero, stop and surface the JSON error; do not attempt unrelated retries
-4. **No commits:** Do not run `git commit` (project rule, already in CLAUDE.md)
-5. **No mutation outside tug:** Avoid manual edits in the same files between analyze and apply
-6. **Deterministic reporting:** Present summaries using actual numeric fields from tug output
-
-#### 8.1.5 Cursor Configuration {#cursor-config}
-
-**Spec S03: Cursor Configuration** {#s03-cursor-config}
-
-##### File: `.cursor/rules/tug.mdc`
-
-Cursor now uses `.mdc` files in `.cursor/rules/` for project-specific rules. This is the recommended format (legacy `.cursorrules` is deprecated).
-
-```markdown
----
-description: Rules for using tug refactoring tool
-alwaysApply: true
----
-
-# Tug Refactoring Rules
-
-When using the `tug` command for refactoring:
-
-## Workflow
-
-1. **Always analyze first:** Run `tug analyze-impact` before any `tug run --apply`
-2. **Review patch:** Run dry-run (`tug run` without `--apply`) and review output before applying
-3. **Get approval:** Ask user "Apply these changes?" before running `--apply`
-
-## Error Handling
-
-Handle errors by exit code:
-- Exit 0: Success, continue
-- Exit 2: Invalid arguments, fix and retry
-- Exit 3: Symbol not found, check location
-- Exit 4: Apply failed, re-analyze
-- Exit 5: Verification failed, do not apply
-- Exit 10: Internal error, report issue
-
-## Safety
-
-- Never guess: If uncertain, show the JSON error and ask for guidance
-- Never run `git commit` (project policy)
-- Never apply changes without showing summary first
-
-## Commands Reference
-
-```bash
-# Analyze impact (read-only)
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
-
-# Dry run with verification (read-only)
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-
-# Apply with verification (modifies files)
-tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-
-# Check fixture status
-tug fixture status
-
-# Fetch missing fixtures
-tug fixture fetch
-```
+```rust
+impl FileImportResolver {
+    /// Build from imports, with context for relative import resolution.
+    ///
+    /// # Arguments
+    /// * `imports` - List of imports from the file
+    /// * `workspace_files` - Set of all workspace file paths
+    /// * `importing_file_path` - Path of the file containing these imports (NEW)
+    pub fn from_imports(
+        imports: &[LocalImport],
+        workspace_files: &HashSet<String>,
+        importing_file_path: &str,  // NEW PARAMETER
+    ) -> Self;
+}
 ```
 
-**Note:** Cursor commands (`.cursor/commands.json`) are out of scope for Phase 8. Rules-only is sufficient.
+**Spec S03: Updated resolve_module_to_file API** {#s03-resolve-api}
 
-#### 8.1.6 Error Handling Playbook {#error-handling}
-
-**Table T01: Exit Code Handling for Front Doors** {#t01-exit-handling}
-
-| Exit | Meaning | Front Door Behavior |
-|------|---------|---------------------|
-| 0 | Success | Parse stdout JSON, continue workflow |
-| 2 | Invalid arguments | Show error; request corrected input (location/name/flags) |
-| 3 | Resolution error | Show error; suggest checking location; re-run analyze-impact |
-| 4 | Apply error | Advise re-analyzing (snapshot may be stale) |
-| 5 | Verification failed | Do not apply; show verification output; suggest fixing code |
-| 10 | Internal error | Stop; instruct to file bug with stderr + JSON |
+```rust
+/// Resolve a module path to a workspace file path.
+///
+/// # Arguments
+/// * `module_path` - The module path (may be relative)
+/// * `workspace_files` - Set of all workspace file paths
+/// * `context_path` - Path of the importing file (for relative imports) (NEW)
+/// * `relative_level` - Number of leading dots (0 for absolute) (NEW)
+pub fn resolve_module_to_file(
+    module_path: &str,
+    workspace_files: &HashSet<String>,
+    context_path: Option<&str>,  // NEW PARAMETER
+    relative_level: u32,          // NEW PARAMETER
+) -> Option<String>;
+```
 
 ---
 
 ### 8.2 Symbol Inventory {#symbol-inventory}
 
-#### 8.2.1 New Files {#new-files}
+#### 8.2.1 Symbols to Modify {#symbols-modify}
 
-| File | Purpose |
-|------|---------|
-| `.claude/commands/tug-rename.md` | Full rename workflow command |
-| `.claude/commands/tug-rename-plan.md` | Analyze + dry-run only command |
-| `.claude/commands/tug-fixtures-ensure.md` | Fixture status/fetch command |
-| `.cursor/rules/tug.mdc` | Cursor agent rules for tug usage (new `.mdc` format) |
+| Symbol | Kind | Location | Changes |
+|--------|------|----------|---------|
+| `FileImportResolver::from_imports` | fn | `analyzer.rs` | Add `importing_file_path` parameter |
+| `resolve_module_to_file` | fn | `analyzer.rs` | Add `context_path` and `relative_level` parameters |
+| `convert_imports` | fn | `analyzer.rs` | Remove `relative_level > 0` skip; pass level to resolver |
+| `LocalImport` | struct | `analyzer.rs` | Add `relative_level: u32` field |
 
-#### 8.2.2 Files to Delete {#files-delete}
-
-| File | Reason |
-|------|--------|
-| `crates/tugtool/src/mcp.rs` | MCP removal |
-
-#### 8.2.3 Symbols to Remove {#symbols-remove}
+#### 8.2.2 New Symbols {#new-symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `mcp` | module | `lib.rs` | Remove feature-gated module |
-| `Command::Mcp` | variant | `main.rs` | Remove CLI subcommand |
-| `execute_mcp` | fn | `main.rs` | Remove executor function |
-| `mcp_parity` | module | `golden_tests.rs` | Remove test module |
-| `mcp` | feature | `Cargo.toml` | Remove feature flag |
-| `tokio` | dependency | `Cargo.toml` | Remove if audit shows MCP-only (see [D05]) |
+| `resolve_relative_path` | fn | `analyzer.rs` | Helper to compute relative -> absolute path |
 
 ---
 
-### 8.3 Documentation Plan {#documentation-plan}
-
-- [ ] Update CLAUDE.md to remove MCP references
-- [ ] Update CLAUDE.md to add editor interop section referencing new commands
-- [ ] Update README.md to remove MCP feature and commands table entry
-- [ ] Update README.md to add Claude Code / Cursor integration section
-- [ ] Update docs/AGENT_API.md to remove MCP Server section
-- [ ] Update docs/AGENT_PLAYBOOK.md to remove MCP configuration, add Claude Code commands
-- [ ] Update Justfile to remove `mcp` recipe
-
----
-
-### 8.4 Test Plan Concepts {#test-plan-concepts}
+### 8.3 Test Plan Concepts {#test-plan-concepts}
 
 #### Test Categories {#test-categories}
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Build** | Verify compilation without MCP | After removal |
-| **Integration** | Verify CLI still works | After removal |
-| **Golden** | Verify output schemas unchanged | After removal |
-| **Manual** | Verify editor commands work | After command creation |
+| **Unit** | Test relative path resolution logic | New `resolve_relative_path` function |
+| **Integration** | Test full analyze -> rename flow | Spike test scenarios |
+| **Acceptance** | Verify cross-file reference creation | Updated `acceptance_criteria.rs` |
 
-#### Verification Strategy {#verification-strategy}
+#### Spike Test Scenarios {#spike-scenarios}
 
-1. **Compilation check:** `cargo build -p tugtool` succeeds with default features
-2. **No MCP references:** `grep -r "mcp\|MCP\|rmcp" --include="*.rs" crates/` returns empty
-3. **Tests pass:** `cargo nextest run --workspace`
-4. **Feature flags:** `cargo build -p tugtool --features full` succeeds (full no longer includes mcp)
+**Table T01: Spike Test Scenarios** {#t01-spike-scenarios}
 
-#### Testing Boundaries {#testing-boundaries}
-
-**What can be CI-tested:**
-- tug CLI functionality (existing tests)
-- File existence (commands, rules)
-- Documentation content (grep checks)
-
-**What requires manual testing:**
-- Claude Code command UX (requires Claude Code environment)
-- Cursor rules behavior (requires Cursor environment)
-
-The CLI is the testable "kernel" - editor integrations are prompt templates that instruct agents to call the CLI. The best CI can do is verify "files exist + documented workflow + tug CLI remains correct."
+| ID | Scenario | Files | Import Pattern | Expected |
+|----|----------|-------|----------------|----------|
+| S1 | Current spike | `lib/utils.py`, `lib/__init__.py`, `lib/processor.py`, `main.py` | `from .utils import process_data` | 4 files changed, ~8 edits |
+| S2 | Star import | `pkg/base.py`, `pkg/consumer.py` | `from .base import *` | References to exported symbols |
+| S3 | Aliased import | `pkg/utils.py`, `pkg/main.py` | `from .utils import func as f` | References resolve through alias |
+| S4 | Re-export | `pkg/__init__.py` re-exports `pkg/internal.py` | `from .internal import x; __all__ = ['x']` | Cross-file reference chain works |
 
 ---
 
-### 8.5 Execution Steps {#execution-steps}
+### 8.4 Execution Steps {#execution-steps}
 
-#### Step 0: Preparation and Audit {#step-0}
+#### Step 0: Add Failing Tests for Relative Imports {#step-0}
 
-**Commit:** N/A (audit only, no changes)
+**Commit:** `test(python): add failing tests for relative import resolution`
 
-**References:** [D01] MCP Removal, List L01, List L02, (#context, #files-to-delete, #files-to-modify)
-
-**Artifacts:**
-- Inventory of all MCP-related code and documentation
-
-**Tasks:**
-- [ ] Identify all files containing MCP/mcp/rmcp references
-- [ ] Verify no external consumers of MCP functionality
-- [ ] Document the exact lines to remove in each file
-
-**Checkpoint:**
-- [ ] Complete file inventory created (this is documented in L01 and L02)
-
----
-
-#### Step 1: Delete MCP Module and Update Cargo.toml {#step-1}
-
-**Commit:** `refactor(tugtool): remove MCP server support`
-
-**References:** [D01] MCP Removal, [D02] CLI as Kernel, [D05] Tokio Removal, List L01, List L02, (#files-to-delete, #symbols-remove)
+**References:** [D03] Update Acceptance Criteria, Table T01, (#target-behavior)
 
 **Artifacts:**
-- Delete `crates/tugtool/src/mcp.rs`
-- Updated `crates/tugtool/Cargo.toml` without MCP dependencies
+- Updated `crates/tugtool-python/tests/acceptance_criteria.rs`
 
 **Tasks:**
-- [ ] Delete `crates/tugtool/src/mcp.rs`
-- [ ] **Tokio audit:** Search for `tokio` usage outside `mcp.rs`:
-  - [ ] `grep -r "tokio" --include="*.rs" crates/tugtool/src/ | grep -v mcp.rs`
-  - [ ] If no results: remove `tokio` dependency entirely
-  - [ ] If results: keep `tokio`, update comments to reflect actual usage
-- [ ] Remove from `crates/tugtool/Cargo.toml`:
-  - [ ] `rmcp = { ... }` dependency
-  - [ ] `schemars = { ... }` dependency
-  - [ ] `tokio = { ... }` dependency (if audit confirms MCP-only)
-  - [ ] `mcp = ["dep:rmcp", "dep:schemars"]` feature
-  - [ ] `mcp` from `default` features
-  - [ ] `mcp` from `full` features
-- [ ] Update package keywords to remove "mcp"
+- [ ] Modify `relative_imports_handled` test to assert references ARE created
+- [ ] Modify `star_imports_handled` test to assert references or star marker exists
+- [ ] Add new test `relative_import_creates_cross_file_reference` that:
+  - Creates `pkg/utils.py` with `def foo(): pass`
+  - Creates `pkg/consumer.py` with `from .utils import foo; foo()`
+  - Verifies that `foo` reference in consumer.py resolves to definition in utils.py
+- [ ] Run tests and verify they FAIL (documenting the gap)
 
 **Tests:**
-- [ ] Build: `cargo build -p tugtool`
+- [ ] Acceptance: `cargo nextest run -p tugtool-python relative_import` (expect FAIL)
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool` succeeds
-- [ ] `grep -r "rmcp" crates/tugtool/Cargo.toml` returns empty
-- [ ] Tokio audit documented (kept or removed with reason)
+- [ ] New tests exist and fail with clear "expected reference not found" messages
+- [ ] Existing tests still pass: `cargo nextest run -p tugtool-python -- --exclude relative`
+
+**Rollback:**
+- Revert test changes
+
+---
+
+#### Step 1: Implement Relative Path Resolution Helper {#step-1}
+
+**Commit:** `feat(python): add resolve_relative_path helper function`
+
+**References:** [D01] Relative Resolution via File Path, [D02] Single-Level First, Spec S01, (#s01-relative-path)
+
+**Artifacts:**
+- New function `resolve_relative_path` in `crates/tugtool-python/src/analyzer.rs`
+
+**Tasks:**
+- [ ] Add `resolve_relative_path(importing_file: &str, relative_level: u32, module_name: &str) -> String`
+- [ ] Handle relative_level = 1 (single dot)
+- [ ] Handle relative_level = 0 (absolute, pass through)
+- [ ] Log warning for relative_level > 1 (not yet supported)
+- [ ] Add unit tests for path computation
+
+**Tests:**
+- [ ] Unit: `resolve_relative_path("lib/foo.py", 1, "utils")` -> `"lib/utils"`
+- [ ] Unit: `resolve_relative_path("lib/sub/foo.py", 1, "bar")` -> `"lib/sub/bar"`
+- [ ] Unit: `resolve_relative_path("lib/foo.py", 1, "")` -> `"lib"` (package itself)
+- [ ] Unit: `resolve_relative_path("lib/foo.py", 0, "absolute.path")` -> `"absolute/path"`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python resolve_relative_path` passes
+- [ ] No warnings from clippy: `cargo clippy -p tugtool-python`
 
 **Rollback:**
 - Revert commit
 
 ---
 
-#### Step 2: Update Rust Source Files {#step-2}
+#### Step 2: Update LocalImport to Track Relative Level {#step-2}
 
-**Commit:** `refactor(tugtool): remove MCP from lib and main`
+**Commit:** `feat(python): track relative_level in LocalImport`
 
-**References:** [D01] MCP Removal, List L02, (#symbols-remove)
+**References:** Spec S02, (#symbols-modify)
 
 **Artifacts:**
-- Updated `crates/tugtool/src/lib.rs`
-- Updated `crates/tugtool/src/main.rs`
+- Updated `LocalImport` struct
+- Updated `convert_imports` function
 
 **Tasks:**
-- [ ] In `crates/tugtool/src/lib.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] pub mod mcp;`
-  - [ ] Update module doc comments to remove MCP references
-- [ ] In `crates/tugtool/src/main.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] Command::Mcp` variant
-  - [ ] Remove `#[cfg(feature = "mcp")] Command::Mcp => execute_mcp()` match arm
-  - [ ] Remove `execute_mcp()` function
-  - [ ] Remove any MCP-related imports
+- [ ] Add `relative_level: u32` field to `LocalImport` struct
+- [ ] Update `convert_imports` to populate `relative_level` from CST import info
+- [ ] REMOVE the `if import.relative_level > 0 { continue; }` skip
+- [ ] Ensure all call sites of `convert_imports` compile
 
 **Tests:**
-- [ ] Build: `cargo build -p tugtool`
-- [ ] Unit: existing CLI parsing tests pass
+- [ ] Unit: Verify `LocalImport` captures relative_level correctly
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool` succeeds
-- [ ] `cargo nextest run -p tugtool -- cli_parsing` passes
-- [ ] `grep -r "mcp" crates/tugtool/src/` returns only comments or unrelated strings
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python` passes (no regressions)
 
 **Rollback:**
 - Revert commit
 
 ---
 
-#### Step 3: Update Test Files {#step-3}
+#### Step 3: Update FileImportResolver for Relative Imports {#step-3}
 
-**Commit:** `test(tugtool): remove MCP-related tests`
+**Commit:** `feat(python): handle relative imports in FileImportResolver`
 
-**References:** [D01] MCP Removal, List L02, (#symbols-remove)
+**References:** [D01] Relative Resolution, Spec S02, Spec S03, (#api-changes)
 
 **Artifacts:**
-- Updated `crates/tugtool/tests/golden_tests.rs`
-- Updated `crates/tugtool/tests/api_surface.rs`
+- Updated `FileImportResolver::from_imports`
+- Updated `resolve_module_to_file`
 
 **Tasks:**
-- [ ] In `crates/tugtool/tests/golden_tests.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] mod mcp_parity { ... }` block
-- [ ] In `crates/tugtool/tests/api_surface.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] use tugtool::mcp;`
+- [ ] Add `importing_file_path: &str` parameter to `from_imports`
+- [ ] Add `context_path: Option<&str>` and `relative_level: u32` to `resolve_module_to_file`
+- [ ] In `from_imports`, handle relative imports:
+  - Use `resolve_relative_path` to convert to absolute module path
+  - Then proceed with normal resolution logic
+- [ ] REMOVE the `if import.module_path.starts_with('.') { continue; }` skip
+- [ ] Update all call sites in `analyze_files` to pass the importing file path
 
 **Tests:**
-- [ ] Golden: `cargo nextest run -p tugtool golden`
-- [ ] API surface: `cargo nextest run -p tugtool api_surface`
+- [ ] Integration: Relative import creates resolver alias
+- [ ] Integration: Resolver resolves relative import to correct file
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool` passes
-- [ ] No feature = "mcp" references in test files
+- [ ] `cargo build --workspace` succeeds
+- [ ] `cargo nextest run -p tugtool-python` passes
 
 **Rollback:**
 - Revert commit
 
 ---
 
-#### Step 4: Update Documentation {#step-4}
+#### Step 4: Verify Cross-File Reference Creation {#step-4}
 
-**Commit:** `docs: remove MCP references from all documentation`
+**Commit:** `test(python): verify relative imports create cross-file references`
 
-**References:** [D01] MCP Removal, [D02] CLI as Kernel, List L02, (#documentation-plan)
+**References:** [D03] Acceptance Tests, Table T01, (#test-plan-concepts)
 
 **Artifacts:**
-- Updated `CLAUDE.md`
-- Updated `README.md`
-- Updated `docs/AGENT_API.md`
-- Updated `docs/AGENT_PLAYBOOK.md`
-- Updated `Justfile`
+- Updated acceptance criteria tests
 
 **Tasks:**
-- [ ] In `CLAUDE.md`:
-  - [ ] Remove "MCP Server" section
-  - [ ] Remove `| mcp | Yes | Model Context Protocol server |` from feature flags table
-  - [ ] Update `tug mcp` reference if any
-  - [ ] Remove MCP tools list
-- [ ] In `README.md`:
-  - [ ] Remove `- **MCP support** - Native Model Context Protocol server...` from Features
-  - [ ] Remove `| mcp | Start MCP server |` from Commands table
-  - [ ] Remove entire "### MCP Configuration" section
-  - [ ] Remove "- MCP server for direct tool integration" from "For AI Agents" section
-- [ ] In `docs/AGENT_API.md`:
-  - [ ] Remove entire "## MCP Server" section
-  - [ ] Remove `| mcp | Start MCP server on stdio | tug mcp |` from Subcommands table
-  - [ ] Update Overview to remove MCP mention
-- [ ] In `docs/AGENT_PLAYBOOK.md`:
-  - [ ] Remove "### MCP Configuration" section
-  - [ ] Remove "### Example Tool Calls" section (MCP tool calls)
-  - [ ] Update "### Agent Instructions Snippet" to use CLI instead of MCP
-- [ ] In `Justfile`:
-  - [ ] Remove `mcp:` recipe
+- [ ] Run the failing tests from Step 0 - they should now PASS
+- [ ] Add additional test: `from . import module` pattern (import module, not symbol)
+- [ ] Verify reference count is correct in tests
 
 **Tests:**
-- [ ] Grep check: `grep -ri "mcp" CLAUDE.md README.md docs/ Justfile` returns empty or only false positives
+- [ ] Acceptance: `cargo nextest run -p tugtool-python relative_import` (expect PASS now)
+- [ ] Acceptance: `cargo nextest run -p tugtool-python ac4_import` (expect PASS)
 
 **Checkpoint:**
-- [ ] No MCP references in documentation
-- [ ] `just --list` shows no `mcp` recipe
+- [ ] All relative import tests pass
+- [ ] All existing tests pass: `cargo nextest run --workspace`
 
 **Rollback:**
-- Revert commit
+- If tests fail, debug the implementation from Steps 1-3
 
 ---
 
-#### Step 5: Verify Clean Removal {#step-5}
+#### Step 5: Validate with Spike Test {#step-5}
 
-**Commit:** N/A (verification only)
+**Commit:** N/A (validation only)
 
-**References:** [D01] MCP Removal, (#success-criteria)
+**References:** [D04] Spike as Acceptance Gate, Table T01 scenario S1, (#success-criteria)
 
 **Tasks:**
-- [ ] Run comprehensive grep: `grep -ri "mcp\|rmcp" --include="*.rs" --include="*.toml" --include="*.md" .`
-- [ ] Verify only expected results (plans/extras/editor-interop.md may reference MCP as historical context)
-- [ ] Run full test suite: `cargo nextest run --workspace`
-- [ ] Verify Cargo.lock updated (no rmcp entries)
+- [ ] Build tug: `cargo build -p tugtool --release`
+- [ ] Navigate to spike: `cd spikes/interop-spike`
+- [ ] Reset spike files: `git checkout .`
+- [ ] Run analyze-impact: `tug analyze-impact rename-symbol --at lib/utils.py:4:5 --to transform_data`
+- [ ] Verify output shows 4 files affected, ~8 references
+- [ ] Run dry-run: `tug run --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data`
+- [ ] Verify patch preview shows changes in all 4 files
+- [ ] Run apply: `tug run --apply --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data`
+- [ ] Verify result: 4 files changed
+- [ ] Run Python: `python3 main.py` - should execute without ImportError
+- [ ] Reset: `git checkout .`
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace` passes
-- [ ] `grep -r "rmcp" Cargo.lock` returns empty
-- [ ] Build with all features: `cargo build -p tugtool --features full`
+- [ ] `tug analyze-impact` shows files_affected >= 4
+- [ ] `tug run --apply` succeeds with 4 files changed
+- [ ] `python3 main.py` executes successfully after rename
 
 ---
 
-#### Step 5 Summary: MCP Removal Complete {#step-5-summary}
+#### Step 6: Add Additional Spike Scenarios {#step-6}
 
-After Steps 1-5, the codebase will have:
-- No MCP server code
-- No rmcp/schemars dependencies
-- No MCP feature flag
-- No MCP documentation
-- Simpler build, fewer dependencies
+**Commit:** `test(spike): add additional interop spike scenarios`
 
-**Final Part 1 Checkpoint:**
-- [ ] `cargo build -p tugtool` succeeds
-- [ ] `cargo nextest run --workspace` passes
-- [ ] No MCP references except historical context in plan files
-
----
-
-#### Step 6: Create Claude Code Rename Command {#step-6}
-
-**Commit:** `feat(interop): add /tug-rename Claude Code command`
-
-**References:** [D02] CLI as Kernel, [D03] Decision Gates, [D04] No Apply Without Approval, Spec S01, (#cmd-tug-rename)
+**References:** Table T01, [Q02] Star Imports, (#spike-scenarios)
 
 **Artifacts:**
-- New file: `.claude/commands/tug-rename.md`
+- New directory `spikes/interop-spike/scenarios/`
+- Scenario S2: Star import
+- Scenario S3: Aliased import
+- Scenario S4: Re-export
 
 **Tasks:**
-- [ ] Create `.claude/commands/tug-rename.md` with:
-  - [ ] Command description and purpose
-  - [ ] Input requirements (new_name from user, location from context)
-  - [ ] Full workflow algorithm with decision gates
-  - [ ] Exit code handling per Table T01
-  - [ ] Example usage
-
-**File content:**
-```markdown
-# /tug-rename
-
-Rename a symbol using tug with full verification workflow.
-
-## Workflow
-
-This command performs a safe rename operation with three decision gates:
-
-1. **Analyze Impact** - Identify all references and assess risk
-2. **Dry Run** - Generate patch and verify syntax
-3. **Apply** - Write changes after explicit approval
-
-## Usage
-
-When the user wants to rename a symbol:
-
-1. Determine the location from current file and cursor position as `<file>:<line>:<col>` (1-indexed)
-2. Ask for the new name if not provided
-
-### Step 1: Analyze Impact
-
-```bash
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
-```
-
-Parse the JSON output. Check:
-- If `references_count == 0`: Stop and inform user "No references found at this location. Please position cursor on the symbol definition or a reference."
-- If `files_affected > 50` OR `edits_estimated > 500`: Warn user this is a large refactor and ask for explicit confirmation before proceeding.
-
-### Step 2: Dry Run with Verification
-
-```bash
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-```
-
-Parse the JSON output. Present summary:
-- Files to change: N
-- Total edits: M
-- Verification: passed/failed
-
-If verification failed: Stop and show the verification output. Do not proceed.
-
-### Step 3: Apply (with approval)
-
-Show the summary and ask: "Apply these changes? (yes/no)"
-
-Only if user approves:
-
-```bash
-tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-```
-
-Report the result.
-
-## Error Handling
-
-| Exit Code | Action |
-|-----------|--------|
-| 0 | Success - continue workflow |
-| 2 | Invalid arguments - show error, ask for corrected input |
-| 3 | Symbol not found - suggest different location |
-| 4 | Apply failed - suggest re-analyzing |
-| 5 | Verification failed - do not apply, show errors |
-| 10 | Internal error - report bug |
-
-## Example
-
-User: "Rename the function process_data to transform_data"
-
-1. Get location from cursor (e.g., `src/utils.py:42:5`)
-2. Run analyze-impact
-3. Show: "Found 3 references across 2 files"
-4. Run dry-run
-5. Show: "Changes: 2 files, 4 edits. Verification: passed"
-6. Ask: "Apply these changes?"
-7. If yes: Apply and report success
-```
+- [ ] Create `spikes/interop-spike/scenarios/` directory structure
+- [ ] Scenario S2 - Star import:
+  - `star/pkg/base.py` with `def foo(): pass` and `__all__ = ['foo']`
+  - `star/pkg/consumer.py` with `from .base import *; foo()`
+  - Test: rename `foo` in base.py, verify consumer.py updates
+- [ ] Scenario S3 - Aliased import:
+  - `alias/pkg/utils.py` with `def process(): pass`
+  - `alias/pkg/main.py` with `from .utils import process as p; p()`
+  - Test: rename `process` in utils.py, verify `process` (not `p`) changes
+- [ ] Scenario S4 - Re-export:
+  - `reexport/pkg/internal.py` with `def helper(): pass`
+  - `reexport/pkg/__init__.py` with `from .internal import helper`
+  - `reexport/main.py` with `from pkg import helper; helper()`
+  - Test: rename `helper` in internal.py, verify all locations update
+- [ ] Document each scenario in README
 
 **Tests:**
-- [ ] Manual: Run `/tug-rename` in Claude Code (requires Claude Code environment)
+- [ ] Manual: Run each scenario through tug rename flow
+- [ ] Verify Python execution after rename
 
 **Checkpoint:**
-- [ ] File exists at `.claude/commands/tug-rename.md`
-- [ ] File content matches spec
+- [ ] At least 2 of the 3 additional scenarios pass
+- [ ] Any failing scenarios are documented with specific failure mode
 
 **Rollback:**
-- Delete file
+- Delete scenario directories
 
 ---
 
-#### Step 7: Create Claude Code Plan Command {#step-7}
+#### Step 7: Update Documentation {#step-7}
 
-**Commit:** `feat(interop): add /tug-rename-plan Claude Code command`
+**Commit:** `docs: document relative import support and limitations`
 
-**References:** [D02] CLI as Kernel, Spec S01, (#cmd-tug-rename-plan)
+**References:** (#specification)
 
 **Artifacts:**
-- New file: `.claude/commands/tug-rename-plan.md`
+- Updated `CLAUDE.md` (if needed)
+- Updated comments in `analyzer.rs`
 
 **Tasks:**
-- [ ] Create `.claude/commands/tug-rename-plan.md` with:
-  - [ ] Command description (analyze + dry-run only)
-  - [ ] Workflow stopping at dry-run
-  - [ ] Clear statement that this does NOT apply changes
-
-**File content:**
-```markdown
-# /tug-rename-plan
-
-Analyze and preview a rename without applying changes.
-
-## Purpose
-
-This command shows what a rename would do without making any changes. Use this for:
-- Reviewing impact before deciding to rename
-- Understanding scope of a refactor
-- Cautious workflows where you want to review before committing to changes
-
-## Workflow
-
-1. Determine the location from current file and cursor position
-2. Ask for the new name if not provided
-3. Run analyze-impact and show references
-4. Run dry-run and show patch preview
-5. **Stop here** - do not apply
-
-### Step 1: Analyze Impact
-
-```bash
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
-```
-
-Show:
-- Symbol name and kind
-- Number of references found
-- Files affected
-
-### Step 2: Dry Run Preview
-
-```bash
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-```
-
-Show:
-- Files that would change
-- Number of edits
-- Verification status
-- (Optional) First few edits as preview
-
-## What This Command Does NOT Do
-
-- Does NOT apply any changes
-- Does NOT modify any files
-- Does NOT require approval (nothing to approve)
-
-If you want to apply the changes, use `/tug-rename` instead.
-
-## Error Handling
-
-Same as `/tug-rename` - show errors and stop.
-```
+- [ ] Update Contract C3 comments in `analyzer.rs` to reflect new capabilities
+- [ ] Document supported relative import patterns
+- [ ] Document known limitations (multi-level relative imports, etc.)
+- [ ] Update any outdated "documented limitation" comments
 
 **Checkpoint:**
-- [ ] File exists at `.claude/commands/tug-rename-plan.md`
+- [ ] Comments accurately reflect current behavior
+- [ ] No misleading "unsupported" comments for now-supported features
 
 **Rollback:**
-- Delete file
+- Revert doc changes
 
 ---
 
-#### Step 8: Create Claude Code Fixtures Command {#step-8}
-
-**Commit:** `feat(interop): add /tug-fixtures-ensure Claude Code command`
-
-**References:** Spec S01, (#cmd-tug-fixtures-ensure)
-
-**Artifacts:**
-- New file: `.claude/commands/tug-fixtures-ensure.md`
-
-**Tasks:**
-- [ ] Create `.claude/commands/tug-fixtures-ensure.md`
-
-**File content:**
-```markdown
-# /tug-fixtures-ensure
-
-Ensure test fixtures are fetched and ready for use.
-
-## Purpose
-
-Tugtool uses external test fixtures (like Temporale) for integration tests. This command checks fixture status and fetches any missing fixtures.
-
-## Workflow
-
-### Step 1: Check Status
-
-```bash
-tug fixture status
-```
-
-Parse the JSON output. For each fixture, check the `state` field:
-- `fetched` - Fixture is ready
-- `missing` - Fixture needs to be fetched
-- `sha-mismatch` - Fixture is outdated
-
-### Step 2: Fetch if Needed
-
-If any fixtures are `missing` or `sha-mismatch`:
-
-```bash
-tug fixture fetch
-```
-
-### Step 3: Report Status
-
-Show final status of all fixtures:
-- Name
-- State (should all be `fetched`)
-- Path
-
-## Example Output
-
-"Fixture status:
-- temporale: fetched at .tug/fixtures/temporale/
-
-All fixtures ready."
-
-Or if fetch was needed:
-
-"Fixture status:
-- temporale: missing
-
-Fetching fixtures...
-
-Fixture status after fetch:
-- temporale: fetched at .tug/fixtures/temporale/
-
-All fixtures ready."
-
-## Error Handling
-
-If fetch fails, show the error and suggest:
-- Check network connectivity
-- Verify the fixture repository is accessible
-- Try `tug fixture fetch --force` to re-fetch
-```
-
-**Checkpoint:**
-- [ ] File exists at `.claude/commands/tug-fixtures-ensure.md`
-
-**Rollback:**
-- Delete file
-
----
-
-#### Step 9: Update CLAUDE.md with Interop Section {#step-9}
-
-**Commit:** `docs: add editor interop section to CLAUDE.md`
-
-**References:** [D02] CLI as Kernel, Spec S02, (#claude-rules)
-
-**Artifacts:**
-- Updated `CLAUDE.md` with editor interop section
-
-**Tasks:**
-- [ ] Add new section "## Editor Integration" to CLAUDE.md
-- [ ] Document the available commands
-- [ ] Add agent rules inline
-
-**Content to add:**
-```markdown
-## Editor Integration
-
-Tugtool integrates with Claude Code and Cursor via custom commands and rules.
-
-### Claude Code Commands
-
-The following commands are available in `.claude/commands/`:
-
-| Command | Purpose |
-|---------|---------|
-| `/tug-rename` | Full rename workflow with analyze, review, and apply |
-| `/tug-rename-plan` | Analyze and preview only (no apply) |
-| `/tug-fixtures-ensure` | Ensure test fixtures are fetched |
-
-### Agent Rules for Tug
-
-When using tug for refactoring, follow these rules:
-
-1. **Always analyze first**: Run `analyze-impact` before any `run --apply`
-2. **Review before apply**: Run dry-run and show summary before applying
-3. **Get explicit approval**: Never apply changes without user confirmation
-4. **Handle errors by exit code**: See Table T26 for exit code meanings
-5. **No mutation during workflow**: Don't manually edit files between analyze and apply
-6. **Report actual numbers**: Use values from JSON output, don't estimate
-```
-
-**Checkpoint:**
-- [ ] CLAUDE.md contains "Editor Integration" section
-- [ ] Commands table lists all three commands
-
-**Rollback:**
-- Revert changes to CLAUDE.md
-
----
-
-#### Step 10: Create Cursor Configuration {#step-10}
-
-**Commit:** `feat(interop): add Cursor rules configuration`
-
-**References:** Spec S03, [Q01] Cursor rules format (RESOLVED), (#cursor-config)
-
-**Artifacts:**
-- New file: `.cursor/rules/tug.mdc`
-
-**Tasks:**
-- [ ] Create `.cursor/rules/` directory
-- [ ] Create `.cursor/rules/tug.mdc` file with agent rules (see Spec S03 for content)
-- [ ] Document cursor integration in docs
-
-**File content for `.cursor/rules/tug.mdc`:**
-```markdown
----
-description: Rules for using tug refactoring tool
-alwaysApply: true
----
-
-# Tug Refactoring Rules
-
-When using the `tug` command for refactoring:
-
-## Workflow
-
-1. **Always analyze first:** Run `tug analyze-impact` before any `tug run --apply`
-2. **Review patch:** Run dry-run (`tug run` without `--apply`) and review output before applying
-3. **Get approval:** Ask user "Apply these changes?" before running `--apply`
-
-## Error Handling
-
-Handle errors by exit code:
-- Exit 0: Success, continue
-- Exit 2: Invalid arguments, fix and retry
-- Exit 3: Symbol not found, check location
-- Exit 4: Apply failed, re-analyze
-- Exit 5: Verification failed, do not apply
-- Exit 10: Internal error, report issue
-
-## Safety
-
-- Never guess: If uncertain, show the JSON error and ask for guidance
-- Never run `git commit` (project policy)
-- Never apply changes without showing summary first
-
-## Commands Reference
-
-```bash
-# Analyze impact (read-only)
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
-
-# Dry run with verification (read-only)
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-
-# Apply with verification (modifies files)
-tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-
-# Check fixture status
-tug fixture status
-
-# Fetch missing fixtures
-tug fixture fetch
-```
-```
-
-**Checkpoint:**
-- [ ] `.cursor/rules/tug.mdc` file exists
-- [ ] File contains workflow rules and error handling
-- [ ] File has valid `.mdc` frontmatter
-
-**Rollback:**
-- Delete `.cursor/rules/` directory
-
----
-
-#### Step 11: Update Agent Playbook {#step-11}
-
-**Commit:** `docs: update AGENT_PLAYBOOK with Claude Code integration`
-
-**References:** [D02] CLI as Kernel, (#documentation-plan)
-
-**Artifacts:**
-- Updated `docs/AGENT_PLAYBOOK.md`
-
-**Tasks:**
-- [ ] Replace MCP configuration section with Claude Code commands section
-- [ ] Update example snippets to show command usage
-- [ ] Add Cursor section
-
-**Checkpoint:**
-- [ ] No MCP references in AGENT_PLAYBOOK.md
-- [ ] Claude Code section documents commands
-- [ ] Cursor section documents rules file
-
-**Rollback:**
-- Revert changes
-
----
-
-#### Step 12: Final Verification {#step-12}
+#### Step 8: Final Verification and Cleanup {#step-8}
 
 **Commit:** N/A (verification only)
 
 **References:** (#success-criteria)
 
 **Tasks:**
-- [ ] Full build: `cargo build --workspace`
-- [ ] Full test suite: `cargo nextest run --workspace`
-- [ ] Grep verification: no unexpected MCP references
-- [ ] Documentation review: all docs updated
-- [ ] Claude Code command test: manually test in Claude Code environment
+- [ ] Run full test suite: `cargo nextest run --workspace`
+- [ ] Run clippy: `cargo clippy --workspace -- -D warnings`
+- [ ] Run formatter: `cargo fmt --all -- --check`
+- [ ] Run spike test one final time
+- [ ] Verify CI would pass: `just ci`
 
 **Checkpoint:**
-- [ ] All tests pass
-- [ ] All documentation updated
-- [ ] Commands work in Claude Code (manual verification)
-- [ ] `.cursor/rules/tug.mdc` present
+- [ ] `cargo nextest run --workspace` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [ ] `cargo fmt --all -- --check` passes
+- [ ] Spike test passes completely
 
 ---
 
-### 8.6 Deliverables and Checkpoints {#deliverables}
+### 8.5 Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Tugtool without MCP, with Claude Code commands and Cursor rules for editor integration.
+**Deliverable:** Cross-file rename working for relative imports in Python packages, validated by the interop spike test.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `cargo build -p tugtool` succeeds with no MCP code
-- [ ] `cargo nextest run --workspace` passes
-- [ ] No MCP references in code or user-facing documentation (except historical context in `plans/`)
-- [ ] `.claude/commands/tug-rename.md` exists and follows spec
-- [ ] `.claude/commands/tug-rename-plan.md` exists and follows spec
-- [ ] `.claude/commands/tug-fixtures-ensure.md` exists and follows spec
-- [ ] `.cursor/rules/tug.mdc` exists and follows spec
-- [ ] CLAUDE.md updated with editor integration section
+- [ ] `tug run --apply --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data` in `spikes/interop-spike/` produces 4 files changed
+- [ ] `python3 spikes/interop-spike/main.py` executes without error after rename
+- [ ] `cargo nextest run --workspace` passes (no regressions)
+- [ ] Acceptance criteria tests verify references ARE created for relative imports
+- [ ] At least one additional spike scenario (S2, S3, or S4) passes
 
 **Acceptance tests:**
-- [ ] Build: `cargo build -p tugtool`
-- [ ] Tests: `cargo nextest run --workspace`
-- [ ] Grep: `grep -r "rmcp" --include="*.rs" --include="*.toml" crates/` returns empty
+- [ ] Integration: `cargo nextest run -p tugtool-python ac4_import`
+- [ ] Integration: `cargo nextest run -p tugtool-python relative_import`
+- [ ] Manual: Spike test end-to-end flow
 
 #### Milestones (Within Phase) {#milestones}
 
-**Milestone M01: MCP Removed** {#m01-mcp-removed}
-- [ ] All MCP code deleted
-- [ ] All dependencies removed
-- [ ] Build succeeds
+**Milestone M01: Failing Tests Written** {#m01-failing-tests}
+- [ ] Step 0 complete
+- [ ] Tests exist that fail due to missing relative import support
 
-**Milestone M02: Claude Code Integration Complete** {#m02-claude-code}
-- [ ] All three commands created
-- [ ] CLAUDE.md updated
+**Milestone M02: Core Fix Implemented** {#m02-core-fix}
+- [ ] Steps 1-4 complete
+- [ ] Relative imports resolved in FileImportResolver
+- [ ] Cross-file references created for relative imports
 
-**Milestone M03: Cursor Integration Complete** {#m03-cursor}
-- [ ] `.cursor/rules/tug.mdc` created
+**Milestone M03: Spike Passes** {#m03-spike-passes}
+- [ ] Step 5 complete
+- [ ] Original spike test scenario passes end-to-end
+
+**Milestone M04: Additional Validation** {#m04-validation}
+- [ ] Steps 6-8 complete
+- [ ] Additional spike scenarios documented
 - [ ] Documentation updated
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Test commands in production Claude Code environment
-- [ ] Add more refactoring operations to commands as they're implemented
-- [ ] Consider VS Code extension for non-AI editor users
-- [ ] Add `tug doctor` command for environment verification
+- [ ] Support multi-level relative imports (`from ..utils import foo`)
+- [ ] Full star import expansion (resolve each symbol in `__all__`)
+- [ ] Import resolution for installed packages (not just workspace files)
+- [ ] Circular import detection and handling
 
 | Checkpoint | Verification |
 |------------|--------------|
-| MCP removed | `grep -r "rmcp" Cargo.lock` returns empty |
-| Tests pass | `cargo nextest run --workspace` |
-| Commands exist | `ls .claude/commands/tug-*.md` shows 3 files |
-| Rules exist | `cat .cursor/rules/tug.mdc` shows content |
+| Tests fail before fix | Step 0 tests FAIL |
+| Tests pass after fix | Step 4 tests PASS |
+| Spike passes | `python3 main.py` succeeds |
+| CI green | `just ci` passes |
 
 ---
 
@@ -1161,16 +694,12 @@ tug fixture fetch
 
 | Step | Status | Date | Notes |
 |------|--------|------|-------|
-| Step 0 | pending | | |
-| Step 1 | pending | | |
-| Step 2 | pending | | |
-| Step 3 | pending | | |
-| Step 4 | pending | | |
-| Step 5 | pending | | |
-| Step 6 | pending | | |
-| Step 7 | pending | | |
-| Step 8 | pending | | |
-| Step 9 | pending | | |
-| Step 10 | pending | | |
-| Step 11 | pending | | |
-| Step 12 | pending | | |
+| Step 0 | pending | | Add failing tests |
+| Step 1 | pending | | Relative path helper |
+| Step 2 | pending | | LocalImport changes |
+| Step 3 | pending | | FileImportResolver changes |
+| Step 4 | pending | | Verify tests pass |
+| Step 5 | pending | | Spike validation |
+| Step 6 | pending | | Additional scenarios |
+| Step 7 | pending | | Documentation |
+| Step 8 | pending | | Final verification |

@@ -8,6 +8,55 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Phase 8 Plan Creation (Spike Test Fixups) | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `spikes/interop-spike/README.md` - Critical issue documented from spike testing
+- `spikes/interop-spike/lib/utils.py` - Spike test definition file
+- `spikes/interop-spike/lib/__init__.py` - Spike test re-export file
+- `spikes/interop-spike/lib/processor.py` - Spike test consumer with relative import
+- `spikes/interop-spike/main.py` - Spike test main entry point
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Documented limitation at lines 682-683
+- `plans/phase-9.md` - Subsequent phase (renamed from original Phase 8)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Analyze spike test failure root cause | Done |
+| Identify relative import limitation in acceptance_criteria.rs | Done |
+| Rename original Phase 8 (MCP removal + interop) to Phase 9 | Done |
+| Create new Phase 8 plan focused on spike fixups | Done |
+| Define 8 execution steps with checkpoints | Done |
+| Define 4 milestones (M01-M04) | Done |
+| Define 4 design decisions (D01-D04) | Done |
+| Document open questions (Q01 multi-level, Q02 star imports) | Done |
+
+**Files Created:**
+- `plans/phase-8.md` - New Phase 8: Claude Code Spike Test Fixups plan
+
+**Files Modified:**
+- `plans/phase-9.md` - Renamed from original phase-8.md (MCP removal + interop)
+
+**Test Results:**
+- N/A (plan creation only)
+
+**Checkpoints Verified:**
+- Plan file created with complete structure: PASS
+- Plan includes all required sections (metadata, overview, design decisions, specs, steps): PASS
+- Implementation log ready for updates: PASS
+
+**Key Decisions/Notes:**
+- **Root cause identified:** Relative imports (`from .utils import foo`) return `None` - a documented limitation in acceptance_criteria.rs lines 682-683
+- **Critical gap:** Tests verify "parsing doesn't crash" but NOT "references are created" - this masked the broken behavior
+- **Strategy:** Write failing tests first (expose gap), then fix implementation, then validate with spike
+- **Scope:** Single-level relative imports (`.`) first; multi-level (`..`) deferred to future work
+- **Phase 9 dependency:** Phase 9 (Claude Code interop) is blocked until Phase 8 spike fixups complete
+
+---
+
 ## [phase-8.md] Phase 8 Plan Creation | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
