@@ -8,6 +8,53 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step B4: Update Spec Documentation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum B Step B4 (lines 2267-2291)
+- `plans/phase-7.md` - Lockfile rewrite policy (lines 2002-2015)
+- `plans/phase-7.md` - Raw SHA limitation (lines 2018-2025)
+- `plans/phase-7.md` - Spec S05 Lock File Format (lines 472-493)
+- `plans/phase-7.md` - Spec S02 fixture update (lines 369-394)
+- `plans/phase-7.md` - Test scenarios Section 7.3 (lines 628-634)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add note to Spec S05 about lock file regeneration (comments not preserved) | Done |
+| Add note to Spec S02 about raw SHA limitation | Done |
+| Update test scenario in Section 7.3 to remove "preserves comments" requirement | Done |
+| Add "Accepted Deviations" section documenting `toml` dependency | Done (already existed in B.6) |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `plans/phase-7.md`:
+  - Added lock file regeneration note after Spec S05 format example (line 495)
+  - Added raw SHA limitation note in Spec S02 Behavior section (line 388)
+  - Changed test scenario from "Update preserves lock file comments and formatting" to "Update regenerates lock file (comments not preserved)" (line 637)
+  - Checked off all 4 tasks for Step B4
+  - Checked off all 3 checkpoints
+
+**Test Results:**
+- No tests required for documentation-only changes
+
+**Checkpoints Verified:**
+- Spec S05 includes lock file regeneration note: PASS (line 495)
+- Spec S02 includes raw SHA limitation note: PASS (line 388)
+- Test scenarios updated: PASS (line 637)
+
+**Key Decisions/Notes:**
+- The "Accepted Deviations" section already existed as section B.6 in the plan file, documenting the `toml` dependency and SHA enforcement in test helper decisions
+- All spec updates follow the exact text provided in the B.1 Specification Updates section
+- This completes Phase 7 Addendum B: Error Codes and CLI Tests
+
+---
+
 ## [phase-7.md] Step B3: Add CLI End-to-End Tests | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

@@ -385,6 +385,8 @@ tug fixture update <NAME> --ref <REF>
 5. Output JSON response with optional warning
 6. Note: Does NOT automatically fetch the new version
 
+> **Limitation:** The `--ref` argument must be a tag name or branch name, not a raw SHA. This is because `git ls-remote <repository> <sha>` does not resolve raw commit SHAs. To pin to a specific commit, first identify a tag or branch that points to that commit.
+
 **Exit codes:**
 - 0: Success (lock file updated)
 - 2: Invalid arguments (unknown fixture, invalid ref)
@@ -489,6 +491,8 @@ sha = "<full-40-char-sha>"
 # Optional metadata fields (not used by fetch/update)
 description = "<description>"
 ```
+
+> **Note:** When `tug fixture update` modifies a lock file, it regenerates the entire file from a template. Any user-added comments will not be preserved. The comment header shown above is automatically regenerated.
 
 ---
 
@@ -630,7 +634,7 @@ fixtures/fixture-test/
 - Update to valid branch ref (warning)
 - Update to invalid ref (error)
 - Update non-existent fixture (error)
-- Update preserves lock file comments and formatting
+- Update regenerates lock file (comments not preserved)
 
 ---
 
@@ -2274,15 +2278,15 @@ fn test_fixture_list_returns_exit_0() {
 - Updated `plans/phase-7.md` with spec clarifications
 
 **Tasks:**
-- [ ] Add note to Spec S05 about lock file regeneration (comments not preserved)
-- [ ] Add note to Spec S02 about raw SHA limitation
-- [ ] Update test scenario in Section 7.3 to remove "preserves comments" requirement
-- [ ] Add "Accepted Deviations" section documenting `toml` dependency
+- [x] Add note to Spec S05 about lock file regeneration (comments not preserved)
+- [x] Add note to Spec S02 about raw SHA limitation
+- [x] Update test scenario in Section 7.3 to remove "preserves comments" requirement
+- [x] Add "Accepted Deviations" section documenting `toml` dependency
 
 **Checkpoint:**
-- [ ] Spec S05 includes lock file regeneration note
-- [ ] Spec S02 includes raw SHA limitation note
-- [ ] Test scenarios updated
+- [x] Spec S05 includes lock file regeneration note
+- [x] Spec S02 includes raw SHA limitation note
+- [x] Test scenarios updated
 
 **Commit after all checkpoints pass.**
 
