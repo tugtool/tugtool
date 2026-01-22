@@ -8,6 +8,56 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step B2: Update CLI Error Handling in main.rs | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum B Step B2 (lines 2137-2174)
+- `plans/phase-7.md` - Exit code clarification (lines 1979-1999)
+- `crates/tugtool-core/src/error.rs` - TugError and OutputErrorCode types
+- `crates/tugtool/src/fixture.rs` - FixtureError and FixtureErrorKind types
+- `crates/tugtool/src/main.rs` - CLI error handling implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `execute_fixture_fetch` to propagate fixture errors with correct exit codes | Done |
+| Update `execute_fixture_update` to propagate fixture errors with correct exit codes | Done |
+| Update `execute_fixture_list` to return exit code 2 for invalid fixture name | Done (N/A - list doesn't take name) |
+| Update `execute_fixture_status` to return exit code 2 for invalid fixture name | Done |
+| Ensure error responses include appropriate JSON structure | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs`:
+  - Added `fixture_error_to_tug_error()` helper function that maps FixtureErrorKind to TugError variants
+  - Updated `execute_fixture_fetch` to use `fixture_error_to_tug_error` instead of `TugError::internal`
+  - Updated `execute_fixture_update` to use `fixture_error_to_tug_error` instead of `TugError::internal`
+  - Updated `execute_fixture_status` to use `fixture_error_to_tug_error` for name-specific queries
+- `plans/phase-7.md`:
+  - Checked off all 5 tasks for Step B2
+  - Checked off test item
+  - Checked off both checkpoint items
+
+**Test Results:**
+- `cargo nextest run -p tugtool`: 258 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool` - builds without errors: PASS
+- `cargo nextest run -p tugtool` - all tests pass (258 passed): PASS
+
+**Key Decisions/Notes:**
+- Created `fixture_error_to_tug_error` helper to centralize FixtureError → TugError conversion
+- Exit code mapping: NotFound→2 (invalid_args), RefNotFound→3 (file_not_found), Internal→10 (internal)
+- The `execute_fixture_list` function doesn't take a name parameter, so "invalid fixture name" doesn't apply
+- JSON error structure was already handled by existing `ErrorResponse` in main()
+
+---
+
 ## [phase-7.md] Step B1: Update Error Handling in fixture.rs | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

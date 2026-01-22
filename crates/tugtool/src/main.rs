@@ -707,12 +707,12 @@ fn execute_fixture_fetch(
     let results = if let Some(fixture_name) = name {
         // Fetch specific fixture
         let result = tugtool::fixture::fetch_fixture_by_name(&workspace, &fixture_name, force)
-            .map_err(|e| TugError::internal(e.to_string()))?;
+            .map_err(fixture_error_to_tug_error)?;
         vec![result]
     } else {
         // Fetch all fixtures
         tugtool::fixture::fetch_all_fixtures(&workspace, force)
-            .map_err(|e| TugError::internal(e.to_string()))?
+            .map_err(fixture_error_to_tug_error)?
     };
 
     // Convert to response format
@@ -756,7 +756,7 @@ fn execute_fixture_update(global: &GlobalArgs, name: &str, git_ref: &str) -> Res
 
     // Perform the update
     let result = tugtool::fixture::update_fixture_lock(&workspace_root, name, git_ref)
-        .map_err(|e| TugError::internal(e.to_string()))?;
+        .map_err(fixture_error_to_tug_error)?;
 
     // Convert lock_file path to relative path string
     let lock_file_relative = result
@@ -838,7 +838,7 @@ fn execute_fixture_status(global: &GlobalArgs, name: Option<String>) -> Result<(
     let results = if let Some(fixture_name) = name {
         // Get state of specific fixture
         let (info, state) = tugtool::fixture::get_fixture_state_by_name(&workspace, &fixture_name)
-            .map_err(|e| TugError::internal(e.to_string()))?;
+            .map_err(fixture_error_to_tug_error)?;
         vec![(info, state)]
     } else {
         // Get states of all fixtures
@@ -998,6 +998,22 @@ fn resolve_toolchain(
         .map_err(|e| TugError::internal(format!("Failed to save session: {}", e)))?;
 
     Ok(resolved_path)
+}
+
+/// Convert a FixtureError to a TugError with the appropriate exit code.
+///
+/// Maps fixture error kinds to TugError variants:
+/// - `NotFound` -> `InvalidArguments` (exit code 2)
+/// - `RefNotFound` -> `FileNotFound` (exit code 3, resolution error)
+/// - `Internal` -> `InternalError` (exit code 10)
+fn fixture_error_to_tug_error(e: tugtool::fixture::FixtureError) -> TugError {
+    use tugtool::fixture::FixtureErrorKind;
+
+    match e.kind {
+        FixtureErrorKind::NotFound => TugError::invalid_args(e.to_string()),
+        FixtureErrorKind::RefNotFound => TugError::file_not_found(e.to_string()),
+        FixtureErrorKind::Internal => TugError::internal(e.to_string()),
+    }
 }
 
 // ============================================================================

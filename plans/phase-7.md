@@ -2144,11 +2144,11 @@ impl FixtureError {
 - Updated `crates/tugtool/src/main.rs` error handling
 
 **Tasks:**
-- [ ] Update `execute_fixture_fetch` to propagate fixture errors with correct exit codes
-- [ ] Update `execute_fixture_update` to propagate fixture errors with correct exit codes
-- [ ] Update `execute_fixture_list` to return exit code 2 for invalid fixture name
-- [ ] Update `execute_fixture_status` to return exit code 2 for invalid fixture name
-- [ ] Ensure error responses include appropriate JSON structure
+- [x] Update `execute_fixture_fetch` to propagate fixture errors with correct exit codes
+- [x] Update `execute_fixture_update` to propagate fixture errors with correct exit codes
+- [x] Update `execute_fixture_list` to return exit code 2 for invalid fixture name
+- [x] Update `execute_fixture_status` to return exit code 2 for invalid fixture name
+- [x] Ensure error responses include appropriate JSON structure
 
 **Implementation approach:**
 ```rust
@@ -2165,11 +2165,11 @@ fn execute_fixture_fetch(...) -> Result<(), TugError> {
 ```
 
 **Tests:**
-- [ ] Verify error paths return correct error types (covered by E2E tests in B3)
+- [x] Verify error paths return correct error types (covered by E2E tests in B3)
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool` - builds without errors
-- [ ] `cargo nextest run -p tugtool` - all tests pass
+- [x] `cargo build -p tugtool` - builds without errors
+- [x] `cargo nextest run -p tugtool` - all tests pass (258 passed)
 
 **Commit after all checkpoints pass.**
 
