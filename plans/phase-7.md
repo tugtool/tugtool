@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | TBD |
 | Last updated | 2026-01-22 |
@@ -1066,7 +1066,7 @@ This bypasses the fixture fetch system entirely.
 
 ---
 
-#### Step 8: Optional CI Workflow Update {#step-8}
+#### Step 8: Optional CI Workflow Update {#step-8}: DEFERRED
 
 **Commit:** `ci: use tug fixture fetch command`
 
@@ -1112,36 +1112,36 @@ This bypasses the fixture fetch system entirely.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `tug fixture fetch` fetches all fixtures from lock files
-- [ ] `tug fixture fetch temporale` fetches specific fixture
-- [ ] `tug fixture fetch --force` re-fetches even if up-to-date
-- [ ] `tug fixture update temporale --ref <tag>` updates lock file
-- [ ] All commands produce valid JSON output
-- [ ] Branch refs produce warning in update response
-- [ ] SHA verification catches mismatches
-- [ ] All existing Temporale tests pass
-- [ ] CLAUDE.md documents new commands
+- [x] `tug fixture fetch` fetches all fixtures from lock files
+- [x] `tug fixture fetch temporale` fetches specific fixture
+- [x] `tug fixture fetch --force` re-fetches even if up-to-date
+- [x] `tug fixture update temporale --ref <tag>` updates lock file
+- [x] All commands produce valid JSON output
+- [x] Branch refs produce warning in update response
+- [x] SHA verification catches mismatches
+- [x] All existing Temporale tests pass
+- [x] CLAUDE.md documents new commands
 
 **Acceptance tests:**
-- [ ] Integration: `cargo nextest run -p tugtool fixture` passes
-- [ ] Integration: `cargo nextest run -p tugtool temporale` passes
-- [ ] CLI: `tug fixture fetch 2>&1 | jq .status` outputs "ok"
+- [x] Integration: `cargo nextest run -p tugtool fixture` passes (42 tests)
+- [x] Integration: `cargo nextest run -p tugtool temporale` passes (8 tests)
+- [x] CLI: `tug fixture fetch 2>&1 | jq .status` outputs "ok"
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Shared Module Created** {#m01-shared-module}
-- [ ] `fixture.rs` module exists with core types and functions
-- [ ] Test support uses shared module
+- [x] `fixture.rs` module exists with core types and functions
+- [x] Test support uses shared module
 
 **Milestone M02: Fetch Command Working** {#m02-fetch-working}
-- [ ] `tug fixture fetch` fetches Temporale fixture
-- [ ] SHA verification works
-- [ ] Force flag works
+- [x] `tug fixture fetch` fetches Temporale fixture
+- [x] SHA verification works
+- [x] Force flag works
 
 **Milestone M03: Update Command Working** {#m03-update-working}
-- [ ] `tug fixture update` resolves refs and updates lock files
-- [ ] Branch warning works
-- [ ] JSON output complete
+- [x] `tug fixture update` resolves refs and updates lock files
+- [x] Branch warning works
+- [x] JSON output complete
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
