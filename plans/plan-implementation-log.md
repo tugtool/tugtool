@@ -8,6 +8,55 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 1: Implement Relative Path Resolution Helper | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 1 specification, Spec S01 (algorithm), Design decisions D01/D02
+- `crates/tugtool-python/src/analyzer.rs` - Existing `resolve_module_to_file` function and test structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `resolve_relative_path(importing_file: &str, relative_level: u32, module_name: &str) -> String` | Done |
+| Handle relative_level = 1 (single dot) | Done |
+| Handle relative_level = 0 (absolute, pass through) | Done |
+| Log warning for relative_level > 1 (not yet supported) | Done |
+| Add unit tests for path computation | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added `resolve_relative_path` function (line 1266) and 10 unit tests in new `resolve_relative_path_tests` module
+- `plans/phase-8.md` - Checked off Step 1 tasks, tests, checkpoints; updated implementation log
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python resolve_relative_path`: 10 passed
+- `cargo clippy -p tugtool-python`: No warnings
+
+**Tests Added:**
+- `resolve_relative_path_single_level_with_module` - "lib/foo.py" + level 1 + "utils" → "lib/utils"
+- `resolve_relative_path_single_level_nested` - "lib/sub/foo.py" + level 1 + "bar" → "lib/sub/bar"
+- `resolve_relative_path_single_level_package_itself` - "lib/foo.py" + level 1 + "" → "lib"
+- `resolve_relative_path_absolute_import` - level 0 + "absolute.path" → "absolute/path"
+- `resolve_relative_path_absolute_import_simple` - level 0 + "utils" → "utils"
+- `resolve_relative_path_double_level` - level 2 parent package support
+- `resolve_relative_path_double_level_package_itself` - level 2 with empty module
+- `resolve_relative_path_dotted_module_name` - "sub.utils" → "sub/utils"
+- `resolve_relative_path_root_level_file` - file at root level
+- `resolve_relative_path_root_level_package_itself` - empty result at root
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python resolve_relative_path` passes: PASS (10/10)
+- No warnings from clippy: PASS
+
+**Key Decisions/Notes:**
+- Function implements Spec S01 algorithm: get directory, go up `relative_level - 1` parents, append module path
+- Multi-level relative imports (level > 1) emit a `tracing::warn!` but still work (D02 allows this)
+- The 4 acceptance criteria tests from Step 0 remain failing as expected - they will pass after Steps 2-4
+
+---
+
 ## [phase-8.md] Step 0: Add Failing Tests for Relative Imports | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

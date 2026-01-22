@@ -1263,6 +1263,84 @@ pub fn resolve_module_to_file(
     None
 }
 
+/// Resolve a relative import path to an absolute module path.
+///
+/// This function converts Python relative imports (e.g., `from .utils import foo`)
+/// into absolute module paths that can be resolved against workspace files.
+///
+/// # Arguments
+/// * `importing_file` - Path of the file containing the import (e.g., "lib/foo.py")
+/// * `relative_level` - Number of leading dots (0 = absolute, 1 = current package, 2+ = parent packages)
+/// * `module_name` - Module name after the dots (e.g., "utils" from "from .utils import foo")
+///
+/// # Returns
+/// The resolved module path as a forward-slash separated path (e.g., "lib/utils").
+/// For absolute imports (relative_level = 0), converts dots to slashes.
+///
+/// # Algorithm (Spec S01)
+/// 1. Get directory of importing file
+/// 2. For each relative level, go up one parent directory
+/// 3. Append module_name (dots converted to slashes)
+/// 4. Return the resulting path
+///
+/// # Examples
+/// ```ignore
+/// resolve_relative_path("lib/foo.py", 1, "utils") -> "lib/utils"
+/// resolve_relative_path("lib/sub/foo.py", 1, "bar") -> "lib/sub/bar"
+/// resolve_relative_path("lib/foo.py", 1, "") -> "lib"
+/// resolve_relative_path("lib/foo.py", 0, "absolute.path") -> "absolute/path"
+/// ```
+pub fn resolve_relative_path(importing_file: &str, relative_level: u32, module_name: &str) -> String {
+    // Handle absolute imports (relative_level = 0)
+    if relative_level == 0 {
+        // Convert dots to slashes for absolute module paths
+        return module_name.replace('.', "/");
+    }
+
+    // Log warning for multi-level relative imports (not yet fully supported)
+    if relative_level > 1 {
+        tracing::warn!(
+            "Multi-level relative import (level {}) in '{}' - support is limited",
+            relative_level,
+            importing_file
+        );
+    }
+
+    // Get the directory of the importing file
+    let dir = std::path::Path::new(importing_file)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Go up parent directories based on relative level
+    // relative_level = 1 means current package (stay in same directory)
+    // relative_level = 2 means parent package (go up one)
+    // etc.
+    let mut current_dir = std::path::PathBuf::from(&dir);
+    for _ in 1..relative_level {
+        if let Some(parent) = current_dir.parent() {
+            current_dir = parent.to_path_buf();
+        }
+    }
+
+    // Convert back to forward-slash path
+    let base_path = current_dir
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    // Append module name if present
+    if module_name.is_empty() {
+        base_path
+    } else {
+        let module_path = module_name.replace('.', "/");
+        if base_path.is_empty() {
+            module_path
+        } else {
+            format!("{}/{}", base_path, module_path)
+        }
+    }
+}
+
 // ========================================================================
 // Reference Resolution (Contract C4: LEGB Scope Chain)
 // ========================================================================
@@ -2238,6 +2316,80 @@ mod tests {
             let file_path = module_path.replace('.', "/");
             assert_eq!(format!("{}.py", file_path), expected_py);
             assert_eq!(format!("{}/__init__.py", file_path), expected_init);
+        }
+    }
+
+    mod resolve_relative_path_tests {
+        use super::*;
+
+        #[test]
+        fn resolve_relative_path_single_level_with_module() {
+            // from .utils import foo in lib/foo.py -> lib/utils
+            let result = resolve_relative_path("lib/foo.py", 1, "utils");
+            assert_eq!(result, "lib/utils");
+        }
+
+        #[test]
+        fn resolve_relative_path_single_level_nested() {
+            // from .bar import x in lib/sub/foo.py -> lib/sub/bar
+            let result = resolve_relative_path("lib/sub/foo.py", 1, "bar");
+            assert_eq!(result, "lib/sub/bar");
+        }
+
+        #[test]
+        fn resolve_relative_path_single_level_package_itself() {
+            // from . import utils in lib/foo.py -> lib (the package itself)
+            let result = resolve_relative_path("lib/foo.py", 1, "");
+            assert_eq!(result, "lib");
+        }
+
+        #[test]
+        fn resolve_relative_path_absolute_import() {
+            // Absolute import (relative_level = 0) converts dots to slashes
+            let result = resolve_relative_path("lib/foo.py", 0, "absolute.path");
+            assert_eq!(result, "absolute/path");
+        }
+
+        #[test]
+        fn resolve_relative_path_absolute_import_simple() {
+            // Absolute import with no dots
+            let result = resolve_relative_path("lib/foo.py", 0, "utils");
+            assert_eq!(result, "utils");
+        }
+
+        #[test]
+        fn resolve_relative_path_double_level() {
+            // from ..utils import foo in lib/sub/foo.py -> lib/utils
+            let result = resolve_relative_path("lib/sub/foo.py", 2, "utils");
+            assert_eq!(result, "lib/utils");
+        }
+
+        #[test]
+        fn resolve_relative_path_double_level_package_itself() {
+            // from .. import x in lib/sub/foo.py -> lib
+            let result = resolve_relative_path("lib/sub/foo.py", 2, "");
+            assert_eq!(result, "lib");
+        }
+
+        #[test]
+        fn resolve_relative_path_dotted_module_name() {
+            // from .sub.utils import foo in pkg/foo.py -> pkg/sub/utils
+            let result = resolve_relative_path("pkg/foo.py", 1, "sub.utils");
+            assert_eq!(result, "pkg/sub/utils");
+        }
+
+        #[test]
+        fn resolve_relative_path_root_level_file() {
+            // from .utils import foo in foo.py (at root) -> utils
+            let result = resolve_relative_path("foo.py", 1, "utils");
+            assert_eq!(result, "utils");
+        }
+
+        #[test]
+        fn resolve_relative_path_root_level_package_itself() {
+            // from . import utils in foo.py (at root) -> ""
+            let result = resolve_relative_path("foo.py", 1, "");
+            assert_eq!(result, "");
         }
     }
 

@@ -415,21 +415,21 @@ pub fn resolve_module_to_file(
 - New function `resolve_relative_path` in `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] Add `resolve_relative_path(importing_file: &str, relative_level: u32, module_name: &str) -> String`
-- [ ] Handle relative_level = 1 (single dot)
-- [ ] Handle relative_level = 0 (absolute, pass through)
-- [ ] Log warning for relative_level > 1 (not yet supported)
-- [ ] Add unit tests for path computation
+- [x] Add `resolve_relative_path(importing_file: &str, relative_level: u32, module_name: &str) -> String`
+- [x] Handle relative_level = 1 (single dot)
+- [x] Handle relative_level = 0 (absolute, pass through)
+- [x] Log warning for relative_level > 1 (not yet supported)
+- [x] Add unit tests for path computation
 
 **Tests:**
-- [ ] Unit: `resolve_relative_path("lib/foo.py", 1, "utils")` -> `"lib/utils"`
-- [ ] Unit: `resolve_relative_path("lib/sub/foo.py", 1, "bar")` -> `"lib/sub/bar"`
-- [ ] Unit: `resolve_relative_path("lib/foo.py", 1, "")` -> `"lib"` (package itself)
-- [ ] Unit: `resolve_relative_path("lib/foo.py", 0, "absolute.path")` -> `"absolute/path"`
+- [x] Unit: `resolve_relative_path("lib/foo.py", 1, "utils")` -> `"lib/utils"`
+- [x] Unit: `resolve_relative_path("lib/sub/foo.py", 1, "bar")` -> `"lib/sub/bar"`
+- [x] Unit: `resolve_relative_path("lib/foo.py", 1, "")` -> `"lib"` (package itself)
+- [x] Unit: `resolve_relative_path("lib/foo.py", 0, "absolute.path")` -> `"absolute/path"`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python resolve_relative_path` passes
-- [ ] No warnings from clippy: `cargo clippy -p tugtool-python`
+- [x] `cargo nextest run -p tugtool-python resolve_relative_path` passes
+- [x] No warnings from clippy: `cargo clippy -p tugtool-python`
 
 **Rollback:**
 - Revert commit
@@ -695,7 +695,7 @@ pub fn resolve_module_to_file(
 | Step | Status | Date | Notes |
 |------|--------|------|-------|
 | Step 0 | complete | 2026-01-22 | Add failing tests - 4 tests fail as expected |
-| Step 1 | pending | | Relative path helper |
+| Step 1 | complete | 2026-01-22 | Added resolve_relative_path with 10 unit tests passing |
 | Step 2 | pending | | LocalImport changes |
 | Step 3 | pending | | FileImportResolver changes |
 | Step 4 | pending | | Verify tests pass |
