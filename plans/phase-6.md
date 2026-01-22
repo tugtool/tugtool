@@ -1349,11 +1349,11 @@ cp -r /tmp/temporale-backup sample-code/python/temporale
 - Updated: `temporale_path()` to remove fallback
 
 **Tasks:**
-- [ ] Remove vendored fallback from `temporale_path()`
-- [ ] Delete `sample-code/python/temporale/` directory
-- [ ] Delete empty `sample-code/python/` if no other content
-- [ ] Delete empty `sample-code/` if no other content
-- [ ] Update any documentation referencing old location
+- [x] Remove vendored fallback from `temporale_path()`
+- [x] Delete `sample-code/python/temporale/` directory
+- [x] Delete empty `sample-code/python/` if no other content
+- [x] Delete empty `sample-code/` if no other content
+- [x] Update any documentation referencing old location
 
 **Updated temporale_path() (final version):**
 ```rust
@@ -1369,12 +1369,12 @@ fn temporale_path() -> PathBuf {
 ```
 
 **Tests:**
-- [ ] Integration: all Temporale tests pass
-- [ ] Verify: `sample-code/python/temporale/` does not exist
+- [x] Integration: all Temporale tests pass
+- [x] Verify: `sample-code/python/temporale/` does not exist
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool temporale` - all tests pass
-- [ ] `ls sample-code/python/temporale 2>&1 | grep -q "No such file"` - directory gone
+- [x] `cargo nextest run -p tugtool temporale` - all tests pass (8 passed)
+- [x] `ls sample-code/python/temporale 2>&1 | grep -q "No such file"` - directory gone
 - [ ] CI passes
 
 **Commit after all checkpoints pass.**

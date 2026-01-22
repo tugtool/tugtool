@@ -8,6 +8,50 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-6.md] Step 7: Remove Vendored Temporale | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-6.md` - Step 7 specification (lines 1341-1381)
+- [D01] Fixture structure decision
+- Success criteria from phase overview
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove vendored fallback from `temporale_path()` | Done |
+| Delete `sample-code/python/temporale/` directory | Done |
+| Delete empty `sample-code/python/` if no other content | Done |
+| Delete empty `sample-code/` if no other content | Done |
+| Update any documentation referencing old location | Done |
+
+**Files Modified:**
+- `crates/tugtool/tests/temporale_integration.rs` - Simplified `temporale_path()` to use `get_fixture_path()` directly
+- `plans/phase-6.md` - Checked off Step 7 tasks and checkpoints
+
+**Files Deleted:**
+- `sample-code/python/temporale/` - Entire vendored Temporale directory
+- `sample-code/python/` - Empty after Temporale removal (only had .DS_Store)
+- `sample-code/` - Empty after python removal (only had .gitignore for Python code)
+
+**Test Results:**
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool temporale` - all tests pass: PASS (8 passed)
+- `ls sample-code/python/temporale 2>&1 | grep -q "No such file"` - directory gone: PASS
+- CI passes: PENDING (requires push)
+
+**Key Decisions/Notes:**
+- The `temporale_path()` function was simplified from ~30 lines to 3 lines, now delegating entirely to `get_fixture_path()`
+- The entire `sample-code/` directory was removed since Temporale was the only sample code
+- References in `phase-5.md` are historical documentation and were preserved as-is
+- CLAUDE.md was already updated in Step 5 with fixture-based workflow
+
+---
+
 ## [phase-6.md] Step 6: Verify Fixture-Based Tests Work | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

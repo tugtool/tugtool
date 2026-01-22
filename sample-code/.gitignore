@@ -1,5 +1,0 @@
-# Prevent uv from creating per-project venvs
-# All Python testing uses the workspace-level .tug-test-venv/
-.venv/
-__pycache__/
-*.pyc
