@@ -633,6 +633,75 @@ impl SessionStatusResponse {
     }
 }
 
+// ============================================================================
+// Fixture Response Types (Phase 7)
+// ============================================================================
+
+/// Response for fixture fetch command.
+///
+/// Per Phase 7 Spec S03: fixture fetch Response Schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureFetchResponse {
+    /// Status: "ok".
+    pub status: String,
+    /// Schema version for compatibility.
+    pub schema_version: String,
+    /// List of fixture results.
+    pub fixtures: Vec<FixtureFetchResult>,
+}
+
+impl FixtureFetchResponse {
+    /// Create a new fixture fetch response.
+    pub fn new(fixtures: Vec<FixtureFetchResult>) -> Self {
+        FixtureFetchResponse {
+            status: "ok".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            fixtures,
+        }
+    }
+}
+
+/// Individual fixture fetch result.
+///
+/// Per Phase 7 Spec S03.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureFetchResult {
+    /// Fixture name.
+    pub name: String,
+    /// Action taken: "fetched", "up-to-date", "updated".
+    pub action: String,
+    /// Relative path to fixture directory.
+    pub path: String,
+    /// Git repository URL.
+    pub repository: String,
+    /// Git ref (tag/branch).
+    #[serde(rename = "ref")]
+    pub git_ref: String,
+    /// Commit SHA.
+    pub sha: String,
+}
+
+impl FixtureFetchResult {
+    /// Create a new fixture fetch result.
+    pub fn new(
+        name: impl Into<String>,
+        action: impl Into<String>,
+        path: impl Into<String>,
+        repository: impl Into<String>,
+        git_ref: impl Into<String>,
+        sha: impl Into<String>,
+    ) -> Self {
+        FixtureFetchResult {
+            name: name.into(),
+            action: action.into(),
+            path: path.into(),
+            repository: repository.into(),
+            git_ref: git_ref.into(),
+            sha: sha.into(),
+        }
+    }
+}
+
 /// Error response.
 ///
 /// Per 26.0.7 spec #error-response.

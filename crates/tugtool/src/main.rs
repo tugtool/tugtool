@@ -32,7 +32,10 @@ use tugtool_core::error::{OutputErrorCode, TugError};
 #[cfg(feature = "python")]
 use tugtool_core::output::VerifyResponse;
 use tugtool_core::output::SCHEMA_VERSION;
-use tugtool_core::output::{emit_response, ErrorInfo, ErrorResponse, SnapshotResponse};
+use tugtool_core::output::{
+    emit_response, ErrorInfo, ErrorResponse, FixtureFetchResponse, FixtureFetchResult,
+    SnapshotResponse,
+};
 use tugtool_core::session::{Session, SessionOptions};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
@@ -192,6 +195,11 @@ enum Command {
     /// The server communicates via JSON-RPC 2.0 over stdin/stdout.
     #[cfg(feature = "mcp")]
     Mcp,
+    /// Fixture management commands.
+    Fixture {
+        #[command(subcommand)]
+        action: FixtureAction,
+    },
 }
 
 /// Refactoring operations (used by analyze-impact and run).
@@ -261,6 +269,27 @@ enum SessionAction {
     Status,
 }
 
+/// Fixture management actions.
+#[derive(Subcommand)]
+enum FixtureAction {
+    /// Fetch fixtures according to lock files.
+    Fetch {
+        /// Specific fixture to fetch (fetches all if omitted).
+        name: Option<String>,
+        /// Re-fetch even if fixture exists and SHA matches.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Update a fixture lock file to a new ref.
+    Update {
+        /// Fixture name to update.
+        name: String,
+        /// New ref (tag or branch).
+        #[arg(long, rename_all = "kebab-case")]
+        git_ref: String,
+    },
+}
+
 // ============================================================================
 // Main Entry Point
 // ============================================================================
@@ -326,6 +355,7 @@ fn execute(cli: Cli) -> Result<(), TugError> {
         Command::Clean { workers, cache } => execute_clean(&cli.global, workers, cache),
         #[cfg(feature = "mcp")]
         Command::Mcp => execute_mcp(),
+        Command::Fixture { action } => execute_fixture(&cli.global, action),
     }
 }
 
@@ -639,6 +669,83 @@ fn execute_mcp() -> Result<(), TugError> {
 
     // Run the MCP server (blocks until client disconnects or sends shutdown)
     runtime.block_on(tugtool::mcp::run_mcp_server())
+}
+
+/// Execute fixture command.
+///
+/// Handles fixture fetch and update subcommands.
+fn execute_fixture(global: &GlobalArgs, action: FixtureAction) -> Result<(), TugError> {
+    match action {
+        FixtureAction::Fetch { name, force } => execute_fixture_fetch(global, name, force),
+        FixtureAction::Update { name, git_ref } => execute_fixture_update(global, &name, &git_ref),
+    }
+}
+
+/// Execute fixture fetch subcommand.
+///
+/// Fetches fixtures according to lock files in the fixtures/ directory.
+fn execute_fixture_fetch(
+    global: &GlobalArgs,
+    name: Option<String>,
+    force: bool,
+) -> Result<(), TugError> {
+    let workspace = global
+        .workspace
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    let results = if let Some(fixture_name) = name {
+        // Fetch specific fixture
+        let result = tugtool::fixture::fetch_fixture_by_name(&workspace, &fixture_name, force)
+            .map_err(|e| TugError::internal(e.to_string()))?;
+        vec![result]
+    } else {
+        // Fetch all fixtures
+        tugtool::fixture::fetch_all_fixtures(&workspace, force)
+            .map_err(|e| TugError::internal(e.to_string()))?
+    };
+
+    // Convert to response format
+    let fixture_results: Vec<FixtureFetchResult> = results
+        .into_iter()
+        .map(|r| {
+            // Make path relative to workspace
+            let relative_path = r
+                .path
+                .strip_prefix(&workspace)
+                .unwrap_or(&r.path)
+                .to_string_lossy()
+                .to_string();
+
+            FixtureFetchResult::new(
+                r.name,
+                r.action.to_string(),
+                relative_path,
+                r.repository,
+                r.git_ref,
+                r.sha,
+            )
+        })
+        .collect();
+
+    let response = FixtureFetchResponse::new(fixture_results);
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = io::stdout().flush();
+
+    Ok(())
+}
+
+/// Execute fixture update subcommand.
+///
+/// Updates a fixture lock file to a new ref (not yet implemented).
+fn execute_fixture_update(
+    _global: &GlobalArgs,
+    _name: &str,
+    _git_ref: &str,
+) -> Result<(), TugError> {
+    Err(TugError::internal(
+        "fixture update command not yet implemented (planned for Phase 7 Step 4)",
+    ))
 }
 
 /// Find Python interpreter in PATH (for verification purposes).
@@ -1217,6 +1324,81 @@ mod tests {
             let args = ["tug", "mcp"];
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(matches!(cli.command, Command::Mcp));
+        }
+
+        #[test]
+        fn parse_fixture_fetch() {
+            let args = ["tug", "fixture", "fetch"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Fetch { name, force },
+                } => {
+                    assert!(name.is_none());
+                    assert!(!force);
+                }
+                _ => panic!("expected Fixture Fetch"),
+            }
+        }
+
+        #[test]
+        fn parse_fixture_fetch_with_name() {
+            let args = ["tug", "fixture", "fetch", "temporale"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Fetch { name, force },
+                } => {
+                    assert_eq!(name, Some("temporale".to_string()));
+                    assert!(!force);
+                }
+                _ => panic!("expected Fixture Fetch"),
+            }
+        }
+
+        #[test]
+        fn parse_fixture_fetch_force() {
+            let args = ["tug", "fixture", "fetch", "--force"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Fetch { name, force },
+                } => {
+                    assert!(name.is_none());
+                    assert!(force);
+                }
+                _ => panic!("expected Fixture Fetch"),
+            }
+        }
+
+        #[test]
+        fn parse_fixture_fetch_with_name_and_force() {
+            let args = ["tug", "fixture", "fetch", "temporale", "--force"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Fetch { name, force },
+                } => {
+                    assert_eq!(name, Some("temporale".to_string()));
+                    assert!(force);
+                }
+                _ => panic!("expected Fixture Fetch"),
+            }
+        }
+
+        #[test]
+        fn parse_fixture_update() {
+            let args = ["tug", "fixture", "update", "temporale", "--git-ref", "v0.2.0"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Fixture {
+                    action: FixtureAction::Update { name, git_ref },
+                } => {
+                    assert_eq!(name, "temporale");
+                    assert_eq!(git_ref, "v0.2.0");
+                }
+                _ => panic!("expected Fixture Update"),
+            }
         }
     }
 

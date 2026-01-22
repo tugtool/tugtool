@@ -8,6 +8,60 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 3: Add Fixture Fetch CLI Command | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Step 3 specification, Spec S01 (fetch command), Spec S03 (fetch response schema)
+- `crates/tugtool/src/main.rs` - Existing CLI structure and command patterns
+- `crates/tugtool-core/src/output.rs` - Output response type patterns
+- `crates/tugtool/src/fixture.rs` - Fetch operation types from Step 2
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `Command::Fixture` variant to CLI enum | Done |
+| Add `FixtureAction` enum (Fetch, Update) | Done |
+| Add `--force` flag to fetch subcommand | Done |
+| Add optional `[NAME]` argument to fetch subcommand | Done |
+| Implement `execute_fixture_fetch()` function | Done |
+| Add `FixtureFetchResponse` to `crates/tugtool-core/src/output.rs` | Done |
+| Add CLI parsing tests | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs` - Added CLI commands and handlers:
+  - `FixtureAction` enum with `Fetch` and `Update` subcommands
+  - `Command::Fixture` variant in main Command enum
+  - `execute_fixture()` router function
+  - `execute_fixture_fetch()` implementation
+  - `execute_fixture_update()` stub (returns not-implemented error)
+  - 5 new CLI parsing tests for fixture commands
+- `crates/tugtool-core/src/output.rs` - Added response types:
+  - `FixtureFetchResponse` struct per Spec S03
+  - `FixtureFetchResult` struct for individual fixture results
+- `plans/phase-7.md` - Checked off Step 3 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool cli_parsing`: 29 tests passed
+- `cargo nextest run -p tugtool fixture`: 33 tests passed
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+- `cargo nextest run -p tugtool`: 223 tests passed (full suite)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool cli_parsing` - CLI tests pass: PASS (29 passed)
+- `cargo run -p tugtool -- fixture fetch --help` shows correct usage: PASS
+- `./target/debug/tug fixture fetch | jq .` produces valid JSON: PASS
+
+**Key Decisions/Notes:**
+- Response uses relative paths (strips workspace prefix) per Spec S03
+- `FixtureAction::Update` is stubbed with not-implemented error (planned for Step 4)
+- JSON output tested by piping to `jq .` to verify valid structure
+- Added import for `FixtureFetchResponse` and `FixtureFetchResult` in main.rs
+
+---
+
 ## [phase-7.md] Step 2: Implement Fetch Operation | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

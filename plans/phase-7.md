@@ -833,13 +833,13 @@ pub fn fetch_fixture(
 - `FixtureFetchResponse` in output module
 
 **Tasks:**
-- [ ] Add `Command::Fixture` variant to CLI enum
-- [ ] Add `FixtureAction` enum (Fetch, Update)
-- [ ] Add `--force` flag to fetch subcommand
-- [ ] Add optional `[NAME]` argument to fetch subcommand
-- [ ] Implement `execute_fixture_fetch()` function
-- [ ] Add `FixtureFetchResponse` to `crates/tugtool-core/src/output.rs`
-- [ ] Add CLI parsing tests
+- [x] Add `Command::Fixture` variant to CLI enum
+- [x] Add `FixtureAction` enum (Fetch, Update)
+- [x] Add `--force` flag to fetch subcommand
+- [x] Add optional `[NAME]` argument to fetch subcommand
+- [x] Implement `execute_fixture_fetch()` function
+- [x] Add `FixtureFetchResponse` to `crates/tugtool-core/src/output.rs`
+- [x] Add CLI parsing tests
 
 **CLI structure:**
 ```rust
@@ -871,16 +871,16 @@ enum FixtureAction {
 ```
 
 **Tests:**
-- [ ] CLI: parse `tug fixture fetch`
-- [ ] CLI: parse `tug fixture fetch temporale`
-- [ ] CLI: parse `tug fixture fetch --force`
-- [ ] CLI: parse `tug fixture fetch temporale --force`
-- [ ] Integration: command produces valid JSON output
+- [x] CLI: parse `tug fixture fetch`
+- [x] CLI: parse `tug fixture fetch temporale`
+- [x] CLI: parse `tug fixture fetch --force`
+- [x] CLI: parse `tug fixture fetch temporale --force`
+- [x] Integration: command produces valid JSON output
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass
-- [ ] `cargo run -p tugtool -- fixture fetch --help` shows correct usage
-- [ ] `cargo run -p tugtool -- fixture fetch 2>&1 | jq .` produces valid JSON
+- [x] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass (29 passed)
+- [x] `cargo run -p tugtool -- fixture fetch --help` shows correct usage
+- [x] `cargo run -p tugtool -- fixture fetch 2>&1 | jq .` produces valid JSON
 
 **Commit after all checkpoints pass.**
 
