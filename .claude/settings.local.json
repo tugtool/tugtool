@@ -249,7 +249,9 @@
       "Bash(TUG_TEMPORALE_PATH=/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale cargo nextest run:*)",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip install:*)",
       "Bash(TUG_TEMPORALE_PATH=/tmp/temporale-backup cargo nextest:*)",
-      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip show:*)"
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip show:*)",
+      "Bash(../../target/release/tug analyze-impact rename-symbol:*)",
+      "Bash(../../target/release/tug run:*)"
     ],
     "deny": [],
     "ask": []

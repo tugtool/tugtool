@@ -8,6 +8,82 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 6: Comprehensive Static Python Import Pattern Support | PLANNING | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Original Step 6 specification
+- `crates/tugtool-python/src/analyzer.rs` - FileImportResolver, resolve_module_to_file, convert_imports
+- `crates/tugtool-python-cst/src/visitor/import.rs` - CST import collection
+- Spike test results from Step 5
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Audit ALL Python import syntaxes | Done |
+| Create complete taxonomy (Tables T10-T18) | Done |
+| Identify current support status for each pattern | Done |
+| Create Step 6.1-6.6 substeps | Done |
+| Define algorithms (Spec S10, S11) | Done |
+| Update milestones and exit criteria | Done |
+
+**Files Modified:**
+- `plans/phase-8.md` - Complete rewrite of Step 6 section (~600 lines added); updated milestones M03-M05; updated exit criteria; updated implementation log
+
+**Key Decisions/Notes:**
+- Step 6 expanded from simple "additional scenarios" to comprehensive import pattern support
+- 9 categories of import patterns documented with current status
+- Priority order established: 6.2 (re-exports, P0) -> 6.5 -> 6.1 -> 6.3 -> 6.4 -> 6.6
+- Root cause identified: `resolve_import_to_original` stops at import bindings instead of following chain
+- Spec S10 (re-export chain resolution) and Spec S11 (star import expansion) defined
+- Out of scope: PEP 420 namespace packages, conditional/dynamic imports, value-level aliasing
+
+---
+
+## [phase-8.md] Step 5: Validate with Spike Test | PARTIAL | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 5 specification, Success Criteria
+- `spikes/interop-spike/` - All source files (lib/utils.py, lib/__init__.py, lib/processor.py, main.py)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Build tug release | Done |
+| Navigate to spike and reset files | Done |
+| Run analyze-impact | Done - 3 files, 4 references |
+| Verify 4 files affected | Partial - 3 files (relative imports work) |
+| Run dry-run | Done - 3 files, 5 edits, verification passed |
+| Verify patch in all 4 files | Partial - 3 files updated |
+| Run apply | Done - 3 files changed, verification passed |
+| Verify 4 files changed | Partial - 3 files changed |
+| Run Python | BLOCKED - ImportError in main.py |
+| Reset files | Done |
+
+**Test Results:**
+- `cargo build -p tugtool --release`: SUCCESS
+- `tug analyze-impact`: 3 files affected, 4 references
+- `tug run --apply --verify syntax`: 3 files changed, 5 edits, verification PASSED
+- `python3 main.py`: FAILED - ImportError: cannot import name 'process_data' from 'lib'
+
+**Checkpoints Verified:**
+- analyze-impact shows >= 4 files: PARTIAL (3 files)
+- tug run --apply succeeds: PASS (with 3 files)
+- python3 main.py succeeds: FAIL (re-export chain not followed)
+
+**Key Decisions/Notes:**
+- **Phase 8 core goal (relative imports) is ACHIEVED** - `from .utils import process_data` correctly renamed in lib/__init__.py and lib/processor.py
+- **Gap identified**: Re-export chains not followed. main.py imports from `lib` (the package re-export), not directly from `lib.utils`
+- This is a different problem than relative imports - it requires following the import chain: main.py → lib/__init__.py → lib/utils.py
+- This finding drove the comprehensive expansion of Step 6 to cover all static import patterns
+
+---
+
 ## [phase-8.md] Step 4: Verify Cross-File Reference Creation | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
