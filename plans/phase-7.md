@@ -2185,14 +2185,14 @@ fn execute_fixture_fetch(...) -> Result<(), TugError> {
 - New `crates/tugtool/tests/fixture_cli_e2e.rs`
 
 **Tasks:**
-- [ ] Create test file with helper function to run tug binary
-- [ ] Add test: `fetch nonexistent` returns exit code 2
-- [ ] Add test: `fetch` (valid) returns exit code 0 and valid JSON
-- [ ] Add test: `update temporale --ref nonexistent-xyz` returns exit code 3
-- [ ] Add test: `update nonexistent --ref v1.0.0` returns exit code 2
-- [ ] Add test: `list` returns exit code 0 and valid JSON
-- [ ] Add test: `status` returns exit code 0 and valid JSON
-- [ ] Add test: `status nonexistent` returns exit code 2
+- [x] Create test file with helper function to run tug binary
+- [x] Add test: `fetch nonexistent` returns exit code 2
+- [x] Add test: `fetch` (valid) returns exit code 0 and valid JSON
+- [x] Add test: `update temporale --ref nonexistent-xyz` returns exit code 3
+- [x] Add test: `update nonexistent --ref v1.0.0` returns exit code 2
+- [x] Add test: `list` returns exit code 0 and valid JSON
+- [x] Add test: `status` returns exit code 0 and valid JSON
+- [x] Add test: `status nonexistent` returns exit code 2
 
 **Test file structure:**
 ```rust
@@ -2248,17 +2248,17 @@ fn test_fixture_list_returns_exit_0() {
 ```
 
 **Tests:**
-- [ ] E2E: fetch nonexistent -> exit 2
-- [ ] E2E: fetch valid -> exit 0, JSON ok
-- [ ] E2E: update bad ref -> exit 3
-- [ ] E2E: update nonexistent fixture -> exit 2
-- [ ] E2E: list -> exit 0, JSON ok
-- [ ] E2E: status -> exit 0, JSON ok
-- [ ] E2E: status nonexistent -> exit 2
+- [x] E2E: fetch nonexistent -> exit 2
+- [x] E2E: fetch valid -> exit 0, JSON ok
+- [x] E2E: update bad ref -> exit 3
+- [x] E2E: update nonexistent fixture -> exit 2
+- [x] E2E: list -> exit 0, JSON ok
+- [x] E2E: status -> exit 0, JSON ok
+- [x] E2E: status nonexistent -> exit 2
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixture_cli_e2e` - E2E tests pass
-- [ ] All tests validate both exit code and JSON structure
+- [x] `cargo nextest run -p tugtool fixture_cli_e2e` - E2E tests pass (7 passed)
+- [x] All tests validate both exit code and JSON structure
 
 **Commit after all checkpoints pass.**
 

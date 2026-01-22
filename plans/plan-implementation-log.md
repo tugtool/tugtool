@@ -8,6 +8,64 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step B3: Add CLI End-to-End Tests | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum B Step B3 (lines 2178-2263)
+- `plans/phase-7.md` - Test scenarios (lines 2063-2078)
+- `crates/tugtool/tests/fixture_list_status_integration.rs` - Existing test patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create test file with helper function to run tug binary | Done |
+| Add test: `fetch nonexistent` returns exit code 2 | Done |
+| Add test: `fetch` (valid) returns exit code 0 and valid JSON | Done |
+| Add test: `update temporale --ref nonexistent-xyz` returns exit code 3 | Done |
+| Add test: `update nonexistent --ref v1.0.0` returns exit code 2 | Done |
+| Add test: `list` returns exit code 0 and valid JSON | Done |
+| Add test: `status` returns exit code 0 and valid JSON | Done |
+| Add test: `status nonexistent` returns exit code 2 | Done |
+
+**Files Created:**
+- `crates/tugtool/tests/fixture_cli_e2e.rs` - CLI end-to-end tests that spawn the actual `tug` binary and validate stdout/exit codes
+
+**Files Modified:**
+- `plans/phase-7.md`:
+  - Checked off all 8 tasks for Step B3
+  - Checked off all 7 test assertions
+  - Checked off both checkpoint items
+
+**Test Results:**
+- `cargo nextest run -p tugtool returns_exit`: 7 E2E tests passed
+- `cargo nextest run -p tugtool`: 265 tests passed (including 7 new E2E tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixture_cli_e2e` - E2E tests pass (7 passed): PASS
+- All tests validate both exit code and JSON structure: PASS
+
+**Key Decisions/Notes:**
+- Tests use `env!("CARGO_BIN_EXE_tug")` to locate the binary built by cargo
+- Tests run from workspace root using `workspace_root()` helper
+- Each test validates both the exit code AND the JSON structure of the response
+- The `fetch_valid_returns_exit_0_and_valid_json` test first checks if fixtures exist via `list` before attempting fetch
+
+**Test Coverage:**
+| Test | Exit Code | JSON Validation |
+|------|-----------|-----------------|
+| fetch_nonexistent_returns_exit_2 | 2 | status: "error" |
+| fetch_valid_returns_exit_0_and_valid_json | 0 | status: "ok", fixtures array |
+| update_bad_ref_returns_exit_3 | 3 | status: "error" |
+| update_nonexistent_fixture_returns_exit_2 | 2 | status: "error" |
+| list_returns_exit_0_and_valid_json | 0 | status: "ok", fixtures array |
+| status_returns_exit_0_and_valid_json | 0 | status: "ok", fixtures with required fields |
+| status_nonexistent_returns_exit_2 | 2 | status: "error" |
+
+---
+
 ## [phase-7.md] Step B2: Update CLI Error Handling in main.rs | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
