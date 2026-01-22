@@ -702,6 +702,74 @@ impl FixtureFetchResult {
     }
 }
 
+/// Response for fixture update command.
+///
+/// Per Phase 7 Spec S04: fixture update Response Schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureUpdateResponse {
+    /// Status: "ok".
+    pub status: String,
+    /// Schema version for compatibility.
+    pub schema_version: String,
+    /// Update details.
+    pub fixture: FixtureUpdateResult,
+    /// Optional warning (e.g., when ref is a branch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+impl FixtureUpdateResponse {
+    /// Create a new fixture update response.
+    pub fn new(fixture: FixtureUpdateResult, warning: Option<String>) -> Self {
+        FixtureUpdateResponse {
+            status: "ok".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            fixture,
+            warning,
+        }
+    }
+}
+
+/// Individual fixture update result.
+///
+/// Per Phase 7 Spec S04.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureUpdateResult {
+    /// Fixture name.
+    pub name: String,
+    /// Previous git ref.
+    pub previous_ref: String,
+    /// Previous commit SHA.
+    pub previous_sha: String,
+    /// New git ref.
+    pub new_ref: String,
+    /// New commit SHA.
+    pub new_sha: String,
+    /// Path to lock file.
+    pub lock_file: String,
+}
+
+impl FixtureUpdateResult {
+    /// Create a new fixture update result.
+    pub fn new(
+        name: impl Into<String>,
+        previous_ref: impl Into<String>,
+        previous_sha: impl Into<String>,
+        new_ref: impl Into<String>,
+        new_sha: impl Into<String>,
+        lock_file: impl Into<String>,
+    ) -> Self {
+        FixtureUpdateResult {
+            name: name.into(),
+            previous_ref: previous_ref.into(),
+            previous_sha: previous_sha.into(),
+            new_ref: new_ref.into(),
+            new_sha: new_sha.into(),
+            lock_file: lock_file.into(),
+        }
+    }
+}
+
 /// Error response.
 ///
 /// Per 26.0.7 spec #error-response.

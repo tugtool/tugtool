@@ -8,6 +8,52 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 5: Add Fixture Update CLI Command | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Step 5 specification (lines 958-983)
+- `plans/phase-7.md` - Spec S04 fixture update Response Schema (lines 434-467)
+- `crates/tugtool/src/main.rs` - Existing CLI structure and FixtureAction enum
+- `crates/tugtool-core/src/output.rs` - FixtureFetchResponse pattern
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `execute_fixture_update()` function | Done |
+| Add `FixtureUpdateResponse` to `crates/tugtool-core/src/output.rs` | Done |
+| Handle warning field in response | Done |
+| Add CLI parsing and integration tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/output.rs` - Added response types:
+  - `FixtureUpdateResponse` struct per Spec S04
+  - `FixtureUpdateResult` struct for update details
+  - Both with `new()` constructors following existing patterns
+- `crates/tugtool/src/main.rs` - CLI implementation:
+  - Implemented `execute_fixture_update()` function
+  - Changed CLI arg from `--git-ref` to `--ref` to match Spec S02
+  - Updated existing parsing test to use `--ref`
+- `plans/phase-7.md` - Checked off Step 5 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool cli_parsing`: 29 tests passed
+- `cargo nextest run -p tugtool`: 232 tests passed (full suite)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool cli_parsing` - CLI tests pass: PASS (29 passed)
+- `cargo run -p tugtool -- fixture update --help` shows correct usage: PASS
+
+**Key Decisions/Notes:**
+- Changed CLI argument from `--git-ref` to `--ref` to match plan Spec S02 specification
+- Warning field uses `#[serde(skip_serializing_if = "Option::is_none")]` so it only appears when present
+- CLI parsing test already existed from Step 3 stub; updated to use `--ref`
+- Lock file path is converted to relative path in JSON output
+
+---
+
 ## [phase-7.md] Step 4: Implement Update Operation | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

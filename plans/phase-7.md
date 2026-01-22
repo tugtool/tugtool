@@ -966,19 +966,19 @@ pub fn update_fixture_lock(
 - `FixtureUpdateResponse` in output module
 
 **Tasks:**
-- [ ] Implement `execute_fixture_update()` function
-- [ ] Add `FixtureUpdateResponse` to `crates/tugtool-core/src/output.rs`
-- [ ] Handle warning field in response
-- [ ] Add CLI parsing and integration tests
+- [x] Implement `execute_fixture_update()` function
+- [x] Add `FixtureUpdateResponse` to `crates/tugtool-core/src/output.rs`
+- [x] Handle warning field in response
+- [x] Add CLI parsing and integration tests
 
 **Tests:**
-- [ ] CLI: parse `tug fixture update temporale --ref v0.2.0`
-- [ ] Integration: command produces valid JSON output
-- [ ] Integration: warning appears for branch ref
+- [x] CLI: parse `tug fixture update temporale --ref v0.2.0`
+- [x] Integration: command produces valid JSON output
+- [x] Integration: warning appears for branch ref
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass
-- [ ] `cargo run -p tugtool -- fixture update --help` shows correct usage
+- [x] `cargo nextest run -p tugtool cli_parsing` - CLI tests pass (29 passed)
+- [x] `cargo run -p tugtool -- fixture update --help` shows correct usage
 
 **Commit after all checkpoints pass.**
 

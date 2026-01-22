@@ -34,7 +34,7 @@ use tugtool_core::output::VerifyResponse;
 use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::output::{
     emit_response, ErrorInfo, ErrorResponse, FixtureFetchResponse, FixtureFetchResult,
-    SnapshotResponse,
+    FixtureUpdateResponse, FixtureUpdateResult, SnapshotResponse,
 };
 use tugtool_core::session::{Session, SessionOptions};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
@@ -285,7 +285,7 @@ enum FixtureAction {
         /// Fixture name to update.
         name: String,
         /// New ref (tag or branch).
-        #[arg(long, rename_all = "kebab-case")]
+        #[arg(long = "ref")]
         git_ref: String,
     },
 }
@@ -737,15 +737,41 @@ fn execute_fixture_fetch(
 
 /// Execute fixture update subcommand.
 ///
-/// Updates a fixture lock file to a new ref (not yet implemented).
-fn execute_fixture_update(
-    _global: &GlobalArgs,
-    _name: &str,
-    _git_ref: &str,
-) -> Result<(), TugError> {
-    Err(TugError::internal(
-        "fixture update command not yet implemented (planned for Phase 7 Step 4)",
-    ))
+/// Updates a fixture lock file to a new ref.
+fn execute_fixture_update(global: &GlobalArgs, name: &str, git_ref: &str) -> Result<(), TugError> {
+    let workspace_root = global
+        .workspace
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
+
+    // Perform the update
+    let result = tugtool::fixture::update_fixture_lock(&workspace_root, name, git_ref)
+        .map_err(|e| TugError::internal(e.to_string()))?;
+
+    // Convert lock_file path to relative path string
+    let lock_file_relative = result
+        .lock_file
+        .strip_prefix(&workspace_root)
+        .unwrap_or(&result.lock_file)
+        .to_string_lossy()
+        .to_string();
+
+    // Build response
+    let fixture_result = FixtureUpdateResult::new(
+        result.name,
+        result.previous_ref,
+        result.previous_sha,
+        result.new_ref,
+        result.new_sha,
+        lock_file_relative,
+    );
+
+    let response = FixtureUpdateResponse::new(fixture_result, result.warning);
+
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = io::stdout().flush();
+
+    Ok(())
 }
 
 /// Find Python interpreter in PATH (for verification purposes).
@@ -1388,7 +1414,7 @@ mod tests {
 
         #[test]
         fn parse_fixture_update() {
-            let args = ["tug", "fixture", "update", "temporale", "--git-ref", "v0.2.0"];
+            let args = ["tug", "fixture", "update", "temporale", "--ref", "v0.2.0"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
                 Command::Fixture {
