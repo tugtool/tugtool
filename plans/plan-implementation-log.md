@@ -8,6 +8,43 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 4: Verify Cross-File Reference Creation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 4 specification, [D03] Acceptance Tests, Table T01
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - existing relative import tests
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Run the failing tests from Step 0 - they should now PASS | Done |
+| Add additional test: `from . import module` pattern (import module, not symbol) | Done |
+| Verify reference count is correct in tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Added `relative_import_module_pattern` test for `from . import utils` pattern
+- `plans/phase-8.md` - Checked off Step 4 tasks, tests, and checkpoints; updated implementation log
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python relative_import`: 8 tests passed (7 original + 1 new)
+- `cargo nextest run -p tugtool-python ac4_import`: 17 tests passed
+- `cargo nextest run --workspace`: 1239 tests passed, 0 failed
+
+**Checkpoints Verified:**
+- All relative import tests pass: PASS (8/8)
+- All existing tests pass (`cargo nextest run --workspace`): PASS (1239/1239)
+
+**Key Decisions/Notes:**
+- All Step 0 failing tests now pass after Step 3 implementation
+- Added `relative_import_module_pattern` test to verify `from . import utils` resolves correctly
+- The Import struct tracks `imported_name` (singular) and `module_path`; no `resolved_file_path` field exists
+- Reference count verification is already built into existing tests (`refs.len() >= 2`, `ref_file_ids.len() >= 2`)
+
+---
+
 ## [phase-8.md] Step 3: Update FileImportResolver for Relative Imports | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

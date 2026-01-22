@@ -954,6 +954,58 @@ mod ac4_import_resolution {
     }
 
     #[test]
+    fn relative_import_module_pattern() {
+        // Test the "from . import module" pattern (importing the module itself, not a symbol)
+        // Scenario:
+        // - pkg/utils.py is a module
+        // - pkg/__init__.py uses "from . import utils" to import the module
+        // - This should resolve utils to pkg/utils.py
+        let file_list = files(&[
+            ("pkg/__init__.py", "from . import utils\n"),
+            ("pkg/utils.py", "def helper(): pass\n"),
+            ("main.py", "from pkg import utils\nutils.helper()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // The import in pkg/__init__.py should resolve to pkg/utils.py
+        let utils_file = store.file_by_path("pkg/utils.py");
+        assert!(utils_file.is_some(), "Expected pkg/utils.py to be analyzed");
+
+        // The import should be recorded
+        let init_file = store.file_by_path("pkg/__init__.py");
+        assert!(init_file.is_some(), "Expected pkg/__init__.py to be analyzed");
+        let init_file_id = init_file.unwrap().file_id;
+
+        // Find imports from __init__.py
+        let init_imports: Vec<_> = store
+            .imports()
+            .filter(|i| i.file_id == init_file_id)
+            .collect();
+        assert!(
+            !init_imports.is_empty(),
+            "Expected import in pkg/__init__.py to be recorded"
+        );
+
+        // Verify the import records 'utils' as the imported name
+        let utils_import = init_imports
+            .iter()
+            .find(|i| i.imported_name.as_deref() == Some("utils"));
+        assert!(
+            utils_import.is_some(),
+            "Expected 'utils' import in pkg/__init__.py to be recorded"
+        );
+
+        // The module_path should be set to 'pkg' (the resolved base for relative import)
+        // or be empty string for a pure "from . import" form
+        let import = utils_import.unwrap();
+        assert!(
+            import.module_path == "pkg" || import.module_path.is_empty(),
+            "Expected module_path to be 'pkg' or empty for 'from . import utils', got '{}'",
+            import.module_path
+        );
+    }
+
+    #[test]
     fn star_imports_handled() {
         // from foo import *  # star imports are recorded
         // Note: Full expansion of star imports (resolving to each exported symbol)

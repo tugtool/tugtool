@@ -506,17 +506,17 @@ pub fn resolve_module_to_file(
 - Updated acceptance criteria tests
 
 **Tasks:**
-- [ ] Run the failing tests from Step 0 - they should now PASS
-- [ ] Add additional test: `from . import module` pattern (import module, not symbol)
-- [ ] Verify reference count is correct in tests
+- [x] Run the failing tests from Step 0 - they should now PASS
+- [x] Add additional test: `from . import module` pattern (import module, not symbol)
+- [x] Verify reference count is correct in tests
 
 **Tests:**
-- [ ] Acceptance: `cargo nextest run -p tugtool-python relative_import` (expect PASS now)
-- [ ] Acceptance: `cargo nextest run -p tugtool-python ac4_import` (expect PASS)
+- [x] Acceptance: `cargo nextest run -p tugtool-python relative_import` (expect PASS now)
+- [x] Acceptance: `cargo nextest run -p tugtool-python ac4_import` (expect PASS)
 
 **Checkpoint:**
-- [ ] All relative import tests pass
-- [ ] All existing tests pass: `cargo nextest run --workspace`
+- [x] All relative import tests pass
+- [x] All existing tests pass: `cargo nextest run --workspace`
 
 **Rollback:**
 - If tests fail, debug the implementation from Steps 1-3
@@ -698,7 +698,7 @@ pub fn resolve_module_to_file(
 | Step 1 | complete | 2026-01-22 | Added resolve_relative_path with 10 unit tests passing |
 | Step 2 | complete | 2026-01-22 | LocalImport now tracks relative_level; relative imports no longer skipped; one Step 0 test now passes |
 | Step 3 | complete | 2026-01-22 | FileImportResolver + resolve_module_to_file now handle relative imports; all 288 tests pass |
-| Step 4 | pending | | Verify tests pass |
+| Step 4 | complete | 2026-01-22 | All 8 relative_import tests pass; added `from . import module` pattern test; all 1239 workspace tests pass |
 | Step 5 | pending | | Spike validation |
 | Step 6 | pending | | Additional scenarios |
 | Step 7 | pending | | Documentation |
