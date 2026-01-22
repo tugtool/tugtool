@@ -39,8 +39,7 @@ struct LockFile {
 #[allow(dead_code)]
 pub fn workspace_root() -> &'static PathBuf {
     WORKSPACE_ROOT.get_or_init(|| {
-        let manifest_dir =
-            env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
         PathBuf::from(manifest_dir)
             .parent() // crates/tugtool -> crates
             .expect("parent of tugtool")
@@ -128,14 +127,7 @@ pub fn get_fixture_path(name: &str, env_var: &str) -> PathBuf {
         \n\
         See fixtures/{}.lock for the pinned version.\n\
         ============================================================\n",
-        name,
-        info.git_ref,
-        info.repository,
-        name,
-        env_var,
-        env_var,
-        name,
-        name
+        name, info.git_ref, info.repository, name, env_var, env_var, name, name
     );
 }
 

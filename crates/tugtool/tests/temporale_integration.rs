@@ -51,7 +51,10 @@ fn temporale_path() -> PathBuf {
     let workspace_root = fixtures::workspace_root();
 
     // Check fetched fixture location
-    let fixture_path = workspace_root.join(".tug").join("fixtures").join("temporale");
+    let fixture_path = workspace_root
+        .join(".tug")
+        .join("fixtures")
+        .join("temporale");
     if fixture_path.join("pyproject.toml").exists() {
         return fixture_path;
     }
