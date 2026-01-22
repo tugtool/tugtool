@@ -42,21 +42,18 @@ jobs:
       # Fetch Temporale fixture for integration tests
       - name: Fetch test fixtures
         run: |
-          # Parse lock file robustly (no brittle grep/cut parsing)
-          .tug-test-venv/bin/python - <<'PY'
+          # Parse lock file and export as shell variables (eval captures output)
+          eval "$(.tug-test-venv/bin/python - <<'PY'
           import tomllib
           from pathlib import Path
-          import os
+          import shlex
           data = tomllib.loads(Path("fixtures/temporale.lock").read_text(encoding="utf-8"))
           fx = data["fixture"]
-          env_path = os.environ.get("GITHUB_ENV")
-          if not env_path:
-              raise SystemExit("GITHUB_ENV not set (this script is intended for GitHub Actions)")
-          with open(env_path, "a", encoding="utf-8") as f:
-              f.write(f"FIXTURE_REPO={fx['repository']}\n")
-              f.write(f"FIXTURE_REF={fx['ref']}\n")
-              f.write(f"FIXTURE_SHA={fx['sha']}\n")
+          print(f"FIXTURE_REPO={shlex.quote(fx['repository'])}")
+          print(f"FIXTURE_REF={shlex.quote(fx['ref'])}")
+          print(f"FIXTURE_SHA={shlex.quote(fx['sha'])}")
           PY
+          )"
 
           echo "Fetching temporale fixture: $FIXTURE_REPO @ $FIXTURE_REF (SHA: $FIXTURE_SHA)"
 
