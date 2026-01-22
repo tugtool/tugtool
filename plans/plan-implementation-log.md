@@ -8,6 +8,49 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 2: Update LocalImport to Track Relative Level | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 2 specification, Spec S02
+- `crates/tugtool-python/src/analyzer.rs` - LocalImport struct and convert_imports function
+- `crates/tugtool-python-cst/src/visitor/import.rs` - CST ImportInfo struct with relative_level
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `relative_level: u32` field to `LocalImport` struct | Done |
+| Update `convert_imports` to populate `relative_level` from CST import info | Done |
+| REMOVE the `if import.relative_level > 0 { continue; }` skip | Done |
+| Ensure all call sites of `convert_imports` compile | Done |
+| Add unit test to verify LocalImport captures relative_level | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added `relative_level` field to LocalImport; updated convert_imports to include relative imports; added convert_imports_tests module with 2 tests; updated 4 test helpers and 1 inline test
+
+**Test Results:**
+- `cargo build -p tugtool-python`: SUCCESS
+- `cargo nextest run -p tugtool-python`: 284 tests run: 281 passed, 3 failed (expected)
+- `cargo nextest run -p tugtool-python convert_imports`: 2 passed
+
+**Tests Added:**
+- `convert_imports_captures_relative_level` - verifies relative_level for absolute, single-level, and double-level imports
+- `convert_imports_includes_relative_star_import` - verifies relative star imports are now included
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python` passes (no regressions): PASS
+
+**Key Decisions/Notes:**
+- Removed the `if import.relative_level > 0 { continue; }` skip - relative imports are now processed
+- Cast `relative_level` from CST's `usize` to `u32` for LocalImport
+- The `relative_star_import_handled` test from Step 0 now PASSES (4 failing → 3 failing)
+- Remaining 3 failing tests will pass after Step 3 implements FileImportResolver changes
+
+---
+
 ## [phase-8.md] Step 1: Implement Relative Path Resolution Helper | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

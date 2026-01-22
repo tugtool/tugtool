@@ -251,6 +251,8 @@ pub struct LocalImport {
     pub line: Option<u32>,
     /// Resolved file (if in workspace).
     pub resolved_file: Option<String>,
+    /// Relative import level (0 = absolute, 1 = from ., 2 = from .., etc.)
+    pub relative_level: u32,
 }
 
 /// An imported name.
@@ -1644,10 +1646,8 @@ fn convert_imports(
     let mut result = Vec::new();
 
     for import in imports {
-        // Skip relative imports
-        if import.relative_level > 0 {
-            continue;
-        }
+        // Convert relative_level from usize to u32
+        let relative_level = import.relative_level as u32;
 
         let names: Vec<ImportedName> = import
             .names
@@ -1663,6 +1663,8 @@ fn convert_imports(
             .unwrap_or_default();
 
         // Resolve import to workspace file
+        // Note: For relative imports, this will return None until Step 3 updates
+        // resolve_module_to_file to handle relative paths
         let resolved_file = resolve_module_to_file(&import.module, workspace_files);
 
         let kind = match import.kind {
@@ -1679,6 +1681,7 @@ fn convert_imports(
             span: import.span.as_ref().map(|s| Span::new(s.start, s.end)),
             line: import.line,
             resolved_file,
+            relative_level,
         });
     }
 
@@ -2297,6 +2300,7 @@ mod tests {
                 span: Some(Span::new(0, 30)),
                 line: Some(1),
                 resolved_file: None,
+                relative_level: 0,
             };
 
             assert_eq!(imp.module_path, "os.path");
@@ -2390,6 +2394,112 @@ mod tests {
             // from . import utils in foo.py (at root) -> ""
             let result = resolve_relative_path("foo.py", 1, "");
             assert_eq!(result, "");
+        }
+    }
+
+    mod convert_imports_tests {
+        use super::*;
+
+        #[test]
+        fn convert_imports_captures_relative_level() {
+            // Test that convert_imports properly captures relative_level from CST ImportInfo
+            use tugtool_python_cst::{ImportInfo, ImportKind};
+
+            let workspace_files: HashSet<String> = HashSet::new();
+
+            // Create a mix of absolute and relative imports
+            let cst_imports = vec![
+                // Absolute import: import os
+                ImportInfo {
+                    module: "os".to_string(),
+                    kind: ImportKind::Import,
+                    names: None,
+                    alias: None,
+                    is_star: false,
+                    span: None,
+                    line: Some(1),
+                    relative_level: 0,
+                },
+                // Single-level relative: from .utils import foo
+                ImportInfo {
+                    module: "utils".to_string(),
+                    kind: ImportKind::From,
+                    names: Some(vec![tugtool_python_cst::ImportedName {
+                        name: "foo".to_string(),
+                        alias: None,
+                    }]),
+                    alias: None,
+                    is_star: false,
+                    span: None,
+                    line: Some(2),
+                    relative_level: 1,
+                },
+                // Double-level relative: from ..parent import bar
+                ImportInfo {
+                    module: "parent".to_string(),
+                    kind: ImportKind::From,
+                    names: Some(vec![tugtool_python_cst::ImportedName {
+                        name: "bar".to_string(),
+                        alias: None,
+                    }]),
+                    alias: None,
+                    is_star: false,
+                    span: None,
+                    line: Some(3),
+                    relative_level: 2,
+                },
+            ];
+
+            let local_imports = convert_imports(&cst_imports, &workspace_files);
+
+            // Verify all imports are converted (no skipping!)
+            assert_eq!(
+                local_imports.len(),
+                3,
+                "All imports should be converted, including relative imports"
+            );
+
+            // Verify relative_level is captured correctly
+            assert_eq!(
+                local_imports[0].relative_level, 0,
+                "Absolute import should have relative_level=0"
+            );
+            assert_eq!(
+                local_imports[1].relative_level, 1,
+                "Single-level relative import should have relative_level=1"
+            );
+            assert_eq!(
+                local_imports[2].relative_level, 2,
+                "Double-level relative import should have relative_level=2"
+            );
+        }
+
+        #[test]
+        fn convert_imports_includes_relative_star_import() {
+            // Test that relative star imports are also included
+            use tugtool_python_cst::{ImportInfo, ImportKind};
+
+            let workspace_files: HashSet<String> = HashSet::new();
+
+            let cst_imports = vec![ImportInfo {
+                module: "utils".to_string(),
+                kind: ImportKind::From,
+                names: None,
+                alias: None,
+                is_star: true,
+                span: None,
+                line: Some(1),
+                relative_level: 1, // from .utils import *
+            }];
+
+            let local_imports = convert_imports(&cst_imports, &workspace_files);
+
+            assert_eq!(local_imports.len(), 1, "Relative star import should be included");
+            assert!(local_imports[0].is_star, "Should be marked as star import");
+            assert_eq!(
+                local_imports[0].relative_level, 1,
+                "Should have relative_level=1"
+            );
         }
     }
 
@@ -2546,6 +2656,7 @@ mod tests {
                 span: None,
                 line: None,
                 resolved_file: resolved_file.map(String::from),
+                relative_level: 0,
             }
         }
 
@@ -2563,6 +2674,7 @@ mod tests {
                 span: None,
                 line: None,
                 resolved_file: resolved_file.map(String::from),
+                relative_level: 0,
             }
         }
 
@@ -2576,6 +2688,7 @@ mod tests {
                 span: None,
                 line: None,
                 resolved_file: resolved_file.map(String::from),
+                relative_level: 0,
             }
         }
 

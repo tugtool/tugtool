@@ -447,17 +447,17 @@ pub fn resolve_module_to_file(
 - Updated `convert_imports` function
 
 **Tasks:**
-- [ ] Add `relative_level: u32` field to `LocalImport` struct
-- [ ] Update `convert_imports` to populate `relative_level` from CST import info
-- [ ] REMOVE the `if import.relative_level > 0 { continue; }` skip
-- [ ] Ensure all call sites of `convert_imports` compile
+- [x] Add `relative_level: u32` field to `LocalImport` struct
+- [x] Update `convert_imports` to populate `relative_level` from CST import info
+- [x] REMOVE the `if import.relative_level > 0 { continue; }` skip
+- [x] Ensure all call sites of `convert_imports` compile
 
 **Tests:**
-- [ ] Unit: Verify `LocalImport` captures relative_level correctly
+- [x] Unit: Verify `LocalImport` captures relative_level correctly
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python` passes (no regressions)
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python` passes (no regressions)
 
 **Rollback:**
 - Revert commit
@@ -696,7 +696,7 @@ pub fn resolve_module_to_file(
 |------|--------|------|-------|
 | Step 0 | complete | 2026-01-22 | Add failing tests - 4 tests fail as expected |
 | Step 1 | complete | 2026-01-22 | Added resolve_relative_path with 10 unit tests passing |
-| Step 2 | pending | | LocalImport changes |
+| Step 2 | complete | 2026-01-22 | LocalImport now tracks relative_level; relative imports no longer skipped; one Step 0 test now passes |
 | Step 3 | pending | | FileImportResolver changes |
 | Step 4 | pending | | Verify tests pass |
 | Step 5 | pending | | Spike validation |
