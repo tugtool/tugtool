@@ -49,7 +49,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 toml = "0.8"
 
 # MCP server support (optional)
-rmcp = { version = "0.12", features = ["server", "transport-io"], optional = true }
+rmcp = { version = "0.13", features = ["server", "transport-io"], optional = true }
 schemars = { version = "1", optional = true }
 
 [features]
