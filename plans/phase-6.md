@@ -1136,9 +1136,9 @@ pub mod python;
 - Updated `crates/tugtool/tests/temporale_integration.rs`
 
 **Tasks:**
-- [ ] Update `temporale_path()` to use `get_fixture_path()`
-- [ ] Keep backward compatibility: check vendored location as fallback during transition
-- [ ] Update any imports needed
+- [x] Update `temporale_path()` to use `get_fixture_path()`
+- [x] Keep backward compatibility: check vendored location as fallback during transition
+- [x] Update any imports needed
 
 **Updated temporale_path():**
 ```rust
@@ -1182,12 +1182,12 @@ fn temporale_path() -> PathBuf {
 ```
 
 **Tests:**
-- [ ] Integration: existing Temporale tests still pass (using vendored)
-- [ ] Manual: set `TUG_TEMPORALE_PATH`, verify override works
+- [x] Integration: existing Temporale tests still pass (using vendored)
+- [x] Manual: set `TUG_TEMPORALE_PATH`, verify override works
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool temporale` - all tests pass
-- [ ] Tests use vendored location (transition state)
+- [x] `cargo nextest run -p tugtool temporale` - all tests pass (8 tests passed)
+- [x] Tests use vendored location (transition state)
 
 **Commit after all checkpoints pass.**
 

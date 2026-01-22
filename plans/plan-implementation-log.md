@@ -8,6 +8,45 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-6.md] Step 4: Update temporale_path() to Use Fixture Infrastructure | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-6.md` - Step 4 specification (lines 1129-1192)
+- `crates/tugtool/tests/temporale_integration.rs` - Current implementation
+- Design decisions [D02] (env override takes precedence) and [D03] (fail loudly)
+- Spec S01 (temporale_path() resolution algorithm)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `temporale_path()` to use `get_fixture_path()` | Done |
+| Keep backward compatibility: check vendored location as fallback | Done |
+| Update any imports needed | Done |
+
+**Files Modified:**
+- `crates/tugtool/tests/temporale_integration.rs` - Updated `temporale_path()` function with new resolution order
+- `plans/phase-6.md` - Checked off Step 4 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+- Manual env var override test with invalid path: Correctly used override path (test failed as expected)
+- Manual env var override test with valid path: Correctly used override path (test passed)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool temporale` - all tests pass: PASS (8 tests)
+- Tests use vendored location (transition state): PASS
+
+**Key Decisions/Notes:**
+- Resolution order: env var → fetched fixture → vendored → panic with instructions
+- Uses `support::fixtures` module functions for workspace root and helpful error messages
+- Vendored fallback is intentional for transition period (will be removed in Step 7)
+- Import uses `use support::fixtures;` rather than `use crate::support::fixtures;` since we're in an integration test file
+
+---
+
 ## [phase-6.md] Step 3: Create Fixture Infrastructure in Tugtool | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

@@ -32,15 +32,38 @@ use tugtool_python::ops::rename;
 use tugtool_python::verification::VerificationMode;
 
 /// Get the path to the Temporale sample code directory.
+///
+/// Resolution order:
+/// 1. TUG_TEMPORALE_PATH environment variable (if set)
+/// 2. Fetched fixture at .tug/fixtures/temporale/
+/// 3. Vendored location at sample-code/python/temporale/ (transition period only)
+/// 4. Panic with instructions
 fn temporale_path() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let workspace_root = PathBuf::from(manifest_dir)
-        .parent()
-        .expect("parent of crates/tugtool")
-        .parent()
-        .expect("workspace root")
-        .to_path_buf();
-    workspace_root.join("sample-code/python/temporale")
+    use support::fixtures;
+
+    // Check env var first
+    if let Ok(path) = std::env::var("TUG_TEMPORALE_PATH") {
+        if !path.is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+
+    let workspace_root = fixtures::workspace_root();
+
+    // Check fetched fixture location
+    let fixture_path = workspace_root.join(".tug").join("fixtures").join("temporale");
+    if fixture_path.join("pyproject.toml").exists() {
+        return fixture_path;
+    }
+
+    // TRANSITION: Check vendored location (remove in Step 7)
+    let vendored_path = workspace_root.join("sample-code/python/temporale");
+    if vendored_path.join("pyproject.toml").exists() {
+        return vendored_path;
+    }
+
+    // Neither available - use get_fixture_path to get helpful error
+    fixtures::get_fixture_path("temporale", "TUG_TEMPORALE_PATH")
 }
 
 /// Copy Temporale to a temp directory for safe mutation.
