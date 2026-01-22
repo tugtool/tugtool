@@ -8,6 +8,53 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 0: Verify Current State | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Context and Success Criteria sections
+- `plans/phase-6.md` - Verified status is "complete"
+- `crates/tugtool/tests/support/fixtures.rs` - Reviewed for reusable code
+- `fixtures/temporale.lock` - Verified format
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Verify Phase 6 is complete (fixture infrastructure works) | Done |
+| Run existing Temporale integration tests | Done |
+| Verify current lock file format in `fixtures/temporale.lock` | Done |
+| Review `tests/support/fixtures.rs` for reusable code | Done |
+| Phase 6 follow-up: decide SHA enforcement approach | Done |
+
+**Files Modified:**
+- `plans/phase-7.md` - Checked off all Step 0 tasks and checkpoints, documented SHA enforcement decision
+
+**Test Results:**
+- `cargo nextest run -p tugtool temporale`: 8 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool temporale` - all tests pass: PASS (8/8)
+- `cat fixtures/temporale.lock` shows valid TOML: PASS
+- `.tug/fixtures/temporale/` exists: PASS (SHA: 9f21df0322b7aa39ca7f599b128f66c07ecec42f)
+
+**Key Decisions/Notes:**
+
+**SHA Enforcement Decision - Hybrid Approach (Option C):**
+- When `TUG_*_PATH` env var is set → trust user, no SHA verification (for local fixture development)
+- When using fetched fixture at `.tug/fixtures/<name>/` → verify SHA matches lock file
+- `tug fixture fetch` also verifies/corrects SHA
+- This matches "fail loudly" philosophy while supporting local development workflows
+
+**Reusable Code Identified in `tests/support/fixtures.rs`:**
+- `FixtureInfo`, `LockFile` structs - fully reusable
+- `read_lock_file_from()` - fully reusable (takes explicit root path)
+- `workspace_root()` - needs CLI-compatible alternative (uses `CARGO_MANIFEST_DIR` which is only available in test context)
+- `get_fixture_path()` - logic reusable but depends on `workspace_root()`
+
+---
+
 ## [phase-6.md] Phase 6 Complete: Make Temporale Standalone | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
