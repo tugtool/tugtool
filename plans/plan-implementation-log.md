@@ -8,6 +8,55 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step A5: Update Documentation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Phase 7 Addendum Step A5 (lines 1787-1817)
+- Spec S07, S08: CLI command specifications for list and status
+- `CLAUDE.md` - Target file for documentation updates (Fixture Commands section)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `tug fixture list` to CLAUDE.md fixture commands section | Done |
+| Add `tug fixture status` to CLAUDE.md fixture commands section | Done |
+| Add examples showing typical usage | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `CLAUDE.md`:
+  - Added `tug fixture list` command with description
+  - Added `tug fixture status` command with description and state explanations
+  - Added `tug fixture status temporale` example for specific fixture
+- `plans/phase-7.md`:
+  - Checked off all 3 tasks for Step A5
+  - Checked off checkpoint
+  - Checked off all Addendum Exit Criteria (6 items)
+  - Checked off all Acceptance tests (4 items)
+  - Checked off all items in Milestones M04 and M05
+  - Changed Addendum metadata Status from "draft" to "complete"
+
+**Test Results:**
+- `cargo nextest run -p tugtool`: 256 tests passed (all tests)
+- `tug fixture list | jq .status`: outputs "ok"
+- `tug fixture status | jq .status`: outputs "ok"
+
+**Checkpoints Verified:**
+- CLAUDE.md contains complete fixture list/status documentation: PASS
+
+**Key Decisions/Notes:**
+- This was the final step of the Phase 7 Addendum
+- Documentation follows the existing pattern in the Fixture Commands section
+- Added list and status commands at the top of the examples (before fetch/update) since they are inspection commands
+- Included explanation of possible states (fetched, missing, sha-mismatch, etc.) in the status command comment
+
+---
+
 ## [phase-7.md] Step A4: Add Integration Tests | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

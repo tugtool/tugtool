@@ -249,6 +249,15 @@ Tools exposed via MCP:
 Manage test fixtures (external repositories used for integration tests).
 
 ```bash
+# List available fixtures from lock files
+tug fixture list
+
+# Show status of all fixtures (fetched, missing, sha-mismatch, etc.)
+tug fixture status
+
+# Show status of specific fixture
+tug fixture status temporale
+
 # Fetch all fixtures according to lock files
 tug fixture fetch
 

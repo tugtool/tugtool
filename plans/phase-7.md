@@ -1178,7 +1178,7 @@ This bypasses the fixture fetch system entirely.
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | TBD |
 | Last updated | 2026-01-22 |
@@ -1794,9 +1794,9 @@ enum FixtureAction {
 - Updated CLAUDE.md with new commands
 
 **Tasks:**
-- [ ] Add `tug fixture list` to CLAUDE.md fixture commands section
-- [ ] Add `tug fixture status` to CLAUDE.md fixture commands section
-- [ ] Add examples showing typical usage
+- [x] Add `tug fixture list` to CLAUDE.md fixture commands section
+- [x] Add `tug fixture status` to CLAUDE.md fixture commands section
+- [x] Add examples showing typical usage
 
 **CLAUDE.md additions:**
 ```markdown
@@ -1811,7 +1811,7 @@ tug fixture status temporale
 ```
 
 **Checkpoint:**
-- [ ] CLAUDE.md contains complete fixture list/status documentation
+- [x] CLAUDE.md contains complete fixture list/status documentation
 
 **Commit after all checkpoints pass.**
 
@@ -1823,29 +1823,29 @@ tug fixture status temporale
 
 #### Addendum Exit Criteria {#addendum-exit-criteria}
 
-- [ ] `tug fixture list` outputs fixtures from lock files
-- [ ] `tug fixture status` shows state of each fixture
-- [ ] Status detects fetched, missing, sha-mismatch states correctly
-- [ ] All commands produce valid JSON output
-- [ ] All existing Phase 7 tests continue to pass
-- [ ] CLAUDE.md documents new commands
+- [x] `tug fixture list` outputs fixtures from lock files
+- [x] `tug fixture status` shows state of each fixture
+- [x] Status detects fetched, missing, sha-mismatch states correctly
+- [x] All commands produce valid JSON output
+- [x] All existing Phase 7 tests continue to pass
+- [x] CLAUDE.md documents new commands
 
 **Acceptance tests:**
-- [ ] Integration: `cargo nextest run -p tugtool fixture_list` passes
-- [ ] Integration: `cargo nextest run -p tugtool fixture_status` passes
-- [ ] CLI: `tug fixture list 2>&1 | jq .status` outputs "ok"
-- [ ] CLI: `tug fixture status 2>&1 | jq .status` outputs "ok"
+- [x] Integration: `cargo nextest run -p tugtool fixture_list` passes
+- [x] Integration: `cargo nextest run -p tugtool fixture_status` passes
+- [x] CLI: `tug fixture list 2>&1 | jq .status` outputs "ok"
+- [x] CLI: `tug fixture status 2>&1 | jq .status` outputs "ok"
 
 #### Milestones {#addendum-milestones}
 
 **Milestone M04: List Command Working** {#m04-list-working}
-- [ ] `tug fixture list` returns fixture info from lock files
-- [ ] JSON output includes all required fields
+- [x] `tug fixture list` returns fixture info from lock files
+- [x] JSON output includes all required fields
 
 **Milestone M05: Status Command Working** {#m05-status-working}
-- [ ] `tug fixture status` correctly identifies fixture states
-- [ ] SHA mismatch detection works
-- [ ] Missing fixture detection works
+- [x] `tug fixture status` correctly identifies fixture states
+- [x] SHA mismatch detection works
+- [x] Missing fixture detection works
 
 | Checkpoint | Verification |
 |------------|--------------|
