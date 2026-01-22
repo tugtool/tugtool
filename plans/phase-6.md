@@ -667,14 +667,14 @@ fixtures/fixture-test/
 **Artifacts:** None
 
 **Tasks:**
-- [ ] Run existing Temporale integration tests to confirm baseline
-- [ ] Verify `sample-code/python/temporale/` structure matches expectations
-- [ ] Check PyPI for name availability (web check recommended; `pip search` is deprecated/removed in modern pip)
+- [x] Run existing Temporale integration tests to confirm baseline
+- [x] Verify `sample-code/python/temporale/` structure matches expectations
+- [x] Check PyPI for name availability (web check recommended; `pip search` is deprecated/removed in modern pip)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool temporale` - all tests pass
-- [ ] `ls sample-code/python/temporale/pyproject.toml` - file exists
-- [ ] PyPI name check completed (document result)
+- [x] `cargo nextest run -p tugtool temporale` - all tests pass (8 tests passed)
+- [x] `ls sample-code/python/temporale/pyproject.toml` - file exists (548 bytes)
+- [x] PyPI name check completed: **"temporale" is AVAILABLE** (PyPI JSON API returns 404)
 
 **No commit - this is verification only.**
 

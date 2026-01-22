@@ -6,6 +6,8 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+---
+
 ## [phase-6.md] Phase 6 Plan Creation: Make Temporale Standalone | COMPLETE | 2026-01-21
 
 **Completed:** 2026-01-21
