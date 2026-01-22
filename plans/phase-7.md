@@ -897,15 +897,15 @@ enum FixtureAction {
 - `UpdateResult` struct
 
 **Tasks:**
-- [ ] Implement `resolve_ref_to_sha()` using `git ls-remote`
-- [ ] Implement `is_branch_ref()` to detect branches vs tags
-- [ ] Implement `update_fixture_lock()` function:
+- [x] Implement `resolve_ref_to_sha()` using `git ls-remote`
+- [x] Implement `is_branch_ref()` to detect branches vs tags
+- [x] Implement `update_fixture_lock()` function:
   - Read existing lock file
   - Resolve new ref to SHA
   - Update lock file preserving format
   - Return result with optional warning
-- [ ] Add `UpdateResult` struct
-- [ ] Add unit and integration tests
+- [x] Add `UpdateResult` struct
+- [x] Add unit and integration tests
 
 **Key implementation:**
 ```rust
@@ -942,14 +942,14 @@ pub fn update_fixture_lock(
 ```
 
 **Tests:**
-- [ ] Unit: resolve_ref_to_sha resolves tag
-- [ ] Unit: resolve_ref_to_sha detects branch
-- [ ] Unit: resolve_ref_to_sha fails on invalid ref
-- [ ] Integration: update_fixture_lock updates lock file
-- [ ] Integration: update with branch produces warning
+- [x] Unit: resolve_ref_to_sha resolves tag
+- [x] Unit: resolve_ref_to_sha detects branch
+- [x] Unit: resolve_ref_to_sha fails on invalid ref
+- [x] Integration: update_fixture_lock updates lock file
+- [x] Integration: update with branch produces warning
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool fixture` - all tests pass
+- [x] `cargo nextest run -p tugtool fixture` - all tests pass (42 tests passed)
 
 **Commit after all checkpoints pass.**
 

@@ -517,6 +517,260 @@ pub fn fetch_fixture_by_name(
     fetch_fixture(workspace_root, &info, force)
 }
 
+// ============================================================================
+// Update Operation Types and Functions
+// ============================================================================
+
+/// Result of a fixture update operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateResult {
+    /// Fixture name.
+    pub name: String,
+    /// Previous git ref.
+    pub previous_ref: String,
+    /// Previous commit SHA.
+    pub previous_sha: String,
+    /// New git ref.
+    pub new_ref: String,
+    /// New commit SHA.
+    pub new_sha: String,
+    /// Path to the lock file.
+    pub lock_file: PathBuf,
+    /// Optional warning (e.g., when ref is a branch).
+    pub warning: Option<String>,
+}
+
+/// Information about a resolved git ref.
+#[derive(Debug, Clone)]
+pub struct ResolvedRef {
+    /// The commit SHA.
+    pub sha: String,
+    /// Whether this ref is a branch (true) or tag (false).
+    pub is_branch: bool,
+}
+
+/// Resolve a git ref to its SHA using `git ls-remote`.
+///
+/// This function queries a remote repository to resolve a ref (tag, branch, or SHA)
+/// to its full commit SHA, and determines whether the ref is a branch.
+///
+/// # Arguments
+/// - `repository`: Git repository URL
+/// - `git_ref`: Git ref to resolve (tag name, branch name, or SHA)
+///
+/// # Returns
+/// - `Ok(ResolvedRef)`: The resolved SHA and whether it's a branch
+/// - `Err(FixtureError)`: Error if the ref cannot be resolved
+///
+/// # How it works
+/// Uses `git ls-remote <repository> <ref>` to query the remote. The output format is:
+/// ```text
+/// <sha>\trefs/heads/<branch>  # for branches
+/// <sha>\trefs/tags/<tag>      # for tags
+/// ```
+///
+/// If the ref matches `refs/heads/*`, it's a branch. If it matches `refs/tags/*`, it's a tag.
+/// Direct SHA lookups or other refs are treated as non-branches.
+pub fn resolve_ref_to_sha(repository: &str, git_ref: &str) -> Result<ResolvedRef, FixtureError> {
+    // Verify git is available
+    verify_git_available().map_err(|e| FixtureError::without_name(e))?;
+
+    // Query the remote for the ref
+    let output = Command::new("git")
+        .args(["ls-remote", repository, git_ref])
+        .output()
+        .map_err(|e| FixtureError::without_name(format!("Failed to run git ls-remote: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(FixtureError::without_name(format!(
+            "git ls-remote failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.trim();
+
+    if stdout.is_empty() {
+        return Err(FixtureError::without_name(format!(
+            "Ref '{}' not found in repository '{}'",
+            git_ref, repository
+        )));
+    }
+
+    // Parse the ls-remote output
+    // Format: "<sha>\t<ref>" (one or more lines)
+    // We need to find the best match for the requested ref
+    let mut best_match: Option<(String, bool)> = None;
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() != 2 {
+            continue;
+        }
+
+        let sha = parts[0].trim();
+        let ref_path = parts[1].trim();
+
+        // Determine if this is a branch or tag
+        let is_branch = ref_path.starts_with("refs/heads/");
+        let is_tag = ref_path.starts_with("refs/tags/");
+
+        // Check if this ref matches what we're looking for
+        let ref_name = if is_branch {
+            ref_path.strip_prefix("refs/heads/").unwrap_or(ref_path)
+        } else if is_tag {
+            ref_path.strip_prefix("refs/tags/").unwrap_or(ref_path)
+        } else {
+            ref_path
+        };
+
+        // Exact match on the ref name
+        if ref_name == git_ref || ref_path == git_ref {
+            // Prefer tags over branches if both exist
+            if best_match.is_none() || (is_tag && best_match.as_ref().map(|(_, b)| *b).unwrap_or(false)) {
+                best_match = Some((sha.to_string(), is_branch));
+            }
+        }
+    }
+
+    match best_match {
+        Some((sha, is_branch)) => Ok(ResolvedRef { sha, is_branch }),
+        None => {
+            // If no match found, the ref might be listed but with a different format
+            // Try to use the first line's SHA as a fallback
+            let first_line = stdout.lines().next().unwrap_or("");
+            let parts: Vec<&str> = first_line.split('\t').collect();
+            if parts.len() == 2 {
+                let sha = parts[0].trim().to_string();
+                let ref_path = parts[1].trim();
+                let is_branch = ref_path.starts_with("refs/heads/");
+                Ok(ResolvedRef { sha, is_branch })
+            } else {
+                Err(FixtureError::without_name(format!(
+                    "Could not parse ref '{}' from repository '{}'",
+                    git_ref, repository
+                )))
+            }
+        }
+    }
+}
+
+/// Check if a ref is a branch (vs a tag).
+///
+/// This is a convenience function that calls `resolve_ref_to_sha` and returns
+/// just the `is_branch` flag.
+///
+/// # Arguments
+/// - `repository`: Git repository URL
+/// - `git_ref`: Git ref to check
+///
+/// # Returns
+/// - `Ok(true)`: The ref is a branch
+/// - `Ok(false)`: The ref is a tag or other non-branch ref
+/// - `Err(FixtureError)`: Error if the ref cannot be resolved
+pub fn is_branch_ref(repository: &str, git_ref: &str) -> Result<bool, FixtureError> {
+    let resolved = resolve_ref_to_sha(repository, git_ref)?;
+    Ok(resolved.is_branch)
+}
+
+/// Write a lock file with the given fixture info.
+///
+/// # Arguments
+/// - `lock_path`: Path to the lock file
+/// - `info`: Fixture information to write
+///
+/// # Returns
+/// - `Ok(())`: Lock file written successfully
+/// - `Err(String)`: Error if write fails
+fn write_lock_file(lock_path: &Path, info: &FixtureInfo) -> Result<(), String> {
+    let content = format!(
+        r#"# {} fixture pin for tugtool integration tests
+#
+# To update:
+#   tug fixture update {} --ref <new-ref>
+
+[fixture]
+name = "{}"
+repository = "{}"
+ref = "{}"
+sha = "{}"
+"#,
+        info.name, info.name, info.name, info.repository, info.git_ref, info.sha
+    );
+
+    std::fs::write(lock_path, content)
+        .map_err(|e| format!("Failed to write lock file {}: {}", lock_path.display(), e))
+}
+
+/// Update a fixture lock file to a new ref.
+///
+/// This function resolves the new ref to a SHA, updates the lock file,
+/// and returns the result with an optional warning if the ref is a branch.
+///
+/// # Arguments
+/// - `workspace_root`: Path to the workspace root
+/// - `name`: Fixture name (must have existing lock file)
+/// - `new_ref`: New git ref (tag or branch)
+///
+/// # Returns
+/// - `Ok(UpdateResult)`: Result of the update operation
+/// - `Err(FixtureError)`: Error if update fails
+///
+/// # Note
+/// This function does NOT automatically fetch the new version.
+/// Run `fetch_fixture_by_name` after updating to get the new content.
+pub fn update_fixture_lock(
+    workspace_root: &Path,
+    name: &str,
+    new_ref: &str,
+) -> Result<UpdateResult, FixtureError> {
+    // 1. Read existing lock file
+    let lock_path = workspace_root
+        .join("fixtures")
+        .join(format!("{}.lock", name));
+
+    let existing_info = read_lock_file(&lock_path)
+        .map_err(|e| FixtureError::with_name(name, e))?;
+
+    // 2. Resolve new ref to SHA
+    let resolved = resolve_ref_to_sha(&existing_info.repository, new_ref)
+        .map_err(|e| FixtureError::with_name(name, e.message))?;
+
+    // 3. Check if branch (for warning)
+    let warning = if resolved.is_branch {
+        Some(format!(
+            "Ref '{}' is a branch, not a tag. SHA may change.",
+            new_ref
+        ))
+    } else {
+        None
+    };
+
+    // 4. Write updated lock file
+    let updated_info = FixtureInfo {
+        name: existing_info.name.clone(),
+        repository: existing_info.repository.clone(),
+        git_ref: new_ref.to_string(),
+        sha: resolved.sha.clone(),
+    };
+
+    write_lock_file(&lock_path, &updated_info)
+        .map_err(|e| FixtureError::with_name(name, e))?;
+
+    // 5. Return result
+    Ok(UpdateResult {
+        name: existing_info.name,
+        previous_ref: existing_info.git_ref,
+        previous_sha: existing_info.sha,
+        new_ref: new_ref.to_string(),
+        new_sha: resolved.sha,
+        lock_file: lock_path,
+        warning,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1129,5 +1383,296 @@ sha = "abc123"
                 .collect();
             assert!(entries.is_empty(), "temp directories should be cleaned up");
         }
+    }
+
+    // ========================================================================
+    // Update Operation Tests
+    // ========================================================================
+
+    /// Helper to create a local git repo with a tag and a branch for testing
+    fn create_test_repo_with_tag_and_branch(dir: &Path) -> (PathBuf, String, String) {
+        let repo_dir = dir.join("source-repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("file.txt"), "v1 content").unwrap();
+
+        // Initialize git repo
+        let init_output = Command::new("git")
+            .args(["init"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+        if !init_output.status.success() {
+            panic!("Failed to init git repo");
+        }
+
+        // Configure git user
+        let _ = Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&repo_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&repo_dir)
+            .output();
+
+        // Add and commit v1
+        let _ = Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["commit", "-m", "v1"])
+            .current_dir(&repo_dir)
+            .output();
+
+        // Create tag v1.0.0
+        let _ = Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&repo_dir)
+            .output();
+
+        let v1_sha = get_repo_sha(&repo_dir).unwrap();
+
+        // Create second commit for v2
+        std::fs::write(repo_dir.join("file.txt"), "v2 content").unwrap();
+        let _ = Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["commit", "-m", "v2"])
+            .current_dir(&repo_dir)
+            .output();
+
+        // Create tag v2.0.0
+        let _ = Command::new("git")
+            .args(["tag", "v2.0.0"])
+            .current_dir(&repo_dir)
+            .output();
+
+        let v2_sha = get_repo_sha(&repo_dir).unwrap();
+
+        // Create a branch
+        let _ = Command::new("git")
+            .args(["branch", "develop"])
+            .current_dir(&repo_dir)
+            .output();
+
+        (repo_dir, v1_sha, v2_sha)
+    }
+
+    #[test]
+    fn test_resolve_ref_to_sha_resolves_tag() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, v1_sha, _v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        let repo_url = format!("file://{}", repo_dir.display());
+
+        // Resolve tag v1.0.0
+        let result = resolve_ref_to_sha(&repo_url, "v1.0.0");
+        assert!(result.is_ok(), "should resolve tag: {:?}", result);
+
+        let resolved = result.unwrap();
+        assert_eq!(resolved.sha, v1_sha);
+        assert!(!resolved.is_branch, "v1.0.0 should be detected as a tag, not a branch");
+    }
+
+    #[test]
+    fn test_resolve_ref_to_sha_detects_branch() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, _v1_sha, v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        let repo_url = format!("file://{}", repo_dir.display());
+
+        // Resolve branch 'develop'
+        let result = resolve_ref_to_sha(&repo_url, "develop");
+        assert!(result.is_ok(), "should resolve branch: {:?}", result);
+
+        let resolved = result.unwrap();
+        assert_eq!(resolved.sha, v2_sha); // develop points to latest commit
+        assert!(resolved.is_branch, "develop should be detected as a branch");
+    }
+
+    #[test]
+    fn test_resolve_ref_to_sha_fails_on_invalid_ref() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, _v1_sha, _v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        let repo_url = format!("file://{}", repo_dir.display());
+
+        // Try to resolve non-existent ref
+        let result = resolve_ref_to_sha(&repo_url, "nonexistent-ref");
+        assert!(result.is_err(), "should fail on invalid ref");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("not found"),
+            "error should mention ref not found: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_is_branch_ref() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, _v1_sha, _v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        let repo_url = format!("file://{}", repo_dir.display());
+
+        // Tag should not be a branch
+        assert!(!is_branch_ref(&repo_url, "v1.0.0").unwrap());
+
+        // Branch should be a branch
+        assert!(is_branch_ref(&repo_url, "develop").unwrap());
+    }
+
+    #[test]
+    fn test_update_fixture_lock_updates_lock_file() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, v1_sha, v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        // Create workspace with lock file at v1.0.0
+        let workspace_dir = dir.path().join("workspace");
+        let fixtures_dir = workspace_dir.join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let lock_content = format!(
+            r#"
+[fixture]
+name = "test-fixture"
+repository = "file://{}"
+ref = "v1.0.0"
+sha = "{}"
+"#,
+            repo_dir.display(),
+            v1_sha
+        );
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        // Update to v2.0.0
+        let result = update_fixture_lock(&workspace_dir, "test-fixture", "v2.0.0");
+        assert!(result.is_ok(), "update should succeed: {:?}", result);
+
+        let update_result = result.unwrap();
+        assert_eq!(update_result.name, "test-fixture");
+        assert_eq!(update_result.previous_ref, "v1.0.0");
+        assert_eq!(update_result.previous_sha, v1_sha);
+        assert_eq!(update_result.new_ref, "v2.0.0");
+        assert_eq!(update_result.new_sha, v2_sha);
+        assert!(update_result.warning.is_none(), "tag should not produce warning");
+
+        // Verify lock file was updated
+        let updated_info = read_lock_file_by_name(&workspace_dir, "test-fixture").unwrap();
+        assert_eq!(updated_info.git_ref, "v2.0.0");
+        assert_eq!(updated_info.sha, v2_sha);
+    }
+
+    #[test]
+    fn test_update_fixture_lock_with_branch_produces_warning() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, v1_sha, v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        // Create workspace with lock file
+        let workspace_dir = dir.path().join("workspace");
+        let fixtures_dir = workspace_dir.join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let lock_content = format!(
+            r#"
+[fixture]
+name = "test-fixture"
+repository = "file://{}"
+ref = "v1.0.0"
+sha = "{}"
+"#,
+            repo_dir.display(),
+            v1_sha
+        );
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        // Update to branch 'develop'
+        let result = update_fixture_lock(&workspace_dir, "test-fixture", "develop");
+        assert!(result.is_ok(), "update should succeed: {:?}", result);
+
+        let update_result = result.unwrap();
+        assert_eq!(update_result.new_ref, "develop");
+        assert_eq!(update_result.new_sha, v2_sha);
+        assert!(update_result.warning.is_some(), "branch should produce warning");
+
+        let warning = update_result.warning.unwrap();
+        assert!(warning.contains("branch"), "warning should mention branch");
+        assert!(warning.contains("develop"), "warning should mention the ref name");
+    }
+
+    #[test]
+    fn test_update_fixture_lock_fails_on_nonexistent_fixture() {
+        let dir = TempDir::new().unwrap();
+        let fixtures_dir = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        // No lock file exists for 'nonexistent'
+        let result = update_fixture_lock(dir.path(), "nonexistent", "v1.0.0");
+        assert!(result.is_err(), "should fail for nonexistent fixture");
+
+        let err = result.unwrap_err();
+        assert_eq!(err.name.as_deref(), Some("nonexistent"));
+    }
+
+    #[test]
+    fn test_update_fixture_lock_fails_on_invalid_ref() {
+        let dir = TempDir::new().unwrap();
+        let (repo_dir, v1_sha, _v2_sha) = create_test_repo_with_tag_and_branch(dir.path());
+
+        // Create workspace with lock file
+        let workspace_dir = dir.path().join("workspace");
+        let fixtures_dir = workspace_dir.join("fixtures");
+        std::fs::create_dir_all(&fixtures_dir).unwrap();
+
+        let lock_content = format!(
+            r#"
+[fixture]
+name = "test-fixture"
+repository = "file://{}"
+ref = "v1.0.0"
+sha = "{}"
+"#,
+            repo_dir.display(),
+            v1_sha
+        );
+        std::fs::write(fixtures_dir.join("test-fixture.lock"), lock_content).unwrap();
+
+        // Try to update to nonexistent ref
+        let result = update_fixture_lock(&workspace_dir, "test-fixture", "nonexistent-tag");
+        assert!(result.is_err(), "should fail for invalid ref");
+
+        let err = result.unwrap_err();
+        assert!(err.message.contains("not found"), "error should mention ref not found");
+    }
+
+    #[test]
+    fn test_write_lock_file_format() {
+        let dir = TempDir::new().unwrap();
+        let lock_path = dir.path().join("test.lock");
+
+        let info = FixtureInfo {
+            name: "myfix".to_string(),
+            repository: "https://github.com/example/test".to_string(),
+            git_ref: "v1.0.0".to_string(),
+            sha: "abc123def456".to_string(),
+        };
+
+        write_lock_file(&lock_path, &info).unwrap();
+
+        // Verify the file can be read back
+        let read_info = read_lock_file(&lock_path).unwrap();
+        assert_eq!(read_info.name, "myfix");
+        assert_eq!(read_info.repository, "https://github.com/example/test");
+        assert_eq!(read_info.git_ref, "v1.0.0");
+        assert_eq!(read_info.sha, "abc123def456");
+
+        // Verify the file contains expected content
+        let content = std::fs::read_to_string(&lock_path).unwrap();
+        assert!(content.contains("# myfix fixture pin"));
+        assert!(content.contains("tug fixture update myfix"));
     }
 }

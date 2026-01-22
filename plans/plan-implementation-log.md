@@ -8,6 +8,54 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-7.md] Step 4: Implement Update Operation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-7.md` - Step 4 specification (lines 889-954)
+- `plans/phase-7.md` - Spec S02 fixture update command (lines 367-393)
+- `plans/phase-7.md` - Spec S04 fixture update response schema (lines 434-467)
+- `plans/phase-7.md` - [D06] Branch Warning in Update (lines 309-323)
+- `crates/tugtool/src/fixture.rs` - Existing fetch operation patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `resolve_ref_to_sha()` using `git ls-remote` | Done |
+| Implement `is_branch_ref()` to detect branches vs tags | Done |
+| Implement `update_fixture_lock()` function | Done |
+| Add `UpdateResult` struct | Done |
+| Add unit and integration tests | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/fixture.rs` - Added update operation types and functions:
+  - `UpdateResult` struct - Result type for update operations
+  - `ResolvedRef` struct - Helper for resolved ref info (sha, is_branch)
+  - `resolve_ref_to_sha()` - Resolves git refs using `git ls-remote`, detects branches vs tags
+  - `is_branch_ref()` - Convenience wrapper returning just the is_branch flag
+  - `write_lock_file()` - Helper to write lock files in TOML format with comments
+  - `update_fixture_lock()` - Main update function that reads lock, resolves ref, writes updated lock
+  - 9 new tests for update operations
+- `plans/phase-7.md` - Checked off Step 4 tasks, tests, and checkpoint
+
+**Test Results:**
+- `cargo nextest run -p tugtool fixture`: 42 tests passed
+- `cargo nextest run -p tugtool`: 232 tests passed (full suite)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool fixture` - all tests pass: PASS (42 tests)
+
+**Key Decisions/Notes:**
+- `resolve_ref_to_sha()` parses `git ls-remote` output to detect refs/heads (branches) vs refs/tags
+- Branch refs generate warning message: "Ref 'X' is a branch, not a tag. SHA may change."
+- `write_lock_file()` generates lock file with header comments including update instructions
+- Created helper function `create_test_repo_with_tag_and_branch()` for update tests
+- This completes the library-side implementation; Step 5 will wire up the CLI
+
+---
+
 ## [phase-7.md] Step 3: Add Fixture Fetch CLI Command | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
