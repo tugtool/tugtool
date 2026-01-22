@@ -246,7 +246,9 @@
       "Bash(gh api:*)",
       "Bash(git ls-remote:*)",
       "Bash(TUG_TEMPORALE_PATH=/tmp/test-override cargo nextest:*)",
-      "Bash(TUG_TEMPORALE_PATH=/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale cargo nextest run:*)"
+      "Bash(TUG_TEMPORALE_PATH=/Users/kocienda/Mounts/u/src/tugtool/sample-code/python/temporale cargo nextest run:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip install:*)",
+      "Bash(TUG_TEMPORALE_PATH=/tmp/temporale-backup cargo nextest:*)"
     ],
     "deny": [],
     "ask": []

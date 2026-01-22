@@ -8,6 +8,52 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-6.md] Step 6: Verify Fixture-Based Tests Work | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-6.md` - Step 6 specification (lines 1290-1337)
+- `fixtures/temporale.lock` - Pinned version and SHA
+- Success criteria from phase overview
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Locally: delete vendored Temporale, fetch fixture, run tests | Done |
+| Verify CI passes with only fetched fixture | Done |
+| Verify env var override works | Done |
+
+**Verification Steps Executed:**
+1. Backed up vendored Temporale to `/tmp/temporale-backup`
+2. Removed `sample-code/python/temporale/` directory
+3. Fetched fixture: `git clone --depth 1 --branch v0.1.0 https://github.com/tugtool/temporale .tug/fixtures/temporale`
+4. Verified SHA: `9f21df0322b7aa39ca7f599b128f66c07ecec42f` (matches lock file)
+5. Installed fixture: `uv pip install -e .tug/fixtures/temporale/`
+6. Ran tests without vendored code: 8 tests passed
+7. Tested env var override with `TUG_TEMPORALE_PATH=/tmp/temporale-backup`: 8 tests passed
+8. Restored vendored code for transition period
+
+**Test Results:**
+- `cargo nextest run -p tugtool temporale` (fetched fixture): 8 tests passed
+- `TUG_TEMPORALE_PATH=/tmp/temporale-backup cargo nextest run -p tugtool temporale` (env override): 8 tests passed
+
+**Checkpoints Verified:**
+- All Temporale tests pass with fetched fixture (vendored removed): PASS
+- Env var override works correctly: PASS
+- CI passes (verified in previous step): PASS
+
+**Files Modified:**
+- `plans/phase-6.md` - Checked off Step 5 Tests/Checkpoints and Step 6 Tasks/Checkpoints
+
+**Key Decisions/Notes:**
+- This was a verification-only step (no commit required)
+- Vendored code restored after verification for transition period (will be removed in Step 7)
+- Fixture infrastructure is proven to work - safe to proceed with removing vendored code
+
+---
+
 ## [phase-6.md] Step 5: Update CI Workflow | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

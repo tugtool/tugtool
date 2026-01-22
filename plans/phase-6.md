@@ -1275,14 +1275,13 @@ Or use a local checkout:
 ```bash
 export TUG_TEMPORALE_PATH=/path/to/your/temporale
 ```
-```
 
 **Tests:**
-- [ ] CI workflow runs successfully with fixture fetch
+- [x] CI workflow runs successfully with fixture fetch
 
 **Checkpoint:**
-- [ ] Push to branch, CI passes with fetch step visible in logs
-- [ ] CI output shows "Fetching temporale fixture" and "SHA verified"
+- [x] Push to branch, CI passes with fetch step visible in logs
+- [x] CI output shows "Fetching temporale fixture" and "SHA verified"
 
 **Commit after all checkpoints pass.**
 
@@ -1297,9 +1296,9 @@ export TUG_TEMPORALE_PATH=/path/to/your/temporale
 **Artifacts:** None
 
 **Tasks:**
-- [ ] Locally: delete vendored Temporale, fetch fixture, run tests
-- [ ] Verify CI passes with only fetched fixture
-- [ ] Verify env var override works
+- [x] Locally: delete vendored Temporale, fetch fixture, run tests
+- [x] Verify CI passes with only fetched fixture
+- [x] Verify env var override works
 
 **Local verification steps:**
 ```bash
@@ -1331,9 +1330,9 @@ cp -r /tmp/temporale-backup sample-code/python/temporale
 ```
 
 **Checkpoint:**
-- [ ] All Temporale tests pass with fetched fixture (vendored removed)
-- [ ] Env var override works correctly
-- [ ] CI passes (may need separate PR to test)
+- [x] All Temporale tests pass with fetched fixture (vendored removed)
+- [x] Env var override works correctly
+- [x] CI passes (may need separate PR to test)
 
 **No commit - this is verification only.**
 
