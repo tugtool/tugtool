@@ -1203,10 +1203,10 @@ fn temporale_path() -> PathBuf {
 - Updated `.github/workflows/ci.yml`
 
 **Tasks:**
-- [ ] Add fixture fetch step after venv setup
-- [ ] Add SHA verification
-- [ ] Add editable install of fixture
-- [ ] Update CLAUDE.md with fixture setup instructions
+- [x] Add fixture fetch step after venv setup
+- [x] Add SHA verification
+- [x] Add editable install of fixture
+- [x] Update CLAUDE.md with fixture setup instructions
 
 **CI workflow additions:**
 ```yaml

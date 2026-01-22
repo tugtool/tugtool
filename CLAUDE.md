@@ -114,38 +114,60 @@ cargo nextest run -- --nocapture
 TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
 ```
 
-### Python Tests (Temporale sample code)
+### Python Tests (Temporale fixture)
 
 **⚠️ CRITICAL: USE THE INSTALLED VENV - NEVER USE `uv run` ⚠️**
 
-Python tests for the Temporale sample code library MUST be run using the pre-installed virtual environment at the **workspace root**:
+Temporale is an external fixture fetched from https://github.com/tugtool/temporale. It is NOT vendored in the tugtool repository.
+
+#### Fixture Setup
+
+Before running Temporale integration tests locally, fetch the fixture:
+
+```bash
+# Read the pinned version from lock file
+cat fixtures/temporale.lock
+
+# Fetch the fixture (adjust tag as needed)
+mkdir -p .tug/fixtures
+git clone --depth 1 --branch v0.1.0 \
+  https://github.com/tugtool/temporale \
+  .tug/fixtures/temporale
+
+# Install in test venv
+.tug-test-venv/bin/pip install -e .tug/fixtures/temporale/
+```
+
+Or use a local checkout for development:
+```bash
+export TUG_TEMPORALE_PATH=/path/to/your/temporale
+```
+
+#### Running Python Tests
+
+Python tests for Temporale MUST be run using the pre-installed virtual environment at the **workspace root**:
 
 ```bash
 # CORRECT - The ONE AND ONLY way to run Python tests:
-/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
-
-# Or from workspace root with relative path:
-.tug-test-venv/bin/python -m pytest sample-code/python/temporale/tests/ -v
+.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v
 ```
 
 **ABSOLUTELY FORBIDDEN:**
 - ❌ `uv run python -m pytest ...` - Creates unwanted venvs, breaks project structure
 - ❌ `python -m pytest ...` - Uses wrong Python, missing dependencies
 - ❌ `pytest ...` - May use system pytest without temporale installed
-- ❌ Looking for venv in `sample-code/python/temporale/.tug-test-venv/` - WRONG LOCATION
 
 **Why this matters:**
-- The `.tug-test-venv/` is at the **tugtool workspace root**, NOT in sample-code
+- The `.tug-test-venv/` is at the **tugtool workspace root**
 - This venv has temporale installed in editable mode (`-e`)
 - This venv has pytest and all test dependencies
 - Using `uv run` auto-creates new venvs and breaks the testing setup
 
 **If the venv doesn't exist, create it:**
 ```bash
-cd /Users/kocienda/Mounts/u/src/tugtool
 uv venv --python 3.11 .tug-test-venv
 uv pip install --python .tug-test-venv/bin/python pytest
-uv pip install --python .tug-test-venv/bin/python -e sample-code/python/temporale/
+uv pip install --python .tug-test-venv/bin/python -e .tug/fixtures/temporale/
 ```
 
 ## Quality Checks

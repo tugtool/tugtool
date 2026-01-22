@@ -8,6 +8,43 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-6.md] Step 5: Update CI Workflow | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-6.md` - Step 5 specification (lines 1196-1287)
+- `.github/workflows/ci.yml` - Current CI workflow structure
+- `CLAUDE.md` - Current Python test instructions
+- Spec S03 (CI Fixture Fetch Step)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add fixture fetch step after venv setup | Done |
+| Add SHA verification | Done |
+| Add editable install of fixture | Done |
+| Update CLAUDE.md with fixture setup instructions | Done |
+
+**Files Modified:**
+- `.github/workflows/ci.yml` - Added "Fetch test fixtures" and "Install fixture in venv" steps
+- `CLAUDE.md` - Updated Python Tests section with fixture setup instructions
+- `plans/phase-6.md` - Checked off Step 5 tasks
+
+**Checkpoints Pending (require CI run):**
+- Push to branch, CI passes with fetch step visible in logs: PENDING
+- CI output shows "Fetching temporale fixture" and "SHA verified": PENDING
+
+**Key Decisions/Notes:**
+- Used `FIXTURE_REPO`, `FIXTURE_REF`, `FIXTURE_SHA` as env var names (prefixed to avoid conflicts)
+- Fixture fetch step uses Python's `tomllib` for robust TOML parsing
+- SHA verification uses `git rev-parse HEAD` and fails with `::error::` annotation if mismatch
+- CLAUDE.md updated to document fixture-based workflow (fetched from GitHub, not vendored)
+- Checkpoints require CI run to verify - cannot be completed locally
+
+---
+
 ## [phase-6.md] Step 4: Update temporale_path() to Use Fixture Infrastructure | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
