@@ -8,6 +8,51 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Phase 8 Plan Creation | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/extras/editor-interop.md` - Editor interop design sketch
+- `plans/phase-8.md` - Phase 8 plan file (created and updated)
+- Cursor documentation via web search for rules format
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create Phase 8 plan using code-planner agent | Done |
+| Resolve Q01 (Cursor rules format) via web search | Done |
+| Update date from 2025 to 2026 | Done |
+| Remove R01 risk (zero users, clean break) | Done |
+| Add D05 (tokio removal audit) | Done |
+| Add D06 (syntax verification only) | Done |
+| Update Cursor config to `.cursor/rules/tug.mdc` | Done |
+| Drop `.cursor/commands.json` from scope | Done |
+| Scope success criteria to exclude `plans/` | Done |
+| Add testing boundaries section | Done |
+
+**Files Created:**
+- `plans/phase-8.md` - Complete Phase 8 plan for MCP removal and editor interop
+
+**Files Modified:**
+- `plans/phase-8.md` - Multiple updates based on user feedback
+
+**Key Decisions/Notes:**
+- **Q01 Resolved**: Cursor now uses `.cursor/rules/*.mdc` format (legacy `.cursorrules` deprecated)
+- **D05 Added**: Tokio audit during MCP removal - remove if MCP-only
+- **D06 Added**: `--verify syntax` only for Phase 8 commands
+- **Clean Break**: MCP removal with no deprecation, no stub commands, no migration path (zero users)
+- **Rules-Only for Cursor**: Cursor commands out of scope for Phase 8
+- **Testing Boundaries**: CLI is testable kernel; editor commands require manual verification
+
+**Sources for Cursor Format:**
+- https://github.com/PatrickJS/awesome-cursorrules
+- https://dotcursorrules.com/
+- https://forum.cursor.com/t/good-examples-of-cursorrules-file/4346
+
+---
+
 ## [phase-7.md] Step B4: Update Spec Documentation | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
