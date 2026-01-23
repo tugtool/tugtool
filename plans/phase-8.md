@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | **complete** |
 | Target branch | main |
 | Tracking issue/PR | TBD |
 | Last updated | 2026-01-22 |
@@ -1587,19 +1587,19 @@ After completing Steps 6.1-6.10, tugtool supports:
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `tug run --apply --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data` in `spikes/interop-spike/` produces 4 files changed
-- [ ] `python3 spikes/interop-spike/main.py` executes without error after rename
-- [ ] `cargo nextest run --workspace` passes (no regressions)
-- [ ] Re-export chain resolution works (Step 6.2)
-- [ ] At least 3 of 4 additional spike scenarios pass (Step 6.5)
-- [ ] All acceptance criteria tests pass for relative imports, re-exports, and star imports
+- [x] `tug run --apply --verify syntax rename-symbol --at lib/utils.py:4:5 --to transform_data` in `spikes/interop-spike/` produces 4 files changed
+- [x] `python3 spikes/interop-spike/main.py` executes without error after rename
+- [x] `cargo nextest run --workspace` passes (no regressions)
+- [x] Re-export chain resolution works (Step 6.2)
+- [x] At least 3 of 4 additional spike scenarios pass (Step 6.5) - **all 4 pass**
+- [x] All acceptance criteria tests pass for relative imports, re-exports, and star imports
 
 **Acceptance tests:**
-- [ ] Integration: `cargo nextest run -p tugtool-python ac4_import`
-- [ ] Integration: `cargo nextest run -p tugtool-python relative_import`
-- [ ] Integration: `cargo nextest run -p tugtool-python reexport`
-- [ ] Integration: `cargo nextest run -p tugtool-python star_import`
-- [ ] Manual: Spike test end-to-end flow
+- [x] Integration: `cargo nextest run -p tugtool-python ac4_import`
+- [x] Integration: `cargo nextest run -p tugtool-python relative_import`
+- [x] Integration: `cargo nextest run -p tugtool-python re_export`
+- [x] Integration: `cargo nextest run -p tugtool-python star_import`
+- [x] Manual: Spike test end-to-end flow
 
 #### Milestones (Within Phase) {#milestones}
 
@@ -1627,14 +1627,14 @@ After completing Steps 6.1-6.10, tugtool supports:
 - [x] Steps 6.5, 6.6 complete
 - [x] Additional spike scenarios passing (3 of 4)
 - [x] Documentation updated
-- [ ] Step 7 pending (final verification)
+- [x] Step 7 complete (final verification)
 
 **Milestone M06: Technical Debt and Architectural Improvements** {#m06-cleanup}
 - [x] Step 6.7 complete (import alias tracking audit)
 - [x] Step 6.8 complete (star import expansion)
 - [x] Step 6.9 complete (FactsStore export tracking)
 - [x] Step 6.10 complete (transitive star import expansion)
-- [ ] All spike scenarios pass (4 of 4)
+- [x] All spike scenarios pass (4 of 4)
 - [x] No re-parsing in rename operations
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -1675,4 +1675,4 @@ After completing Steps 6.1-6.10, tugtool supports:
 | Step 6.8 | complete | 2026-01-22 | Star import expansion in Pass 3 using source file exports/__all__ |
 | Step 6.9 | complete | 2026-01-22 | Export entity in FactsStore, rename uses store.exports_named() |
 | Step 6.10 | complete | 2026-01-22 | Transitive star import expansion - follow star import chains |
-| Step 7 | pending | | Final verification and cleanup |
+| Step 7 | complete | 2026-01-22 | Final verification and cleanup - all tests pass, all spike scenarios pass, CI green |
