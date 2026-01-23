@@ -8,6 +8,77 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-10.md] Architecture Review Fixes: P0/P1/P2 Issues | COMPLETE | 2026-01-23
+
+**Completed:** 2026-01-23
+
+**References Reviewed:**
+- `plans/phase-10.md` - Phase 10 plan (pre-review version)
+- `plans/plan-skeleton.md` - Plan structure template
+- Architecture review findings (P0-P3 issues identified by code-architect agent)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Apply P0-1 fix: Remove duplicate offset_to_line_col function | Done |
+| Apply P0-2 fix: Add resolve_module_to_file call site inventory | Done |
+| Apply P0-3 fix: Merge CLI transition steps into atomic step | Done |
+| Apply P1-1 fix: Specify PositionTable growth strategy | Done |
+| Apply P1-2 fix: Identify specific inflate visitor functions | Done |
+| Apply P1-3 fix: Define alias scope matching semantics | Done |
+| Apply P1-4 fix: Add warning status to tug doctor | Done |
+| Apply P1-5 fix: Add clap mutual exclusion configuration | Done |
+| Apply P2-1 fix: Add alias edge case coverage table | Done |
+| Apply P2-2 fix: Specify AliasGraph memory management | Done |
+| Apply P2-3 fix: Define transitive_aliases() cycle behavior | Done |
+| Apply P2-4 fix: Specify diff output format | Done |
+| Apply P2-5 fix: Make Step 4 prerequisites explicit | Done |
+
+**Files Modified:**
+- `plans/phase-10.md` - Applied all P0, P1, and P2 fixes
+
+**P0 (Critical) Fixes Applied:**
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| P0-1 | `offset_to_line_col` duplicates existing function | Spec S01: use existing `byte_offset_to_position_str`, do NOT add new function |
+| P0-2 | `resolve_module_to_file` call sites unknown | Step 8: added inventory of 6 call sites across `analyzer.rs` and `lookup.rs` |
+| P0-3 | CLI removal order non-atomic | Merged Steps 14+15 into single atomic Step 14, plan now has 15 steps |
+
+**P1 (High) Fixes Applied:**
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| P1-1 | PositionTable growth undefined | Spec S01: `vec.resize(id.0 + 1, None)` when `id.0 >= positions.len()` |
+| P1-2 | Visitor functions unspecified | Steps 2-3: `inflate_lambda()`, `inflate_list_comp()`, etc. |
+| P1-3 | Scope filtering ambiguous | Spec S04: exact match only, `alias.scope_path == target.scope_path` |
+| P1-4 | Doctor always passes | Added `warning` status for "0 files found" case |
+| P1-5 | clap mutual exclusion | Step 13: `#[arg(long, conflicts_with = 'verify')]` |
+
+**P2 (Medium) Fixes Applied:**
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| P2-1 | Alias edge cases missing | Spec S04 table: `a = b = c`, `self.x = y`, `for x in` |
+| P2-2 | Memory management undefined | Spec S04: fresh per file, clear after serialization |
+| P2-3 | Cycle behavior unspecified | Spec S04: visited set, skip cycles, return accumulated |
+| P2-4 | Diff format unspecified | Spec S07: 3 context lines, git-style headers, no color |
+| P2-5 | Implicit dependency | Step 4: explicit "Prerequisites: Steps 2-3" |
+
+**Structural Changes:**
+- Plan reduced from 16 steps to 15 steps (merged CLI transition)
+- Milestones table updated
+- Symbol Inventory updated (`byte_offset_to_position_str` marked "no changes needed")
+
+**Key Decisions/Notes:**
+- Existing `byte_offset_to_position_str` function is sufficient; no new duplicate needed
+- CLI transition is a clean break with no backward compatibility period
+- Alias scope matching uses exact path match, not reachable scopes
+- `tug doctor` now has three statuses: ok, warning, error
+
+---
+
 ## [phase-10.md] Plan Creation: Architectural Hardening | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

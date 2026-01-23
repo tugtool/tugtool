@@ -12,7 +12,7 @@
 | Status | draft |
 | Target branch | main |
 | Tracking issue/PR | TBD |
-| Last updated | 2026-01-22 |
+| Last updated | 2026-01-23 |
 
 ---
 
@@ -87,9 +87,12 @@ This phase addresses these gaps before adding new refactoring operations.
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | PositionTable change breaks assumptions | high | low | Comprehensive test coverage |
-| Namespace package detection false positives | med | low | Only treat as namespace if contains .py files |
+| Namespace package detection false positives | med | low | Exclude .tug/, .git/, __pycache__/; require .py files in dir |
 | Alias chain explosion | med | low | Limit chain depth in transitive_aliases() |
 | Shadowed variables cause incorrect aliases | med | med | Scope-aware analysis using scope_path |
+| Generator expression span edge cases | low | med | Use node span when no explicit parens |
+| Alias coverage gaps surprise users | low | med | Document tracked/untracked patterns in output |
+| Namespace scan is O(n * depth) | low | med | Dedup parent dirs; cache visited parents |
 
 ---
 
@@ -157,6 +160,14 @@ This phase addresses these gaps before adding new refactoring operations.
 
 **Decision:** All apply operations verify syntax by default. Use `--no-verify` to skip.
 
+**Verification modes:**
+- `none`: No verification, apply changes directly
+- `syntax` (default): Re-parse all modified files with native CST parser. Verifies output is syntactically valid Python. Does NOT invoke Python interpreter or type checkers.
+- `tests`: Run test command after apply (future, not Phase 10)
+- `typecheck`: Run type checker after apply (future, not Phase 10)
+
+**"syntax" verification catches:** Broken string literals, indentation errors, missing tokens from incomplete edits.
+
 ---
 
 ### 10.1 Specification {#specification}
@@ -174,20 +185,41 @@ impl PositionTable {
     pub fn with_capacity(capacity: usize) -> Self;
     pub fn get(&self, id: &NodeId) -> Option<&NodePosition>;
     pub fn insert(&mut self, id: NodeId, position: NodePosition);
-    pub fn entry(&mut self, id: NodeId) -> &mut NodePosition;
+    // get_or_insert requires explicit default since NodePosition is not Default
+    pub fn get_or_insert(&mut self, id: NodeId, default: NodePosition) -> &mut NodePosition;
 }
 ```
+
+**Growth strategy:** `insert()` grows the Vec using `vec.resize(id.0 + 1, None)` when `id.0 >= positions.len()`. This ensures the Vec is exactly large enough to hold the new entry. Growth is expected to be rare since NodeIdGenerator assigns sequential IDs.
+
+**Note:** `get_or_insert()` provides entry-like semantics with explicit default value.
 
 #### 10.1.2 Scope Spans {#spec-scope-spans}
 
 **Lambda:** Span from `lambda` keyword to end of body expression.
-**Comprehensions:** Span from opening bracket to closing bracket.
+
+**Comprehensions:**
+- `ListComp`: `[` to `]`
+- `SetComp`: `{` to `}`
+- `DictComp`: `{` to `}`
+- `GeneratorExp`:
+  - If parenthesized: `(` to `)`
+  - If implicit (function argument with no parens): span of entire generator expression node
+    - Example: `sum(x for x in xs)` → span covers `x for x in xs`
 
 #### 10.1.3 Line/Col Helper {#spec-line-col}
 
-**Spec S01:** `offset_to_line_col(source: &str, byte_offset: u64) -> (u32, u32)`
+**Spec S01:** Line/Col Position Computation
 
-Returns 1-indexed (line, col). Column is UTF-8 bytes from start of line.
+**Existing function:** `byte_offset_to_position_str(content: &str, offset: u64) -> (u32, u32)` in `tugtool-core/src/text.rs:124`
+
+Returns 1-indexed (line, col) where:
+- `line`: 1-based line number
+- `col`: 1-based byte offset from start of line (not Unicode codepoints or graphemes)
+
+**Decision:** Use the existing `byte_offset_to_position_str` function. Do NOT add a new `offset_to_line_col` function. The existing function is already used throughout `rename.rs` and `lookup.rs`.
+
+**Note:** Byte offset matches tree-sitter and LibCST internal representation. Downstream consumers may convert to character columns for display if needed.
 
 #### 10.1.4 tug doctor Response {#spec-doctor}
 
@@ -201,9 +233,46 @@ Returns 1-indexed (line, col). Column is UTF-8 bytes from start of line.
     { "name": "workspace_root", "status": "passed", "message": "..." },
     { "name": "python_files", "status": "passed", "message": "Found 42 Python files" }
   ],
-  "summary": { "total": 2, "passed": 2, "failed": 0 }
+  "summary": { "total": 2, "passed": 2, "warnings": 0, "failed": 0 }
 }
 ```
+
+**Example with warning:**
+
+```json
+{
+  "status": "ok",
+  "schema_version": "1",
+  "checks": [
+    { "name": "workspace_root", "status": "passed", "message": "Found git root at /path/to/repo" },
+    { "name": "python_files", "status": "warning", "message": "Found 0 Python files" }
+  ],
+  "summary": { "total": 2, "passed": 1, "warnings": 1, "failed": 0 }
+}
+```
+
+**Workspace root detection order:**
+1. Cargo workspace root (directory containing `Cargo.toml` with `[workspace]`)
+2. Git repository root (`.git` directory)
+3. Current working directory (fallback)
+
+The `workspace_root` check PASSES if a root is found; FAILS only on detection error.
+
+**python_files check behavior:**
+- `status: "passed"` with "Found N Python files" if N > 0
+- `status: "warning"` with "Found 0 Python files" if no `.py` files exist
+- This check never FAILS—it reports what was found with appropriate severity
+
+**Check status values:**
+- `passed`: Check succeeded with expected results
+- `warning`: Check succeeded but result may indicate a problem (e.g., 0 files found)
+- `failed`: Check detected an error condition
+
+**Overall status rule:**
+- `status = "ok"` if all checks are `passed` or `warning`
+- `status = "failed"` if any check is `failed`
+
+**Note:** The `warning` status allows `tug doctor` to surface potential issues (like an empty workspace) without failing. This is consistent with the "tests must fail loudly" philosophy—a warning is visible, but doesn't block workflows where 0 Python files is intentional.
 
 #### 10.1.5 Namespace Package Resolution {#spec-namespace}
 
@@ -215,30 +284,103 @@ Returns 1-indexed (line, col). Column is UTF-8 bytes from start of line.
 4. If `resolved_path` in `namespace_packages` → return namespace marker
 5. Return None
 
+**Namespace marker type:**
+- Introduce a dedicated enum (e.g., `ResolvedModule { File(&File), Namespace(PathBuf) }`).
+- Update `resolve_module_to_file` to return `Option<ResolvedModule>` and adjust all call sites accordingly.
+
+**compute_namespace_packages Algorithm:**
+
+```
+compute_namespace_packages(workspace_files, workspace_root):
+  namespace_packages = Set()
+  for path in workspace_files:
+    if path.extension() == "py":
+      parent = path.parent()
+      while parent != workspace_root && parent.starts_with(workspace_root):
+        if parent/__init__.py not in workspace_files:
+          if not is_excluded(parent):
+            namespace_packages.insert(parent)
+        parent = parent.parent()
+  return namespace_packages
+```
+
+**Performance note:**
+- Deduplicate parent directories (e.g., `visited_dirs`) to avoid repeated scanning in large repos.
+
+**Excluded directories:** `.tug/`, `.git/`, `__pycache__/`, any path outside `workspace_root`
+
 #### 10.1.6 AliasGraph Types {#spec-alias-graph}
 
 **Spec S04: AliasInfo and AliasGraph**
 
 ```rust
 pub struct AliasInfo {
-    pub target: String,
-    pub source: String,
-    pub scope_path: Vec<String>,
-    pub target_span: Option<Span>,
+    pub alias_name: String,      // LHS - the new binding (e.g., "b")
+    pub source_name: String,     // RHS - what it aliases (e.g., "bar")
+    pub scope_path: Vec<String>, // e.g., ["module", "function:process"]
+    pub alias_span: Option<Span>,
     pub source_is_import: bool,
-    pub confidence: f32,
+    pub confidence: f32,         // 1.0 for simple assignment, lower for complex
 }
 
 pub struct AliasGraph {
-    forward: HashMap<String, Vec<AliasInfo>>,
-    reverse: HashMap<String, Vec<String>>,
+    // Key is source_name only. Values may contain aliases from different scopes.
+    // Consumers filter by scope_path when scope-specific results needed.
+    forward: HashMap<String, Vec<AliasInfo>>,  // source -> aliases
+    reverse: HashMap<String, Vec<String>>,     // alias -> sources
 }
 ```
+
+**Scope filtering requirement:**
+- Impact analysis MUST filter alias candidates by `scope_path`.
+- **Scope matching rule:** Exact match only. An alias at `["module", "function:foo"]` does NOT match a target at `["module", "function:foo", "function:inner"]`. This prevents incorrectly surfacing aliases from parent or child scopes.
+- Use `alias.scope_path == target.scope_path` for filtering.
+
+**Memory management:**
+- AliasGraph lifetime is tied to single-file analysis. Create fresh per file in `analyze_file()`.
+- No caching across files in Phase 10.
+- Clear/drop after impact analysis is serialized to output.
+
+**Cycle handling in `transitive_aliases()`:**
+- Use a `visited: HashSet<String>` to track seen names during traversal.
+- If a name is already in `visited`, skip it (do not recurse).
+- Return the accumulated aliases excluding the cycle-causing entry.
+- Example: `a = b; b = a` returns `[b]` when querying `a`, not infinite loop.
+
+**Alias tracking coverage (Phase 10):**
+
+| Pattern | Tracked? | Notes |
+|---------|----------|-------|
+| `b = bar` (simple) | Yes | |
+| `c = b = bar` (chained) | Yes | Both b and c alias bar |
+| `b = bar; c = b` (sequential) | Yes | Transitive: c -> b -> bar |
+| `a = b = c = x` (multi-assignment) | Yes | All alias x |
+| `a, b = foo, bar` (tuple unpacking) | No | |
+| `b: Type = bar` (annotated) | No | |
+| `if (b := bar):` (walrus) | No | |
+| `b += bar` (augmented) | No | |
+| `self.x = y` (attribute assignment) | No | Attribute targets not tracked |
+| `for x in items` (loop target) | No | Loop variables not tracked as aliases |
+| `obj = module` (attribute alias) | No | |
+| `b = bar if cond else baz` (conditional) | No | |
 
 **Spec S05: Impact Analysis Alias Output**
 
 ```json
-{ "aliases": [{ "name": "b", "aliases": "bar", "file": "consumer.py", "line": 3 }] }
+{
+  "aliases": [
+    {
+      "alias_name": "b",
+      "source_name": "bar",
+      "file": "consumer.py",
+      "line": 3,
+      "col": 1,
+      "scope": ["module", "function:process"],
+      "is_import_alias": false,
+      "confidence": 1.0
+    }
+  ]
+}
 ```
 
 #### 10.1.7 CLI Commands {#spec-cli}
@@ -250,11 +392,21 @@ tug rename --at <file:line:col> --to <new_name> [--dry-run] [--verify <mode>] [-
 tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summary]
 ```
 
+**Flag precedence:**
+- `--no-verify` and `--verify <mode>` are mutually exclusive (CLI should reject both).
+
 **Spec S07: Analyze Output Formats**
 
 - `--format diff` (default): Unified diff
 - `--format json`: Full JSON response
 - `--format summary`: Brief text summary
+
+**Diff format specification:**
+- Use unified diff format (compatible with `git apply` and `patch -p1`)
+- Context lines: 3 lines before and after each hunk (standard unified diff)
+- Header format: `--- a/<file>` and `+++ b/<file>` (git-style paths)
+- Multiple files concatenated with blank line separator
+- No color codes in output (plain text)
 
 **Spec S08: Rename Output**
 
@@ -268,10 +420,12 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | `PositionTable` | struct | `inflate_ctx.rs` | Change from type alias to newtype |
-| `offset_to_line_col` | fn | `types.rs` | Line/col computation |
+| `byte_offset_to_position_str` | fn | `text.rs` | Existing - no changes needed |
 | `Command::Doctor` | variant | `main.rs` | New CLI command |
 | `DoctorResponse` | struct | `output.rs` | Doctor JSON output |
+| `CheckStatus` | enum | `output.rs` | New: `passed`, `warning`, `failed` |
 | `compute_namespace_packages` | fn | `analyzer.rs` | Namespace package detection |
+| `ResolvedModule` | enum | `analyzer.rs` | New: `File(PathBuf)`, `Namespace(PathBuf)` |
 | `AliasInfo` | struct | `alias.rs` | Alias metadata |
 | `AliasGraph` | struct | `alias.rs` | Alias graph |
 | `AliasOutput` | struct | `output.rs` | Alias JSON output |
@@ -315,7 +469,7 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 
 **Tasks:**
 - [ ] Change PositionTable from type alias to newtype struct
-- [ ] Implement `new()`, `with_capacity()`, `get()`, `insert()`, `entry()`
+- [ ] Implement `new()`, `with_capacity()`, `get()`, `insert()`, `get_or_insert()`
 - [ ] Update InflateCtx and all callers
 
 **Checkpoint:** `cargo nextest run -p tugtool-python-cst`
@@ -331,8 +485,8 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 **Files:** `crates/tugtool-python-cst/src/inflate.rs`, `visitor/scope.rs`
 
 **Tasks:**
-- [ ] Record `lexical_span` for Lambda nodes during inflation
-- [ ] Update `visit_lambda` to use span from PositionTable
+- [ ] In `inflate.rs`, modify `inflate_lambda()` to record `lexical_span` in PositionTable
+- [ ] In `visitor/scope.rs`, update `visit_lambda()` to retrieve span from PositionTable and set `ScopeInfo.lexical_span`
 
 **Checkpoint:** `cargo nextest run -p tugtool-python-cst scope`
 
@@ -347,8 +501,16 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 **Files:** `crates/tugtool-python-cst/src/inflate.rs`, `visitor/scope.rs`
 
 **Tasks:**
-- [ ] Record `lexical_span` for ListComp, SetComp, DictComp, GeneratorExp
-- [ ] Update corresponding `visit_*` methods
+- [ ] In `inflate.rs`, modify the following functions to record `lexical_span` in PositionTable:
+  - `inflate_list_comp()` - span from `[` to `]`
+  - `inflate_set_comp()` - span from `{` to `}`
+  - `inflate_dict_comp()` - span from `{` to `}`
+  - `inflate_generator_exp()` - span from `(` to `)` or node span if implicit
+- [ ] In `visitor/scope.rs`, update the following visitor methods to retrieve spans and set `ScopeInfo.lexical_span`:
+  - `visit_list_comp()`
+  - `visit_set_comp()`
+  - `visit_dict_comp()`
+  - `visit_generator_exp()`
 
 **Checkpoint:** `cargo nextest run -p tugtool-python-cst scope`
 
@@ -359,6 +521,8 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 **Commit:** `fix(python): use native scope spans in analyzer`
 
 **References:** [D02], resolves analyzer.rs:543 TODO
+
+**Prerequisites:** Steps 2-3 must be complete (lambda and comprehension spans implemented)
 
 **Files:** `crates/tugtool-python/src/analyzer.rs`, `cst_bridge.rs`
 
@@ -372,15 +536,15 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 
 #### Step 5: Line/Col Output Enrichment {#step-5}
 
-**Commit:** `feat(core): add line/col computation from byte offsets`
+**Commit:** `feat(core): add line/col helpers to Location type`
 
 **References:** [D03], Spec S01
 
 **Files:** `crates/tugtool-core/src/types.rs`
 
 **Tasks:**
-- [ ] Add `offset_to_line_col` function
-- [ ] Add `with_line_col` helper to Location
+- [ ] Add `with_line_col` helper to Location type that uses existing `byte_offset_to_position_str` from `text.rs`
+- [ ] No new `offset_to_line_col` function needed - use existing `byte_offset_to_position_str`
 
 **Checkpoint:** `cargo nextest run -p tugtool-core`
 
@@ -396,10 +560,11 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 
 **Tasks:**
 - [ ] Add `Command::Doctor` variant
-- [ ] Add `DoctorResponse`, `CheckResult` types
-- [ ] Implement workspace_root and python_files checks
+- [ ] Add `DoctorResponse`, `CheckResult` types with `status` enum (`passed`, `warning`, `failed`)
+- [ ] Implement workspace_root check (passes if root found, fails on detection error)
+- [ ] Implement python_files check (passes if N > 0, warns if N == 0)
 
-**Checkpoint:** `tug doctor` produces valid JSON
+**Checkpoint:** `tug doctor` produces valid JSON; verify warning status appears when run in empty directory
 
 ---
 
@@ -427,8 +592,29 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 
 **Files:** `crates/tugtool-python/src/analyzer.rs`, `lookup.rs`
 
+**Call site inventory for `resolve_module_to_file`:**
+
+There are TWO implementations that need updating:
+
+1. **`analyzer.rs:1664`** - Primary implementation with full signature:
+   - Call sites in `analyzer.rs`:
+     - Line 709: `resolve_import_chain()`
+     - Line 1442: `convert_imports()`
+     - Line 1460: `convert_imports()`
+     - Line 1866: star import resolution
+     - Line 2435: test helper
+   - **Action:** Add `namespace_packages: &HashSet<PathBuf>` parameter
+
+2. **`lookup.rs:173`** - FactsStore-based implementation:
+   - Call sites in `lookup.rs`:
+     - Line 158: `resolve_import_to_origin()`
+   - **Action:** Add `namespace_packages` parameter, or refactor to call the analyzer version
+
 **Tasks:**
-- [ ] Add `namespace_packages` parameter to `resolve_module_to_file`
+- [ ] Add `namespace_packages: &HashSet<PathBuf>` parameter to `analyzer.rs` `resolve_module_to_file`
+- [ ] Update all 5 call sites in `analyzer.rs` to pass namespace_packages
+- [ ] Update `lookup.rs` `resolve_module_to_file` to accept namespace_packages
+- [ ] Update `resolve_import_to_origin` call site in `lookup.rs`
 - [ ] Check namespace_packages set after regular resolution fails
 
 **Checkpoint:** `cargo nextest run -p tugtool-python`
@@ -508,47 +694,47 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 
 **Tasks:**
 - [ ] Add `Command::Rename` with `--at`, `--to`, `--dry-run`, `--verify`, `--no-verify`, `--format`
+- [ ] Configure clap mutual exclusion: `#[arg(long, conflicts_with = "verify")]` on `no_verify` field
 - [ ] Default `--verify` to `syntax`
 - [ ] Output human-readable summary by default
 
-**Checkpoint:** `tug rename --at <loc> --to <name>` applies changes
+**Checkpoint:** `tug rename --at <loc> --to <name>` applies changes; verify `tug rename --verify syntax --no-verify` produces clap error
 
 ---
 
-#### Step 14: Add `analyze` Command {#step-14}
+#### Step 14: Add `analyze` Command and Remove Old Commands {#step-14}
 
-**Commit:** `feat(cli): add analyze command with format options`
+**Commit:** `feat(cli): add analyze command, remove analyze-impact and run commands`
 
 **References:** [D10], [D11], Spec S06, Spec S07
 
-**Files:** `crates/tugtool/src/main.rs`, `cli.rs`
+**Files:** `crates/tugtool/src/main.rs`, `cli.rs`, `.claude/commands/`, `.claude/skills/`, `CLAUDE.md`
+
+**Note:** This is a clean break. Old commands (`analyze-impact`, `run`) are removed entirely in the same commit that adds new commands. Skills and documentation are updated atomically. No transition period.
 
 **Tasks:**
+
+*CLI changes:*
 - [ ] Add `Command::Analyze` with subcommand `rename`
 - [ ] Add `--format` flag (diff, json, summary)
 - [ ] Default to diff format
-- [ ] Remove old `Command::AnalyzeImpact` and `Command::Run`
+- [ ] Remove old `Command::AnalyzeImpact` and `Command::Run` entirely
 
-**Checkpoint:** `tug analyze rename --at <loc> --to <name>` outputs diff
-
----
-
-#### Step 15: Update Skills and Documentation {#step-15}
-
-**Commit:** `docs: update skills and docs for simplified CLI`
-
-**Files:** `.claude/commands/tug-rename.md`, `.claude/commands/tug-rename-plan.md`, `CLAUDE.md`
-
-**Tasks:**
+*Skill and documentation updates (same commit):*
 - [ ] Update `/tug-rename` to use `tug rename`
 - [ ] Update `/tug-rename-plan` to use `tug analyze rename`
+- [ ] Update `.claude/skills/tug-refactor/` if present
 - [ ] Update CLAUDE.md quick reference
 
-**Checkpoint:** Skills work with new commands
+*Verification:*
+- [ ] Grep codebase for `analyze-impact` and `run --apply` references - must find zero
+- [ ] Update any internal scripts or test fixtures referencing old commands
+
+**Checkpoint:** `tug analyze rename --at <loc> --to <name>` outputs diff; skills work with new commands; `tug analyze-impact` and `tug run` produce "unknown command" errors
 
 ---
 
-#### Step 16: Final Verification {#step-16}
+#### Step 15: Final Verification {#step-15}
 
 **Tasks:**
 - [ ] Full test suite: `cargo nextest run --workspace`
@@ -585,8 +771,8 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 | M03 | 5-6 | Output enrichment and doctor |
 | M04 | 7-8 | Namespace packages |
 | M05 | 9-12 | Value-level aliases |
-| M06 | 13-14 | CLI simplification |
-| M07 | 15-16 | Documentation and verification |
+| M06 | 13-14 | CLI simplification (commands, skills, docs) |
+| M07 | 15 | Final verification |
 
 #### Roadmap / Follow-ons {#roadmap}
 
@@ -614,6 +800,5 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 | Step 11 | pending | | Alias output types |
 | Step 12 | pending | | Wire aliases to impact analysis |
 | Step 13 | pending | | Add `rename` command |
-| Step 14 | pending | | Add `analyze` command |
-| Step 15 | pending | | Update skills and documentation |
-| Step 16 | pending | | Final verification |
+| Step 14 | pending | | Add `analyze` command, remove old commands, update skills and docs |
+| Step 15 | pending | | Final verification |
