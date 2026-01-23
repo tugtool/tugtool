@@ -1377,6 +1377,289 @@ mod ac4_import_resolution {
         );
     }
 
+    // ========================================================================
+    // Transitive Star Import Tests (Spec S12)
+    // ========================================================================
+
+    #[test]
+    fn transitive_star_import_two_level_chain() {
+        // Test two-level transitive star import chain:
+        // pkg/core.py defines original()
+        // pkg/internal.py does: from .core import *
+        // pkg/__init__.py does: from .internal import *
+        // main.py does: from pkg import original
+        //
+        // The reference to original() in main.py should resolve to pkg/core.py
+        let file_list = files(&[
+            (
+                "pkg/core.py",
+                "def original(): pass\n__all__ = ['original']\n",
+            ),
+            ("pkg/internal.py", "from .core import *\n"),
+            ("pkg/__init__.py", "from .internal import *\n"),
+            ("main.py", "from pkg import original\noriginal()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // original should be defined in pkg/core.py
+        let original = store.symbols().find(|s| {
+            s.name == "original" && store.file(s.decl_file_id).unwrap().path == "pkg/core.py"
+        });
+        assert!(
+            original.is_some(),
+            "Expected original to be defined in pkg/core.py"
+        );
+
+        // Reference in main.py should resolve to pkg/core.py
+        let main_file = store.file_by_path("main.py").unwrap();
+        let refs_in_main: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == main_file.file_id)
+            .collect();
+
+        let original_ref = refs_in_main.iter().find(|r| {
+            if let Some(sym) = store.symbol(r.symbol_id) {
+                sym.name == "original"
+                    && store.file(sym.decl_file_id).unwrap().path == "pkg/core.py"
+            } else {
+                false
+            }
+        });
+        assert!(
+            original_ref.is_some(),
+            "Expected reference to original to resolve to pkg/core.py"
+        );
+    }
+
+    #[test]
+    fn transitive_star_import_three_level_chain() {
+        // Test three-level transitive star import chain
+        let file_list = files(&[
+            ("pkg/deep/base.py", "def deep_func(): pass\n"),
+            ("pkg/deep/__init__.py", "from .base import *\n"),
+            ("pkg/__init__.py", "from .deep import *\n"),
+            ("main.py", "from pkg import deep_func\ndeep_func()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // deep_func should be defined in pkg/deep/base.py
+        let deep_func = store.symbols().find(|s| {
+            s.name == "deep_func" && store.file(s.decl_file_id).unwrap().path == "pkg/deep/base.py"
+        });
+        assert!(
+            deep_func.is_some(),
+            "Expected deep_func to be defined in pkg/deep/base.py"
+        );
+
+        // Reference in main.py should resolve
+        let main_file = store.file_by_path("main.py").unwrap();
+        let refs_in_main: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == main_file.file_id)
+            .collect();
+
+        let func_ref = refs_in_main.iter().find(|r| {
+            if let Some(sym) = store.symbol(r.symbol_id) {
+                sym.name == "deep_func"
+            } else {
+                false
+            }
+        });
+        assert!(
+            func_ref.is_some(),
+            "Expected reference to deep_func to resolve"
+        );
+    }
+
+    #[test]
+    fn transitive_star_import_cycle_detection() {
+        // Test cycle detection: pkg/a.py and pkg/b.py star import each other
+        // Should not infinite loop, should handle gracefully
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            ("pkg/a.py", "x = 1\nfrom .b import *\n"),
+            ("pkg/b.py", "y = 2\nfrom .a import *\n"),
+            ("main.py", "from pkg.a import x, y\nprint(x, y)\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // x should be defined in pkg/a.py
+        let x = store
+            .symbols()
+            .find(|s| s.name == "x" && store.file(s.decl_file_id).unwrap().path == "pkg/a.py");
+        assert!(x.is_some(), "Expected x to be defined in pkg/a.py");
+
+        // y should be defined in pkg/b.py
+        let y = store
+            .symbols()
+            .find(|s| s.name == "y" && store.file(s.decl_file_id).unwrap().path == "pkg/b.py");
+        assert!(y.is_some(), "Expected y to be defined in pkg/b.py");
+
+        // Should have analyzed without crashing (cycle handled)
+        let a_file = store.file_by_path("pkg/a.py");
+        let b_file = store.file_by_path("pkg/b.py");
+        assert!(a_file.is_some(), "Expected pkg/a.py to be analyzed");
+        assert!(b_file.is_some(), "Expected pkg/b.py to be analyzed");
+    }
+
+    #[test]
+    fn transitive_star_import_diamond_pattern() {
+        // Test diamond pattern: both left and right import from base,
+        // and init imports from both left and right
+        let file_list = files(&[
+            ("pkg/base.py", "def shared(): pass\n"),
+            ("pkg/left.py", "from .base import *\n"),
+            ("pkg/right.py", "from .base import *\n"),
+            (
+                "pkg/__init__.py",
+                "from .left import *\nfrom .right import *\n",
+            ),
+            ("main.py", "from pkg import shared\nshared()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // shared should be defined in pkg/base.py
+        let shared = store.symbols().find(|s| {
+            s.name == "shared" && store.file(s.decl_file_id).unwrap().path == "pkg/base.py"
+        });
+        assert!(
+            shared.is_some(),
+            "Expected shared to be defined in pkg/base.py"
+        );
+
+        // Reference in main.py should resolve to base.py
+        let main_file = store.file_by_path("main.py").unwrap();
+        let refs_in_main: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == main_file.file_id)
+            .collect();
+
+        let shared_ref = refs_in_main.iter().find(|r| {
+            if let Some(sym) = store.symbol(r.symbol_id) {
+                sym.name == "shared"
+            } else {
+                false
+            }
+        });
+        assert!(
+            shared_ref.is_some(),
+            "Expected reference to shared to resolve"
+        );
+    }
+
+    #[test]
+    fn transitive_star_import_mixed_direct_and_star() {
+        // Test file with both direct definitions and star imports
+        let file_list = files(&[
+            ("pkg/base.py", "def from_base(): pass\n"),
+            (
+                "pkg/mixed.py",
+                "from .base import *\ndef local_func(): pass\n",
+            ),
+            ("pkg/__init__.py", "from .mixed import *\n"),
+            (
+                "main.py",
+                "from pkg import from_base, local_func\nfrom_base()\nlocal_func()\n",
+            ),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // from_base should be defined in pkg/base.py
+        let from_base = store.symbols().find(|s| {
+            s.name == "from_base" && store.file(s.decl_file_id).unwrap().path == "pkg/base.py"
+        });
+        assert!(
+            from_base.is_some(),
+            "Expected from_base to be defined in pkg/base.py"
+        );
+
+        // local_func should be defined in pkg/mixed.py
+        let local_func = store.symbols().find(|s| {
+            s.name == "local_func" && store.file(s.decl_file_id).unwrap().path == "pkg/mixed.py"
+        });
+        assert!(
+            local_func.is_some(),
+            "Expected local_func to be defined in pkg/mixed.py"
+        );
+
+        // References in main.py should resolve correctly
+        let main_file = store.file_by_path("main.py").unwrap();
+        let refs_in_main: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == main_file.file_id)
+            .collect();
+
+        let base_ref = refs_in_main.iter().find(|r| {
+            if let Some(sym) = store.symbol(r.symbol_id) {
+                sym.name == "from_base"
+                    && store.file(sym.decl_file_id).unwrap().path == "pkg/base.py"
+            } else {
+                false
+            }
+        });
+        assert!(
+            base_ref.is_some(),
+            "Expected reference to from_base to resolve to pkg/base.py"
+        );
+
+        let local_ref = refs_in_main.iter().find(|r| {
+            if let Some(sym) = store.symbol(r.symbol_id) {
+                sym.name == "local_func"
+                    && store.file(sym.decl_file_id).unwrap().path == "pkg/mixed.py"
+            } else {
+                false
+            }
+        });
+        assert!(
+            local_ref.is_some(),
+            "Expected reference to local_func to resolve to pkg/mixed.py"
+        );
+    }
+
+    #[test]
+    fn transitive_star_import_with_all_filtering() {
+        // Test that __all__ filtering works with transitive expansion
+        // internal.py star-imports from core, but only exports 'exported' in __all__
+        let file_list = files(&[
+            ("pkg/core.py", "def exported(): pass\ndef hidden(): pass\n"),
+            (
+                "pkg/internal.py",
+                "from .core import *\n__all__ = ['exported']\n",
+            ),
+            ("pkg/__init__.py", "from .internal import *\n"),
+            ("main.py", "from pkg import exported\nexported()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // exported should be defined in pkg/core.py
+        let exported = store.symbols().find(|s| {
+            s.name == "exported" && store.file(s.decl_file_id).unwrap().path == "pkg/core.py"
+        });
+        assert!(
+            exported.is_some(),
+            "Expected exported to be defined in pkg/core.py"
+        );
+
+        // Reference should resolve
+        let main_file = store.file_by_path("main.py").unwrap();
+        let refs_in_main: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == main_file.file_id)
+            .collect();
+
+        let exported_ref = refs_in_main.iter().find(|r| {
+            if let Some(sym) = store.symbol(r.symbol_id) {
+                sym.name == "exported"
+            } else {
+                false
+            }
+        });
+        assert!(
+            exported_ref.is_some(),
+            "Expected reference to exported to resolve"
+        );
+    }
+
     #[test]
     fn module_resolution_foo_bar_to_file() {
         // "foo.bar" → "foo/bar.py" or "foo/bar/__init__.py"

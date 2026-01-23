@@ -1336,9 +1336,165 @@ fn rename_uses_facts_store_exports() {
 
 ---
 
+###### Step 6.10: Transitive Star Import Expansion {#step-6-10}
+
+**Commit:** `feat(python): expand star imports transitively`
+
+**References:** Q04 (#q04-star-transitivity), Table T13 (#t13-star-imports), Spec S11 (#s11-star-expansion)
+
+**Status:** **COMPLETE**
+
+**Context:**
+
+Star import chains are a common pattern in real Python packages. Consider:
+
+```python
+# pkg/core.py
+def process_data(): pass
+__all__ = ['process_data']
+
+# pkg/internal.py
+from .core import *  # Imports process_data from core
+
+# pkg/__init__.py
+from .internal import *  # Should transitively import process_data from core
+
+# main.py
+from pkg import process_data  # This should resolve to pkg/core.py
+```
+
+Currently, Step 6.8 implements single-level star import expansion. When `pkg/__init__.py` does `from .internal import *`, we expand the bindings from `internal.py`. But if `internal.py` itself got those bindings from a star import (`from .core import *`), we don't follow the chain.
+
+**The Problem:**
+
+1. `internal.py` star-imports from `core.py` - we expand `process_data` as a binding in `internal.py`
+2. `__init__.py` star-imports from `internal.py` - we look for bindings in `internal.py`
+3. We find `process_data` as a binding, but it's an IMPORT binding (from star import), not an original definition
+4. We need to trace back through the star import chain to find the original definition in `core.py`
+
+**Algorithm (Spec S12: Transitive Star Import Expansion)** {#s12-transitive-star}
+
+```
+expand_star_import_transitive(star_import, source_file_id, file_exports_map, visited):
+    1. If source_file_id in visited, return [] (cycle detected)
+    2. Add source_file_id to visited
+    3. Get (exports, symbols) from file_exports_map[source_file_id]
+    4. result = []
+    5. If exports is not empty:
+        - For each name in exports:
+            - Find the symbol/binding for name in source_file
+            - If it's an original definition: add (name, source_file) to result
+            - If it's from a star import: recursively expand that star import
+    6. Else (no __all__):
+        - For each public symbol in symbols:
+            - If it's an original definition: add (name, source_file) to result
+            - If it's from a star import: recursively expand that star import
+    7. Return result with deduplicated entries
+```
+
+**Key Implementation Details:**
+
+1. **Track star import sources**: When expanding a star import, we need to know which bindings came from star imports vs direct definitions
+2. **Follow the chain**: For bindings that came from star imports, recursively expand to find the original source
+3. **Cycle detection**: Use a visited set to prevent infinite loops (`a.py` -> `b.py` -> `a.py`)
+4. **Preserve the origin**: The final binding should point to the ORIGINAL definition, not intermediate re-exports
+
+**Tasks:**
+
+**Analysis Phase:**
+
+- [x] Audit current star import expansion to understand what information is available
+- [x] Determine how to track "this binding came from a star import" vs "this is a direct definition"
+- [x] Design the data structures needed for transitive resolution
+
+**Implementation:**
+
+- [x] Modify `FileImportResolver.add_star_import_binding` to track the source of each binding
+- [x] Implement `expand_star_import_transitive` function
+- [x] Update Pass 3 star import expansion to use transitive resolution
+- [x] Add cycle detection with visited set
+- [x] Handle mixed cases: some bindings direct, some from star imports
+
+**Edge Cases:**
+
+- [x] Cycle detection: `a.py: from b import *` / `b.py: from a import *`
+- [x] Diamond pattern: `d.py` imports from both `b.py` and `c.py`, both star-import from `a.py`
+- [x] Mixed star/direct: `internal.py` has some direct defs and some star imports
+- [x] Chain depth: `a -> b -> c -> d -> ...` (no artificial limit, but test reasonable depths)
+
+**Test Scenarios:**
+
+```python
+# Scenario 1: Two-level chain
+# pkg/core.py
+def original(): pass
+__all__ = ['original']
+
+# pkg/internal.py
+from .core import *  # Gets 'original'
+
+# pkg/__init__.py
+from .internal import *  # Should get 'original' tracing back to core
+
+# main.py
+from pkg import original  # Must resolve to pkg/core.py
+
+# Scenario 2: Three-level chain
+# pkg/deep/base.py
+def deep_func(): pass
+
+# pkg/deep/__init__.py
+from .base import *
+
+# pkg/__init__.py
+from .deep import *
+
+# main.py
+from pkg import deep_func  # Must resolve to pkg/deep/base.py
+
+# Scenario 3: Cycle detection
+# pkg/a.py
+x = 1
+from .b import *
+
+# pkg/b.py
+y = 2
+from .a import *  # Cycle! Should handle gracefully
+
+# Scenario 4: Diamond
+# pkg/base.py
+def shared(): pass
+
+# pkg/left.py
+from .base import *
+
+# pkg/right.py
+from .base import *
+
+# pkg/__init__.py
+from .left import *
+from .right import *  # 'shared' appears from both paths - should dedupe
+```
+
+**Exit Criteria:**
+
+- [x] Transitive star imports resolve to original definitions
+- [x] Cycle detection prevents infinite loops
+- [x] Diamond patterns handled (no duplicate bindings)
+- [x] All previous tests continue to pass
+- [x] New tests for transitive scenarios pass
+
+**Checkpoint:**
+
+- [x] `cargo nextest run -p tugtool-python transitive_star` passes
+- [ ] Spike scenario for transitive star imports passes (no spike scenario exists yet)
+- [x] All tests pass: `cargo nextest run --workspace`
+
+---
+
 ##### Step 6 Summary {#step-6-summary}
 
-After completing Steps 6.1-6.9, tugtool supports:
+After completing Steps 6.1-6.10, tugtool supports:
 
 | Category | Status |
 |----------|--------|
@@ -1348,7 +1504,8 @@ After completing Steps 6.1-6.9, tugtool supports:
 | Multi-level relative imports | **COMPLETE** (Step 6.1 - tests pass, resolution works) |
 | Re-export chain resolution | **COMPLETE** (Step 6.2 - chains followed to original definitions) |
 | Star import tracking | **COMPLETE** (Step 6.3 - tracked with is_star=true) |
-| Star import expansion | **COMPLETE** (Step 6.8 - expanded to individual bindings) |
+| Star import expansion (single-level) | **COMPLETE** (Step 6.8 - expanded to individual bindings) |
+| Star import expansion (transitive) | **COMPLETE** (Step 6.10 - follow star import chains) |
 | TYPE_CHECKING imports | **COMPLETE** (Step 6.4 - CST walker traverses if blocks) |
 | Aliased import rename | **COMPLETE** (aliases preserved, only imported names renamed) |
 | Import alias tracking | **COMPLETE** (Step 6.7 - audit complete, dual indexes) |
@@ -1371,8 +1528,9 @@ After completing Steps 6.1-6.9, tugtool supports:
 | Step 6.7: Import Alias Audit | **P2** | Technical debt cleanup |
 | Step 6.8: Star Import Expansion | **P2** | Builds on 6.7, enables full star import support |
 | Step 6.9: FactsStore Exports | **P2** | Architectural improvement, builds on 6.8 |
+| Step 6.10: Transitive Star Imports | **P1** | Common pattern in real packages, builds on 6.8 |
 
-**Recommended Execution Order:** 6.2 -> 6.5 -> 6.1 -> 6.3 -> 6.4 -> 6.6 -> 6.7 -> 6.8 -> 6.9
+**Recommended Execution Order:** 6.2 -> 6.5 -> 6.1 -> 6.3 -> 6.4 -> 6.6 -> 6.7 -> 6.8 -> 6.9 -> 6.10
 
 ---
 
@@ -1389,7 +1547,7 @@ After completing Steps 6.1-6.9, tugtool supports:
 
 **Recommendation:** Start with no limit, add limit if performance issues arise.
 
-**[Q04] Star Import Transitivity (OPEN)** {#q04-star-transitivity}
+**[Q04] Star Import Transitivity (RESOLVED)** {#q04-star-transitivity}
 
 **Question:** If `a.py` does `from b import *` and `b.py` does `from c import *`, should we transitively expand?
 
@@ -1398,7 +1556,7 @@ After completing Steps 6.1-6.9, tugtool supports:
 2. Transitive - follow star import chains
 3. Configurable
 
-**Recommendation:** Start with single-level, add transitive if needed.
+**Resolution:** Option 2 - Transitive expansion. This is a common pattern in real Python packages (e.g., `__init__.py` files that re-export from submodules). Step 6.10 implements transitive star import expansion.
 
 ---
 
@@ -1472,19 +1630,19 @@ After completing Steps 6.1-6.9, tugtool supports:
 - [ ] Step 7 pending (final verification)
 
 **Milestone M06: Technical Debt and Architectural Improvements** {#m06-cleanup}
-- [ ] Step 6.7 complete (import alias tracking audit)
-- [ ] Step 6.8 complete (star import expansion)
-- [ ] Step 6.9 complete (FactsStore export tracking)
+- [x] Step 6.7 complete (import alias tracking audit)
+- [x] Step 6.8 complete (star import expansion)
+- [x] Step 6.9 complete (FactsStore export tracking)
+- [x] Step 6.10 complete (transitive star import expansion)
 - [ ] All spike scenarios pass (4 of 4)
-- [ ] No re-parsing in rename operations
+- [x] No re-parsing in rename operations
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Namespace packages (PEP 420) - packages without `__init__.py`
 - [ ] Import resolution for installed packages (not just workspace files)
-- [ ] Transitive star import expansion (`a.py -> b.py -> c.py`)
 - [ ] Value-level aliasing (`c = b` where `b` is imported)
-- [ ] `__all__` list concatenation parsing (e.g., `__all__ = ['a'] + ['b']`)
+- [ ] `__all__.extend()` pattern parsing (requires method call tracking)
 
 | Checkpoint | Verification |
 |------------|--------------|
@@ -1513,7 +1671,8 @@ After completing Steps 6.1-6.9, tugtool supports:
 | Step 6.4 | complete | 2026-01-22 | TYPE_CHECKING imports work - CST walker traverses if blocks, test added |
 | Step 6.5 | complete | 2026-01-22 | 3 of 4 scenarios pass (reexport-chain, multi-level-relative, aliased-import); star-import partial |
 | Step 6.6 | complete | 2026-01-22 | Updated Contract C3 docs, removed misleading "unsupported" comments |
-| Step 6.7 | pending | | Import alias tracking audit - cleanup messy implementation |
-| Step 6.8 | pending | | Star import expansion - implement full expansion in Pass 2 |
-| Step 6.9 | pending | | FactsStore export tracking - add Export entity, remove re-parsing |
+| Step 6.7 | complete | 2026-01-22 | Consolidated FileImportResolver with dual indexes, removed BasicImportResolver |
+| Step 6.8 | complete | 2026-01-22 | Star import expansion in Pass 3 using source file exports/__all__ |
+| Step 6.9 | complete | 2026-01-22 | Export entity in FactsStore, rename uses store.exports_named() |
+| Step 6.10 | complete | 2026-01-22 | Transitive star import expansion - follow star import chains |
 | Step 7 | pending | | Final verification and cleanup |

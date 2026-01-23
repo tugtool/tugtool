@@ -8,6 +8,61 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 6.10: Transitive Star Import Expansion | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 6.10 specification, Spec S12 algorithm
+- `crates/tugtool-python/src/analyzer.rs` - FileImportResolver, analyze_files, resolve_import_chain
+- Code-architect analysis for refactoring design
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Audit current star import expansion | Done |
+| Determine tracking approach (direct vs star import bindings) | Done |
+| Design data structures for transitive resolution | Done |
+| Implement `collect_star_exports_transitive` function (Spec S12) | Done |
+| Pre-compute `FileImportResolversMap` with star expansion | Done |
+| Update Pass 3 star import expansion to use transitive resolution | Done |
+| Add cycle detection with visited set | Done |
+| Handle mixed cases (direct defs + star imports) | Done |
+| Update `resolve_reference` signature and body | Done |
+| Update `resolve_in_module_scope` signature and body | Done |
+| Update `resolve_in_enclosing_function` signature and body | Done |
+| Update `resolve_import_reference` signature and body | Done |
+| Update `resolve_import_to_original` signature | Done |
+| Update `resolve_import_chain` to use pre-computed resolvers | Done |
+| Add 6 transitive star import tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added `FileImportResolversMap` type, `StarExpandedBinding` struct, `collect_star_exports_transitive` function; pre-compute star-expanded resolvers; updated resolution functions to pass `file_import_resolvers` instead of `file_imports_map + workspace_files`
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Added 6 new transitive star import tests
+- `plans/phase-8.md` - Updated Step 6.10 status to COMPLETE, checked off all tasks
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python transitive_star`: 6 tests passed
+- `cargo nextest run --workspace`: 1258 tests passed (6 new tests added)
+- `cargo clippy --workspace -- -D warnings`: Passed
+- `cargo fmt --all`: Passed
+
+**Checkpoints Verified:**
+- Transitive star imports resolve to original definitions: PASS
+- Cycle detection prevents infinite loops: PASS
+- Diamond patterns handled (no duplicate bindings): PASS
+- All previous tests continue to pass: PASS
+- New tests for transitive scenarios pass: PASS
+
+**Key Decisions/Notes:**
+- Used code-architect agent to design the refactoring approach before implementation
+- Pre-computing `FileImportResolversMap` before reference resolution ensures consistent star-expanded bindings across all files
+- Replaced `file_imports_map` and `workspace_files` parameters with single `file_import_resolvers` parameter throughout resolution call chain
+- Added fallback check in `resolve_import_chain` and `resolve_import_reference` for star-expanded bindings that don't appear in `global_symbols`
+
+---
+
 ## [phase-8.md] Step 6 Substeps 6.7-6.9: Import Audit, Star Expansion, Export Tracking | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

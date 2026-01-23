@@ -349,6 +349,20 @@ pub type ImportBindingsSet = HashSet<(FileId, String)>;
 /// the target file's imports to find the original definition.
 pub type FileImportsMap<'a> = HashMap<&'a str, &'a [LocalImport]>;
 
+/// Maps file paths to their star imports.
+///
+/// Used for transitive star import expansion (Spec S12): when a file does
+/// `from .internal import *` and `internal.py` itself has star imports,
+/// we need to follow the chain to find all transitively exported names.
+pub type FileStarImportsMap<'a> = HashMap<&'a str, Vec<&'a LocalImport>>;
+
+/// Maps file paths to pre-computed import resolvers with star expansion.
+///
+/// Used during reference resolution to provide consistent star-expanded
+/// import bindings across all files. This ensures that when `resolve_import_chain`
+/// follows a re-export chain, it can access the star-expanded bindings of each file.
+pub type FileImportResolversMap = HashMap<String, FileImportResolver>;
+
 /// Maps local file scope IDs to global FactsStore scope IDs.
 ///
 /// Each file has its own local scope numbering (starting from 0).
@@ -637,9 +651,10 @@ pub fn analyze_files(
         }
     }
 
-    // Build file_imports_map for re-export chain resolution (Spec S10)
+    // Build file_imports_map for reference (no longer used directly in resolution,
+    // but kept for debugging and understanding import structure)
     // Maps file path -> slice of that file's imports
-    let file_imports_map: FileImportsMap<'_> = bundle
+    let _file_imports_map: FileImportsMap<'_> = bundle
         .file_analyses
         .iter()
         .map(|a| (a.path.as_str(), a.imports.as_slice()))
@@ -658,83 +673,86 @@ pub fn analyze_files(
         })
         .collect();
 
-    for analysis in &bundle.file_analyses {
-        let file_id = analysis.file_id;
+    // Build file_star_imports_map for transitive star import expansion (Spec S12)
+    // Maps file path -> list of star imports in that file
+    let file_star_imports_map: FileStarImportsMap<'_> = bundle
+        .file_analyses
+        .iter()
+        .map(|a| {
+            let star_imports: Vec<&LocalImport> = a.imports.iter().filter(|i| i.is_star).collect();
+            (a.path.as_str(), star_imports)
+        })
+        .collect();
 
-        // Build per-file import resolver (with file path for relative import resolution)
-        let mut import_resolver = FileImportResolver::from_imports(
-            &analysis.imports,
-            &bundle.workspace_files,
-            &analysis.path,
-        );
-
-        // ================================================================
-        // Star Import Expansion (Spec S11)
-        // ================================================================
-        // For each star import, look up the source file and expand its
-        // exported names into individual import bindings.
-        for local_import in &analysis.imports {
-            if !local_import.is_star {
-                continue;
-            }
-
-            // Resolve the source file for this star import
-            let source_file = resolve_module_to_file(
-                &local_import.module_path,
+    // ====================================================================
+    // Pre-compute Star-Expanded Import Resolvers (Spec S12)
+    // ====================================================================
+    // Build import resolvers for all files with star imports expanded.
+    // This is done upfront so that resolve_import_chain can access
+    // star-expanded bindings when following re-export chains.
+    let file_import_resolvers: FileImportResolversMap = bundle
+        .file_analyses
+        .iter()
+        .map(|analysis| {
+            let mut resolver = FileImportResolver::from_imports(
+                &analysis.imports,
                 &bundle.workspace_files,
-                Some(&analysis.path),
-                local_import.relative_level,
+                &analysis.path,
             );
 
-            if let Some(source_path) = source_file {
-                // Look up the source file's exports
-                if let Some((exports, symbols)) = file_exports_map.get(source_path.as_str()) {
-                    // Get exported names
-                    let exported_names: Vec<String> = if !exports.is_empty() {
-                        // If __all__ is defined, use those names
-                        exports.iter().map(|e| e.name.clone()).collect()
-                    } else {
-                        // Otherwise, use all public module-level bindings
-                        // (names not starting with underscore, excluding imports)
-                        symbols
-                            .iter()
-                            .filter(|s| {
-                                !s.name.starts_with('_')
-                                    && s.kind != SymbolKind::Import
-                                    && s.scope_id == ScopeId(0) // Module-level only
-                            })
-                            .map(|s| s.name.clone())
-                            .collect()
-                    };
+            // Expand star imports transitively
+            for local_import in &analysis.imports {
+                if !local_import.is_star {
+                    continue;
+                }
 
-                    // Add each exported name to the import resolver
-                    // Build base module path for qualified names
-                    let base_module_path = if local_import.relative_level > 0 {
-                        resolve_relative_path(
-                            &analysis.path,
-                            local_import.relative_level,
-                            &local_import.module_path,
-                        )
-                        .replace('/', ".")
-                    } else {
-                        local_import.module_path.clone()
-                    };
+                let source_file = resolve_module_to_file(
+                    &local_import.module_path,
+                    &bundle.workspace_files,
+                    Some(&analysis.path),
+                    local_import.relative_level,
+                );
 
-                    for name in exported_names {
-                        let qualified_path = if base_module_path.is_empty() {
-                            name.clone()
-                        } else {
-                            format!("{}.{}", base_module_path, name)
-                        };
-                        import_resolver.add_star_import_binding(
-                            name,
+                if let Some(source_path) = source_file {
+                    let mut visited = HashSet::new();
+                    let expanded_bindings = collect_star_exports_transitive(
+                        &source_path,
+                        &file_exports_map,
+                        &file_star_imports_map,
+                        &bundle.workspace_files,
+                        &mut visited,
+                    );
+
+                    for binding in expanded_bindings {
+                        let qualified_path = binding
+                            .source_file
+                            .strip_suffix(".py")
+                            .or_else(|| binding.source_file.strip_suffix("/__init__.py"))
+                            .unwrap_or(&binding.source_file)
+                            .replace('/', ".")
+                            + "."
+                            + &binding.name;
+
+                        resolver.add_star_import_binding(
+                            binding.name,
                             qualified_path,
-                            Some(source_path.clone()),
+                            Some(binding.source_file),
                         );
                     }
                 }
             }
-        }
+
+            (analysis.path.clone(), resolver)
+        })
+        .collect();
+
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+
+        // Get the pre-computed import resolver with star expansion
+        let import_resolver = file_import_resolvers
+            .get(&analysis.path)
+            .expect("Import resolver should exist for analyzed file");
 
         // Process imports first - insert Import records
         for local_import in &analysis.imports {
@@ -785,12 +803,11 @@ pub fn analyze_files(
             let resolved_symbol_id = if local_ref.kind == ReferenceKind::Import {
                 resolve_import_reference(
                     &local_ref.name,
-                    &import_resolver,
+                    import_resolver,
                     &global_symbols,
                     &import_bindings,
                     &file_path_to_id,
-                    &file_imports_map,
-                    &bundle.workspace_files,
+                    &file_import_resolvers,
                 )
             } else {
                 // Regular reference resolution (variable usage, calls, etc.)
@@ -802,10 +819,9 @@ pub fn analyze_files(
                     &global_symbols,
                     &import_bindings,
                     &scope_symbols,
-                    &import_resolver,
+                    import_resolver,
                     &file_path_to_id,
-                    &file_imports_map,
-                    &bundle.workspace_files,
+                    &file_import_resolvers,
                     local_ref.kind,
                 )
             };
@@ -1760,6 +1776,155 @@ pub fn resolve_relative_path(
 }
 
 // ========================================================================
+// Transitive Star Import Expansion (Spec S12)
+// ========================================================================
+
+/// Represents an exported name with its original source file.
+///
+/// Used by transitive star import expansion to track where each exported
+/// name originated, allowing us to create bindings that point to the
+/// original definition rather than intermediate re-exports.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct StarExpandedBinding {
+    /// The exported name.
+    name: String,
+    /// Path to the file containing the original definition.
+    source_file: String,
+}
+
+/// Collect all names exported by a file, following star import chains transitively.
+///
+/// This implements Spec S12: Transitive Star Import Expansion.
+///
+/// When a file exports names (via `__all__` or public bindings), some of those
+/// names may have come from star imports. This function follows those chains
+/// to find the original definition of each name.
+///
+/// # Algorithm
+/// 1. If the file has `__all__`, use those names as the exported set
+/// 2. Otherwise, use all public module-level symbols (non-underscore, non-import)
+/// 3. For each star import in the file, recursively collect its exports
+/// 4. Use a visited set to prevent infinite cycles
+///
+/// # Arguments
+/// * `source_path` - Path to the file to collect exports from
+/// * `file_exports_map` - Map from file path to (exports, symbols)
+/// * `file_star_imports_map` - Map from file path to list of star imports
+/// * `workspace_files` - Set of all workspace file paths
+/// * `visited` - Set of already-visited file paths (for cycle detection)
+///
+/// # Returns
+/// A vector of (name, original_source_file) pairs for all exported names.
+fn collect_star_exports_transitive<'a>(
+    source_path: &str,
+    file_exports_map: &HashMap<&str, (&[LocalExport], &[LocalSymbol])>,
+    file_star_imports_map: &FileStarImportsMap<'a>,
+    workspace_files: &HashSet<String>,
+    visited: &mut HashSet<String>,
+) -> Vec<StarExpandedBinding> {
+    // Cycle detection
+    if visited.contains(source_path) {
+        return Vec::new();
+    }
+    visited.insert(source_path.to_string());
+
+    let mut result = Vec::new();
+
+    // Get this file's exports and symbols
+    let Some((exports, symbols)) = file_exports_map.get(source_path) else {
+        return Vec::new();
+    };
+
+    // Collect names that are direct definitions in this file
+    let direct_definitions: HashSet<String> = symbols
+        .iter()
+        .filter(|s| {
+            s.kind != SymbolKind::Import && s.scope_id == ScopeId(0) // Module-level only
+        })
+        .map(|s| s.name.clone())
+        .collect();
+
+    // Determine exported names
+    let exported_names: Vec<String> = if !exports.is_empty() {
+        // If __all__ is defined, use those names
+        exports.iter().map(|e| e.name.clone()).collect()
+    } else {
+        // Otherwise, use all public module-level bindings (direct definitions only)
+        symbols
+            .iter()
+            .filter(|s| {
+                !s.name.starts_with('_') && s.kind != SymbolKind::Import && s.scope_id == ScopeId(0)
+            })
+            .map(|s| s.name.clone())
+            .collect()
+    };
+
+    // Add direct definitions to result
+    for name in &exported_names {
+        if direct_definitions.contains(name) {
+            result.push(StarExpandedBinding {
+                name: name.clone(),
+                source_file: source_path.to_string(),
+            });
+        }
+    }
+
+    // Recursively expand star imports
+    if let Some(star_imports) = file_star_imports_map.get(source_path) {
+        for star_import in star_imports {
+            // Resolve the source file for this star import
+            let star_source = resolve_module_to_file(
+                &star_import.module_path,
+                workspace_files,
+                Some(source_path),
+                star_import.relative_level,
+            );
+
+            if let Some(star_source_path) = star_source {
+                // Recursively collect exports from the star-imported file
+                let nested_exports = collect_star_exports_transitive(
+                    &star_source_path,
+                    file_exports_map,
+                    file_star_imports_map,
+                    workspace_files,
+                    visited,
+                );
+
+                // If this file has __all__, only include nested exports that are in __all__
+                // Otherwise, include all nested exports that are public
+                if !exports.is_empty() {
+                    // Filter to only names in __all__
+                    let all_names: HashSet<&str> =
+                        exports.iter().map(|e| e.name.as_str()).collect();
+                    for binding in nested_exports {
+                        if all_names.contains(binding.name.as_str())
+                            && !direct_definitions.contains(&binding.name)
+                        {
+                            result.push(binding);
+                        }
+                    }
+                } else {
+                    // Include all public nested exports
+                    for binding in nested_exports {
+                        if !binding.name.starts_with('_')
+                            && !direct_definitions.contains(&binding.name)
+                        {
+                            result.push(binding);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Deduplicate (first occurrence wins - preserves closer definition priority)
+    let mut seen = HashSet::new();
+    result.retain(|b| seen.insert(b.name.clone()));
+
+    result
+}
+
+// ========================================================================
 // Reference Resolution (Contract C4: LEGB Scope Chain)
 // ========================================================================
 
@@ -1786,8 +1951,7 @@ fn resolve_reference(
     scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
-    file_imports_map: &FileImportsMap<'_>,
-    workspace_files: &HashSet<String>,
+    file_import_resolvers: &FileImportResolversMap,
     _ref_kind: ReferenceKind,
 ) -> Option<SymbolId> {
     // Find the scope
@@ -1805,8 +1969,7 @@ fn resolve_reference(
             scope_symbols,
             import_resolver,
             file_path_to_id,
-            file_imports_map,
-            workspace_files,
+            file_import_resolvers,
         );
     }
 
@@ -1823,8 +1986,7 @@ fn resolve_reference(
             scope_symbols,
             import_resolver,
             file_path_to_id,
-            file_imports_map,
-            workspace_files,
+            file_import_resolvers,
         );
     }
 
@@ -1841,8 +2003,7 @@ fn resolve_reference(
                 import_bindings,
                 import_resolver,
                 file_path_to_id,
-                file_imports_map,
-                workspace_files,
+                file_import_resolvers,
             ) {
                 return Some(original_id);
             }
@@ -1869,8 +2030,7 @@ fn resolve_reference(
                         import_bindings,
                         import_resolver,
                         file_path_to_id,
-                        file_imports_map,
-                        workspace_files,
+                        file_import_resolvers,
                     ) {
                         return Some(original_id);
                     }
@@ -1892,8 +2052,7 @@ fn resolve_reference(
         scope_symbols,
         import_resolver,
         file_path_to_id,
-        file_imports_map,
-        workspace_files,
+        file_import_resolvers,
     )
 }
 
@@ -1950,8 +2109,7 @@ fn resolve_import_to_original(
     import_bindings: &ImportBindingsSet,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
-    file_imports_map: &FileImportsMap<'_>,
-    workspace_files: &HashSet<String>,
+    file_import_resolvers: &FileImportResolversMap,
 ) -> Option<SymbolId> {
     // Use a visited set to detect cycles
     let mut visited: HashSet<(String, String)> = HashSet::new();
@@ -1961,8 +2119,7 @@ fn resolve_import_to_original(
         global_symbols,
         import_bindings,
         file_path_to_id,
-        file_imports_map,
-        workspace_files,
+        file_import_resolvers,
         &mut visited,
     )
 }
@@ -1978,6 +2135,8 @@ fn resolve_import_to_original(
 /// This function follows the chain: main.py → pkg → internal → core, returning
 /// the original definition's SymbolId.
 ///
+/// Uses pre-computed star-expanded import resolvers to handle transitive star imports.
+///
 /// This is the recursive helper for `resolve_import_to_original`.
 #[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 fn resolve_import_chain(
@@ -1986,8 +2145,7 @@ fn resolve_import_chain(
     global_symbols: &GlobalSymbolMap,
     import_bindings: &ImportBindingsSet,
     file_path_to_id: &HashMap<String, FileId>,
-    file_imports_map: &FileImportsMap<'_>,
-    workspace_files: &HashSet<String>,
+    file_import_resolvers: &FileImportResolversMap,
     visited: &mut HashSet<(String, String)>,
 ) -> Option<SymbolId> {
     // Resolve the import through the current file's resolver
@@ -2027,25 +2185,36 @@ fn resolve_import_chain(
         for (fid, _sym_id) in entries {
             if *fid == target_file_id {
                 // This is an import binding (re-export) - follow the chain
-                // Build an import resolver for the target file and continue
-                if let Some(target_imports) = file_imports_map.get(resolved_file_path) {
-                    let target_resolver = FileImportResolver::from_imports(
-                        target_imports,
-                        workspace_files,
-                        resolved_file_path,
-                    );
+                // Use the pre-computed star-expanded resolver for the target file
+                if let Some(target_resolver) = file_import_resolvers.get(resolved_file_path) {
                     return resolve_import_chain(
                         target_name,
-                        &target_resolver,
+                        target_resolver,
                         global_symbols,
                         import_bindings,
                         file_path_to_id,
-                        file_imports_map,
-                        workspace_files,
+                        file_import_resolvers,
                         visited,
                     );
                 }
             }
+        }
+    }
+
+    // If no import binding found in global_symbols, also check the target file's
+    // star-expanded resolver directly. Star imports don't create entries in
+    // global_symbols, but they do add bindings to the import resolver.
+    if let Some(target_resolver) = file_import_resolvers.get(resolved_file_path) {
+        if target_resolver.is_imported(target_name) {
+            return resolve_import_chain(
+                target_name,
+                target_resolver,
+                global_symbols,
+                import_bindings,
+                file_path_to_id,
+                file_import_resolvers,
+                visited,
+            );
         }
     }
     None
@@ -2070,8 +2239,7 @@ fn resolve_in_module_scope(
     scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
-    file_imports_map: &FileImportsMap<'_>,
-    workspace_files: &HashSet<String>,
+    file_import_resolvers: &FileImportResolversMap,
 ) -> Option<SymbolId> {
     let module_scope_id = ScopeId(0);
 
@@ -2083,8 +2251,7 @@ fn resolve_in_module_scope(
             import_bindings,
             import_resolver,
             file_path_to_id,
-            file_imports_map,
-            workspace_files,
+            file_import_resolvers,
         ) {
             return Some(original_id);
         }
@@ -2128,8 +2295,7 @@ fn resolve_in_enclosing_function(
     scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
-    file_imports_map: &FileImportsMap<'_>,
-    workspace_files: &HashSet<String>,
+    file_import_resolvers: &FileImportResolversMap,
 ) -> Option<SymbolId> {
     // Walk up to find nearest enclosing function scope
     let mut current_scope = scope;
@@ -2155,8 +2321,7 @@ fn resolve_in_enclosing_function(
         scope_symbols,
         import_resolver,
         file_path_to_id,
-        file_imports_map,
-        workspace_files,
+        file_import_resolvers,
     )
 }
 
@@ -2172,16 +2337,14 @@ fn resolve_in_enclosing_function(
 /// * `global_symbols` - Global symbol map for cross-file lookup
 /// * `import_bindings` - Set of import bindings
 /// * `file_path_to_id` - Mapping from file paths to FileIds
-/// * `file_imports_map` - Map of file paths to their imports (for chain resolution)
-/// * `workspace_files` - Set of all workspace file paths
+/// * `file_import_resolvers` - Pre-computed star-expanded import resolvers for all files
 fn resolve_import_reference(
     imported_name: &str,
     import_resolver: &FileImportResolver,
     global_symbols: &GlobalSymbolMap,
     import_bindings: &ImportBindingsSet,
     file_path_to_id: &HashMap<String, FileId>,
-    file_imports_map: &FileImportsMap<'_>,
-    workspace_files: &HashSet<String>,
+    file_import_resolvers: &FileImportResolversMap,
 ) -> Option<SymbolId> {
     // Use the new method to look up by imported name
     let (qualified_path, resolved_file) = import_resolver.resolve_imported_name(imported_name)?;
@@ -2212,25 +2375,36 @@ fn resolve_import_reference(
         for (fid, _sym_id) in entries {
             if *fid == target_file_id {
                 // This is an import binding (re-export) - follow the chain
-                // Build an import resolver for the target file and continue
-                if let Some(target_imports) = file_imports_map.get(resolved_file_path) {
-                    let target_resolver = FileImportResolver::from_imports(
-                        target_imports,
-                        workspace_files,
-                        resolved_file_path,
-                    );
+                // Use the pre-computed star-expanded resolver for the target file
+                if let Some(target_resolver) = file_import_resolvers.get(resolved_file_path) {
                     return resolve_import_chain(
                         target_name,
-                        &target_resolver,
+                        target_resolver,
                         global_symbols,
                         import_bindings,
                         file_path_to_id,
-                        file_imports_map,
-                        workspace_files,
+                        file_import_resolvers,
                         &mut HashSet::new(),
                     );
                 }
             }
+        }
+    }
+
+    // If no import binding found in global_symbols, also check the target file's
+    // star-expanded resolver directly. Star imports don't create entries in
+    // global_symbols, but they do add bindings to the import resolver.
+    if let Some(target_resolver) = file_import_resolvers.get(resolved_file_path) {
+        if target_resolver.is_imported(target_name) {
+            return resolve_import_chain(
+                target_name,
+                target_resolver,
+                global_symbols,
+                import_bindings,
+                file_path_to_id,
+                file_import_resolvers,
+                &mut HashSet::new(),
+            );
         }
     }
 
