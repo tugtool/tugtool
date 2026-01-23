@@ -1732,16 +1732,6 @@ pub fn resolve_relative_path(
         // Convert dots to slashes for absolute module paths
         return module_name.replace('.', "/");
     }
-
-    // Log warning for multi-level relative imports (not yet fully supported)
-    if relative_level > 1 {
-        tracing::warn!(
-            "Multi-level relative import (level {}) in '{}' - support is limited",
-            relative_level,
-            importing_file
-        );
-    }
-
     // Get the directory of the importing file
     let dir = std::path::Path::new(importing_file)
         .parent()
