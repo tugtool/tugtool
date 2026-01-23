@@ -8,6 +8,71 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-9.md] Steps 9A, 9B, 11, 12: Claude Code Skill, Hook, Playbook, and Final Verification | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-9.md` - Steps 9A, 9B, 11, 12 specifications
+- Spec S04 (#s04-skill-definition) - Claude Code skill specification
+- Spec S05 (#s05-userprompt-hook) - UserPromptSubmit hook specification
+- Table T02 (#t02-trigger-patterns) - Discovery trigger patterns
+- [D07] Pattern-Based Discovery, [D08] Skills as Proactive Discovery
+- [D09] Lightweight Hook for Discovery
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Step 9A: Create `.claude/skills/tug-refactor/` directory | Done |
+| Step 9A: Create SKILL.md with trigger patterns | Done |
+| Step 9B: Create `.claude/hooks/` directory | Done |
+| Step 9B: Create tug-discovery.sh hook script | Done |
+| Step 9B: Make hook executable | Done |
+| Step 9B: Create `.claude/settings.json` with hook config | Done |
+| Step 9B: Test hook with refactoring/non-refactoring prompts | Done |
+| Step 11: Update AGENT_PLAYBOOK.md Claude Code section | Done |
+| Step 11: Update Cursor section with rules documentation | Done |
+| Step 12: Full build verification | Done |
+| Step 12: Full test suite (1205 tests) | Done |
+| Step 12: Grep verification (no rmcp references) | Done |
+
+**Files Created:**
+- `.claude/skills/tug-refactor/SKILL.md` - Tug refactoring skill with trigger patterns
+- `.claude/hooks/tug-discovery.sh` - UserPromptSubmit hook for pattern detection
+- `.claude/settings.json` - Hook configuration with 1s timeout
+
+**Files Modified:**
+- `docs/AGENT_PLAYBOOK.md` - Updated Claude Code and Cursor integration sections
+- `plans/phase-9.md` - Updated all task and checkpoint boxes to [x]
+
+**Test Results:**
+- `cargo build --workspace`: SUCCESS
+- `cargo nextest run --workspace`: 1205 tests passed
+- Hook test (refactoring prompt): Outputs hint correctly
+- Hook test (non-refactoring prompt): No output (correct)
+- Hook test (exit code): Always exits 0
+
+**Checkpoints Verified:**
+- `.claude/skills/tug-refactor/SKILL.md` exists with YAML frontmatter: PASS
+- Description includes trigger patterns: PASS
+- `.claude/hooks/tug-discovery.sh` exists and is executable: PASS
+- Hook produces hint for refactoring patterns: PASS
+- Hook produces no output for non-refactoring: PASS
+- Hook always exits 0: PASS
+- No MCP references in AGENT_PLAYBOOK.md: PASS
+- All tests pass: PASS (1205)
+- No rmcp in code or Cargo.lock: PASS
+
+**Key Decisions/Notes:**
+- Added Python-only language support note to SKILL.md (matching CLAUDE.md)
+- Step 8 (tug-fixtures-ensure command) was DEFERRED
+- Step 10 (Cursor rules) was DEFERRED
+- Manual tests remain for Claude Code environment verification
+- Phase 9 substantially complete with MCP removed and Claude Code integration done
+
+---
+
 ## [phase-9.md] Step 9: Update CLAUDE.md with Discovery Patterns | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

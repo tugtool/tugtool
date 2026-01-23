@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "command": ".claude/hooks/tug-discovery.sh",
+        "timeout": 1000
+      }
+    ]
+  }
+}

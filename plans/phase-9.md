@@ -1369,19 +1369,19 @@ If fetch fails, show the error and suggest:
 - New file: `.claude/skills/tug-refactor/SKILL.md`
 
 **Tasks:**
-- [ ] Create `.claude/skills/tug-refactor/` directory
-- [ ] Create `.claude/skills/tug-refactor/SKILL.md` with content from Spec S04
-- [ ] Verify skill description includes trigger patterns from Table T02
-- [ ] Do NOT set `disable-model-invocation: true` (allow proactive invocation)
+- [x] Create `.claude/skills/tug-refactor/` directory
+- [x] Create `.claude/skills/tug-refactor/SKILL.md` with content from Spec S04
+- [x] Verify skill description includes trigger patterns from Table T02
+- [x] Do NOT set `disable-model-invocation: true` (allow proactive invocation)
 
 **Tests:**
 - [ ] Manual: Verify skill appears in Claude Code skill list
 - [ ] Manual: Test that Claude suggests tug when given a refactoring request
 
 **Checkpoint:**
-- [ ] `.claude/skills/tug-refactor/SKILL.md` exists
-- [ ] File contains required YAML frontmatter (name, description)
-- [ ] Description includes trigger patterns
+- [x] `.claude/skills/tug-refactor/SKILL.md` exists
+- [x] File contains required YAML frontmatter (name, description)
+- [x] Description includes trigger patterns
 
 **Rollback:**
 - Delete `.claude/skills/tug-refactor/` directory
@@ -1399,11 +1399,11 @@ If fetch fails, show the error and suggest:
 - New/updated: `.claude/settings.json`
 
 **Tasks:**
-- [ ] Create `.claude/hooks/` directory if not exists
-- [ ] Create `.claude/hooks/tug-discovery.sh` with content from Spec S05
-- [ ] Make script executable: `chmod +x .claude/hooks/tug-discovery.sh`
-- [ ] Create/update `.claude/settings.json` to add hook configuration
-- [ ] Test hook locally with sample JSON input
+- [x] Create `.claude/hooks/` directory if not exists
+- [x] Create `.claude/hooks/tug-discovery.sh` with content from Spec S05
+- [x] Make script executable: `chmod +x .claude/hooks/tug-discovery.sh`
+- [x] Create/update `.claude/settings.json` to add hook configuration
+- [x] Test hook locally with sample JSON input
 
 **Hook Test:**
 ```bash
@@ -1417,16 +1417,16 @@ echo '{"session_id": "test", "prompt": "explain how this code works"}' | .claude
 ```
 
 **Tests:**
-- [ ] Script test: Refactoring pattern detection works
-- [ ] Script test: Non-refactoring prompts produce no output
-- [ ] Script test: Script always exits 0
+- [x] Script test: Refactoring pattern detection works
+- [x] Script test: Non-refactoring prompts produce no output
+- [x] Script test: Script always exits 0
 - [ ] Manual: Hook triggers in Claude Code on refactoring prompts
 
 **Checkpoint:**
-- [ ] `.claude/hooks/tug-discovery.sh` exists and is executable
-- [ ] Hook produces hint output for refactoring patterns
-- [ ] Hook produces no output for non-refactoring patterns
-- [ ] Hook always exits 0
+- [x] `.claude/hooks/tug-discovery.sh` exists and is executable
+- [x] Hook produces hint output for refactoring patterns
+- [x] Hook produces no output for non-refactoring patterns
+- [x] Hook always exits 0
 
 **Rollback:**
 - Delete `.claude/hooks/tug-discovery.sh`
@@ -1486,14 +1486,14 @@ echo '{"session_id": "test", "prompt": "explain how this code works"}' | .claude
 - Updated `docs/AGENT_PLAYBOOK.md`
 
 **Tasks:**
-- [ ] Replace MCP configuration section with Claude Code commands section
-- [ ] Update example snippets to show command usage
-- [ ] Add Cursor section
+- [x] Replace MCP configuration section with Claude Code commands section
+- [x] Update example snippets to show command usage
+- [x] Add Cursor section
 
 **Checkpoint:**
-- [ ] No MCP references in AGENT_PLAYBOOK.md
-- [ ] Claude Code section documents commands
-- [ ] Cursor section documents rules file
+- [x] No MCP references in AGENT_PLAYBOOK.md
+- [x] Claude Code section documents commands
+- [x] Cursor section documents rules file
 
 **Rollback:**
 - Revert changes
@@ -1507,17 +1507,17 @@ echo '{"session_id": "test", "prompt": "explain how this code works"}' | .claude
 **References:** (#success-criteria)
 
 **Tasks:**
-- [ ] Full build: `cargo build --workspace`
-- [ ] Full test suite: `cargo nextest run --workspace`
-- [ ] Grep verification: no unexpected MCP references
-- [ ] Documentation review: all docs updated
+- [x] Full build: `cargo build --workspace`
+- [x] Full test suite: `cargo nextest run --workspace`
+- [x] Grep verification: no unexpected MCP references
+- [x] Documentation review: all docs updated
 - [ ] Claude Code command test: manually test in Claude Code environment
 
 **Checkpoint:**
-- [ ] All tests pass
-- [ ] All documentation updated
+- [x] All tests pass
+- [x] All documentation updated
 - [ ] Commands work in Claude Code (manual verification)
-- [ ] `.cursor/rules/tug.mdc` present
+- [ ] `.cursor/rules/tug.mdc` present (DEFERRED - Step 10 was deferred)
 
 ---
 
@@ -1527,44 +1527,44 @@ echo '{"session_id": "test", "prompt": "explain how this code works"}' | .claude
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `cargo build -p tugtool` succeeds with no MCP code
-- [ ] `cargo nextest run --workspace` passes
-- [ ] No MCP references in code or user-facing documentation (except historical context in `plans/`)
-- [ ] `.claude/commands/tug-rename.md` exists and follows spec
-- [ ] `.claude/commands/tug-rename-plan.md` exists and follows spec
-- [ ] `.claude/commands/tug-fixtures-ensure.md` exists and follows spec
-- [ ] `.claude/skills/tug-refactor/SKILL.md` exists and follows spec
-- [ ] `.claude/hooks/tug-discovery.sh` exists and is executable (experimental)
-- [ ] `.cursor/rules/tug.mdc` exists and includes discovery patterns
-- [ ] CLAUDE.md updated with tug refactoring section including recognition patterns
+- [x] `cargo build -p tugtool` succeeds with no MCP code
+- [x] `cargo nextest run --workspace` passes
+- [x] No MCP references in code or user-facing documentation (except historical context in `plans/`)
+- [x] `.claude/commands/tug-rename.md` exists and follows spec
+- [x] `.claude/commands/tug-rename-plan.md` exists and follows spec
+- [ ] `.claude/commands/tug-fixtures-ensure.md` exists and follows spec (DEFERRED - Step 8)
+- [x] `.claude/skills/tug-refactor/SKILL.md` exists and follows spec
+- [x] `.claude/hooks/tug-discovery.sh` exists and is executable (experimental)
+- [ ] `.cursor/rules/tug.mdc` exists and includes discovery patterns (DEFERRED - Step 10)
+- [x] CLAUDE.md updated with tug refactoring section including recognition patterns
 
 **Acceptance tests:**
-- [ ] Build: `cargo build -p tugtool`
-- [ ] Tests: `cargo nextest run --workspace`
-- [ ] Grep: `grep -r "rmcp" --include="*.rs" --include="*.toml" crates/` returns empty
+- [x] Build: `cargo build -p tugtool`
+- [x] Tests: `cargo nextest run --workspace`
+- [x] Grep: `grep -r "rmcp" --include="*.rs" --include="*.toml" crates/` returns empty
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: MCP Removed** {#m01-mcp-removed}
-- [ ] All MCP code deleted
-- [ ] All dependencies removed
-- [ ] Build succeeds
+- [x] All MCP code deleted
+- [x] All dependencies removed
+- [x] Build succeeds
 
 **Milestone M02: Claude Code Integration Complete** {#m02-claude-code}
-- [ ] All three commands created
-- [ ] `tug-refactor` skill created
-- [ ] Discovery hook created (experimental)
-- [ ] CLAUDE.md updated with discovery patterns
+- [x] All three commands created (tug-rename, tug-rename-plan; tug-fixtures-ensure DEFERRED)
+- [x] `tug-refactor` skill created
+- [x] Discovery hook created (experimental)
+- [x] CLAUDE.md updated with discovery patterns
 
 **Milestone M03: Cursor Integration Complete** {#m03-cursor}
-- [ ] `.cursor/rules/tug.mdc` created with trigger patterns
-- [ ] Documentation updated
+- [ ] `.cursor/rules/tug.mdc` created with trigger patterns (DEFERRED - Step 10)
+- [x] Documentation updated
 
 **Milestone M04: Natural Discovery Complete** {#m04-discovery}
-- [ ] Recognition patterns documented in CLAUDE.md
-- [ ] Skill enables proactive tug suggestion
-- [ ] Hook detects refactoring patterns (experimental)
-- [ ] Cursor rules include trigger patterns
+- [x] Recognition patterns documented in CLAUDE.md
+- [x] Skill enables proactive tug suggestion
+- [x] Hook detects refactoring patterns (experimental)
+- [ ] Cursor rules include trigger patterns (DEFERRED - Step 10)
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

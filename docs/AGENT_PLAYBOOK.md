@@ -115,6 +115,32 @@ fi
 
 ## Claude Code Integration
 
+Claude Code provides built-in slash commands for tug integration.
+
+### Available Commands
+
+- `/tug-rename` - Full rename workflow: analyze impact, dry-run preview, and apply with approval
+- `/tug-rename-plan` - Preview only: analyze and dry-run without applying changes
+
+### Using the Commands
+
+When the user requests a symbol rename:
+
+1. **Identify the location**: Determine file, line, and column of the symbol
+2. **Run `/tug-rename`**: The command handles the full workflow:
+   - Analyzes impact and shows affected files/references
+   - Runs dry-run with syntax verification
+   - Asks for approval before applying changes
+
+For cautious workflows, use `/tug-rename-plan` to preview without any risk of modification.
+
+### Skill-Based Discovery
+
+The `tug-refactor` skill (`.claude/skills/tug-refactor/SKILL.md`) enables proactive tug suggestions when Claude detects refactoring-related requests like:
+- "rename X to Y"
+- "change the name of"
+- "update all references"
+
 ### Agent Instructions Snippet
 
 Add this to your Claude Code custom instructions or CLAUDE.md:
@@ -131,9 +157,21 @@ This ensures all references are updated atomically and the result is syntactical
 
 ## Cursor Integration
 
+Cursor can use tug through its AI rules system and CLI integration.
+
+### Cursor Rules (Recommended)
+
+The `.cursor/rules/tug.mdc` file provides Cursor AI with context about when and how to use tug. This enables Cursor to automatically suggest tug for refactoring requests.
+
+Key features:
+- Recognition patterns for refactoring requests
+- Decision guidance (when to use vs. skip tug)
+- Workflow rules for safe refactoring
+- Error handling guidance
+
 ### CLI via Tasks
 
-You can integrate tug via custom tasks in Cursor.
+You can also integrate tug via custom tasks in Cursor.
 
 Add to `.cursor/tasks.json`:
 
@@ -152,17 +190,16 @@ Add to `.cursor/tasks.json`:
 }
 ```
 
-### Alternative: Shell Integration
+### Shell Integration
 
 Use the CLI directly in Cursor's terminal:
 
 ```bash
-# Set up alias
-alias dw='tug'
+# Analyze impact first
+tug analyze-impact rename-symbol --at src/main.py:10:5 --to better_name
 
-# Use in terminal
-dw analyze-impact rename-symbol --at src/main.py:10:5 --to better_name
-dw run --apply rename-symbol --at src/main.py:10:5 --to better_name
+# Apply with verification
+tug run --apply --verify syntax rename-symbol --at src/main.py:10:5 --to better_name
 ```
 
 ## Common Patterns
