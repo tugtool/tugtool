@@ -1166,10 +1166,10 @@ User: "Rename the function process_data to transform_data"
 - New file: `.claude/commands/tug-rename-plan.md`
 
 **Tasks:**
-- [ ] Create `.claude/commands/tug-rename-plan.md` with:
-  - [ ] Command description (analyze + dry-run only)
-  - [ ] Workflow stopping at dry-run
-  - [ ] Clear statement that this does NOT apply changes
+- [x] Create `.claude/commands/tug-rename-plan.md` with:
+  - [x] Command description (analyze + dry-run only)
+  - [x] Workflow stopping at dry-run
+  - [x] Clear statement that this does NOT apply changes
 
 **File content:**
 ```markdown
@@ -1228,7 +1228,7 @@ If you want to apply the changes, use `/tug-rename` instead.
 Same as `/tug-rename` - show errors and stop.
 
 **Checkpoint:**
-- [ ] File exists at `.claude/commands/tug-rename-plan.md`
+- [x] File exists at `.claude/commands/tug-rename-plan.md`
 
 **Rollback:**
 - Delete file
