@@ -1058,12 +1058,12 @@ After Steps 1-5, the codebase will have:
 - New file: `.claude/commands/tug-rename.md`
 
 **Tasks:**
-- [ ] Create `.claude/commands/tug-rename.md` with:
-  - [ ] Command description and purpose
-  - [ ] Input requirements (new_name from user, location from context)
-  - [ ] Full workflow algorithm with decision gates
-  - [ ] Exit code handling per Table T01
-  - [ ] Example usage
+- [x] Create `.claude/commands/tug-rename.md` with:
+  - [x] Command description and purpose
+  - [x] Input requirements (new_name from user, location from context)
+  - [x] Full workflow algorithm with decision gates
+  - [x] Exit code handling per Table T01
+  - [x] Example usage
 
 **File content:**
 ```markdown
@@ -1148,8 +1148,8 @@ User: "Rename the function process_data to transform_data"
 - [ ] Manual: Run `/tug-rename` in Claude Code (requires Claude Code environment)
 
 **Checkpoint:**
-- [ ] File exists at `.claude/commands/tug-rename.md`
-- [ ] File content matches spec
+- [x] File exists at `.claude/commands/tug-rename.md`
+- [x] File content matches spec
 
 **Rollback:**
 - Delete file
@@ -1235,7 +1235,7 @@ Same as `/tug-rename` - show errors and stop.
 
 ---
 
-#### Step 8: Create Claude Code Fixtures Command {#step-8}
+#### Step 8: Create Claude Code Fixtures Command {#step-8}: DEFERRED
 
 **Commit:** `feat(interop): add /tug-fixtures-ensure Claude Code command`
 

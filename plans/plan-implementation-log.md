@@ -8,6 +8,49 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-9.md] Step 6: Create Claude Code Rename Command | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-9.md` - Step 6 specification, command file content template
+- [D02] CLI as Kernel - CLI is integration kernel, editors are front doors
+- [D03] Three Decision Gates - Gate A (risk), Gate B (patch review), Gate C (verification)
+- [D04] No Apply Without Approval - Never apply without explicit user consent
+- Spec S01 (#cmd-tug-rename) - Full command specification with workflow steps
+- Table T01 - Exit code handling table
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `.claude/commands/tug-rename.md` | Done |
+| Include command description and purpose | Done |
+| Include input requirements (new_name, location) | Done |
+| Include full workflow algorithm with decision gates | Done |
+| Include exit code handling per Table T01 | Done |
+| Include example usage | Done |
+
+**Files Created:**
+- `.claude/commands/tug-rename.md` - Claude Code slash command for symbol rename workflow
+
+**Files Modified:**
+- `plans/phase-9.md` - Updated Step 6 task and checkpoint boxes to [x]
+
+**Test Results:**
+- Manual test (Run `/tug-rename` in Claude Code) - Deferred (requires Claude Code environment)
+
+**Checkpoints Verified:**
+- File exists at `.claude/commands/tug-rename.md`: PASS
+- File content matches spec: PASS
+
+**Key Decisions/Notes:**
+- Command implements the three decision gates: Analyze Impact → Dry Run with Verification → Apply with Approval
+- Error handling table covers all exit codes from Table T01 (0, 2, 3, 4, 5, 10)
+- Location format uses 1-indexed `<file>:<line>:<col>` as specified
+
+---
+
 ## [phase-9.md] Steps 0-5: MCP Removal (Part 1 Complete) | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
