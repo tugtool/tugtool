@@ -2560,3 +2560,429 @@ mod ac8_partial_analysis_error_handling {
         );
     }
 }
+
+// ============================================================================
+// Import Pattern Tests
+// ============================================================================
+//
+// These tests validate cross-file rename for common Python import patterns.
+// They replace the manual spike tests in spikes/interop-spike/scenarios/.
+//
+// Running these tests:
+//   cargo nextest run -p tugtool-python import_pattern_
+
+mod import_pattern_tests {
+    //! Tests for real-world Python import patterns.
+    //!
+    //! Each test validates that:
+    //! 1. All references to a symbol are tracked across files
+    //! 2. Import statements are correctly resolved to original definitions
+    //!
+    //! These patterns are commonly found in production Python codebases.
+
+    use super::*;
+    use tugtool_core::facts::{ReferenceKind, SymbolKind};
+
+    /// Star import pattern: `from .base import *`
+    ///
+    /// Scenario:
+    /// - pkg/base.py defines `process_data`
+    /// - pkg/__init__.py re-exports via `from .base import *`
+    /// - pkg/consumer.py uses `from .base import *` and calls `process_data`
+    /// - main.py imports `from pkg import process_data`
+    ///
+    /// Expected: Renaming `process_data` in base.py should find all 4 references.
+    #[test]
+    fn import_pattern_star_import_rename() {
+        let file_list = files(&[
+            (
+                "pkg/base.py",
+                r#"def process_data(data):
+    return [x * 2 for x in data]
+
+def validate_data(data):
+    return isinstance(data, list)
+"#,
+            ),
+            (
+                "pkg/__init__.py",
+                r#"from .base import *
+
+__all__ = ['process_data', 'validate_data']
+"#,
+            ),
+            (
+                "pkg/consumer.py",
+                r#"from .base import *
+
+def run():
+    data = [1, 2, 3]
+    if validate_data(data):
+        result = process_data(data)
+        return result
+    return None
+"#,
+            ),
+            (
+                "main.py",
+                r#"from pkg import process_data, validate_data
+
+def main():
+    data = [1, 2, 3, 4, 5]
+    if validate_data(data):
+        result = process_data(data)
+        print(result)
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find process_data symbol (should be in pkg/base.py)
+        let symbol = store
+            .symbols()
+            .find(|s| s.name == "process_data" && s.kind == SymbolKind::Function)
+            .expect("process_data symbol not found");
+
+        let file = store.file(symbol.decl_file_id).expect("file not found");
+        assert_eq!(
+            file.path, "pkg/base.py",
+            "Symbol should be defined in pkg/base.py"
+        );
+
+        // Count references to process_data
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == symbol.symbol_id)
+            .collect();
+
+        // Expected references:
+        // 1. Definition in pkg/base.py
+        // 2. Import in pkg/__init__.py (via star import expansion)
+        // 3. Call in pkg/consumer.py
+        // 4. Import in main.py
+        // 5. Call in main.py
+        assert!(
+            refs.len() >= 4,
+            "Expected at least 4 references to process_data, found {}. \
+             References: {:?}",
+            refs.len(),
+            refs.iter()
+                .map(|r| {
+                    let f = store
+                        .file(r.file_id)
+                        .map(|f| f.path.as_str())
+                        .unwrap_or("?");
+                    format!("{}:{}:{:?}", f, r.span.start, r.ref_kind)
+                })
+                .collect::<Vec<_>>()
+        );
+
+        // Verify references are in the expected files
+        let ref_files: Vec<_> = refs
+            .iter()
+            .filter_map(|r| store.file(r.file_id))
+            .map(|f| f.path.as_str())
+            .collect();
+
+        assert!(
+            ref_files.contains(&"pkg/consumer.py"),
+            "Should have reference in pkg/consumer.py"
+        );
+        assert!(
+            ref_files.contains(&"main.py"),
+            "Should have reference in main.py"
+        );
+    }
+
+    /// Aliased import pattern: `from X import Y as Z`
+    ///
+    /// Scenario:
+    /// - pkg/utils.py defines `process_data`
+    /// - pkg/main.py imports `from .utils import process_data as proc`
+    /// - main.py imports `from pkg.utils import process_data as transformer`
+    ///
+    /// Expected: Renaming `process_data` should update import statements but NOT aliases.
+    #[test]
+    fn import_pattern_aliased_import_rename() {
+        let file_list = files(&[
+            ("pkg/__init__.py", "# Package init\n"),
+            (
+                "pkg/utils.py",
+                r#"def process_data(data):
+    return [x * 2 for x in data]
+"#,
+            ),
+            (
+                "pkg/main.py",
+                r#"from .utils import process_data as proc
+
+def run():
+    data = [1, 2, 3]
+    result = proc(data)
+    return result
+"#,
+            ),
+            (
+                "main.py",
+                r#"from pkg.utils import process_data as transformer
+from pkg.main import run
+
+def main():
+    data = [1, 2, 3, 4, 5]
+    result = transformer(data)
+    print(result)
+    main_result = run()
+    print(main_result)
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find process_data symbol
+        let symbol = store
+            .symbols()
+            .find(|s| s.name == "process_data" && s.kind == SymbolKind::Function)
+            .expect("process_data symbol not found");
+
+        let file = store.file(symbol.decl_file_id).expect("file not found");
+        assert_eq!(
+            file.path, "pkg/utils.py",
+            "Symbol should be defined in pkg/utils.py"
+        );
+
+        // Count references
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == symbol.symbol_id)
+            .collect();
+
+        // Expected references:
+        // 1. Definition in pkg/utils.py
+        // 2. Import in pkg/main.py (as proc)
+        // 3. Import in main.py (as transformer)
+        assert!(
+            refs.len() >= 2,
+            "Expected at least 2 references to process_data (imports), found {}",
+            refs.len()
+        );
+
+        // Verify import references are tracked
+        let import_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Import)
+            .collect();
+        assert!(
+            import_refs.len() >= 2,
+            "Expected at least 2 import references, found {}",
+            import_refs.len()
+        );
+    }
+
+    /// Re-export chain pattern: A -> B -> C
+    ///
+    /// Scenario:
+    /// - pkg/core.py defines `process_data`
+    /// - pkg/internal.py re-exports: `from .core import process_data`
+    /// - pkg/__init__.py re-exports: `from .internal import process_data`
+    /// - main.py imports: `from pkg import process_data`
+    ///
+    /// Expected: Renaming `process_data` in core.py should update all re-export statements.
+    #[test]
+    fn import_pattern_reexport_chain_rename() {
+        let file_list = files(&[
+            (
+                "pkg/core.py",
+                r#"def process_data(data):
+    return [x * 2 for x in data]
+"#,
+            ),
+            (
+                "pkg/internal.py",
+                r#"from .core import process_data
+
+__all__ = ['process_data']
+"#,
+            ),
+            (
+                "pkg/__init__.py",
+                r#"from .internal import process_data
+
+__all__ = ['process_data']
+"#,
+            ),
+            (
+                "main.py",
+                r#"from pkg import process_data
+
+def main():
+    data = [1, 2, 3, 4, 5]
+    result = process_data(data)
+    print(result)
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find process_data symbol in core.py
+        let symbol = store
+            .symbols()
+            .find(|s| s.name == "process_data" && s.kind == SymbolKind::Function)
+            .expect("process_data symbol not found");
+
+        let file = store.file(symbol.decl_file_id).expect("file not found");
+        assert_eq!(
+            file.path, "pkg/core.py",
+            "Symbol should be defined in pkg/core.py"
+        );
+
+        // Count references
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == symbol.symbol_id)
+            .collect();
+
+        // Expected references:
+        // 1. Definition in pkg/core.py
+        // 2. Import in pkg/internal.py
+        // 3. Import in pkg/__init__.py
+        // 4. Import in main.py
+        // 5. Call in main.py
+        assert!(
+            refs.len() >= 4,
+            "Expected at least 4 references for re-export chain, found {}. \
+             References: {:?}",
+            refs.len(),
+            refs.iter()
+                .map(|r| {
+                    let f = store
+                        .file(r.file_id)
+                        .map(|f| f.path.as_str())
+                        .unwrap_or("?");
+                    format!("{}:{:?}", f, r.ref_kind)
+                })
+                .collect::<Vec<_>>()
+        );
+
+        // Verify re-export chain is tracked
+        let ref_files: Vec<_> = refs
+            .iter()
+            .filter_map(|r| store.file(r.file_id))
+            .map(|f| f.path.as_str())
+            .collect();
+
+        assert!(
+            ref_files.contains(&"pkg/internal.py"),
+            "Should have reference in pkg/internal.py (re-export)"
+        );
+        assert!(
+            ref_files.contains(&"pkg/__init__.py"),
+            "Should have reference in pkg/__init__.py (re-export)"
+        );
+        assert!(
+            ref_files.contains(&"main.py"),
+            "Should have reference in main.py"
+        );
+    }
+
+    /// Multi-level relative import pattern: `from ..module import X`
+    ///
+    /// Scenario:
+    /// - pkg/utils.py defines `process_data`
+    /// - pkg/sub/consumer.py imports: `from ..utils import process_data`
+    /// - main.py imports: `from pkg.utils import process_data`
+    ///
+    /// Expected: Renaming `process_data` should update the `..utils` import.
+    #[test]
+    fn import_pattern_multi_level_relative_rename() {
+        let file_list = files(&[
+            ("pkg/__init__.py", "# Package init\n"),
+            (
+                "pkg/utils.py",
+                r#"def process_data(data):
+    return [x * 2 for x in data]
+"#,
+            ),
+            ("pkg/sub/__init__.py", "# Subpackage init\n"),
+            (
+                "pkg/sub/consumer.py",
+                r#"from ..utils import process_data
+
+def run():
+    data = [1, 2, 3]
+    result = process_data(data)
+    return result
+"#,
+            ),
+            (
+                "main.py",
+                r#"from pkg.utils import process_data
+from pkg.sub.consumer import run
+
+def main():
+    data = [1, 2, 3, 4, 5]
+    result = process_data(data)
+    print(result)
+    consumer_result = run()
+    print(consumer_result)
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find process_data symbol
+        let symbol = store
+            .symbols()
+            .find(|s| s.name == "process_data" && s.kind == SymbolKind::Function)
+            .expect("process_data symbol not found");
+
+        let file = store.file(symbol.decl_file_id).expect("file not found");
+        assert_eq!(
+            file.path, "pkg/utils.py",
+            "Symbol should be defined in pkg/utils.py"
+        );
+
+        // Count references
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == symbol.symbol_id)
+            .collect();
+
+        // Expected references:
+        // 1. Definition in pkg/utils.py
+        // 2. Import in pkg/sub/consumer.py (from ..utils)
+        // 3. Call in pkg/sub/consumer.py
+        // 4. Import in main.py
+        // 5. Call in main.py
+        assert!(
+            refs.len() >= 4,
+            "Expected at least 4 references for multi-level relative import, found {}. \
+             References: {:?}",
+            refs.len(),
+            refs.iter()
+                .map(|r| {
+                    let f = store
+                        .file(r.file_id)
+                        .map(|f| f.path.as_str())
+                        .unwrap_or("?");
+                    format!("{}:{:?}", f, r.ref_kind)
+                })
+                .collect::<Vec<_>>()
+        );
+
+        // Verify the multi-level relative import is tracked
+        let ref_files: Vec<_> = refs
+            .iter()
+            .filter_map(|r| store.file(r.file_id))
+            .map(|f| f.path.as_str())
+            .collect();
+
+        assert!(
+            ref_files.contains(&"pkg/sub/consumer.py"),
+            "Should have reference in pkg/sub/consumer.py (from ..utils import)"
+        );
+    }
+}
