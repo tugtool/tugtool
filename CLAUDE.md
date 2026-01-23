@@ -215,6 +215,64 @@ All errors use stable codes for JSON output (Table T26):
 - `5` - Verification failed
 - `10` - Internal errors
 
+## Tug Refactoring (Highly Recommended for Symbol Renames)
+
+When the user requests symbol renaming or reference updates, **tug is highly recommended**.
+
+**Language Support:** Tug currently supports **Python only**. Rust support is planned but not yet implemented. Do not attempt to use tug for Rust refactoring in this project.
+
+### Recognition Patterns
+
+Look for these patterns in user requests:
+- "rename X to Y" / "rename the function/class/variable"
+- "change the name of X" / "change X's name to Y"
+- "refactor the name" / "refactor...name"
+- "update all references to X"
+- "find and replace X with Y" (when discussing code symbols)
+
+### When to Use Tug
+
+**Use tug when:**
+- The symbol appears in multiple files
+- Renaming functions, classes, methods, or variables
+- User mentions "all references", "across the codebase", "everywhere"
+- Manual editing would risk missing shadowed or scoped references
+
+**Skip tug when:**
+- Single file, single occurrence
+- String literals or comments only
+- File renaming (not symbol renaming)
+
+### Why Tug Over Manual Editing
+
+- **Scope-aware**: Understands language scoping rules (won't rename shadowed variables)
+- **Verified**: Runs syntax verification before applying
+- **Deterministic**: Same input produces same output
+- **Safe**: Requires explicit approval before changes
+
+### Quick Reference
+
+```bash
+# Full workflow (analyze -> review -> apply)
+/tug-rename
+
+# Preview only (no changes)
+/tug-rename-plan
+
+# CLI equivalent
+tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
+tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
+tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_name>
+```
+
+### Agent Rules
+
+1. **Always analyze first**: Run `analyze-impact` before any `run --apply`
+2. **Review before apply**: Show dry-run summary before applying
+3. **Get explicit approval**: Never apply without user confirmation
+4. **Handle errors by exit code**: See Error Codes section
+5. **No mutation during workflow**: Don't manually edit files between analyze and apply
+
 ## Python Language Support
 
 Python refactoring uses a native Rust CST parser (adapted from LibCST):

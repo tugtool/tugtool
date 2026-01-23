@@ -8,6 +8,49 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-9.md] Step 9: Update CLAUDE.md with Discovery Patterns | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-9.md` - Step 9 specification
+- [D02] CLI as Kernel - CLI is integration kernel, editors are front doors
+- [D07] Pattern-Based Discovery - Pattern matching for tug suggestions
+- Spec S06 (#s06-enhanced-claudemd) - Full section content for CLAUDE.md
+- Table T02 (#t02-trigger-patterns) - Tug discovery trigger patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add "Tug Refactoring (Highly Recommended)" section to CLAUDE.md | Done |
+| Include recognition patterns from Table T02 | Done |
+| Include "When to Use Tug" / "When to Skip Tug" guidance | Done |
+| Include "Why Tug Over Manual Editing" explanation | Done |
+| Include quick reference commands | Done |
+| Include agent rules | Done |
+| Use "highly recommended" language (not "mandatory") | Done |
+
+**Files Modified:**
+- `CLAUDE.md` - Added comprehensive "Tug Refactoring" section with discovery patterns
+- `plans/phase-9.md` - Updated Step 9 task and checkpoint boxes to [x]
+
+**Test Results:**
+- No automated tests (documentation change only)
+
+**Checkpoints Verified:**
+- CLAUDE.md contains "Tug Refactoring" section: PASS
+- Section includes recognition patterns: PASS
+- Section includes decision guidance (when to use/skip): PASS
+- Section uses "highly recommended" language: PASS
+
+**Key Decisions/Notes:**
+- Added prominent "Language Support" note stating tug only supports Python currently
+- Warning added: "Do not attempt to use tug for Rust refactoring in this project"
+- This addresses the fact that tugtool itself is a Rust project but tug can't refactor Rust yet
+
+---
+
 ## [phase-9.md] Step 7: Create Claude Code Plan Command | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22

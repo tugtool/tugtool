@@ -1329,13 +1329,13 @@ If fetch fails, show the error and suggest:
 - Updated `CLAUDE.md` with comprehensive tug section including discovery patterns
 
 **Tasks:**
-- [ ] Add new section "## Tug Refactoring (Highly Recommended for Symbol Renames)" to CLAUDE.md
-- [ ] Include recognition patterns from Table T02
-- [ ] Include "When to Use Tug" / "When to Skip Tug" guidance
-- [ ] Include "Why Tug Over Manual Editing" explanation
-- [ ] Include quick reference commands
-- [ ] Include agent rules
-- [ ] Use "highly recommended" language (not "mandatory")
+- [x] Add new section "## Tug Refactoring (Highly Recommended for Symbol Renames)" to CLAUDE.md
+- [x] Include recognition patterns from Table T02
+- [x] Include "When to Use Tug" / "When to Skip Tug" guidance
+- [x] Include "Why Tug Over Manual Editing" explanation
+- [x] Include quick reference commands
+- [x] Include agent rules
+- [x] Use "highly recommended" language (not "mandatory")
 
 **Content:** See Spec S06 for full section content.
 
@@ -1348,10 +1348,10 @@ If fetch fails, show the error and suggest:
 6. Agent rules
 
 **Checkpoint:**
-- [ ] CLAUDE.md contains "Tug Refactoring" section
-- [ ] Section includes recognition patterns
-- [ ] Section includes decision guidance (when to use/skip)
-- [ ] Section uses "highly recommended" language
+- [x] CLAUDE.md contains "Tug Refactoring" section
+- [x] Section includes recognition patterns
+- [x] Section includes decision guidance (when to use/skip)
+- [x] Section uses "highly recommended" language
 
 **Rollback:**
 - Revert changes to CLAUDE.md
@@ -1436,7 +1436,7 @@ echo '{"session_id": "test", "prompt": "explain how this code works"}' | .claude
 
 ---
 
-#### Step 10: Create Cursor Configuration with Discovery Patterns {#step-10}
+#### Step 10: Create Cursor Configuration with Discovery Patterns {#step-10}: DEFERRED
 
 **Commit:** `feat(interop): add Cursor rules with discovery patterns`
 
