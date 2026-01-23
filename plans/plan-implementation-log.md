@@ -8,6 +8,55 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-10.md] Plan Creation: Architectural Hardening | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- Outstanding roadmap/follow-on items from previous phases
+- `plans/plan-skeleton.md` - Plan structure template
+- Current codebase for PEP 420 and value-level aliasing scope assessment
+
+**Planning Progress:**
+
+| Task | Status |
+|------|--------|
+| Gather outstanding follow-on items from previous phases | Done |
+| Assess PEP 420 namespace package scope (found: ~40 lines, not "overhaul") | Done |
+| Assess value-level aliasing scope (found: data already collected by TypeInferenceCollector) | Done |
+| Design CLI workflow simplification for AI assistants | Done |
+| Remove unnecessary backward compatibility (zero external users) | Done |
+| Consolidate into single linear document structure | Done |
+
+**Files Created:**
+- `plans/phase-10.md` - Complete Phase 10 plan with 16 execution steps
+
+**Plan Scope:**
+
+Phase 10 covers architectural hardening with 7 milestones:
+- M01: PositionTable optimization (HashMap → Vec)
+- M02: Scope spans complete (lambda, comprehension)
+- M03: Output enrichment and `tug doctor`
+- M04: PEP 420 namespace packages
+- M05: Value-level alias tracking
+- M06: CLI simplification (`tug rename`, `tug analyze`)
+- M07: Documentation and verification
+
+**Key Design Decisions:**
+- [D01-D08]: Infrastructure decisions (PositionTable, scopes, aliases)
+- [D09]: Apply-by-default for `tug rename` (AI-first CLI)
+- [D10]: Replace `analyze-impact` with `analyze` (shorter, format flag)
+- [D11]: Unified diff as default analysis output (not JSON)
+- [D12]: Syntax verification by default
+
+**Key Planning Decisions:**
+- PEP 420 is tractable (~1-2 days) - not the "overhaul" originally feared
+- Value-level aliasing reuses existing TypeInferenceCollector data (~3-4 days)
+- No deprecation warnings or migration shims needed (zero external users)
+- CLI simplified from 3-step workflow to single command
+
+---
+
 ## [phase-9.md] Steps 9A, 9B, 11, 12: Claude Code Skill, Hook, Playbook, and Final Verification | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
