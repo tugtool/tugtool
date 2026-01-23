@@ -8,6 +8,44 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-10.md] Step 1: PositionTable Optimization | COMPLETE | 2026-01-23
+
+**Completed:** 2026-01-23
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 1 specification and [D01] design decision
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - Existing PositionTable implementation
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Caller using iter()
+- Spec 10.1.1 - PositionTable API specification
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Change PositionTable from type alias to newtype struct | Done |
+| Implement `new()`, `with_capacity()`, `get()`, `insert()`, `get_or_insert()` | Done |
+| Update InflateCtx and all callers | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - Replaced type alias with newtype struct, added Vec-based methods, updated InflateCtx record methods
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Updated iterator patterns for new iter() signature
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 411 tests passed
+- `cargo nextest run --workspace`: 1205 tests passed
+- `cargo clippy -p tugtool-python-cst -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst`: PASS
+
+**Key Decisions/Notes:**
+- Growth strategy: `insert()` uses `vec.resize(idx + 1, None)` when index exceeds length
+- `iter()` returns `(NodeId, &NodePosition)` instead of `(&NodeId, &NodePosition)` - NodeId is Copy so this is cleaner
+- Type conversion: `id.0` (u32) cast to `usize` for Vec indexing
+- Added `len()`, `is_empty()`, and `iter()` methods for compatibility with existing callers
+
+---
+
 ## [phase-10.md] Architecture Review Fixes: P0/P1/P2 Issues | COMPLETE | 2026-01-23
 
 **Completed:** 2026-01-23

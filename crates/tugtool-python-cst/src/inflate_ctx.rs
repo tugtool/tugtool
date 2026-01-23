@@ -38,7 +38,6 @@
 
 use crate::nodes::traits::{NodeId, NodeIdGenerator};
 use crate::tokenizer::whitespace_parser::Config as WhitespaceConfig;
-use std::collections::HashMap;
 use tugtool_core::patch::Span;
 
 /// Position information for a single node. Different span types serve different purposes.
@@ -67,13 +66,91 @@ pub struct NodePosition {
     pub def_span: Option<Span>,
 }
 
-/// Maps NodeId to position information.
+/// Maps NodeId to position information using Vec indexing for O(1) access.
 ///
-/// Keyed by [`NodeId`], stores multiple span types per node.
-///
-/// Note: HashMap is fine for Phase 4. Follow-on optimization: since NodeIdGenerator
-/// is sequential, `Vec<Option<NodePosition>>` indexed by `NodeId.0` would be faster.
-pub type PositionTable = HashMap<NodeId, NodePosition>;
+/// Since [`NodeIdGenerator`] assigns sequential IDs starting from 0, we can use
+/// `Vec<Option<NodePosition>>` indexed by `NodeId.0` instead of HashMap for better
+/// cache locality and lower constant factors.
+#[derive(Debug, Default)]
+pub struct PositionTable {
+    positions: Vec<Option<NodePosition>>,
+}
+
+impl PositionTable {
+    /// Create an empty PositionTable.
+    pub fn new() -> Self {
+        Self {
+            positions: Vec::new(),
+        }
+    }
+
+    /// Create a PositionTable with pre-allocated capacity.
+    ///
+    /// Use this when you know approximately how many nodes will be tracked.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            positions: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Get position information for a node, if present.
+    pub fn get(&self, id: &NodeId) -> Option<&NodePosition> {
+        let idx = id.0 as usize;
+        self.positions.get(idx).and_then(|opt| opt.as_ref())
+    }
+
+    /// Insert position information for a node.
+    ///
+    /// If the Vec is too small, it is grown to accommodate the new index.
+    /// Growth uses `resize(idx + 1, None)` to ensure exactly enough space.
+    pub fn insert(&mut self, id: NodeId, position: NodePosition) {
+        let idx = id.0 as usize;
+        if idx >= self.positions.len() {
+            self.positions.resize(idx + 1, None);
+        }
+        self.positions[idx] = Some(position);
+    }
+
+    /// Get a mutable reference to position information, inserting a default if absent.
+    ///
+    /// This provides entry-like semantics with an explicit default value since
+    /// `NodePosition` is `Default` but we want to be explicit about initialization.
+    pub fn get_or_insert(&mut self, id: NodeId, default: NodePosition) -> &mut NodePosition {
+        let idx = id.0 as usize;
+        if idx >= self.positions.len() {
+            self.positions.resize(idx + 1, None);
+        }
+        if self.positions[idx].is_none() {
+            self.positions[idx] = Some(default);
+        }
+        self.positions[idx].as_mut().unwrap()
+    }
+
+    /// Returns the number of nodes with position information.
+    ///
+    /// Note: This counts only nodes that have been inserted, not the Vec capacity.
+    pub fn len(&self) -> usize {
+        self.positions.iter().filter(|opt| opt.is_some()).count()
+    }
+
+    /// Returns true if no positions have been recorded.
+    pub fn is_empty(&self) -> bool {
+        self.positions.iter().all(|opt| opt.is_none())
+    }
+
+    /// Returns an iterator over (NodeId, &NodePosition) pairs.
+    ///
+    /// Unlike HashMap's iter() which returns (&K, &V), this returns (K, &V)
+    /// since NodeId is Copy and small. Callers that previously used
+    /// `for (&node_id, pos) in table.iter()` should update to
+    /// `for (node_id, pos) in table.iter()`.
+    pub fn iter(&self) -> impl Iterator<Item = (NodeId, &NodePosition)> {
+        self.positions.iter().enumerate().filter_map(|(idx, opt)| {
+            opt.as_ref()
+                .map(|pos| (NodeId::new(idx as u32), pos))
+        })
+    }
+}
 
 /// Context threaded through inflation for identity assignment and position capture.
 ///
@@ -132,7 +209,9 @@ impl<'a> InflateCtx<'a> {
     /// The identifier span covers just the name text, e.g., "foo" in `def foo():`.
     pub fn record_ident_span(&mut self, id: NodeId, span: Span) {
         if let Some(ref mut positions) = self.positions {
-            positions.entry(id).or_default().ident_span = Some(span);
+            positions
+                .get_or_insert(id, NodePosition::default())
+                .ident_span = Some(span);
         }
     }
 
@@ -142,7 +221,9 @@ impl<'a> InflateCtx<'a> {
     /// NOT at decorators.
     pub fn record_lexical_span(&mut self, id: NodeId, span: Span) {
         if let Some(ref mut positions) = self.positions {
-            positions.entry(id).or_default().lexical_span = Some(span);
+            positions
+                .get_or_insert(id, NodePosition::default())
+                .lexical_span = Some(span);
         }
     }
 
@@ -152,7 +233,9 @@ impl<'a> InflateCtx<'a> {
     /// including decorators if present.
     pub fn record_def_span(&mut self, id: NodeId, span: Span) {
         if let Some(ref mut positions) = self.positions {
-            positions.entry(id).or_default().def_span = Some(span);
+            positions
+                .get_or_insert(id, NodePosition::default())
+                .def_span = Some(span);
         }
     }
 }

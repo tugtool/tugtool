@@ -468,11 +468,11 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 **Files:** `crates/tugtool-python-cst/src/inflate_ctx.rs`
 
 **Tasks:**
-- [ ] Change PositionTable from type alias to newtype struct
-- [ ] Implement `new()`, `with_capacity()`, `get()`, `insert()`, `get_or_insert()`
-- [ ] Update InflateCtx and all callers
+- [x] Change PositionTable from type alias to newtype struct
+- [x] Implement `new()`, `with_capacity()`, `get()`, `insert()`, `get_or_insert()`
+- [x] Update InflateCtx and all callers
 
-**Checkpoint:** `cargo nextest run -p tugtool-python-cst`
+**Checkpoint:** `cargo nextest run -p tugtool-python-cst` ✓
 
 ---
 

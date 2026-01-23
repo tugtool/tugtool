@@ -96,7 +96,7 @@ impl SpanCollector {
     pub fn from_positions(positions: &PositionTable) -> SpanTable {
         let mut spans = SpanTable::new();
 
-        for (&node_id, pos) in positions.iter() {
+        for (node_id, pos) in positions.iter() {
             // Extract ident_span if present
             if let Some(span) = pos.ident_span {
                 spans.insert(node_id, span);
@@ -122,7 +122,7 @@ impl SpanCollector {
     pub fn from_positions_with_lexical(positions: &PositionTable) -> SpanTable {
         let mut spans = SpanTable::new();
 
-        for (&node_id, pos) in positions.iter() {
+        for (node_id, pos) in positions.iter() {
             // Prefer ident_span, fall back to lexical_span
             if let Some(span) = pos.ident_span.or(pos.lexical_span) {
                 spans.insert(node_id, span);
