@@ -1,6 +1,6 @@
-//! JSON output types and serialization for CLI and MCP responses.
+//! JSON output types and serialization for CLI responses.
 //!
-//! This module defines the exact JSON schema for all CLI and MCP outputs per
+//! This module defines the exact JSON schema for all CLI outputs per
 //! the 26.0.7 JSON Output Schema specification. These types form the **agent contract**.
 //!
 //! ## Type Consolidation (Option A)
@@ -1108,7 +1108,7 @@ where
 
 /// Emit a response as pretty-printed JSON to a writer.
 ///
-/// This is the single output path for both CLI and MCP, ensuring consistency.
+/// This is the single output path for CLI, ensuring consistency.
 /// The output is deterministic: same input produces identical bytes.
 pub fn emit_response<T: Serialize>(response: &T, writer: &mut impl Write) -> io::Result<()> {
     // Use serde_json's pretty printer

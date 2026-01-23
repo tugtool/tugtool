@@ -190,12 +190,6 @@ enum Command {
         #[arg(long)]
         cache: bool,
     },
-    /// Start MCP server on stdio.
-    ///
-    /// Runs the Model Context Protocol server for AI agent integration.
-    /// The server communicates via JSON-RPC 2.0 over stdin/stdout.
-    #[cfg(feature = "mcp")]
-    Mcp,
     /// Fixture management commands.
     Fixture {
         #[command(subcommand)]
@@ -361,8 +355,6 @@ fn execute(cli: Cli) -> Result<(), TugError> {
         Command::Session { action } => execute_session(&cli.global, action),
         Command::Verify { mode, test_command } => execute_verify(&cli.global, mode, test_command),
         Command::Clean { workers, cache } => execute_clean(&cli.global, workers, cache),
-        #[cfg(feature = "mcp")]
-        Command::Mcp => execute_mcp(),
         Command::Fixture { action } => execute_fixture(&cli.global, action),
     }
 }
@@ -663,20 +655,6 @@ fn execute_clean(global: &GlobalArgs, workers: bool, cache: bool) -> Result<(), 
     });
     println!("{}", serde_json::to_string_pretty(&response).unwrap());
     Ok(())
-}
-
-/// Execute MCP server command.
-///
-/// Starts the Model Context Protocol server on stdio. The server communicates
-/// via JSON-RPC 2.0 over stdin/stdout, enabling AI agent integration.
-#[cfg(feature = "mcp")]
-fn execute_mcp() -> Result<(), TugError> {
-    // Create a tokio runtime to run the async MCP server
-    let runtime = tokio::runtime::Runtime::new()
-        .map_err(|e| TugError::internal(format!("Failed to create tokio runtime: {}", e)))?;
-
-    // Run the MCP server (blocks until client disconnects or sends shutdown)
-    runtime.block_on(tugtool::mcp::run_mcp_server())
 }
 
 /// Execute fixture command.
@@ -1461,14 +1439,6 @@ mod tests {
                 }
                 _ => panic!("expected Run"),
             }
-        }
-
-        #[test]
-        #[cfg(feature = "mcp")]
-        fn parse_mcp() {
-            let args = ["tug", "mcp"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert!(matches!(cli.command, Command::Mcp));
         }
 
         #[test]

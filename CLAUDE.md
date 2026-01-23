@@ -19,7 +19,6 @@ crates/
 │   │   ├── lib.rs    # Library root - re-exports public API
 │   │   ├── main.rs   # CLI binary entry point
 │   │   ├── cli.rs    # CLI command implementations
-│   │   ├── mcp.rs    # Model Context Protocol server
 │   │   └── testcmd.rs # Test command resolution
 │   └── tests/        # Integration tests
 ├── tugtool-core/     # Shared infrastructure
@@ -55,16 +54,12 @@ The `tugtool` crate supports these feature flags:
 |---------|---------|-------------|
 | `python` | Yes | Python language support via native CST |
 | `rust` | No | Rust language support (placeholder) |
-| `mcp` | Yes | Model Context Protocol server |
 | `full` | No | Enable all features |
 
 Build with specific features:
 ```bash
-# Default features (python + mcp)
+# Default features (python)
 cargo build -p tugtool
-
-# MCP only, no Python
-cargo build -p tugtool --no-default-features --features mcp
 
 # All features
 cargo build -p tugtool --features full
@@ -231,19 +226,6 @@ Python refactoring uses a native Rust CST parser (adapted from LibCST):
 
 No Python installation is required. All analysis is performed natively in Rust.
 
-## MCP Server
-
-Start the MCP server for AI agent integration:
-```bash
-tug mcp
-```
-
-Tools exposed via MCP:
-- `tug_snapshot` - Create workspace snapshot
-- `tug_analyze_impact` - Analyze refactoring impact
-- `tug_rename_symbol` - Execute rename operation
-- `tug_verify` - Run verification
-
 ## Fixture Commands
 
 Manage test fixtures (external repositories used for integration tests).
@@ -280,8 +262,7 @@ All fixture commands produce JSON output for agent integration.
 
 1. **New refactoring operation**: Add to `crates/tugtool-python/src/`
 2. **New CLI command**: Update `crates/tugtool/src/main.rs` and `crates/tugtool/src/cli.rs`
-3. **New MCP tool**: Update `crates/tugtool/src/mcp.rs`
-4. **New output type**: Update `crates/tugtool-core/src/output.rs`
-5. **New core infrastructure**: Add to `crates/tugtool-core/src/`
+3. **New output type**: Update `crates/tugtool-core/src/output.rs`
+4. **New core infrastructure**: Add to `crates/tugtool-core/src/`
 
 Always add tests for new functionality.

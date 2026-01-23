@@ -449,7 +449,6 @@ tug fixture status
 # Fetch missing fixtures
 tug fixture fetch
 ```
-```
 
 **Note:** Cursor commands (`.cursor/commands.json`) are out of scope for Phase 9. Rules-only is sufficient.
 
@@ -678,7 +677,6 @@ tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_nam
 3. **Get explicit approval**: Never apply without user confirmation
 4. **Handle errors by exit code**: See Error Codes section
 5. **No mutation during workflow**: Don't manually edit files between analyze and apply
-```
 
 ##### Spec S07: Enhanced Cursor Rules {#s07-enhanced-cursor}
 
@@ -764,7 +762,6 @@ tug fixture status
 
 # Fetch missing fixtures
 tug fixture fetch
-```
 ```
 
 ---
@@ -859,12 +856,12 @@ The CLI is the testable "kernel" - editor integrations are prompt templates that
 - Inventory of all MCP-related code and documentation
 
 **Tasks:**
-- [ ] Identify all files containing MCP/mcp/rmcp references
-- [ ] Verify no external consumers of MCP functionality
-- [ ] Document the exact lines to remove in each file
+- [x] Identify all files containing MCP/mcp/rmcp references
+- [x] Verify no external consumers of MCP functionality
+- [x] Document the exact lines to remove in each file
 
 **Checkpoint:**
-- [ ] Complete file inventory created (this is documented in L01 and L02)
+- [x] Complete file inventory created (this is documented in L01 and L02)
 
 ---
 
@@ -879,27 +876,27 @@ The CLI is the testable "kernel" - editor integrations are prompt templates that
 - Updated `crates/tugtool/Cargo.toml` without MCP dependencies
 
 **Tasks:**
-- [ ] Delete `crates/tugtool/src/mcp.rs`
-- [ ] **Tokio audit:** Search for `tokio` usage outside `mcp.rs`:
-  - [ ] `grep -r "tokio" --include="*.rs" crates/tugtool/src/ | grep -v mcp.rs`
-  - [ ] If no results: remove `tokio` dependency entirely
-  - [ ] If results: keep `tokio`, update comments to reflect actual usage
-- [ ] Remove from `crates/tugtool/Cargo.toml`:
-  - [ ] `rmcp = { ... }` dependency
-  - [ ] `schemars = { ... }` dependency
-  - [ ] `tokio = { ... }` dependency (if audit confirms MCP-only)
-  - [ ] `mcp = ["dep:rmcp", "dep:schemars"]` feature
-  - [ ] `mcp` from `default` features
-  - [ ] `mcp` from `full` features
-- [ ] Update package keywords to remove "mcp"
+- [x] Delete `crates/tugtool/src/mcp.rs`
+- [x] **Tokio audit:** Search for `tokio` usage outside `mcp.rs`:
+  - [x] `grep -r "tokio" --include="*.rs" crates/tugtool/src/ | grep -v mcp.rs`
+  - [x] If no results: remove `tokio` dependency entirely
+  - [x] If results: keep `tokio`, update comments to reflect actual usage
+- [x] Remove from `crates/tugtool/Cargo.toml`:
+  - [x] `rmcp = { ... }` dependency
+  - [x] `schemars = { ... }` dependency
+  - [x] `tokio = { ... }` dependency (if audit confirms MCP-only)
+  - [x] `mcp = ["dep:rmcp", "dep:schemars"]` feature
+  - [x] `mcp` from `default` features
+  - [x] `mcp` from `full` features
+- [x] Update package keywords to remove "mcp"
 
 **Tests:**
 - [ ] Build: `cargo build -p tugtool`
 
 **Checkpoint:**
 - [ ] `cargo build -p tugtool` succeeds
-- [ ] `grep -r "rmcp" crates/tugtool/Cargo.toml` returns empty
-- [ ] Tokio audit documented (kept or removed with reason)
+- [x] `grep -r "rmcp" crates/tugtool/Cargo.toml` returns empty
+- [x] Tokio audit documented (kept or removed with reason)
 
 **Rollback:**
 - Revert commit
@@ -917,23 +914,23 @@ The CLI is the testable "kernel" - editor integrations are prompt templates that
 - Updated `crates/tugtool/src/main.rs`
 
 **Tasks:**
-- [ ] In `crates/tugtool/src/lib.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] pub mod mcp;`
-  - [ ] Update module doc comments to remove MCP references
-- [ ] In `crates/tugtool/src/main.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] Command::Mcp` variant
-  - [ ] Remove `#[cfg(feature = "mcp")] Command::Mcp => execute_mcp()` match arm
-  - [ ] Remove `execute_mcp()` function
-  - [ ] Remove any MCP-related imports
+- [x] In `crates/tugtool/src/lib.rs`:
+  - [x] Remove `#[cfg(feature = "mcp")] pub mod mcp;`
+  - [x] Update module doc comments to remove MCP references
+- [x] In `crates/tugtool/src/main.rs`:
+  - [x] Remove `#[cfg(feature = "mcp")] Command::Mcp` variant
+  - [x] Remove `#[cfg(feature = "mcp")] Command::Mcp => execute_mcp()` match arm
+  - [x] Remove `execute_mcp()` function
+  - [x] Remove any MCP-related imports
 
 **Tests:**
-- [ ] Build: `cargo build -p tugtool`
-- [ ] Unit: existing CLI parsing tests pass
+- [x] Build: `cargo build -p tugtool`
+- [x] Unit: existing CLI parsing tests pass
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool` succeeds
-- [ ] `cargo nextest run -p tugtool -- cli_parsing` passes
-- [ ] `grep -r "mcp" crates/tugtool/src/` returns only comments or unrelated strings
+- [x] `cargo build -p tugtool` succeeds
+- [x] `cargo nextest run -p tugtool -- cli_parsing` passes
+- [x] `grep -r "mcp" crates/tugtool/src/` returns only comments or unrelated strings
 
 **Rollback:**
 - Revert commit
@@ -951,18 +948,18 @@ The CLI is the testable "kernel" - editor integrations are prompt templates that
 - Updated `crates/tugtool/tests/api_surface.rs`
 
 **Tasks:**
-- [ ] In `crates/tugtool/tests/golden_tests.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] mod mcp_parity { ... }` block
-- [ ] In `crates/tugtool/tests/api_surface.rs`:
-  - [ ] Remove `#[cfg(feature = "mcp")] use tugtool::mcp;`
+- [x] In `crates/tugtool/tests/golden_tests.rs`:
+  - [x] Remove `#[cfg(feature = "mcp")] mod mcp_parity { ... }` block
+- [x] In `crates/tugtool/tests/api_surface.rs`:
+  - [x] Remove `#[cfg(feature = "mcp")] use tugtool::mcp;`
 
 **Tests:**
-- [ ] Golden: `cargo nextest run -p tugtool golden`
-- [ ] API surface: `cargo nextest run -p tugtool api_surface`
+- [x] Golden: `cargo nextest run -p tugtool golden`
+- [x] API surface: `cargo nextest run -p tugtool api_surface`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool` passes
-- [ ] No feature = "mcp" references in test files
+- [x] `cargo nextest run -p tugtool` passes
+- [x] No feature = "mcp" references in test files
 
 **Rollback:**
 - Revert commit
@@ -983,33 +980,33 @@ The CLI is the testable "kernel" - editor integrations are prompt templates that
 - Updated `Justfile`
 
 **Tasks:**
-- [ ] In `CLAUDE.md`:
-  - [ ] Remove "MCP Server" section
-  - [ ] Remove `| mcp | Yes | Model Context Protocol server |` from feature flags table
-  - [ ] Update `tug mcp` reference if any
-  - [ ] Remove MCP tools list
-- [ ] In `README.md`:
-  - [ ] Remove `- **MCP support** - Native Model Context Protocol server...` from Features
-  - [ ] Remove `| mcp | Start MCP server |` from Commands table
-  - [ ] Remove entire "### MCP Configuration" section
-  - [ ] Remove "- MCP server for direct tool integration" from "For AI Agents" section
-- [ ] In `docs/AGENT_API.md`:
-  - [ ] Remove entire "## MCP Server" section
-  - [ ] Remove `| mcp | Start MCP server on stdio | tug mcp |` from Subcommands table
-  - [ ] Update Overview to remove MCP mention
-- [ ] In `docs/AGENT_PLAYBOOK.md`:
-  - [ ] Remove "### MCP Configuration" section
-  - [ ] Remove "### Example Tool Calls" section (MCP tool calls)
-  - [ ] Update "### Agent Instructions Snippet" to use CLI instead of MCP
-- [ ] In `Justfile`:
-  - [ ] Remove `mcp:` recipe
+- [x] In `CLAUDE.md`:
+  - [x] Remove "MCP Server" section
+  - [x] Remove `| mcp | Yes | Model Context Protocol server |` from feature flags table
+  - [x] Update `tug mcp` reference if any
+  - [x] Remove MCP tools list
+- [x] In `README.md`:
+  - [x] Remove `- **MCP support** - Native Model Context Protocol server...` from Features
+  - [x] Remove `| mcp | Start MCP server |` from Commands table
+  - [x] Remove entire "### MCP Configuration" section
+  - [x] Remove "- MCP server for direct tool integration" from "For AI Agents" section
+- [x] In `docs/AGENT_API.md`:
+  - [x] Remove entire "## MCP Server" section
+  - [x] Remove `| mcp | Start MCP server on stdio | tug mcp |` from Subcommands table
+  - [x] Update Overview to remove MCP mention
+- [x] In `docs/AGENT_PLAYBOOK.md`:
+  - [x] Remove "### MCP Configuration" section
+  - [x] Remove "### Example Tool Calls" section (MCP tool calls)
+  - [x] Update "### Agent Instructions Snippet" to use CLI instead of MCP
+- [x] In `Justfile`:
+  - [x] Remove `mcp:` recipe
 
 **Tests:**
-- [ ] Grep check: `grep -ri "mcp" CLAUDE.md README.md docs/ Justfile` returns empty or only false positives
+- [x] Grep check: `grep -ri "mcp" CLAUDE.md README.md docs/ Justfile` returns empty or only false positives
 
 **Checkpoint:**
-- [ ] No MCP references in documentation
-- [ ] `just --list` shows no `mcp` recipe
+- [x] No MCP references in documentation
+- [x] `just --list` shows no `mcp` recipe
 
 **Rollback:**
 - Revert commit
@@ -1023,15 +1020,15 @@ The CLI is the testable "kernel" - editor integrations are prompt templates that
 **References:** [D01] MCP Removal, (#success-criteria)
 
 **Tasks:**
-- [ ] Run comprehensive grep: `grep -ri "mcp\|rmcp" --include="*.rs" --include="*.toml" --include="*.md" .`
-- [ ] Verify only expected results (plans/extras/editor-interop.md may reference MCP as historical context)
-- [ ] Run full test suite: `cargo nextest run --workspace`
-- [ ] Verify Cargo.lock updated (no rmcp entries)
+- [x] Run comprehensive grep: `grep -ri "mcp\|rmcp" --include="*.rs" --include="*.toml" --include="*.md" .`
+- [x] Verify only expected results (plans/extras/editor-interop.md may reference MCP as historical context)
+- [x] Run full test suite: `cargo nextest run --workspace`
+- [x] Verify Cargo.lock updated (no rmcp entries)
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace` passes
-- [ ] `grep -r "rmcp" Cargo.lock` returns empty
-- [ ] Build with all features: `cargo build -p tugtool --features full`
+- [x] `cargo nextest run --workspace` passes
+- [x] `grep -r "rmcp" Cargo.lock` returns empty
+- [x] Build with all features: `cargo build -p tugtool --features full`
 
 ---
 
@@ -1045,9 +1042,9 @@ After Steps 1-5, the codebase will have:
 - Simpler build, fewer dependencies
 
 **Final Part 1 Checkpoint:**
-- [ ] `cargo build -p tugtool` succeeds
-- [ ] `cargo nextest run --workspace` passes
-- [ ] No MCP references except historical context in plan files
+- [x] `cargo build -p tugtool` succeeds
+- [x] `cargo nextest run --workspace` passes
+- [x] No MCP references except historical context in plan files
 
 ---
 
@@ -1146,7 +1143,6 @@ User: "Rename the function process_data to transform_data"
 5. Show: "Changes: 2 files, 4 edits. Verification: passed"
 6. Ask: "Apply these changes?"
 7. If yes: Apply and report success
-```
 
 **Tests:**
 - [ ] Manual: Run `/tug-rename` in Claude Code (requires Claude Code environment)
@@ -1230,7 +1226,6 @@ If you want to apply the changes, use `/tug-rename` instead.
 ## Error Handling
 
 Same as `/tug-rename` - show errors and stop.
-```
 
 **Checkpoint:**
 - [ ] File exists at `.claude/commands/tug-rename-plan.md`
@@ -1315,7 +1310,6 @@ If fetch fails, show the error and suggest:
 - Check network connectivity
 - Verify the fixture repository is accessible
 - Try `tug fixture fetch --force` to re-fetch
-```
 
 **Checkpoint:**
 - [ ] File exists at `.claude/commands/tug-fixtures-ensure.md`
@@ -1595,12 +1589,12 @@ echo '{"session_id": "test", "prompt": "explain how this code works"}' | .claude
 
 | Step | Status | Date | Notes |
 |------|--------|------|-------|
-| Step 0 | pending | | |
-| Step 1 | pending | | |
-| Step 2 | pending | | |
-| Step 3 | pending | | |
-| Step 4 | pending | | |
-| Step 5 | pending | | |
+| Step 0 | complete | 2026-01-22 | Audit complete - inventory of MCP references documented |
+| Step 1 | complete | 2026-01-22 | Deleted mcp.rs, removed rmcp/schemars/tokio deps, removed mcp feature |
+| Step 2 | complete | 2026-01-22 | Removed MCP from lib.rs, main.rs, Command::Mcp, execute_mcp() |
+| Step 3 | complete | 2026-01-22 | Removed mcp_parity tests and MCP imports from test files |
+| Step 4 | complete | 2026-01-22 | Removed MCP from CLAUDE.md, README.md, docs/, Justfile |
+| Step 5 | complete | 2026-01-22 | Verified clean removal - 1205 tests pass, no MCP references |
 | Step 6 | pending | | |
 | Step 7 | pending | | |
 | Step 8 | pending | | |

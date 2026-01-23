@@ -31,10 +31,6 @@ build-release:
 run *ARGS:
     cargo run -p tugtool -- {{ARGS}}
 
-# Start MCP server
-mcp:
-    cargo run -p tugtool -- mcp
-
 # Update golden files (for intentional schema changes)
 update-golden:
     TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden

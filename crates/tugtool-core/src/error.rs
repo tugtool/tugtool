@@ -16,7 +16,7 @@
 //! ## Design
 //!
 //! The error hierarchy follows these principles:
-//! - **Unified type**: `TugError` is the single error type for CLI/MCP output
+//! - **Unified type**: `TugError` is the single error type for CLI output
 //! - **Bridging**: `impl From<X> for TugError` bridges domain errors
 //! - **Code mapping**: `OutputErrorCode` provides stable integer codes for JSON
 
@@ -66,7 +66,7 @@ impl fmt::Display for OutputErrorCode {
 // Unified Error Type
 // ============================================================================
 
-/// Unified error type for CLI and MCP output.
+/// Unified error type for CLI output.
 ///
 /// This is the canonical error type that all subsystem errors are converted to
 /// before being rendered as JSON output. Each variant includes enough context

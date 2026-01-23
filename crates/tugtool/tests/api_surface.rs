@@ -85,15 +85,11 @@ use tugtool::python;
 use tugtool::rust;
 
 // ============================================================================
-// Front Doors (CLI, MCP)
+// Front Doors (CLI)
 // ============================================================================
 
 // CLI module
 use tugtool::cli;
-
-// MCP server (feature-gated)
-#[cfg(feature = "mcp")]
-use tugtool::mcp;
 
 // testcmd module - test command resolution
 use tugtool::testcmd;

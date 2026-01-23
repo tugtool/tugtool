@@ -437,23 +437,3 @@ fn golden_error_invalid_name() {
 // more complex setup (modifying files after snapshot, etc.)
 // These are better tested as unit tests in the main crate.
 
-// ============================================================================
-// MCP Parity Tests (if MCP feature enabled)
-// ============================================================================
-
-#[cfg(feature = "mcp")]
-mod mcp_parity {
-    #![allow(unused_imports)]
-    use super::*;
-
-    // MCP parity tests would require setting up an MCP client/server
-    // and comparing outputs. For now, we verify the structure is consistent
-    // through the shared output types in tugtool::output.
-
-    #[test]
-    fn mcp_output_types_use_same_schema() {
-        // This is a compile-time check - if MCP uses different output types,
-        // it would fail to compile. The actual MCP tests in mcp.rs verify
-        // the runtime behavior.
-    }
-}

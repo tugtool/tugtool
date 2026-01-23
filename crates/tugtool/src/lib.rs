@@ -13,14 +13,12 @@
 //! ## Modules
 //!
 //! - `cli` - CLI command implementations
-//! - `mcp` - Model Context Protocol server (feature-gated)
 //! - `testcmd` - Test command resolution
 //!
 //! ## Feature Flags
 //!
 //! - `python` - Enable Python language support (default)
 //! - `rust` - Enable Rust language support (placeholder)
-//! - `mcp` - Enable MCP server (default)
 //! - `full` - Enable all features
 
 // ============================================================================
@@ -46,9 +44,6 @@ pub use tugtool_core::workspace;
 pub mod cli;
 pub mod fixture;
 pub mod testcmd;
-
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 // ============================================================================
 // Language Adapters (Feature-Gated)

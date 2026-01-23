@@ -8,7 +8,7 @@ license.workspace = true
 description = "AI-native code transformation engine for verified, deterministic refactors"
 repository.workspace = true
 readme = "../../README.md"
-keywords = ["refactoring", "code-transformation", "ai", "mcp", "cli"]
+keywords = ["refactoring", "code-transformation", "ai", "cli"]
 categories = ["development-tools", "command-line-utilities"]
 
 [lib]
@@ -38,9 +38,6 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 # CLI: argument parsing
 clap = { version = "4", features = ["derive"] }
 
-# Async: MCP server plumbing
-tokio = { version = "1", features = ["full"] }
-
 # Logging: structured logging with JSON output
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -48,16 +45,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # TOML: fixture lock file parsing
 toml = "0.8"
 
-# MCP server support (optional)
-rmcp = { version = "0.12", features = ["server", "transport-io"], optional = true }
-schemars = { version = "1", optional = true }
-
 [features]
-default = ["python", "mcp"]
+default = ["python"]
 python = ["dep:tugtool-python"]
 rust = ["dep:tugtool-rust"]
-mcp = ["dep:rmcp", "dep:schemars"]
-full = ["python", "rust", "mcp"]
+full = ["python", "rust"]
 
 [dev-dependencies]
 regex = "1"

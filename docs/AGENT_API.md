@@ -1,6 +1,6 @@
 # Agent API Reference
 
-This document describes the tug CLI and MCP server interface for AI coding agents.
+This document describes the tug CLI interface for AI coding agents.
 
 ## Overview
 
@@ -51,7 +51,6 @@ tug run --apply --verify syntax rename-symbol --at src/utils.py:42:5 --to transf
 | `toolchain <lang> setup` | Set up language toolchain | `tug toolchain python setup` |
 | `toolchain <lang> info` | Show toolchain configuration | `tug toolchain python info` |
 | `toolchain <lang> check` | Verify toolchain is valid | `tug toolchain python check` |
-| `mcp` | Start MCP server on stdio | `tug mcp` |
 
 ### Refactoring Operations
 
@@ -244,28 +243,3 @@ Tug may not be appropriate for:
 - Dynamic code patterns (`getattr`, `eval`, etc.) - the tool will warn
 - Simple string replacement - just use `sed` or find-and-replace
 
-## MCP Server
-
-Tug can run as an MCP (Model Context Protocol) server for direct AI agent integration.
-
-### Starting the Server
-
-```bash
-tug mcp
-```
-
-The server communicates via JSON-RPC 2.0 over stdin/stdout.
-
-### Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `tug_snapshot` | Create workspace snapshot |
-| `tug_analyze_impact` | Analyze refactoring impact |
-| `tug_run` | Execute refactoring operation |
-| `tug_session_status` | Get session status |
-| `tug_verify` | Run verification |
-
-### MCP Configuration
-
-See [AGENT_PLAYBOOK.md](AGENT_PLAYBOOK.md) for MCP configuration examples for Claude Code and other agents.

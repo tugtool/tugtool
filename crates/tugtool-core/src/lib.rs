@@ -4,7 +4,7 @@
 //! - Patch IR for representing code transformations
 //! - Facts store for symbol and reference tracking
 //! - Error types and error codes
-//! - JSON output types for CLI/MCP responses
+//! - JSON output types for CLI responses
 //! - Session management
 //! - Workspace snapshots
 //! - Sandboxed file operations

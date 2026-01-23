@@ -12,7 +12,6 @@ Tug aims to do better with language modules that understand code and how to chan
 - **Verification pipeline** - Catches syntax errors before changes are applied
 - **Sandbox-first** - Changes are verified in isolation before touching your files
 - **JSON output** - All output is structured JSON for easy parsing by AI agents
-- **MCP support** - Native Model Context Protocol server for direct agent integration
 
 ## Installation
 
@@ -37,28 +36,11 @@ Tugtool is designed for AI coding agents. It provides:
 - Stable JSON output contracts for programmatic parsing
 - Atomic cross-file refactoring operations
 - Pre-apply verification to prevent broken code
-- MCP server for direct tool integration
 
 ### Documentation
 
 - [Agent API Reference](docs/AGENT_API.md) - Full CLI and JSON schema documentation
 - [Agent Playbook](docs/AGENT_PLAYBOOK.md) - Copy-paste snippets and integration guides
-
-### MCP Configuration
-
-To use tug as an MCP server with Claude Code:
-
-```json
-{
-  "mcpServers": {
-    "tug": {
-      "command": "tug",
-      "args": ["mcp"],
-      "env": {}
-    }
-  }
-}
-```
 
 ## Supported Languages
 
@@ -76,8 +58,7 @@ To use tug as an MCP server with Claude Code:
 | `verify` | Run verification on workspace |
 | `session status` | Show session status |
 | `clean` | Clean session resources |
-| `toolchain` | Manage language toolchains |
-| `mcp` | Start MCP server |
+| `fixture` | Manage test fixtures |
 
 ## License
 

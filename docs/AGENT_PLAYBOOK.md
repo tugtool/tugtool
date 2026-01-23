@@ -115,64 +115,16 @@ fi
 
 ## Claude Code Integration
 
-### MCP Configuration
-
-Add tug to your Claude Code MCP configuration file (`~/.config/claude/mcp_config.json` or project-local):
-
-```json
-{
-  "mcpServers": {
-    "tug": {
-      "command": "tug",
-      "args": ["mcp"],
-      "env": {}
-    }
-  }
-}
-```
-
-### Example Tool Calls
-
-Once configured, Claude Code can call tug tools directly:
-
-**Analyze Impact:**
-```json
-{
-  "name": "tug_analyze_impact",
-  "arguments": {
-    "file": "src/utils.py",
-    "line": 42,
-    "column": 5,
-    "new_name": "transform_data"
-  }
-}
-```
-
-**Run Rename:**
-```json
-{
-  "name": "tug_run",
-  "arguments": {
-    "file": "src/utils.py",
-    "line": 42,
-    "column": 5,
-    "new_name": "transform_data",
-    "apply": true,
-    "verify": "syntax"
-  }
-}
-```
-
 ### Agent Instructions Snippet
 
 Add this to your Claude Code custom instructions or CLAUDE.md:
 
 ```markdown
-When renaming Python symbols, prefer using the tug MCP server:
+When renaming Python symbols, use the tug CLI:
 
-1. First analyze impact with `tug_analyze_impact` to see all affected files
+1. First analyze impact with `tug analyze-impact` to see all affected files
 2. Review the references list to confirm the rename is safe
-3. Execute with `tug_run` using `apply: true` and `verify: "syntax"`
+3. Execute with `tug run --apply --verify syntax` to apply changes
 
 This ensures all references are updated atomically and the result is syntactically valid.
 ```
@@ -181,7 +133,7 @@ This ensures all references are updated atomically and the result is syntactical
 
 ### CLI via Tasks
 
-Cursor doesn't natively support MCP, but you can integrate tug via custom tasks.
+You can integrate tug via custom tasks in Cursor.
 
 Add to `.cursor/tasks.json`:
 

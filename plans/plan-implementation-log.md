@@ -8,6 +8,66 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-9.md] Steps 0-5: MCP Removal (Part 1 Complete) | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-9.md` - Steps 0-5 specification, MCP removal tasks
+- `crates/tugtool/src/mcp.rs` - Entire file (deleted)
+- `crates/tugtool/Cargo.toml` - Feature flags and dependencies
+- `CLAUDE.md`, `README.md`, `docs/AGENT_API.md`, `docs/AGENT_PLAYBOOK.md` - Documentation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Step 0: Audit and inventory MCP references | Done |
+| Step 1: Delete mcp.rs, remove rmcp/schemars/tokio deps | Done |
+| Step 2: Update lib.rs and main.rs | Done |
+| Step 3: Update test files (golden_tests.rs, api_surface.rs) | Done |
+| Step 4: Update documentation (CLAUDE.md, README.md, docs/, Justfile) | Done |
+| Step 5: Verify clean MCP removal | Done |
+
+**Files Deleted:**
+- `crates/tugtool/src/mcp.rs` - MCP server implementation (~2400 lines)
+
+**Files Modified:**
+- `crates/tugtool/Cargo.toml` - Removed rmcp, schemars, tokio deps; removed mcp feature; updated keywords
+- `crates/tugtool/src/lib.rs` - Removed `#[cfg(feature = "mcp")] pub mod mcp;` and doc comments
+- `crates/tugtool/src/main.rs` - Removed Command::Mcp, execute_mcp(), parse_mcp test
+- `crates/tugtool/tests/golden_tests.rs` - Removed mcp_parity module
+- `crates/tugtool/tests/api_surface.rs` - Removed MCP import and comment
+- `crates/tugtool-core/src/error.rs` - Updated doc comments (CLI/MCP → CLI)
+- `crates/tugtool-core/src/lib.rs` - Updated doc comment
+- `crates/tugtool-core/src/output.rs` - Updated doc comments
+- `CLAUDE.md` - Removed MCP Server section, updated feature flags, architecture
+- `README.md` - Removed MCP from features, commands, AI agents section
+- `docs/AGENT_API.md` - Removed MCP Server section, updated overview
+- `docs/AGENT_PLAYBOOK.md` - Removed MCP Configuration, Example Tool Calls sections
+- `Justfile` - Removed mcp: recipe
+- `plans/phase-9.md` - Updated checkboxes and implementation log
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1205 tests passed
+- `cargo build -p tugtool`: SUCCESS
+- `cargo build -p tugtool --features full`: SUCCESS
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool` succeeds: PASS
+- `grep -r "rmcp" Cargo.lock` returns empty: PASS
+- `cargo nextest run --workspace` passes: PASS (1205 tests)
+- No MCP references in code/docs (except plans/): PASS
+- `just --list` shows no mcp recipe: PASS
+
+**Key Decisions/Notes:**
+- Tokio audit confirmed tokio was MCP-only, removed entirely
+- Also updated tugtool-core doc comments that mentioned MCP
+- Part 1 of Phase 9 (MCP Removal) is complete
+- Part 2 (Claude Code commands), Part 3 (Cursor rules), and Part 4 (Discovery patterns) remain for Steps 6-12
+
+---
+
 ## [phase-8.md] Step 7: Final Verification and Cleanup | COMPLETE | 2026-01-22
 
 **Completed:** 2026-01-22
