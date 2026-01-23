@@ -251,7 +251,17 @@
       "Bash(TUG_TEMPORALE_PATH=/tmp/temporale-backup cargo nextest:*)",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/.tug-test-venv/bin/pip show:*)",
       "Bash(../../target/release/tug analyze-impact rename-symbol:*)",
-      "Bash(../../target/release/tug run:*)"
+      "Bash(../../target/release/tug run:*)",
+      "Bash(../../target/release/tug snapshot:*)",
+      "Bash(../../target/release/tug analyze-impact:*)",
+      "Bash(../../target/release/tug rename-symbol:*)",
+      "Bash(../../target/release/tug --help)",
+      "Bash(../../../../target/release/tug analyze-impact rename-symbol:*)",
+      "Bash(../../../../target/release/tug run:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug analyze-impact rename-symbol --at pkg/utils.py:4:5 --to transform_data)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug run:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug analyze-impact rename-symbol --at pkg/core.py:4:5 --to transform_data)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug analyze-impact:*)"
     ],
     "deny": [],
     "ask": []

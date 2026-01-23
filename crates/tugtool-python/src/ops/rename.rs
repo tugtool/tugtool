@@ -647,41 +647,61 @@ pub fn run(
     let mut seen_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
     all_edits.retain(|(file_id, span)| seen_spans.insert((*file_id, span.start, span.end)));
 
+    // Build a map from file path to content for span validation
+    let file_contents: HashMap<String, &str> = files
+        .iter()
+        .map(|(path, content)| (path.clone(), content.as_str()))
+        .collect();
+
     // Generate edits by file
+    // Filter out edits where the text at the span doesn't match the old name.
+    // This handles aliased imports: `from .utils import process_data as proc`
+    // The reference to `proc()` resolves to `process_data`, but the span points to "proc",
+    // which should NOT be renamed (only the import site "process_data" should change).
     let mut edits_by_file: HashMap<String, Vec<(Span, &str)>> = HashMap::new();
+    let old_name = &symbol.name;
     for (file_id, span) in &all_edits {
         let file = store
             .file(*file_id)
             .ok_or_else(|| RenameError::AnalyzerError {
                 message: "file not found".to_string(),
             })?;
-        edits_by_file
-            .entry(file.path.clone())
-            .or_default()
-            .push((*span, new_name));
+
+        // Get the text at the span and verify it matches the old name
+        if let Some(content) = file_contents.get(&file.path) {
+            let start = span.start as usize;
+            let end = span.end as usize;
+            if end <= content.len() {
+                let text_at_span = &content[start..end];
+                // Only include edits where the text matches the old name
+                if text_at_span == old_name {
+                    edits_by_file
+                        .entry(file.path.clone())
+                        .or_default()
+                        .push((*span, new_name));
+                }
+            }
+        }
     }
 
     // Collect __all__ export edits
-    // The FactsStore doesn't track exports, so we need to parse files to find them
-    let old_name = &symbol.name;
-    for (path, content) in files {
-        // Parse and analyze this file to get exports
-        if let Ok(analysis) = cst_bridge::parse_and_analyze(content) {
-            for export in &analysis.exports {
-                if export.name == *old_name {
-                    if let Some(ref content_span) = export.content_span {
-                        let span = Span::new(content_span.start, content_span.end);
-                        // Check if this span is already in edits_by_file
-                        let file_edits = edits_by_file.entry(path.clone()).or_default();
-                        if !file_edits
-                            .iter()
-                            .any(|(s, _)| s.start == span.start && s.end == span.end)
-                        {
-                            file_edits.push((span, new_name));
-                        }
-                    }
-                }
-            }
+    // FactsStore now tracks exports, so we can look them up directly
+    for export in store.exports_named(old_name) {
+        let file = store
+            .file(export.file_id)
+            .ok_or_else(|| RenameError::AnalyzerError {
+                message: "file not found for export".to_string(),
+            })?;
+
+        // Use content_span for replacement (just the string content, not quotes)
+        let span = export.content_span;
+        // Check if this span is already in edits_by_file
+        let file_edits = edits_by_file.entry(file.path.clone()).or_default();
+        if !file_edits
+            .iter()
+            .any(|(s, _)| s.start == span.start && s.end == span.end)
+        {
+            file_edits.push((span, new_name));
         }
     }
 

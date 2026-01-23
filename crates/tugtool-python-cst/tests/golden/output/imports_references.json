@@ -17,15 +17,6 @@
       ]
     }
   ],
-  "DictType": [
-    {
-      "kind": "import",
-      "span": [
-        175,
-        183
-      ]
-    }
-  ],
   "List": [
     {
       "kind": "import",
@@ -86,15 +77,6 @@
       "span": [
         58,
         61
-      ]
-    }
-  ],
-  "system": [
-    {
-      "kind": "import",
-      "span": [
-        65,
-        71
       ]
     }
   ],

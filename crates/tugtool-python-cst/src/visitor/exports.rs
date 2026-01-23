@@ -206,7 +206,7 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
         }
     }
 
-    /// Extract string literals from an expression (List, Tuple, or Set).
+    /// Extract string literals from an expression (List, Tuple, Set, or BinaryOperation).
     fn extract_strings_from_value(&mut self, value: &Expression<'_>) {
         match value {
             Expression::List(list) => {
@@ -224,8 +224,15 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
                     self.extract_string_from_element(element);
                 }
             }
-            // Concatenated expressions, binary operations (for `[...] + [...]`), etc.
-            // are not handled - we only extract from direct list/tuple/set literals
+            Expression::BinaryOperation(binop) => {
+                // Handle list concatenation: `['a'] + ['b']` or `['a'] + ['b'] + ['c']`
+                // Only process if the operator is Add
+                if matches!(binop.operator, crate::nodes::BinaryOp::Add { .. }) {
+                    // Recursively extract from both sides
+                    self.extract_strings_from_value(&binop.left);
+                    self.extract_strings_from_value(&binop.right);
+                }
+            }
             _ => {}
         }
     }
@@ -557,6 +564,31 @@ class Time:
 
         // Attribute assignment is not our target
         assert_eq!(exports.len(), 0);
+    }
+
+    #[test]
+    fn test_export_list_concatenation() {
+        // List concatenation: `__all__ = ['a'] + ['b']`
+        let source = r#"__all__ = ["foo"] + ["bar"]"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(exports.len(), 2);
+        assert_eq!(exports[0].name, "foo");
+        assert_eq!(exports[1].name, "bar");
+    }
+
+    #[test]
+    fn test_export_list_concatenation_triple() {
+        // Triple concatenation: `__all__ = ['a'] + ['b'] + ['c']`
+        let source = r#"__all__ = ["a"] + ["b"] + ["c"]"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(exports.len(), 3);
+        assert_eq!(exports[0].name, "a");
+        assert_eq!(exports[1].name, "b");
+        assert_eq!(exports[2].name, "c");
     }
 
     #[test]

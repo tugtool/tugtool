@@ -45,7 +45,8 @@ use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
     AnnAssign, Assign, AssignTargetExpression, Attribute, Call, ClassDef, Element, Expression,
-    FunctionDef, Import, ImportFrom, Module, Name, NodeId, Param, Span,
+    FunctionDef, Import, ImportAlias, ImportFrom, ImportNames, Module, Name, NameOrAttribute,
+    NodeId, Param, Span,
 };
 
 /// The kind of reference in Python.
@@ -113,8 +114,6 @@ enum ContextKind {
     CallFunc,
     /// Inside an Attribute node - the attr name should be tagged as Attribute
     AttributeAttr,
-    /// Inside an import statement
-    Import,
     /// Inside a definition - skip the name (we handle it explicitly)
     SkipName,
 }
@@ -235,7 +234,6 @@ impl<'pos> ReferenceCollector<'pos> {
     fn get_current_kind(&self, name: &str) -> Option<ReferenceKind> {
         for entry in self.context_stack.iter().rev() {
             match entry.kind {
-                ContextKind::Import => return Some(ReferenceKind::Import),
                 ContextKind::CallFunc => {
                     if entry.name.as_deref() == Some(name) {
                         return Some(ReferenceKind::Call);
@@ -265,6 +263,55 @@ impl<'pos> ReferenceCollector<'pos> {
             .entry(name.to_string())
             .or_default()
             .push(info);
+    }
+
+    /// Handle an import alias by adding a reference for the imported name.
+    ///
+    /// For `from x import foo as bar`:
+    /// - Creates a reference for "foo" with ReferenceKind::Import
+    /// - Uses the span of "foo" (not "bar") so renames update the correct location
+    ///
+    /// For `from x import foo`:
+    /// - Creates a reference for "foo" with ReferenceKind::Import
+    fn handle_import_alias(&mut self, alias: &ImportAlias<'_>) {
+        // Extract the imported name and its node_id from the alias.name field
+        match &alias.name {
+            NameOrAttribute::N(name) => {
+                // Simple import: `from x import foo` or `from x import foo as bar`
+                // The span should be for the imported name (foo), not the alias (bar)
+                self.add_reference_with_id(name.value, ReferenceKind::Import, name.node_id);
+            }
+            NameOrAttribute::A(attr) => {
+                // Dotted import: `from x import foo.bar` (rare but valid)
+                // Use the full attribute name
+                let full_name = self.get_attribute_full_name(attr);
+                // For attributes, we use the value's node_id for the span
+                if let Expression::Name(name) = &*attr.value {
+                    self.add_reference_with_id(&full_name, ReferenceKind::Import, name.node_id);
+                }
+            }
+        }
+    }
+
+    /// Get the full dotted name from an Attribute node.
+    fn get_attribute_full_name(&self, attr: &Attribute<'_>) -> String {
+        let mut parts = vec![attr.attr.value.to_string()];
+        let mut current = &*attr.value;
+        loop {
+            match current {
+                Expression::Name(n) => {
+                    parts.push(n.value.to_string());
+                    break;
+                }
+                Expression::Attribute(a) => {
+                    parts.push(a.attr.value.to_string());
+                    current = &*a.value;
+                }
+                _ => break,
+            }
+        }
+        parts.reverse();
+        parts.join(".")
     }
 
     /// Mark assignment targets as definitions and add skip contexts.
@@ -431,36 +478,62 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     // Context tracking for Import statements
     // =========================================================================
 
-    fn visit_import_stmt(&mut self, _node: &Import<'a>) -> VisitResult {
-        self.context_stack.push(ContextEntry {
-            kind: ContextKind::Import,
-            name: None,
-        });
-        VisitResult::Continue
+    fn visit_import_stmt(&mut self, node: &Import<'a>) -> VisitResult {
+        // Explicitly handle imports to get correct spans for aliased imports.
+        // For `import foo as bar`, we want:
+        // - Reference for "foo" (the imported name) with ReferenceKind::Import
+        // - Skip "bar" (the alias) since it's a definition, not a reference
+        for alias in &node.names {
+            self.handle_import_alias(alias);
+        }
+        // Skip children to prevent visit_name from re-processing these names
+        VisitResult::SkipChildren
     }
 
     fn leave_import_stmt(&mut self, _node: &Import<'a>) {
-        if let Some(entry) = self.context_stack.last() {
-            if entry.kind == ContextKind::Import {
-                self.context_stack.pop();
-            }
-        }
+        // No context to pop since we skip children
     }
 
-    fn visit_import_from(&mut self, _node: &ImportFrom<'a>) -> VisitResult {
-        self.context_stack.push(ContextEntry {
-            kind: ContextKind::Import,
-            name: None,
-        });
-        VisitResult::Continue
+    fn visit_import_from(&mut self, node: &ImportFrom<'a>) -> VisitResult {
+        // Explicitly handle imports to get correct spans for aliased imports.
+        // For `from x import foo as bar`, we want:
+        // - Reference for "x" (the module name) with ReferenceKind::Import
+        // - Reference for "foo" (the imported name) with ReferenceKind::Import
+        // - Skip "bar" (the alias) since it's a definition, not a reference
+
+        // Handle the module name (e.g., "pathlib" in "from pathlib import Path")
+        if let Some(ref module) = node.module {
+            match module {
+                NameOrAttribute::N(name) => {
+                    self.add_reference_with_id(name.value, ReferenceKind::Import, name.node_id);
+                }
+                NameOrAttribute::A(attr) => {
+                    // Dotted module path: visit the full attribute chain
+                    let full_name = self.get_attribute_full_name(attr);
+                    if let Expression::Name(name) = &*attr.value {
+                        self.add_reference_with_id(&full_name, ReferenceKind::Import, name.node_id);
+                    }
+                }
+            }
+        }
+
+        // Handle the imported names
+        match &node.names {
+            ImportNames::Aliases(aliases) => {
+                for alias in aliases {
+                    self.handle_import_alias(alias);
+                }
+            }
+            ImportNames::Star(_) => {
+                // Star imports don't create individual name references
+            }
+        }
+        // Skip children to prevent visit_name from re-processing these names
+        VisitResult::SkipChildren
     }
 
     fn leave_import_from(&mut self, _node: &ImportFrom<'a>) {
-        if let Some(entry) = self.context_stack.last() {
-            if entry.kind == ContextKind::Import {
-                self.context_stack.pop();
-            }
-        }
+        // No context to pop since we skip children
     }
 
     // =========================================================================

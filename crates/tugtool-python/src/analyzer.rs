@@ -11,7 +11,7 @@
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::facts::{
-    FactsStore, File, Import, Language, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    Export, FactsStore, File, Import, Language, Reference, ReferenceKind, ScopeId as CoreScopeId,
     ScopeInfo as CoreScopeInfo, ScopeKind as CoreScopeKind, Symbol, SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
@@ -192,6 +192,19 @@ pub struct FileAnalysis {
     pub references: Vec<LocalReference>,
     /// Imports in this file.
     pub imports: Vec<LocalImport>,
+    /// Exports (names in __all__) for star import expansion.
+    pub exports: Vec<LocalExport>,
+}
+
+/// An export entry from __all__ (for star import expansion and rename operations).
+#[derive(Debug, Clone)]
+pub struct LocalExport {
+    /// The exported symbol name.
+    pub name: String,
+    /// Byte span of the entire string literal (including quotes).
+    pub span: Option<Span>,
+    /// Byte span of just the string content (for replacement).
+    pub content_span: Option<Span>,
 }
 
 /// A symbol local to a file (before FactsStore integration).
@@ -328,6 +341,13 @@ pub type GlobalSymbolMap = HashMap<(String, SymbolKind), Vec<(FileId, SymbolId)>
 /// local definitions. Used during Pass 3 to apply resolution preference
 /// rules (prefer original definitions over import bindings).
 pub type ImportBindingsSet = HashSet<(FileId, String)>;
+
+/// Maps file paths to their imports.
+///
+/// Used for re-export chain resolution: when resolving an import that targets
+/// another import binding (a re-export), we need to follow the chain through
+/// the target file's imports to find the original definition.
+pub type FileImportsMap<'a> = HashMap<&'a str, &'a [LocalImport]>;
 
 /// Maps local file scope IDs to global FactsStore scope IDs.
 ///
@@ -617,15 +637,104 @@ pub fn analyze_files(
         }
     }
 
+    // Build file_imports_map for re-export chain resolution (Spec S10)
+    // Maps file path -> slice of that file's imports
+    let file_imports_map: FileImportsMap<'_> = bundle
+        .file_analyses
+        .iter()
+        .map(|a| (a.path.as_str(), a.imports.as_slice()))
+        .collect();
+
+    // Build file_exports_map for star import expansion (Spec S11)
+    // Maps file path -> (exports from __all__, module-level bindings)
+    let file_exports_map: HashMap<&str, (&[LocalExport], &[LocalSymbol])> = bundle
+        .file_analyses
+        .iter()
+        .map(|a| {
+            (
+                a.path.as_str(),
+                (a.exports.as_slice(), a.symbols.as_slice()),
+            )
+        })
+        .collect();
+
     for analysis in &bundle.file_analyses {
         let file_id = analysis.file_id;
 
         // Build per-file import resolver (with file path for relative import resolution)
-        let import_resolver = FileImportResolver::from_imports(
+        let mut import_resolver = FileImportResolver::from_imports(
             &analysis.imports,
             &bundle.workspace_files,
             &analysis.path,
         );
+
+        // ================================================================
+        // Star Import Expansion (Spec S11)
+        // ================================================================
+        // For each star import, look up the source file and expand its
+        // exported names into individual import bindings.
+        for local_import in &analysis.imports {
+            if !local_import.is_star {
+                continue;
+            }
+
+            // Resolve the source file for this star import
+            let source_file = resolve_module_to_file(
+                &local_import.module_path,
+                &bundle.workspace_files,
+                Some(&analysis.path),
+                local_import.relative_level,
+            );
+
+            if let Some(source_path) = source_file {
+                // Look up the source file's exports
+                if let Some((exports, symbols)) = file_exports_map.get(source_path.as_str()) {
+                    // Get exported names
+                    let exported_names: Vec<String> = if !exports.is_empty() {
+                        // If __all__ is defined, use those names
+                        exports.iter().map(|e| e.name.clone()).collect()
+                    } else {
+                        // Otherwise, use all public module-level bindings
+                        // (names not starting with underscore, excluding imports)
+                        symbols
+                            .iter()
+                            .filter(|s| {
+                                !s.name.starts_with('_')
+                                    && s.kind != SymbolKind::Import
+                                    && s.scope_id == ScopeId(0) // Module-level only
+                            })
+                            .map(|s| s.name.clone())
+                            .collect()
+                    };
+
+                    // Add each exported name to the import resolver
+                    // Build base module path for qualified names
+                    let base_module_path = if local_import.relative_level > 0 {
+                        resolve_relative_path(
+                            &analysis.path,
+                            local_import.relative_level,
+                            &local_import.module_path,
+                        )
+                        .replace('/', ".")
+                    } else {
+                        local_import.module_path.clone()
+                    };
+
+                    for name in exported_names {
+                        let qualified_path = if base_module_path.is_empty() {
+                            name.clone()
+                        } else {
+                            format!("{}.{}", base_module_path, name)
+                        };
+                        import_resolver.add_star_import_binding(
+                            name,
+                            qualified_path,
+                            Some(source_path.clone()),
+                        );
+                    }
+                }
+            }
+        }
 
         // Process imports first - insert Import records
         for local_import in &analysis.imports {
@@ -656,23 +765,50 @@ pub fn analyze_files(
             }
         }
 
+        // Process exports (__all__ entries)
+        for local_export in &analysis.exports {
+            let export_id = store.next_export_id();
+            let span = local_export.span.unwrap_or_else(|| Span::new(0, 0));
+            let content_span = local_export.content_span.unwrap_or_else(|| Span::new(0, 0));
+            let export = Export::new(export_id, file_id, span, content_span, &local_export.name);
+            store.insert_export(export);
+        }
+
         // Process references
         for local_ref in &analysis.references {
             let ref_span = local_ref.span.unwrap_or_else(|| Span::new(0, 0));
 
-            // Try to resolve the reference to a symbol
-            let resolved_symbol_id = resolve_reference(
-                &local_ref.name,
-                local_ref.scope_id,
-                file_id,
-                &analysis.scopes,
-                &global_symbols,
-                &import_bindings,
-                &scope_symbols,
-                &import_resolver,
-                &file_path_to_id,
-                local_ref.kind,
-            );
+            // For import references (the imported name in "from x import name as alias"),
+            // we need special handling because the import_resolver tracks the alias,
+            // not the imported name. We use resolve_imported_name to look up by the
+            // original name rather than the local alias.
+            let resolved_symbol_id = if local_ref.kind == ReferenceKind::Import {
+                resolve_import_reference(
+                    &local_ref.name,
+                    &import_resolver,
+                    &global_symbols,
+                    &import_bindings,
+                    &file_path_to_id,
+                    &file_imports_map,
+                    &bundle.workspace_files,
+                )
+            } else {
+                // Regular reference resolution (variable usage, calls, etc.)
+                resolve_reference(
+                    &local_ref.name,
+                    local_ref.scope_id,
+                    file_id,
+                    &analysis.scopes,
+                    &global_symbols,
+                    &import_bindings,
+                    &scope_symbols,
+                    &import_resolver,
+                    &file_path_to_id,
+                    &file_imports_map,
+                    &bundle.workspace_files,
+                    local_ref.kind,
+                )
+            };
 
             if let Some(symbol_id) = resolved_symbol_id {
                 // Create reference
@@ -1006,6 +1142,17 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
     // workspace-aware import resolution.
     let imports = convert_imports(&native_result.imports, &HashSet::new(), path);
 
+    // Convert exports (from __all__) for star import expansion and rename operations
+    let exports: Vec<LocalExport> = native_result
+        .exports
+        .iter()
+        .map(|e| LocalExport {
+            name: e.name.clone(),
+            span: e.span.map(|s| Span::new(s.start, s.end)),
+            content_span: e.content_span.map(|s| Span::new(s.start, s.end)),
+        })
+        .collect();
+
     Ok(FileAnalysis {
         file_id,
         path: path.to_string(),
@@ -1014,6 +1161,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         symbols,
         references,
         imports,
+        exports,
     })
 }
 
@@ -1144,18 +1292,66 @@ fn find_scope_for_path(scope_path: &[String], scopes: &[Scope]) -> Option<ScopeI
 /// Per-file import resolver for Pass 3 reference resolution.
 ///
 /// This struct implements Contract C3 import resolution:
+///
+/// ## Supported Import Patterns
+///
 /// - `import foo` → aliases["foo"] = ("foo", None)
 /// - `import foo.bar` → aliases["foo"] = ("foo", None) **binds ROOT only**
 /// - `import foo as f` → aliases["f"] = ("foo", None)
 /// - `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved_file)
 /// - `from foo import bar` → aliases["bar"] = ("foo.bar", resolved_file)
 /// - `from foo import bar as b` → aliases["b"] = ("foo.bar", resolved_file)
-/// - Relative imports → None (not supported)
-/// - Star imports → None (not supported)
+/// - `from .module import name` → aliases["name"] = ("pkg.module.name", resolved_file) (relative imports)
+/// - `from ..utils import foo` → aliases["foo"] = ("parent.utils.foo", resolved_file) (multi-level relative)
+/// - Re-export chains (A → B → C) are followed to find original definitions
+/// - Imports inside `if TYPE_CHECKING:` blocks are collected and resolved
+///
+/// ## Not Expanded (Tracked Only)
+///
+/// - `from foo import *` → Recorded with is_star=true, but individual names not expanded
+///
+/// ## Out of Scope
+///
+/// - Namespace packages (PEP 420 - packages without `__init__.py`)
+/// - Conditional/dynamic imports (except TYPE_CHECKING which is always analyzed)
+///
+/// ## Terminology (Contract C3.1)
+///
+/// - **Local Name**: The name used in the importing file's scope after the import.
+///   - `from x import foo` → local name is "foo"
+///   - `from x import foo as bar` → local name is "bar"
+///   - `import x.y` → local name is "x" (binds root only)
+///   - `import x.y as z` → local name is "z"
+///
+/// - **Imported Name**: The actual name being imported from the source module.
+///   - `from x import foo` → imported name is "foo"
+///   - `from x import foo as bar` → imported name is "foo" (NOT "bar")
+///
+/// - **Qualified Path**: The full dotted path to the symbol.
+///   - `from x.y import foo` → qualified path is "x.y.foo"
+///   - `from .utils import bar` (in pkg/sub.py) → qualified path is "pkg.utils.bar"
+///
+/// ## Data Structures
+///
+/// The resolver maintains two indexes for efficient lookup:
+///
+/// 1. `by_local_name`: Maps local names to (qualified_path, resolved_file)
+///    - Used for resolving references in code (most common case)
+///    - O(1) lookup by local name
+///
+/// 2. `by_imported_name`: Maps imported names to local names
+///    - Used for resolving import statements themselves (e.g., the "foo" in `from x import foo`)
+///    - Enables O(1) lookup instead of linear search through all aliases
 #[derive(Debug, Default)]
 pub struct FileImportResolver {
-    /// Maps local bound names to (qualified_path, resolved_file).
-    aliases: HashMap<String, (String, Option<String>)>,
+    /// Primary index: Maps local bound names to (qualified_path, resolved_file).
+    /// This is the main lookup used for resolving references in code.
+    by_local_name: HashMap<String, (String, Option<String>)>,
+
+    /// Secondary index: Maps imported names to local names.
+    /// This enables O(1) lookup when resolving import references.
+    /// For `from x import foo as bar`, maps "foo" -> "bar".
+    by_imported_name: HashMap<String, String>,
 }
 
 impl FileImportResolver {
@@ -1165,6 +1361,9 @@ impl FileImportResolver {
     }
 
     /// Build from a list of local imports, resolving to workspace files.
+    ///
+    /// This is the full-featured constructor that resolves relative imports
+    /// and looks up modules in the workspace file set.
     ///
     /// # Arguments
     /// * `imports` - List of imports from the file
@@ -1180,7 +1379,10 @@ impl FileImportResolver {
         for import in imports {
             match import.kind.as_str() {
                 "from" => {
-                    // Skip star imports (Contract C3: unsupported for name resolution)
+                    // Skip star imports for alias resolution.
+                    // Star imports are TRACKED (recorded with is_star=true) but individual
+                    // names are NOT expanded. Full expansion would require analyzing the
+                    // source module's __all__ or public bindings at analysis time.
                     if import.is_star {
                         continue;
                     }
@@ -1213,14 +1415,13 @@ impl FileImportResolver {
                         // Resolve the module to a workspace file
                         // For `from . import utils`, we need to resolve the imported_name as
                         // a submodule, not the empty module_path
-                        let module_to_resolve = if import.module_path.is_empty()
-                            && import.relative_level > 0
-                        {
-                            // `from . import utils` - resolve the imported name as a module
-                            &imported_name.name
-                        } else {
-                            &import.module_path
-                        };
+                        let module_to_resolve =
+                            if import.module_path.is_empty() && import.relative_level > 0 {
+                                // `from . import utils` - resolve the imported name as a module
+                                &imported_name.name
+                            } else {
+                                &import.module_path
+                            };
 
                         let resolved_file = resolve_module_to_file(
                             module_to_resolve,
@@ -1229,34 +1430,39 @@ impl FileImportResolver {
                             import.relative_level,
                         );
 
-                        resolver
-                            .aliases
-                            .insert(local_name.clone(), (qualified_path, resolved_file));
+                        resolver.insert(
+                            local_name.clone(),
+                            imported_name.name.clone(),
+                            qualified_path,
+                            resolved_file,
+                        );
                     }
                 }
                 "import" => {
                     if let Some(alias) = &import.alias {
-                        // `import foo.bar as fb` → aliases["fb"] = ("foo.bar", resolved)
+                        // `import foo.bar as fb` → by_local_name["fb"] = ("foo.bar", resolved)
                         let resolved_file = resolve_module_to_file(
                             &import.module_path,
                             workspace_files,
                             Some(importing_file_path),
                             import.relative_level,
                         );
-                        resolver
-                            .aliases
-                            .insert(alias.clone(), (import.module_path.clone(), resolved_file));
+                        // For module imports, the "imported name" is the full module path
+                        resolver.insert(
+                            alias.clone(),
+                            import.module_path.clone(),
+                            import.module_path.clone(),
+                            resolved_file,
+                        );
                     } else {
-                        // `import foo.bar` → aliases["foo"] = ("foo", None)
+                        // `import foo.bar` → by_local_name["foo"] = ("foo", None)
                         // Per Contract C3: binds ROOT only
                         let root = import
                             .module_path
                             .split('.')
                             .next()
                             .unwrap_or(&import.module_path);
-                        resolver
-                            .aliases
-                            .insert(root.to_string(), (root.to_string(), None));
+                        resolver.insert(root.to_string(), root.to_string(), root.to_string(), None);
                     }
                 }
                 _ => {}
@@ -1266,16 +1472,164 @@ impl FileImportResolver {
         resolver
     }
 
+    /// Build a simple resolver from imports without workspace resolution.
+    ///
+    /// This constructor is useful for inheritance resolution where we only
+    /// need to map local names to qualified paths without resolving files.
+    ///
+    /// # Arguments
+    /// * `imports` - List of imports from the file
+    pub fn from_imports_simple(imports: &[LocalImport]) -> Self {
+        let mut resolver = Self::new();
+
+        for import in imports {
+            match import.kind.as_str() {
+                "from" => {
+                    // Skip star imports - can't resolve specific names without source analysis
+                    if import.is_star {
+                        continue;
+                    }
+
+                    for imported_name in &import.names {
+                        let local_name =
+                            imported_name.alias.as_ref().unwrap_or(&imported_name.name);
+                        let qualified_path =
+                            format!("{}.{}", import.module_path, imported_name.name);
+
+                        resolver.insert(
+                            local_name.clone(),
+                            imported_name.name.clone(),
+                            qualified_path,
+                            import.resolved_file.clone(),
+                        );
+                    }
+                }
+                "import" => {
+                    let local_name = import.alias.as_ref().unwrap_or(&import.module_path);
+                    let first_component = import
+                        .module_path
+                        .split('.')
+                        .next()
+                        .unwrap_or(&import.module_path);
+
+                    if import.alias.is_some() {
+                        resolver.insert(
+                            local_name.clone(),
+                            import.module_path.clone(),
+                            import.module_path.clone(),
+                            import.resolved_file.clone(),
+                        );
+                    } else {
+                        resolver.insert(
+                            first_component.to_string(),
+                            first_component.to_string(),
+                            first_component.to_string(),
+                            None,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        resolver
+    }
+
+    /// Insert an import mapping into both indexes.
+    ///
+    /// # Arguments
+    /// * `local_name` - The name bound in the importing file's scope
+    /// * `imported_name` - The actual name being imported from the source
+    /// * `qualified_path` - The full dotted path to the symbol
+    /// * `resolved_file` - The workspace file path if known
+    fn insert(
+        &mut self,
+        local_name: String,
+        imported_name: String,
+        qualified_path: String,
+        resolved_file: Option<String>,
+    ) {
+        self.by_local_name
+            .insert(local_name.clone(), (qualified_path, resolved_file));
+        self.by_imported_name.insert(imported_name, local_name);
+    }
+
     /// Resolve a local name to its qualified path and source file.
+    ///
+    /// This is the primary lookup method, used for resolving references in code.
+    /// O(1) complexity via HashMap lookup.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // For: from x.y import foo as bar
+    /// resolver.resolve("bar") // → Some(("x.y.foo", Some("x/y.py")))
+    /// resolver.resolve("foo") // → None (foo is not the local name)
+    /// ```
     pub fn resolve(&self, local_name: &str) -> Option<(&str, Option<&str>)> {
-        self.aliases
+        self.by_local_name
             .get(local_name)
             .map(|(qn, rf)| (qn.as_str(), rf.as_deref()))
     }
 
-    /// Check if a name is imported.
+    /// Resolve an imported name to its qualified path and source file.
+    ///
+    /// This is used for import references where we have the IMPORTED name
+    /// (e.g., "process_data" in `from .utils import process_data as proc`)
+    /// rather than the local name (e.g., "proc").
+    ///
+    /// O(1) complexity via two HashMap lookups (imported_name → local_name → data).
+    ///
+    /// # Example
+    /// ```ignore
+    /// // For: from x.y import foo as bar
+    /// resolver.resolve_imported_name("foo") // → Some(("x.y.foo", Some("x/y.py")))
+    /// resolver.resolve_imported_name("bar") // → None (bar is the local name, not imported)
+    /// ```
+    pub fn resolve_imported_name(&self, imported_name: &str) -> Option<(&str, Option<&str>)> {
+        // O(1) lookup via secondary index
+        let local_name = self.by_imported_name.get(imported_name)?;
+        self.by_local_name
+            .get(local_name)
+            .map(|(qn, rf)| (qn.as_str(), rf.as_deref()))
+    }
+
+    /// Check if a name is imported (by local name).
     pub fn is_imported(&self, local_name: &str) -> bool {
-        self.aliases.contains_key(local_name)
+        self.by_local_name.contains_key(local_name)
+    }
+
+    /// Get the resolved file path for an imported name.
+    ///
+    /// Returns `Some(file_path)` if the import was resolved to a workspace file.
+    pub fn resolved_file(&self, local_name: &str) -> Option<&str> {
+        self.by_local_name
+            .get(local_name)
+            .and_then(|(_, rf)| rf.as_deref())
+    }
+
+    /// Get all local names (useful for debugging/testing).
+    #[cfg(test)]
+    pub fn local_names(&self) -> impl Iterator<Item = &str> {
+        self.by_local_name.keys().map(|s| s.as_str())
+    }
+
+    /// Add an expanded star import binding.
+    ///
+    /// Used by star import expansion (Step 6.8) to add individual bindings
+    /// for names exported by a star-imported module.
+    ///
+    /// # Arguments
+    /// * `name` - The exported name (becomes both local and imported name)
+    /// * `qualified_path` - The full dotted path to the symbol
+    /// * `resolved_file` - The workspace file path
+    pub fn add_star_import_binding(
+        &mut self,
+        name: String,
+        qualified_path: String,
+        resolved_file: Option<String>,
+    ) {
+        // For star imports, local name == imported name
+        self.insert(name.clone(), name, qualified_path, resolved_file);
     }
 }
 
@@ -1352,7 +1706,11 @@ pub fn resolve_module_to_file(
 /// resolve_relative_path("lib/foo.py", 1, "") -> "lib"
 /// resolve_relative_path("lib/foo.py", 0, "absolute.path") -> "absolute/path"
 /// ```
-pub fn resolve_relative_path(importing_file: &str, relative_level: u32, module_name: &str) -> String {
+pub fn resolve_relative_path(
+    importing_file: &str,
+    relative_level: u32,
+    module_name: &str,
+) -> String {
     // Handle absolute imports (relative_level = 0)
     if relative_level == 0 {
         // Convert dots to slashes for absolute module paths
@@ -1386,9 +1744,7 @@ pub fn resolve_relative_path(importing_file: &str, relative_level: u32, module_n
     }
 
     // Convert back to forward-slash path
-    let base_path = current_dir
-        .to_string_lossy()
-        .replace('\\', "/");
+    let base_path = current_dir.to_string_lossy().replace('\\', "/");
 
     // Append module name if present
     if module_name.is_empty() {
@@ -1430,6 +1786,8 @@ fn resolve_reference(
     scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
+    file_imports_map: &FileImportsMap<'_>,
+    workspace_files: &HashSet<String>,
     _ref_kind: ReferenceKind,
 ) -> Option<SymbolId> {
     // Find the scope
@@ -1447,6 +1805,8 @@ fn resolve_reference(
             scope_symbols,
             import_resolver,
             file_path_to_id,
+            file_imports_map,
+            workspace_files,
         );
     }
 
@@ -1463,6 +1823,8 @@ fn resolve_reference(
             scope_symbols,
             import_resolver,
             file_path_to_id,
+            file_imports_map,
+            workspace_files,
         );
     }
 
@@ -1479,6 +1841,8 @@ fn resolve_reference(
                 import_bindings,
                 import_resolver,
                 file_path_to_id,
+                file_imports_map,
+                workspace_files,
             ) {
                 return Some(original_id);
             }
@@ -1505,6 +1869,8 @@ fn resolve_reference(
                         import_bindings,
                         import_resolver,
                         file_path_to_id,
+                        file_imports_map,
+                        workspace_files,
                     ) {
                         return Some(original_id);
                     }
@@ -1526,6 +1892,8 @@ fn resolve_reference(
         scope_symbols,
         import_resolver,
         file_path_to_id,
+        file_imports_map,
+        workspace_files,
     )
 }
 
@@ -1559,24 +1927,85 @@ fn find_symbol_in_scope_with_kind(
     })
 }
 
-/// Resolve an imported name to its original definition.
+/// Resolve an imported name to its original definition, following re-export chains.
 ///
 /// Per Contract C3: References to imported names should resolve to the
 /// ORIGINAL definition, not the import binding. This function follows
-/// the import chain to find the original symbol.
+/// the import chain through re-exports to find the original symbol.
+///
+/// # Re-Export Chain Resolution (Spec S10)
+///
+/// When file A imports from file B, and B re-exports from file C, we need to
+/// follow the chain: A → B → C to find the original definition in C.
+///
+/// Algorithm:
+/// 1. Resolve the import to its target file and name
+/// 2. If the target is NOT an import binding, return it (found original)
+/// 3. If the target IS an import binding (re-export), recursively resolve
+/// 4. Track visited (file, name) pairs to detect cycles
+#[allow(clippy::too_many_arguments)]
 fn resolve_import_to_original(
     name: &str,
     global_symbols: &GlobalSymbolMap,
     import_bindings: &ImportBindingsSet,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
+    file_imports_map: &FileImportsMap<'_>,
+    workspace_files: &HashSet<String>,
 ) -> Option<SymbolId> {
+    // Use a visited set to detect cycles
+    let mut visited: HashSet<(String, String)> = HashSet::new();
+    resolve_import_chain(
+        name,
+        import_resolver,
+        global_symbols,
+        import_bindings,
+        file_path_to_id,
+        file_imports_map,
+        workspace_files,
+        &mut visited,
+    )
+}
+
+/// Follow an import chain to its original definition (Spec S10: Re-Export Chain Resolution).
+///
+/// This implements recursive resolution for re-export chains. For example:
+/// - `main.py` imports from `pkg` → `pkg/__init__.py`
+/// - `pkg/__init__.py` re-exports from `pkg/internal.py`
+/// - `pkg/internal.py` re-exports from `pkg/core.py`
+/// - `pkg/core.py` has the original definition
+///
+/// This function follows the chain: main.py → pkg → internal → core, returning
+/// the original definition's SymbolId.
+///
+/// This is the recursive helper for `resolve_import_to_original`.
+#[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
+fn resolve_import_chain(
+    name: &str,
+    import_resolver: &FileImportResolver,
+    global_symbols: &GlobalSymbolMap,
+    import_bindings: &ImportBindingsSet,
+    file_path_to_id: &HashMap<String, FileId>,
+    file_imports_map: &FileImportsMap<'_>,
+    workspace_files: &HashSet<String>,
+    visited: &mut HashSet<(String, String)>,
+) -> Option<SymbolId> {
+    // Resolve the import through the current file's resolver
     let (qualified_path, resolved_file) = import_resolver.resolve(name)?;
     let resolved_file_path = resolved_file?;
     let &target_file_id = file_path_to_id.get(resolved_file_path)?;
     let target_name = qualified_path.rsplit('.').next().unwrap_or(name);
 
+    // Check for cycle
+    let visit_key = (resolved_file_path.to_string(), target_name.to_string());
+    if visited.contains(&visit_key) {
+        // Cycle detected - return None to avoid infinite loop
+        return None;
+    }
+    visited.insert(visit_key);
+
     // Look for the symbol in the target file
+    // First, check for actual definitions (non-import symbols)
     for kind in [
         SymbolKind::Function,
         SymbolKind::Class,
@@ -1586,10 +2015,35 @@ fn resolve_import_to_original(
         if let Some(entries) = global_symbols.get(&(target_name.to_string(), kind)) {
             for (fid, sym_id) in entries {
                 if *fid == target_file_id {
-                    // Verify this is a definition, not another import binding
-                    if !import_bindings.contains(&(target_file_id, target_name.to_string())) {
-                        return Some(*sym_id);
-                    }
+                    // Found an actual definition (not an import binding)
+                    return Some(*sym_id);
+                }
+            }
+        }
+    }
+
+    // If no definition found, check if there's an import binding (re-export) and follow the chain
+    if let Some(entries) = global_symbols.get(&(target_name.to_string(), SymbolKind::Import)) {
+        for (fid, _sym_id) in entries {
+            if *fid == target_file_id {
+                // This is an import binding (re-export) - follow the chain
+                // Build an import resolver for the target file and continue
+                if let Some(target_imports) = file_imports_map.get(resolved_file_path) {
+                    let target_resolver = FileImportResolver::from_imports(
+                        target_imports,
+                        workspace_files,
+                        resolved_file_path,
+                    );
+                    return resolve_import_chain(
+                        target_name,
+                        &target_resolver,
+                        global_symbols,
+                        import_bindings,
+                        file_path_to_id,
+                        file_imports_map,
+                        workspace_files,
+                        visited,
+                    );
                 }
             }
         }
@@ -1616,6 +2070,8 @@ fn resolve_in_module_scope(
     scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
+    file_imports_map: &FileImportsMap<'_>,
+    workspace_files: &HashSet<String>,
 ) -> Option<SymbolId> {
     let module_scope_id = ScopeId(0);
 
@@ -1627,6 +2083,8 @@ fn resolve_in_module_scope(
             import_bindings,
             import_resolver,
             file_path_to_id,
+            file_imports_map,
+            workspace_files,
         ) {
             return Some(original_id);
         }
@@ -1670,6 +2128,8 @@ fn resolve_in_enclosing_function(
     scope_symbols: &ScopeSymbolsMap,
     import_resolver: &FileImportResolver,
     file_path_to_id: &HashMap<String, FileId>,
+    file_imports_map: &FileImportsMap<'_>,
+    workspace_files: &HashSet<String>,
 ) -> Option<SymbolId> {
     // Walk up to find nearest enclosing function scope
     let mut current_scope = scope;
@@ -1695,7 +2155,86 @@ fn resolve_in_enclosing_function(
         scope_symbols,
         import_resolver,
         file_path_to_id,
+        file_imports_map,
+        workspace_files,
     )
+}
+
+/// Resolve an import reference (the imported name in an import statement).
+///
+/// For `from .utils import process_data as proc`, this resolves "process_data"
+/// to the original symbol in the target file. This is needed because the
+/// FileImportResolver tracks aliases ("proc"), not imported names ("process_data").
+///
+/// # Arguments
+/// * `imported_name` - The name being imported (e.g., "process_data")
+/// * `import_resolver` - The file's import resolver (with properly resolved imports)
+/// * `global_symbols` - Global symbol map for cross-file lookup
+/// * `import_bindings` - Set of import bindings
+/// * `file_path_to_id` - Mapping from file paths to FileIds
+/// * `file_imports_map` - Map of file paths to their imports (for chain resolution)
+/// * `workspace_files` - Set of all workspace file paths
+fn resolve_import_reference(
+    imported_name: &str,
+    import_resolver: &FileImportResolver,
+    global_symbols: &GlobalSymbolMap,
+    import_bindings: &ImportBindingsSet,
+    file_path_to_id: &HashMap<String, FileId>,
+    file_imports_map: &FileImportsMap<'_>,
+    workspace_files: &HashSet<String>,
+) -> Option<SymbolId> {
+    // Use the new method to look up by imported name
+    let (qualified_path, resolved_file) = import_resolver.resolve_imported_name(imported_name)?;
+    let resolved_file_path = resolved_file?;
+    let &target_file_id = file_path_to_id.get(resolved_file_path)?;
+    let target_name = qualified_path.rsplit('.').next().unwrap_or(imported_name);
+
+    // Look for the symbol in the target file
+    // First, check for actual definitions (non-import symbols)
+    for kind in [
+        SymbolKind::Function,
+        SymbolKind::Class,
+        SymbolKind::Variable,
+        SymbolKind::Constant,
+    ] {
+        if let Some(entries) = global_symbols.get(&(target_name.to_string(), kind)) {
+            for (fid, sym_id) in entries {
+                if *fid == target_file_id {
+                    // Found an actual definition (not an import binding)
+                    return Some(*sym_id);
+                }
+            }
+        }
+    }
+
+    // If no definition found, check if there's an import binding (re-export) and follow the chain
+    if let Some(entries) = global_symbols.get(&(target_name.to_string(), SymbolKind::Import)) {
+        for (fid, _sym_id) in entries {
+            if *fid == target_file_id {
+                // This is an import binding (re-export) - follow the chain
+                // Build an import resolver for the target file and continue
+                if let Some(target_imports) = file_imports_map.get(resolved_file_path) {
+                    let target_resolver = FileImportResolver::from_imports(
+                        target_imports,
+                        workspace_files,
+                        resolved_file_path,
+                    );
+                    return resolve_import_chain(
+                        target_name,
+                        &target_resolver,
+                        global_symbols,
+                        import_bindings,
+                        file_path_to_id,
+                        file_imports_map,
+                        workspace_files,
+                        &mut HashSet::new(),
+                    );
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Convert local imports from native CST analysis to LocalImport format.
@@ -1819,132 +2358,9 @@ pub struct IndexedMethodCall {
     pub method_span: Span,
 }
 
-// ============================================================================
-// Import Resolver (for import-aware inheritance resolution)
-// ============================================================================
-
-/// Resolves imported names to their qualified module paths.
-///
-/// Used for import-aware inheritance resolution: when a class inherits from
-/// an imported base class, this resolver maps the local name to the qualified
-/// name so we can find the correct class definition.
-///
-/// Example:
-/// ```python
-/// from myproject.handlers import BaseHandler
-/// class MyHandler(BaseHandler):  # BaseHandler → "myproject.handlers.BaseHandler"
-///     pass
-/// ```
-#[derive(Debug, Default)]
-pub struct ImportResolver {
-    /// Maps local names to (qualified_name, resolved_file).
-    /// - qualified_name: full dotted path like "myproject.handlers.BaseHandler"
-    /// - resolved_file: workspace file path if known (e.g., "myproject/handlers.py")
-    aliases: HashMap<String, (String, Option<String>)>,
-}
-
-impl ImportResolver {
-    /// Create a new empty import resolver.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Build an import resolver from a list of local imports.
-    ///
-    /// Processes imports to build the name→qualified_name mapping:
-    /// - `from x.y import Z` → aliases["Z"] = ("x.y.Z", resolved_file)
-    /// - `from x.y import Z as W` → aliases["W"] = ("x.y.Z", resolved_file)
-    /// - `import x.y` → aliases["x"] = ("x", None) [module import, less useful for classes]
-    /// - `import x.y as w` → aliases["w"] = ("x.y", None)
-    pub fn from_imports(imports: &[LocalImport]) -> Self {
-        let mut resolver = Self::new();
-
-        for import in imports {
-            match import.kind.as_str() {
-                "from" => {
-                    // `from x.y import Z` or `from x.y import Z as W`
-                    // Star imports are tracked but can't resolve specific names
-                    if import.is_star {
-                        // Can't resolve specific names from star imports without analyzing the source module
-                        // Skip for now - this is a known limitation
-                        continue;
-                    }
-
-                    for imported_name in &import.names {
-                        // The local name is either the alias or the original name
-                        let local_name =
-                            imported_name.alias.as_ref().unwrap_or(&imported_name.name);
-
-                        // The qualified name is module_path.name
-                        let qualified_name =
-                            format!("{}.{}", import.module_path, imported_name.name);
-
-                        resolver.aliases.insert(
-                            local_name.clone(),
-                            (qualified_name, import.resolved_file.clone()),
-                        );
-                    }
-                }
-                "import" => {
-                    // `import x.y` or `import x.y as w`
-                    // Less useful for class resolution since this imports modules, not classes
-                    // But we track it for completeness
-                    let local_name = import.alias.as_ref().unwrap_or(&import.module_path);
-
-                    // For module imports, the "local name" for the first component
-                    // maps to the full module path
-                    let first_component = import
-                        .module_path
-                        .split('.')
-                        .next()
-                        .unwrap_or(&import.module_path);
-
-                    if import.alias.is_some() {
-                        // `import x.y as w` → aliases["w"] = "x.y"
-                        resolver.aliases.insert(
-                            local_name.clone(),
-                            (import.module_path.clone(), import.resolved_file.clone()),
-                        );
-                    } else {
-                        // `import x.y` → aliases["x"] = "x" (the root module)
-                        // This doesn't directly help with class resolution
-                        resolver.aliases.insert(
-                            first_component.to_string(),
-                            (first_component.to_string(), None),
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        resolver
-    }
-
-    /// Resolve a local name to its qualified name and source file.
-    ///
-    /// Returns `Some((qualified_name, resolved_file))` if the name was imported,
-    /// `None` if it's not an imported name (could be defined locally).
-    pub fn resolve(&self, local_name: &str) -> Option<(&str, Option<&str>)> {
-        self.aliases
-            .get(local_name)
-            .map(|(qn, rf)| (qn.as_str(), rf.as_deref()))
-    }
-
-    /// Get the resolved file path for an imported name.
-    ///
-    /// Returns `Some(file_path)` if the import was resolved to a workspace file.
-    pub fn resolved_file(&self, local_name: &str) -> Option<&str> {
-        self.aliases
-            .get(local_name)
-            .and_then(|(_, rf)| rf.as_deref())
-    }
-
-    /// Check if a name is imported.
-    pub fn is_imported(&self, local_name: &str) -> bool {
-        self.aliases.contains_key(local_name)
-    }
-}
+// NOTE: ImportResolver has been consolidated into FileImportResolver.
+// Use FileImportResolver::from_imports_simple() for the same functionality
+// that ImportResolver::from_imports() provided.
 
 // ============================================================================
 // Scope Chain Resolution
@@ -2565,7 +2981,11 @@ mod tests {
             // Pass a dummy file path for relative import context
             let local_imports = convert_imports(&cst_imports, &workspace_files, "pkg/test.py");
 
-            assert_eq!(local_imports.len(), 1, "Relative star import should be included");
+            assert_eq!(
+                local_imports.len(),
+                1,
+                "Relative star import should be included"
+            );
             assert!(local_imports[0].is_star, "Should be marked as star import");
             assert_eq!(
                 local_imports[0].relative_level, 1,
@@ -2765,7 +3185,7 @@ mod tests {
 
         #[test]
         fn empty_resolver() {
-            let resolver = ImportResolver::new();
+            let resolver = FileImportResolver::new();
             assert!(resolver.resolve("SomeClass").is_none());
             assert!(!resolver.is_imported("SomeClass"));
         }
@@ -2779,7 +3199,7 @@ mod tests {
                 Some("myproject/handlers.py"),
             )];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             assert!(resolver.is_imported("BaseHandler"));
             let (qualified, resolved) = resolver.resolve("BaseHandler").unwrap();
@@ -2796,7 +3216,7 @@ mod tests {
                 Some("myproject/handlers.py"),
             )];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             // Should be accessible via alias, not original name
             assert!(resolver.is_imported("BH"));
@@ -2816,7 +3236,7 @@ mod tests {
                 Some("myproject/handlers.py"),
             )];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             assert!(resolver.is_imported("BaseHandler"));
             assert!(resolver.is_imported("OtherHandler"));
@@ -2840,7 +3260,7 @@ mod tests {
                 None, // Not resolved to workspace file
             )];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             assert!(resolver.is_imported("SomeClass"));
             let (qualified, resolved) = resolver.resolve("SomeClass").unwrap();
@@ -2857,7 +3277,7 @@ mod tests {
                 Some("myproject/handlers.py"),
             )];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             assert!(resolver.is_imported("handlers"));
             let (qualified, resolved) = resolver.resolve("handlers").unwrap();
@@ -2870,7 +3290,7 @@ mod tests {
             // import myproject.handlers
             let imports = vec![make_module_import("myproject.handlers", None, None)];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             // Only the first component is tracked
             assert!(resolver.is_imported("myproject"));
@@ -2885,7 +3305,7 @@ mod tests {
                 Some("myproject/handlers.py"),
             )];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             // Star imports can't resolve specific names
             assert!(!resolver.is_imported("BaseHandler"));
@@ -2907,7 +3327,7 @@ mod tests {
                 ),
             ];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             assert!(resolver.is_imported("BaseHandler"));
             assert!(resolver.is_imported("H"));
@@ -2935,7 +3355,7 @@ mod tests {
                 ),
             ];
 
-            let resolver = ImportResolver::from_imports(&imports);
+            let resolver = FileImportResolver::from_imports_simple(&imports);
 
             assert_eq!(
                 resolver.resolved_file("BaseHandler"),
@@ -2943,6 +3363,50 @@ mod tests {
             );
             assert!(resolver.resolved_file("External").is_none());
             assert!(resolver.resolved_file("Unknown").is_none());
+        }
+
+        #[test]
+        fn resolve_imported_name_o1_lookup() {
+            // Test that resolve_imported_name uses O(1) lookup via secondary index
+            // from myproject.handlers import BaseHandler as BH
+            let imports = vec![make_from_import(
+                "myproject.handlers",
+                vec![("BaseHandler", Some("BH"))],
+                Some("myproject/handlers.py"),
+            )];
+
+            let resolver = FileImportResolver::from_imports_simple(&imports);
+
+            // Lookup by local name works
+            assert!(resolver.resolve("BH").is_some());
+            assert!(resolver.resolve("BaseHandler").is_none()); // Not the local name
+
+            // Lookup by imported name works
+            let (qualified, resolved) = resolver.resolve_imported_name("BaseHandler").unwrap();
+            assert_eq!(qualified, "myproject.handlers.BaseHandler");
+            assert_eq!(resolved, Some("myproject/handlers.py"));
+
+            // Looking up by alias as imported name should fail
+            assert!(resolver.resolve_imported_name("BH").is_none());
+        }
+
+        #[test]
+        fn resolve_imported_name_no_alias() {
+            // Test resolve_imported_name when there's no alias
+            // from myproject.handlers import BaseHandler
+            let imports = vec![make_from_import(
+                "myproject.handlers",
+                vec![("BaseHandler", None)],
+                Some("myproject/handlers.py"),
+            )];
+
+            let resolver = FileImportResolver::from_imports_simple(&imports);
+
+            // Both methods should work since local_name == imported_name
+            let (q1, r1) = resolver.resolve("BaseHandler").unwrap();
+            let (q2, r2) = resolver.resolve_imported_name("BaseHandler").unwrap();
+            assert_eq!(q1, q2);
+            assert_eq!(r1, r2);
         }
     }
 
@@ -2978,7 +3442,10 @@ mod tests {
 
             // Verify it resolves correctly
             let (qualified, resolved) = resolver.resolve("foo").unwrap();
-            assert_eq!(qualified, "pkg.utils.foo", "qualified name should be pkg.utils.foo");
+            assert_eq!(
+                qualified, "pkg.utils.foo",
+                "qualified name should be pkg.utils.foo"
+            );
             assert_eq!(
                 resolved,
                 Some("pkg/utils.py"),
@@ -3024,12 +3491,10 @@ mod tests {
         #[test]
         fn from_package_itself_import() {
             // Test: from . import utils in pkg/__init__.py
-            let workspace_files: HashSet<String> = vec![
-                "pkg/__init__.py".to_string(),
-                "pkg/utils.py".to_string(),
-            ]
-            .into_iter()
-            .collect();
+            let workspace_files: HashSet<String> =
+                vec!["pkg/__init__.py".to_string(), "pkg/utils.py".to_string()]
+                    .into_iter()
+                    .collect();
 
             let imports = vec![LocalImport {
                 kind: "from".to_string(),

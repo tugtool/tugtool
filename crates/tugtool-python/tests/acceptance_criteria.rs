@@ -889,8 +889,7 @@ mod ac4_import_resolution {
         );
 
         // Verify references come from different files
-        let ref_file_ids: std::collections::HashSet<_> =
-            refs.iter().map(|r| r.file_id).collect();
+        let ref_file_ids: std::collections::HashSet<_> = refs.iter().map(|r| r.file_id).collect();
 
         assert!(
             ref_file_ids.len() >= 2,
@@ -954,6 +953,119 @@ mod ac4_import_resolution {
     }
 
     #[test]
+    fn multi_level_relative_import_double_dot() {
+        // Test multi-level relative imports with .. (parent package)
+        // Scenario:
+        // - pkg/utils.py defines helper()
+        // - pkg/sub/consumer.py imports helper via "from ..utils import helper"
+        // This tests Step 6.1: Multi-level relative imports
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            ("pkg/utils.py", "def helper(): pass\n"),
+            ("pkg/sub/__init__.py", ""),
+            (
+                "pkg/sub/consumer.py",
+                "from ..utils import helper\nhelper()\n",
+            ),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // Find the helper DEFINITION in pkg/utils.py
+        let utils_file = store.file_by_path("pkg/utils.py");
+        assert!(utils_file.is_some(), "Expected pkg/utils.py to be analyzed");
+        let utils_file_id = utils_file.unwrap().file_id;
+
+        let helper_in_utils = store
+            .symbols()
+            .find(|s| s.name == "helper" && s.decl_file_id == utils_file_id);
+
+        assert!(
+            helper_in_utils.is_some(),
+            "Expected helper DEFINITION in pkg/utils.py"
+        );
+
+        let helper = helper_in_utils.unwrap();
+
+        // Get references to helper - should include pkg/sub/consumer.py
+        let refs = store.refs_of_symbol(helper.symbol_id);
+
+        let consumer_file = store.file_by_path("pkg/sub/consumer.py");
+        assert!(
+            consumer_file.is_some(),
+            "Expected pkg/sub/consumer.py in store"
+        );
+        let consumer_file_id = consumer_file.unwrap().file_id;
+
+        let refs_in_consumer: Vec<_> = refs
+            .iter()
+            .filter(|r| r.file_id == consumer_file_id)
+            .collect();
+
+        assert!(
+            !refs_in_consumer.is_empty(),
+            "Expected at least one reference to helper in pkg/sub/consumer.py (via 'from ..utils import helper'), \
+             but found none. Multi-level relative import (..) resolution is not working."
+        );
+    }
+
+    #[test]
+    fn multi_level_relative_import_triple_dot() {
+        // Test multi-level relative imports with ... (grandparent package)
+        // Scenario:
+        // - pkg/utils.py defines helper()
+        // - pkg/sub/deep/consumer.py imports helper via "from ...utils import helper"
+        // This tests Step 6.1: Multi-level relative imports
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            ("pkg/utils.py", "def helper(): pass\n"),
+            ("pkg/sub/__init__.py", ""),
+            ("pkg/sub/deep/__init__.py", ""),
+            (
+                "pkg/sub/deep/consumer.py",
+                "from ...utils import helper\nhelper()\n",
+            ),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // Find the helper DEFINITION in pkg/utils.py
+        let utils_file = store.file_by_path("pkg/utils.py");
+        assert!(utils_file.is_some(), "Expected pkg/utils.py to be analyzed");
+        let utils_file_id = utils_file.unwrap().file_id;
+
+        let helper_in_utils = store
+            .symbols()
+            .find(|s| s.name == "helper" && s.decl_file_id == utils_file_id);
+
+        assert!(
+            helper_in_utils.is_some(),
+            "Expected helper DEFINITION in pkg/utils.py"
+        );
+
+        let helper = helper_in_utils.unwrap();
+
+        // Get references to helper - should include pkg/sub/deep/consumer.py
+        let refs = store.refs_of_symbol(helper.symbol_id);
+
+        let consumer_file = store.file_by_path("pkg/sub/deep/consumer.py");
+        assert!(
+            consumer_file.is_some(),
+            "Expected pkg/sub/deep/consumer.py in store"
+        );
+        let consumer_file_id = consumer_file.unwrap().file_id;
+
+        let refs_in_consumer: Vec<_> = refs
+            .iter()
+            .filter(|r| r.file_id == consumer_file_id)
+            .collect();
+
+        assert!(
+            !refs_in_consumer.is_empty(),
+            "Expected at least one reference to helper in pkg/sub/deep/consumer.py (via 'from ...utils import helper'), \
+             but found none. Multi-level relative import (...) resolution is not working."
+        );
+    }
+
+    #[test]
     fn relative_import_module_pattern() {
         // Test the "from . import module" pattern (importing the module itself, not a symbol)
         // Scenario:
@@ -973,7 +1085,10 @@ mod ac4_import_resolution {
 
         // The import should be recorded
         let init_file = store.file_by_path("pkg/__init__.py");
-        assert!(init_file.is_some(), "Expected pkg/__init__.py to be analyzed");
+        assert!(
+            init_file.is_some(),
+            "Expected pkg/__init__.py to be analyzed"
+        );
         let init_file_id = init_file.unwrap().file_id;
 
         // Find imports from __init__.py
@@ -1002,6 +1117,97 @@ mod ac4_import_resolution {
             import.module_path == "pkg" || import.module_path.is_empty(),
             "Expected module_path to be 'pkg' or empty for 'from . import utils', got '{}'",
             import.module_path
+        );
+    }
+
+    #[test]
+    fn re_export_chain_resolution() {
+        // Test re-export chain: main.py imports from lib, lib re-exports from lib.utils
+        // This is the spike test scenario from Phase 8 Step 5:
+        //
+        // lib/utils.py: def process_data(): ...
+        // lib/__init__.py: from .utils import process_data  # re-export
+        // main.py: from lib import process_data  # imports the re-export
+        //
+        // When resolving the reference in main.py, it should follow the chain:
+        // main.py → lib/__init__.py → lib/utils.py
+        // and return the ORIGINAL definition in lib/utils.py
+        let file_list = files(&[
+            (
+                "lib/__init__.py",
+                "from .utils import process_data\n__all__ = ['process_data']\n",
+            ),
+            ("lib/utils.py", "def process_data(data): return data * 2\n"),
+            (
+                "main.py",
+                "from lib import process_data\nresult = process_data([1, 2, 3])\n",
+            ),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // Find the original definition in lib/utils.py
+        let utils_file = store.file_by_path("lib/utils.py");
+        assert!(utils_file.is_some(), "Expected lib/utils.py to be analyzed");
+        let utils_file_id = utils_file.unwrap().file_id;
+
+        let original_symbol = store
+            .symbols()
+            .find(|s| s.name == "process_data" && s.decl_file_id == utils_file_id);
+        assert!(
+            original_symbol.is_some(),
+            "Expected process_data symbol in lib/utils.py"
+        );
+        let original_sym_id = original_symbol.unwrap().symbol_id;
+
+        // Find all references to the original symbol
+        let refs_to_original: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == original_sym_id)
+            .collect();
+
+        // We expect at least:
+        // 1. The definition itself in lib/utils.py
+        // 2. The import reference in lib/__init__.py (from .utils import process_data)
+        // 3. The import reference in main.py (from lib import process_data) - THIS IS THE KEY ONE
+        // 4. The call reference in main.py (process_data([1, 2, 3]))
+
+        // Get main.py file_id
+        let main_file = store.file_by_path("main.py");
+        assert!(main_file.is_some(), "Expected main.py to be analyzed");
+        let main_file_id = main_file.unwrap().file_id;
+
+        // Check if there's a reference from main.py to the original symbol
+        let refs_from_main: Vec<_> = refs_to_original
+            .iter()
+            .filter(|r| r.file_id == main_file_id)
+            .collect();
+
+        assert!(
+            !refs_from_main.is_empty(),
+            "Expected at least one reference from main.py to the original process_data in lib/utils.py. \
+             This validates that re-export chain resolution is working - when main.py imports \
+             process_data from lib (which re-exports from lib.utils), the reference should resolve \
+             to the ORIGINAL definition in lib/utils.py, not the import binding in lib/__init__.py. \
+             Found {} total references to process_data, but none from main.py.",
+            refs_to_original.len()
+        );
+
+        // Verify we have references from all expected files
+        let init_file = store.file_by_path("lib/__init__.py");
+        assert!(
+            init_file.is_some(),
+            "Expected lib/__init__.py to be analyzed"
+        );
+        let init_file_id = init_file.unwrap().file_id;
+
+        let refs_from_init: Vec<_> = refs_to_original
+            .iter()
+            .filter(|r| r.file_id == init_file_id)
+            .collect();
+
+        assert!(
+            !refs_from_init.is_empty(),
+            "Expected reference from lib/__init__.py to the original process_data"
         );
     }
 
@@ -1053,6 +1259,125 @@ mod ac4_import_resolution {
     }
 
     #[test]
+    fn star_import_expansion_with_all() {
+        // Star imports with __all__ should expand to names in __all__
+        // from .utils import * should bring in only names from __all__
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/utils.py",
+                "def public_func(): pass\ndef _private_func(): pass\n__all__ = ['public_func']\n",
+            ),
+            ("pkg/consumer.py", "from .utils import *\npublic_func()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // public_func should be defined in utils.py
+        let public_func = store.symbols().find(|s| {
+            s.name == "public_func" && store.file(s.decl_file_id).unwrap().path == "pkg/utils.py"
+        });
+        assert!(
+            public_func.is_some(),
+            "Expected public_func to be defined in pkg/utils.py"
+        );
+
+        // There should be a cross-file reference from consumer.py to utils.py
+        let consumer_file = store.file_by_path("pkg/consumer.py").unwrap();
+        let refs_in_consumer: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == consumer_file.file_id)
+            .collect();
+
+        // The reference to public_func() should resolve to the definition in utils.py
+        let func_ref = refs_in_consumer
+            .iter()
+            .find(|r| store.symbol(r.symbol_id).unwrap().name == "public_func");
+        assert!(
+            func_ref.is_some(),
+            "Expected reference to public_func to resolve"
+        );
+    }
+
+    #[test]
+    fn star_import_expansion_without_all() {
+        // Star imports without __all__ should expand to all public names (not starting with _)
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/helpers.py",
+                "def helper_a(): pass\ndef helper_b(): pass\ndef _internal(): pass\n",
+            ),
+            (
+                "pkg/main.py",
+                "from .helpers import *\nhelper_a()\nhelper_b()\n",
+            ),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // helper_a and helper_b should be defined in helpers.py
+        let helper_a = store.symbols().find(|s| {
+            s.name == "helper_a" && store.file(s.decl_file_id).unwrap().path == "pkg/helpers.py"
+        });
+        let helper_b = store.symbols().find(|s| {
+            s.name == "helper_b" && store.file(s.decl_file_id).unwrap().path == "pkg/helpers.py"
+        });
+        assert!(helper_a.is_some(), "Expected helper_a to be defined");
+        assert!(helper_b.is_some(), "Expected helper_b to be defined");
+
+        // References in main.py should resolve to helpers.py
+        let main_file = store.file_by_path("pkg/main.py").unwrap();
+        let refs_in_main: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == main_file.file_id)
+            .collect();
+
+        let helper_a_ref = refs_in_main
+            .iter()
+            .find(|r| store.symbol(r.symbol_id).unwrap().name == "helper_a");
+        let helper_b_ref = refs_in_main
+            .iter()
+            .find(|r| store.symbol(r.symbol_id).unwrap().name == "helper_b");
+
+        assert!(
+            helper_a_ref.is_some(),
+            "Expected reference to helper_a to resolve"
+        );
+        assert!(
+            helper_b_ref.is_some(),
+            "Expected reference to helper_b to resolve"
+        );
+    }
+
+    #[test]
+    fn star_import_expansion_respects_all_over_public() {
+        // If __all__ is defined, use it even if there are other public names
+        let file_list = files(&[
+            ("pkg/__init__.py", ""),
+            (
+                "pkg/module.py",
+                "def exported(): pass\ndef not_exported(): pass\n__all__ = ['exported']\n",
+            ),
+            ("pkg/consumer.py", "from .module import *\nexported()\n"),
+        ]);
+        let store = analyze_test_files(&file_list);
+
+        // The reference to exported() should resolve
+        let consumer_file = store.file_by_path("pkg/consumer.py").unwrap();
+        let refs_in_consumer: Vec<_> = store
+            .references()
+            .filter(|r| r.file_id == consumer_file.file_id)
+            .collect();
+
+        let exported_ref = refs_in_consumer
+            .iter()
+            .find(|r| store.symbol(r.symbol_id).unwrap().name == "exported");
+        assert!(
+            exported_ref.is_some(),
+            "Expected reference to exported to resolve"
+        );
+    }
+
+    #[test]
     fn module_resolution_foo_bar_to_file() {
         // "foo.bar" → "foo/bar.py" or "foo/bar/__init__.py"
         let file_list = files(&[
@@ -1081,6 +1406,102 @@ mod ac4_import_resolution {
         // Both files should be analyzed
         let foo_file = store.file_by_path("foo.py");
         assert!(foo_file.is_some(), "Expected foo.py to be analyzed");
+    }
+
+    #[test]
+    fn type_checking_import_collected() {
+        // from typing import TYPE_CHECKING
+        // if TYPE_CHECKING:
+        //     from foo import Bar
+        // Imports inside TYPE_CHECKING blocks should be collected for static analysis.
+        // Note: TYPE_CHECKING is always False at runtime but True for type checkers.
+        let code = r#"from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from foo import Bar
+
+def process(x: "Bar") -> None:
+    pass
+"#;
+        let file_list = files(&[("foo.py", "class Bar: pass\n"), ("main.py", code)]);
+        let store = analyze_test_files(&file_list);
+
+        // Both files should be analyzed
+        let main_file = store.file_by_path("main.py");
+        assert!(main_file.is_some(), "Expected main.py to be analyzed");
+
+        // Check that the import from typing is collected
+        let imports: Vec<_> = store.imports().collect();
+        let typing_import = imports.iter().any(|i| {
+            i.module_path == "typing" && i.imported_name == Some("TYPE_CHECKING".to_string())
+        });
+        assert!(
+            typing_import,
+            "Expected 'from typing import TYPE_CHECKING' to be collected"
+        );
+
+        // Check if the conditional import is collected
+        // Note: This tests that imports inside if blocks ARE traversed by the CST walker.
+        // The import 'from foo import Bar' should be collected because walk_module visits all nodes.
+        let bar_import = imports
+            .iter()
+            .any(|i| i.module_path == "foo" && i.imported_name == Some("Bar".to_string()));
+        assert!(
+            bar_import,
+            "Expected 'from foo import Bar' inside TYPE_CHECKING block to be collected"
+        );
+    }
+
+    #[test]
+    fn exports_tracked_in_facts_store() {
+        // FactsStore should track __all__ exports for rename operations
+        let file_list = files(&[(
+            "module.py",
+            "def foo(): pass\ndef bar(): pass\n__all__ = ['foo', 'bar']\n",
+        )]);
+        let store = analyze_test_files(&file_list);
+
+        // Exports should be tracked
+        let exports: Vec<_> = store.exports().collect();
+        assert_eq!(exports.len(), 2, "Expected 2 exports tracked");
+
+        let foo_export = exports.iter().find(|e| e.name == "foo");
+        let bar_export = exports.iter().find(|e| e.name == "bar");
+        assert!(foo_export.is_some(), "Expected 'foo' export");
+        assert!(bar_export.is_some(), "Expected 'bar' export");
+
+        // exports_named should work
+        let foo_by_name: Vec<_> = store.exports_named("foo").into_iter().collect();
+        assert_eq!(foo_by_name.len(), 1, "Expected 1 export named 'foo'");
+        assert_eq!(foo_by_name[0].name, "foo");
+
+        // exports_in_file should work
+        let module_file = store.file_by_path("module.py").unwrap();
+        let exports_in_module = store.exports_in_file(module_file.file_id);
+        assert_eq!(
+            exports_in_module.len(),
+            2,
+            "Expected 2 exports in module.py"
+        );
+    }
+
+    #[test]
+    fn exports_with_list_concatenation_tracked() {
+        // FactsStore should track exports from list concatenation
+        let file_list = files(&[(
+            "module.py",
+            "def a(): pass\ndef b(): pass\n__all__ = ['a'] + ['b']\n",
+        )]);
+        let store = analyze_test_files(&file_list);
+
+        // Both exports should be tracked
+        let exports: Vec<_> = store.exports().collect();
+        assert_eq!(exports.len(), 2, "Expected 2 exports from concatenation");
+
+        let a_export = exports.iter().find(|e| e.name == "a");
+        let b_export = exports.iter().find(|e| e.name == "b");
+        assert!(a_export.is_some(), "Expected 'a' export");
+        assert!(b_export.is_some(), "Expected 'b' export");
     }
 }
 

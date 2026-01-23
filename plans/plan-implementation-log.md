@@ -8,6 +8,143 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-8.md] Step 6 Substeps 6.7-6.9: Import Audit, Star Expansion, Export Tracking | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 6.7, 6.8, 6.9 specifications
+- `crates/tugtool-python/src/analyzer.rs` - FileImportResolver, analyze_files
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore data model
+- `crates/tugtool-python/src/ops/rename.rs` - Rename operation export handling
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - ExportCollector
+
+**Implementation Progress:**
+
+| Substep | Task | Status |
+|---------|------|--------|
+| 6.7 | Audit FileImportResolver and consolidate with ImportResolver | Done |
+| 6.7 | Add dual indexes (by_local_name, by_imported_name) for O(1) lookup | Done |
+| 6.7 | Add Contract C3.1 documentation (local/imported/qualified names) | Done |
+| 6.7 | Remove ImportResolver, add from_imports_simple() constructor | Done |
+| 6.7 | Add resolve_imported_name_o1_lookup test | Done |
+| 6.8 | Implement star import expansion in Pass 3 | Done |
+| 6.8 | Handle __all__ for explicit exports | Done |
+| 6.8 | Handle modules without __all__ (public names) | Done |
+| 6.8 | Add list concatenation support to ExportCollector | Done |
+| 6.8 | Add star_import_expansion_* tests | Done |
+| 6.9 | Add ExportId type to tugtool-core | Done |
+| 6.9 | Add Export struct to FactsStore | Done |
+| 6.9 | Add exports storage and indexes | Done |
+| 6.9 | Add insert_export, export, exports_in_file, exports_named methods | Done |
+| 6.9 | Update analyzer to populate exports during analysis | Done |
+| 6.9 | Replace re-parsing in rename.rs with FactsStore lookup | Done |
+| 6.9 | Add exports_tracked_in_facts_store tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs` - Added ExportId, Export struct, exports storage, indexes, and methods
+- `crates/tugtool-python/src/analyzer.rs` - Consolidated FileImportResolver with dual indexes, added star import expansion in Pass 3, added LocalExport with spans, added export population
+- `crates/tugtool-python/src/ops/rename.rs` - Replaced re-parsing loop with store.exports_named() lookup
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - Added BinaryOperation::Add handling for list concatenation
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Added 7 new tests for star import expansion and export tracking
+- `plans/phase-8.md` - Updated Step 6 Summary, checked off all 6.7-6.9 tasks
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1252 tests passed (7 new tests added)
+- `cargo clippy --workspace -- -D warnings`: Passed
+- `cargo fmt --all -- --check`: Passed
+- Spike scenario `star-import`: Passed
+
+**Checkpoints Verified:**
+- Step 6.7: Import alias tracking audit complete, dual indexes eliminate linear search
+- Step 6.8: Star imports expand to individual bindings, __all__ and public names both work
+- Step 6.9: FactsStore tracks exports, rename.rs no longer re-parses for exports
+
+**Key Decisions/Notes:**
+- Consolidated ImportResolver into FileImportResolver with two constructors: from_imports() for full workspace resolution, from_imports_simple() for simple cases
+- Added secondary index by_imported_name to enable O(1) lookup when resolving import references (previously O(n) linear search)
+- Star import expansion happens in Pass 3 after all files are analyzed, so source file exports are available
+- For modules without __all__, export all public module-level bindings (non-underscore, non-imports)
+- list.extend() pattern for __all__ not supported (requires method call tracking), marked as limitation
+- Export spans include both full_span (with quotes) and content_span (without) for accurate replacement
+
+---
+
+## [phase-8.md] Step 6 Substeps 6.1-6.6: Comprehensive Static Python Import Pattern Support | COMPLETE | 2026-01-22
+
+**Completed:** 2026-01-22
+
+**References Reviewed:**
+- `plans/phase-8.md` - Step 6 specification including substeps 6.1-6.6
+- `crates/tugtool-python/src/analyzer.rs` - FileImportResolver, resolve_module_to_file, resolve_import_chain
+- `crates/tugtool-python/src/ops/rename.rs` - Rename operation edit generation
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector for import references
+- `spikes/interop-spike/scenarios/` - All test scenarios
+
+**Implementation Progress:**
+
+| Substep | Task | Status |
+|---------|------|--------|
+| 6.2 (P0) | Add `resolve_import_chain` function | Done |
+| 6.2 (P0) | Add `resolve_imported_name` method to FileImportResolver | Done |
+| 6.2 (P0) | Add `resolve_import_reference` function for import references | Done |
+| 6.2 (P0) | Fix aliased import rename bug (preserve aliases) | Done |
+| 6.2 (P0) | Add re-export chain resolution test | Done |
+| 6.1 (P1) | Add multi-level relative import tests (`..`, `...`) | Done |
+| 6.1 (P1) | Verify cross-file references for multi-level imports | Done |
+| 6.5 (P0) | Create 4 spike test scenarios directory structure | Done |
+| 6.5 (P0) | Verify reexport-chain scenario | Pass |
+| 6.5 (P0) | Verify multi-level-relative scenario | Pass |
+| 6.5 (P0) | Verify aliased-import scenario | Pass |
+| 6.5 (P0) | Verify star-import scenario | Partial (tracked, not expanded) |
+| 6.3 (P1) | Star import tracking verification | Done |
+| 6.3 (P1) | Star import expansion | Deferred (not required for exit criteria) |
+| 6.4 (P2) | Audit TYPE_CHECKING imports | Done (already working) |
+| 6.4 (P2) | Add TYPE_CHECKING import test | Done |
+| 6.6 (P2) | Update Contract C3 documentation | Done |
+| 6.6 (P2) | Remove misleading "unsupported" comments | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added `resolve_import_chain`, `resolve_imported_name`, `resolve_import_reference`; updated Contract C3 docs
+- `crates/tugtool-python/src/ops/rename.rs` - Added span text validation to filter aliased references from rename edits
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - Added `re_export_chain_resolution`, multi-level relative import tests, `type_checking_import_collected` test
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Updated `visit_import_from` and `visit_import_stmt` to create proper import references
+- `crates/tugtool-python-cst/tests/golden/output/imports_references.json` - Updated golden test for correct import reference behavior
+- `plans/phase-8.md` - Checked off all Step 6 substep tasks, updated implementation log, updated milestones
+
+**Files Created:**
+- `spikes/interop-spike/scenarios/reexport-chain/` - 2-level re-export chain test scenario
+- `spikes/interop-spike/scenarios/multi-level-relative/` - Double-dot relative import test scenario
+- `spikes/interop-spike/scenarios/aliased-import/` - Aliased import preservation test scenario
+- `spikes/interop-spike/scenarios/star-import/` - Star import test scenario
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1243 tests passed
+- `cargo nextest run -p tugtool-python reexport`: 1 test passed
+- `cargo nextest run -p tugtool-python multi_level_relative`: 2 tests passed
+- `cargo nextest run -p tugtool-python star_import`: 5 tests passed
+- `cargo nextest run -p tugtool-python type_checking`: 1 test passed
+- `cargo clippy --workspace -- -D warnings`: Pass
+- `cargo fmt --all -- --check`: Pass
+
+**Checkpoints Verified:**
+- Step 6.1: Multi-level relative imports work (with informational warning): PASS
+- Step 6.2: Re-export chains followed to original definitions: PASS
+- Step 6.2: Original spike test passes (4 files, 6 references): PASS
+- Step 6.3: Star imports tracked with is_star=true: PASS
+- Step 6.4: TYPE_CHECKING imports collected by CST walker: PASS
+- Step 6.5: 3 of 4 additional scenarios pass end-to-end: PASS
+- Step 6.6: Documentation updated, no misleading comments: PASS
+
+**Key Decisions/Notes:**
+- **Aliased Import Bug Fix**: When renaming `process_data` in `from .utils import process_data as proc`, only the imported name is renamed; the alias `proc` is preserved. Fixed by adding span text validation in rename operation.
+- **Re-Export Chain Resolution**: New `resolve_import_chain` function follows chains like main.py → pkg → internal → core to find original definitions.
+- **Star Import Expansion Deferred**: Star imports are TRACKED (is_star=true) but not EXPANDED to individual bindings. Full expansion requires analyzing source module's __all__, which is significant work not required for Phase 8 exit criteria.
+- **TYPE_CHECKING Already Works**: The CST walker traverses all nodes including if blocks, so imports inside `if TYPE_CHECKING:` are already collected. Just added a test to verify.
+- **Multi-Level Warnings**: Double-dot imports work correctly; the warning is informational only.
+
+---
+
 ## [phase-8.md] Step 6: Comprehensive Static Python Import Pattern Support | PLANNING | 2026-01-22
 
 **Completed:** 2026-01-22
