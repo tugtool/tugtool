@@ -436,4 +436,3 @@ fn golden_error_invalid_name() {
 // Note: error_apply_failed and error_verification_failed tests require
 // more complex setup (modifying files after snapshot, etc.)
 // These are better tested as unit tests in the main crate.
-
