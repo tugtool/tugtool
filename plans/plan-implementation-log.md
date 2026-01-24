@@ -6,6 +6,46 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 5: Line/Col Output Enrichment | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 5 specification, [D03] design decision, Spec S01
+- `crates/tugtool-core/src/text.rs` - Existing `byte_offset_to_position_str` function
+- `crates/tugtool-core/src/types.rs` - Location struct and existing constructors
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `with_line_col` helper to Location type | Done |
+| Use existing `byte_offset_to_position_str` (no new function) | Done |
+| Add test: test_with_line_col_first_line | Done |
+| Add test: test_with_line_col_second_line | Done |
+| Add test: test_with_line_col_mid_line | Done |
+| Add test: test_with_line_col_unicode | Done |
+| Add test: test_with_line_col_empty_file | Done |
+| Add test: test_with_line_col_trailing_newline | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/types.rs` - Added import for `byte_offset_to_position_str`; added `with_line_col()` method to Location impl; added 6 test cases in `location_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core`: 281 tests passed
+- `cargo nextest run --workspace`: 1259 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core`: PASS (281 tests)
+
+**Key Decisions/Notes:**
+- **Lazy computation per [D03]**: Line/col computed from byte offsets only when `with_line_col()` is called, not stored redundantly
+- **Reuses existing function**: Used `byte_offset_to_position_str` from text.rs rather than adding duplicate functionality
+- **Column counts Unicode scalar values**: The function counts chars, not bytes, for correct Unicode handling
+- **Test correction**: Initial trailing newline test had wrong expectations; fixed to match actual behavior where processing a newline increments line number
+
+---
+
 ## [phase-10.md] Step 4: Connect Scope Spans to Analyzer | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

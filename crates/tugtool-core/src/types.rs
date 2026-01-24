@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::text::byte_offset_to_position_str;
+
 // ============================================================================
 // Location Type
 // ============================================================================
@@ -70,6 +72,39 @@ impl Location {
             col,
             byte_start: Some(byte_start),
             byte_end: Some(byte_end),
+        }
+    }
+
+    /// Create a location from byte offset, computing line/col from content.
+    ///
+    /// This method lazily computes line and column from a byte offset using
+    /// the file content. Per design decision [D03], line/col is computed
+    /// at the output boundary rather than stored internally.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - Workspace-relative file path
+    /// * `content` - The file content (needed to compute line/col)
+    /// * `byte_start` - Byte offset from file start
+    /// * `byte_end` - Optional byte offset end (exclusive)
+    ///
+    /// # Returns
+    ///
+    /// A Location with line/col computed from the byte offset.
+    /// Line and column are 1-indexed. Column counts Unicode scalar values.
+    pub fn with_line_col(
+        file: impl Into<String>,
+        content: &str,
+        byte_start: u64,
+        byte_end: Option<u64>,
+    ) -> Self {
+        let (line, col) = byte_offset_to_position_str(content, byte_start);
+        Location {
+            file: file.into(),
+            line,
+            col,
+            byte_start: Some(byte_start),
+            byte_end,
         }
     }
 
@@ -217,6 +252,105 @@ mod tests {
             assert!(Location::parse("src/utils.py").is_none());
             assert!(Location::parse("src/utils.py:42").is_none());
             assert!(Location::parse("src/utils.py:abc:5").is_none());
+        }
+
+        // ====================================================================
+        // with_line_col tests (Table T05: Line/Col Helper Test Cases)
+        // ====================================================================
+
+        /// LC-01: Byte 0 → (1, 1)
+        #[test]
+        fn test_with_line_col_first_line() {
+            let content = "def foo():\n    pass\n";
+            let loc = Location::with_line_col("test.py", content, 0, None);
+            assert_eq!(loc.file, "test.py");
+            assert_eq!(loc.line, 1);
+            assert_eq!(loc.col, 1);
+            assert_eq!(loc.byte_start, Some(0));
+            assert_eq!(loc.byte_end, None);
+        }
+
+        /// LC-02: After newline → (2, 1)
+        #[test]
+        fn test_with_line_col_second_line() {
+            let content = "def foo():\n    pass\n";
+            //            0123456789 0 <- newline at byte 10
+            //                       11 <- byte 11 is start of line 2
+            let loc = Location::with_line_col("test.py", content, 11, Some(15));
+            assert_eq!(loc.line, 2);
+            assert_eq!(loc.col, 1);
+            assert_eq!(loc.byte_start, Some(11));
+            assert_eq!(loc.byte_end, Some(15));
+        }
+
+        /// LC-03: Middle of line → correct col
+        #[test]
+        fn test_with_line_col_mid_line() {
+            let content = "def foo():\n    pass\n";
+            //            0123456789
+            //                ^4 = column 5 (1-indexed)
+            let loc = Location::with_line_col("test.py", content, 4, Some(7));
+            assert_eq!(loc.line, 1);
+            assert_eq!(loc.col, 5); // 1-indexed: positions 0,1,2,3 then position 4 is col 5
+            assert_eq!(loc.byte_start, Some(4));
+            assert_eq!(loc.byte_end, Some(7));
+        }
+
+        /// LC-04: Unicode chars (byte vs char offset)
+        /// The column counts Unicode scalar values (chars), not bytes.
+        #[test]
+        fn test_with_line_col_unicode() {
+            // "café" uses 5 bytes but 4 characters (é is 2 bytes in UTF-8)
+            let content = "café\ntest\n";
+            // Bytes:  c(0) a(1) f(2) é(3,4) \n(5) t(6) e(7) s(8) t(9) \n(10)
+            // Chars:  c(1) a(2) f(3) é(4)   \n    t(1) e(2) s(3) t(4) \n
+
+            // Byte 5 is the newline after "café"
+            // At byte 5, we've passed 4 chars + newline, so line 2, col 1
+            let loc = Location::with_line_col("test.py", content, 6, None);
+            assert_eq!(loc.line, 2);
+            assert_eq!(loc.col, 1); // First char of line 2
+
+            // Byte 3 is the start of 'é' (2-byte char)
+            // At byte 3, we've passed c, a, f so we're at column 4
+            let loc2 = Location::with_line_col("test.py", content, 3, None);
+            assert_eq!(loc2.line, 1);
+            assert_eq!(loc2.col, 4); // 'é' is the 4th character
+        }
+
+        /// LC-05: Empty content edge case
+        #[test]
+        fn test_with_line_col_empty_file() {
+            let content = "";
+            let loc = Location::with_line_col("empty.py", content, 0, None);
+            assert_eq!(loc.line, 1);
+            assert_eq!(loc.col, 1);
+            assert_eq!(loc.byte_start, Some(0));
+        }
+
+        /// LC-06: File ending with newline
+        #[test]
+        fn test_with_line_col_trailing_newline() {
+            let content = "line1\nline2\n";
+            // Bytes: l(0) i(1) n(2) e(3) 1(4) \n(5) l(6) i(7) n(8) e(9) 2(10) \n(11)
+            //        ^line 1                       ^line 2
+
+            // Byte 10 is '2', the last char of "line2" before the trailing newline
+            let loc = Location::with_line_col("test.py", content, 10, Some(11));
+            assert_eq!(loc.line, 2);
+            assert_eq!(loc.col, 5); // "line" = 4 chars, then '2' at col 5
+
+            // Byte 11 is the trailing newline itself
+            // At byte 11, we've consumed "line2" (5 chars), so col is 6
+            let loc2 = Location::with_line_col("test.py", content, 11, Some(12));
+            assert_eq!(loc2.line, 2);
+            assert_eq!(loc2.col, 6);
+
+            // Byte 12 (at end, after consuming trailing newline)
+            // The function processes the \n at byte 11, incrementing to line 3
+            let loc3 = Location::with_line_col("test.py", content, 12, None);
+            assert_eq!(loc3.line, 3);
+            assert_eq!(loc3.col, 1); // Start of (empty) line 3
         }
     }
 

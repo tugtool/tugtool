@@ -1527,8 +1527,8 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Files:** `crates/tugtool-core/src/types.rs`
 
 **Tasks:**
-- [ ] Add `with_line_col` helper to Location type that uses existing `byte_offset_to_position_str` from `text.rs`
-- [ ] No new `offset_to_line_col` function needed - use existing `byte_offset_to_position_str`
+- [x] Add `with_line_col` helper to Location type that uses existing `byte_offset_to_position_str` from `text.rs`
+- [x] No new `offset_to_line_col` function needed - use existing `byte_offset_to_position_str`
 
 **Tests:**
 
@@ -1543,14 +1543,14 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 | LC-05 | `test_with_line_col_empty_file` | unit | Empty content edge case |
 | LC-06 | `test_with_line_col_trailing_newline` | unit | File ending with newline |
 
-- [ ] unit test: `test_with_line_col_first_line` - byte 0 maps to line 1, col 1
-- [ ] unit test: `test_with_line_col_second_line` - first char after newline
-- [ ] unit test: `test_with_line_col_mid_line` - arbitrary position on line
-- [ ] unit test: `test_with_line_col_unicode` - UTF-8 multibyte characters (byte offset, not char)
-- [ ] unit test: `test_with_line_col_empty_file` - edge case: empty content
-- [ ] unit test: `test_with_line_col_trailing_newline` - file ends with newline
+- [x] unit test: `test_with_line_col_first_line` - byte 0 maps to line 1, col 1
+- [x] unit test: `test_with_line_col_second_line` - first char after newline
+- [x] unit test: `test_with_line_col_mid_line` - arbitrary position on line
+- [x] unit test: `test_with_line_col_unicode` - UTF-8 multibyte characters (byte offset, not char)
+- [x] unit test: `test_with_line_col_empty_file` - edge case: empty content
+- [x] unit test: `test_with_line_col_trailing_newline` - file ends with newline
 
-**Checkpoint:** `cargo nextest run -p tugtool-core`
+**Checkpoint:** `cargo nextest run -p tugtool-core` ✓
 
 ---
 
