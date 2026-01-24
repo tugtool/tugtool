@@ -463,11 +463,12 @@ fn execute_analyze(global: &GlobalArgs, op: AnalyzeOp) -> Result<(), TugError> {
                         .and_then(|d| d.as_str())
                         .unwrap_or("");
 
-                    if diff.is_empty() {
-                        println!("No changes.");
-                    } else {
+                    // Output diff as-is (empty diff = empty output for machine consumption)
+                    // This is git-apply compatible: empty input = no-op
+                    if !diff.is_empty() {
                         print!("{}", diff);
                     }
+                    // If diff is empty, output nothing (not even a newline)
                 }
                 AnalyzeFormat::Summary => {
                     // Brief text summary

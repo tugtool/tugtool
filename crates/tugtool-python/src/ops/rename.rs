@@ -42,7 +42,7 @@ use crate::verification::{
 use crate::cst_bridge;
 
 // Native analyze_files for multi-file analysis
-use crate::analyzer::analyze_files;
+use crate::analyzer::{analyze_files, FileAnalysis, Scope, ScopeId, ScopeKind};
 
 // ============================================================================
 // Error Types
@@ -429,6 +429,44 @@ pub fn apply_renames(source: &str, rewrites: &[(Span, String)]) -> RenameResult<
 // Multi-File Native Rename (using analyze_files 4-pass pipeline)
 // ========================================================================
 
+/// Build a scope_path by walking up the scope hierarchy.
+///
+/// Returns a Vec like `["<module>", "ClassName", "method_name"]`.
+fn build_scope_path(scope_id: ScopeId, scopes: &[Scope]) -> Vec<String> {
+    let mut path = Vec::new();
+    let mut current_id = Some(scope_id);
+
+    while let Some(id) = current_id {
+        if let Some(scope) = scopes.iter().find(|s| s.id == id) {
+            let name = match scope.kind {
+                ScopeKind::Module => "<module>".to_string(),
+                ScopeKind::Class | ScopeKind::Function => scope
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "<anonymous>".to_string()),
+                ScopeKind::Lambda => "lambda".to_string(),
+                ScopeKind::Comprehension => "comprehension".to_string(),
+            };
+            path.push(name);
+            current_id = scope.parent_id;
+        } else {
+            break;
+        }
+    }
+
+    path.reverse();
+    path
+}
+
+/// Find the scope_id for a symbol by matching its declaration span in a FileAnalysis.
+fn find_symbol_scope_id(symbol_decl_span: &Span, file_analysis: &FileAnalysis) -> Option<ScopeId> {
+    file_analysis
+        .symbols
+        .iter()
+        .find(|ls| ls.span.as_ref() == Some(symbol_decl_span))
+        .map(|ls| ls.scope_id)
+}
+
 /// Analyze the impact of renaming a symbol using native CST analysis.
 ///
 /// This function uses the native 4-pass `analyze_files` pipeline to build
@@ -549,19 +587,31 @@ pub fn analyze_impact(
     let symbol_info = symbol_to_info(&symbol, decl_file, &decl_content);
 
     // Collect value-level aliases for the target symbol ([D06]: informational only)
-    // Query each file's AliasGraph for aliases of the target symbol name
+    // Per plan: only search declaration file, filter by exact scope_path match
     let mut aliases: Vec<AliasOutput> = Vec::new();
-    for file_analysis in &bundle.file_analyses {
-        // Get transitive aliases for the symbol name (all scopes in this file)
-        let file_aliases = file_analysis
-            .alias_graph
-            .transitive_aliases(&symbol.name, None, None);
+
+    // Find the declaration file's analysis
+    if let Some(decl_file_analysis) = bundle
+        .file_analyses
+        .iter()
+        .find(|fa| fa.path == decl_file.path)
+    {
+        // Get the symbol's scope_path from its declaration
+        let symbol_scope_path = find_symbol_scope_id(&symbol.decl_span, decl_file_analysis)
+            .map(|scope_id| build_scope_path(scope_id, &decl_file_analysis.scopes))
+            .unwrap_or_else(|| vec!["<module>".to_string()]);
+
+        // Query with scope filtering (exact match per plan line 335-337)
+        let file_aliases = decl_file_analysis.alias_graph.transitive_aliases(
+            &symbol.name,
+            Some(&symbol_scope_path),
+            None,
+        );
 
         for alias_info in file_aliases {
             // Compute line/col from alias span
             let (line, col) = if let Some(span) = alias_info.alias_span {
-                let content = read_file(workspace_root, &file_analysis.path)?;
-                tugtool_core::text::byte_offset_to_position_str(&content, span.start)
+                tugtool_core::text::byte_offset_to_position_str(&decl_content, span.start)
             } else {
                 (1, 1) // Fallback if no span
             };
@@ -569,7 +619,7 @@ pub fn analyze_impact(
             aliases.push(AliasOutput::new(
                 alias_info.alias_name,
                 alias_info.source_name,
-                file_analysis.path.clone(),
+                decl_file_analysis.path.clone(),
                 line,
                 col,
                 alias_info.scope_path,
@@ -1327,19 +1377,19 @@ def foo():
 
         #[test]
         fn test_impact_alias_scope_filtered() {
-            // IA-03: Aliases are collected per file but NOT filtered by scope
-            // (per [D07]: single-file scope, not per-scope filtering)
+            // IA-03: Aliases are filtered by exact scope_path match (plan lines 334-337)
             // Code has bar in module scope, aliased in both module and function scopes
+            // Only same-scope aliases should be returned
             let code = r#"bar = 1
-b = bar  # module scope alias
+b = bar  # module scope alias - SHOULD be included
 
 def func():
-    c = bar  # function scope alias
+    c = bar  # function scope alias - should NOT be included (different scope)
 "#;
             let result =
                 analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
 
-            // Both aliases should be included (different scopes within same file)
+            // Only module-scope alias should be included (exact scope_path match)
             let alias_names: Vec<&str> = result
                 .aliases
                 .iter()
@@ -1350,9 +1400,10 @@ def func():
                 "should include module scope alias 'b'"
             );
             assert!(
-                alias_names.contains(&"c"),
-                "should include function scope alias 'c'"
+                !alias_names.contains(&"c"),
+                "should NOT include function scope alias 'c' (different scope_path)"
             );
+            assert_eq!(result.aliases.len(), 1, "exactly one alias at same scope");
         }
 
         #[test]

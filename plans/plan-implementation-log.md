@@ -6,6 +6,45 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Phase 10 Audit Fixes | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Lines 334-337 (scope filtering requirement), Implementation Log table
+- `crates/tugtool-python/src/ops/rename.rs` - Alias collection logic
+- `crates/tugtool/src/main.rs` - Empty diff output handling
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| **High**: Fix alias scope filtering enforcement | Done |
+| **Medium**: Fix empty diff output format | Done |
+| **Low**: Update Phase 10 plan tracking log | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename.rs` - Added `build_scope_path()` and `find_symbol_scope_id()` helpers; updated `analyze_impact()` to filter aliases by exact scope_path match per plan lines 334-337; only search declaration file (not all files); updated `test_impact_alias_scope_filtered()` to expect filtered behavior
+- `crates/tugtool/src/main.rs` - Changed empty diff output from "No changes." to empty output (no text, no newline) for git-apply compatibility
+- `plans/phase-10.md` - Updated Implementation Log table: marked Steps 1-8 and 10 as "done" (were incorrectly "pending" despite features being verified working)
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1347 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all -- --check`: Passes
+
+**Checkpoints Verified:**
+- Alias scope filtering works correctly: PASS (test_impact_alias_scope_filtered)
+- Empty diff outputs nothing: PASS
+- All Phase 10 steps marked complete: PASS
+
+**Key Decisions/Notes:**
+- **Scope filtering implementation**: Added helpers to build scope_path from scope hierarchy and find symbol's scope_id by declaration span match. Aliases are now filtered by exact scope_path match per plan specification.
+- **Empty diff rationale**: Output nothing (not even newline) when diff is empty. This is git-apply compatible (empty input = no-op), simple for machine parsing, and follows Unix philosophy (silence = success).
+- **Plan tracking sync**: Steps 1-8 and 10 were marked "pending" but all Phase Exit Criteria passed, indicating features were already implemented. Updated log to reflect reality.
+
+---
+
 ## [phase-10.md] Step 15: Final Verification + Section 10.5 Deliverables | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

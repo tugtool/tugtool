@@ -2269,18 +2269,18 @@ All 5 new tests (AI-01 through AI-05) should pass.
 
 | Step | Status | Date | Notes |
 |------|--------|------|-------|
-| Step 1 | pending | | PositionTable optimization |
-| Step 2 | pending | | Lambda scope spans |
-| Step 3 | pending | | Comprehension scope spans |
-| Step 4 | pending | | Connect scope spans to analyzer |
-| Step 5 | pending | | Line/col output enrichment |
-| Step 6 | pending | | tug doctor command |
-| Step 7 | pending | | Compute namespace packages |
-| Step 8 | pending | | Namespace package resolution |
+| Step 1 | done | 2026-01-24 | PositionTable optimization (Vec<Option<NodePosition>>) |
+| Step 2 | done | 2026-01-24 | Lambda scope spans |
+| Step 3 | done | 2026-01-24 | Comprehension scope spans |
+| Step 4 | done | 2026-01-24 | Connect scope spans to analyzer |
+| Step 5 | done | 2026-01-24 | Line/col output enrichment |
+| Step 6 | done | 2026-01-24 | tug doctor command |
+| Step 7 | done | 2026-01-24 | Compute namespace packages |
+| Step 8 | done | 2026-01-24 | Namespace package resolution |
 | Step 9 | done | 2026-01-24 | AliasGraph module |
-| Step 10 | pending | | Integrate AliasGraph into analyzer |
+| Step 10 | done | 2026-01-24 | Integrate AliasGraph into analyzer |
 | Step 11 | done | 2026-01-24 | Alias output types |
 | Step 12 | done | 2026-01-24 | Wire aliases to impact analysis |
 | Step 13 | done | 2026-01-24 | Add `rename` command |
-| Step 14 | done | 2025-01-24 | Add `analyze` command, remove old commands, update skills and docs |
+| Step 14 | done | 2026-01-24 | Add `analyze` command, remove old commands, update skills and docs |
 | Step 15 | done | 2026-01-24 | Final verification |
