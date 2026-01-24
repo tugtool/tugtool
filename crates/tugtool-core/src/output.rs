@@ -1205,6 +1205,84 @@ impl DoctorResponse {
 }
 
 // ============================================================================
+// Alias Output Types (Phase 10)
+// ============================================================================
+
+/// Alias information for impact analysis output.
+///
+/// Per Phase 10 Spec S05: Impact Analysis Alias Output.
+/// Represents a value-level alias that exists in the codebase.
+///
+/// Example JSON:
+/// ```json
+/// {
+///     "alias_name": "b",
+///     "source_name": "bar",
+///     "file": "consumer.py",
+///     "line": 3,
+///     "col": 1,
+///     "scope": ["module", "function:process"],
+///     "is_import_alias": false,
+///     "confidence": 1.0
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AliasOutput {
+    /// The name of the alias binding (the LHS of the assignment).
+    /// Example: In `b = bar`, this is "b".
+    pub alias_name: String,
+
+    /// The name of the source being aliased (the RHS of the assignment).
+    /// Example: In `b = bar`, this is "bar".
+    pub source_name: String,
+
+    /// The file containing the alias.
+    pub file: String,
+
+    /// Line number (1-indexed) where the alias is defined.
+    pub line: u32,
+
+    /// Column number (1-indexed) where the alias is defined.
+    pub col: u32,
+
+    /// Scope path where the alias is defined.
+    /// Example: `["module", "function:process"]` for an alias inside a function.
+    pub scope: Vec<String>,
+
+    /// Whether the source of the alias is an imported name.
+    pub is_import_alias: bool,
+
+    /// Confidence score for the alias (1.0 for simple assignments).
+    pub confidence: f32,
+}
+
+impl AliasOutput {
+    /// Create a new AliasOutput.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        alias_name: impl Into<String>,
+        source_name: impl Into<String>,
+        file: impl Into<String>,
+        line: u32,
+        col: u32,
+        scope: Vec<String>,
+        is_import_alias: bool,
+        confidence: f32,
+    ) -> Self {
+        AliasOutput {
+            alias_name: alias_name.into(),
+            source_name: source_name.into(),
+            file: file.into(),
+            line,
+            col,
+            scope,
+            is_import_alias,
+            confidence,
+        }
+    }
+}
+
+// ============================================================================
 // Deterministic Sorting
 // ============================================================================
 
@@ -1877,6 +1955,196 @@ mod tests {
             assert_eq!(parsed["state"], "error");
             assert!(parsed.get("actual_sha").is_none());
             assert_eq!(parsed["error"], "git command failed: exit code 128");
+        }
+    }
+
+    mod alias_output_tests {
+        use super::*;
+
+        /// AO-01: Serializes to JSON correctly
+        #[test]
+        fn test_alias_output_serialize() {
+            let alias = AliasOutput::new(
+                "b",
+                "bar",
+                "consumer.py",
+                3,
+                1,
+                vec!["module".to_string(), "function:process".to_string()],
+                false,
+                1.0,
+            );
+
+            let json = serde_json::to_string(&alias).unwrap();
+
+            // Verify it produces valid JSON
+            let _: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            // Verify key fields are present
+            assert!(json.contains("\"alias_name\":\"b\""));
+            assert!(json.contains("\"source_name\":\"bar\""));
+            assert!(json.contains("\"file\":\"consumer.py\""));
+        }
+
+        /// AO-02: Deserializes from JSON correctly (round-trip)
+        #[test]
+        fn test_alias_output_deserialize() {
+            let original = AliasOutput::new(
+                "my_alias",
+                "original_name",
+                "src/module.py",
+                42,
+                8,
+                vec!["module".to_string(), "class:MyClass".to_string()],
+                true,
+                0.95,
+            );
+
+            // Serialize
+            let json = serde_json::to_string(&original).unwrap();
+
+            // Deserialize
+            let deserialized: AliasOutput = serde_json::from_str(&json).unwrap();
+
+            // Verify round-trip
+            assert_eq!(original, deserialized);
+        }
+
+        /// AO-03: All fields present in output
+        #[test]
+        fn test_alias_output_all_fields() {
+            let alias = AliasOutput::new(
+                "b",
+                "bar",
+                "consumer.py",
+                3,
+                1,
+                vec!["module".to_string(), "function:process".to_string()],
+                false,
+                1.0,
+            );
+
+            let json = serde_json::to_string(&alias).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            // Verify all required fields are present
+            assert_eq!(parsed["alias_name"], "b");
+            assert_eq!(parsed["source_name"], "bar");
+            assert_eq!(parsed["file"], "consumer.py");
+            assert_eq!(parsed["line"], 3);
+            assert_eq!(parsed["col"], 1);
+            assert!(parsed["scope"].is_array());
+            assert_eq!(parsed["scope"].as_array().unwrap().len(), 2);
+            assert_eq!(parsed["scope"][0], "module");
+            assert_eq!(parsed["scope"][1], "function:process");
+            assert_eq!(parsed["is_import_alias"], false);
+            // Check confidence is approximately 1.0 (f32 comparison)
+            let confidence = parsed["confidence"].as_f64().unwrap();
+            assert!((confidence - 1.0).abs() < 0.001);
+        }
+
+        /// AO-04: Schema matches Spec S05
+        #[test]
+        fn test_alias_output_schema() {
+            // Golden test: verify exact JSON structure matches Spec S05
+            let alias = AliasOutput::new(
+                "b",
+                "bar",
+                "consumer.py",
+                3,
+                1,
+                vec!["module".to_string(), "function:process".to_string()],
+                false,
+                1.0,
+            );
+
+            let json = serde_json::to_string_pretty(&alias).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            // Per Spec S05, the output should have exactly these fields
+            let obj = parsed.as_object().unwrap();
+
+            // Verify field names match spec exactly
+            assert!(obj.contains_key("alias_name"), "Missing 'alias_name' field");
+            assert!(
+                obj.contains_key("source_name"),
+                "Missing 'source_name' field"
+            );
+            assert!(obj.contains_key("file"), "Missing 'file' field");
+            assert!(obj.contains_key("line"), "Missing 'line' field");
+            assert!(obj.contains_key("col"), "Missing 'col' field");
+            assert!(obj.contains_key("scope"), "Missing 'scope' field");
+            assert!(
+                obj.contains_key("is_import_alias"),
+                "Missing 'is_import_alias' field"
+            );
+            assert!(obj.contains_key("confidence"), "Missing 'confidence' field");
+
+            // Verify no extra fields
+            assert_eq!(
+                obj.len(),
+                8,
+                "AliasOutput should have exactly 8 fields per Spec S05"
+            );
+
+            // Verify types
+            assert!(obj["alias_name"].is_string());
+            assert!(obj["source_name"].is_string());
+            assert!(obj["file"].is_string());
+            assert!(obj["line"].is_number());
+            assert!(obj["col"].is_number());
+            assert!(obj["scope"].is_array());
+            assert!(obj["is_import_alias"].is_boolean());
+            assert!(obj["confidence"].is_number());
+        }
+
+        #[test]
+        fn test_alias_output_empty_scope() {
+            let alias = AliasOutput::new("x", "y", "test.py", 1, 1, vec![], false, 1.0);
+
+            let json = serde_json::to_string(&alias).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["scope"].as_array().unwrap().len(), 0);
+        }
+
+        #[test]
+        fn test_alias_output_import_alias_true() {
+            let alias = AliasOutput::new(
+                "np",
+                "numpy",
+                "data.py",
+                1,
+                1,
+                vec!["module".to_string()],
+                true, // is_import_alias
+                1.0,
+            );
+
+            let json = serde_json::to_string(&alias).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["is_import_alias"], true);
+        }
+
+        #[test]
+        fn test_alias_output_low_confidence() {
+            let alias = AliasOutput::new(
+                "maybe_alias",
+                "complex_expr",
+                "uncertain.py",
+                10,
+                5,
+                vec!["module".to_string()],
+                false,
+                0.5, // lower confidence
+            );
+
+            let json = serde_json::to_string(&alias).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            let confidence = parsed["confidence"].as_f64().unwrap();
+            assert!((confidence - 0.5).abs() < 0.001);
         }
     }
 }

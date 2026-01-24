@@ -297,8 +297,7 @@ impl Anchor {
                 let suffix_bytes = suffix_context.as_bytes();
 
                 // Calculate search bounds
-                let search_start =
-                    (approx_span.start).saturating_sub(*search_window as usize);
+                let search_start = (approx_span.start).saturating_sub(*search_window as usize);
                 let search_end = std::cmp::min(
                     (approx_span.end).saturating_add(*search_window as usize),
                     content.len(),

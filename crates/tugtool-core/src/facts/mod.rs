@@ -1906,12 +1906,8 @@ mod tests {
 
             for (i, kind) in kinds.iter().enumerate() {
                 let scope_id = store.next_scope_id();
-                let scope = ScopeInfo::new(
-                    scope_id,
-                    file_id,
-                    Span::new(i * 10, (i + 1) * 10),
-                    *kind,
-                );
+                let scope =
+                    ScopeInfo::new(scope_id, file_id, Span::new(i * 10, (i + 1) * 10), *kind);
                 store.insert_scope(scope);
 
                 let retrieved = store.scope(scope_id).unwrap();

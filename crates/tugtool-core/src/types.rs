@@ -48,7 +48,12 @@ impl Location {
     }
 
     /// Create a location with byte start offset (byte_end computed from name length).
-    pub fn with_byte_start(file: impl Into<String>, line: u32, col: u32, byte_start: usize) -> Self {
+    pub fn with_byte_start(
+        file: impl Into<String>,
+        line: u32,
+        col: u32,
+        byte_start: usize,
+    ) -> Self {
         Location {
             file: file.into(),
             line,

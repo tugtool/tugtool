@@ -2039,7 +2039,7 @@ All 5 new tests (AI-01 through AI-05) should pass.
 **Files:** `crates/tugtool-core/src/output.rs`
 
 **Tasks:**
-- [ ] Define `AliasOutput` struct with serialization
+- [x] Define `AliasOutput` struct with serialization
 
 **Tests:**
 
@@ -2052,12 +2052,12 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | AO-03 | `test_alias_output_all_fields` | unit | All fields present in output |
 | AO-04 | `test_alias_output_schema` | golden | Schema matches Spec S05 |
 
-- [ ] unit test: `test_alias_output_serialize` - serde_json::to_string works
-- [ ] unit test: `test_alias_output_deserialize` - round-trip serialization
-- [ ] unit test: `test_alias_output_all_fields` - alias_name, source_name, file, line, col, scope, is_import_alias, confidence
-- [ ] golden test: `test_alias_output_schema` - verify against Spec S05 schema
+- [x] unit test: `test_alias_output_serialize` - serde_json::to_string works
+- [x] unit test: `test_alias_output_deserialize` - round-trip serialization
+- [x] unit test: `test_alias_output_all_fields` - alias_name, source_name, file, line, col, scope, is_import_alias, confidence
+- [x] golden test: `test_alias_output_schema` - verify against Spec S05 schema
 
-**Checkpoint:** `cargo nextest run -p tugtool-core output`
+**Checkpoint:** `cargo nextest run -p tugtool-core output` ✓
 
 ---
 
@@ -2279,7 +2279,7 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | Step 8 | pending | | Namespace package resolution |
 | Step 9 | done | 2026-01-24 | AliasGraph module |
 | Step 10 | pending | | Integrate AliasGraph into analyzer |
-| Step 11 | pending | | Alias output types |
+| Step 11 | done | 2026-01-24 | Alias output types |
 | Step 12 | pending | | Wire aliases to impact analysis |
 | Step 13 | pending | | Add `rename` command |
 | Step 14 | pending | | Add `analyze` command, remove old commands, update skills and docs |

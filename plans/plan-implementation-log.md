@@ -6,6 +6,44 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 11: Alias Output Types | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 11 specification, Spec S05 (Impact Analysis Alias Output)
+- `crates/tugtool-core/src/output.rs` - Existing output types and serialization patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `AliasOutput` struct with serialization | Done |
+| unit test: `test_alias_output_serialize` | Done |
+| unit test: `test_alias_output_deserialize` | Done |
+| unit test: `test_alias_output_all_fields` | Done |
+| golden test: `test_alias_output_schema` | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/output.rs` - Added `AliasOutput` struct with 8 fields per Spec S05, plus 7 unit tests in `alias_output_tests` module
+- `plans/phase-10.md` - Checked off all task and test checkboxes for Step 11, updated implementation log status
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core output`: 43 tests passed (including 7 new alias output tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core output`: PASS (43 tests)
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+- `cargo fmt -p tugtool-core -- --check`: PASS
+
+**Key Decisions/Notes:**
+- **Spec S05 compliance**: `AliasOutput` struct includes all 8 fields exactly as specified: `alias_name`, `source_name`, `file`, `line`, `col`, `scope`, `is_import_alias`, `confidence`
+- **Golden test**: `test_alias_output_schema` verifies exact field count (8) and types match spec
+- **Round-trip serialization**: Tests verify JSON serialization/deserialization works correctly
+- **Additional edge case tests**: Added tests for empty scope, import aliases, and low confidence values
+
+---
+
 ## [infrastructure] Standardize Span Types on usize | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24
