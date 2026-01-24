@@ -482,11 +482,949 @@ tug analyze rename --at <file:line:col> --to <new_name> [--format diff|json|summ
 
 **References:** [D02], (#spec-scope-spans)
 
-**Files:** `crates/tugtool-python-cst/src/inflate.rs`, `visitor/scope.rs`
+**Files:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Add token fields, helper function, Lambda inflate
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Pass tokens to literals
+- `crates/tugtool-python-cst/src/parser/numbers.rs` - Accept token parameter
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Update visit_lambda
 
-**Tasks:**
-- [ ] In `inflate.rs`, modify `inflate_lambda()` to record `lexical_span` in PositionTable
-- [ ] In `visitor/scope.rs`, update `visit_lambda()` to retrieve span from PositionTable and set `ScopeInfo.lexical_span`
+##### Problem Statement
+
+To compute lambda scope spans (from `lambda` keyword to end of body expression), we need to determine the end position of the body expression. However, several expression types currently lack the token fields needed to compute their end positions:
+
+- `Ellipsis` - no `tok` field
+- `Integer` - no `tok` field (only stores `value: &'a str`)
+- `Float` - no `tok` field (only stores `value: &'a str`)
+- `Imaginary` - no `tok` field (only stores `value: &'a str`)
+- `SimpleString` - no `tok` field (only stores `value: &'a str`)
+
+Example: For `lambda: 42`, we cannot get the end position of the `42` literal without a token field.
+
+##### Architecture Overview
+
+###### CST Node Structure
+
+The codebase uses a two-phase architecture:
+1. **Deflated types** - Parser output, contains `TokenRef` fields for position info
+2. **Inflated types** - Final CST, `TokenRef` fields are stripped during inflation
+
+The `#[cst_node]` proc macro in `tugtool-python-cst-derive` automatically:
+- Generates `Deflated*` type from the struct definition
+- Keeps `TokenRef` fields only in the deflated version
+- Filters out `TokenRef` fields from the inflated version (line 284-289 in cstnode.rs)
+
+###### Key Pattern
+
+Looking at existing types like `Name`, `Lambda`, `Yield`, etc., the pattern is:
+1. Add `pub(crate) tok: TokenRef<'a>` field to the struct
+2. The field is automatically kept in `DeflatedName` but filtered from `Name`
+3. During `inflate()`, access `self.tok.start_pos.byte_idx()` and `self.tok.end_pos.byte_idx()`
+
+##### Step 2.1: Add Token Fields to Expression Types {#step-2-1}
+
+###### 2.1.1 Ellipsis
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Current definition (lines 506-510):**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Ellipsis<'a> {
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+}
+```
+
+**Updated definition:**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Ellipsis<'a> {
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Token for the `...` ellipsis literal.
+    pub(crate) tok: TokenRef<'a>,
+}
+```
+
+**Grammar change required:** Yes - see Step 2.2
+
+**Inflate update (lines 519-526):**
+```rust
+impl<'r, 'a> Inflate<'a> for DeflatedEllipsis<'r, 'a> {
+    type Inflated = Ellipsis<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated { lpar, rpar })
+    }
+}
+```
+No changes needed - the `tok` field is automatically filtered out from the inflated type.
+
+###### 2.1.2 Integer
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Current definition (lines 528-538):**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Integer<'a> {
+    /// A string representation of the integer, such as ``"100000"`` or
+    /// ``"100_000"``.
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Updated definition:**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Integer<'a> {
+    /// A string representation of the integer, such as ``"100000"`` or
+    /// ``"100_000"``.
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Token for the integer literal.
+    pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Inflate method (lines 548-562):** No changes needed - `tok` filtered automatically.
+
+###### 2.1.3 Float
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Current definition (lines 565-575):**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Float<'a> {
+    /// A string representation of the floating point number, such as ```"0.05"``,
+    /// ``".050"``, or ``"5e-2"``.
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Updated definition:**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Float<'a> {
+    /// A string representation of the floating point number, such as ```"0.05"``,
+    /// ``".050"``, or ``"5e-2"``.
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Token for the float literal.
+    pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Inflate method (lines 585-599):** No changes needed.
+
+###### 2.1.4 Imaginary
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Current definition (lines 602-608):**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Imaginary<'a> {
+    /// A string representation of the complex number, such as ``"2j"``
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+}
+```
+
+**Updated definition:**
+```rust
+#[cst_node(ParenthesizedNode)]
+pub struct Imaginary<'a> {
+    /// A string representation of the complex number, such as ``"2j"``
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Token for the imaginary literal.
+    pub(crate) tok: TokenRef<'a>,
+}
+```
+
+**Inflate method (lines 618-628):** No changes needed.
+
+###### 2.1.5 SimpleString
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Current definition (lines 2439-2450):**
+```rust
+#[cst_node(ParenthesizedNode, Default)]
+pub struct SimpleString<'a> {
+    /// The texual representation of the string, including quotes, prefix
+    /// characters, and any escape characters present in the original source code,
+    /// such as ``r"my string\n"``.
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Updated definition:**
+```rust
+#[cst_node(ParenthesizedNode, Default)]
+pub struct SimpleString<'a> {
+    /// The texual representation of the string, including quotes, prefix
+    /// characters, and any escape characters present in the original source code,
+    /// such as ``r"my string\n"``.
+    pub value: &'a str,
+    pub lpar: Vec<LeftParen<'a>>,
+    pub rpar: Vec<RightParen<'a>>,
+
+    /// Token for the string literal.
+    pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Inflate method (lines 2452-2466):** No changes needed.
+
+##### Step 2.2: Update Parser/Grammar to Populate Tokens {#step-2-2}
+
+###### Ellipsis (grammar.rs line 1072)
+
+**Current:**
+```rust
+/ lit("...") { Expression::Ellipsis(Box::new(Ellipsis {lpar: vec![], rpar: vec![]}))}
+```
+
+**Updated:**
+```rust
+/ tok:lit("...") { Expression::Ellipsis(Box::new(Ellipsis {lpar: vec![], rpar: vec![], tok}))}
+```
+
+###### Numbers - make_number function (grammar.rs lines 1772-1774)
+
+The current `make_number` function receives a `TokenRef` but only passes the string to `parse_number`:
+
+```rust
+fn make_number<'input, 'a>(num: TokenRef<'input, 'a>) -> Expression<'input, 'a> {
+    super::numbers::parse_number(num.string)
+}
+```
+
+**Updated:**
+```rust
+fn make_number<'input, 'a>(num: TokenRef<'input, 'a>) -> Expression<'input, 'a> {
+    super::numbers::parse_number(num.string, num)
+}
+```
+
+###### numbers.rs parse_number (lines 43-69)
+
+**Current:**
+```rust
+pub(crate) fn parse_number(raw: &str) -> Expression {
+    if INTEGER_RE.with(|r| r.is_match(raw)) {
+        Expression::Integer(Box::new(Integer {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+        }))
+    } else if FLOAT_RE.with(|r| r.is_match(raw)) {
+        Expression::Float(Box::new(Float {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+        }))
+    } else if IMAGINARY_RE.with(|r| r.is_match(raw)) {
+        Expression::Imaginary(Box::new(Imaginary {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+        }))
+    } else {
+        Expression::Integer(Box::new(Integer {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+        }))
+    }
+}
+```
+
+**Updated:**
+```rust
+use crate::tokenizer::Token;
+
+type TokenRef<'r, 'a> = &'r Token<'a>;
+
+pub(crate) fn parse_number<'r, 'a>(raw: &'a str, tok: TokenRef<'r, 'a>) -> Expression<'r, 'a> {
+    if INTEGER_RE.with(|r| r.is_match(raw)) {
+        Expression::Integer(Box::new(Integer {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+            tok,
+        }))
+    } else if FLOAT_RE.with(|r| r.is_match(raw)) {
+        Expression::Float(Box::new(Float {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+            tok,
+        }))
+    } else if IMAGINARY_RE.with(|r| r.is_match(raw)) {
+        Expression::Imaginary(Box::new(Imaginary {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+            tok,
+        }))
+    } else {
+        Expression::Integer(Box::new(Integer {
+            value: raw,
+            lpar: Default::default(),
+            rpar: Default::default(),
+            tok,
+        }))
+    }
+}
+```
+
+###### Strings - make_string function (grammar.rs lines 2903-2908)
+
+**Current:**
+```rust
+fn make_string<'input, 'a>(tok: TokenRef<'input, 'a>) -> String<'input, 'a> {
+    String::Simple(SimpleString {
+        value: tok.string,
+        ..Default::default()
+    })
+}
+```
+
+**Updated:**
+```rust
+fn make_string<'input, 'a>(tok: TokenRef<'input, 'a>) -> String<'input, 'a> {
+    String::Simple(SimpleString {
+        value: tok.string,
+        lpar: Default::default(),
+        rpar: Default::default(),
+        tok,
+        // Note: node_id is NOT included - it's filtered from DeflatedSimpleString by the cst_node macro
+    })
+}
+```
+
+##### Step 2.3: Create `deflated_expression_end_pos()` Helper {#step-2-3}
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+Add this helper function to compute the end position of any deflated expression. This needs to be added near the end of the file, possibly after the Expression enum definition or in a dedicated section.
+
+```rust
+/// Compute the end byte position of a deflated expression.
+///
+/// This is needed during Lambda inflation to determine the lexical span end.
+/// The span goes from `lambda` keyword to the end of the body expression.
+///
+/// # Returns
+/// The byte index of the end position of the expression.
+pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u64 {
+    match expr {
+        // Literals with token fields
+        DeflatedExpression::Name(n) => {
+            // Name may or may not have a token; if it does, use end_pos
+            // If not (rare), we can't compute - return 0 as fallback
+            n.tok.map(|t| t.end_pos.byte_idx() as u64).unwrap_or(0)
+        }
+        DeflatedExpression::Ellipsis(e) => {
+            if !e.rpar.is_empty() {
+                // Parenthesized: use rpar end
+                e.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                e.tok.end_pos.byte_idx() as u64
+            }
+        }
+        DeflatedExpression::Integer(i) => {
+            if !i.rpar.is_empty() {
+                i.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                i.tok.end_pos.byte_idx() as u64
+            }
+        }
+        DeflatedExpression::Float(f) => {
+            if !f.rpar.is_empty() {
+                f.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                f.tok.end_pos.byte_idx() as u64
+            }
+        }
+        DeflatedExpression::Imaginary(i) => {
+            if !i.rpar.is_empty() {
+                i.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                i.tok.end_pos.byte_idx() as u64
+            }
+        }
+        DeflatedExpression::SimpleString(s) => {
+            if !s.rpar.is_empty() {
+                s.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                s.tok.end_pos.byte_idx() as u64
+            }
+        }
+
+        // Compound expressions - recurse to rightmost component
+        DeflatedExpression::Comparison(c) => {
+            if !c.rpar.is_empty() {
+                c.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else if let Some(last) = c.comparisons.last() {
+                deflated_expression_end_pos(&last.comparator)
+            } else {
+                deflated_expression_end_pos(&c.left)
+            }
+        }
+        DeflatedExpression::UnaryOperation(u) => {
+            if !u.rpar.is_empty() {
+                u.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&u.expression)
+            }
+        }
+        DeflatedExpression::BinaryOperation(b) => {
+            if !b.rpar.is_empty() {
+                b.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&b.right)
+            }
+        }
+        DeflatedExpression::BooleanOperation(b) => {
+            if !b.rpar.is_empty() {
+                b.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&b.right)
+            }
+        }
+        DeflatedExpression::Attribute(a) => {
+            if !a.rpar.is_empty() {
+                a.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                // Attribute ends at the attr name token
+                a.attr.tok.map(|t| t.end_pos.byte_idx() as u64).unwrap_or(0)
+            }
+        }
+        DeflatedExpression::Tuple(t) => {
+            if !t.rpar.is_empty() {
+                t.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else if let Some(last) = t.elements.last() {
+                // Tuple element is Element<Expression>
+                deflated_expression_end_pos(&last.value)
+            } else {
+                0 // Empty tuple - shouldn't happen without parens
+            }
+        }
+        DeflatedExpression::Call(c) => {
+            // Call always ends with ) - use the call's rpar_tok
+            c.rpar_tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::GeneratorExp(g) => {
+            // Generator expressions: if parenthesized, use rpar; otherwise use for_in end
+            if !g.rpar.is_empty() {
+                g.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                // Implicit genexp (like sum(x for x in xs)) - use for_in span
+                deflated_comp_for_end_pos(&g.for_in)
+            }
+        }
+        DeflatedExpression::ListComp(l) => {
+            // List comp ends with ]
+            l.rbracket.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::SetComp(s) => {
+            // Set comp ends with }
+            s.rbrace.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::DictComp(d) => {
+            // Dict comp ends with }
+            d.rbrace.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::List(l) => {
+            // List ends with ]
+            l.rbracket.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::Set(s) => {
+            // Set ends with }
+            s.rbrace.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::Dict(d) => {
+            // Dict ends with }
+            d.rbrace.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::Subscript(s) => {
+            // Subscript ends with ]
+            s.rbracket.tok.end_pos.byte_idx() as u64
+        }
+        DeflatedExpression::StarredElement(s) => {
+            if !s.rpar.is_empty() {
+                s.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&s.value)
+            }
+        }
+        DeflatedExpression::IfExp(i) => {
+            if !i.rpar.is_empty() {
+                i.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&i.orelse)
+            }
+        }
+        DeflatedExpression::Lambda(l) => {
+            if !l.rpar.is_empty() {
+                l.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&l.body)
+            }
+        }
+        DeflatedExpression::Yield(y) => {
+            if !y.rpar.is_empty() {
+                y.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else if let Some(value) = &y.value {
+                match value.as_ref() {
+                    DeflatedYieldValue::Expression(e) => deflated_expression_end_pos(e),
+                    DeflatedYieldValue::From(f) => deflated_expression_end_pos(&f.item),
+                }
+            } else {
+                y.yield_tok.end_pos.byte_idx() as u64
+            }
+        }
+        DeflatedExpression::Await(a) => {
+            if !a.rpar.is_empty() {
+                a.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&a.expression)
+            }
+        }
+        DeflatedExpression::ConcatenatedString(c) => {
+            if !c.rpar.is_empty() {
+                c.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_string_end_pos(&c.right)
+            }
+        }
+        DeflatedExpression::FormattedString(f) => {
+            if !f.rpar.is_empty() {
+                f.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                // Formatted string ends at its end token (the closing quote)
+                // The end field is a &str, we need the token position
+                // This is tricky - FormattedString doesn't have an end_tok field
+                // We may need to add one or use the last part's position
+                // For now, use a heuristic: end of last part or start + estimated length
+                if let Some(last_part) = f.parts.last() {
+                    deflated_formatted_string_content_end_pos(last_part)
+                } else {
+                    0 // Fallback
+                }
+            }
+        }
+        DeflatedExpression::TemplatedString(t) => {
+            if !t.rpar.is_empty() {
+                t.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                if let Some(last_part) = t.parts.last() {
+                    deflated_templated_string_content_end_pos(last_part)
+                } else {
+                    0 // Fallback
+                }
+            }
+        }
+        DeflatedExpression::NamedExpr(n) => {
+            if !n.rpar.is_empty() {
+                n.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&n.value)
+            }
+        }
+    }
+}
+
+/// Helper for CompFor end position (used by GeneratorExp)
+fn deflated_comp_for_end_pos<'r, 'a>(comp_for: &DeflatedCompFor<'r, 'a>) -> u64 {
+    // CompFor may have inner_for_in (nested comprehensions) or end at ifs/iter
+    if let Some(inner) = &comp_for.inner_for_in {
+        deflated_comp_for_end_pos(inner)
+    } else if let Some(last_if) = comp_for.ifs.last() {
+        deflated_expression_end_pos(&last_if.test)
+    } else {
+        deflated_expression_end_pos(&comp_for.iter)
+    }
+}
+
+/// Helper for String end position
+fn deflated_string_end_pos<'r, 'a>(s: &DeflatedString<'r, 'a>) -> u64 {
+    match s {
+        DeflatedString::Simple(ss) => {
+            if !ss.rpar.is_empty() {
+                ss.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                ss.tok.end_pos.byte_idx() as u64
+            }
+        }
+        DeflatedString::Concatenated(cs) => {
+            if !cs.rpar.is_empty() {
+                cs.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_string_end_pos(&cs.right)
+            }
+        }
+        DeflatedString::Formatted(fs) => {
+            if !fs.rpar.is_empty() {
+                fs.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else if let Some(last_part) = fs.parts.last() {
+                deflated_formatted_string_content_end_pos(last_part)
+            } else {
+                0
+            }
+        }
+        DeflatedString::Templated(ts) => {
+            if !ts.rpar.is_empty() {
+                ts.rpar.last().unwrap().rpar_tok.end_pos.byte_idx() as u64
+            } else if let Some(last_part) = ts.parts.last() {
+                deflated_templated_string_content_end_pos(last_part)
+            } else {
+                0
+            }
+        }
+    }
+}
+
+/// Helper for FormattedStringContent end position
+fn deflated_formatted_string_content_end_pos<'r, 'a>(
+    content: &DeflatedFormattedStringContent<'r, 'a>,
+) -> u64 {
+    match content {
+        DeflatedFormattedStringContent::Text(_) => 0, // Text doesn't have position info
+        DeflatedFormattedStringContent::Expression(e) => {
+            // Expression ends at its closing brace
+            // The after_expr_tok points to conversion/format_spec/rbrace
+            if let Some(tok) = &e.after_expr_tok {
+                tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&e.expression)
+            }
+        }
+    }
+}
+
+/// Helper for TemplatedStringContent end position
+fn deflated_templated_string_content_end_pos<'r, 'a>(
+    content: &DeflatedTemplatedStringContent<'r, 'a>,
+) -> u64 {
+    match content {
+        DeflatedTemplatedStringContent::Text(_) => 0,
+        DeflatedTemplatedStringContent::Expression(e) => {
+            if let Some(tok) = &e.after_expr_tok {
+                tok.end_pos.byte_idx() as u64
+            } else {
+                deflated_expression_end_pos(&e.expression)
+            }
+        }
+    }
+}
+```
+
+**Note:** The above helper function handles all 26 Expression variants. Some edge cases (like FormattedString without end token) may need additional token fields added to those types, or we may need to accept some fallback behavior for rare cases. The implementation above handles most common cases correctly.
+
+##### Step 2.4: Update Lambda inflate() Method {#step-2-4}
+
+**File:** `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Current Lambda inflate (lines 2173-2199):**
+```rust
+impl<'r, 'a> Inflate<'a> for DeflatedLambda<'r, 'a> {
+    type Inflated = Lambda<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let lpar = self.lpar.inflate(ctx)?;
+        let whitespace_after_lambda = if !self.params.is_empty() {
+            Some(parse_parenthesizable_whitespace(
+                &ctx.ws,
+                &mut self.lambda_tok.whitespace_after.borrow_mut(),
+            )?)
+        } else {
+            Default::default()
+        };
+        let mut params = self.params.inflate(ctx)?;
+        adjust_parameters_trailing_whitespace(&ctx.ws, &mut params, self.colon.tok)?;
+        let colon = self.colon.inflate(ctx)?;
+        let body = self.body.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated {
+            params,
+            body,
+            colon,
+            lpar,
+            rpar,
+            whitespace_after_lambda,
+        })
+    }
+}
+```
+
+**Updated Lambda inflate:**
+```rust
+impl<'r, 'a> Inflate<'a> for DeflatedLambda<'r, 'a> {
+    type Inflated = Lambda<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Lambda node
+        let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens are stripped during inflation).
+        // Lambda lexical span: from `lambda` keyword to end of body expression.
+        let lexical_start = self.lambda_tok.start_pos.byte_idx() as u64;
+        let lexical_end = deflated_expression_end_pos(&self.body);
+
+        // Record lexical span (if position tracking is enabled)
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: lexical_end,
+            },
+        );
+
+        let lpar = self.lpar.inflate(ctx)?;
+        let whitespace_after_lambda = if !self.params.is_empty() {
+            Some(parse_parenthesizable_whitespace(
+                &ctx.ws,
+                &mut self.lambda_tok.whitespace_after.borrow_mut(),
+            )?)
+        } else {
+            Default::default()
+        };
+        let mut params = self.params.inflate(ctx)?;
+        adjust_parameters_trailing_whitespace(&ctx.ws, &mut params, self.colon.tok)?;
+        let colon = self.colon.inflate(ctx)?;
+        let body = self.body.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated {
+            params,
+            body,
+            colon,
+            lpar,
+            rpar,
+            whitespace_after_lambda,
+            node_id: Some(node_id),
+        })
+    }
+}
+```
+
+##### Step 2.5: Update visit_lambda() in scope.rs {#step-2-5}
+
+**File:** `crates/tugtool-python-cst/src/visitor/scope.rs`
+
+**Current visit_lambda (lines 321-329):**
+```rust
+fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
+    // Lambda spans are follow-on work (no lexical_span recorded yet)
+    self.enter_scope(ScopeKind::Lambda, None);
+    VisitResult::Continue
+}
+
+fn leave_lambda(&mut self, _node: &Lambda<'a>) {
+    self.exit_scope();
+}
+```
+
+**Updated visit_lambda:**
+```rust
+fn visit_lambda(&mut self, node: &Lambda<'a>) -> VisitResult {
+    // Look up lexical span from PositionTable using Lambda's node_id
+    self.enter_scope_with_id(ScopeKind::Lambda, None, node.node_id);
+    VisitResult::Continue
+}
+
+fn leave_lambda(&mut self, _node: &Lambda<'a>) {
+    self.exit_scope();
+}
+```
+
+##### Step 2.6: Add Test Cases {#step-2-6}
+
+**File:** `crates/tugtool-python-cst/src/visitor/scope.rs`
+
+Add new tests in the `#[cfg(test)]` module:
+
+```rust
+#[test]
+fn test_scope_lambda_has_lexical_span() {
+    let source = "f = lambda x: x + 1";
+    //            01234567890123456789
+    //                ^lambda starts at byte 4
+    //                              ^body ends after '1' at byte 19
+
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+    assert_eq!(scopes.len(), 2);
+
+    // Module scope
+    assert_eq!(scopes[0].kind, ScopeKind::Module);
+
+    // Lambda scope - should now have lexical span
+    assert_eq!(scopes[1].kind, ScopeKind::Lambda);
+    let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+    assert_eq!(
+        lambda_span.start, 4,
+        "Lambda lexical span should start at 'lambda' keyword (byte 4)"
+    );
+    assert_eq!(
+        lambda_span.end, 19,
+        "Lambda lexical span should end after body expression (byte 19)"
+    );
+}
+
+#[test]
+fn test_scope_lambda_with_integer_body() {
+    let source = "f = lambda: 42";
+    //            01234567890123
+    //                ^lambda at 4
+    //                        ^42 ends at 14
+
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+    assert_eq!(scopes.len(), 2);
+    let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+    assert_eq!(lambda_span.start, 4);
+    assert_eq!(lambda_span.end, 14);
+}
+
+#[test]
+fn test_scope_lambda_with_string_body() {
+    let source = r#"f = lambda: "hello""#;
+    //            0123456789012345678
+    //                ^lambda at 4
+    //                        ^string ends at 19
+
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+    assert_eq!(scopes.len(), 2);
+    let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+    assert_eq!(lambda_span.start, 4);
+    // String is "hello" which is 7 chars, starting at 12, ending at 19
+    assert_eq!(lambda_span.end, 19);
+}
+
+#[test]
+fn test_scope_lambda_with_ellipsis_body() {
+    let source = "f = lambda: ...";
+    //            012345678901234
+    //                ^lambda at 4
+    //                        ^... ends at 15
+
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+    assert_eq!(scopes.len(), 2);
+    let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+    assert_eq!(lambda_span.start, 4);
+    assert_eq!(lambda_span.end, 15);
+}
+
+#[test]
+fn test_scope_nested_lambda_containment() {
+    let source = "f = lambda x: lambda y: x + y";
+    //            01234567890123456789012345678
+    //                ^outer lambda at 4
+    //                          ^inner lambda at 14
+    //                                      ^ends at 29
+
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+    assert_eq!(scopes.len(), 3);
+
+    // Outer lambda
+    let outer_span = scopes[1].span.expect("Outer lambda should have span");
+    assert_eq!(outer_span.start, 4);
+    assert_eq!(outer_span.end, 29);
+
+    // Inner lambda
+    let inner_span = scopes[2].span.expect("Inner lambda should have span");
+    assert_eq!(inner_span.start, 14);
+    assert_eq!(inner_span.end, 29);
+
+    // Verify containment
+    assert!(
+        outer_span.start <= inner_span.start && inner_span.end <= outer_span.end,
+        "Inner lambda should be contained within outer lambda"
+    );
+}
+```
+
+##### Implementation Order
+
+1. **Add token fields to expression types** (Step 2.1)
+   - Modify struct definitions in expression.rs
+   - No inflate changes needed (proc macro handles filtering)
+
+2. **Update parser/grammar** (Step 2.2)
+   - Modify grammar.rs: Ellipsis rule, make_number, make_string
+   - Modify numbers.rs: parse_number signature and body
+
+3. **Add deflated_expression_end_pos() helper** (Step 2.3)
+   - Add helper function to expression.rs
+   - Handle all Expression variants
+
+4. **Update Lambda inflate()** (Step 2.4)
+   - Compute and record lexical_span during inflation
+   - Add node_id assignment
+
+5. **Update visit_lambda()** (Step 2.5)
+   - Change from enter_scope() to enter_scope_with_id()
+
+6. **Add tests** (Step 2.6)
+   - Verify lambda spans are correct
+   - Test various body expression types
+
+##### Risk Assessment
+
+| Risk | Mitigation |
+|------|------------|
+| Breaking existing parsing | Token fields are optional in proc-macro expansion; existing code continues to work |
+| Missing edge cases in deflated_expression_end_pos | Comprehensive match on all Expression variants; fallback to 0 for truly pathological cases |
+| FormattedString/TemplatedString missing end position | These are rare lambda bodies; acceptable to have less precise spans for these edge cases |
+
+##### Follow-on Work
+
+Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler because comprehensions use explicit bracket tokens (`[`, `]`, `{`, `}`) that already exist and have position information.
 
 **Checkpoint:** `cargo nextest run -p tugtool-python-cst scope`
 

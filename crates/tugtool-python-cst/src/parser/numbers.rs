@@ -6,6 +6,9 @@
 use regex::Regex;
 
 use crate::nodes::deflated::{Expression, Float, Imaginary, Integer};
+use crate::tokenizer::Token;
+
+type TokenRef<'r, 'a> = &'r Token<'a>;
 
 static HEX: &str = r"0[xX](?:_?[0-9a-fA-F])+";
 static BIN: &str = r"0[bB](?:_?[01])+";
@@ -40,30 +43,34 @@ thread_local! {
         .expect("regex");
 }
 
-pub(crate) fn parse_number(raw: &str) -> Expression {
+pub(crate) fn parse_number<'r, 'a>(raw: &'a str, tok: TokenRef<'r, 'a>) -> Expression<'r, 'a> {
     if INTEGER_RE.with(|r| r.is_match(raw)) {
         Expression::Integer(Box::new(Integer {
             value: raw,
             lpar: Default::default(),
             rpar: Default::default(),
+            tok,
         }))
     } else if FLOAT_RE.with(|r| r.is_match(raw)) {
         Expression::Float(Box::new(Float {
             value: raw,
             lpar: Default::default(),
             rpar: Default::default(),
+            tok,
         }))
     } else if IMAGINARY_RE.with(|r| r.is_match(raw)) {
         Expression::Imaginary(Box::new(Imaginary {
             value: raw,
             lpar: Default::default(),
             rpar: Default::default(),
+            tok,
         }))
     } else {
         Expression::Integer(Box::new(Integer {
             value: raw,
             lpar: Default::default(),
             rpar: Default::default(),
+            tok,
         }))
     }
 }

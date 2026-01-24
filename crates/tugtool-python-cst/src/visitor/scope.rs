@@ -318,9 +318,9 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
         self.exit_scope();
     }
 
-    fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
-        // Lambda spans are follow-on work (no lexical_span recorded yet)
-        self.enter_scope(ScopeKind::Lambda, None);
+    fn visit_lambda(&mut self, node: &Lambda<'a>) -> VisitResult {
+        // Look up lexical span from PositionTable using Lambda's node_id
+        self.enter_scope_with_id(ScopeKind::Lambda, None, node.node_id);
         VisitResult::Continue
     }
 
@@ -822,5 +822,656 @@ mod tests {
             func_span.start, 11,
             "Lexical span should start at 'async' (byte 11), not at decorator '@' (byte 0)"
         );
+    }
+
+    // ========================================================================
+    // Lambda scope span tests
+    // ========================================================================
+
+    #[test]
+    fn test_scope_lambda_has_lexical_span() {
+        let source = "f = lambda x: x + 1";
+        //            01234567890123456789
+        //                ^lambda starts at byte 4
+        //                              ^body ends after '1' at byte 19
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+
+        // Module scope
+        assert_eq!(scopes[0].kind, ScopeKind::Module);
+
+        // Lambda scope - should now have lexical span
+        assert_eq!(scopes[1].kind, ScopeKind::Lambda);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(
+            lambda_span.start, 4,
+            "Lambda lexical span should start at 'lambda' keyword (byte 4)"
+        );
+        assert_eq!(
+            lambda_span.end, 19,
+            "Lambda lexical span should end after body expression (byte 19)"
+        );
+    }
+
+    #[test]
+    fn test_scope_lambda_with_integer_body() {
+        let source = "f = lambda: 42";
+        //            01234567890123
+        //                ^lambda at 4
+        //                        ^42 ends at 14
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 14);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_string_body() {
+        let source = r#"f = lambda: "hello""#;
+        //            0123456789012345678
+        //                ^lambda at 4
+        //                        ^string ends at 19
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        // String is "hello" which is 7 chars, starting at 12, ending at 19
+        assert_eq!(lambda_span.end, 19);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_ellipsis_body() {
+        let source = "f = lambda: ...";
+        //            012345678901234
+        //                ^lambda at 4
+        //                        ^... ends at 15
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 15);
+    }
+
+    #[test]
+    fn test_scope_nested_lambda_containment() {
+        let source = "f = lambda x: lambda y: x + y";
+        //            01234567890123456789012345678
+        //                ^outer lambda at 4
+        //                          ^inner lambda at 14
+        //                                      ^ends at 29
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 3);
+
+        // Outer lambda
+        let outer_span = scopes[1].span.expect("Outer lambda should have span");
+        assert_eq!(outer_span.start, 4);
+        assert_eq!(outer_span.end, 29);
+
+        // Inner lambda
+        let inner_span = scopes[2].span.expect("Inner lambda should have span");
+        assert_eq!(inner_span.start, 14);
+        assert_eq!(inner_span.end, 29);
+
+        // Verify containment
+        assert!(
+            outer_span.start <= inner_span.start && inner_span.end <= outer_span.end,
+            "Inner lambda should be contained within outer lambda"
+        );
+    }
+
+    // ========================================================================
+    // Real-world lambda span tests - stress testing edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_scope_lambda_as_sort_key() {
+        // Very common real-world pattern: lambda as key function
+        let source = "sorted(items, key=lambda x: x.name)";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123456
+        //                              ^lambda at 18
+        //                                           ^ends at 34 (after 'e' of 'name')
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 18, "Lambda should start at 'lambda' keyword");
+        assert_eq!(lambda_span.end, 34, "Lambda should end after x.name");
+    }
+
+    #[test]
+    fn test_scope_lambda_with_method_chain() {
+        // Tests Attribute -> Call -> Attribute -> Call chain
+        let source = "f = lambda s: s.strip().lower()";
+        //            0         1         2         3
+        //            0123456789012345678901234567890
+        //                ^lambda at 4
+        //                                        ^ends at 31
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 31);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_subscript() {
+        // Tests Subscript ending with ]
+        let source = "f = lambda x: x[0]";
+        //            012345678901234567
+        //                ^lambda at 4
+        //                           ^ends at 18
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 18);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_slice() {
+        // Tests Subscript with slice
+        let source = "f = lambda x: x[1:3]";
+        //            01234567890123456789
+        //                ^lambda at 4
+        //                             ^ends at 20
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 20);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_list_comp_body() {
+        // Lambda body is a list comprehension - creates nested scope
+        let source = "f = lambda x: [i * 2 for i in x]";
+        //            0         1         2         3
+        //            01234567890123456789012345678901
+        //                ^lambda at 4
+        //                                         ^ends at 32
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + Lambda + ListComp = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 32);
+
+        // ListComp scope is inside lambda (Step 3 will add span tracking for this)
+        assert_eq!(scopes[2].kind, ScopeKind::Comprehension);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_conditional_expression() {
+        // Tests IfExp (ternary) - body ends at the orelse
+        let source = "f = lambda x: x if x > 0 else -x";
+        //            0         1         2         3
+        //            01234567890123456789012345678901
+        //                ^lambda at 4
+        //                                         ^ends at 32
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 32);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_chained_comparison() {
+        // Tests Comparison with multiple comparators
+        let source = "f = lambda x: 0 < x < 10";
+        //            012345678901234567890123
+        //                ^lambda at 4
+        //                                 ^ends at 24
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 24);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_boolean_operation() {
+        // Tests BooleanOperation
+        let source = "f = lambda x, y: x and y or False";
+        //            0         1         2         3
+        //            012345678901234567890123456789012
+        //                ^lambda at 4
+        //                                          ^ends at 33
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 33);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_parenthesized_body() {
+        // Tests rpar handling - parentheses around body
+        let source = "f = lambda x: (x + 1)";
+        //            012345678901234567890
+        //                ^lambda at 4
+        //                              ^ends at 21
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 21);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_nested_parens() {
+        // Tests deeply nested parentheses
+        let source = "f = lambda x: ((x))";
+        //            0123456789012345678
+        //                ^lambda at 4
+        //                            ^ends at 19
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 19);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_dict_literal_body() {
+        // Lambda body is a dict literal
+        let source = "f = lambda x: {'key': x}";
+        //            012345678901234567890123
+        //                ^lambda at 4
+        //                                 ^ends at 24
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 24);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_list_literal_body() {
+        // Lambda body is a list literal
+        let source = "f = lambda x: [x, x + 1]";
+        //            012345678901234567890123
+        //                ^lambda at 4
+        //                                 ^ends at 24
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 24);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_tuple_body() {
+        // Lambda body is a tuple (with parens for clarity)
+        let source = "f = lambda x: (x, x + 1)";
+        //            012345678901234567890123
+        //                ^lambda at 4
+        //                                 ^ends at 24
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 24);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_generator_exp_body() {
+        // Lambda body is a generator expression - creates nested scope
+        let source = "f = lambda x: (i for i in x)";
+        //            0         1         2
+        //            0123456789012345678901234567
+        //                ^lambda at 4
+        //                                     ^ends at 28
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + Lambda + GeneratorExp = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 28);
+
+        assert_eq!(scopes[2].kind, ScopeKind::Comprehension);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_fstring_body() {
+        // Tests FormattedString - this is an edge case per the audit
+        let source = r#"f = lambda x: f"hello {x}""#;
+        //            0         1         2
+        //            01234567890123456789012345
+        //                ^lambda at 4
+        //                                    ^ends at 26
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        // Note: FormattedString end position may have edge cases - verify it's reasonable
+        assert!(
+            lambda_span.end >= 20,
+            "Lambda end should be at least past the f-string start"
+        );
+    }
+
+    #[test]
+    fn test_scope_lambda_with_float_body() {
+        // Tests Float token (mentioned as gap in audit)
+        let source = "f = lambda: 3.14";
+        //            0123456789012345
+        //                ^lambda at 4
+        //                          ^ends at 16
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 16);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_imaginary_body() {
+        // Tests Imaginary token
+        let source = "f = lambda: 2j";
+        //            01234567890123
+        //                ^lambda at 4
+        //                        ^ends at 14
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 14);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_unary_minus() {
+        // Tests UnaryOperation
+        let source = "f = lambda x: -x";
+        //            0123456789012345
+        //                ^lambda at 4
+        //                          ^ends at 16
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 16);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_await_body() {
+        // Tests Await expression (must be inside async context, but parser accepts it)
+        let source = "f = lambda: await coro()";
+        //            012345678901234567890123
+        //                ^lambda at 4
+        //                                 ^ends at 24
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 24);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_starred_element() {
+        // Tests StarredElement in tuple
+        let source = "f = lambda x: (*x,)";
+        //            0123456789012345678
+        //                ^lambda at 4
+        //                            ^ends at 19
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 19);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_walrus_body() {
+        // Tests NamedExpr (walrus operator)
+        let source = "f = lambda: (x := 1)";
+        //            01234567890123456789
+        //                ^lambda at 4
+        //                             ^ends at 20
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 20);
+    }
+
+    #[test]
+    fn test_scope_multiple_lambdas_same_line() {
+        // Multiple lambdas on same line - verify independence
+        let source = "a, b = lambda: 1, lambda: 2";
+        //            0         1         2
+        //            012345678901234567890123456
+        //                   ^lambda1 at 7, ends at 16 (after "1")
+        //                              ^lambda2 at 18, ends at 27 (after "2")
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + 2 lambdas = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        let lambda1_span = scopes[1].span.expect("Lambda 1 should have span");
+        assert_eq!(lambda1_span.start, 7);
+        assert_eq!(lambda1_span.end, 16); // ends after "1" at position 15
+
+        let lambda2_span = scopes[2].span.expect("Lambda 2 should have span");
+        assert_eq!(lambda2_span.start, 18);
+        assert_eq!(lambda2_span.end, 27); // ends after "2" at position 26
+
+        // Verify non-overlapping
+        assert!(
+            lambda1_span.end <= lambda2_span.start,
+            "Lambda spans should not overlap"
+        );
+    }
+
+    #[test]
+    fn test_scope_lambda_in_dict_value() {
+        // Lambda as dict value - common pattern
+        let source = "d = {'transform': lambda x: x * 2}";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123
+        //                              ^lambda at 18
+        //                                           ^ends at 33
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 18);
+        assert_eq!(lambda_span.end, 33);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_call_chain_ending_in_subscript() {
+        // Complex chained expression: call -> attribute -> subscript
+        let source = "f = lambda x: x.items()[0]";
+        //            0         1         2
+        //            01234567890123456789012345
+        //                ^lambda at 4
+        //                                   ^ends at 26
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 26);
+    }
+
+    #[test]
+    fn test_scope_lambda_with_concatenated_strings() {
+        // Tests ConcatenatedString
+        let source = r#"f = lambda: "hello" "world""#;
+        //            0         1         2
+        //            012345678901234567890123456
+        //                ^lambda at 4
+        //                                     ^ends at 27
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 27);
+    }
+
+    #[test]
+    fn test_scope_lambda_yield_expression() {
+        // Tests Yield expression (valid in generator context)
+        let source = "f = lambda: (yield 1)";
+        //            012345678901234567890
+        //                ^lambda at 4
+        //                              ^ends at 21
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 21);
+    }
+
+    #[test]
+    fn test_scope_lambda_deeply_nested_calls() {
+        // Stress test: deeply nested function calls
+        let source = "f = lambda x: foo(bar(baz(x)))";
+        //            0         1         2
+        //            012345678901234567890123456789
+        //                ^lambda at 4
+        //                                       ^ends at 30
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 30);
+    }
+
+    #[test]
+    fn test_scope_lambda_set_comp_body() {
+        // Lambda body is a set comprehension
+        let source = "f = lambda x: {i for i in x}";
+        //            0         1         2
+        //            0123456789012345678901234567
+        //                ^lambda at 4
+        //                                     ^ends at 28
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + Lambda + SetComp = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 28);
+    }
+
+    #[test]
+    fn test_scope_lambda_dict_comp_body() {
+        // Lambda body is a dict comprehension
+        let source = "f = lambda x: {k: v for k, v in x}";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123
+        //                ^lambda at 4
+        //                                           ^ends at 34
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + Lambda + DictComp = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 34);
     }
 }

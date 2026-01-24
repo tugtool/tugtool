@@ -8,6 +8,63 @@ Entries are sorted newest-first.
 
 ---
 
+## [phase-10.md] Step 2: Lambda Scope Spans | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 2 specification and [D02] design decision
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Expression types and inflate implementations
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - PEG grammar rules
+- `crates/tugtool-python-cst/src/parser/numbers.rs` - Number parsing
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Scope visitor infrastructure
+- Spec 10.1.2 - Scope Spans specification
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `tok: TokenRef<'a>` to Ellipsis | Done |
+| Add `tok: TokenRef<'a>` to Integer | Done |
+| Add `tok: TokenRef<'a>` to Float | Done |
+| Add `tok: TokenRef<'a>` to Imaginary | Done |
+| Add `tok: TokenRef<'a>` to SimpleString | Done |
+| Update grammar.rs Ellipsis rule | Done |
+| Update make_number() to pass token | Done |
+| Update make_string() to include tok | Done |
+| Update parse_number() signature in numbers.rs | Done |
+| Fix/enhance deflated_expression_end_pos() | Done |
+| Update Lambda inflate() to compute and record lexical spans | Done |
+| Update visit_lambda() to use enter_scope_with_id() | Done |
+| Add 5 basic test cases | Done |
+| Add 29 real-world stress test cases | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added tok fields to 5 expression types, fixed deflated_expression_end_pos() to return u64, added helper functions, updated Lambda inflate(), removed Default from SimpleString cst_node attribute and added manual Default impl
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Updated Ellipsis rule to capture tok, updated make_number() and make_string()
+- `crates/tugtool-python-cst/src/parser/numbers.rs` - Updated parse_number() signature to accept TokenRef
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Updated visit_lambda() to use enter_scope_with_id(), added 34 test cases
+- `plans/phase-10.md` - Fixed incorrect node_id in make_string documentation
+- `crates/tugtool-python-cst/tests/golden_tests.rs` - Updated lambdas_scopes golden test
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst scope`: 72 tests passed
+- `cargo nextest run --workspace`: 1239 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst scope`: PASS
+
+**Key Decisions/Notes:**
+- **Architectural insight discovered:** The `#[cst_node]` proc macro filters fields differently:
+  - `tok: TokenRef<'a>` → Kept in Deflated type, filtered from Inflated type
+  - `node_id: Option<NodeId>` → Filtered from Deflated type, kept in Inflated type
+- This means grammar.rs (which uses deflated types) must NOT include `node_id` fields in struct initializations
+- Cannot use `Default` derive on `#[cst_node(...)]` for types with `TokenRef` fields because the derive applies to both types
+- Added 29 real-world stress test cases covering: sort key patterns, method chains, subscripts, comprehension bodies, conditional expressions, chained comparisons, boolean operations, parenthesized bodies, f-strings, numeric literals (float/imaginary), unary operations, await, starred elements, walrus operator, multiple independent lambdas, deeply nested calls, and more
+- Code architect audit confirmed implementation is clean and ready for Step 3
+
+---
+
 ## [phase-10.md] Step 1: PositionTable Optimization | COMPLETE | 2026-01-23
 
 **Completed:** 2026-01-23

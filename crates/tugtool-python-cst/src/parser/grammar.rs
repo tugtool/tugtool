@@ -1069,7 +1069,7 @@ parser! {
             / &lit("(") e:(tuple() / group() / (g:genexp() {Expression::GeneratorExp(Box::new(g))})) {e}
             / &lit("[") e:(list() / listcomp()) {e}
             / &lit("{") e:(dict() / set() / dictcomp() / setcomp()) {e}
-            / lit("...") { Expression::Ellipsis(Box::new(Ellipsis {lpar: vec![], rpar: vec![]}))}
+            / tok:lit("...") { Expression::Ellipsis(Box::new(Ellipsis {lpar: vec![], rpar: vec![], tok}))}
 
         rule group() -> Expression<'input, 'a>
             = lpar:lpar() e:(yield_expr() / named_expression()) rpar:rpar() {
@@ -1770,7 +1770,7 @@ fn make_unary_operator<'input, 'a>(tok: TokenRef<'input, 'a>) -> Result<'a, Unar
 }
 
 fn make_number<'input, 'a>(num: TokenRef<'input, 'a>) -> Expression<'input, 'a> {
-    super::numbers::parse_number(num.string)
+    super::numbers::parse_number(num.string, num)
 }
 
 fn make_indented_block<'input, 'a>(
@@ -2903,7 +2903,9 @@ fn make_class_def<'input, 'a>(
 fn make_string<'input, 'a>(tok: TokenRef<'input, 'a>) -> String<'input, 'a> {
     String::Simple(SimpleString {
         value: tok.string,
-        ..Default::default()
+        lpar: Default::default(),
+        rpar: Default::default(),
+        tok,
     })
 }
 
