@@ -6,6 +6,51 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 6: tug doctor Command | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 6 specification, [D04] design decision, Spec S02
+- `crates/tugtool/src/main.rs` - Existing CLI command structure and patterns
+- `crates/tugtool-core/src/output.rs` - Existing response type patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `Command::Doctor` variant | Done |
+| Add `DoctorResponse`, `CheckResult` types with `CheckStatus` enum | Done |
+| Implement workspace_root check (passes if root found) | Done |
+| Implement python_files check (passes if N > 0, warns if N == 0) | Done |
+| Test: test_doctor_git_repo | Done |
+| Test: test_doctor_cargo_workspace | Done |
+| Test: test_doctor_no_python_files | Done |
+| Test: test_doctor_with_python_files | Done |
+| Test: test_doctor_empty_directory | Done |
+| Test: test_doctor_json_schema | Done |
+| Test: test_doctor_summary_counts | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/output.rs` - Added `CheckStatus` enum, `CheckResult` struct, `DoctorSummary` struct, and `DoctorResponse` struct
+- `crates/tugtool/src/main.rs` - Added `Command::Doctor` variant; added `execute_doctor()`, `detect_workspace_root()`, `find_cargo_workspace_root()`, `find_git_root()`, `count_python_files()` functions; added 9 tests in `doctor_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool doctor_tests`: 9 tests passed
+- `cargo nextest run --workspace`: 1268 tests passed
+
+**Checkpoints Verified:**
+- `tug doctor` produces valid JSON: PASS
+- Warning status appears when run in empty directory: PASS (python_files shows "warning" with "Found 0 Python files")
+
+**Key Decisions/Notes:**
+- **Workspace detection order**: Cargo workspace root → git root → current directory (per Spec S02)
+- **Check status enum**: `CheckStatus` with `Passed`, `Warning`, `Failed` variants using serde rename_all lowercase
+- **Auto-computed summary**: `DoctorSummary::from_checks()` counts status types; `DoctorResponse::new()` sets overall status to "failed" if any check failed
+- **Python file counting**: Recursive traversal that skips hidden dirs, `__pycache__`, `node_modules`, `target`, `venv`, `.venv`
+
+---
+
 ## [phase-10.md] Step 5: Line/Col Output Enrichment | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

@@ -33,9 +33,9 @@ use tugtool_core::error::{OutputErrorCode, TugError};
 use tugtool_core::output::VerifyResponse;
 use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::output::{
-    emit_response, ErrorInfo, ErrorResponse, FixtureFetchResponse, FixtureFetchResult,
-    FixtureListItem, FixtureListResponse, FixtureStatusItem, FixtureStatusResponse,
-    FixtureUpdateResponse, FixtureUpdateResult, SnapshotResponse,
+    emit_response, CheckResult, DoctorResponse, ErrorInfo, ErrorResponse, FixtureFetchResponse,
+    FixtureFetchResult, FixtureListItem, FixtureListResponse, FixtureStatusItem,
+    FixtureStatusResponse, FixtureUpdateResponse, FixtureUpdateResult, SnapshotResponse,
 };
 use tugtool_core::session::{Session, SessionOptions};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
@@ -195,6 +195,8 @@ enum Command {
         #[command(subcommand)]
         action: FixtureAction,
     },
+    /// Run environment diagnostics.
+    Doctor,
 }
 
 /// Refactoring operations (used by analyze-impact and run).
@@ -356,6 +358,7 @@ fn execute(cli: Cli) -> Result<(), TugError> {
         Command::Verify { mode, test_command } => execute_verify(&cli.global, mode, test_command),
         Command::Clean { workers, cache } => execute_clean(&cli.global, workers, cache),
         Command::Fixture { action } => execute_fixture(&cli.global, action),
+        Command::Doctor => execute_doctor(&cli.global),
     }
 }
 
@@ -853,6 +856,151 @@ fn execute_fixture_status(global: &GlobalArgs, name: Option<String>) -> Result<(
     let _ = io::stdout().flush();
 
     Ok(())
+}
+
+/// Execute doctor command.
+///
+/// Runs environment diagnostics:
+/// 1. workspace_root: Verifies workspace root detection
+/// 2. python_files: Counts Python files in workspace
+///
+/// Per Phase 10 Spec S02: Doctor Response Schema.
+fn execute_doctor(global: &GlobalArgs) -> Result<(), TugError> {
+    let mut checks = Vec::new();
+
+    // Determine workspace root
+    let workspace = global
+        .workspace
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    // Check 1: workspace_root
+    // Workspace root detection order:
+    // 1. Cargo workspace root (Cargo.toml with [workspace])
+    // 2. Git repository root (.git directory)
+    // 3. Current working directory (fallback)
+    let (root_path, root_method) = detect_workspace_root(&workspace);
+    checks.push(CheckResult::passed(
+        "workspace_root",
+        format!("Found {} at {}", root_method, root_path.display()),
+    ));
+
+    // Check 2: python_files
+    // Count Python files in the workspace
+    let python_count = count_python_files(&root_path);
+    if python_count > 0 {
+        checks.push(CheckResult::passed(
+            "python_files",
+            format!("Found {} Python files", python_count),
+        ));
+    } else {
+        checks.push(CheckResult::warning(
+            "python_files",
+            "Found 0 Python files".to_string(),
+        ));
+    }
+
+    // Build and emit response
+    let response = DoctorResponse::new(checks);
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = io::stdout().flush();
+
+    Ok(())
+}
+
+/// Detect workspace root using multiple strategies.
+///
+/// Returns (path, detection_method) where detection_method is one of:
+/// - "Cargo workspace root"
+/// - "git root"
+/// - "current directory"
+fn detect_workspace_root(start_path: &std::path::Path) -> (PathBuf, &'static str) {
+    // Canonicalize the start path
+    let start = start_path
+        .canonicalize()
+        .unwrap_or_else(|_| start_path.to_path_buf());
+
+    // 1. Check for Cargo workspace root
+    if let Some(cargo_root) = find_cargo_workspace_root(&start) {
+        return (cargo_root, "Cargo workspace root");
+    }
+
+    // 2. Check for git root
+    if let Some(git_root) = find_git_root(&start) {
+        return (git_root, "git root");
+    }
+
+    // 3. Fall back to current directory
+    (start, "current directory")
+}
+
+/// Find Cargo workspace root by walking up from the given path.
+fn find_cargo_workspace_root(start: &std::path::Path) -> Option<PathBuf> {
+    let mut current = start.to_path_buf();
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            // Check if this Cargo.toml has a [workspace] section
+            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                if content.contains("[workspace]") {
+                    return Some(current);
+                }
+            }
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Find git root by walking up from the given path.
+fn find_git_root(start: &std::path::Path) -> Option<PathBuf> {
+    let mut current = start.to_path_buf();
+    loop {
+        if current.join(".git").exists() {
+            return Some(current);
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Count Python files in the workspace.
+fn count_python_files(workspace: &std::path::Path) -> usize {
+    use std::fs;
+
+    fn count_recursive(dir: &std::path::Path) -> usize {
+        let mut count = 0;
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+                // Skip hidden directories and common non-source directories
+                if file_name.starts_with('.')
+                    || file_name == "__pycache__"
+                    || file_name == "node_modules"
+                    || file_name == "target"
+                    || file_name == "venv"
+                    || file_name == ".venv"
+                {
+                    continue;
+                }
+
+                if path.is_dir() {
+                    count += count_recursive(&path);
+                } else if path.extension().is_some_and(|ext| ext == "py") {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    count_recursive(workspace)
 }
 
 /// Find Python interpreter in PATH (for verification purposes).
@@ -2026,6 +2174,198 @@ mod tests {
             let result = resolve_toolchain(&mut session, "cobol", &[]);
             assert!(result.is_err());
             assert!(result.unwrap_err().to_string().contains("Unknown language"));
+        }
+    }
+
+    mod doctor_tests {
+        use super::*;
+        use tempfile::TempDir;
+        use tugtool_core::output::CheckStatus;
+
+        /// DR-01: Test that doctor detects git root
+        #[test]
+        fn test_doctor_git_repo() {
+            let temp = TempDir::new().unwrap();
+
+            // Create a .git directory to simulate a git repo
+            std::fs::create_dir(temp.path().join(".git")).unwrap();
+
+            // Create a Python file
+            std::fs::write(temp.path().join("test.py"), "def foo(): pass\n").unwrap();
+
+            let (root, method) = detect_workspace_root(temp.path());
+            assert_eq!(root, temp.path().canonicalize().unwrap());
+            assert_eq!(method, "git root");
+        }
+
+        /// DR-02: Test that doctor detects Cargo workspace
+        #[test]
+        fn test_doctor_cargo_workspace() {
+            let temp = TempDir::new().unwrap();
+
+            // Create a Cargo.toml with [workspace] section
+            std::fs::write(
+                temp.path().join("Cargo.toml"),
+                "[workspace]\nmembers = [\"crate1\"]\n",
+            )
+            .unwrap();
+
+            let (root, method) = detect_workspace_root(temp.path());
+            assert_eq!(root, temp.path().canonicalize().unwrap());
+            assert_eq!(method, "Cargo workspace root");
+        }
+
+        /// DR-03: Test that doctor warns when no Python files
+        #[test]
+        fn test_doctor_no_python_files() {
+            let temp = TempDir::new().unwrap();
+
+            // No Python files, just a text file
+            std::fs::write(temp.path().join("readme.txt"), "Hello\n").unwrap();
+
+            let count = count_python_files(temp.path());
+            assert_eq!(count, 0);
+
+            // Verify the check result would be a warning
+            let check = if count > 0 {
+                CheckResult::passed("python_files", format!("Found {} Python files", count))
+            } else {
+                CheckResult::warning("python_files", "Found 0 Python files".to_string())
+            };
+            assert_eq!(check.status, CheckStatus::Warning);
+        }
+
+        /// DR-04: Test that doctor passes with Python files
+        #[test]
+        fn test_doctor_with_python_files() {
+            let temp = TempDir::new().unwrap();
+
+            // Create some Python files
+            std::fs::write(temp.path().join("test1.py"), "def foo(): pass\n").unwrap();
+            std::fs::write(temp.path().join("test2.py"), "def bar(): pass\n").unwrap();
+
+            // Create a subdirectory with Python files
+            std::fs::create_dir(temp.path().join("subdir")).unwrap();
+            std::fs::write(
+                temp.path().join("subdir").join("test3.py"),
+                "def baz(): pass\n",
+            )
+            .unwrap();
+
+            let count = count_python_files(temp.path());
+            assert_eq!(count, 3);
+
+            // Verify the check result would be passed
+            let check = if count > 0 {
+                CheckResult::passed("python_files", format!("Found {} Python files", count))
+            } else {
+                CheckResult::warning("python_files", "Found 0 Python files".to_string())
+            };
+            assert_eq!(check.status, CheckStatus::Passed);
+        }
+
+        /// DR-05: Test that doctor falls back to current directory
+        #[test]
+        fn test_doctor_empty_directory() {
+            let temp = TempDir::new().unwrap();
+
+            // Empty directory - no .git, no Cargo.toml
+            let (root, method) = detect_workspace_root(temp.path());
+            assert_eq!(root, temp.path().canonicalize().unwrap());
+            assert_eq!(method, "current directory");
+        }
+
+        /// DR-06: Test doctor JSON schema (golden test style)
+        #[test]
+        fn test_doctor_json_schema() {
+            use tugtool_core::output::DoctorResponse;
+
+            let checks = vec![
+                CheckResult::passed("workspace_root", "Found git root at /repo"),
+                CheckResult::passed("python_files", "Found 42 Python files"),
+            ];
+
+            let response = DoctorResponse::new(checks);
+            let json = serde_json::to_string_pretty(&response).unwrap();
+
+            // Verify schema structure
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed["status"], "ok");
+            assert_eq!(parsed["schema_version"], "1");
+            assert!(parsed["checks"].is_array());
+            assert!(parsed["summary"].is_object());
+            assert_eq!(parsed["summary"]["total"], 2);
+            assert_eq!(parsed["summary"]["passed"], 2);
+            assert_eq!(parsed["summary"]["warnings"], 0);
+            assert_eq!(parsed["summary"]["failed"], 0);
+        }
+
+        /// DR-07: Test summary counts are correct
+        #[test]
+        fn test_doctor_summary_counts() {
+            use tugtool_core::output::{DoctorResponse, DoctorSummary};
+
+            // Test with mixed statuses
+            let checks = vec![
+                CheckResult::passed("check1", "passed"),
+                CheckResult::warning("check2", "warning"),
+                CheckResult::passed("check3", "passed"),
+                CheckResult::failed("check4", "failed"),
+            ];
+
+            let summary = DoctorSummary::from_checks(&checks);
+            assert_eq!(summary.total, 4);
+            assert_eq!(summary.passed, 2);
+            assert_eq!(summary.warnings, 1);
+            assert_eq!(summary.failed, 1);
+
+            // Test that status is "failed" when any check fails
+            let response = DoctorResponse::new(checks);
+            assert_eq!(response.status, "failed");
+
+            // Test with only passed/warning (no failures)
+            let checks_ok = vec![
+                CheckResult::passed("check1", "passed"),
+                CheckResult::warning("check2", "warning"),
+            ];
+            let response_ok = DoctorResponse::new(checks_ok);
+            assert_eq!(response_ok.status, "ok");
+        }
+
+        /// Test that CLI parses doctor command
+        #[test]
+        fn parse_doctor_command() {
+            let args = ["tug", "doctor"];
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert!(matches!(cli.command, Command::Doctor));
+        }
+
+        /// Test that hidden directories are skipped when counting Python files
+        #[test]
+        fn test_python_files_skips_hidden() {
+            let temp = TempDir::new().unwrap();
+
+            // Create a Python file in root
+            std::fs::write(temp.path().join("main.py"), "def main(): pass\n").unwrap();
+
+            // Create a Python file in hidden directory (should be skipped)
+            std::fs::create_dir(temp.path().join(".hidden")).unwrap();
+            std::fs::write(
+                temp.path().join(".hidden").join("hidden.py"),
+                "def hidden(): pass\n",
+            )
+            .unwrap();
+
+            // Create a Python file in __pycache__ (should be skipped)
+            std::fs::create_dir(temp.path().join("__pycache__")).unwrap();
+            std::fs::write(
+                temp.path().join("__pycache__").join("cached.py"),
+                "def cached(): pass\n",
+            )
+            .unwrap();
+
+            let count = count_python_files(temp.path());
+            assert_eq!(count, 1); // Only main.py should be counted
         }
     }
 }

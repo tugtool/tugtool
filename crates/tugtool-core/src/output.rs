@@ -1054,6 +1054,157 @@ impl ErrorResponse {
 }
 
 // ============================================================================
+// Doctor Response Types (Phase 10)
+// ============================================================================
+
+/// Check status for doctor checks.
+///
+/// Per Phase 10 Spec S02:
+/// - `passed`: Check succeeded with expected results
+/// - `warning`: Check succeeded but result may indicate a problem
+/// - `failed`: Check detected an error condition
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckStatus {
+    /// Check passed successfully.
+    Passed,
+    /// Check passed but with a warning condition.
+    Warning,
+    /// Check failed.
+    Failed,
+}
+
+impl std::fmt::Display for CheckStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CheckStatus::Passed => write!(f, "passed"),
+            CheckStatus::Warning => write!(f, "warning"),
+            CheckStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+/// Individual check result for doctor response.
+///
+/// Per Phase 10 Spec S02:
+/// - `name`: Check name (e.g., "workspace_root", "python_files")
+/// - `status`: One of "passed", "warning", "failed"
+/// - `message`: Human-readable description of the check result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckResult {
+    /// Check name (e.g., "workspace_root", "python_files").
+    pub name: String,
+    /// Check status.
+    pub status: CheckStatus,
+    /// Human-readable message describing the result.
+    pub message: String,
+}
+
+impl CheckResult {
+    /// Create a passed check result.
+    pub fn passed(name: impl Into<String>, message: impl Into<String>) -> Self {
+        CheckResult {
+            name: name.into(),
+            status: CheckStatus::Passed,
+            message: message.into(),
+        }
+    }
+
+    /// Create a warning check result.
+    pub fn warning(name: impl Into<String>, message: impl Into<String>) -> Self {
+        CheckResult {
+            name: name.into(),
+            status: CheckStatus::Warning,
+            message: message.into(),
+        }
+    }
+
+    /// Create a failed check result.
+    pub fn failed(name: impl Into<String>, message: impl Into<String>) -> Self {
+        CheckResult {
+            name: name.into(),
+            status: CheckStatus::Failed,
+            message: message.into(),
+        }
+    }
+}
+
+/// Summary counts for doctor response.
+///
+/// Per Phase 10 Spec S02.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorSummary {
+    /// Total number of checks.
+    pub total: u32,
+    /// Number of passed checks.
+    pub passed: u32,
+    /// Number of warning checks.
+    pub warnings: u32,
+    /// Number of failed checks.
+    pub failed: u32,
+}
+
+impl DoctorSummary {
+    /// Create a summary from a list of check results.
+    pub fn from_checks(checks: &[CheckResult]) -> Self {
+        let mut passed = 0;
+        let mut warnings = 0;
+        let mut failed = 0;
+
+        for check in checks {
+            match check.status {
+                CheckStatus::Passed => passed += 1,
+                CheckStatus::Warning => warnings += 1,
+                CheckStatus::Failed => failed += 1,
+            }
+        }
+
+        DoctorSummary {
+            total: checks.len() as u32,
+            passed,
+            warnings,
+            failed,
+        }
+    }
+}
+
+/// Response for doctor command.
+///
+/// Per Phase 10 Spec S02: Doctor Response Schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DoctorResponse {
+    /// Status: "ok" if all checks passed or warning, "failed" if any failed.
+    pub status: String,
+    /// Schema version for compatibility.
+    pub schema_version: String,
+    /// List of individual check results.
+    pub checks: Vec<CheckResult>,
+    /// Summary counts.
+    pub summary: DoctorSummary,
+}
+
+impl DoctorResponse {
+    /// Create a new doctor response from check results.
+    ///
+    /// Status is "ok" if all checks are passed or warning, "failed" if any check failed.
+    pub fn new(checks: Vec<CheckResult>) -> Self {
+        let summary = DoctorSummary::from_checks(&checks);
+        let status = if summary.failed > 0 {
+            "failed".to_string()
+        } else {
+            "ok".to_string()
+        };
+
+        DoctorResponse {
+            status,
+            schema_version: SCHEMA_VERSION.to_string(),
+            checks,
+            summary,
+        }
+    }
+}
+
+// ============================================================================
 // Deterministic Sorting
 // ============================================================================
 

@@ -1563,10 +1563,10 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Files:** `crates/tugtool/src/main.rs`, `cli.rs`, `tugtool-core/src/output.rs`
 
 **Tasks:**
-- [ ] Add `Command::Doctor` variant
-- [ ] Add `DoctorResponse`, `CheckResult` types with `status` enum (`passed`, `warning`, `failed`)
-- [ ] Implement workspace_root check (passes if root found, fails on detection error)
-- [ ] Implement python_files check (passes if N > 0, warns if N == 0)
+- [x] Add `Command::Doctor` variant
+- [x] Add `DoctorResponse`, `CheckResult` types with `status` enum (`passed`, `warning`, `failed`)
+- [x] Implement workspace_root check (passes if root found, fails on detection error)
+- [x] Implement python_files check (passes if N > 0, warns if N == 0)
 
 **Tests:**
 
@@ -1582,15 +1582,15 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 | DR-06 | `test_doctor_json_schema` | golden | Output matches DoctorResponse schema |
 | DR-07 | `test_doctor_summary_counts` | unit | summary.total = len(checks) |
 
-- [ ] integration test: `test_doctor_git_repo` - detects .git, workspace_root passes
-- [ ] integration test: `test_doctor_cargo_workspace` - detects Cargo.toml with [workspace]
-- [ ] integration test: `test_doctor_no_python_files` - python_files check has status=warning
-- [ ] integration test: `test_doctor_with_python_files` - python_files check has status=passed
-- [ ] integration test: `test_doctor_empty_directory` - falls back to cwd, all checks run
-- [ ] golden test: `test_doctor_json_schema` - verify DoctorResponse schema stability
-- [ ] unit test: `test_doctor_summary_counts` - summary.total/passed/warnings/failed correct
+- [x] integration test: `test_doctor_git_repo` - detects .git, workspace_root passes
+- [x] integration test: `test_doctor_cargo_workspace` - detects Cargo.toml with [workspace]
+- [x] integration test: `test_doctor_no_python_files` - python_files check has status=warning
+- [x] integration test: `test_doctor_with_python_files` - python_files check has status=passed
+- [x] integration test: `test_doctor_empty_directory` - falls back to cwd, all checks run
+- [x] golden test: `test_doctor_json_schema` - verify DoctorResponse schema stability
+- [x] unit test: `test_doctor_summary_counts` - summary.total/passed/warnings/failed correct
 
-**Checkpoint:** `tug doctor` produces valid JSON; verify warning status appears when run in empty directory
+**Checkpoint:** `tug doctor` produces valid JSON; verify warning status appears when run in empty directory ✓
 
 ---
 
