@@ -58,7 +58,7 @@ use tugtool::testcmd::{resolve_test_command, TemplateVars};
 ///
 /// Tug provides verified, deterministic, minimal-diff refactors across
 /// Python codebases. All output is JSON for easy parsing by LLM agents.
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "tug", version, about = "Safe code refactoring for AI agents")]
 struct Cli {
     #[command(flatten)]
@@ -137,8 +137,18 @@ impl LogLevel {
     }
 }
 
+/// Output format for rename command.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+enum RenameFormat {
+    /// Human-readable text summary (default).
+    #[default]
+    Text,
+    /// Full JSON response.
+    Json,
+}
+
 /// CLI subcommands.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum Command {
     /// Create a workspace snapshot for analysis.
     Snapshot,
@@ -163,6 +173,30 @@ enum Command {
         /// If not provided, auto-detects from pyproject.toml, pytest.ini, or setup.cfg.
         #[arg(long)]
         test_command: Option<String>,
+    },
+    /// Rename a symbol (apply-by-default).
+    ///
+    /// Per Phase 10 [D09]: Primary command applies changes by default.
+    /// Use --dry-run to preview changes without modifying files.
+    Rename {
+        /// Location of the symbol to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// Preview changes without applying (default: apply changes).
+        #[arg(long)]
+        dry_run: bool,
+        /// Verification mode after applying changes.
+        #[arg(long, value_enum, default_value = "syntax")]
+        verify: VerifyMode,
+        /// Skip verification entirely.
+        #[arg(long, conflicts_with = "verify")]
+        no_verify: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value = "text")]
+        format: RenameFormat,
     },
     /// Session management commands.
     Session {
@@ -200,7 +234,7 @@ enum Command {
 }
 
 /// Refactoring operations (used by analyze-impact and run).
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Debug)]
 enum RefactorOp {
     /// Rename a symbol.
     RenameSymbol {
@@ -260,14 +294,14 @@ impl From<VerifyMode> for VerificationMode {
 }
 
 /// Session management actions.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum SessionAction {
     /// Show session status.
     Status,
 }
 
 /// Fixture management actions.
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum FixtureAction {
     /// Fetch fixtures according to lock files.
     Fetch {
@@ -354,6 +388,14 @@ fn execute(cli: Cli) -> Result<(), TugError> {
             verify,
             test_command,
         } => execute_run(&cli.global, refactor, apply, verify, test_command),
+        Command::Rename {
+            at,
+            to,
+            dry_run,
+            verify,
+            no_verify,
+            format,
+        } => execute_rename(&cli.global, &at, &to, dry_run, verify, no_verify, format),
         Command::Session { action } => execute_session(&cli.global, action),
         Command::Verify { mode, test_command } => execute_verify(&cli.global, mode, test_command),
         Command::Clean { workers, cache } => execute_clean(&cli.global, workers, cache),
@@ -486,6 +528,178 @@ fn execute_run(
     _test_command: Option<String>,
 ) -> Result<(), TugError> {
     Err(tugtool::cli::python_not_available())
+}
+
+/// Execute rename command.
+///
+/// Per Phase 10 [D09]: Apply-by-default. The `--dry-run` flag prevents file modification.
+/// Per Phase 10 [D12]: Default verification mode is `syntax`.
+///
+/// # Arguments
+///
+/// * `global` - Global CLI arguments
+/// * `at` - Location string in "file:line:col" format
+/// * `to` - New name for the symbol
+/// * `dry_run` - If true, preview changes without applying
+/// * `verify` - Verification mode (default: syntax)
+/// * `no_verify` - If true, skip verification entirely
+/// * `format` - Output format (text or json)
+#[cfg(feature = "python")]
+fn execute_rename(
+    global: &GlobalArgs,
+    at: &str,
+    to: &str,
+    dry_run: bool,
+    verify: VerifyMode,
+    no_verify: bool,
+    format: RenameFormat,
+) -> Result<(), TugError> {
+    let mut session = open_session(global)?;
+    let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+    // Determine effective verification mode
+    // --no-verify takes precedence (conflicts_with is already enforced by clap)
+    let effective_verify = if no_verify {
+        VerificationMode::None
+    } else {
+        verify.into()
+    };
+
+    // Apply changes unless --dry-run is specified
+    let apply = !dry_run;
+
+    // Run the rename operation
+    let json = run_rename(&session, Some(python_path), at, to, effective_verify, apply)?;
+
+    // Output based on format
+    match format {
+        RenameFormat::Json => {
+            println!("{}", json);
+        }
+        RenameFormat::Text => {
+            // Parse the JSON and produce human-readable summary
+            let result: serde_json::Value =
+                serde_json::from_str(&json).map_err(|e| TugError::internal(e.to_string()))?;
+
+            output_rename_summary(&result, dry_run)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Execute rename command (Python not available).
+#[cfg(not(feature = "python"))]
+fn execute_rename(
+    _global: &GlobalArgs,
+    _at: &str,
+    _to: &str,
+    _dry_run: bool,
+    _verify: VerifyMode,
+    _no_verify: bool,
+    _format: RenameFormat,
+) -> Result<(), TugError> {
+    Err(tugtool::cli::python_not_available())
+}
+
+/// Output a human-readable summary of rename results.
+///
+/// Per Phase 10 Spec S08: Default output is human-readable summary.
+#[cfg(feature = "python")]
+fn output_rename_summary(result: &serde_json::Value, dry_run: bool) -> Result<(), TugError> {
+    let status = result
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    // Check if this was a dry run
+    let applied = result
+        .get("applied")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Get symbol info
+    let symbol_name = result
+        .get("symbol")
+        .and_then(|s| s.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let symbol_kind = result
+        .get("symbol")
+        .and_then(|s| s.get("kind"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("symbol");
+
+    // Get counts
+    let files_affected = result
+        .get("files_written")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let edits_count = result
+        .get("edits_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    // Format output
+    if dry_run || !applied {
+        println!("Dry run: would rename {} '{}'", symbol_kind, symbol_name);
+        println!(
+            "  {} file(s) would be affected, {} edit(s)",
+            files_affected, edits_count
+        );
+    } else {
+        println!("Renamed {} '{}' successfully", symbol_kind, symbol_name);
+        println!(
+            "  {} file(s) modified, {} edit(s) applied",
+            files_affected, edits_count
+        );
+    }
+
+    // Show verification status if present
+    if let Some(verification) = result.get("verification") {
+        let verify_mode = verification
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
+        let verify_passed = verification
+            .get("passed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        if verify_mode != "none" {
+            if verify_passed {
+                println!("  Verification ({}): passed", verify_mode);
+            } else {
+                println!("  Verification ({}): FAILED", verify_mode);
+            }
+        }
+    }
+
+    // Show warnings if present
+    if let Some(warnings) = result.get("warnings").and_then(|v| v.as_array()) {
+        if !warnings.is_empty() {
+            println!("  Warnings:");
+            for warning in warnings {
+                if let Some(msg) = warning.as_str() {
+                    println!("    - {}", msg);
+                }
+            }
+        }
+    }
+
+    // Show status
+    if status == "error" {
+        if let Some(error) = result.get("error") {
+            let error_msg = error
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            println!("  Status: error - {}", error_msg);
+        }
+    }
+
+    Ok(())
 }
 
 /// Execute session command.
@@ -2366,6 +2580,327 @@ mod tests {
 
             let count = count_python_files(temp.path());
             assert_eq!(count, 1); // Only main.py should be counted
+        }
+    }
+
+    /// Tests for Phase 10 Step 13: rename command
+    mod rename_command_tests {
+        use super::*;
+
+        /// RC-01: Test that rename applies by default (no --dry-run)
+        #[test]
+        fn test_rename_applies_by_default() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename { dry_run, .. } => {
+                    // By default, dry_run is false, meaning changes are applied
+                    assert!(!dry_run);
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// RC-02: Test that --dry-run flag prevents changes
+        #[test]
+        fn test_rename_dry_run_no_changes() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--dry-run",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename { dry_run, .. } => {
+                    assert!(dry_run);
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// RC-03: Test that --verify defaults to syntax
+        #[test]
+        fn test_rename_verify_syntax_default() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename { verify, .. } => {
+                    assert!(matches!(verify, VerifyMode::Syntax));
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// RC-04: Test that --no-verify skips verification
+        #[test]
+        fn test_rename_no_verify_skips() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--no-verify",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename { no_verify, .. } => {
+                    assert!(no_verify);
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// RC-05: Test that --verify and --no-verify conflict
+        #[test]
+        fn test_rename_verify_no_verify_conflict() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--verify",
+                "syntax",
+                "--no-verify",
+            ];
+            // This should fail to parse due to conflicts_with
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "expected conflict error");
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("cannot be used with") || err.contains("conflict"),
+                "error should mention conflict: {}",
+                err
+            );
+        }
+
+        /// RC-06: Test that default output format is text
+        #[test]
+        fn test_rename_format_text_default() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename { format, .. } => {
+                    assert!(matches!(format, RenameFormat::Text));
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// RC-07: Test that --format json produces JSON output
+        #[test]
+        fn test_rename_format_json() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--format",
+                "json",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename { format, .. } => {
+                    assert!(matches!(format, RenameFormat::Json));
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// RC-08: Test that --at is required
+        #[test]
+        fn test_rename_at_required() {
+            let args = ["tug", "rename", "--to", "new_name"];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "expected missing --at error");
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("--at") || err.contains("required"),
+                "error should mention --at: {}",
+                err
+            );
+        }
+
+        /// RC-09: Test that --to is required
+        #[test]
+        fn test_rename_to_required() {
+            let args = ["tug", "rename", "--at", "src/main.py:10:5"];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "expected missing --to error");
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("--to") || err.contains("required"),
+                "error should mention --to: {}",
+                err
+            );
+        }
+
+        /// RC-10: Test that invalid --at format produces error
+        /// Note: This tests the Location parsing in the execution path,
+        /// not CLI parsing, so we test the Location::parse function directly.
+        #[test]
+        fn test_rename_invalid_location() {
+            use tugtool_core::output::Location;
+
+            // Valid location
+            let valid = Location::parse("src/main.py:10:5");
+            assert!(valid.is_some(), "valid location should parse");
+
+            // Invalid locations
+            let invalid1 = Location::parse("src/main.py:10"); // missing column
+            assert!(invalid1.is_none(), "missing column should fail");
+
+            let invalid2 = Location::parse("src/main.py"); // missing line and column
+            assert!(invalid2.is_none(), "missing line should fail");
+
+            let invalid3 = Location::parse("bad"); // no colons
+            assert!(invalid3.is_none(), "no colons should fail");
+        }
+
+        /// RC-11: Test verification mode combinations
+        #[test]
+        fn test_rename_verify_modes() {
+            // Test explicit syntax
+            let args_syntax = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--verify",
+                "syntax",
+            ];
+            let cli = Cli::try_parse_from(args_syntax).unwrap();
+            match cli.command {
+                Command::Rename { verify, .. } => {
+                    assert!(matches!(verify, VerifyMode::Syntax));
+                }
+                _ => panic!("expected Rename command"),
+            }
+
+            // Test verify none
+            let args_none = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--verify",
+                "none",
+            ];
+            let cli = Cli::try_parse_from(args_none).unwrap();
+            match cli.command {
+                Command::Rename { verify, .. } => {
+                    assert!(matches!(verify, VerifyMode::None));
+                }
+                _ => panic!("expected Rename command"),
+            }
+
+            // Test verify tests
+            let args_tests = [
+                "tug",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--verify",
+                "tests",
+            ];
+            let cli = Cli::try_parse_from(args_tests).unwrap();
+            match cli.command {
+                Command::Rename { verify, .. } => {
+                    assert!(matches!(verify, VerifyMode::Tests));
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// Additional test: Parse complete rename command with all flags
+        #[test]
+        fn parse_rename_all_flags() {
+            let args = [
+                "tug",
+                "rename",
+                "--at",
+                "src/lib.py:25:10",
+                "--to",
+                "better_name",
+                "--dry-run",
+                "--verify",
+                "none",
+                "--format",
+                "json",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Rename {
+                    at,
+                    to,
+                    dry_run,
+                    verify,
+                    no_verify,
+                    format,
+                } => {
+                    assert_eq!(at, "src/lib.py:25:10");
+                    assert_eq!(to, "better_name");
+                    assert!(dry_run);
+                    assert!(matches!(verify, VerifyMode::None));
+                    assert!(!no_verify);
+                    assert!(matches!(format, RenameFormat::Json));
+                }
+                _ => panic!("expected Rename command"),
+            }
+        }
+
+        /// Test global args work with rename command
+        #[test]
+        fn parse_rename_with_global_args() {
+            let args = [
+                "tug",
+                "--workspace",
+                "/my/project",
+                "rename",
+                "--at",
+                "test.py:1:1",
+                "--to",
+                "x",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert_eq!(cli.global.workspace, Some(PathBuf::from("/my/project")));
+            assert!(matches!(cli.command, Command::Rename { .. }));
         }
     }
 }

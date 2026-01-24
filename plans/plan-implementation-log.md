@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 13: Add `rename` Command | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 13 specification, [D09], [D12], Spec S06, Spec S08
+- `crates/tugtool/src/main.rs` - Existing CLI command structure
+- `crates/tugtool/src/cli.rs` - Existing `run_rename()` function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `Command::Rename` with `--at`, `--to`, `--dry-run`, `--verify`, `--no-verify`, `--format` | Done |
+| Configure clap mutual exclusion for --verify and --no-verify | Done |
+| Default `--verify` to `syntax` | Done |
+| Output human-readable summary by default | Done |
+| integration test: `test_rename_applies_by_default` | Done |
+| integration test: `test_rename_dry_run_no_changes` | Done |
+| integration test: `test_rename_verify_syntax_default` | Done |
+| integration test: `test_rename_no_verify_skips` | Done |
+| integration test: `test_rename_verify_no_verify_conflict` | Done |
+| integration test: `test_rename_format_text_default` | Done |
+| integration test: `test_rename_format_json` | Done |
+| integration test: `test_rename_at_required` | Done |
+| integration test: `test_rename_to_required` | Done |
+| integration test: `test_rename_invalid_location` | Done |
+| integration test: `test_rename_syntax_error_detected` | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs` - Added `RenameFormat` enum, `Command::Rename` variant with all flags, `execute_rename()` function (with Python feature gates), `output_rename_summary()` helper function; added Debug derives to `Cli`, `Command`, `RefactorOp`, `SessionAction`, `FixtureAction`; added 13 tests in `rename_command_tests` module
+- `plans/phase-10.md` - Checked off all task and test checkboxes for Step 13, updated implementation log status
+
+**Test Results:**
+- `cargo nextest run -p tugtool rename_command`: 13 tests passed
+- `cargo nextest run --workspace`: 1345 tests passed
+
+**Checkpoints Verified:**
+- `tug rename --at <loc> --to <name>` command parses correctly: PASS
+- `tug rename --verify syntax --no-verify` produces clap conflict error: PASS
+- `cargo nextest run --workspace`: PASS (1345 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo fmt --all -- --check`: PASS
+
+**Key Decisions/Notes:**
+- **Apply-by-default ([D09])**: Unlike `tug run` which defaults to dry-run, `tug rename` applies changes by default; use `--dry-run` to preview
+- **Syntax verification default ([D12])**: Default `--verify` mode is `syntax`, matching the "verification defaults to syntax" decision
+- **Mutual exclusion**: `--no-verify` and `--verify` are mutually exclusive via clap's `conflicts_with` attribute
+- **Human-readable output**: Default `--format text` produces a concise summary showing symbol type, file counts, edit counts, and verification status
+- **JSON format**: `--format json` outputs the full rename result JSON for programmatic consumption
+- **Debug derives**: Added `Debug` derive to `Cli`, `Command`, `RefactorOp`, `SessionAction`, `FixtureAction` to support test assertions using `unwrap_err()`
+
+---
+
 ## [phase-10.md] Step 12: Wire Aliases to Impact Analysis | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

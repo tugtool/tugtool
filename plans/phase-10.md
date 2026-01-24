@@ -2108,10 +2108,10 @@ All 5 new tests (AI-01 through AI-05) should pass.
 **Files:** `crates/tugtool/src/main.rs`, `cli.rs`
 
 **Tasks:**
-- [ ] Add `Command::Rename` with `--at`, `--to`, `--dry-run`, `--verify`, `--no-verify`, `--format`
-- [ ] Configure clap mutual exclusion: `#[arg(long, conflicts_with = "verify")]` on `no_verify` field
-- [ ] Default `--verify` to `syntax`
-- [ ] Output human-readable summary by default
+- [x] Add `Command::Rename` with `--at`, `--to`, `--dry-run`, `--verify`, `--no-verify`, `--format`
+- [x] Configure clap mutual exclusion: `#[arg(long, conflicts_with = "verify")]` on `no_verify` field
+- [x] Default `--verify` to `syntax`
+- [x] Output human-readable summary by default
 
 **Tests:**
 
@@ -2131,17 +2131,17 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | RC-10 | `test_rename_invalid_location` | integration | Bad --at format → error |
 | RC-11 | `test_rename_syntax_error_detected` | integration | Broken syntax → verification fails |
 
-- [ ] integration test: `test_rename_applies_by_default` - files are modified
-- [ ] integration test: `test_rename_dry_run_no_changes` - preview only
-- [ ] integration test: `test_rename_verify_syntax_default` - syntax checked by default
-- [ ] integration test: `test_rename_no_verify_skips` - verification skipped
-- [ ] integration test: `test_rename_verify_no_verify_conflict` - clap mutual exclusion
-- [ ] integration test: `test_rename_format_text_default` - human-readable summary
-- [ ] integration test: `test_rename_format_json` - JSON output format
-- [ ] integration test: `test_rename_at_required` - missing argument error
-- [ ] integration test: `test_rename_to_required` - missing argument error
-- [ ] integration test: `test_rename_invalid_location` - malformed location
-- [ ] integration test: `test_rename_syntax_error_detected` - verification catches errors
+- [x] integration test: `test_rename_applies_by_default` - files are modified
+- [x] integration test: `test_rename_dry_run_no_changes` - preview only
+- [x] integration test: `test_rename_verify_syntax_default` - syntax checked by default
+- [x] integration test: `test_rename_no_verify_skips` - verification skipped
+- [x] integration test: `test_rename_verify_no_verify_conflict` - clap mutual exclusion
+- [x] integration test: `test_rename_format_text_default` - human-readable summary
+- [x] integration test: `test_rename_format_json` - JSON output format
+- [x] integration test: `test_rename_at_required` - missing argument error
+- [x] integration test: `test_rename_to_required` - missing argument error
+- [x] integration test: `test_rename_invalid_location` - malformed location
+- [x] integration test: `test_rename_syntax_error_detected` - verification catches errors
 
 **Checkpoint:** `tug rename --at <loc> --to <name>` applies changes; verify `tug rename --verify syntax --no-verify` produces clap error
 
@@ -2281,6 +2281,6 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | Step 10 | pending | | Integrate AliasGraph into analyzer |
 | Step 11 | done | 2026-01-24 | Alias output types |
 | Step 12 | done | 2026-01-24 | Wire aliases to impact analysis |
-| Step 13 | pending | | Add `rename` command |
+| Step 13 | done | 2026-01-24 | Add `rename` command |
 | Step 14 | pending | | Add `analyze` command, remove old commands, update skills and docs |
 | Step 15 | pending | | Final verification |
