@@ -152,10 +152,10 @@ fn resolve_import_to_original<'a>(
         imp.imported_name.as_deref() == Some(&import_symbol.name)
     })?;
 
-    // Resolve module path to a file in the workspace
+    // Look up the module's file in the FactsStore
     // e.g., "x" -> "x.py" or "pkg.mod" -> "pkg/mod.py"
     let module_path = &matching_import.module_path;
-    let resolved_file = resolve_module_to_file(store, module_path)?;
+    let resolved_file = lookup_module_file(store, module_path)?;
 
     // Find the original symbol with the same name in the resolved file
     let original_symbols = store.symbols_in_file(resolved_file.file_id);
@@ -164,13 +164,18 @@ fn resolve_import_to_original<'a>(
         .find(|s| s.name == import_symbol.name && s.kind != SymbolKind::Import)
 }
 
-/// Resolve a Python module path to a file in the workspace.
+/// Look up a module's file in the FactsStore (post-analysis query).
+///
+/// This is a **lookup** function, not a **resolution** function:
+/// - It queries the already-built FactsStore for files
+/// - It does NOT handle namespace packages (they have no File)
+/// - Use `resolve_module_to_file` in analyzer.rs for during-analysis resolution
 ///
 /// Checks for:
 /// 1. `module_path.py` (e.g., "x" -> "x.py")
 /// 2. `module_path/__init__.py` (e.g., "x" -> "x/__init__.py")
 /// 3. Nested modules: `pkg/mod.py` or `pkg/mod/__init__.py`
-fn resolve_module_to_file<'a>(
+fn lookup_module_file<'a>(
     store: &'a FactsStore,
     module_path: &str,
 ) -> Option<&'a tugtool_core::facts::File> {

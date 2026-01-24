@@ -1640,32 +1640,67 @@ Uses **Table T01: Namespace Package Test Cases** from Section 10.3.
 
 **References:** [D05], Spec S03, Table T01
 
-**Files:** `crates/tugtool-python/src/analyzer.rs`, `lookup.rs`
+**Files:** `crates/tugtool-python/src/analyzer.rs` (tests), `crates/tugtool-python/src/lookup.rs` (rename only)
 
-**Call site inventory for `resolve_module_to_file`:**
+##### Naming Clarification (Architecture Fix)
 
-There are TWO implementations that need updating:
+**Problem:** Two functions named `resolve_module_to_file` caused confusion. They do different things at different phases.
 
-1. **`analyzer.rs:1664`** - Primary implementation with full signature:
-   - Call sites in `analyzer.rs`:
-     - Line 709: `resolve_import_chain()`
-     - Line 1442: `convert_imports()`
-     - Line 1460: `convert_imports()`
-     - Line 1866: star import resolution
-     - Line 2435: test helper
-   - **Action:** Add `namespace_packages: &HashSet<PathBuf>` parameter
+**Solution:** Distinct names with clear semantics:
 
-2. **`lookup.rs:173`** - FactsStore-based implementation:
-   - Call sites in `lookup.rs`:
-     - Line 158: `resolve_import_to_origin()`
-   - **Action:** Add `namespace_packages` parameter, or refactor to call the analyzer version
+| Function | File | Purpose | When |
+|----------|------|---------|------|
+| `resolve_module_to_file` | analyzer.rs | **Resolve** module path → file/namespace | During analysis |
+| `lookup_module_file` | lookup.rs | **Look up** module's file in FactsStore | Post-analysis |
 
-**Tasks:**
-- [ ] Add `namespace_packages: &HashSet<PathBuf>` parameter to `analyzer.rs` `resolve_module_to_file`
-- [ ] Update all 5 call sites in `analyzer.rs` to pass namespace_packages
-- [ ] Update `lookup.rs` `resolve_module_to_file` to accept namespace_packages
-- [ ] Update `resolve_import_to_origin` call site in `lookup.rs`
-- [ ] Check namespace_packages set after regular resolution fails
+##### Function Details
+
+1. **`resolve_module_to_file`** (analyzer.rs) - **Resolution during analysis**
+   - **Purpose:** Computes what file a module path maps to, handling namespace packages
+   - **Signature:** `fn resolve_module_to_file(..., namespace_packages: &HashSet<String>) -> Option<ResolvedModule>`
+   - **Returns:** `ResolvedModule::File(path)` or `ResolvedModule::Namespace(path)` or `None`
+   - **Status:** ✅ Complete from Step 7
+
+2. **`lookup_module_file`** (lookup.rs) - **Post-analysis query**
+   - **Purpose:** Finds a module's File record in the already-built FactsStore
+   - **Signature:** `fn lookup_module_file(store: &FactsStore, module_path: &str) -> Option<&File>`
+   - **Returns:** Reference to File record or `None` (namespace packages return `None` - correct)
+   - **Status:** ✅ Renamed from `resolve_module_to_file`
+
+##### Why lookup.rs Doesn't Need Namespace Package Support
+
+`lookup_module_file` is a **query** on existing data, not a **resolution** algorithm:
+- It queries the FactsStore for Files that were analyzed
+- Namespace packages have no File (no `__init__.py` to analyze)
+- Returning `None` is semantically correct: "no file to look up symbols in"
+- The caller (`resolve_import_to_origin`) handles `None` gracefully
+
+**Key Insight:** Namespace packages enable `from namespace_pkg.module import foo` to resolve `namespace_pkg/module.py` during analysis. Post-analysis lookup correctly reports "no file" for the namespace package itself.
+
+##### What Step 7 Already Implemented
+
+- [x] `ResolvedModule` enum with `File(String)` and `Namespace(String)` variants
+- [x] `compute_namespace_packages()` function
+- [x] `resolve_module_to_file` accepts `namespace_packages` parameter
+- [x] Algorithm: try `.py` → try `__init__.py` → check namespace_packages → return None
+- [x] All 5 analyzer.rs call sites pass `namespace_packages`
+- [x] All call sites use `.as_file()` appropriately (skip namespace packages for symbol lookup)
+
+##### Step 8 Tasks
+
+**Architecture Fix (Done):**
+- [x] Rename `resolve_module_to_file` → `lookup_module_file` in lookup.rs
+- [x] Update docstring to clarify post-analysis query semantics
+- [x] Update call site in `resolve_import_to_origin`
+
+**Tests:**
+- [x] Write test `test_resolve_namespace_import_from` (NR-01)
+- [x] Write test `test_resolve_namespace_import` (NR-02)
+- [x] Write test `test_resolve_namespace_relative` (NR-03)
+- [x] Write test `test_resolve_mixed_packages` (NR-04)
+- [x] Write test `test_resolve_namespace_deep_nesting` (NR-05)
+- [x] Write test `test_resolve_namespace_fallback` (NR-06)
+- [x] Write test `test_resolve_namespace_returns_marker` (NR-07)
 
 **Tests:**
 
@@ -1675,23 +1710,34 @@ Uses **Table T01: Namespace Package Test Cases** from Section 10.3.
 
 | ID | Test Name | Category | Description |
 |----|-----------|----------|-------------|
-| NR-01 | `test_resolve_namespace_import_from` | integration | `from utils.helpers import foo` resolves |
-| NR-02 | `test_resolve_namespace_import` | integration | `import utils` as namespace marker |
-| NR-03 | `test_resolve_namespace_relative` | integration | Relative import within namespace |
-| NR-04 | `test_resolve_mixed_packages` | integration | Regular and namespace packages |
-| NR-05 | `test_resolve_namespace_deep_nesting` | integration | `a.b.c.d.e` namespace chain |
-| NR-06 | `test_resolve_namespace_fallback` | unit | Tries regular resolution first |
-| NR-07 | `test_resolve_namespace_returns_marker` | unit | ResolvedModule::Namespace returned |
+| NR-01 | `test_resolve_namespace_import_from` | integration | `from utils.helpers import foo` resolves to `utils/helpers.py` |
+| NR-02 | `test_resolve_namespace_import` | integration | `import utils` recognizes namespace package |
+| NR-03 | `test_resolve_namespace_relative` | integration | `from . import other` within namespace package |
+| NR-04 | `test_resolve_mixed_packages` | integration | Mix of regular (`__init__.py`) and namespace packages |
+| NR-05 | `test_resolve_namespace_deep_nesting` | integration | `a.b.c.d.e` where `a/`, `b/`, `c/`, `d/` are all namespace packages |
+| NR-06 | `test_resolve_namespace_fallback` | unit | Regular file/init resolution tried before namespace |
+| NR-07 | `test_resolve_namespace_returns_marker` | unit | `ResolvedModule::Namespace` returned for namespace package |
 
-- [ ] integration test: `test_resolve_namespace_import_from` - NS-01 from T01
-- [ ] integration test: `test_resolve_namespace_import` - NS-02 from T01
-- [ ] integration test: `test_resolve_namespace_relative` - NS-03 from T01
-- [ ] integration test: `test_resolve_mixed_packages` - NS-04 from T01
-- [ ] integration test: `test_resolve_namespace_deep_nesting` - deeply nested namespace
-- [ ] unit test: `test_resolve_namespace_fallback` - regular resolution tried first
-- [ ] unit test: `test_resolve_namespace_returns_marker` - ResolvedModule::Namespace type
+##### Test Implementation Notes
 
-**Checkpoint:** `cargo nextest run -p tugtool-python`
+**Test fixture structure for NR-01 through NR-05:**
+```
+test_workspace/
+├── utils/                    # Namespace package (no __init__.py)
+│   └── helpers.py            # Contains: def foo(): pass
+├── regular_pkg/              # Regular package
+│   ├── __init__.py
+│   └── module.py
+└── consumer.py               # from utils.helpers import foo
+```
+
+**Key assertions:**
+- `resolve_module_to_file("utils", ..., namespace_packages)` → `ResolvedModule::Namespace("utils")`
+- `resolve_module_to_file("utils.helpers", ..., namespace_packages)` → `ResolvedModule::File("utils/helpers.py")`
+- Star imports from namespace packages produce no exports (correct behavior)
+- Rename operations across namespace package boundaries work correctly
+
+**Checkpoint:** `cargo nextest run -p tugtool-python` ✓
 
 ---
 

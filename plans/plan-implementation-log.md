@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 8: Namespace Package Resolution | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 8 specification, [D05] design decision, Spec S03, Table T01, Table T08
+- `crates/tugtool-python/src/analyzer.rs` - Existing `resolve_module_to_file()` function and `ResolvedModule` enum
+- `crates/tugtool-python/src/lookup.rs` - Post-analysis lookup function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Rename `resolve_module_to_file` → `lookup_module_file` in lookup.rs | Done |
+| Update docstring to clarify post-analysis query semantics | Done |
+| Update call site in `resolve_import_to_origin` | Done |
+| Test: test_resolve_namespace_import_from (NR-01) | Done |
+| Test: test_resolve_namespace_import (NR-02) | Done |
+| Test: test_resolve_namespace_relative (NR-03) | Done |
+| Test: test_resolve_mixed_packages (NR-04) | Done |
+| Test: test_resolve_namespace_deep_nesting (NR-05) | Done |
+| Test: test_resolve_namespace_fallback (NR-06) | Done |
+| Test: test_resolve_namespace_returns_marker (NR-07) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/lookup.rs` - Renamed function from `resolve_module_to_file` to `lookup_module_file`; updated docstring to clarify it's a post-analysis query, not resolution; updated call site
+- `crates/tugtool-python/src/analyzer.rs` - Added `namespace_resolution_tests` module with 7 tests verifying PEP 420 namespace package resolution
+- `plans/phase-10.md` - Added architectural analysis section explaining two-function distinction; checked off completed tasks
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python namespace_resolution`: 7 tests passed
+- `cargo nextest run -p tugtool-python`: 329 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python`: PASS (all 329 tests pass)
+
+**Key Decisions/Notes:**
+- **Naming clarification**: Two functions had the same name but different purposes. Renamed lookup.rs version to `lookup_module_file` to distinguish from analyzer.rs's `resolve_module_to_file`. The former is a post-analysis query; the latter is resolution during analysis.
+- **lookup.rs does NOT need namespace package support**: It queries the FactsStore for Files. Namespace packages have no File (no `__init__.py`), so returning `None` is semantically correct.
+- **Step 7 already implemented core functionality**: The `ResolvedModule` enum, `namespace_packages` parameter, and call site updates were done in Step 7. Step 8 was primarily testing and architecture cleanup.
+- **Test coverage**: NR-01 through NR-07 cover from-imports, direct imports, relative imports, mixed packages, deep nesting, fallback priority, and return type verification.
+
+---
+
 ## [phase-10.md] Step 7: Compute Namespace Packages | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24
