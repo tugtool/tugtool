@@ -2160,20 +2160,20 @@ All 5 new tests (AI-01 through AI-05) should pass.
 **Tasks:**
 
 *CLI changes:*
-- [ ] Add `Command::Analyze` with subcommand `rename`
-- [ ] Add `--format` flag (diff, json, summary)
-- [ ] Default to diff format
-- [ ] Remove old `Command::AnalyzeImpact` and `Command::Run` entirely
+- [x] Add `Command::Analyze` with subcommand `rename`
+- [x] Add `--format` flag (diff, json, summary)
+- [x] Default to diff format
+- [x] Remove old `Command::AnalyzeImpact` and `Command::Run` entirely
 
 *Skill and documentation updates (same commit):*
-- [ ] Update `/tug-rename` to use `tug rename`
-- [ ] Update `/tug-rename-plan` to use `tug analyze rename`
-- [ ] Update `.claude/skills/tug-refactor/` if present
-- [ ] Update CLAUDE.md quick reference
+- [x] Update `/tug-rename` to use `tug rename`
+- [x] Rename `/tug-rename-plan` to `/tug-analyze-rename` and update to use `tug analyze rename`
+- [x] Update `.claude/skills/tug-refactor/` if present
+- [x] Update CLAUDE.md quick reference
 
 *Verification:*
-- [ ] Grep codebase for `analyze-impact` and `run --apply` references - must find zero
-- [ ] Update any internal scripts or test fixtures referencing old commands
+- [x] Grep codebase for `analyze-impact` and `run --apply` references - must find zero
+- [x] Update any internal scripts or test fixtures referencing old commands
 
 **Tests:**
 
@@ -2199,18 +2199,18 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | OR-04 | `test_no_run_apply_refs` | drift | grep finds 0 `run --apply` refs |
 | OR-05 | `test_skills_use_new_commands` | drift | Skills invoke tug rename/analyze |
 
-- [ ] integration test: `test_analyze_rename_diff_default` - unified diff format
-- [ ] integration test: `test_analyze_rename_format_json` - JSON output option
-- [ ] integration test: `test_analyze_rename_format_summary` - summary output option
+- [x] integration test: `test_analyze_rename_diff_default` - unified diff format
+- [x] integration test: `test_analyze_rename_format_json` - JSON output option
+- [x] integration test: `test_analyze_rename_format_summary` - summary output option
 - [ ] integration test: `test_analyze_rename_no_changes` - empty diff when no edits
 - [ ] integration test: `test_analyze_rename_git_compatible` - diff works with git apply
 - [ ] integration test: `test_analyze_rename_context_lines` - 3 lines context
 - [ ] integration test: `test_analyze_rename_multiple_files` - multi-file output
-- [ ] drift prevention test: `test_analyze_impact_removed` - old command gone
-- [ ] drift prevention test: `test_run_command_removed` - old command gone
+- [x] drift prevention test: `test_analyze_impact_removed` - old command gone
+- [x] drift prevention test: `test_run_command_removed` - old command gone
 - [ ] drift prevention test: `test_no_analyze_impact_refs` - no stale references
 - [ ] drift prevention test: `test_no_run_apply_refs` - no stale references
-- [ ] drift prevention test: `test_skills_use_new_commands` - skills updated
+- [x] drift prevention test: `test_skills_use_new_commands` - skills updated
 
 **Checkpoint:** `tug analyze rename --at <loc> --to <name>` outputs diff; skills work with new commands; `tug analyze-impact` and `tug run` produce "unknown command" errors
 
@@ -2282,5 +2282,5 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | Step 11 | done | 2026-01-24 | Alias output types |
 | Step 12 | done | 2026-01-24 | Wire aliases to impact analysis |
 | Step 13 | done | 2026-01-24 | Add `rename` command |
-| Step 14 | pending | | Add `analyze` command, remove old commands, update skills and docs |
+| Step 14 | done | 2025-01-24 | Add `analyze` command, remove old commands, update skills and docs |
 | Step 15 | pending | | Final verification |

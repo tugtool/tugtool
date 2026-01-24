@@ -257,18 +257,19 @@ Look for these patterns in user requests:
 /tug-rename
 
 # Preview only (no changes)
-/tug-rename-plan
+/tug-analyze-rename
 
 # CLI equivalent
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
-tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_name>
+tug analyze rename --at <file:line:col> --to <new_name>            # Preview (unified diff)
+tug analyze rename --at <file:line:col> --to <new_name> --format summary  # Brief summary
+tug rename --at <file:line:col> --to <new_name>                    # Apply changes
+tug rename --at <file:line:col> --to <new_name> --dry-run          # Preview without apply
 ```
 
 ### Agent Rules
 
-1. **Always analyze first**: Run `analyze-impact` before any `run --apply`
-2. **Review before apply**: Show dry-run summary before applying
+1. **Always analyze first**: Run `tug analyze rename` before applying
+2. **Review before apply**: Show preview to user before running `tug rename`
 3. **Get explicit approval**: Never apply without user confirmation
 4. **Handle errors by exit code**: See Error Codes section
 5. **No mutation during workflow**: Don't manually edit files between analyze and apply

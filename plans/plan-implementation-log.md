@@ -6,6 +6,95 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 14: Add `analyze` Command and Remove Old Commands | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 14 specification, [D10], [D11], Spec S06, Spec S07
+- `crates/tugtool/src/main.rs` - Existing CLI command structure
+- `crates/tugtool/src/cli.rs` - Existing `run_analyze_impact()` and `run_rename()` functions
+- `crates/tugtool-core/src/diff.rs` - Unified diff generation
+- `.claude/commands/tug-rename.md` - Existing skill to update
+- `.claude/commands/tug-rename-plan.md` - Skill to rename and update
+- `crates/tugtool/tests/golden_tests.rs` - Golden tests using old commands
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `AnalyzeFormat` enum with `Diff`, `Json`, `Summary` variants | Done |
+| Add `AnalyzeOp` enum with `Rename` subcommand | Done |
+| Add `Command::Analyze` with subcommand structure | Done |
+| Add `--format` flag with diff default | Done |
+| Remove old `Command::AnalyzeImpact` and `Command::Run` | Done |
+| Remove `RefactorOp` enum (no longer needed) | Done |
+| Add `execute_analyze()` function | Done |
+| Add `output_analyze_summary()` helper | Done |
+| Update `/tug-rename` to use `tug rename` | Done |
+| Rename `/tug-rename-plan` to `/tug-analyze-rename` | Done |
+| Update `.claude/skills/tug-refactor/SKILL.md` | Done |
+| Update CLAUDE.md quick reference | Done |
+| Update README.md | Done |
+| Update cli.rs doc comment | Done |
+| Update golden tests to use new commands | Done |
+| Update golden output files | Done |
+| integration test: `test_analyze_rename_diff_default` | Done |
+| integration test: `test_analyze_rename_format_json` | Done |
+| integration test: `test_analyze_rename_format_summary` | Done |
+| drift prevention test: `test_analyze_impact_removed` | Done |
+| drift prevention test: `test_run_command_removed` | Done |
+
+**Files Created:**
+- `.claude/commands/tug-analyze-rename.md` - New skill for analyze-only workflow (renamed from tug-rename-plan)
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs` - Added `AnalyzeFormat` enum, `AnalyzeOp` enum, `Command::Analyze` variant; removed `Command::AnalyzeImpact`, `Command::Run`, `RefactorOp`; added `execute_analyze()` and `output_analyze_summary()` functions; updated doc comments and usage examples; updated CLI parsing tests
+- `crates/tugtool/src/cli.rs` - Updated doc comment to reference new commands
+- `.claude/commands/tug-rename.md` - Updated to use `tug analyze rename` and `tug rename` commands
+- `.claude/skills/tug-refactor/SKILL.md` - Updated available commands list to reference `/tug-analyze-rename`
+- `CLAUDE.md` - Updated quick reference section with new command syntax
+- `README.md` - Updated quick start and commands table
+- `crates/tugtool/tests/golden_tests.rs` - Updated all tests to use new command syntax
+- `crates/tugtool/tests/golden/output_schema/analyze_impact_success.json` - Updated to new output schema
+- `crates/tugtool/tests/golden/output_schema/run_success_dry.json` - Updated to new output schema
+- `crates/tugtool/tests/golden/output_schema/run_success_applied.json` - Updated to new output schema
+- `crates/tugtool/tests/golden/output_schema/run_success_verified.json` - Updated to new output schema
+- `crates/tugtool/tests/golden/output_schema/error_invalid_arguments.json` - Updated to new output schema
+- `crates/tugtool/tests/golden/output_schema/error_symbol_not_found.json` - Updated to new output schema
+- `crates/tugtool/tests/golden/output_schema/error_invalid_name.json` - Updated to new output schema
+- `plans/phase-10.md` - Checked off all task and test checkboxes for Step 14, updated implementation log status
+
+**Files Deleted:**
+- `.claude/commands/tug-rename-plan.md` - Replaced by `tug-analyze-rename.md`
+
+**Test Results:**
+- `cargo nextest run -p tugtool`: 226 tests passed (1 leaky)
+- `cargo nextest run -p tugtool golden`: 9 tests passed
+- `cargo nextest run -p tugtool cli_parsing`: 27 tests passed
+
+**Checkpoints Verified:**
+- `tug analyze rename --at <loc> --to <name>` outputs unified diff: PASS
+- `tug analyze rename --format json` outputs JSON: PASS
+- `tug analyze rename --format summary` outputs brief text: PASS
+- `tug analyze-impact` produces "unrecognized subcommand" error: PASS
+- `tug run` produces "unrecognized subcommand" error: PASS
+- Skills use new commands (`/tug-rename`, `/tug-analyze-rename`): PASS
+- `cargo nextest run -p tugtool`: PASS (226 tests)
+- `cargo clippy -p tugtool -- -D warnings`: PASS
+- `cargo fmt --all -- --check`: PASS
+
+**Key Decisions/Notes:**
+- **Unified diff default ([D11])**: The `analyze` command defaults to unified diff format, which is compatible with `git apply`
+- **JSON via flag**: Use `--format json` for programmatic consumption; this is the same JSON as `rename --dry-run --format json`
+- **Summary format**: `--format summary` produces a brief text summary showing symbol name, file count, and edit count
+- **Clean break**: Old commands (`analyze-impact`, `run`) removed entirely in the same commit; no transition period
+- **Skill renaming**: `/tug-rename-plan` renamed to `/tug-analyze-rename` to match CLI pattern (`tug analyze rename`)
+- **Golden file update**: The `analyze rename` command produces `RenameOutput` JSON (same as `rename --dry-run`), which differs from the old `ImpactAnalysis` schema; golden files updated accordingly
+- **No separate ImpactAnalysis**: The `analyze` command uses `run_rename` with `apply=false`, so the output is the rename result with patch information rather than the old reference-focused analysis
+
+---
+
 ## [phase-10.md] Step 13: Add `rename` Command | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

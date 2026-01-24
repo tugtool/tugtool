@@ -27,7 +27,7 @@ Use tug when the user requests symbol renaming or reference updates, especially:
 ## Available Commands
 
 - `/tug-rename` - Full rename workflow with analyze, review, and apply
-- `/tug-rename-plan` - Analyze and preview only (no changes)
+- `/tug-analyze-rename` - Analyze and preview only (no changes)
 
 ## Workflow
 

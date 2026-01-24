@@ -4,11 +4,10 @@ Rename a symbol using tug with full verification workflow.
 
 ## Workflow
 
-This command performs a safe rename operation with three decision gates:
+This command performs a safe rename operation with two decision gates:
 
-1. **Analyze Impact** - Identify all references and assess risk
-2. **Dry Run** - Generate patch and verify syntax
-3. **Apply** - Write changes after explicit approval
+1. **Preview** - Analyze and show what changes will be made
+2. **Apply** - Write changes after explicit approval
 
 ## Usage
 
@@ -17,37 +16,38 @@ When the user wants to rename a symbol:
 1. Determine the location from current file and cursor position as `<file>:<line>:<col>` (1-indexed)
 2. Ask for the new name if not provided
 
-### Step 1: Analyze Impact
+### Step 1: Preview Changes
 
 ```bash
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
+tug analyze rename --at <file:line:col> --to <new_name> --format summary
 ```
 
-Parse the JSON output. Check:
-- If `references_count == 0`: Stop and inform user "No references found at this location. Please position cursor on the symbol definition or a reference."
-- If `files_affected > 50` OR `edits_estimated > 500`: Warn user this is a large refactor and ask for explicit confirmation before proceeding.
-
-### Step 2: Dry Run with Verification
+Show the summary to the user. If you need the full diff:
 
 ```bash
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
+tug analyze rename --at <file:line:col> --to <new_name>
 ```
 
-Parse the JSON output. Present summary:
-- Files to change: N
-- Total edits: M
-- Verification: passed/failed
+Check:
+- If no changes needed: Stop and inform user "No references found at this location. Please position cursor on the symbol definition or a reference."
+- If large refactor (many files): Warn user and ask for explicit confirmation before proceeding.
 
-If verification failed: Stop and show the verification output. Do not proceed.
-
-### Step 3: Apply (with approval)
+### Step 2: Apply (with approval)
 
 Show the summary and ask: "Apply these changes? (yes/no)"
 
 Only if user approves:
 
 ```bash
-tug run --apply --verify syntax rename-symbol --at <file:line:col> --to <new_name>
+tug rename --at <file:line:col> --to <new_name>
+```
+
+This applies the changes with syntax verification by default. The output is human-readable text.
+
+For JSON output:
+
+```bash
+tug rename --at <file:line:col> --to <new_name> --format json
 ```
 
 Report the result.
@@ -68,9 +68,8 @@ Report the result.
 User: "Rename the function process_data to transform_data"
 
 1. Get location from cursor (e.g., `src/utils.py:42:5`)
-2. Run analyze-impact
-3. Show: "Found 3 references across 2 files"
-4. Run dry-run
-5. Show: "Changes: 2 files, 4 edits. Verification: passed"
-6. Ask: "Apply these changes?"
-7. If yes: Apply and report success
+2. Run `tug analyze rename --at src/utils.py:42:5 --to transform_data --format summary`
+3. Show: "Would rename 'process_data': 2 file(s), 4 edit(s)"
+4. Ask: "Apply these changes?"
+5. If yes: Run `tug rename --at src/utils.py:42:5 --to transform_data`
+6. Report success

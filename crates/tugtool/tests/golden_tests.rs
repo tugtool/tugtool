@@ -231,17 +231,20 @@ fn run_golden_test(
 // ============================================================================
 
 #[test]
-fn golden_analyze_impact_success() {
+fn golden_analyze_rename_success() {
     let python = find_python_for_tests();
 
+    // Phase 10: `analyze rename` with --format json for structured output
     let result = run_golden_test(
         &[
-            "analyze-impact",
-            "rename-symbol",
+            "analyze",
+            "rename",
             "--at",
             "input.py:1:5",
             "--to",
             "transform_data",
+            "--format",
+            "json",
         ],
         "analyze_impact_success.json",
         Some("rename_function"),
@@ -254,17 +257,20 @@ fn golden_analyze_impact_success() {
 }
 
 #[test]
-fn golden_run_success_dry() {
+fn golden_rename_success_dry() {
     let python = find_python_for_tests();
 
+    // Phase 10: `rename --dry-run` replaces `run` without --apply
     let result = run_golden_test(
         &[
-            "run",
-            "rename-symbol",
+            "rename",
             "--at",
             "input.py:1:5",
             "--to",
             "transform_data",
+            "--dry-run",
+            "--format",
+            "json",
         ],
         "run_success_dry.json",
         Some("rename_function"),
@@ -277,18 +283,19 @@ fn golden_run_success_dry() {
 }
 
 #[test]
-fn golden_run_success_applied() {
+fn golden_rename_success_applied() {
     let python = find_python_for_tests();
 
+    // Phase 10: `rename` applies by default (replaces `run --apply`)
     let result = run_golden_test(
         &[
-            "run",
-            "--apply",
-            "rename-symbol",
+            "rename",
             "--at",
             "input.py:1:5",
             "--to",
             "transform_data",
+            "--format",
+            "json",
         ],
         "run_success_applied.json",
         Some("rename_function"),
@@ -301,19 +308,22 @@ fn golden_run_success_applied() {
 }
 
 #[test]
-fn golden_run_success_verified() {
+fn golden_rename_success_verified() {
     let python = find_python_for_tests();
 
+    // Phase 10: `rename` with verification (syntax is default)
     let result = run_golden_test(
         &[
-            "run",
-            "--verify",
-            "syntax",
-            "rename-symbol",
+            "rename",
             "--at",
             "input.py:1:5",
             "--to",
             "transform_data",
+            "--dry-run",
+            "--verify",
+            "syntax",
+            "--format",
+            "json",
         ],
         "run_success_verified.json",
         Some("rename_function"),
@@ -366,14 +376,10 @@ fn golden_error_invalid_arguments() {
     let python = find_python_for_tests();
 
     // Invalid location format
+    // Phase 10: Uses `analyze rename` with --format json
     let result = run_golden_test(
         &[
-            "analyze-impact",
-            "rename-symbol",
-            "--at",
-            "invalid",
-            "--to",
-            "bar",
+            "analyze", "rename", "--at", "invalid", "--to", "bar", "--format", "json",
         ],
         "error_invalid_arguments.json",
         None,
@@ -390,14 +396,17 @@ fn golden_error_symbol_not_found() {
     let python = find_python_for_tests();
 
     // Symbol at non-existent location
+    // Phase 10: Uses `analyze rename` with --format json
     let result = run_golden_test(
         &[
-            "analyze-impact",
-            "rename-symbol",
+            "analyze",
+            "rename",
             "--at",
             "input.py:999:1",
             "--to",
             "bar",
+            "--format",
+            "json",
         ],
         "error_symbol_not_found.json",
         Some("symbol_not_found"),
@@ -414,14 +423,17 @@ fn golden_error_invalid_name() {
     let python = find_python_for_tests();
 
     // Invalid Python identifier
+    // Phase 10: Uses `rename --dry-run` with --format json
     let result = run_golden_test(
         &[
-            "run",
-            "rename-symbol",
+            "rename",
             "--at",
             "input.py:1:5",
             "--to",
             "123invalid",
+            "--dry-run",
+            "--format",
+            "json",
         ],
         "error_invalid_name.json",
         Some("rename_function"),

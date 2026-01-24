@@ -6,11 +6,11 @@
 //! ## Usage
 //!
 //! ```bash
-//! # Analyze impact of a rename
-//! tug analyze-impact rename-symbol --at src/lib.py:10:5 --to new_name
+//! # Rename a symbol (applies changes by default)
+//! tug rename --at src/lib.py:10:5 --to new_name
 //!
-//! # Execute rename with verification (--apply and --verify come before the refactor subcommand)
-//! tug run --apply --verify syntax rename-symbol --at src/lib.py:10:5 --to new_name
+//! # Preview rename without applying (outputs unified diff)
+//! tug analyze rename --at src/lib.py:10:5 --to new_name
 //!
 //! # Check session status
 //! tug session status
@@ -42,7 +42,7 @@ use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
 // Python feature-gated imports
 #[cfg(feature = "python")]
-use tugtool::cli::{run_analyze_impact, run_rename};
+use tugtool::cli::run_rename;
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
@@ -147,32 +147,32 @@ enum RenameFormat {
     Json,
 }
 
+/// Output format for analyze command.
+///
+/// Per Phase 10 [D11]: Unified diff is the default output format.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+enum AnalyzeFormat {
+    /// Unified diff format (default, compatible with `git apply`).
+    #[default]
+    Diff,
+    /// Full JSON response.
+    Json,
+    /// Brief text summary.
+    Summary,
+}
+
 /// CLI subcommands.
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Create a workspace snapshot for analysis.
     Snapshot,
-    /// Analyze impact of a refactoring operation.
-    AnalyzeImpact {
+    /// Analyze a refactoring operation without applying changes.
+    ///
+    /// Per Phase 10 [D10]: Preview what changes would be made.
+    /// Default output is unified diff format.
+    Analyze {
         #[command(subcommand)]
-        refactor: RefactorOp,
-    },
-    /// Execute a refactoring operation.
-    Run {
-        #[command(subcommand)]
-        refactor: RefactorOp,
-        /// Apply changes to files (default: dry-run).
-        #[arg(long)]
-        apply: bool,
-        /// Verification mode after applying changes.
-        #[arg(long, value_enum, default_value = "syntax")]
-        verify: VerifyMode,
-        /// Custom test command as JSON array (e.g., '["{python}","-m","pytest","-x"]').
-        ///
-        /// Template variables: {python} = resolved Python path, {workspace} = workspace root.
-        /// If not provided, auto-detects from pyproject.toml, pytest.ini, or setup.cfg.
-        #[arg(long)]
-        test_command: Option<String>,
+        op: AnalyzeOp,
     },
     /// Rename a symbol (apply-by-default).
     ///
@@ -233,38 +233,26 @@ enum Command {
     Doctor,
 }
 
-/// Refactoring operations (used by analyze-impact and run).
+/// Analyze operations (used by the `analyze` command).
+///
+/// Per Phase 10 [D10]: Preview what changes a refactoring operation would make.
 #[derive(Subcommand, Clone, Debug)]
-enum RefactorOp {
-    /// Rename a symbol.
-    RenameSymbol {
+enum AnalyzeOp {
+    /// Analyze a symbol rename operation.
+    ///
+    /// Shows what edits would be made without applying them.
+    Rename {
         /// Location of the symbol to rename (file:line:col).
         #[arg(long)]
         at: String,
         /// New name for the symbol.
         #[arg(long)]
         to: String,
-    },
-    /// Change a function signature (not yet implemented).
-    ChangeSignature {
-        /// Location of the function (file:line:col).
-        #[arg(long)]
-        at: String,
-    },
-    /// Move a symbol to a new location (not yet implemented).
-    MoveSymbol {
-        /// Location of the symbol to move (file:line:col).
-        #[arg(long)]
-        at: String,
-        /// Destination file path.
-        #[arg(long)]
-        to: String,
-    },
-    /// Organize imports in a file (not yet implemented).
-    OrganizeImports {
-        /// File to organize imports in.
-        #[arg(long)]
-        file: String,
+        /// Output format.
+        ///
+        /// Per Phase 10 [D11]: Default is unified diff.
+        #[arg(long, value_enum, default_value = "diff")]
+        format: AnalyzeFormat,
     },
 }
 
@@ -381,13 +369,7 @@ fn init_tracing(level: LogLevel) {
 fn execute(cli: Cli) -> Result<(), TugError> {
     match cli.command {
         Command::Snapshot => execute_snapshot(&cli.global),
-        Command::AnalyzeImpact { refactor } => execute_analyze_impact(&cli.global, refactor),
-        Command::Run {
-            refactor,
-            apply,
-            verify,
-            test_command,
-        } => execute_run(&cli.global, refactor, apply, verify, test_command),
+        Command::Analyze { op } => execute_analyze(&cli.global, op),
         Command::Rename {
             at,
             to,
@@ -439,95 +421,129 @@ fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
     Ok(())
 }
 
-/// Execute analyze-impact command.
+/// Execute analyze command.
+///
+/// Per Phase 10 [D10]: Preview what changes a refactoring operation would make.
+/// Per Phase 10 [D11]: Default output is unified diff.
+///
+/// This runs the rename operation in dry-run mode (no changes applied) and outputs
+/// the results in the requested format.
 #[cfg(feature = "python")]
-fn execute_analyze_impact(global: &GlobalArgs, refactor: RefactorOp) -> Result<(), TugError> {
-    let mut session = open_session(global)?;
-
-    match refactor {
-        RefactorOp::RenameSymbol { at, to } => {
-            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
-            // run_analyze_impact now returns Result<String, TugError> directly
-            let json = run_analyze_impact(&session, Some(python_path), &at, &to)?;
-
-            // Output is already JSON from run_analyze_impact
-            println!("{}", json);
-            Ok(())
-        }
-        RefactorOp::ChangeSignature { .. } => Err(TugError::internal(
-            "Operation not yet implemented: change-signature",
-        )),
-        RefactorOp::MoveSymbol { .. } => Err(TugError::internal(
-            "Operation not yet implemented: move-symbol",
-        )),
-        RefactorOp::OrganizeImports { .. } => Err(TugError::internal(
-            "Operation not yet implemented: organize-imports",
-        )),
-    }
-}
-
-/// Execute analyze-impact command (Python not available).
-#[cfg(not(feature = "python"))]
-fn execute_analyze_impact(_global: &GlobalArgs, _refactor: RefactorOp) -> Result<(), TugError> {
-    Err(tugtool::cli::python_not_available())
-}
-
-/// Execute run command.
-#[cfg(feature = "python")]
-fn execute_run(
-    global: &GlobalArgs,
-    refactor: RefactorOp,
-    apply: bool,
-    verify: VerifyMode,
-    test_command: Option<String>,
-) -> Result<(), TugError> {
-    let mut session = open_session(global)?;
-
-    match refactor {
-        RefactorOp::RenameSymbol { at, to } => {
+fn execute_analyze(global: &GlobalArgs, op: AnalyzeOp) -> Result<(), TugError> {
+    match op {
+        AnalyzeOp::Rename { at, to, format } => {
+            let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Resolve test command if verification mode is Tests
-            if verify == VerifyMode::Tests {
-                let vars = TemplateVars::new(
-                    Some(python_path.to_string_lossy().to_string()),
-                    Some(session.workspace_root().to_string_lossy().to_string()),
-                );
-                let _test_cmd =
-                    resolve_test_command(test_command.as_deref(), session.workspace_root(), &vars)
+            // Run rename in dry-run mode with no verification
+            // The analyze command is purely for previewing changes
+            let json = run_rename(
+                &session,
+                Some(python_path),
+                &at,
+                &to,
+                VerificationMode::None,
+                false, // Never apply changes
+            )?;
+
+            // Output based on format
+            match format {
+                AnalyzeFormat::Json => {
+                    // Full JSON response
+                    println!("{}", json);
+                }
+                AnalyzeFormat::Diff => {
+                    // Extract unified diff from the JSON response
+                    let result: serde_json::Value = serde_json::from_str(&json)
                         .map_err(|e| TugError::internal(e.to_string()))?;
-                // TODO: Pass test command to run_rename when tests verification is implemented
+
+                    let diff = result
+                        .get("patch")
+                        .and_then(|p| p.get("unified_diff"))
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("");
+
+                    if diff.is_empty() {
+                        println!("No changes.");
+                    } else {
+                        print!("{}", diff);
+                    }
+                }
+                AnalyzeFormat::Summary => {
+                    // Brief text summary
+                    let result: serde_json::Value = serde_json::from_str(&json)
+                        .map_err(|e| TugError::internal(e.to_string()))?;
+
+                    output_analyze_summary(&result)?;
+                }
             }
 
-            // run_rename now returns Result<String, TugError> directly
-            let json = run_rename(&session, Some(python_path), &at, &to, verify.into(), apply)?;
-
-            // Output is already JSON from run_rename
-            println!("{}", json);
             Ok(())
         }
-        RefactorOp::ChangeSignature { .. } => Err(TugError::internal(
-            "Operation not yet implemented: change-signature",
-        )),
-        RefactorOp::MoveSymbol { .. } => Err(TugError::internal(
-            "Operation not yet implemented: move-symbol",
-        )),
-        RefactorOp::OrganizeImports { .. } => Err(TugError::internal(
-            "Operation not yet implemented: organize-imports",
-        )),
     }
 }
 
-/// Execute run command (Python not available).
+/// Execute analyze command (Python not available).
 #[cfg(not(feature = "python"))]
-fn execute_run(
-    _global: &GlobalArgs,
-    _refactor: RefactorOp,
-    _apply: bool,
-    _verify: VerifyMode,
-    _test_command: Option<String>,
-) -> Result<(), TugError> {
+fn execute_analyze(_global: &GlobalArgs, _op: AnalyzeOp) -> Result<(), TugError> {
     Err(tugtool::cli::python_not_available())
+}
+
+/// Output a brief text summary of analyze results.
+///
+/// Per Phase 10 Spec S07: --format summary produces brief text.
+#[cfg(feature = "python")]
+fn output_analyze_summary(result: &serde_json::Value) -> Result<(), TugError> {
+    // Get symbol info
+    let symbol_name = result
+        .get("patch")
+        .and_then(|p| p.get("edits"))
+        .and_then(|e| e.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|e| e.get("old_text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    // Get counts from summary
+    let files_changed = result
+        .get("summary")
+        .and_then(|s| s.get("files_changed"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let edits_count = result
+        .get("summary")
+        .and_then(|s| s.get("edits_count"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    if edits_count == 0 {
+        println!("No changes needed for '{}'.", symbol_name);
+    } else {
+        println!(
+            "Would rename '{}': {} file(s), {} edit(s)",
+            symbol_name, files_changed, edits_count
+        );
+
+        // List affected files
+        if let Some(edits) = result
+            .get("patch")
+            .and_then(|p| p.get("edits"))
+            .and_then(|e| e.as_array())
+        {
+            let mut files: Vec<&str> = edits
+                .iter()
+                .filter_map(|e| e.get("file").and_then(|f| f.as_str()))
+                .collect();
+            files.sort();
+            files.dedup();
+
+            for file in files {
+                println!("  {}", file);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Execute rename command.
@@ -1367,12 +1383,17 @@ mod tests {
     mod cli_parsing {
         use super::*;
 
+        // ====================================================================
+        // analyze command tests (Phase 10 Step 14)
+        // ====================================================================
+
         #[test]
-        fn parse_analyze_impact_rename() {
+        fn test_analyze_rename_diff_default() {
+            // AC-01: Default format is unified diff
             let args = [
                 "tug",
-                "analyze-impact",
-                "rename-symbol",
+                "analyze",
+                "rename",
                 "--at",
                 "src/main.py:10:5",
                 "--to",
@@ -1380,24 +1401,113 @@ mod tests {
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::AnalyzeImpact {
-                    refactor: RefactorOp::RenameSymbol { at, to },
+                Command::Analyze {
+                    op: AnalyzeOp::Rename { at, to, format },
                 } => {
                     assert_eq!(at, "src/main.py:10:5");
                     assert_eq!(to, "new_name");
+                    assert!(matches!(format, AnalyzeFormat::Diff));
                 }
-                _ => panic!("expected AnalyzeImpact RenameSymbol"),
+                _ => panic!("expected Analyze Rename"),
             }
         }
 
         #[test]
-        fn parse_run_rename_with_apply() {
-            // Note: flags for 'run' come before the nested subcommand 'rename-symbol'
+        fn test_analyze_rename_format_json() {
+            // AC-02: --format json produces JSON
+            let args = [
+                "tug",
+                "analyze",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--format",
+                "json",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Analyze {
+                    op: AnalyzeOp::Rename { format, .. },
+                } => {
+                    assert!(matches!(format, AnalyzeFormat::Json));
+                }
+                _ => panic!("expected Analyze Rename"),
+            }
+        }
+
+        #[test]
+        fn test_analyze_rename_format_summary() {
+            // AC-03: --format summary produces brief text
+            let args = [
+                "tug",
+                "analyze",
+                "rename",
+                "--at",
+                "src/main.py:10:5",
+                "--to",
+                "new_name",
+                "--format",
+                "summary",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                Command::Analyze {
+                    op: AnalyzeOp::Rename { format, .. },
+                } => {
+                    assert!(matches!(format, AnalyzeFormat::Summary));
+                }
+                _ => panic!("expected Analyze Rename"),
+            }
+        }
+
+        // ====================================================================
+        // Old command removal tests (Phase 10 Step 14)
+        // ====================================================================
+
+        #[test]
+        fn test_analyze_impact_removed() {
+            // OR-01: `tug analyze-impact` → unknown command
+            let args = [
+                "tug",
+                "analyze-impact",
+                "rename-symbol",
+                "--at",
+                "test.py:1:1",
+                "--to",
+                "x",
+            ];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "analyze-impact should be removed");
+        }
+
+        #[test]
+        fn test_run_command_removed() {
+            // OR-02: `tug run` → unknown command
             let args = [
                 "tug",
                 "run",
                 "--apply",
                 "rename-symbol",
+                "--at",
+                "test.py:1:1",
+                "--to",
+                "x",
+            ];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "run should be removed");
+        }
+
+        // ====================================================================
+        // rename command tests (existing from Step 13)
+        // ====================================================================
+
+        #[test]
+        fn parse_rename_default_options() {
+            let args = [
+                "tug",
+                "rename",
                 "--at",
                 "lib.py:42:8",
                 "--to",
@@ -1405,86 +1515,89 @@ mod tests {
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Run {
-                    refactor: RefactorOp::RenameSymbol { at, to },
-                    apply,
+                Command::Rename {
+                    at,
+                    to,
+                    dry_run,
                     verify,
-                    ..
+                    no_verify,
+                    format,
                 } => {
                     assert_eq!(at, "lib.py:42:8");
                     assert_eq!(to, "better_name");
-                    assert!(apply);
-                    assert!(matches!(verify, VerifyMode::Syntax)); // default
+                    assert!(!dry_run);
+                    assert!(matches!(verify, VerifyMode::Syntax));
+                    assert!(!no_verify);
+                    assert!(matches!(format, RenameFormat::Text));
                 }
-                _ => panic!("expected Run RenameSymbol"),
+                _ => panic!("expected Rename"),
             }
         }
 
         #[test]
-        fn parse_run_with_verify_none() {
+        fn parse_rename_dry_run() {
             let args = [
                 "tug",
-                "run",
-                "--verify",
-                "none",
-                "rename-symbol",
+                "rename",
                 "--at",
-                "test.py:1:1",
+                "lib.py:1:1",
                 "--to",
                 "x",
+                "--dry-run",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Run { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::None));
+                Command::Rename { dry_run, .. } => {
+                    assert!(dry_run);
                 }
-                _ => panic!("expected Run"),
+                _ => panic!("expected Rename"),
             }
         }
 
         #[test]
-        fn parse_run_with_verify_tests() {
+        fn parse_rename_no_verify() {
             let args = [
                 "tug",
-                "run",
-                "--verify",
-                "tests",
-                "rename-symbol",
+                "rename",
                 "--at",
-                "test.py:1:1",
+                "lib.py:1:1",
                 "--to",
                 "x",
+                "--no-verify",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Run { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::Tests));
+                Command::Rename { no_verify, .. } => {
+                    assert!(no_verify);
                 }
-                _ => panic!("expected Run"),
+                _ => panic!("expected Rename"),
             }
         }
 
         #[test]
-        fn parse_run_with_verify_typecheck() {
+        fn parse_rename_format_json() {
             let args = [
                 "tug",
-                "run",
-                "--verify",
-                "typecheck",
-                "rename-symbol",
+                "rename",
                 "--at",
-                "test.py:1:1",
+                "lib.py:1:1",
                 "--to",
                 "x",
+                "--format",
+                "json",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Run { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::Typecheck));
+                Command::Rename { format, .. } => {
+                    assert!(matches!(format, RenameFormat::Json));
                 }
-                _ => panic!("expected Run"),
+                _ => panic!("expected Rename"),
             }
         }
+
+        // ====================================================================
+        // Other command tests (unchanged)
+        // ====================================================================
 
         #[test]
         fn parse_session_status() {
@@ -1557,144 +1670,6 @@ mod tests {
         }
 
         #[test]
-        fn parse_analyze_impact_change_signature() {
-            let args = [
-                "tug",
-                "analyze-impact",
-                "change-signature",
-                "--at",
-                "src/lib.py:25:4",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::AnalyzeImpact {
-                    refactor: RefactorOp::ChangeSignature { at },
-                } => {
-                    assert_eq!(at, "src/lib.py:25:4");
-                }
-                _ => panic!("expected AnalyzeImpact ChangeSignature"),
-            }
-        }
-
-        #[test]
-        fn parse_analyze_impact_move_symbol() {
-            let args = [
-                "tug",
-                "analyze-impact",
-                "move-symbol",
-                "--at",
-                "src/utils.py:10:0",
-                "--to",
-                "src/helpers.py",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::AnalyzeImpact {
-                    refactor: RefactorOp::MoveSymbol { at, to },
-                } => {
-                    assert_eq!(at, "src/utils.py:10:0");
-                    assert_eq!(to, "src/helpers.py");
-                }
-                _ => panic!("expected AnalyzeImpact MoveSymbol"),
-            }
-        }
-
-        #[test]
-        fn parse_analyze_impact_organize_imports() {
-            let args = [
-                "tug",
-                "analyze-impact",
-                "organize-imports",
-                "--file",
-                "src/main.py",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::AnalyzeImpact {
-                    refactor: RefactorOp::OrganizeImports { file },
-                } => {
-                    assert_eq!(file, "src/main.py");
-                }
-                _ => panic!("expected AnalyzeImpact OrganizeImports"),
-            }
-        }
-
-        #[test]
-        fn parse_run_change_signature() {
-            let args = [
-                "tug",
-                "run",
-                "--apply",
-                "change-signature",
-                "--at",
-                "src/lib.py:25:4",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Run {
-                    refactor: RefactorOp::ChangeSignature { at },
-                    apply,
-                    ..
-                } => {
-                    assert_eq!(at, "src/lib.py:25:4");
-                    assert!(apply);
-                }
-                _ => panic!("expected Run ChangeSignature"),
-            }
-        }
-
-        #[test]
-        fn parse_run_move_symbol() {
-            let args = [
-                "tug",
-                "run",
-                "--apply",
-                "move-symbol",
-                "--at",
-                "src/utils.py:10:0",
-                "--to",
-                "src/helpers.py",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Run {
-                    refactor: RefactorOp::MoveSymbol { at, to },
-                    apply,
-                    ..
-                } => {
-                    assert_eq!(at, "src/utils.py:10:0");
-                    assert_eq!(to, "src/helpers.py");
-                    assert!(apply);
-                }
-                _ => panic!("expected Run MoveSymbol"),
-            }
-        }
-
-        #[test]
-        fn parse_run_organize_imports() {
-            let args = [
-                "tug",
-                "run",
-                "--apply",
-                "organize-imports",
-                "--file",
-                "src/main.py",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Run {
-                    refactor: RefactorOp::OrganizeImports { file },
-                    apply,
-                    ..
-                } => {
-                    assert_eq!(file, "src/main.py");
-                    assert!(apply);
-                }
-                _ => panic!("expected Run OrganizeImports"),
-            }
-        }
-
-        #[test]
         fn parse_verify_none() {
             let args = ["tug", "verify", "none"];
             let cli = Cli::try_parse_from(args).unwrap();
@@ -1731,38 +1706,6 @@ mod tests {
         }
 
         #[test]
-        fn parse_run_with_test_command() {
-            let args = [
-                "tug",
-                "run",
-                "--verify",
-                "tests",
-                "--test-command",
-                r#"["{python}", "-m", "pytest", "-x"]"#,
-                "rename-symbol",
-                "--at",
-                "test.py:1:1",
-                "--to",
-                "x",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Run {
-                    test_command,
-                    verify,
-                    ..
-                } => {
-                    assert!(matches!(verify, VerifyMode::Tests));
-                    assert_eq!(
-                        test_command,
-                        Some(r#"["{python}", "-m", "pytest", "-x"]"#.to_string())
-                    );
-                }
-                _ => panic!("expected Run"),
-            }
-        }
-
-        #[test]
         fn parse_verify_with_test_command() {
             let args = [
                 "tug",
@@ -1778,28 +1721,6 @@ mod tests {
                     assert_eq!(test_command, Some(r#"["pytest", "-v"]"#.to_string()));
                 }
                 _ => panic!("expected Verify"),
-            }
-        }
-
-        #[test]
-        fn parse_run_without_test_command() {
-            let args = [
-                "tug",
-                "run",
-                "--verify",
-                "tests",
-                "rename-symbol",
-                "--at",
-                "test.py:1:1",
-                "--to",
-                "x",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Run { test_command, .. } => {
-                    assert!(test_command.is_none());
-                }
-                _ => panic!("expected Run"),
             }
         }
 

@@ -1,4 +1,4 @@
-# /tug-rename-plan
+# /tug-analyze-rename
 
 Analyze and preview a rename without applying changes.
 
@@ -13,32 +13,33 @@ This command shows what a rename would do without making any changes. Use this f
 
 1. Determine the location from current file and cursor position
 2. Ask for the new name if not provided
-3. Run analyze-impact and show references
-4. Run dry-run and show patch preview
-5. **Stop here** - do not apply
+3. Run analyze and show the preview
+4. **Stop here** - do not apply
 
-### Step 1: Analyze Impact
+### Analyze and Preview
+
+The default format is unified diff (compatible with `git apply`):
 
 ```bash
-tug analyze-impact rename-symbol --at <file:line:col> --to <new_name>
+tug analyze rename --at <file:line:col> --to <new_name>
 ```
 
-Show:
-- Symbol name and kind
-- Number of references found
-- Files affected
-
-### Step 2: Dry Run Preview
+For a brief text summary:
 
 ```bash
-tug run --verify syntax rename-symbol --at <file:line:col> --to <new_name>
+tug analyze rename --at <file:line:col> --to <new_name> --format summary
+```
+
+For full JSON output:
+
+```bash
+tug analyze rename --at <file:line:col> --to <new_name> --format json
 ```
 
 Show:
 - Files that would change
 - Number of edits
-- Verification status
-- (Optional) First few edits as preview
+- The unified diff showing all changes
 
 ## What This Command Does NOT Do
 

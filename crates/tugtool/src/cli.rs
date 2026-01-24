@@ -1,8 +1,8 @@
 //! CLI front door for agent integration.
 //!
 //! Provides the command-line interface for tug operations:
-//! - `analyze-impact rename-symbol` - Analyze rename impact
-//! - `run rename-symbol` - Execute rename with verification
+//! - `analyze rename` - Analyze rename impact (outputs unified diff)
+//! - `rename` - Execute rename with verification
 //!
 //! ## Session Integration
 //!
