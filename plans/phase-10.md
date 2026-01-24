@@ -2219,10 +2219,10 @@ All 5 new tests (AI-01 through AI-05) should pass.
 #### Step 15: Final Verification {#step-15}
 
 **Tasks:**
-- [ ] Full test suite: `cargo nextest run --workspace`
-- [ ] Spike test: `spikes/interop-spike/` still works
-- [ ] Build: `cargo build --release`
-- [ ] Clippy: `cargo clippy --workspace -- -D warnings`
+- [x] Full test suite: `cargo nextest run --workspace`
+- [x] Spike test: `spikes/interop-spike/` still works (N/A - spike directory removed)
+- [x] Build: `cargo build --release`
+- [x] Clippy: `cargo clippy --workspace -- -D warnings`
 
 **Checkpoint:** All tests pass, no clippy warnings
 
@@ -2234,15 +2234,15 @@ All 5 new tests (AI-01 through AI-05) should pass.
 
 #### Phase Exit Criteria {#exit-criteria}
 
-- [ ] PositionTable uses Vec instead of HashMap
-- [ ] Lambda and comprehension scopes have lexical spans
-- [ ] analyzer.rs:543 TODO is resolved
-- [ ] PEP 420 namespace packages resolve correctly
-- [ ] Impact analysis includes value-level aliases
-- [ ] `tug doctor` produces valid JSON
-- [ ] `tug rename --at <loc> --to <name>` applies changes
-- [ ] `tug analyze rename` outputs unified diff by default
-- [ ] All tests pass, no clippy warnings
+- [x] PositionTable uses Vec instead of HashMap
+- [x] Lambda and comprehension scopes have lexical spans
+- [x] analyzer.rs:543 TODO is resolved
+- [x] PEP 420 namespace packages resolve correctly
+- [x] Impact analysis includes value-level aliases
+- [x] `tug doctor` produces valid JSON
+- [x] `tug rename --at <loc> --to <name>` applies changes
+- [x] `tug analyze rename` outputs unified diff by default
+- [x] All tests pass, no clippy warnings
 
 #### Milestones {#milestones}
 
@@ -2283,4 +2283,4 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | Step 12 | done | 2026-01-24 | Wire aliases to impact analysis |
 | Step 13 | done | 2026-01-24 | Add `rename` command |
 | Step 14 | done | 2025-01-24 | Add `analyze` command, remove old commands, update skills and docs |
-| Step 15 | pending | | Final verification |
+| Step 15 | done | 2026-01-24 | Final verification |
