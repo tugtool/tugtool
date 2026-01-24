@@ -6,6 +6,70 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Steps 3-14: Test Specifications | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Steps 3-14 execution sections
+- `plans/plan-skeleton.md` - Test section format and conventions (lines 521-595)
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Existing scope test patterns
+- `crates/tugtool/tests/golden_tests.rs` - Golden test infrastructure
+- `crates/tugtool-python/src/cst_bridge.rs` - Analyzer test patterns
+- Section 10.3 Test Plan - Tables T01 and T02 for reference
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add Tests section to Step 3 (Comprehension Scope Spans) | Done |
+| Add Tests section to Step 4 (Connect Scope Spans to Analyzer) | Done |
+| Add Tests section to Step 5 (Line/Col Output Enrichment) | Done |
+| Add Tests section to Step 6 (tug doctor Command) | Done |
+| Add Tests section to Step 7 (Compute Namespace Packages) | Done |
+| Add Tests section to Step 8 (Namespace Package Resolution) | Done |
+| Add Tests section to Step 9 (AliasGraph Module) | Done |
+| Add Tests section to Step 10 (Integrate AliasGraph into Analyzer) | Done |
+| Add Tests section to Step 11 (Alias Output Types) | Done |
+| Add Tests section to Step 12 (Wire Aliases to Impact Analysis) | Done |
+| Add Tests section to Step 13 (Add `rename` Command) | Done |
+| Add Tests section to Step 14 (Add `analyze` Command) | Done |
+
+**Files Modified:**
+- `plans/phase-10.md` - Added comprehensive **Tests:** sections with numbered tables (T03-T15) and test case specifications to Steps 3-14
+
+**Test Tables Added:**
+
+| Table | Step | Test Count | Categories |
+|-------|------|------------|------------|
+| T03 | Step 3: Comprehension Scope Spans | 10 tests | unit, golden |
+| T04 | Step 4: Connect Scope Spans to Analyzer | 6 tests | unit, drift prevention |
+| T05 | Step 5: Line/Col Output Enrichment | 6 tests | unit |
+| T06 | Step 6: tug doctor Command | 7 tests | integration, golden, unit |
+| T07 | Step 7: Compute Namespace Packages | 7 tests | unit |
+| T08 | Step 8: Namespace Package Resolution | 7 tests | integration, unit |
+| T09 | Step 9: AliasGraph Module | 10 tests | unit |
+| T10 | Step 10: Integrate AliasGraph into Analyzer | 5 tests | unit |
+| T11 | Step 11: Alias Output Types | 4 tests | unit, golden |
+| T12 | Step 12: Wire Aliases to Impact Analysis | 7 tests | integration, golden |
+| T13 | Step 13: Add `rename` Command | 11 tests | integration |
+| T14+T15 | Step 14: Add `analyze` Command | 12 tests | integration, drift prevention |
+
+**Test Results:**
+- N/A (documentation-only change, no code changes)
+
+**Checkpoints Verified:**
+- Plan file structure validated: PASS
+- Test tables follow skeleton format: PASS
+
+**Key Decisions/Notes:**
+- **Total of 92 tests specified** across 15 tables (T03-T15)
+- **Test categories used:** unit (40), integration (35), golden (6), drift prevention (6)
+- Step 3 tests marked `[x]` as they were already implemented in previous session
+- Remaining tests marked `[ ]` pending implementation
+- Tables reference earlier spec tables (T01, T02) where applicable for test case requirements
+- Each table has unique ID prefixes (CS-, SA-, LC-, DR-, NP-, NR-, AG-, AI-, AO-, IA-, RC-, AC-, OR-)
+
 ---
 
 ## [phase-10.md] Step 2: Lambda Scope Spans | COMPLETE | 2026-01-24

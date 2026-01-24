@@ -1102,6 +1102,9 @@ pub struct GeneratorExp<'a> {
     pub for_in: Box<CompFor<'a>>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for GeneratorExp<'a> {
@@ -1116,6 +1119,37 @@ impl<'a> Codegen<'a> for GeneratorExp<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedGeneratorExp<'r, 'a> {
     type Inflated = GeneratorExp<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this GeneratorExp node
+        let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens are stripped during inflation).
+        // GeneratorExp lexical span:
+        // - If parenthesized: from `(` to `)`
+        // - If implicit (no parens): from elt start to for_in end
+        let (lexical_start, lexical_end) = if let Some(first_lpar) = self.lpar.first() {
+            // Parenthesized generator expression
+            let start = first_lpar.lpar_tok.start_pos.byte_idx() as u64;
+            let end = self
+                .rpar
+                .last()
+                .map(|rp| rp.rpar_tok.end_pos.byte_idx() as u64)
+                .unwrap_or_else(|| deflated_comp_for_end_pos(&self.for_in));
+            (start, end)
+        } else {
+            // Implicit generator expression (e.g., sum(x for x in xs))
+            let start = deflated_expression_start_pos(&self.elt);
+            let end = deflated_comp_for_end_pos(&self.for_in);
+            (start, end)
+        };
+
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: lexical_end,
+            },
+        );
+
         let lpar = self.lpar.inflate(ctx)?;
         let elt = self.elt.inflate(ctx)?;
         let for_in = self.for_in.inflate(ctx)?;
@@ -1125,6 +1159,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedGeneratorExp<'r, 'a> {
             for_in,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1137,6 +1172,9 @@ pub struct ListComp<'a> {
     pub rbracket: RightSquareBracket<'a>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for ListComp<'a> {
@@ -1153,6 +1191,22 @@ impl<'a> Codegen<'a> for ListComp<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedListComp<'r, 'a> {
     type Inflated = ListComp<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this ListComp node
+        let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens are stripped during inflation).
+        // ListComp lexical span: from `[` to `]`
+        let lexical_start = self.lbracket.tok.start_pos.byte_idx() as u64;
+        let lexical_end = self.rbracket.tok.end_pos.byte_idx() as u64;
+
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: lexical_end,
+            },
+        );
+
         let lpar = self.lpar.inflate(ctx)?;
         let lbracket = self.lbracket.inflate(ctx)?;
         let elt = self.elt.inflate(ctx)?;
@@ -1166,6 +1220,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedListComp<'r, 'a> {
             rbracket,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1226,11 +1281,30 @@ pub struct SetComp<'a> {
     pub rbrace: RightCurlyBrace<'a>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedSetComp<'r, 'a> {
     type Inflated = SetComp<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this SetComp node
+        let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens are stripped during inflation).
+        // SetComp lexical span: from `{` to `}`
+        let lexical_start = self.lbrace.tok.start_pos.byte_idx() as u64;
+        let lexical_end = self.rbrace.tok.end_pos.byte_idx() as u64;
+
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: lexical_end,
+            },
+        );
+
         let lpar = self.lpar.inflate(ctx)?;
         let lbrace = self.lbrace.inflate(ctx)?;
         let elt = self.elt.inflate(ctx)?;
@@ -1244,6 +1318,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedSetComp<'r, 'a> {
             rbrace,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1272,11 +1347,30 @@ pub struct DictComp<'a> {
     pub whitespace_after_colon: ParenthesizableWhitespace<'a>,
 
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedDictComp<'r, 'a> {
     type Inflated = DictComp<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this DictComp node
+        let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens are stripped during inflation).
+        // DictComp lexical span: from `{` to `}`
+        let lexical_start = self.lbrace.tok.start_pos.byte_idx() as u64;
+        let lexical_end = self.rbrace.tok.end_pos.byte_idx() as u64;
+
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: lexical_end,
+            },
+        );
+
         let lpar = self.lpar.inflate(ctx)?;
         let lbrace = self.lbrace.inflate(ctx)?;
         let key = self.key.inflate(ctx)?;
@@ -1302,6 +1396,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedDictComp<'r, 'a> {
             rpar,
             whitespace_before_colon,
             whitespace_after_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2202,6 +2297,129 @@ pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 
         NamedExpr(ne) => {
             rpar_end(&ne.rpar).unwrap_or_else(|| deflated_expression_end_pos(&ne.value))
         }
+    }
+}
+
+/// Compute the byte start position of a deflated expression.
+///
+/// This is used for implicit generator expressions where we need the start of the elt.
+/// Returns 0 as a fallback if the expression type doesn't have accessible position information.
+fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u64 {
+    use DeflatedExpression::*;
+
+    // Helper: get start position from the first lpar if available
+    fn lpar_start<'r, 'a>(lpar: &[DeflatedLeftParen<'r, 'a>]) -> Option<u64> {
+        lpar.first().map(|lp| lp.lpar_tok.start_pos.byte_idx() as u64)
+    }
+
+    match expr {
+        // Simple expressions with tokens
+        Name(n) => lpar_start(&n.lpar)
+            .or_else(|| n.tok.map(|t| t.start_pos.byte_idx() as u64))
+            .unwrap_or(0),
+        Ellipsis(e) => lpar_start(&e.lpar).unwrap_or_else(|| e.tok.start_pos.byte_idx() as u64),
+
+        // Literals with tok fields
+        Integer(i) => lpar_start(&i.lpar).unwrap_or_else(|| i.tok.start_pos.byte_idx() as u64),
+        Float(f) => lpar_start(&f.lpar).unwrap_or_else(|| f.tok.start_pos.byte_idx() as u64),
+        Imaginary(i) => lpar_start(&i.lpar).unwrap_or_else(|| i.tok.start_pos.byte_idx() as u64),
+
+        // Expressions with explicit opening tokens
+        Call(c) => lpar_start(&c.lpar).unwrap_or_else(|| deflated_expression_start_pos(&c.func)),
+        Subscript(s) => {
+            lpar_start(&s.lpar).unwrap_or_else(|| deflated_expression_start_pos(&s.value))
+        }
+        List(l) => {
+            lpar_start(&l.lpar).unwrap_or_else(|| l.lbracket.tok.start_pos.byte_idx() as u64)
+        }
+        Set(s) => lpar_start(&s.lpar).unwrap_or_else(|| s.lbrace.tok.start_pos.byte_idx() as u64),
+        Dict(d) => lpar_start(&d.lpar).unwrap_or_else(|| d.lbrace.tok.start_pos.byte_idx() as u64),
+        ListComp(lc) => {
+            lpar_start(&lc.lpar).unwrap_or_else(|| lc.lbracket.tok.start_pos.byte_idx() as u64)
+        }
+        SetComp(sc) => {
+            lpar_start(&sc.lpar).unwrap_or_else(|| sc.lbrace.tok.start_pos.byte_idx() as u64)
+        }
+        DictComp(dc) => {
+            lpar_start(&dc.lpar).unwrap_or_else(|| dc.lbrace.tok.start_pos.byte_idx() as u64)
+        }
+        GeneratorExp(ge) => {
+            lpar_start(&ge.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ge.elt))
+        }
+
+        // Compound expressions - recurse into leftmost sub-expression
+        BinaryOperation(op) => {
+            lpar_start(&op.lpar).unwrap_or_else(|| deflated_expression_start_pos(&op.left))
+        }
+        BooleanOperation(op) => {
+            lpar_start(&op.lpar).unwrap_or_else(|| deflated_expression_start_pos(&op.left))
+        }
+        UnaryOperation(op) => {
+            // UnaryOp is an enum, each variant has a tok field
+            // For simplicity, fall back to 0 if no lpar - this is a rare edge case
+            lpar_start(&op.lpar).unwrap_or(0)
+        }
+        Comparison(c) => {
+            lpar_start(&c.lpar).unwrap_or_else(|| deflated_expression_start_pos(&c.left))
+        }
+
+        // String types
+        SimpleString(ss) => {
+            lpar_start(&ss.lpar).unwrap_or_else(|| ss.tok.start_pos.byte_idx() as u64)
+        }
+        ConcatenatedString(cs) => {
+            lpar_start(&cs.lpar).unwrap_or_else(|| deflated_string_start_pos(&cs.left))
+        }
+        FormattedString(fs) => lpar_start(&fs.lpar).unwrap_or_else(|| {
+            // FormattedString starts with start field (the f" prefix)
+            0 // Fallback - FormattedString doesn't have start token
+        }),
+        TemplatedString(ts) => lpar_start(&ts.lpar).unwrap_or_else(|| {
+            // TemplatedString starts with start field (the t" prefix)
+            0 // Fallback
+        }),
+
+        // Other expressions
+        Tuple(t) => lpar_start(&t.lpar).unwrap_or_else(|| {
+            t.elements
+                .first()
+                .map(|e| match e {
+                    DeflatedElement::Simple { value, .. } => deflated_expression_start_pos(value),
+                    DeflatedElement::Starred(se) => se.star_tok.start_pos.byte_idx() as u64,
+                })
+                .unwrap_or(0)
+        }),
+        Attribute(a) => {
+            lpar_start(&a.lpar).unwrap_or_else(|| deflated_expression_start_pos(&a.value))
+        }
+        StarredElement(se) => {
+            lpar_start(&se.lpar).unwrap_or_else(|| se.star_tok.start_pos.byte_idx() as u64)
+        }
+        IfExp(ie) => {
+            lpar_start(&ie.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ie.body))
+        }
+        Lambda(l) => {
+            lpar_start(&l.lpar).unwrap_or_else(|| l.lambda_tok.start_pos.byte_idx() as u64)
+        }
+        Yield(y) => {
+            lpar_start(&y.lpar).unwrap_or_else(|| y.yield_tok.start_pos.byte_idx() as u64)
+        }
+        Await(a) => {
+            lpar_start(&a.lpar).unwrap_or_else(|| a.await_tok.start_pos.byte_idx() as u64)
+        }
+        NamedExpr(ne) => {
+            lpar_start(&ne.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ne.target))
+        }
+    }
+}
+
+/// Helper for String start position
+fn deflated_string_start_pos<'r, 'a>(s: &DeflatedString<'r, 'a>) -> u64 {
+    match s {
+        DeflatedString::Simple(ss) => ss.tok.start_pos.byte_idx() as u64,
+        DeflatedString::Concatenated(cs) => deflated_string_start_pos(&cs.left),
+        DeflatedString::Formatted(_) => 0, // Fallback
+        DeflatedString::Templated(_) => 0, // Fallback
     }
 }
 

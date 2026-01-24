@@ -262,20 +262,6 @@ impl<'pos> ScopeCollector<'pos> {
         self.scope_stack.push(scope_id);
     }
 
-    /// Enter a new scope without node_id (for comprehensions, lambdas which don't have lexical_span yet).
-    ///
-    /// These scope types don't have lexical_span recorded during inflation (follow-on work).
-    fn enter_scope(&mut self, kind: ScopeKind, name: Option<&str>) {
-        let scope_id = self.generate_scope_id();
-        let parent = self.current_parent();
-
-        // No span for these scope types (lambda/comprehension spans are follow-on work)
-        let scope = ScopeInfo::new(scope_id.clone(), kind, name.map(|s| s.to_string()), parent);
-
-        self.scopes.push(scope);
-        self.scope_stack.push(scope_id);
-    }
-
     /// Exit the current scope.
     fn exit_scope(&mut self) {
         self.scope_stack.pop();
@@ -328,10 +314,10 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
         self.exit_scope();
     }
 
-    fn visit_list_comp(&mut self, _node: &ListComp<'a>) -> VisitResult {
+    fn visit_list_comp(&mut self, node: &ListComp<'a>) -> VisitResult {
         // List comprehensions create their own scope in Python 3
-        // Comprehension spans are follow-on work (no lexical_span recorded yet)
-        self.enter_scope(ScopeKind::Comprehension, None);
+        // Look up lexical span from PositionTable using ListComp's node_id
+        self.enter_scope_with_id(ScopeKind::Comprehension, None, node.node_id);
         VisitResult::Continue
     }
 
@@ -339,9 +325,9 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
         self.exit_scope();
     }
 
-    fn visit_set_comp(&mut self, _node: &SetComp<'a>) -> VisitResult {
-        // Comprehension spans are follow-on work
-        self.enter_scope(ScopeKind::Comprehension, None);
+    fn visit_set_comp(&mut self, node: &SetComp<'a>) -> VisitResult {
+        // Look up lexical span from PositionTable using SetComp's node_id
+        self.enter_scope_with_id(ScopeKind::Comprehension, None, node.node_id);
         VisitResult::Continue
     }
 
@@ -349,9 +335,9 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
         self.exit_scope();
     }
 
-    fn visit_dict_comp(&mut self, _node: &DictComp<'a>) -> VisitResult {
-        // Comprehension spans are follow-on work
-        self.enter_scope(ScopeKind::Comprehension, None);
+    fn visit_dict_comp(&mut self, node: &DictComp<'a>) -> VisitResult {
+        // Look up lexical span from PositionTable using DictComp's node_id
+        self.enter_scope_with_id(ScopeKind::Comprehension, None, node.node_id);
         VisitResult::Continue
     }
 
@@ -359,9 +345,9 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
         self.exit_scope();
     }
 
-    fn visit_generator_exp(&mut self, _node: &GeneratorExp<'a>) -> VisitResult {
-        // Comprehension spans are follow-on work
-        self.enter_scope(ScopeKind::Comprehension, None);
+    fn visit_generator_exp(&mut self, node: &GeneratorExp<'a>) -> VisitResult {
+        // Look up lexical span from PositionTable using GeneratorExp's node_id
+        self.enter_scope_with_id(ScopeKind::Comprehension, None, node.node_id);
         VisitResult::Continue
     }
 
@@ -1473,5 +1459,216 @@ mod tests {
         let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
         assert_eq!(lambda_span.start, 4);
         assert_eq!(lambda_span.end, 34);
+    }
+
+    // ========================================================================
+    // Comprehension scope span tests
+    // ========================================================================
+
+    #[test]
+    fn test_scope_list_comp_has_lexical_span() {
+        let source = "x = [i * 2 for i in range(10)]";
+        //            0         1         2         3
+        //            0123456789012345678901234567890
+        //                ^list comp starts at [ (byte 4)
+        //                                     ^ends at ] (byte 30)
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + ListComp = 2 scopes
+        assert_eq!(scopes.len(), 2);
+
+        // Module scope
+        assert_eq!(scopes[0].kind, ScopeKind::Module);
+
+        // ListComp scope
+        assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
+        let comp_span = scopes[1].span.expect("ListComp should have lexical span");
+        assert_eq!(comp_span.start, 4, "ListComp should start at '[' (byte 4)");
+        assert_eq!(comp_span.end, 30, "ListComp should end at ']' (byte 30)");
+    }
+
+    #[test]
+    fn test_scope_set_comp_has_lexical_span() {
+        let source = "x = {i * 2 for i in range(10)}";
+        //            0         1         2         3
+        //            0123456789012345678901234567890
+        //                ^set comp starts at { (byte 4)
+        //                                     ^ends at } (byte 30)
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
+        let comp_span = scopes[1].span.expect("SetComp should have lexical span");
+        assert_eq!(comp_span.start, 4, "SetComp should start at left brace (byte 4)");
+        assert_eq!(comp_span.end, 30, "SetComp should end at right brace (byte 30)");
+    }
+
+    #[test]
+    fn test_scope_dict_comp_has_lexical_span() {
+        let source = "x = {k: v for k, v in items}";
+        //            0         1         2
+        //            0123456789012345678901234567
+        //                ^dict comp starts at { (byte 4)
+        //                                     ^ends at } (byte 28)
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
+        let comp_span = scopes[1].span.expect("DictComp should have lexical span");
+        assert_eq!(comp_span.start, 4, "DictComp should start at left brace (byte 4)");
+        assert_eq!(comp_span.end, 28, "DictComp should end at right brace (byte 28)");
+    }
+
+    #[test]
+    fn test_scope_generator_exp_parenthesized_has_lexical_span() {
+        let source = "x = (i * 2 for i in range(10))";
+        //            0         1         2         3
+        //            0123456789012345678901234567890
+        //                ^genexp starts at ( (byte 4)
+        //                                     ^ends at ) (byte 30)
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
+        let comp_span = scopes[1].span.expect("GeneratorExp should have lexical span");
+        assert_eq!(
+            comp_span.start, 4,
+            "GeneratorExp should start at '(' (byte 4)"
+        );
+        assert_eq!(
+            comp_span.end, 30,
+            "GeneratorExp should end at ')' (byte 30)"
+        );
+    }
+
+    #[test]
+    fn test_scope_generator_exp_implicit_has_lexical_span() {
+        // Implicit generator expression as function argument
+        let source = "sum(x for x in xs)";
+        //            012345678901234567
+        //                ^genexp starts at x (byte 4)
+        //                             ^ends at xs (byte 17)
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
+        let comp_span = scopes[1].span.expect("Implicit GeneratorExp should have lexical span");
+        assert_eq!(
+            comp_span.start, 4,
+            "Implicit GeneratorExp should start at 'x' (byte 4)"
+        );
+        assert_eq!(
+            comp_span.end, 17,
+            "Implicit GeneratorExp should end after 'xs' (byte 17)"
+        );
+    }
+
+    #[test]
+    fn test_scope_nested_comprehensions() {
+        // Nested list comprehensions
+        let source = "x = [[j for j in i] for i in xs]";
+        //            0         1         2         3
+        //            01234567890123456789012345678901
+        //                ^outer list comp at [ (byte 4)
+        //                 ^inner list comp at [ (byte 5)
+        //                              ^inner ] at 18
+        //                                       ^outer ] at 31
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + outer ListComp + inner ListComp = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        // Outer comprehension
+        let outer_span = scopes[1].span.expect("Outer ListComp should have span");
+        assert_eq!(outer_span.start, 4);
+        assert_eq!(outer_span.end, 32);
+
+        // Inner comprehension
+        let inner_span = scopes[2].span.expect("Inner ListComp should have span");
+        assert_eq!(inner_span.start, 5);
+        assert_eq!(inner_span.end, 19);
+
+        // Verify containment
+        assert!(
+            outer_span.start <= inner_span.start && inner_span.end <= outer_span.end,
+            "Inner comprehension should be contained within outer comprehension"
+        );
+    }
+
+    #[test]
+    fn test_scope_comprehension_with_condition() {
+        let source = "x = [i for i in xs if i > 0]";
+        //            0         1         2
+        //            0123456789012345678901234567
+        //                ^[ at 4
+        //                                     ^] at 28
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let comp_span = scopes[1].span.expect("ListComp with condition should have span");
+        assert_eq!(comp_span.start, 4);
+        assert_eq!(comp_span.end, 28);
+    }
+
+    #[test]
+    fn test_scope_comprehension_with_multiple_fors() {
+        let source = "x = [i + j for i in xs for j in ys]";
+        //            0         1         2         3
+        //            01234567890123456789012345678901234
+        //                ^[ at 4
+        //                                              ^] at 35
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(scopes.len(), 2);
+        let comp_span = scopes[1].span.expect("ListComp with multiple fors should have span");
+        assert_eq!(comp_span.start, 4);
+        assert_eq!(comp_span.end, 35);
+    }
+
+    #[test]
+    fn test_scope_comprehension_inside_lambda() {
+        // Lambda containing a list comprehension
+        let source = "f = lambda x: [i for i in x]";
+        //            0         1         2
+        //            0123456789012345678901234567
+        //                ^lambda at 4
+        //                        ^list comp at 14
+        //                                     ^] at 27
+
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
+
+        // Module + Lambda + ListComp = 3 scopes
+        assert_eq!(scopes.len(), 3);
+
+        let lambda_span = scopes[1].span.expect("Lambda should have span");
+        assert_eq!(lambda_span.start, 4);
+        assert_eq!(lambda_span.end, 28);
+
+        let comp_span = scopes[2].span.expect("ListComp should have span");
+        assert_eq!(comp_span.start, 14);
+        assert_eq!(comp_span.end, 28);
+
+        // Comprehension is inside lambda
+        assert!(
+            lambda_span.start <= comp_span.start && comp_span.end <= lambda_span.end,
+            "ListComp should be contained within Lambda"
+        );
     }
 }

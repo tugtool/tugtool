@@ -1439,18 +1439,45 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Files:** `crates/tugtool-python-cst/src/inflate.rs`, `visitor/scope.rs`
 
 **Tasks:**
-- [ ] In `inflate.rs`, modify the following functions to record `lexical_span` in PositionTable:
-  - `inflate_list_comp()` - span from `[` to `]`
-  - `inflate_set_comp()` - span from `{` to `}`
-  - `inflate_dict_comp()` - span from `{` to `}`
-  - `inflate_generator_exp()` - span from `(` to `)` or node span if implicit
-- [ ] In `visitor/scope.rs`, update the following visitor methods to retrieve spans and set `ScopeInfo.lexical_span`:
+- [x] In `expression.rs`, modify the inflate implementations to record `lexical_span` in PositionTable:
+  - `DeflatedListComp::inflate()` - span from `[` to `]`
+  - `DeflatedSetComp::inflate()` - span from `{` to `}`
+  - `DeflatedDictComp::inflate()` - span from `{` to `}`
+  - `DeflatedGeneratorExp::inflate()` - span from `(` to `)` or node span if implicit
+- [x] In `visitor/scope.rs`, update the following visitor methods to retrieve spans and set `ScopeInfo.lexical_span`:
   - `visit_list_comp()`
   - `visit_set_comp()`
   - `visit_dict_comp()`
   - `visit_generator_exp()`
 
-**Checkpoint:** `cargo nextest run -p tugtool-python-cst scope`
+**Tests:**
+
+**Table T03: Comprehension Scope Span Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| CS-01 | `test_scope_list_comp_has_lexical_span` | unit | ListComp span from `[` to `]` |
+| CS-02 | `test_scope_set_comp_has_lexical_span` | unit | SetComp span from `{` to `}` |
+| CS-03 | `test_scope_dict_comp_has_lexical_span` | unit | DictComp span from `{` to `}` |
+| CS-04 | `test_scope_generator_exp_parenthesized_has_lexical_span` | unit | GeneratorExp with parens |
+| CS-05 | `test_scope_generator_exp_implicit_has_lexical_span` | unit | Implicit genexp in function call |
+| CS-06 | `test_scope_nested_comprehensions` | unit | Outer contains inner span |
+| CS-07 | `test_scope_comprehension_with_condition` | unit | Span includes if clause |
+| CS-08 | `test_scope_comprehension_with_multiple_fors` | unit | Span includes nested for clauses |
+| CS-09 | `test_scope_comprehension_inside_lambda` | unit | Lambda span contains comprehension |
+
+- [x] unit test: `test_scope_list_comp_has_lexical_span` - ListComp span boundaries
+- [x] unit test: `test_scope_set_comp_has_lexical_span` - SetComp span boundaries
+- [x] unit test: `test_scope_dict_comp_has_lexical_span` - DictComp span boundaries
+- [x] unit test: `test_scope_generator_exp_parenthesized_has_lexical_span` - Parenthesized genexp
+- [x] unit test: `test_scope_generator_exp_implicit_has_lexical_span` - Implicit genexp (sum(x for x in xs))
+- [x] unit test: `test_scope_nested_comprehensions` - Containment verification
+- [x] unit test: `test_scope_comprehension_with_condition` - if clause included in span
+- [x] unit test: `test_scope_comprehension_with_multiple_fors` - nested for in span
+- [x] unit test: `test_scope_comprehension_inside_lambda` - lambda contains comprehension
+- [x] golden test: `golden_comprehensions_scopes` - verify span fields in JSON output
+
+**Checkpoint:** `cargo nextest run -p tugtool-python-cst scope` ✓
 
 ---
 
@@ -1468,6 +1495,25 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 - [ ] Pass scope spans from ScopeInfo to CoreScopeInfo
 - [ ] Remove TODO at analyzer.rs:543
 
+**Tests:**
+
+**Table T04: Scope Span Analyzer Integration Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| SA-01 | `test_analyzer_lambda_scope_has_span` | unit | CoreScopeInfo.span populated for lambda |
+| SA-02 | `test_analyzer_listcomp_scope_has_span` | unit | CoreScopeInfo.span populated for listcomp |
+| SA-03 | `test_analyzer_function_scope_has_span` | unit | Function scopes retain existing spans |
+| SA-04 | `test_analyzer_class_scope_has_span` | unit | Class scopes retain existing spans |
+| SA-05 | `test_analyzer_module_scope_has_span` | unit | Module scope (whole file) span |
+
+- [ ] unit test: `test_analyzer_lambda_scope_has_span` - verify lambda span flows to CoreScopeInfo
+- [ ] unit test: `test_analyzer_listcomp_scope_has_span` - verify comprehension span flows to CoreScopeInfo
+- [ ] unit test: `test_analyzer_function_scope_has_span` - existing function spans unaffected
+- [ ] unit test: `test_analyzer_class_scope_has_span` - existing class spans unaffected
+- [ ] unit test: `test_analyzer_module_scope_has_span` - module scope covers full file
+- [ ] drift prevention test: verify TODO at analyzer.rs:543 is removed (grep for "TODO.*scope.*span")
+
 **Checkpoint:** `cargo nextest run -p tugtool-python`
 
 ---
@@ -1483,6 +1529,26 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Tasks:**
 - [ ] Add `with_line_col` helper to Location type that uses existing `byte_offset_to_position_str` from `text.rs`
 - [ ] No new `offset_to_line_col` function needed - use existing `byte_offset_to_position_str`
+
+**Tests:**
+
+**Table T05: Line/Col Helper Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| LC-01 | `test_with_line_col_first_line` | unit | Byte 0 → (1, 1) |
+| LC-02 | `test_with_line_col_second_line` | unit | After newline → (2, 1) |
+| LC-03 | `test_with_line_col_mid_line` | unit | Middle of line → correct col |
+| LC-04 | `test_with_line_col_unicode` | unit | Unicode chars (byte vs char offset) |
+| LC-05 | `test_with_line_col_empty_file` | unit | Empty content edge case |
+| LC-06 | `test_with_line_col_trailing_newline` | unit | File ending with newline |
+
+- [ ] unit test: `test_with_line_col_first_line` - byte 0 maps to line 1, col 1
+- [ ] unit test: `test_with_line_col_second_line` - first char after newline
+- [ ] unit test: `test_with_line_col_mid_line` - arbitrary position on line
+- [ ] unit test: `test_with_line_col_unicode` - UTF-8 multibyte characters (byte offset, not char)
+- [ ] unit test: `test_with_line_col_empty_file` - edge case: empty content
+- [ ] unit test: `test_with_line_col_trailing_newline` - file ends with newline
 
 **Checkpoint:** `cargo nextest run -p tugtool-core`
 
@@ -1502,6 +1568,28 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 - [ ] Implement workspace_root check (passes if root found, fails on detection error)
 - [ ] Implement python_files check (passes if N > 0, warns if N == 0)
 
+**Tests:**
+
+**Table T06: tug doctor Command Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| DR-01 | `test_doctor_git_repo` | integration | Finds git root, status=ok |
+| DR-02 | `test_doctor_cargo_workspace` | integration | Finds Cargo.toml root |
+| DR-03 | `test_doctor_no_python_files` | integration | 0 Python files → warning |
+| DR-04 | `test_doctor_with_python_files` | integration | N > 0 Python files → passed |
+| DR-05 | `test_doctor_empty_directory` | integration | No git/cargo → uses cwd |
+| DR-06 | `test_doctor_json_schema` | golden | Output matches DoctorResponse schema |
+| DR-07 | `test_doctor_summary_counts` | unit | summary.total = len(checks) |
+
+- [ ] integration test: `test_doctor_git_repo` - detects .git, workspace_root passes
+- [ ] integration test: `test_doctor_cargo_workspace` - detects Cargo.toml with [workspace]
+- [ ] integration test: `test_doctor_no_python_files` - python_files check has status=warning
+- [ ] integration test: `test_doctor_with_python_files` - python_files check has status=passed
+- [ ] integration test: `test_doctor_empty_directory` - falls back to cwd, all checks run
+- [ ] golden test: `test_doctor_json_schema` - verify DoctorResponse schema stability
+- [ ] unit test: `test_doctor_summary_counts` - summary.total/passed/warnings/failed correct
+
 **Checkpoint:** `tug doctor` produces valid JSON; verify warning status appears when run in empty directory
 
 ---
@@ -1517,6 +1605,30 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Tasks:**
 - [ ] Add `compute_namespace_packages()` function
 - [ ] Compute at start of `analyze_files()`
+
+**Tests:**
+
+Uses **Table T01: Namespace Package Test Cases** from Section 10.3.
+
+**Table T07: compute_namespace_packages() Unit Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| NP-01 | `test_compute_namespace_simple` | unit | Dir with .py but no __init__.py |
+| NP-02 | `test_compute_namespace_nested` | unit | Multiple levels without __init__.py |
+| NP-03 | `test_compute_namespace_mixed` | unit | Some dirs have __init__.py, some don't |
+| NP-04 | `test_compute_namespace_excludes_git` | unit | .git/ excluded |
+| NP-05 | `test_compute_namespace_excludes_pycache` | unit | __pycache__/ excluded |
+| NP-06 | `test_compute_namespace_excludes_tug` | unit | .tug/ excluded |
+| NP-07 | `test_compute_namespace_deduplicates` | unit | Same dir not counted twice |
+
+- [ ] unit test: `test_compute_namespace_simple` - single namespace package detected
+- [ ] unit test: `test_compute_namespace_nested` - parent/child namespace packages
+- [ ] unit test: `test_compute_namespace_mixed` - regular and namespace packages coexist
+- [ ] unit test: `test_compute_namespace_excludes_git` - .git/ not included
+- [ ] unit test: `test_compute_namespace_excludes_pycache` - __pycache__/ not included
+- [ ] unit test: `test_compute_namespace_excludes_tug` - .tug/ not included
+- [ ] unit test: `test_compute_namespace_deduplicates` - visited dirs cached
 
 **Checkpoint:** `cargo nextest run -p tugtool-python namespace`
 
@@ -1555,6 +1667,30 @@ There are TWO implementations that need updating:
 - [ ] Update `resolve_import_to_origin` call site in `lookup.rs`
 - [ ] Check namespace_packages set after regular resolution fails
 
+**Tests:**
+
+Uses **Table T01: Namespace Package Test Cases** from Section 10.3.
+
+**Table T08: Namespace Package Resolution Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| NR-01 | `test_resolve_namespace_import_from` | integration | `from utils.helpers import foo` resolves |
+| NR-02 | `test_resolve_namespace_import` | integration | `import utils` as namespace marker |
+| NR-03 | `test_resolve_namespace_relative` | integration | Relative import within namespace |
+| NR-04 | `test_resolve_mixed_packages` | integration | Regular and namespace packages |
+| NR-05 | `test_resolve_namespace_deep_nesting` | integration | `a.b.c.d.e` namespace chain |
+| NR-06 | `test_resolve_namespace_fallback` | unit | Tries regular resolution first |
+| NR-07 | `test_resolve_namespace_returns_marker` | unit | ResolvedModule::Namespace returned |
+
+- [ ] integration test: `test_resolve_namespace_import_from` - NS-01 from T01
+- [ ] integration test: `test_resolve_namespace_import` - NS-02 from T01
+- [ ] integration test: `test_resolve_namespace_relative` - NS-03 from T01
+- [ ] integration test: `test_resolve_mixed_packages` - NS-04 from T01
+- [ ] integration test: `test_resolve_namespace_deep_nesting` - deeply nested namespace
+- [ ] unit test: `test_resolve_namespace_fallback` - regular resolution tried first
+- [ ] unit test: `test_resolve_namespace_returns_marker` - ResolvedModule::Namespace type
+
 **Checkpoint:** `cargo nextest run -p tugtool-python`
 
 ---
@@ -1570,6 +1706,36 @@ There are TWO implementations that need updating:
 **Tasks:**
 - [ ] Define `AliasInfo` and `AliasGraph` structs
 - [ ] Implement `from_analysis()`, `direct_aliases()`, `transitive_aliases()`
+
+**Tests:**
+
+Uses **Table T02: Value-Level Alias Test Cases** from Section 10.3.
+
+**Table T09: AliasGraph Unit Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| AG-01 | `test_alias_direct_simple` | unit | VA-01: `b = bar` → forward["bar"] has b |
+| AG-02 | `test_alias_chained_assignment` | unit | VA-02: `c = b = bar` → both alias bar |
+| AG-03 | `test_alias_transitive` | unit | VA-03: `b = bar; c = b` → transitive |
+| AG-04 | `test_alias_self_assignment` | unit | VA-04: `x = x` not tracked |
+| AG-05 | `test_alias_cycle_no_infinite_loop` | unit | VA-05: `a = b; b = a` terminates |
+| AG-06 | `test_alias_reverse_lookup` | unit | reverse["b"] → ["bar"] |
+| AG-07 | `test_alias_scope_filtering` | unit | Filter by scope_path |
+| AG-08 | `test_alias_confidence_simple` | unit | Simple assignment → confidence 1.0 |
+| AG-09 | `test_alias_from_analysis_empty` | unit | No assignments → empty graph |
+| AG-10 | `test_alias_transitive_depth_limit` | unit | Deep chain doesn't explode |
+
+- [ ] unit test: `test_alias_direct_simple` - basic forward lookup
+- [ ] unit test: `test_alias_chained_assignment` - chained assignment (`c = b = bar`)
+- [ ] unit test: `test_alias_transitive` - transitive_aliases() follows chain
+- [ ] unit test: `test_alias_self_assignment` - `x = x` filtered out
+- [ ] unit test: `test_alias_cycle_no_infinite_loop` - cycle detection with visited set
+- [ ] unit test: `test_alias_reverse_lookup` - reverse map lookup
+- [ ] unit test: `test_alias_scope_filtering` - exact scope_path match
+- [ ] unit test: `test_alias_confidence_simple` - simple assignment has confidence 1.0
+- [ ] unit test: `test_alias_from_analysis_empty` - empty input → empty graph
+- [ ] unit test: `test_alias_transitive_depth_limit` - reasonable depth handling
 
 **Checkpoint:** `cargo nextest run -p tugtool-python alias`
 
@@ -1587,6 +1753,24 @@ There are TWO implementations that need updating:
 - [ ] Build `AliasGraph` per file using `NativeAnalysisResult.assignments`
 - [ ] Add `alias_graph` field to `FileAnalysis`
 
+**Tests:**
+
+**Table T10: AliasGraph Analyzer Integration Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| AI-01 | `test_analyzer_alias_graph_populated` | unit | FileAnalysis.alias_graph not empty |
+| AI-02 | `test_analyzer_alias_from_assignments` | unit | Uses NativeAnalysisResult.assignments |
+| AI-03 | `test_analyzer_alias_per_file` | unit | Each file gets its own graph |
+| AI-04 | `test_analyzer_alias_scope_preserved` | unit | scope_path flows through |
+| AI-05 | `test_analyzer_alias_no_cross_file` | unit | Aliases don't leak across files |
+
+- [ ] unit test: `test_analyzer_alias_graph_populated` - alias_graph field set
+- [ ] unit test: `test_analyzer_alias_from_assignments` - built from assignments data
+- [ ] unit test: `test_analyzer_alias_per_file` - fresh graph per file
+- [ ] unit test: `test_analyzer_alias_scope_preserved` - scope_path correctly populated
+- [ ] unit test: `test_analyzer_alias_no_cross_file` - no cross-file leakage
+
 **Checkpoint:** `cargo nextest run -p tugtool-python analyzer`
 
 ---
@@ -1601,6 +1785,22 @@ There are TWO implementations that need updating:
 
 **Tasks:**
 - [ ] Define `AliasOutput` struct with serialization
+
+**Tests:**
+
+**Table T11: AliasOutput Type Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| AO-01 | `test_alias_output_serialize` | unit | Serializes to JSON correctly |
+| AO-02 | `test_alias_output_deserialize` | unit | Deserializes from JSON correctly |
+| AO-03 | `test_alias_output_all_fields` | unit | All fields present in output |
+| AO-04 | `test_alias_output_schema` | golden | Schema matches Spec S05 |
+
+- [ ] unit test: `test_alias_output_serialize` - serde_json::to_string works
+- [ ] unit test: `test_alias_output_deserialize` - round-trip serialization
+- [ ] unit test: `test_alias_output_all_fields` - alias_name, source_name, file, line, col, scope, is_import_alias, confidence
+- [ ] golden test: `test_alias_output_schema` - verify against Spec S05 schema
 
 **Checkpoint:** `cargo nextest run -p tugtool-core output`
 
@@ -1617,6 +1817,28 @@ There are TWO implementations that need updating:
 **Tasks:**
 - [ ] Query AliasGraph for target symbol
 - [ ] Include aliases in ImpactAnalysis response
+
+**Tests:**
+
+**Table T12: Alias Impact Analysis Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| IA-01 | `test_impact_includes_direct_alias` | integration | `b = bar` shown in aliases |
+| IA-02 | `test_impact_includes_transitive_alias` | integration | `b = bar; c = b` shows c |
+| IA-03 | `test_impact_alias_scope_filtered` | integration | Only same-scope aliases |
+| IA-04 | `test_impact_no_aliases_when_none` | integration | aliases: [] when no aliases |
+| IA-05 | `test_impact_alias_line_col_correct` | integration | Line/col match source |
+| IA-06 | `test_impact_alias_import_flag` | integration | is_import_alias set correctly |
+| IA-07 | `test_impact_alias_json_schema` | golden | aliases field matches Spec S05 |
+
+- [ ] integration test: `test_impact_includes_direct_alias` - basic alias in output
+- [ ] integration test: `test_impact_includes_transitive_alias` - transitive chain
+- [ ] integration test: `test_impact_alias_scope_filtered` - scope_path filtering
+- [ ] integration test: `test_impact_no_aliases_when_none` - empty aliases array
+- [ ] integration test: `test_impact_alias_line_col_correct` - position verification
+- [ ] integration test: `test_impact_alias_import_flag` - import vs value alias
+- [ ] golden test: `test_impact_alias_json_schema` - schema stability
 
 **Checkpoint:** `cargo nextest run -p tugtool-python rename`
 
@@ -1635,6 +1857,36 @@ There are TWO implementations that need updating:
 - [ ] Configure clap mutual exclusion: `#[arg(long, conflicts_with = "verify")]` on `no_verify` field
 - [ ] Default `--verify` to `syntax`
 - [ ] Output human-readable summary by default
+
+**Tests:**
+
+**Table T13: rename Command Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| RC-01 | `test_rename_applies_by_default` | integration | No --dry-run → files modified |
+| RC-02 | `test_rename_dry_run_no_changes` | integration | --dry-run → no file writes |
+| RC-03 | `test_rename_verify_syntax_default` | integration | Default verification is syntax |
+| RC-04 | `test_rename_no_verify_skips` | integration | --no-verify skips syntax check |
+| RC-05 | `test_rename_verify_no_verify_conflict` | integration | --verify + --no-verify → error |
+| RC-06 | `test_rename_format_text_default` | integration | Default output is text summary |
+| RC-07 | `test_rename_format_json` | integration | --format json produces JSON |
+| RC-08 | `test_rename_at_required` | integration | Missing --at → error |
+| RC-09 | `test_rename_to_required` | integration | Missing --to → error |
+| RC-10 | `test_rename_invalid_location` | integration | Bad --at format → error |
+| RC-11 | `test_rename_syntax_error_detected` | integration | Broken syntax → verification fails |
+
+- [ ] integration test: `test_rename_applies_by_default` - files are modified
+- [ ] integration test: `test_rename_dry_run_no_changes` - preview only
+- [ ] integration test: `test_rename_verify_syntax_default` - syntax checked by default
+- [ ] integration test: `test_rename_no_verify_skips` - verification skipped
+- [ ] integration test: `test_rename_verify_no_verify_conflict` - clap mutual exclusion
+- [ ] integration test: `test_rename_format_text_default` - human-readable summary
+- [ ] integration test: `test_rename_format_json` - JSON output format
+- [ ] integration test: `test_rename_at_required` - missing argument error
+- [ ] integration test: `test_rename_to_required` - missing argument error
+- [ ] integration test: `test_rename_invalid_location` - malformed location
+- [ ] integration test: `test_rename_syntax_error_detected` - verification catches errors
 
 **Checkpoint:** `tug rename --at <loc> --to <name>` applies changes; verify `tug rename --verify syntax --no-verify` produces clap error
 
@@ -1667,6 +1919,43 @@ There are TWO implementations that need updating:
 *Verification:*
 - [ ] Grep codebase for `analyze-impact` and `run --apply` references - must find zero
 - [ ] Update any internal scripts or test fixtures referencing old commands
+
+**Tests:**
+
+**Table T14: analyze Command Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| AC-01 | `test_analyze_rename_diff_default` | integration | Default format is unified diff |
+| AC-02 | `test_analyze_rename_format_json` | integration | --format json produces JSON |
+| AC-03 | `test_analyze_rename_format_summary` | integration | --format summary produces brief text |
+| AC-04 | `test_analyze_rename_no_changes` | integration | Diff is empty if no edits |
+| AC-05 | `test_analyze_rename_git_compatible` | integration | Diff applies with `git apply` |
+| AC-06 | `test_analyze_rename_context_lines` | integration | 3 lines context before/after |
+| AC-07 | `test_analyze_rename_multiple_files` | integration | Multi-file diff concatenated |
+
+**Table T15: Old Command Removal Test Cases**
+
+| ID | Test Name | Category | Description |
+|----|-----------|----------|-------------|
+| OR-01 | `test_analyze_impact_removed` | drift | `tug analyze-impact` → unknown command |
+| OR-02 | `test_run_command_removed` | drift | `tug run` → unknown command |
+| OR-03 | `test_no_analyze_impact_refs` | drift | grep finds 0 analyze-impact refs |
+| OR-04 | `test_no_run_apply_refs` | drift | grep finds 0 `run --apply` refs |
+| OR-05 | `test_skills_use_new_commands` | drift | Skills invoke tug rename/analyze |
+
+- [ ] integration test: `test_analyze_rename_diff_default` - unified diff format
+- [ ] integration test: `test_analyze_rename_format_json` - JSON output option
+- [ ] integration test: `test_analyze_rename_format_summary` - summary output option
+- [ ] integration test: `test_analyze_rename_no_changes` - empty diff when no edits
+- [ ] integration test: `test_analyze_rename_git_compatible` - diff works with git apply
+- [ ] integration test: `test_analyze_rename_context_lines` - 3 lines context
+- [ ] integration test: `test_analyze_rename_multiple_files` - multi-file output
+- [ ] drift prevention test: `test_analyze_impact_removed` - old command gone
+- [ ] drift prevention test: `test_run_command_removed` - old command gone
+- [ ] drift prevention test: `test_no_analyze_impact_refs` - no stale references
+- [ ] drift prevention test: `test_no_run_apply_refs` - no stale references
+- [ ] drift prevention test: `test_skills_use_new_commands` - skills updated
 
 **Checkpoint:** `tug analyze rename --at <loc> --to <name>` outputs diff; skills work with new commands; `tug analyze-impact` and `tug run` produce "unknown command" errors
 
