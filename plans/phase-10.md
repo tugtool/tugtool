@@ -2070,8 +2070,8 @@ All 5 new tests (AI-01 through AI-05) should pass.
 **Files:** `crates/tugtool-python/src/ops/rename.rs`
 
 **Tasks:**
-- [ ] Query AliasGraph for target symbol
-- [ ] Include aliases in ImpactAnalysis response
+- [x] Query AliasGraph for target symbol
+- [x] Include aliases in ImpactAnalysis response
 
 **Tests:**
 
@@ -2087,15 +2087,15 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | IA-06 | `test_impact_alias_import_flag` | integration | is_import_alias set correctly |
 | IA-07 | `test_impact_alias_json_schema` | golden | aliases field matches Spec S05 |
 
-- [ ] integration test: `test_impact_includes_direct_alias` - basic alias in output
-- [ ] integration test: `test_impact_includes_transitive_alias` - transitive chain
-- [ ] integration test: `test_impact_alias_scope_filtered` - scope_path filtering
-- [ ] integration test: `test_impact_no_aliases_when_none` - empty aliases array
-- [ ] integration test: `test_impact_alias_line_col_correct` - position verification
-- [ ] integration test: `test_impact_alias_import_flag` - import vs value alias
-- [ ] golden test: `test_impact_alias_json_schema` - schema stability
+- [x] integration test: `test_impact_includes_direct_alias` - basic alias in output
+- [x] integration test: `test_impact_includes_transitive_alias` - transitive chain
+- [x] integration test: `test_impact_alias_scope_filtered` - scope_path filtering
+- [x] integration test: `test_impact_no_aliases_when_none` - empty aliases array
+- [x] integration test: `test_impact_alias_line_col_correct` - position verification
+- [x] integration test: `test_impact_alias_import_flag` - import vs value alias
+- [x] integration test: `test_impact_alias_json_schema` - schema stability
 
-**Checkpoint:** `cargo nextest run -p tugtool-python rename`
+**Checkpoint:** `cargo nextest run -p tugtool-python rename` ✓
 
 ---
 
@@ -2280,7 +2280,7 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | Step 9 | done | 2026-01-24 | AliasGraph module |
 | Step 10 | pending | | Integrate AliasGraph into analyzer |
 | Step 11 | done | 2026-01-24 | Alias output types |
-| Step 12 | pending | | Wire aliases to impact analysis |
+| Step 12 | done | 2026-01-24 | Wire aliases to impact analysis |
 | Step 13 | pending | | Add `rename` command |
 | Step 14 | pending | | Add `analyze` command, remove old commands, update skills and docs |
 | Step 15 | pending | | Final verification |

@@ -886,9 +886,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedFunctionDef<'r, 'a> {
         // Compute scope end directly from our body suite (see [D10])
         let scope_end = match &self.body {
             DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
-            DeflatedSuite::SimpleStatementSuite(suite) => {
-                suite.newline_tok.end_pos.byte_idx()
-            }
+            DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
         };
 
         // Record spans (if position tracking is enabled)
@@ -1829,9 +1827,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedClassDef<'r, 'a> {
         // Compute scope end directly from our body suite (see [D10])
         let scope_end = match &self.body {
             DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
-            DeflatedSuite::SimpleStatementSuite(suite) => {
-                suite.newline_tok.end_pos.byte_idx()
-            }
+            DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
         };
 
         // Record spans (if position tracking is enabled)

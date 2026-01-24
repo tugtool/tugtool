@@ -25,7 +25,7 @@ use tempfile::TempDir;
 use thiserror::Error;
 
 use tugtool_core::facts::FactsStore;
-use tugtool_core::output::{Location, ReferenceInfo, SymbolInfo};
+use tugtool_core::output::{AliasOutput, Location, ReferenceInfo, SymbolInfo};
 use tugtool_core::patch::{FileId, MaterializedPatch, OutputEdit, Span};
 use tugtool_core::text::byte_offset_to_position_str;
 use tugtool_core::util::{generate_snapshot_id, generate_undo_token};
@@ -132,6 +132,11 @@ pub struct ImpactAnalysis {
     pub symbol: SymbolInfo,
     /// All references (uses output::ReferenceInfo per 26.0.7 spec).
     pub references: Vec<ReferenceInfo>,
+    /// Value-level aliases of the target symbol (per Spec S05).
+    ///
+    /// These are informational only ([D06]): they show potential aliases
+    /// but are NOT automatically renamed.
+    pub aliases: Vec<AliasOutput>,
     /// Impact summary.
     pub impact: ImpactSummary,
     /// Warnings (structured per Spec S11).
@@ -543,6 +548,45 @@ pub fn analyze_impact(
     let decl_content = read_file(workspace_root, &decl_file.path)?;
     let symbol_info = symbol_to_info(&symbol, decl_file, &decl_content);
 
+    // Collect value-level aliases for the target symbol ([D06]: informational only)
+    // Query each file's AliasGraph for aliases of the target symbol name
+    let mut aliases: Vec<AliasOutput> = Vec::new();
+    for file_analysis in &bundle.file_analyses {
+        // Get transitive aliases for the symbol name (all scopes in this file)
+        let file_aliases = file_analysis
+            .alias_graph
+            .transitive_aliases(&symbol.name, None, None);
+
+        for alias_info in file_aliases {
+            // Compute line/col from alias span
+            let (line, col) = if let Some(span) = alias_info.alias_span {
+                let content = read_file(workspace_root, &file_analysis.path)?;
+                tugtool_core::text::byte_offset_to_position_str(&content, span.start)
+            } else {
+                (1, 1) // Fallback if no span
+            };
+
+            aliases.push(AliasOutput::new(
+                alias_info.alias_name,
+                alias_info.source_name,
+                file_analysis.path.clone(),
+                line,
+                col,
+                alias_info.scope_path,
+                alias_info.source_is_import,
+                alias_info.confidence,
+            ));
+        }
+    }
+
+    // Sort aliases by (file, line, col) for deterministic output
+    aliases.sort_by(|a, b| {
+        a.file
+            .cmp(&b.file)
+            .then(a.line.cmp(&b.line))
+            .then(a.col.cmp(&b.col))
+    });
+
     // Generate snapshot ID
     let snapshot_id = generate_snapshot_id();
 
@@ -552,6 +596,7 @@ pub fn analyze_impact(
         snapshot_id,
         symbol: symbol_info,
         references,
+        aliases,
         impact: ImpactSummary {
             files_affected: files_affected.len(),
             references_count: all_edits.len(),
@@ -1189,6 +1234,209 @@ def foo():
                 export_edit.is_some(),
                 "should have an edit for __all__ export"
             );
+        }
+    }
+
+    // ========================================================================
+    // Impact Analysis Alias Integration Tests (Table T12)
+    // ========================================================================
+
+    mod impact_alias_tests {
+        use super::*;
+        use std::fs::{self, File};
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        /// Helper to create a workspace with given files and analyze impact.
+        fn analyze_impact_with_files(
+            files: &[(&str, &str)],
+            target_file: &str,
+            target_line: u32,
+            target_col: u32,
+            new_name: &str,
+        ) -> ImpactAnalysis {
+            let workspace = TempDir::new().unwrap();
+
+            // Write all files
+            for (path, content) in files {
+                let file_path = workspace.path().join(path);
+                if let Some(parent) = file_path.parent() {
+                    fs::create_dir_all(parent).unwrap();
+                }
+                File::create(&file_path)
+                    .unwrap()
+                    .write_all(content.as_bytes())
+                    .unwrap();
+            }
+
+            // Build file list
+            let file_list: Vec<(String, String)> = files
+                .iter()
+                .map(|(path, content)| (path.to_string(), content.to_string()))
+                .collect();
+
+            let location = Location::new(target_file, target_line, target_col);
+
+            analyze_impact(workspace.path(), &file_list, &location, new_name)
+                .expect("analyze_impact should succeed")
+        }
+
+        #[test]
+        fn test_impact_includes_direct_alias() {
+            // IA-01: Basic alias is included in impact analysis
+            // Code: bar = 1; b = bar
+            // Target: bar at definition
+            // Expected: aliases contains b
+            let code = "bar = 1\nb = bar\n";
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            assert_eq!(result.symbol.name, "bar");
+            assert_eq!(result.aliases.len(), 1);
+            assert_eq!(result.aliases[0].alias_name, "b");
+            assert_eq!(result.aliases[0].source_name, "bar");
+        }
+
+        #[test]
+        fn test_impact_includes_transitive_alias() {
+            // IA-02: Transitive alias chain is included
+            // Code: bar = 1; b = bar; c = b
+            // Target: bar at definition
+            // Expected: aliases contains both b and c
+            let code = "bar = 1\nb = bar\nc = b\n";
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            assert_eq!(result.symbol.name, "bar");
+            assert_eq!(result.aliases.len(), 2);
+
+            let alias_names: Vec<&str> = result
+                .aliases
+                .iter()
+                .map(|a| a.alias_name.as_str())
+                .collect();
+            assert!(
+                alias_names.contains(&"b"),
+                "should include direct alias 'b'"
+            );
+            assert!(
+                alias_names.contains(&"c"),
+                "should include transitive alias 'c'"
+            );
+        }
+
+        #[test]
+        fn test_impact_alias_scope_filtered() {
+            // IA-03: Aliases are collected per file but NOT filtered by scope
+            // (per [D07]: single-file scope, not per-scope filtering)
+            // Code has bar in module scope, aliased in both module and function scopes
+            let code = r#"bar = 1
+b = bar  # module scope alias
+
+def func():
+    c = bar  # function scope alias
+"#;
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            // Both aliases should be included (different scopes within same file)
+            let alias_names: Vec<&str> = result
+                .aliases
+                .iter()
+                .map(|a| a.alias_name.as_str())
+                .collect();
+            assert!(
+                alias_names.contains(&"b"),
+                "should include module scope alias 'b'"
+            );
+            assert!(
+                alias_names.contains(&"c"),
+                "should include function scope alias 'c'"
+            );
+        }
+
+        #[test]
+        fn test_impact_no_aliases_when_none() {
+            // IA-04: Empty aliases array when no aliases exist
+            // Code: bar = 1 (no aliases)
+            let code = "bar = 1\nprint(bar)\n";
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            assert_eq!(result.symbol.name, "bar");
+            assert!(
+                result.aliases.is_empty(),
+                "aliases should be empty when no aliases exist"
+            );
+        }
+
+        #[test]
+        fn test_impact_alias_line_col_correct() {
+            // IA-05: Line/col positions match source
+            let code = "bar = 1\nb = bar\n";
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            assert_eq!(result.aliases.len(), 1);
+            let alias = &result.aliases[0];
+            assert_eq!(alias.line, 2, "alias 'b = bar' is on line 2");
+            assert_eq!(alias.col, 1, "alias 'b' starts at column 1");
+        }
+
+        #[test]
+        fn test_impact_alias_import_flag() {
+            // IA-06: is_import_alias is set correctly for imported names
+            // This test verifies the flag when the source is NOT an import
+            let code = "bar = 1\nb = bar\n";
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            assert_eq!(result.aliases.len(), 1);
+            assert!(
+                !result.aliases[0].is_import_alias,
+                "is_import_alias should be false for local variable"
+            );
+        }
+
+        #[test]
+        fn test_impact_alias_json_schema() {
+            // IA-07: Verify JSON schema matches Spec S05
+            let code = "bar = 1\nb = bar\n";
+            let result =
+                analyze_impact_with_files(&[("test.py", code)], "test.py", 1, 1, "renamed");
+
+            // Serialize to JSON and verify structure
+            let json = serde_json::to_value(&result).expect("should serialize to JSON");
+
+            // Verify aliases array exists and has expected structure
+            let aliases = json.get("aliases").expect("should have aliases field");
+            assert!(aliases.is_array(), "aliases should be an array");
+
+            let alias_arr = aliases.as_array().unwrap();
+            assert_eq!(alias_arr.len(), 1);
+
+            let alias = &alias_arr[0];
+            // Verify all required fields per Spec S05
+            assert!(alias.get("alias_name").is_some(), "should have alias_name");
+            assert!(
+                alias.get("source_name").is_some(),
+                "should have source_name"
+            );
+            assert!(alias.get("file").is_some(), "should have file");
+            assert!(alias.get("line").is_some(), "should have line");
+            assert!(alias.get("col").is_some(), "should have col");
+            assert!(alias.get("scope").is_some(), "should have scope");
+            assert!(
+                alias.get("is_import_alias").is_some(),
+                "should have is_import_alias"
+            );
+            assert!(alias.get("confidence").is_some(), "should have confidence");
+
+            // Verify values
+            assert_eq!(alias["alias_name"], "b");
+            assert_eq!(alias["source_name"], "bar");
+            assert_eq!(alias["file"], "test.py");
+            assert_eq!(alias["confidence"], 1.0);
         }
     }
 }

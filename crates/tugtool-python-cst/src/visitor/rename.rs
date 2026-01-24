@@ -406,11 +406,7 @@ mod tests {
         // Starts at byte 4
         let start = 4;
         let end = start + "函数".len();
-        let requests = vec![RenameRequest::from_offsets(
-            start,
-            end,
-            "func",
-        )];
+        let requests = vec![RenameRequest::from_offsets(start, end, "func")];
 
         let transformer = RenameTransformer::new(source, requests);
         let result = transformer.apply().unwrap();
@@ -425,11 +421,7 @@ mod tests {
         // Replace the emoji (4 bytes)
         let emoji_start = source.find('🎉').unwrap();
         let emoji_end = emoji_start + '🎉'.len_utf8();
-        let requests = vec![RenameRequest::from_offsets(
-            emoji_start,
-            emoji_end,
-            "party",
-        )];
+        let requests = vec![RenameRequest::from_offsets(emoji_start, emoji_end, "party")];
 
         let transformer = RenameTransformer::new(source, requests);
         let result = transformer.apply().unwrap();

@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 12: Wire Aliases to Impact Analysis | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 12 specification, [D06], Spec S05
+- `crates/tugtool-python/src/ops/rename.rs` - analyze_impact() implementation
+- `crates/tugtool-python/src/alias.rs` - AliasGraph API
+- `crates/tugtool-core/src/output.rs` - AliasOutput struct (from Step 11)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Query AliasGraph for target symbol | Done |
+| Include aliases in ImpactAnalysis response | Done |
+| integration test: `test_impact_includes_direct_alias` | Done |
+| integration test: `test_impact_includes_transitive_alias` | Done |
+| integration test: `test_impact_alias_scope_filtered` | Done |
+| integration test: `test_impact_no_aliases_when_none` | Done |
+| integration test: `test_impact_alias_line_col_correct` | Done |
+| integration test: `test_impact_alias_import_flag` | Done |
+| integration test: `test_impact_alias_json_schema` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename.rs` - Added `aliases: Vec<AliasOutput>` field to `ImpactAnalysis` struct; modified `analyze_impact()` to query AliasGraph for transitive aliases; added 7 integration tests in `impact_alias_tests` module
+- `crates/tugtool/tests/golden/output_schema/analyze_impact_success.json` - Added empty `aliases` array to match updated schema
+- `plans/phase-10.md` - Checked off all task and test checkboxes for Step 12, updated implementation log status
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python rename`: 38 tests passed (including 7 new alias impact tests)
+- `cargo nextest run --workspace`: 1332 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python rename`: PASS (38 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo fmt --all -- --check`: PASS
+
+**Key Decisions/Notes:**
+- **Informational only ([D06])**: Aliases are collected and displayed but NOT automatically renamed - user decides what to rename
+- **Per-file scope ([D07])**: AliasGraph is queried per file from `FileAnalysisBundle.file_analyses`
+- **Transitive traversal**: Uses `transitive_aliases()` with no scope filtering (all scopes within each file)
+- **Line/col computation**: Computed from `alias_span` byte offsets using `byte_offset_to_position_str()`
+- **Deterministic output**: Aliases sorted by (file, line, col) for consistent JSON
+- **Golden file update**: `analyze_impact_success.json` updated with empty `aliases` array since the test fixture has no value-level aliases
+
+---
+
 ## [phase-10.md] Step 11: Alias Output Types | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

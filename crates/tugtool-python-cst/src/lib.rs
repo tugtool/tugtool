@@ -1310,10 +1310,7 @@ mod test {
                     // Verify exact positions
                     assert_eq!(target_span.start, 0, "foo should start at byte 0");
                     assert_eq!(target_span.end, 3, "foo should end at byte 3");
-                    assert_eq!(
-                        &source[target_span.start..target_span.end],
-                        "foo"
-                    );
+                    assert_eq!(&source[target_span.start..target_span.end], "foo");
                 } else {
                     panic!("Expected Name target");
                 }
@@ -1330,10 +1327,7 @@ mod test {
                     // Verify exact positions
                     assert_eq!(value_span.start, 6, "bar should start at byte 6");
                     assert_eq!(value_span.end, 9, "bar should end at byte 9");
-                    assert_eq!(
-                        &source[value_span.start..value_span.end],
-                        "bar"
-                    );
+                    assert_eq!(&source[value_span.start..value_span.end], "bar");
                 } else {
                     panic!("Expected Name value");
                 }

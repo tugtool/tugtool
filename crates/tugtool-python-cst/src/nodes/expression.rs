@@ -2188,21 +2188,13 @@ pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 
 
         // Expressions with explicit closing tokens
         Call(c) => rpar_end(&c.rpar).unwrap_or_else(|| c.rpar_tok.end_pos.byte_idx()),
-        Subscript(s) => {
-            rpar_end(&s.rpar).unwrap_or_else(|| s.rbracket.tok.end_pos.byte_idx())
-        }
+        Subscript(s) => rpar_end(&s.rpar).unwrap_or_else(|| s.rbracket.tok.end_pos.byte_idx()),
         List(l) => rpar_end(&l.rpar).unwrap_or_else(|| l.rbracket.tok.end_pos.byte_idx()),
         Set(s) => rpar_end(&s.rpar).unwrap_or_else(|| s.rbrace.tok.end_pos.byte_idx()),
         Dict(d) => rpar_end(&d.rpar).unwrap_or_else(|| d.rbrace.tok.end_pos.byte_idx()),
-        ListComp(lc) => {
-            rpar_end(&lc.rpar).unwrap_or_else(|| lc.rbracket.tok.end_pos.byte_idx())
-        }
-        SetComp(sc) => {
-            rpar_end(&sc.rpar).unwrap_or_else(|| sc.rbrace.tok.end_pos.byte_idx())
-        }
-        DictComp(dc) => {
-            rpar_end(&dc.rpar).unwrap_or_else(|| dc.rbrace.tok.end_pos.byte_idx())
-        }
+        ListComp(lc) => rpar_end(&lc.rpar).unwrap_or_else(|| lc.rbracket.tok.end_pos.byte_idx()),
+        SetComp(sc) => rpar_end(&sc.rpar).unwrap_or_else(|| sc.rbrace.tok.end_pos.byte_idx()),
+        DictComp(dc) => rpar_end(&dc.rpar).unwrap_or_else(|| dc.rbrace.tok.end_pos.byte_idx()),
         GeneratorExp(ge) => {
             // Generator expressions end at rpar if parenthesized, otherwise recurse to for_in
             rpar_end(&ge.rpar).unwrap_or_else(|| deflated_comp_for_end_pos(&ge.for_in))
@@ -2303,8 +2295,7 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
 
     // Helper: get start position from the first lpar if available
     fn lpar_start<'r, 'a>(lpar: &[DeflatedLeftParen<'r, 'a>]) -> Option<usize> {
-        lpar.first()
-            .map(|lp| lp.lpar_tok.start_pos.byte_idx())
+        lpar.first().map(|lp| lp.lpar_tok.start_pos.byte_idx())
     }
 
     match expr {
@@ -2324,20 +2315,14 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
         Subscript(s) => {
             lpar_start(&s.lpar).unwrap_or_else(|| deflated_expression_start_pos(&s.value))
         }
-        List(l) => {
-            lpar_start(&l.lpar).unwrap_or_else(|| l.lbracket.tok.start_pos.byte_idx())
-        }
+        List(l) => lpar_start(&l.lpar).unwrap_or_else(|| l.lbracket.tok.start_pos.byte_idx()),
         Set(s) => lpar_start(&s.lpar).unwrap_or_else(|| s.lbrace.tok.start_pos.byte_idx()),
         Dict(d) => lpar_start(&d.lpar).unwrap_or_else(|| d.lbrace.tok.start_pos.byte_idx()),
         ListComp(lc) => {
             lpar_start(&lc.lpar).unwrap_or_else(|| lc.lbracket.tok.start_pos.byte_idx())
         }
-        SetComp(sc) => {
-            lpar_start(&sc.lpar).unwrap_or_else(|| sc.lbrace.tok.start_pos.byte_idx())
-        }
-        DictComp(dc) => {
-            lpar_start(&dc.lpar).unwrap_or_else(|| dc.lbrace.tok.start_pos.byte_idx())
-        }
+        SetComp(sc) => lpar_start(&sc.lpar).unwrap_or_else(|| sc.lbrace.tok.start_pos.byte_idx()),
+        DictComp(dc) => lpar_start(&dc.lpar).unwrap_or_else(|| dc.lbrace.tok.start_pos.byte_idx()),
         GeneratorExp(ge) => {
             lpar_start(&ge.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ge.elt))
         }
@@ -2359,9 +2344,7 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
         }
 
         // String types
-        SimpleString(ss) => {
-            lpar_start(&ss.lpar).unwrap_or_else(|| ss.tok.start_pos.byte_idx())
-        }
+        SimpleString(ss) => lpar_start(&ss.lpar).unwrap_or_else(|| ss.tok.start_pos.byte_idx()),
         ConcatenatedString(cs) => {
             lpar_start(&cs.lpar).unwrap_or_else(|| deflated_string_start_pos(&cs.left))
         }
@@ -2393,9 +2376,7 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
         IfExp(ie) => {
             lpar_start(&ie.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ie.body))
         }
-        Lambda(l) => {
-            lpar_start(&l.lpar).unwrap_or_else(|| l.lambda_tok.start_pos.byte_idx())
-        }
+        Lambda(l) => lpar_start(&l.lpar).unwrap_or_else(|| l.lambda_tok.start_pos.byte_idx()),
         Yield(y) => lpar_start(&y.lpar).unwrap_or_else(|| y.yield_tok.start_pos.byte_idx()),
         Await(a) => lpar_start(&a.lpar).unwrap_or_else(|| a.await_tok.start_pos.byte_idx()),
         NamedExpr(ne) => {
