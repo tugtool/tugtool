@@ -6,6 +6,55 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 9: AliasGraph Module | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 9 specification, [D06], [D07], [D08] design decisions, Spec S04, Table T02
+- `plans/step-9-alias-graph.md` - Detailed implementation specification (711 lines)
+- `crates/tugtool-python/src/types.rs` - `AssignmentInfo` and `SpanInfo` types
+- `crates/tugtool-core/src/patch.rs` - `Span` type definition
+- `crates/tugtool-python/src/lib.rs` - Module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Task 9.1: Create alias.rs with type definitions | Done |
+| Task 9.2: Implement AliasGraph::from_analysis | Done |
+| Task 9.3: Implement query methods | Done |
+| Task 9.4: Implement transitive_aliases with cycle detection | Done |
+| Task 9.5: Add utility methods | Done |
+| Task 9.6: Update lib.rs | Done |
+| AG-01 through AG-16: All 16 unit tests | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/alias.rs` - AliasGraph module with `AliasInfo` struct, `AliasGraph` struct, query methods, transitive traversal with cycle detection, and 16 unit tests (~450 lines)
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added `pub mod alias;` and updated docstring
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Fixed clippy `unnecessary_lazy_evaluations` warnings (unwrap_or_else → unwrap_or for constant fallbacks); added `#[allow(clippy::derivable_impls)]` for intentional manual Default impl
+- `crates/tugtool-python/src/analyzer.rs` - Fixed clippy `redundant_locals` warning (removed unnecessary rebinding)
+- `plans/phase-10.md` - Checked off all Task 9.x items and AG-01 through AG-16 tests; updated status table
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python alias`: 23 tests passed (16 AG-xx tests + 7 helper tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python alias`: PASS (23 tests)
+- `cargo clippy -p tugtool-python -- -D warnings`: PASS
+- `cargo fmt -p tugtool-python -- --check`: PASS
+
+**Key Decisions/Notes:**
+- **Cycle detection fix**: Initial implementation had a bug where aliases were added to result before checking the visited set. Fixed by checking `visited.contains(&alias_name)` before pushing to result.
+- **Pre-existing clippy issues**: Fixed three unrelated clippy warnings that blocked the build (in tugtool-python-cst and analyzer.rs).
+- **Design decisions followed**: [D06] informational only (show aliases, don't auto-rename), [D07] single-file scope, [D08] reuse existing TypeInferenceCollector data.
+- **Confidence field**: Set to 1.0 for simple variable assignments; reserved for future expression pattern analysis.
+- **Scope filtering**: Uses exact match semantics per spec (no hierarchical matching).
+
+---
+
 ## [phase-10.md] Step 8: Namespace Package Resolution | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

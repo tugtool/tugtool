@@ -939,7 +939,10 @@ mod tests {
 
         assert_eq!(scopes.len(), 2);
         let lambda_span = scopes[1].span.expect("Lambda should have lexical span");
-        assert_eq!(lambda_span.start, 18, "Lambda should start at 'lambda' keyword");
+        assert_eq!(
+            lambda_span.start, 18,
+            "Lambda should start at 'lambda' keyword"
+        );
         assert_eq!(lambda_span.end, 34, "Lambda should end after x.name");
     }
 
@@ -1503,8 +1506,14 @@ mod tests {
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
         let comp_span = scopes[1].span.expect("SetComp should have lexical span");
-        assert_eq!(comp_span.start, 4, "SetComp should start at left brace (byte 4)");
-        assert_eq!(comp_span.end, 30, "SetComp should end at right brace (byte 30)");
+        assert_eq!(
+            comp_span.start, 4,
+            "SetComp should start at left brace (byte 4)"
+        );
+        assert_eq!(
+            comp_span.end, 30,
+            "SetComp should end at right brace (byte 30)"
+        );
     }
 
     #[test]
@@ -1521,8 +1530,14 @@ mod tests {
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
         let comp_span = scopes[1].span.expect("DictComp should have lexical span");
-        assert_eq!(comp_span.start, 4, "DictComp should start at left brace (byte 4)");
-        assert_eq!(comp_span.end, 28, "DictComp should end at right brace (byte 28)");
+        assert_eq!(
+            comp_span.start, 4,
+            "DictComp should start at left brace (byte 4)"
+        );
+        assert_eq!(
+            comp_span.end, 28,
+            "DictComp should end at right brace (byte 28)"
+        );
     }
 
     #[test]
@@ -1538,7 +1553,9 @@ mod tests {
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
-        let comp_span = scopes[1].span.expect("GeneratorExp should have lexical span");
+        let comp_span = scopes[1]
+            .span
+            .expect("GeneratorExp should have lexical span");
         assert_eq!(
             comp_span.start, 4,
             "GeneratorExp should start at '(' (byte 4)"
@@ -1562,7 +1579,9 @@ mod tests {
 
         assert_eq!(scopes.len(), 2);
         assert_eq!(scopes[1].kind, ScopeKind::Comprehension);
-        let comp_span = scopes[1].span.expect("Implicit GeneratorExp should have lexical span");
+        let comp_span = scopes[1]
+            .span
+            .expect("Implicit GeneratorExp should have lexical span");
         assert_eq!(
             comp_span.start, 4,
             "Implicit GeneratorExp should start at 'x' (byte 4)"
@@ -1619,7 +1638,9 @@ mod tests {
         let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
-        let comp_span = scopes[1].span.expect("ListComp with condition should have span");
+        let comp_span = scopes[1]
+            .span
+            .expect("ListComp with condition should have span");
         assert_eq!(comp_span.start, 4);
         assert_eq!(comp_span.end, 28);
     }
@@ -1636,7 +1657,9 @@ mod tests {
         let scopes = ScopeCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(scopes.len(), 2);
-        let comp_span = scopes[1].span.expect("ListComp with multiple fors should have span");
+        let comp_span = scopes[1]
+            .span
+            .expect("ListComp with multiple fors should have span");
         assert_eq!(comp_span.start, 4);
         assert_eq!(comp_span.end, 35);
     }

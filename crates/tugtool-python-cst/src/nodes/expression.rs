@@ -2224,9 +2224,7 @@ pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 
                 .map(|ct| deflated_expression_end_pos(&ct.comparator))
                 .unwrap_or_else(|| deflated_expression_end_pos(&c.left))
         }),
-        IfExp(ie) => {
-            rpar_end(&ie.rpar).unwrap_or_else(|| deflated_expression_end_pos(&ie.orelse))
-        }
+        IfExp(ie) => rpar_end(&ie.rpar).unwrap_or_else(|| deflated_expression_end_pos(&ie.orelse)),
 
         // Attribute access - attr name has token
         Attribute(a) => rpar_end(&a.rpar)
@@ -2262,14 +2260,10 @@ pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 
                 })
                 .unwrap_or_else(|| y.yield_tok.end_pos.byte_idx() as u64)
         }),
-        Await(a) => {
-            rpar_end(&a.rpar).unwrap_or_else(|| deflated_expression_end_pos(&a.expression))
-        }
+        Await(a) => rpar_end(&a.rpar).unwrap_or_else(|| deflated_expression_end_pos(&a.expression)),
 
         // String types
-        SimpleString(ss) => {
-            rpar_end(&ss.rpar).unwrap_or_else(|| ss.tok.end_pos.byte_idx() as u64)
-        }
+        SimpleString(ss) => rpar_end(&ss.rpar).unwrap_or_else(|| ss.tok.end_pos.byte_idx() as u64),
         ConcatenatedString(cs) => {
             rpar_end(&cs.rpar).unwrap_or_else(|| deflated_string_end_pos(&cs.right))
         }
@@ -2309,7 +2303,8 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
 
     // Helper: get start position from the first lpar if available
     fn lpar_start<'r, 'a>(lpar: &[DeflatedLeftParen<'r, 'a>]) -> Option<u64> {
-        lpar.first().map(|lp| lp.lpar_tok.start_pos.byte_idx() as u64)
+        lpar.first()
+            .map(|lp| lp.lpar_tok.start_pos.byte_idx() as u64)
     }
 
     match expr {
@@ -2370,11 +2365,11 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
         ConcatenatedString(cs) => {
             lpar_start(&cs.lpar).unwrap_or_else(|| deflated_string_start_pos(&cs.left))
         }
-        FormattedString(fs) => lpar_start(&fs.lpar).unwrap_or_else(|| {
+        FormattedString(fs) => lpar_start(&fs.lpar).unwrap_or({
             // FormattedString starts with start field (the f" prefix)
             0 // Fallback - FormattedString doesn't have start token
         }),
-        TemplatedString(ts) => lpar_start(&ts.lpar).unwrap_or_else(|| {
+        TemplatedString(ts) => lpar_start(&ts.lpar).unwrap_or({
             // TemplatedString starts with start field (the t" prefix)
             0 // Fallback
         }),
@@ -2401,12 +2396,8 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
         Lambda(l) => {
             lpar_start(&l.lpar).unwrap_or_else(|| l.lambda_tok.start_pos.byte_idx() as u64)
         }
-        Yield(y) => {
-            lpar_start(&y.lpar).unwrap_or_else(|| y.yield_tok.start_pos.byte_idx() as u64)
-        }
-        Await(a) => {
-            lpar_start(&a.lpar).unwrap_or_else(|| a.await_tok.start_pos.byte_idx() as u64)
-        }
+        Yield(y) => lpar_start(&y.lpar).unwrap_or_else(|| y.yield_tok.start_pos.byte_idx() as u64),
+        Await(a) => lpar_start(&a.lpar).unwrap_or_else(|| a.await_tok.start_pos.byte_idx() as u64),
         NamedExpr(ne) => {
             lpar_start(&ne.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ne.target))
         }
@@ -2799,6 +2790,7 @@ pub struct SimpleString<'a> {
 }
 
 // Manual Default impl for inflated SimpleString (tok field is filtered from inflated type)
+#[allow(clippy::derivable_impls)]
 impl<'a> Default for SimpleString<'a> {
     fn default() -> Self {
         Self {

@@ -11,6 +11,7 @@
 //!
 //! # Modules
 //!
+//! - [`alias`]: Value-level alias tracking for impact analysis
 //! - [`analyzer`]: Multi-file semantic analysis with scope chain resolution
 //! - [`cst_bridge`]: Bridge layer between native CST and tugtool types
 //! - [`type_tracker`]: Level 1-2 type inference from assignments and annotations
@@ -35,6 +36,7 @@
 //! let bundle = analyze_files(&files, &mut store).expect("analysis failed");
 //! ```
 
+pub mod alias;
 pub mod analyzer;
 pub mod cst_bridge;
 pub mod dynamic;

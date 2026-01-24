@@ -1745,15 +1745,61 @@ test_workspace/
 
 **Commit:** `feat(python): add AliasGraph for value-level alias tracking`
 
-**References:** [D06], [D07], [D08], Spec S04
+**References:** [D06], [D07], [D08], Spec S04, Table T02
 
 **Files:** New `crates/tugtool-python/src/alias.rs`, update `lib.rs`
 
-**Tasks:**
-- [ ] Define `AliasInfo` and `AliasGraph` structs
-- [ ] Implement `from_analysis()`, `direct_aliases()`, `transitive_aliases()`
+**Detailed spec:** See `plans/step-9-alias-graph.md` for complete implementation reference.
 
-**Tests:**
+##### Codebase Integration
+
+**AssignmentInfo source:** The `TypeInferenceCollector` in `tugtool-python-cst/src/visitor/type_inference.rs` produces `AssignmentInfo` with:
+- `type_source: TypeSource` enum (`Constructor`, `Variable`, `FunctionCall`, `Unknown`)
+- `rhs_name: Option<String>` for variable aliases
+- `scope_path: Vec<String>` for scope tracking
+- `span: Option<Span>` for location
+
+**Alias-relevant filter:** Only `type_source == "variable"` assignments with `rhs_name.is_some()` are alias candidates.
+
+**Integration point:** In `analyzer.rs` (around line 967), assignments are already collected and processed.
+
+##### Tasks
+
+**Task 9.1: Create alias.rs with type definitions**
+- [x] Create `crates/tugtool-python/src/alias.rs`
+- [x] Define `AliasInfo` struct with fields: `alias_name`, `source_name`, `scope_path`, `alias_span`, `source_is_import`, `confidence`
+- [x] Implement `AliasInfo::from_assignment()` constructor
+- [x] Define `AliasGraph` struct with `forward: HashMap<String, Vec<AliasInfo>>` and `reverse: HashMap<String, Vec<String>>`
+
+**Task 9.2: Implement AliasGraph::from_analysis**
+- [x] Accept `assignments: &[AssignmentInfo]` and `imports: &HashSet<String>`
+- [x] Filter for `type_source == "variable"` only
+- [x] Skip self-assignments (`x = x`)
+- [x] Populate forward map (source → aliases)
+- [x] Populate reverse map (alias → sources)
+- [x] Set `source_is_import` based on imports set
+
+**Task 9.3: Implement query methods**
+- [x] `direct_aliases(&self, source_name: &str) -> &[AliasInfo]` - all scopes
+- [x] `direct_aliases_in_scope(&self, source_name: &str, scope_path: &[String]) -> Vec<&AliasInfo>` - exact scope match
+- [x] `reverse_lookup(&self, alias_name: &str) -> &[String]` - reverse map access
+
+**Task 9.4: Implement transitive_aliases**
+- [x] Add `visited: HashSet<String>` for cycle detection (per Spec S04)
+- [x] Add `max_depth` parameter with default 10
+- [x] Implement recursive traversal following alias chain
+- [x] Return early on cycle or depth limit
+
+**Task 9.5: Add utility methods**
+- [x] `is_empty(&self) -> bool`
+- [x] `source_count(&self) -> usize`
+- [x] `alias_count(&self) -> usize`
+- [x] Implement `Default` trait
+
+**Task 9.6: Update lib.rs**
+- [x] Add `pub mod alias;` to module list
+
+##### Tests
 
 Uses **Table T02: Value-Level Alias Test Cases** from Section 10.3.
 
@@ -1767,23 +1813,54 @@ Uses **Table T02: Value-Level Alias Test Cases** from Section 10.3.
 | AG-04 | `test_alias_self_assignment` | unit | VA-04: `x = x` not tracked |
 | AG-05 | `test_alias_cycle_no_infinite_loop` | unit | VA-05: `a = b; b = a` terminates |
 | AG-06 | `test_alias_reverse_lookup` | unit | reverse["b"] → ["bar"] |
-| AG-07 | `test_alias_scope_filtering` | unit | Filter by scope_path |
+| AG-07 | `test_alias_scope_filtering` | unit | Filter by scope_path (exact match) |
 | AG-08 | `test_alias_confidence_simple` | unit | Simple assignment → confidence 1.0 |
 | AG-09 | `test_alias_from_analysis_empty` | unit | No assignments → empty graph |
-| AG-10 | `test_alias_transitive_depth_limit` | unit | Deep chain doesn't explode |
+| AG-10 | `test_alias_transitive_depth_limit` | unit | Deep chain (15 levels) stops at max_depth |
+| AG-11 | `test_alias_multi_target_same_source` | unit | `a = x; b = x` → both in forward["x"] |
+| AG-12 | `test_alias_nested_scope_separate` | unit | Same name in different scopes tracked separately |
+| AG-13 | `test_alias_import_flag_set` | unit | Imported source has `source_is_import: true` |
+| AG-14 | `test_alias_span_populated` | unit | alias_span contains correct byte offsets |
+| AG-15 | `test_alias_constructor_ignored` | unit | `x = MyClass()` not tracked as alias |
+| AG-16 | `test_alias_function_call_ignored` | unit | `x = get_data()` not tracked as alias |
 
-- [ ] unit test: `test_alias_direct_simple` - basic forward lookup
-- [ ] unit test: `test_alias_chained_assignment` - chained assignment (`c = b = bar`)
-- [ ] unit test: `test_alias_transitive` - transitive_aliases() follows chain
-- [ ] unit test: `test_alias_self_assignment` - `x = x` filtered out
-- [ ] unit test: `test_alias_cycle_no_infinite_loop` - cycle detection with visited set
-- [ ] unit test: `test_alias_reverse_lookup` - reverse map lookup
-- [ ] unit test: `test_alias_scope_filtering` - exact scope_path match
-- [ ] unit test: `test_alias_confidence_simple` - simple assignment has confidence 1.0
-- [ ] unit test: `test_alias_from_analysis_empty` - empty input → empty graph
-- [ ] unit test: `test_alias_transitive_depth_limit` - reasonable depth handling
+- [x] AG-01: `test_alias_direct_simple` - basic forward lookup
+- [x] AG-02: `test_alias_chained_assignment` - chained assignment (`c = b = bar`)
+- [x] AG-03: `test_alias_transitive` - transitive_aliases() follows chain
+- [x] AG-04: `test_alias_self_assignment` - `x = x` filtered out
+- [x] AG-05: `test_alias_cycle_no_infinite_loop` - cycle detection with visited set
+- [x] AG-06: `test_alias_reverse_lookup` - reverse map lookup
+- [x] AG-07: `test_alias_scope_filtering` - exact scope_path match
+- [x] AG-08: `test_alias_confidence_simple` - simple assignment has confidence 1.0
+- [x] AG-09: `test_alias_from_analysis_empty` - empty input → empty graph
+- [x] AG-10: `test_alias_transitive_depth_limit` - reasonable depth handling
+- [x] AG-11: `test_alias_multi_target_same_source` - multiple aliases for same source
+- [x] AG-12: `test_alias_nested_scope_separate` - scope isolation
+- [x] AG-13: `test_alias_import_flag_set` - import flag correct
+- [x] AG-14: `test_alias_span_populated` - span byte offsets correct
+- [x] AG-15: `test_alias_constructor_ignored` - constructor assignments filtered
+- [x] AG-16: `test_alias_function_call_ignored` - function call assignments filtered
 
-**Checkpoint:** `cargo nextest run -p tugtool-python alias`
+##### Checkpoint
+
+```bash
+# Run all alias tests
+cargo nextest run -p tugtool-python alias
+
+# Verify no clippy warnings
+cargo clippy -p tugtool-python -- -D warnings
+
+# Verify formatting
+cargo fmt -p tugtool-python -- --check
+```
+
+All 16 tests should pass.
+
+##### Integration Notes for Subsequent Steps
+
+**Step 10 (Integrate into Analyzer):** Will call `AliasGraph::from_analysis()` from `analyze_file()`, passing `NativeAnalysisResult.assignments` and a set of imported names.
+
+**Step 12 (Wire to Impact Analysis):** Will query `alias_graph.transitive_aliases(symbol_name, Some(scope_path), None)` and convert results to `AliasOutput`.
 
 ---
 
@@ -2068,7 +2145,7 @@ Uses **Table T02: Value-Level Alias Test Cases** from Section 10.3.
 | Step 6 | pending | | tug doctor command |
 | Step 7 | pending | | Compute namespace packages |
 | Step 8 | pending | | Namespace package resolution |
-| Step 9 | pending | | AliasGraph module |
+| Step 9 | done | 2026-01-24 | AliasGraph module |
 | Step 10 | pending | | Integrate AliasGraph into analyzer |
 | Step 11 | pending | | Alias output types |
 | Step 12 | pending | | Wire aliases to impact analysis |

@@ -145,10 +145,10 @@ impl PositionTable {
     /// `for (&node_id, pos) in table.iter()` should update to
     /// `for (node_id, pos) in table.iter()`.
     pub fn iter(&self) -> impl Iterator<Item = (NodeId, &NodePosition)> {
-        self.positions.iter().enumerate().filter_map(|(idx, opt)| {
-            opt.as_ref()
-                .map(|pos| (NodeId::new(idx as u32), pos))
-        })
+        self.positions
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, opt)| opt.as_ref().map(|pos| (NodeId::new(idx as u32), pos)))
     }
 }
 

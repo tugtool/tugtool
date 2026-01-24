@@ -783,7 +783,6 @@ pub fn analyze_files(
                 // Only process file-based modules for star import expansion
                 // Namespace packages don't have exports to expand
                 if let Some(ResolvedModule::File(source_path)) = source_file {
-                    let source_path = source_path; // rebind for clarity
                     let mut visited = HashSet::new();
                     let expanded_bindings = collect_star_exports_transitive(
                         &source_path,
@@ -1228,7 +1227,12 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
     // Note: We use empty workspace_files and namespace_packages sets here since single-file
     // analysis doesn't have access to the workspace. The caller (analyze_files) handles
     // workspace-aware import resolution.
-    let imports = convert_imports(&native_result.imports, &HashSet::new(), &HashSet::new(), path);
+    let imports = convert_imports(
+        &native_result.imports,
+        &HashSet::new(),
+        &HashSet::new(),
+        path,
+    );
 
     // Convert exports (from __all__) for star import expansion and rename operations
     let exports: Vec<LocalExport> = native_result
@@ -1528,7 +1532,8 @@ impl FileImportResolver {
                             import.relative_level,
                         );
                         // Extract file path for import resolution (namespace packages don't have symbols)
-                        let resolved_file = resolved.and_then(|r| r.as_file().map(|s| s.to_string()));
+                        let resolved_file =
+                            resolved.and_then(|r| r.as_file().map(|s| s.to_string()));
 
                         resolver.insert(
                             local_name.clone(),
@@ -1549,7 +1554,8 @@ impl FileImportResolver {
                             import.relative_level,
                         );
                         // Extract file path for import resolution (namespace packages don't have symbols)
-                        let resolved_file = resolved.and_then(|r| r.as_file().map(|s| s.to_string()));
+                        let resolved_file =
+                            resolved.and_then(|r| r.as_file().map(|s| s.to_string()));
                         // For module imports, the "imported name" is the full module path
                         resolver.insert(
                             alias.clone(),
@@ -2993,8 +2999,14 @@ mod tests {
 
             // Lambda scope should have a span starting at 'lambda' keyword
             let span = lambda_scope.span.expect("Lambda scope should have span");
-            assert_eq!(span.start, 4, "Lambda scope should start at 'lambda' keyword");
-            assert_eq!(span.end, 19, "Lambda scope should end after body expression");
+            assert_eq!(
+                span.start, 4,
+                "Lambda scope should start at 'lambda' keyword"
+            );
+            assert_eq!(
+                span.end, 19,
+                "Lambda scope should end after body expression"
+            );
         }
 
         #[test]
@@ -3009,7 +3021,9 @@ mod tests {
             assert_eq!(comp_scope.kind, ScopeKind::Comprehension);
 
             // List comprehension scope should have a span from '[' to ']'
-            let span = comp_scope.span.expect("Comprehension scope should have span");
+            let span = comp_scope
+                .span
+                .expect("Comprehension scope should have span");
             assert_eq!(span.start, 4, "List comp scope should start at '['");
             assert_eq!(span.end, 26, "List comp scope should end after ']'");
         }
@@ -3396,10 +3410,8 @@ mod tests {
             // NP-02: Multiple levels without __init__.py
             // Given: a/b/c/module.py exists, but none of a/, a/b/, a/b/c/ have __init__.py
             // Expected: all three directories should be namespace packages
-            let files: HashSet<String> = ["a/b/c/module.py"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
+            let files: HashSet<String> =
+                ["a/b/c/module.py"].iter().map(|s| s.to_string()).collect();
 
             let ns_packages = compute_namespace_packages(&files);
 
@@ -3423,14 +3435,10 @@ mod tests {
             //   - pkg/sub/module.py (no pkg/sub/__init__.py)
             //   - ns/module.py (no ns/__init__.py)
             // Expected: "pkg/sub" and "ns" are namespace packages, "pkg" is NOT
-            let files: HashSet<String> = [
-                "pkg/__init__.py",
-                "pkg/sub/module.py",
-                "ns/module.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let files: HashSet<String> = ["pkg/__init__.py", "pkg/sub/module.py", "ns/module.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let ns_packages = compute_namespace_packages(&files);
 
@@ -3570,13 +3578,8 @@ mod tests {
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
             // Resolve utils - should return namespace marker
-            let result = resolve_module_to_file(
-                "utils",
-                &workspace_files,
-                &namespace_packages,
-                None,
-                0,
-            );
+            let result =
+                resolve_module_to_file("utils", &workspace_files, &namespace_packages, None, 0);
 
             assert_eq!(
                 result,
@@ -3592,10 +3595,11 @@ mod tests {
             //        namespace_pkg/other.py exists
             //        namespace_pkg/ has no __init__.py
             // Expected: relative import resolves to namespace_pkg/other.py
-            let workspace_files: HashSet<String> = ["namespace_pkg/module.py", "namespace_pkg/other.py"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
+            let workspace_files: HashSet<String> =
+                ["namespace_pkg/module.py", "namespace_pkg/other.py"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
@@ -3715,27 +3719,32 @@ mod tests {
             // Given: a/b/c/d/e.py exists, no __init__.py anywhere
             // Expected: a.b.c.d.e resolves to a/b/c/d/e.py
             //           a, a.b, a.b.c, a.b.c.d all resolve as namespace packages
-            let workspace_files: HashSet<String> = ["a/b/c/d/e.py"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
+            let workspace_files: HashSet<String> =
+                ["a/b/c/d/e.py"].iter().map(|s| s.to_string()).collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
             // All intermediate directories should be namespace packages
-            assert!(namespace_packages.contains("a"), "a should be namespace package");
-            assert!(namespace_packages.contains("a/b"), "a/b should be namespace package");
-            assert!(namespace_packages.contains("a/b/c"), "a/b/c should be namespace package");
-            assert!(namespace_packages.contains("a/b/c/d"), "a/b/c/d should be namespace package");
+            assert!(
+                namespace_packages.contains("a"),
+                "a should be namespace package"
+            );
+            assert!(
+                namespace_packages.contains("a/b"),
+                "a/b should be namespace package"
+            );
+            assert!(
+                namespace_packages.contains("a/b/c"),
+                "a/b/c should be namespace package"
+            );
+            assert!(
+                namespace_packages.contains("a/b/c/d"),
+                "a/b/c/d should be namespace package"
+            );
 
             // Resolve the full path to the file
-            let result = resolve_module_to_file(
-                "a.b.c.d.e",
-                &workspace_files,
-                &namespace_packages,
-                None,
-                0,
-            );
+            let result =
+                resolve_module_to_file("a.b.c.d.e", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(
                 result,
                 Some(ResolvedModule::File("a/b/c/d/e.py".to_string())),
@@ -3743,21 +3752,24 @@ mod tests {
             );
 
             // Resolve intermediate namespace packages
-            let a_result = resolve_module_to_file("a", &workspace_files, &namespace_packages, None, 0);
+            let a_result =
+                resolve_module_to_file("a", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(
                 a_result,
                 Some(ResolvedModule::Namespace("a".to_string())),
                 "a should resolve as namespace package"
             );
 
-            let ab_result = resolve_module_to_file("a.b", &workspace_files, &namespace_packages, None, 0);
+            let ab_result =
+                resolve_module_to_file("a.b", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(
                 ab_result,
                 Some(ResolvedModule::Namespace("a/b".to_string())),
                 "a.b should resolve as namespace package"
             );
 
-            let abcd_result = resolve_module_to_file("a.b.c.d", &workspace_files, &namespace_packages, None, 0);
+            let abcd_result =
+                resolve_module_to_file("a.b.c.d", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(
                 abcd_result,
                 Some(ResolvedModule::Namespace("a/b/c/d".to_string())),
@@ -3784,13 +3796,8 @@ mod tests {
             );
 
             // But resolution should return the file, not namespace
-            let result = resolve_module_to_file(
-                "utils",
-                &workspace_files,
-                &namespace_packages,
-                None,
-                0,
-            );
+            let result =
+                resolve_module_to_file("utils", &workspace_files, &namespace_packages, None, 0);
 
             assert_eq!(
                 result,
@@ -3822,19 +3829,11 @@ mod tests {
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
-            let result = resolve_module_to_file(
-                "myns",
-                &workspace_files,
-                &namespace_packages,
-                None,
-                0,
-            );
+            let result =
+                resolve_module_to_file("myns", &workspace_files, &namespace_packages, None, 0);
 
             // Verify it's the Namespace variant
-            assert!(
-                result.is_some(),
-                "myns should resolve to something"
-            );
+            assert!(result.is_some(), "myns should resolve to something");
 
             let resolved = result.unwrap();
             assert!(
@@ -3899,19 +3898,22 @@ mod tests {
             //   pkg/sub/module.py (importing)
             //   pkg/other.py (target)
             // Import: from .. import other (relative_level=2)
-            let workspace_files: HashSet<String> = [
-                "pkg/sub/module.py",
-                "pkg/other.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> = ["pkg/sub/module.py", "pkg/other.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
             // Both pkg and pkg/sub should be namespace packages
-            assert!(namespace_packages.contains("pkg"), "pkg should be namespace package");
-            assert!(namespace_packages.contains("pkg/sub"), "pkg/sub should be namespace package");
+            assert!(
+                namespace_packages.contains("pkg"),
+                "pkg should be namespace package"
+            );
+            assert!(
+                namespace_packages.contains("pkg/sub"),
+                "pkg/sub should be namespace package"
+            );
 
             // Relative import from pkg/sub/module.py: from .. import other
             let result = resolve_module_to_file(
@@ -3935,13 +3937,10 @@ mod tests {
             // Structure:
             //   a/b/c/module.py (importing)
             //   a/target.py
-            let workspace_files: HashSet<String> = [
-                "a/b/c/module.py",
-                "a/target.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> = ["a/b/c/module.py", "a/target.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
@@ -3968,31 +3967,33 @@ mod tests {
             //   outer/           (namespace - no __init__.py)
             //   outer/middle/__init__.py (regular package)
             //   outer/middle/inner/module.py (namespace - no __init__.py in inner)
-            let workspace_files: HashSet<String> = [
-                "outer/middle/__init__.py",
-                "outer/middle/inner/module.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> =
+                ["outer/middle/__init__.py", "outer/middle/inner/module.py"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
             // outer should be namespace (no __init__.py)
-            assert!(namespace_packages.contains("outer"), "outer should be namespace package");
+            assert!(
+                namespace_packages.contains("outer"),
+                "outer should be namespace package"
+            );
             // outer/middle should NOT be namespace (has __init__.py)
-            assert!(!namespace_packages.contains("outer/middle"), "outer/middle has __init__.py");
+            assert!(
+                !namespace_packages.contains("outer/middle"),
+                "outer/middle has __init__.py"
+            );
             // outer/middle/inner should be namespace (no __init__.py)
-            assert!(namespace_packages.contains("outer/middle/inner"), "outer/middle/inner should be namespace");
+            assert!(
+                namespace_packages.contains("outer/middle/inner"),
+                "outer/middle/inner should be namespace"
+            );
 
             // Resolve through the mixed hierarchy
-            let outer_result = resolve_module_to_file(
-                "outer",
-                &workspace_files,
-                &namespace_packages,
-                None,
-                0,
-            );
+            let outer_result =
+                resolve_module_to_file("outer", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(
                 outer_result,
                 Some(ResolvedModule::Namespace("outer".to_string())),
@@ -4034,7 +4035,9 @@ mod tests {
             );
             assert_eq!(
                 module_result,
-                Some(ResolvedModule::File("outer/middle/inner/module.py".to_string())),
+                Some(ResolvedModule::File(
+                    "outer/middle/inner/module.py".to_string()
+                )),
                 "outer.middle.inner.module should resolve to file"
             );
         }
@@ -4047,31 +4050,49 @@ mod tests {
             //   ns/sub/      (namespace)
             //   ns/sub/module.py
             //   ns/other.py
-            let workspace_files: HashSet<String> = [
-                "ns/sub/module.py",
-                "ns/other.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> = ["ns/sub/module.py", "ns/other.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
             assert!(namespace_packages.contains("ns"), "ns should be namespace");
-            assert!(namespace_packages.contains("ns/sub"), "ns/sub should be namespace");
+            assert!(
+                namespace_packages.contains("ns/sub"),
+                "ns/sub should be namespace"
+            );
 
             // Resolve various paths
-            let ns_result = resolve_module_to_file("ns", &workspace_files, &namespace_packages, None, 0);
+            let ns_result =
+                resolve_module_to_file("ns", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(ns_result, Some(ResolvedModule::Namespace("ns".to_string())));
 
-            let sub_result = resolve_module_to_file("ns.sub", &workspace_files, &namespace_packages, None, 0);
-            assert_eq!(sub_result, Some(ResolvedModule::Namespace("ns/sub".to_string())));
+            let sub_result =
+                resolve_module_to_file("ns.sub", &workspace_files, &namespace_packages, None, 0);
+            assert_eq!(
+                sub_result,
+                Some(ResolvedModule::Namespace("ns/sub".to_string()))
+            );
 
-            let module_result = resolve_module_to_file("ns.sub.module", &workspace_files, &namespace_packages, None, 0);
-            assert_eq!(module_result, Some(ResolvedModule::File("ns/sub/module.py".to_string())));
+            let module_result = resolve_module_to_file(
+                "ns.sub.module",
+                &workspace_files,
+                &namespace_packages,
+                None,
+                0,
+            );
+            assert_eq!(
+                module_result,
+                Some(ResolvedModule::File("ns/sub/module.py".to_string()))
+            );
 
-            let other_result = resolve_module_to_file("ns.other", &workspace_files, &namespace_packages, None, 0);
-            assert_eq!(other_result, Some(ResolvedModule::File("ns/other.py".to_string())));
+            let other_result =
+                resolve_module_to_file("ns.other", &workspace_files, &namespace_packages, None, 0);
+            assert_eq!(
+                other_result,
+                Some(ResolvedModule::File("ns/other.py".to_string()))
+            );
         }
 
         #[test]
@@ -4087,14 +4108,10 @@ mod tests {
             //
             // So for "pkg", we try pkg.py FIRST, then pkg/__init__.py
             // This means pkg.py wins if both exist.
-            let workspace_files: HashSet<String> = [
-                "pkg.py",
-                "pkg/__init__.py",
-                "pkg/module.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> = ["pkg.py", "pkg/__init__.py", "pkg/module.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
@@ -4102,7 +4119,8 @@ mod tests {
             assert!(!namespace_packages.contains("pkg"), "pkg has __init__.py");
 
             // Resolve "pkg" - should get pkg.py (per Contract C3: .py wins)
-            let result = resolve_module_to_file("pkg", &workspace_files, &namespace_packages, None, 0);
+            let result =
+                resolve_module_to_file("pkg", &workspace_files, &namespace_packages, None, 0);
             assert_eq!(
                 result,
                 Some(ResolvedModule::File("pkg.py".to_string())),
@@ -4110,7 +4128,13 @@ mod tests {
             );
 
             // Resolve "pkg.module" - should still find the submodule
-            let module_result = resolve_module_to_file("pkg.module", &workspace_files, &namespace_packages, None, 0);
+            let module_result = resolve_module_to_file(
+                "pkg.module",
+                &workspace_files,
+                &namespace_packages,
+                None,
+                0,
+            );
             assert_eq!(
                 module_result,
                 Some(ResolvedModule::File("pkg/module.py".to_string())),
@@ -4125,13 +4149,10 @@ mod tests {
             //   ns/a/module.py (importing)
             //   ns/b/target.py
             // Import from ns/a/module.py: from ..b import target
-            let workspace_files: HashSet<String> = [
-                "ns/a/module.py",
-                "ns/b/target.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> = ["ns/a/module.py", "ns/b/target.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
@@ -4159,13 +4180,10 @@ mod tests {
         fn test_resolve_namespace_empty_module_path() {
             // Test handling of edge case: empty module path with relative import
             // from . import x (module_path is empty string, just dots)
-            let workspace_files: HashSet<String> = [
-                "pkg/x.py",
-                "pkg/y.py",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+            let workspace_files: HashSet<String> = ["pkg/x.py", "pkg/y.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
             let namespace_packages = compute_namespace_packages(&workspace_files);
 
@@ -4282,13 +4300,11 @@ mod tests {
             // because namespace packages have no __init__.py
             let mut store = FactsStore::new();
             let files = vec![
-                (
-                    "ns/module.py".to_string(),
-                    "def func(): pass".to_string(),
-                ),
+                ("ns/module.py".to_string(), "def func(): pass".to_string()),
                 (
                     "main.py".to_string(),
-                    "from ns import *\n# ns has no __init__.py, so this imports nothing".to_string(),
+                    "from ns import *\n# ns has no __init__.py, so this imports nothing"
+                        .to_string(),
                 ),
             ];
 
@@ -4303,9 +4319,9 @@ mod tests {
             let main_file = store.files().find(|f| f.path == "main.py").unwrap();
 
             // There should be no import binding for `func` in main.py
-            let func_in_main = symbols.iter().find(|s| {
-                s.name == "func" && s.decl_file_id == main_file.file_id
-            });
+            let func_in_main = symbols
+                .iter()
+                .find(|s| s.name == "func" && s.decl_file_id == main_file.file_id);
 
             assert!(
                 func_in_main.is_none(),
@@ -4344,7 +4360,11 @@ mod tests {
 
             let deep_def = symbols
                 .iter()
-                .find(|s| s.name == "deep" && s.decl_file_id == module_file.file_id && s.kind == SymbolKind::Function)
+                .find(|s| {
+                    s.name == "deep"
+                        && s.decl_file_id == module_file.file_id
+                        && s.kind == SymbolKind::Function
+                })
                 .expect("should have deep function");
 
             // Check references
@@ -4370,10 +4390,7 @@ mod tests {
             //   ns/b.py - from . import a; a.func_a()
             let mut store = FactsStore::new();
             let files = vec![
-                (
-                    "ns/a.py".to_string(),
-                    "def func_a():\n    pass".to_string(),
-                ),
+                ("ns/a.py".to_string(), "def func_a():\n    pass".to_string()),
                 (
                     "ns/b.py".to_string(),
                     "from . import a\na.func_a()".to_string(),
@@ -4389,9 +4406,9 @@ mod tests {
             let symbols: Vec<_> = store.symbols().collect();
             let b_file = store.files().find(|f| f.path == "ns/b.py").unwrap();
 
-            let a_import = symbols
-                .iter()
-                .find(|s| s.name == "a" && s.decl_file_id == b_file.file_id && s.kind == SymbolKind::Import);
+            let a_import = symbols.iter().find(|s| {
+                s.name == "a" && s.decl_file_id == b_file.file_id && s.kind == SymbolKind::Import
+            });
 
             assert!(
                 a_import.is_some(),
@@ -4409,18 +4426,9 @@ mod tests {
             //   main.py - from regular import x; from namespace.mod import z
             let mut store = FactsStore::new();
             let files = vec![
-                (
-                    "regular/__init__.py".to_string(),
-                    "x = 1".to_string(),
-                ),
-                (
-                    "regular/mod.py".to_string(),
-                    "y = 2".to_string(),
-                ),
-                (
-                    "namespace/mod.py".to_string(),
-                    "z = 3".to_string(),
-                ),
+                ("regular/__init__.py".to_string(), "x = 1".to_string()),
+                ("regular/mod.py".to_string(), "y = 2".to_string()),
+                ("namespace/mod.py".to_string(), "z = 3".to_string()),
                 (
                     "main.py".to_string(),
                     "from regular import x\nfrom namespace.mod import z".to_string(),
@@ -4445,8 +4453,14 @@ mod tests {
                 s.name == "z" && s.decl_file_id == main_file.file_id && s.kind == SymbolKind::Import
             });
 
-            assert!(x_import.is_some(), "should have import binding for x from regular package");
-            assert!(z_import.is_some(), "should have import binding for z from namespace package");
+            assert!(
+                x_import.is_some(),
+                "should have import binding for x from regular package"
+            );
+            assert!(
+                z_import.is_some(),
+                "should have import binding for z from namespace package"
+            );
         }
     }
 
@@ -4505,8 +4519,12 @@ mod tests {
 
             // Pass a dummy file path for relative import context
             let namespace_packages: HashSet<String> = HashSet::new();
-            let local_imports =
-                convert_imports(&cst_imports, &workspace_files, &namespace_packages, "pkg/test.py");
+            let local_imports = convert_imports(
+                &cst_imports,
+                &workspace_files,
+                &namespace_packages,
+                "pkg/test.py",
+            );
 
             // Verify all imports are converted (no skipping!)
             assert_eq!(
@@ -4550,8 +4568,12 @@ mod tests {
 
             // Pass a dummy file path for relative import context
             let namespace_packages: HashSet<String> = HashSet::new();
-            let local_imports =
-                convert_imports(&cst_imports, &workspace_files, &namespace_packages, "pkg/test.py");
+            let local_imports = convert_imports(
+                &cst_imports,
+                &workspace_files,
+                &namespace_packages,
+                "pkg/test.py",
+            );
 
             assert_eq!(
                 local_imports.len(),
