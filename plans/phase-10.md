@@ -1868,33 +1868,165 @@ All 16 tests should pass.
 
 **Commit:** `feat(python): build AliasGraph during file analysis`
 
-**References:** [D08]
+**References:** [D06], [D07], [D08], Spec S04, Table T02, Table T10
 
 **Files:** `crates/tugtool-python/src/analyzer.rs`
 
-**Tasks:**
-- [ ] Build `AliasGraph` per file using `NativeAnalysisResult.assignments`
-- [ ] Add `alias_graph` field to `FileAnalysis`
+##### Codebase Integration
 
-**Tests:**
+**Data flow overview:**
+
+```
+cst_bridge::parse_and_analyze(content)
+    -> NativeAnalysisResult {
+         imports: Vec<CstImportInfo>,          // Source for imports set
+         assignments: Vec<CstAssignmentInfo>,  // Input to AliasGraph
+       }
+    -> FileAnalysis {
+         alias_graph: AliasGraph,  // NEW FIELD
+       }
+```
+
+**FileAnalysis struct (analyzer.rs:235-252):**
+
+The `FileAnalysis` struct currently has these fields:
+- `file_id: FileId`
+- `path: String`
+- `cst_id: String`
+- `scopes: Vec<Scope>`
+- `symbols: Vec<LocalSymbol>`
+- `references: Vec<LocalReference>`
+- `imports: Vec<LocalImport>`
+- `exports: Vec<LocalExport>`
+
+A new field `alias_graph: AliasGraph` will be added after `exports`.
+
+**NativeAnalysisResult data (cst_bridge.rs:93-119):**
+
+The `NativeAnalysisResult` provides:
+- `assignments: Vec<CstAssignmentInfo>` - Contains `type_source`, `rhs_name`, `scope_path`, `span`
+- `imports: Vec<CstImportInfo>` - Contains module paths, names, and aliases for building the imports set
+
+**analyze_file function (analyzer.rs:1197-1258):**
+
+Current flow:
+1. Line 1199: `let native_result = cst_bridge::parse_and_analyze(content)?;`
+2. Lines 1201-1206: Build scopes and symbols
+3. Lines 1208-1224: Convert references
+4. Lines 1226-1235: Convert imports
+5. Lines 1237-1246: Convert exports
+6. Lines 1248-1257: Return `FileAnalysis`
+
+**Integration point (after exports, before FileAnalysis construction):**
+
+```rust
+// Build imports set for AliasGraph
+// Collect all names bound by imports (local names, not module paths)
+let imported_names: HashSet<String> = imports
+    .iter()
+    .flat_map(|imp| {
+        let mut names = Vec::new();
+        if let Some(name) = &imp.imported_name {
+            names.push(name.clone());
+        }
+        names
+    })
+    .collect();
+
+// Convert CstAssignmentInfo to types::AssignmentInfo for AliasGraph
+let types_assignments: Vec<crate::types::AssignmentInfo> = native_result
+    .assignments
+    .iter()
+    .map(|a| crate::types::AssignmentInfo {
+        target: a.target.clone(),
+        scope_path: a.scope_path.clone(),
+        type_source: a.type_source.as_str().to_string(),
+        inferred_type: a.inferred_type.clone(),
+        rhs_name: a.rhs_name.clone(),
+        callee_name: a.callee_name.clone(),
+        span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+            start: s.start as usize,
+            end: s.end as usize,
+        }),
+        line: a.line,
+        col: a.col,
+    })
+    .collect();
+
+// Build AliasGraph from assignments and imports
+let alias_graph = AliasGraph::from_analysis(&types_assignments, &imported_names);
+```
+
+**Required import (add near line 20-26):**
+
+```rust
+use crate::alias::AliasGraph;
+```
+
+##### Tasks
+
+**Task 10.1: Add alias_graph field to FileAnalysis**
+- [x] Import `AliasGraph` from `crate::alias` in analyzer.rs
+- [x] Add `pub alias_graph: AliasGraph` field to `FileAnalysis` struct (after `exports`)
+
+**Task 10.2: Build imports set from LocalImport data**
+- [x] After `let exports = ...` block, build `imported_names: HashSet<String>`
+- [x] Extract `imported_name` from each `LocalImport` where present
+
+**Task 10.3: Convert CstAssignmentInfo to types::AssignmentInfo**
+- [x] Map `native_result.assignments` to `Vec<crate::types::AssignmentInfo>`
+- [x] Convert `type_source` enum to string via `.as_str().to_string()`
+- [x] Convert span to `SpanInfo` with usize casts
+
+**Task 10.4: Call AliasGraph::from_analysis()**
+- [x] Call `AliasGraph::from_analysis(&types_assignments, &imported_names)`
+- [x] Store result in local variable `alias_graph`
+
+**Task 10.5: Wire through to FileAnalysis return**
+- [x] Add `alias_graph` field to the `FileAnalysis` construction
+- [x] Ensure field order matches struct definition
+
+##### Tests
 
 **Table T10: AliasGraph Analyzer Integration Test Cases**
 
 | ID | Test Name | Category | Description |
 |----|-----------|----------|-------------|
-| AI-01 | `test_analyzer_alias_graph_populated` | unit | FileAnalysis.alias_graph not empty |
-| AI-02 | `test_analyzer_alias_from_assignments` | unit | Uses NativeAnalysisResult.assignments |
-| AI-03 | `test_analyzer_alias_per_file` | unit | Each file gets its own graph |
-| AI-04 | `test_analyzer_alias_scope_preserved` | unit | scope_path flows through |
-| AI-05 | `test_analyzer_alias_no_cross_file` | unit | Aliases don't leak across files |
+| AI-01 | `test_analyzer_alias_graph_populated` | unit | FileAnalysis.alias_graph not empty for code with aliases |
+| AI-02 | `test_analyzer_alias_from_assignments` | unit | Graph built from NativeAnalysisResult.assignments |
+| AI-03 | `test_analyzer_alias_per_file` | unit | Each file gets its own graph in analyze_files |
+| AI-04 | `test_analyzer_alias_scope_preserved` | unit | scope_path from assignments flows to AliasInfo |
+| AI-05 | `test_analyzer_alias_no_cross_file` | unit | Aliases in file A don't appear in file B's graph |
 
-- [ ] unit test: `test_analyzer_alias_graph_populated` - alias_graph field set
-- [ ] unit test: `test_analyzer_alias_from_assignments` - built from assignments data
-- [ ] unit test: `test_analyzer_alias_per_file` - fresh graph per file
-- [ ] unit test: `test_analyzer_alias_scope_preserved` - scope_path correctly populated
-- [ ] unit test: `test_analyzer_alias_no_cross_file` - no cross-file leakage
+- [x] AI-01: `test_analyzer_alias_graph_populated` - Input: `"bar = 1\nb = bar"`, assert alias_graph has "b" aliasing "bar"
+- [x] AI-02: `test_analyzer_alias_from_assignments` - Input: `"x = MyClass()\ny = x"`, assert constructor not tracked, variable is
+- [x] AI-03: `test_analyzer_alias_per_file` - Two files with same names, each has distinct alias_graph
+- [x] AI-04: `test_analyzer_alias_scope_preserved` - Input: `"def foo():\n    b = bar"`, assert scope_path contains function
+- [x] AI-05: `test_analyzer_alias_no_cross_file` - File A has `b = bar`, File B's graph has no entries from A
 
-**Checkpoint:** `cargo nextest run -p tugtool-python analyzer`
+##### Checkpoint
+
+```bash
+# Run analyzer tests (including new alias integration tests)
+cargo nextest run -p tugtool-python analyzer
+
+# Run all tugtool-python tests to ensure no regressions
+cargo nextest run -p tugtool-python
+
+# Verify no clippy warnings
+cargo clippy -p tugtool-python -- -D warnings
+
+# Verify formatting
+cargo fmt -p tugtool-python -- --check
+```
+
+All 5 new tests (AI-01 through AI-05) should pass.
+
+##### Integration Notes for Subsequent Steps
+
+**Step 11 (Alias Output Types):** Will define `AliasOutput` in `tugtool-core/src/output.rs` for JSON serialization. No changes needed to analyzer.rs.
+
+**Step 12 (Wire to Impact Analysis):** Will access `FileAnalysis.alias_graph` from rename impact analysis to query `transitive_aliases(symbol_name, Some(scope_path), None)` and convert results to `AliasOutput`.
 
 ---
 

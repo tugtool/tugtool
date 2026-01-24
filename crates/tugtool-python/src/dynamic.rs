@@ -200,10 +200,7 @@ pub fn analyze_dynamic_patterns(
             file: file_path.to_string(),
             line: pattern.line.unwrap_or(0),
             col: pattern.col.unwrap_or(0),
-            span: pattern
-                .span
-                .as_ref()
-                .map(|s| Span::new(s.start as u64, s.end as u64)),
+            span: pattern.span.as_ref().map(|s| Span::new(s.start, s.end)),
         };
 
         let warning = DynamicWarning {
@@ -335,8 +332,8 @@ pub fn collect_dynamic_warnings(
                     literal_name: p.attribute_name,
                     pattern_text: Some(p.description),
                     span: p.span.map(|s| crate::types::SpanInfo {
-                        start: s.start as usize,
-                        end: s.end as usize,
+                        start: s.start,
+                        end: s.end,
                     }),
                     line: p.line,
                     col: p.col,

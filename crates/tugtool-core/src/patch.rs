@@ -93,9 +93,9 @@ impl fmt::Display for FileId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     /// Start byte offset (inclusive).
-    pub start: u64,
+    pub start: usize,
     /// End byte offset (exclusive).
-    pub end: u64,
+    pub end: usize,
 }
 
 impl Span {
@@ -103,7 +103,7 @@ impl Span {
     ///
     /// # Panics
     /// Panics if `start > end`.
-    pub fn new(start: u64, end: u64) -> Self {
+    pub fn new(start: usize, end: usize) -> Self {
         assert!(
             start <= end,
             "Span start ({}) must be <= end ({})",
@@ -114,7 +114,7 @@ impl Span {
     }
 
     /// Length of the span in bytes.
-    pub fn len(&self) -> u64 {
+    pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
 
@@ -247,7 +247,7 @@ pub enum AnchorResolution {
     /// Context search found multiple matches (ambiguous).
     Ambiguous { matches: Vec<Span> },
     /// Span is out of bounds for the file content.
-    OutOfBounds { span: Span, file_len: u64 },
+    OutOfBounds { span: Span, file_len: usize },
 }
 
 impl Anchor {
@@ -261,15 +261,15 @@ impl Anchor {
                 expected_before_hash,
             } => {
                 // Check bounds
-                if span.end as usize > content.len() {
+                if span.end > content.len() {
                     return AnchorResolution::OutOfBounds {
                         span: *span,
-                        file_len: content.len() as u64,
+                        file_len: content.len(),
                     };
                 }
 
                 // Verify hash
-                let slice = &content[span.start as usize..span.end as usize];
+                let slice = &content[span.start..span.end];
                 let actual_hash = ContentHash::compute(slice);
                 if &actual_hash != expected_before_hash {
                     return AnchorResolution::HashMismatch {
@@ -292,15 +292,15 @@ impl Anchor {
                 // Build the pattern to search for: prefix + target + suffix
                 // We need to find where prefix ends and suffix begins
 
-                let target_len = approx_span.len() as usize;
+                let target_len = approx_span.len();
                 let prefix_bytes = prefix_context.as_bytes();
                 let suffix_bytes = suffix_context.as_bytes();
 
                 // Calculate search bounds
                 let search_start =
-                    (approx_span.start as usize).saturating_sub(*search_window as usize);
+                    (approx_span.start).saturating_sub(*search_window as usize);
                 let search_end = std::cmp::min(
-                    (approx_span.end as usize).saturating_add(*search_window as usize),
+                    (approx_span.end).saturating_add(*search_window as usize),
                     content.len(),
                 );
 
@@ -358,13 +358,13 @@ impl Anchor {
                     }
 
                     // Found a potential match
-                    let actual_start = (search_start + target_start) as u64;
-                    let actual_end = (search_start + target_end) as u64;
+                    let actual_start = search_start + target_start;
+                    let actual_end = search_start + target_end;
                     let found_span = Span::new(actual_start, actual_end);
 
                     // If we have an expected hash, verify it
                     if let Some(expected_hash) = expected_before_hash {
-                        let target_bytes = &content[actual_start as usize..actual_end as usize];
+                        let target_bytes = &content[actual_start..actual_end];
                         let actual_hash = ContentHash::compute(target_bytes);
                         if &actual_hash != expected_hash {
                             search_pos = i + 1;
@@ -461,7 +461,7 @@ pub enum Conflict {
     SpanOutOfBounds {
         file_id: FileId,
         span: Span,
-        file_len: u64,
+        file_len: usize,
     },
 
     /// File not found in context.
@@ -879,8 +879,8 @@ impl PatchSet {
             file_edits.sort_by(|a, b| b.0.start.cmp(&a.0.start));
 
             for (span, edit) in file_edits {
-                let start = span.start as usize;
-                let end = span.end as usize;
+                let start = span.start;
+                let end = span.end;
 
                 match edit.kind {
                     EditKind::Insert => {
@@ -967,8 +967,8 @@ impl PatchSet {
             let span = edit.span();
 
             let (old_text, line, col) = if let Some(content) = content {
-                let old_bytes = if (span.end as usize) <= content.len() {
-                    &content[span.start as usize..span.end as usize]
+                let old_bytes = if (span.end) <= content.len() {
+                    &content[span.start..span.end]
                 } else {
                     &[]
                 };
@@ -1379,7 +1379,7 @@ mod tests {
 
             match anchor.resolve(&content) {
                 AnchorResolution::OutOfBounds { file_len, .. } => {
-                    assert_eq!(file_len, content.len() as u64);
+                    assert_eq!(file_len, content.len());
                 }
                 other => panic!("Expected OutOfBounds, got {:?}", other),
             }
@@ -1398,7 +1398,7 @@ mod tests {
 
             match anchor.resolve(&content) {
                 AnchorResolution::Resolved(span) => {
-                    let found = &content[span.start as usize..span.end as usize];
+                    let found = &content[span.start..span.end];
                     assert_eq!(found, b"TARGET");
                 }
                 other => panic!("Expected Resolved, got {:?}", other),
@@ -2342,7 +2342,7 @@ mod tests {
                         } => {
                             assert_eq!(oob_file, &file_id);
                             assert_eq!(span.end, 100);
-                            assert_eq!(*file_len, content.len() as u64);
+                            assert_eq!(*file_len, content.len());
                         }
                         other => panic!("Expected SpanOutOfBounds, got {:?}", other),
                     }

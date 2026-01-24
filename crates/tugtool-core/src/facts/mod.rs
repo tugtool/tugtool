@@ -553,7 +553,7 @@ impl ScopeInfo {
     }
 
     /// Check if a byte position is within this scope.
-    pub fn contains_position(&self, position: u64) -> bool {
+    pub fn contains_position(&self, position: usize) -> bool {
         position >= self.span.start && position < self.span.end
     }
 }
@@ -1020,7 +1020,7 @@ impl FactsStore {
     ///
     /// Returns the most specific (innermost) scope that contains the position,
     /// or None if no scope contains it.
-    pub fn scope_at_position(&self, file_id: FileId, position: u64) -> Option<&ScopeInfo> {
+    pub fn scope_at_position(&self, file_id: FileId, position: usize) -> Option<&ScopeInfo> {
         let scopes = self.scopes_in_file(file_id);
 
         // Find all scopes containing the position
@@ -1189,14 +1189,14 @@ mod tests {
         )
     }
 
-    fn test_symbol(store: &mut FactsStore, name: &str, file_id: FileId, start: u64) -> Symbol {
+    fn test_symbol(store: &mut FactsStore, name: &str, file_id: FileId, start: usize) -> Symbol {
         let symbol_id = store.next_symbol_id();
         Symbol::new(
             symbol_id,
             SymbolKind::Function,
             name,
             file_id,
-            Span::new(start, start + name.len() as u64),
+            Span::new(start, start + name.len()),
         )
     }
 
@@ -1204,8 +1204,8 @@ mod tests {
         store: &mut FactsStore,
         symbol_id: SymbolId,
         file_id: FileId,
-        start: u64,
-        end: u64,
+        start: usize,
+        end: usize,
     ) -> Reference {
         let ref_id = store.next_reference_id();
         Reference::new(
@@ -1909,7 +1909,7 @@ mod tests {
                 let scope = ScopeInfo::new(
                     scope_id,
                     file_id,
-                    Span::new((i * 10) as u64, ((i + 1) * 10) as u64),
+                    Span::new(i * 10, (i + 1) * 10),
                     *kind,
                 );
                 store.insert_scope(scope);

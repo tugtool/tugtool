@@ -62,7 +62,7 @@ struct GoldenScope {
     kind: String,
     name: Option<String>,
     parent: Option<String>,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
     globals: Vec<String>,
     nonlocals: Vec<String>,
 }
@@ -73,14 +73,14 @@ struct GoldenBinding {
     name: String,
     kind: String,
     scope_path: Vec<String>,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 /// Serializable reference info for golden file comparison.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct GoldenReference {
     kind: String,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 /// Serializable import info for golden file comparison.
@@ -92,7 +92,7 @@ struct GoldenImport {
     names: Option<Vec<GoldenImportedName>>,
     is_star: bool,
     relative_level: usize,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,7 +109,7 @@ struct GoldenAnnotation {
     annotation_kind: String,
     source_kind: String,
     scope_path: Vec<String>,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 /// Serializable inheritance info for golden file comparison.
@@ -118,7 +118,7 @@ struct GoldenInheritance {
     name: String,
     bases: Vec<String>,
     scope_path: Vec<String>,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 /// Serializable method call info for golden file comparison.
@@ -127,7 +127,7 @@ struct GoldenMethodCall {
     receiver: String,
     method: String,
     scope_path: Vec<String>,
-    method_span: Option<(u64, u64)>,
+    method_span: Option<(usize, usize)>,
 }
 
 /// Serializable type inference info for golden file comparison.
@@ -139,7 +139,7 @@ struct GoldenTypeInference {
     rhs_name: Option<String>,
     callee_name: Option<String>,
     scope_path: Vec<String>,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 /// Serializable dynamic pattern info for golden file comparison.
@@ -149,7 +149,7 @@ struct GoldenDynamicPattern {
     description: String,
     attribute_name: Option<String>,
     scope_path: Vec<String>,
-    span: Option<(u64, u64)>,
+    span: Option<(usize, usize)>,
 }
 
 // =============================================================================

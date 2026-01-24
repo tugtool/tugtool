@@ -15,6 +15,8 @@ use std::collections::HashMap;
 // ============================================================================
 
 /// Span information representing a byte range in source code.
+///
+/// Uses `usize` for consistency with `tugtool_core::patch::Span`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpanInfo {
     pub start: usize,

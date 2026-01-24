@@ -56,7 +56,7 @@ impl RenameRequest {
     }
 
     /// Create a new rename request from byte offsets.
-    pub fn from_offsets(start: u64, end: u64, new_name: impl Into<String>) -> Self {
+    pub fn from_offsets(start: usize, end: usize, new_name: impl Into<String>) -> Self {
         Self {
             span: Span::new(start, end),
             new_name: new_name.into(),
@@ -68,7 +68,7 @@ impl RenameRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenameError {
     /// A span extends beyond the source text length.
-    SpanOutOfBounds { span: Span, source_len: u64 },
+    SpanOutOfBounds { span: Span, source_len: usize },
     /// Two spans overlap, which is not allowed.
     OverlappingSpans { span1: Span, span2: Span },
     /// Empty request list (nothing to rename).
@@ -149,7 +149,7 @@ impl<'src> RenameTransformer<'src> {
             return Err(RenameError::EmptyRequests);
         }
 
-        let source_len = self.source.len() as u64;
+        let source_len = self.source.len();
 
         // Validate all spans are within bounds
         for request in &self.requests {
@@ -184,15 +184,12 @@ impl<'src> RenameTransformer<'src> {
         // Apply renames in reverse order (from end to start)
         let mut result = self.source.to_string();
         for request in &self.requests {
-            let start = request.span.start as usize;
-            let end = request.span.end as usize;
-
             // Replace the span with the new name
             result = format!(
                 "{}{}{}",
-                &result[..start],
+                &result[..request.span.start],
                 &request.new_name,
-                &result[end..]
+                &result[request.span.end..]
             );
         }
 
@@ -215,14 +212,11 @@ impl<'src> RenameTransformer<'src> {
         // Apply renames
         let mut result = self.source.to_string();
         for request in &self.requests {
-            let start = request.span.start as usize;
-            let end = request.span.end as usize;
-
             result = format!(
                 "{}{}{}",
-                &result[..start],
+                &result[..request.span.start],
                 &request.new_name,
-                &result[end..]
+                &result[request.span.end..]
             );
         }
 
@@ -413,8 +407,8 @@ mod tests {
         let start = 4;
         let end = start + "函数".len();
         let requests = vec![RenameRequest::from_offsets(
-            start as u64,
-            end as u64,
+            start,
+            end,
             "func",
         )];
 
@@ -432,8 +426,8 @@ mod tests {
         let emoji_start = source.find('🎉').unwrap();
         let emoji_end = emoji_start + '🎉'.len_utf8();
         let requests = vec![RenameRequest::from_offsets(
-            emoji_start as u64,
-            emoji_end as u64,
+            emoji_start,
+            emoji_end,
             "party",
         )];
 

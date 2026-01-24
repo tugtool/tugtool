@@ -886,7 +886,7 @@ mod tests {
         // Verify the span text matches the binding name
         for b in &bindings {
             if let Some(span) = b.span {
-                let text = &source[span.start as usize..span.end as usize];
+                let text = &source[span.start..span.end];
                 assert_eq!(
                     text, b.name,
                     "Span text should match binding name for '{}'",

@@ -43,8 +43,8 @@ use crate::patch::Span;
 ///
 /// A `(line, col)` tuple where both are 1-indexed.
 /// If `offset` exceeds content length, returns position at end of content.
-pub fn byte_offset_to_position(content: &[u8], offset: u64) -> (u32, u32) {
-    let offset = (offset as usize).min(content.len());
+pub fn byte_offset_to_position(content: &[u8], offset: usize) -> (u32, u32) {
+    let offset = offset.min(content.len());
     let mut line = 1u32;
     let mut col = 1u32;
 
@@ -77,7 +77,7 @@ pub fn byte_offset_to_position(content: &[u8], offset: u64) -> (u32, u32) {
 ///
 /// The byte offset. If the position is beyond the content,
 /// returns the content length.
-pub fn position_to_byte_offset(content: &[u8], line: u32, col: u32) -> u64 {
+pub fn position_to_byte_offset(content: &[u8], line: u32, col: u32) -> usize {
     let line = line.max(1);
     let col = col.max(1);
 
@@ -93,7 +93,7 @@ pub fn position_to_byte_offset(content: &[u8], line: u32, col: u32) -> u64 {
                 .map(|p| i + p)
                 .unwrap_or(content.len());
             let max_offset = line_end - i;
-            return (i + offset_in_line.min(max_offset)) as u64;
+            return i + offset_in_line.min(max_offset);
         }
         if byte == b'\n' {
             current_line += 1;
@@ -101,7 +101,7 @@ pub fn position_to_byte_offset(content: &[u8], line: u32, col: u32) -> u64 {
     }
 
     // Line not found - return end of content
-    content.len() as u64
+    content.len()
 }
 
 // ============================================================================
@@ -121,8 +121,8 @@ pub fn position_to_byte_offset(content: &[u8], line: u32, col: u32) -> u64 {
 /// # Returns
 ///
 /// A `(line, col)` tuple where both are 1-indexed.
-pub fn byte_offset_to_position_str(content: &str, offset: u64) -> (u32, u32) {
-    let target = offset as usize;
+pub fn byte_offset_to_position_str(content: &str, offset: usize) -> (u32, u32) {
+    let target = offset;
     let mut line = 1u32;
     let mut col = 1u32;
     let mut current_offset = 0usize;
@@ -156,7 +156,7 @@ pub fn byte_offset_to_position_str(content: &str, offset: u64) -> (u32, u32) {
 /// # Returns
 ///
 /// The byte offset into the string.
-pub fn position_to_byte_offset_str(content: &str, line: u32, col: u32) -> u64 {
+pub fn position_to_byte_offset_str(content: &str, line: u32, col: u32) -> usize {
     let line = line.max(1);
     let col = col.max(1);
 
@@ -168,7 +168,7 @@ pub fn position_to_byte_offset_str(content: &str, line: u32, col: u32) -> u64 {
             let mut current_col = 1u32;
             for (j, c) in content[i..].char_indices() {
                 if current_col == col {
-                    return (i + j) as u64;
+                    return i + j;
                 }
                 if c == '\n' {
                     break;
@@ -180,7 +180,7 @@ pub fn position_to_byte_offset_str(content: &str, line: u32, col: u32) -> u64 {
                 .find('\n')
                 .map(|p| i + p)
                 .unwrap_or(content.len());
-            return line_end as u64;
+            return line_end;
         }
         if ch == '\n' {
             current_line += 1;
@@ -188,7 +188,7 @@ pub fn position_to_byte_offset_str(content: &str, line: u32, col: u32) -> u64 {
     }
 
     // Line not found - return end of content
-    content.len() as u64
+    content.len()
 }
 
 // ============================================================================
@@ -210,10 +210,8 @@ pub fn span_to_line_range(content: &[u8], span: &Span) -> (u32, u32) {
 ///
 /// Returns `None` if the span extends beyond content bounds.
 pub fn extract_span<'a>(content: &'a [u8], span: &Span) -> Option<&'a [u8]> {
-    let start = span.start as usize;
-    let end = span.end as usize;
-    if end <= content.len() {
-        Some(&content[start..end])
+    if span.end <= content.len() {
+        Some(&content[span.start..span.end])
     } else {
         None
     }
@@ -223,9 +221,7 @@ pub fn extract_span<'a>(content: &'a [u8], span: &Span) -> Option<&'a [u8]> {
 ///
 /// Returns `None` if the span extends beyond content bounds or contains invalid UTF-8.
 pub fn extract_span_str<'a>(content: &'a str, span: &Span) -> Option<&'a str> {
-    let start = span.start as usize;
-    let end = span.end as usize;
-    content.get(start..end)
+    content.get(span.start..span.end)
 }
 
 // ============================================================================
@@ -236,7 +232,7 @@ pub fn extract_span_str<'a>(content: &'a str, span: &Span) -> Option<&'a str> {
 ///
 /// Returns the offset of the first character on the given 1-indexed line.
 /// Returns `None` if the line doesn't exist or has no content.
-pub fn line_start_offset(content: &[u8], line: u32) -> Option<u64> {
+pub fn line_start_offset(content: &[u8], line: u32) -> Option<usize> {
     if line == 0 {
         return None;
     }
@@ -251,7 +247,7 @@ pub fn line_start_offset(content: &[u8], line: u32) -> Option<u64> {
             if current_line == line {
                 // Check if there's content after this newline
                 if i + 1 < content.len() {
-                    return Some((i + 1) as u64);
+                    return Some(i + 1);
                 } else {
                     return None; // Line exists but has no content (trailing newline)
                 }
@@ -307,10 +303,10 @@ mod tests {
         fn roundtrip_byte_based() {
             let content = b"def foo():\n    pass\n";
             for offset in 0..content.len() {
-                let (line, col) = byte_offset_to_position(content, offset as u64);
+                let (line, col) = byte_offset_to_position(content, offset);
                 let recovered = position_to_byte_offset(content, line, col);
                 assert_eq!(
-                    recovered, offset as u64,
+                    recovered, offset,
                     "roundtrip failed for offset {}: got line={}, col={}, recovered={}",
                     offset, line, col, recovered
                 );
@@ -364,10 +360,10 @@ mod tests {
         fn roundtrip_str_based() {
             let content = "line1\nline2\nline3\n";
             for offset in 0..content.len() {
-                let (line, col) = byte_offset_to_position_str(content, offset as u64);
+                let (line, col) = byte_offset_to_position_str(content, offset);
                 let recovered = position_to_byte_offset_str(content, line, col);
                 assert_eq!(
-                    recovered, offset as u64,
+                    recovered, offset,
                     "roundtrip failed for offset {}: got line={}, col={}, recovered={}",
                     offset, line, col, recovered
                 );

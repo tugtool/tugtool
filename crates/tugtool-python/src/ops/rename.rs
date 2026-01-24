@@ -231,7 +231,7 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
     for binding in &analysis.bindings {
         if binding.name == old_name {
             if let Some(ref span_info) = binding.span {
-                let span = Span::new(span_info.start as u64, span_info.end as u64);
+                let span = Span::new(span_info.start, span_info.end);
                 rewrites.push((span, new_name.to_string()));
             }
         }
@@ -242,7 +242,7 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
         if name == old_name {
             for ref_info in refs {
                 if let Some(ref span_info) = ref_info.span {
-                    let span = Span::new(span_info.start as u64, span_info.end as u64);
+                    let span = Span::new(span_info.start, span_info.end);
                     // Avoid duplicates
                     if !rewrites
                         .iter()
@@ -304,18 +304,18 @@ pub fn collect_rename_edits(
     let analysis = cst_bridge::parse_and_analyze(content)?;
 
     let mut edits: Vec<NativeRenameEdit> = Vec::new();
-    let mut seen_spans: HashSet<(u64, u64)> = HashSet::new();
+    let mut seen_spans: HashSet<(usize, usize)> = HashSet::new();
 
     // Collect edits from bindings
     for binding in &analysis.bindings {
         if binding.name == old_name {
             if let Some(ref span_info) = binding.span {
-                let span = Span::new(span_info.start as u64, span_info.end as u64);
+                let span = Span::new(span_info.start, span_info.end);
                 let key = (span.start, span.end);
                 if seen_spans.insert(key) {
                     let (line, col) = byte_offset_to_position_str(content, span.start);
                     let old_text = content
-                        .get(span.start as usize..span.end as usize)
+                        .get(span.start..span.end)
                         .unwrap_or(old_name)
                         .to_string();
                     edits.push(NativeRenameEdit {
@@ -335,12 +335,12 @@ pub fn collect_rename_edits(
         if name == old_name {
             for ref_info in refs {
                 if let Some(ref span_info) = ref_info.span {
-                    let span = Span::new(span_info.start as u64, span_info.end as u64);
+                    let span = Span::new(span_info.start, span_info.end);
                     let key = (span.start, span.end);
                     if seen_spans.insert(key) {
                         let (line, col) = byte_offset_to_position_str(content, span.start);
                         let old_text = content
-                            .get(span.start as usize..span.end as usize)
+                            .get(span.start..span.end)
                             .unwrap_or(old_name)
                             .to_string();
                         edits.push(NativeRenameEdit {
@@ -366,7 +366,7 @@ pub fn collect_rename_edits(
                 if seen_spans.insert(key) {
                     let (line, col) = byte_offset_to_position_str(content, span.start);
                     let old_text = content
-                        .get(span.start as usize..span.end as usize)
+                        .get(span.start..span.end)
                         .unwrap_or(old_name)
                         .to_string();
                     edits.push(NativeRenameEdit {
@@ -505,7 +505,7 @@ pub fn analyze_impact(
     }
 
     // Deduplicate edits by (file_id, span)
-    let mut seen_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
+    let mut seen_spans: HashSet<(FileId, usize, usize)> = HashSet::new();
     all_edits.retain(|(file_id, span, _)| seen_spans.insert((*file_id, span.start, span.end)));
 
     // Build reference info
@@ -644,7 +644,7 @@ pub fn run(
     }
 
     // Deduplicate edits by (file_id, span)
-    let mut seen_spans: HashSet<(FileId, u64, u64)> = HashSet::new();
+    let mut seen_spans: HashSet<(FileId, usize, usize)> = HashSet::new();
     all_edits.retain(|(file_id, span)| seen_spans.insert((*file_id, span.start, span.end)));
 
     // Build a map from file path to content for span validation
@@ -669,8 +669,8 @@ pub fn run(
 
         // Get the text at the span and verify it matches the old name
         if let Some(content) = file_contents.get(&file.path) {
-            let start = span.start as usize;
-            let end = span.end as usize;
+            let start = span.start;
+            let end = span.end;
             if end <= content.len() {
                 let text_at_span = &content[start..end];
                 // Only include edits where the text matches the old name
@@ -733,8 +733,8 @@ pub fn run(
 
         let mut new_content = content.clone();
         for (span, replacement) in &sorted_edits {
-            let start = span.start as usize;
-            let end = span.end as usize;
+            let start = span.start;
+            let end = span.end;
             let old_text = &content[start..end];
             let (line, col) = byte_offset_to_position_str(&content, span.start);
 
@@ -792,8 +792,8 @@ pub fn run(
 
             let mut new_content = content.clone();
             for (span, replacement) in &sorted_edits {
-                let start = span.start as usize;
-                let end = span.end as usize;
+                let start = span.start;
+                let end = span.end;
                 new_content = format!(
                     "{}{}{}",
                     &new_content[..start],
@@ -951,7 +951,7 @@ mod tests {
             for line in 1..=2u32 {
                 for col in 1..=10u32 {
                     let offset = position_to_byte_offset_str(content, line, col);
-                    if (offset as usize) < content.len() {
+                    if offset < content.len() {
                         let (l, _c) = byte_offset_to_position_str(content, offset);
                         // Note: roundtrip may differ due to col clamping
                         assert!(l <= line);
@@ -1182,7 +1182,7 @@ def foo():
 
             // Find the __all__ export edit
             let export_edit = edits.iter().find(|e| {
-                let span_text = &content[e.span.start as usize..e.span.end as usize];
+                let span_text = &content[e.span.start..e.span.end];
                 span_text == "foo" && e.line == 1 // __all__ is on line 1
             });
             assert!(

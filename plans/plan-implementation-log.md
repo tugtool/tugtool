@@ -6,6 +6,67 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [infrastructure] Standardize Span Types on usize | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**Context:**
+During Phase 10 Step 10 work, a type inconsistency was identified: `Span` used `u64` for byte offsets while Rust's string/slice APIs use `usize`. This caused ~130 casts scattered throughout the codebase. User requested standardization on `usize` to eliminate all casting overhead.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Change `Span` struct from u64 to usize | Done |
+| Remove helper methods (start_usize, end_usize, len_usize, slice_bytes, slice_str) | Done |
+| Update SpanInfo in tugtool-python | Done |
+| Update Location struct in tugtool-core | Done |
+| Update all byte offset functions in text.rs | Done |
+| Propagate usize throughout tugtool-python-cst | Done |
+| Update error variants (file_len fields) | Done |
+| Fix test assertions | Done |
+| Code-architect audit for completeness | Done |
+| Clean up vestigial no-op casts | Done |
+
+**Files Modified:**
+
+Core types changed from u64 to usize:
+- `crates/tugtool-core/src/patch.rs` - `Span` struct (start, end), error variants (`OutOfBounds`, `SpanOutOfBounds` file_len fields)
+- `crates/tugtool-core/src/text.rs` - All byte offset functions (`byte_offset_to_position`, `position_to_byte_offset`, `line_start_offset`)
+- `crates/tugtool-core/src/types.rs` - `Location` struct (byte_start, byte_end)
+- `crates/tugtool-python/src/types.rs` - `SpanInfo` struct
+- `crates/tugtool-core/src/facts/mod.rs` - Position query methods
+
+Python CST types and functions:
+- `crates/tugtool-python-cst/src/visitor/rename.rs` - `RenameEntry::from_offsets()`, error variants
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - `deflated_expression_end_pos()`, `deflated_expression_start_pos()` return types; removed `.byte_idx() as u64` casts
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Removed `.byte_idx() as u64` casts
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Removed no-op casts
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - Removed no-op casts
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - Removed no-op casts
+
+Test files updated:
+- `crates/tugtool-core/src/patch.rs` (tests) - Updated assertions
+- `crates/tugtool/tests/golden_tests.rs` - Changed `Option<(u64, u64)>` to `Option<(usize, usize)>`
+- Various other test files with u64 literals → usize
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1318 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS (all 1318 tests pass)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo fmt --all -- --check`: PASS
+
+**Key Decisions/Notes:**
+- **32-bit platform concern dismissed**: User explicitly stated "WHAT 32-bit platforms? Seriously. There are none I care about."
+- **Cast elimination**: Removed ~130 `as usize` / `as u64` casts throughout the codebase
+- **Helper method removal**: `Span::start_usize()`, `end_usize()`, `len_usize()`, `slice_bytes()`, `slice_str()` were all removed as they became trivial after the change
+- **Code-architect audit**: Performed full audit to find vestigial no-op casts like `span.start as usize` that remained after initial implementation
+- **Two-phase implementation**: First changed types and fixed compilation errors; second phase cleaned up no-op casts found by audit
+
+---
+
 ## [phase-10.md] Step 9: AliasGraph Module | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

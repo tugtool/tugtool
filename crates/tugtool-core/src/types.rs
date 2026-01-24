@@ -29,10 +29,10 @@ pub struct Location {
     pub col: u32,
     /// Byte offset from file start (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub byte_start: Option<u64>,
+    pub byte_start: Option<usize>,
     /// Byte offset end, exclusive (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub byte_end: Option<u64>,
+    pub byte_end: Option<usize>,
 }
 
 impl Location {
@@ -48,7 +48,7 @@ impl Location {
     }
 
     /// Create a location with byte start offset (byte_end computed from name length).
-    pub fn with_byte_start(file: impl Into<String>, line: u32, col: u32, byte_start: u64) -> Self {
+    pub fn with_byte_start(file: impl Into<String>, line: u32, col: u32, byte_start: usize) -> Self {
         Location {
             file: file.into(),
             line,
@@ -63,8 +63,8 @@ impl Location {
         file: impl Into<String>,
         line: u32,
         col: u32,
-        byte_start: u64,
-        byte_end: u64,
+        byte_start: usize,
+        byte_end: usize,
     ) -> Self {
         Location {
             file: file.into(),
@@ -95,8 +95,8 @@ impl Location {
     pub fn with_line_col(
         file: impl Into<String>,
         content: &str,
-        byte_start: u64,
-        byte_end: Option<u64>,
+        byte_start: usize,
+        byte_end: Option<usize>,
     ) -> Self {
         let (line, col) = byte_offset_to_position_str(content, byte_start);
         Location {
@@ -183,8 +183,8 @@ impl SymbolInfo {
         file: &str,
         line: u32,
         col: u32,
-        byte_start: u64,
-        byte_end: u64,
+        byte_start: usize,
+        byte_end: usize,
         container: Option<String>,
     ) -> Self {
         SymbolInfo {

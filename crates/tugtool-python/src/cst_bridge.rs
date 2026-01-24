@@ -125,8 +125,8 @@ pub struct NativeAnalysisResult {
 /// Convert a tugtool_core Span to SpanInfo.
 fn span_to_span_info(span: &Span) -> SpanInfo {
     SpanInfo {
-        start: span.start as usize,
-        end: span.end as usize,
+        start: span.start,
+        end: span.end,
     }
 }
 
@@ -163,8 +163,8 @@ impl From<CstScopeInfo> for ScopeInfo {
 
         // Preserve byte span for CoreScopeInfo construction in analyzer
         let byte_span = cst_scope.span.as_ref().map(|s| SpanInfo {
-            start: s.start as usize,
-            end: s.end as usize,
+            start: s.start,
+            end: s.end,
         });
 
         ScopeInfo {

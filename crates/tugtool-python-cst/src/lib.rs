@@ -1176,7 +1176,7 @@ mod test {
                     assert_eq!(ident_span.end, 3, "ident_span should end at 3 (exclusive)");
 
                     // Extract the text and verify it matches
-                    let ident_text = &source[ident_span.start as usize..ident_span.end as usize];
+                    let ident_text = &source[ident_span.start..ident_span.end];
                     assert_eq!(ident_text, "foo", "ident_span should cover 'foo'");
                 } else {
                     panic!("Expected Name");
@@ -1198,7 +1198,7 @@ mod test {
             let name_pos = positions.get(&name_id).expect("Name should have position");
 
             let ident_span = name_pos.ident_span.expect("Name should have ident_span");
-            let ident_text = &source[ident_span.start as usize..ident_span.end as usize];
+            let ident_text = &source[ident_span.start..ident_span.end];
             assert_eq!(ident_text, "my_func", "ident_span should cover 'my_func'");
         } else {
             panic!("Expected FunctionDef");
@@ -1311,7 +1311,7 @@ mod test {
                     assert_eq!(target_span.start, 0, "foo should start at byte 0");
                     assert_eq!(target_span.end, 3, "foo should end at byte 3");
                     assert_eq!(
-                        &source[target_span.start as usize..target_span.end as usize],
+                        &source[target_span.start..target_span.end],
                         "foo"
                     );
                 } else {
@@ -1331,7 +1331,7 @@ mod test {
                     assert_eq!(value_span.start, 6, "bar should start at byte 6");
                     assert_eq!(value_span.end, 9, "bar should end at byte 9");
                     assert_eq!(
-                        &source[value_span.start as usize..value_span.end as usize],
+                        &source[value_span.start..value_span.end],
                         "bar"
                     );
                 } else {

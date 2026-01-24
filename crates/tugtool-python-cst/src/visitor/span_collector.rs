@@ -190,7 +190,7 @@ mod tests {
         // Verify function name span is accurate
         // "foo" starts at byte 4 (after "def ")
         let has_foo_span = span_table.iter().any(|(_, span)| {
-            let text = &source[span.start as usize..span.end as usize];
+            let text = &source[span.start..span.end];
             text == "foo"
         });
         assert!(has_foo_span, "Should have span for 'foo'");
@@ -222,7 +222,7 @@ mod tests {
 
         // Find the span for "x"
         let x_span = span_table.iter().find(|(_, span)| {
-            let text = &source[span.start as usize..span.end as usize];
+            let text = &source[span.start..span.end];
             text == "x"
         });
         assert!(x_span.is_some(), "Should have span for 'x'");
@@ -243,7 +243,7 @@ mod tests {
 
         // Verify we have a span for the identifier 'x'
         let x_span = span_table.iter().find(|(_, span)| {
-            let text = &source[span.start as usize..span.end as usize];
+            let text = &source[span.start..span.end];
             text == "x"
         });
         assert!(x_span.is_some(), "Should have span for 'x'");
@@ -263,11 +263,11 @@ mod tests {
         let spans: Vec<_> = span_table.iter().collect();
 
         let x_span = spans.iter().find(|(_, span)| {
-            let text = &source[span.start as usize..span.end as usize];
+            let text = &source[span.start..span.end];
             text == "x"
         });
         let y_span = spans.iter().find(|(_, span)| {
-            let text = &source[span.start as usize..span.end as usize];
+            let text = &source[span.start..span.end];
             text == "y"
         });
 
@@ -290,13 +290,13 @@ mod tests {
         // Should have spans for function name and parameters
         let has_add = span_table
             .iter()
-            .any(|(_, span)| &source[span.start as usize..span.end as usize] == "add");
+            .any(|(_, span)| &source[span.start..span.end] == "add");
         let has_a = span_table
             .iter()
-            .any(|(_, span)| &source[span.start as usize..span.end as usize] == "a");
+            .any(|(_, span)| &source[span.start..span.end] == "a");
         let has_b = span_table
             .iter()
-            .any(|(_, span)| &source[span.start as usize..span.end as usize] == "b");
+            .any(|(_, span)| &source[span.start..span.end] == "b");
 
         assert!(has_add, "Should have span for 'add'");
         assert!(has_a, "Should have span for 'a'");
@@ -347,7 +347,7 @@ mod tests {
         // All three 'x' occurrences should have spans
         let x_spans: Vec<_> = span_table
             .iter()
-            .filter(|(_, span)| &source[span.start as usize..span.end as usize] == "x")
+            .filter(|(_, span)| &source[span.start..span.end] == "x")
             .collect();
 
         assert_eq!(x_spans.len(), 3, "Should have 3 distinct spans for 'x'");
@@ -375,7 +375,7 @@ mod tests {
         // All 'a' occurrences should have distinct spans
         let a_spans: Vec<_> = span_table
             .iter()
-            .filter(|(_, span)| &source[span.start as usize..span.end as usize] == "a")
+            .filter(|(_, span)| &source[span.start..span.end] == "a")
             .collect();
 
         assert!(
@@ -397,7 +397,7 @@ mod tests {
         // Find the span for "my_func"
         let func_span = span_table
             .iter()
-            .find(|(_, span)| &source[span.start as usize..span.end as usize] == "my_func");
+            .find(|(_, span)| &source[span.start..span.end] == "my_func");
 
         assert!(func_span.is_some(), "Should have span for 'my_func'");
         let (_, span) = func_span.unwrap();
@@ -452,7 +452,7 @@ mod tests {
 
             // Verify the span points to "foo"
             let span = span_table.span_of(name_id).unwrap();
-            let text = &source[span.start as usize..span.end as usize];
+            let text = &source[span.start..span.end];
             assert_eq!(text, "foo", "Name span should point to function name");
         } else {
             panic!("Expected FunctionDef as first statement");
@@ -482,7 +482,7 @@ mod tests {
 
                         // Verify the span points to "x"
                         let span = span_table.span_of(embedded_id).unwrap();
-                        let text = &source[span.start as usize..span.end as usize];
+                        let text = &source[span.start..span.end];
                         assert_eq!(text, "x", "Name span should point to identifier");
                         return;
                     }

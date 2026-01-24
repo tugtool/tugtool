@@ -186,10 +186,7 @@ impl AliasGraph {
             }
 
             // Build the span from assignment data
-            let alias_span = assignment
-                .span
-                .as_ref()
-                .map(|s| Span::new(s.start as u64, s.end as u64));
+            let alias_span = assignment.span.as_ref().map(|s| Span::new(s.start, s.end));
 
             // Check if source is an import
             let source_is_import = imports.contains(source_name);

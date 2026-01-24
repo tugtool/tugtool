@@ -873,21 +873,21 @@ impl<'r, 'a> Inflate<'a> for DeflatedFunctionDef<'r, 'a> {
         let lexical_start = self
             .async_tok
             .as_ref()
-            .map(|t| t.start_pos.byte_idx() as u64)
-            .unwrap_or_else(|| self.def_tok.start_pos.byte_idx() as u64);
+            .map(|t| t.start_pos.byte_idx())
+            .unwrap_or_else(|| self.def_tok.start_pos.byte_idx());
 
         let def_start = if !self.decorators.is_empty() {
             // First decorator's @ token marks the start of the definition
-            self.decorators[0].at_tok.start_pos.byte_idx() as u64
+            self.decorators[0].at_tok.start_pos.byte_idx()
         } else {
             lexical_start
         };
 
         // Compute scope end directly from our body suite (see [D10])
         let scope_end = match &self.body {
-            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx() as u64,
+            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
             DeflatedSuite::SimpleStatementSuite(suite) => {
-                suite.newline_tok.end_pos.byte_idx() as u64
+                suite.newline_tok.end_pos.byte_idx()
             }
         };
 
@@ -1817,20 +1817,20 @@ impl<'r, 'a> Inflate<'a> for DeflatedClassDef<'r, 'a> {
         // - lexical_start: where the scope begins (at 'class')
         // - def_start: where the extractable definition begins (at first decorator '@' if any)
         // - scope_end: where the scope ends (at dedent or end of single-line suite)
-        let lexical_start = self.class_tok.start_pos.byte_idx() as u64;
+        let lexical_start = self.class_tok.start_pos.byte_idx();
 
         let def_start = if !self.decorators.is_empty() {
             // First decorator's @ token marks the start of the definition
-            self.decorators[0].at_tok.start_pos.byte_idx() as u64
+            self.decorators[0].at_tok.start_pos.byte_idx()
         } else {
             lexical_start
         };
 
         // Compute scope end directly from our body suite (see [D10])
         let scope_end = match &self.body {
-            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx() as u64,
+            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
             DeflatedSuite::SimpleStatementSuite(suite) => {
-                suite.newline_tok.end_pos.byte_idx() as u64
+                suite.newline_tok.end_pos.byte_idx()
             }
         };
 

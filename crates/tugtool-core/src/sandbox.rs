@@ -824,7 +824,7 @@ impl RefactorReport {
                         .insert(file_path.clone(), file_edits.len());
 
                     for edit in file_edits {
-                        let span_len = edit.anchor.span().len() as usize;
+                        let span_len = edit.anchor.span().len();
                         let text_len = edit.text.len();
 
                         match edit.kind {

@@ -119,10 +119,7 @@ impl TypeTracker {
                 inferred_type: assignment.inferred_type.clone(),
                 rhs_name: assignment.rhs_name.clone(),
                 callee_name: assignment.callee_name.clone(),
-                span: assignment
-                    .span
-                    .as_ref()
-                    .map(|s| Span::new(s.start as u64, s.end as u64)),
+                span: assignment.span.as_ref().map(|s| Span::new(s.start, s.end)),
                 line: assignment.line,
             };
 
@@ -569,7 +566,7 @@ pub fn find_typed_method_references(
                     references.push(ResolvedMethodReference {
                         class_name: class_name.to_string(),
                         method_name: method_name.to_string(),
-                        span: Span::new(method_span.start as u64, method_span.end as u64),
+                        span: Span::new(method_span.start, method_span.end),
                         scope_path: call.scope_path.clone(),
                     });
                 }

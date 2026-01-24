@@ -320,12 +320,12 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
         if let Some(offset) = self.source[self.search_from..].find(value) {
             let start = self.search_from + offset;
             let full_span = Span {
-                start: start as u64,
-                end: (start + value.len()) as u64,
+                start,
+                end: start + value.len(),
             };
             let content_span = Span {
-                start: (start + prefix_len) as u64,
-                end: (start + value.len() - suffix_len) as u64,
+                start: start + prefix_len,
+                end: start + value.len() - suffix_len,
             };
             // Update search_from for next string in this list
             self.search_from = start + 1;
@@ -514,10 +514,10 @@ mod tests {
         assert_eq!(content_span.end, 16, "Content span should end at byte 16");
 
         // Verify the span content
-        let span_text = &source[span.start as usize..span.end as usize];
+        let span_text = &source[span.start..span.end];
         assert_eq!(span_text, "\"Date\"");
 
-        let content_text = &source[content_span.start as usize..content_span.end as usize];
+        let content_text = &source[content_span.start..content_span.end];
         assert_eq!(content_text, "Date");
     }
 

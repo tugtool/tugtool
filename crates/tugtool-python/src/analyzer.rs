@@ -16,6 +16,7 @@ use tugtool_core::facts::{
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
+use crate::alias::AliasGraph;
 use crate::type_tracker::TypeTracker;
 use crate::types::{BindingInfo, ScopeInfo};
 use std::collections::{HashMap, HashSet};
@@ -249,6 +250,8 @@ pub struct FileAnalysis {
     pub imports: Vec<LocalImport>,
     /// Exports (names in __all__) for star import expansion.
     pub exports: Vec<LocalExport>,
+    /// Value-level aliases in this file (e.g., `b = bar`).
+    pub alias_graph: AliasGraph,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -974,8 +977,8 @@ pub fn analyze_files(
                 rhs_name: a.rhs_name.clone(),
                 callee_name: a.callee_name.clone(),
                 span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                    start: s.start as usize,
-                    end: s.end as usize,
+                    start: s.start,
+                    end: s.end,
                 }),
                 line: a.line,
                 col: a.col,
@@ -993,8 +996,8 @@ pub fn analyze_files(
                 type_str: a.type_str.clone(),
                 scope_path: a.scope_path.clone(),
                 span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                    start: s.start as usize,
-                    end: s.end as usize,
+                    start: s.start,
+                    end: s.end,
                 }),
                 line: a.line,
                 col: a.col,
@@ -1211,10 +1214,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
             references.push(LocalReference {
                 name: name.clone(),
                 kind: reference_kind_from_str(&native_ref.kind),
-                span: native_ref
-                    .span
-                    .as_ref()
-                    .map(|s| Span::new(s.start as u64, s.end as u64)),
+                span: native_ref.span.as_ref().map(|s| Span::new(s.start, s.end)),
                 line: native_ref.line,
                 col: native_ref.col,
                 scope_id: ScopeId(0), // Will be resolved during scope analysis
@@ -1245,6 +1245,61 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         })
         .collect();
 
+    // Build imports set for AliasGraph
+    // Collect all names bound by imports (local names, not module paths).
+    // For `from x import y as z`, the bound name is `z` (or `y` if no alias).
+    // For `import foo as bar`, the bound name is `bar` (or last segment of module_path).
+    let imported_names: HashSet<String> = imports
+        .iter()
+        .flat_map(|imp| {
+            let mut names = Vec::new();
+            // Collect names from `from x import y, z` style imports
+            for imported in &imp.names {
+                // Use alias if present, otherwise use the original name
+                let bound_name = imported
+                    .alias
+                    .clone()
+                    .unwrap_or_else(|| imported.name.clone());
+                names.push(bound_name);
+            }
+            // For `import foo` or `import foo as bar`, use alias or last module segment
+            if imp.names.is_empty() && !imp.is_star {
+                if let Some(alias) = &imp.alias {
+                    names.push(alias.clone());
+                } else {
+                    // Extract the last segment of the module path (e.g., "os" from "os.path")
+                    if let Some(last) = imp.module_path.rsplit('.').next() {
+                        names.push(last.to_string());
+                    }
+                }
+            }
+            names
+        })
+        .collect();
+
+    // Convert CstAssignmentInfo to types::AssignmentInfo for AliasGraph
+    let types_assignments: Vec<crate::types::AssignmentInfo> = native_result
+        .assignments
+        .iter()
+        .map(|a| crate::types::AssignmentInfo {
+            target: a.target.clone(),
+            scope_path: a.scope_path.clone(),
+            type_source: a.type_source.as_str().to_string(),
+            inferred_type: a.inferred_type.clone(),
+            rhs_name: a.rhs_name.clone(),
+            callee_name: a.callee_name.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+        })
+        .collect();
+
+    // Build AliasGraph from assignments and imports
+    let alias_graph = AliasGraph::from_analysis(&types_assignments, &imported_names);
+
     Ok(FileAnalysis {
         file_id,
         path: path.to_string(),
@@ -1254,6 +1309,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         references,
         imports,
         exports,
+        alias_graph,
     })
 }
 
@@ -1276,10 +1332,7 @@ fn build_scopes(native_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, Sco
             let parent_id = ns.parent.as_ref().and_then(|p| scope_map.get(p).copied());
 
             // Convert byte_span from SpanInfo to Span
-            let span = ns
-                .byte_span
-                .as_ref()
-                .map(|s| Span::new(s.start as u64, s.end as u64));
+            let span = ns.byte_span.as_ref().map(|s| Span::new(s.start, s.end));
 
             let mut scope = Scope::new(
                 scope_id,
@@ -1337,10 +1390,7 @@ fn collect_symbols(bindings: &[BindingInfo], scopes: &[Scope]) -> Vec<LocalSymbo
             name: binding.name.clone(),
             kind,
             scope_id,
-            span: binding
-                .span
-                .as_ref()
-                .map(|s| Span::new(s.start as u64, s.end as u64)),
+            span: binding.span.as_ref().map(|s| Span::new(s.start, s.end)),
             line: binding.line,
             col: binding.col,
             container,
@@ -2947,7 +2997,7 @@ mod tests {
             assert_eq!(span.start, 0, "Module scope should start at byte 0");
             assert_eq!(
                 span.end,
-                source.len() as u64,
+                source.len(),
                 "Module scope should end at file length"
             );
         }
@@ -4595,8 +4645,8 @@ mod tests {
             file_id: u32,
             receiver: &str,
             receiver_type: Option<&str>,
-            span_start: u64,
-            span_end: u64,
+            span_start: usize,
+            span_end: usize,
         ) -> IndexedMethodCall {
             IndexedMethodCall {
                 file_id: FileId::new(file_id),
@@ -5276,6 +5326,163 @@ mod tests {
             let result = analyze_file(FileId::new(0), "test.py", content);
 
             assert!(result.is_err(), "should return error for invalid syntax");
+        }
+    }
+
+    // ========================================================================
+    // AliasGraph Integration Tests (Phase 10 Step 10)
+    // ========================================================================
+
+    mod alias_graph_tests {
+        use super::*;
+
+        /// AI-01: FileAnalysis.alias_graph not empty for code with aliases.
+        #[test]
+        fn test_analyzer_alias_graph_populated() {
+            let content = "bar = 1\nb = bar";
+            let result = analyze_file(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Verify alias_graph is populated
+            assert!(
+                !result.alias_graph.is_empty(),
+                "alias_graph should not be empty for code with aliases"
+            );
+
+            // Verify "b" aliases "bar"
+            let aliases = result.alias_graph.direct_aliases("bar");
+            assert!(!aliases.is_empty(), "should have aliases for 'bar'");
+            assert!(
+                aliases.iter().any(|a| a.alias_name == "b"),
+                "should have 'b' as alias for 'bar'"
+            );
+        }
+
+        /// AI-02: Graph built from NativeAnalysisResult.assignments.
+        /// Constructors are NOT tracked as aliases, only variable references.
+        #[test]
+        fn test_analyzer_alias_from_assignments() {
+            let content = "x = MyClass()\ny = x";
+            let result = analyze_file(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Constructor assignment (x = MyClass()) should NOT create an alias
+            // Variable assignment (y = x) SHOULD create an alias
+            let aliases_from_constructor = result.alias_graph.direct_aliases("MyClass");
+            assert!(
+                aliases_from_constructor.is_empty(),
+                "constructor should not create alias entries"
+            );
+
+            // y = x should create an alias relationship
+            let aliases_from_x = result.alias_graph.direct_aliases("x");
+            assert!(
+                aliases_from_x.iter().any(|a| a.alias_name == "y"),
+                "'y' should alias 'x' (variable reference)"
+            );
+        }
+
+        /// AI-03: Each file gets its own graph in analyze_files.
+        #[test]
+        fn test_analyzer_alias_per_file() {
+            let content_a = "x = 1\na = x";
+            let content_b = "x = 1\nb = x";
+
+            let result_a =
+                analyze_file(FileId::new(0), "a.py", content_a).expect("should analyze a.py");
+            let result_b =
+                analyze_file(FileId::new(1), "b.py", content_b).expect("should analyze b.py");
+
+            // Each file should have its own alias graph
+            let aliases_a = result_a.alias_graph.direct_aliases("x");
+            let aliases_b = result_b.alias_graph.direct_aliases("x");
+
+            // File A has 'a' aliasing 'x'
+            assert!(
+                aliases_a.iter().any(|a| a.alias_name == "a"),
+                "file A should have 'a' aliasing 'x'"
+            );
+            assert!(
+                !aliases_a.iter().any(|a| a.alias_name == "b"),
+                "file A should NOT have 'b' (from file B)"
+            );
+
+            // File B has 'b' aliasing 'x'
+            assert!(
+                aliases_b.iter().any(|a| a.alias_name == "b"),
+                "file B should have 'b' aliasing 'x'"
+            );
+            assert!(
+                !aliases_b.iter().any(|a| a.alias_name == "a"),
+                "file B should NOT have 'a' (from file A)"
+            );
+        }
+
+        /// AI-04: scope_path from assignments flows to AliasInfo.
+        #[test]
+        fn test_analyzer_alias_scope_preserved() {
+            let content = "bar = 1\ndef foo():\n    b = bar";
+            let result = analyze_file(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Check that the alias in function has correct scope_path
+            let aliases = result.alias_graph.direct_aliases("bar");
+
+            // Find the alias that's defined inside the function
+            let function_alias = aliases
+                .iter()
+                .find(|a| a.alias_name == "b" && a.scope_path.iter().any(|p| p.contains("foo")));
+
+            assert!(
+                function_alias.is_some(),
+                "alias 'b' should have scope_path containing 'foo'"
+            );
+        }
+
+        /// AI-05: Aliases in file A don't appear in file B's graph.
+        #[test]
+        fn test_analyzer_alias_no_cross_file() {
+            let content_a = "bar = 1\nb = bar";
+            let content_b = "x = 1\ny = x";
+
+            let result_a =
+                analyze_file(FileId::new(0), "a.py", content_a).expect("should analyze a.py");
+            let result_b =
+                analyze_file(FileId::new(1), "b.py", content_b).expect("should analyze b.py");
+
+            // File B's graph should have NO entries for 'bar'
+            let aliases_b_bar = result_b.alias_graph.direct_aliases("bar");
+            assert!(
+                aliases_b_bar.is_empty(),
+                "file B should have no aliases for 'bar' (which is in file A)"
+            );
+
+            // File A's graph should have NO entries for 'x'
+            let aliases_a_x = result_a.alias_graph.direct_aliases("x");
+            assert!(
+                aliases_a_x.is_empty(),
+                "file A should have no aliases for 'x' (which is in file B)"
+            );
+        }
+
+        /// Additional test: imported names are correctly marked.
+        #[test]
+        fn test_analyzer_alias_import_flag() {
+            let content = "from os import path\np = path";
+            let result = analyze_file(FileId::new(0), "test.py", content)
+                .expect("should analyze successfully");
+
+            // Check that 'path' is recognized as imported
+            let aliases = result.alias_graph.direct_aliases("path");
+
+            // Find the alias 'p'
+            let p_alias = aliases.iter().find(|a| a.alias_name == "p");
+            if let Some(alias) = p_alias {
+                assert!(
+                    alias.source_is_import,
+                    "'path' should be marked as an import"
+                );
+            }
         }
     }
 

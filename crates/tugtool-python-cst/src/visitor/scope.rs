@@ -273,7 +273,7 @@ impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
         // Module scope - spans from byte 0 to end of source
         let scope_id = self.generate_scope_id();
         let scope = ScopeInfo::new(scope_id.clone(), ScopeKind::Module, None, None)
-            .with_span(Some(Span::new(0, self.source_len as u64)));
+            .with_span(Some(Span::new(0, self.source_len)));
 
         self.scopes.push(scope);
         self.scope_stack.push(scope_id);
@@ -630,7 +630,7 @@ mod tests {
         assert_eq!(scopes[0].kind, ScopeKind::Module);
         let module_span = scopes[0].span.expect("Module should have span");
         assert_eq!(module_span.start, 0);
-        assert_eq!(module_span.end, source.len() as u64);
+        assert_eq!(module_span.end, source.len());
 
         // Function scope - lexical span should start at 'def', not '@'
         assert_eq!(scopes[1].kind, ScopeKind::Function);
@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(module_span.start, 0, "Module span should start at 0");
         assert_eq!(
             module_span.end,
-            source.len() as u64,
+            source.len(),
             "Module span should end at source length"
         );
     }
