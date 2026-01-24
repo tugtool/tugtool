@@ -1499,6 +1499,92 @@ mod tests {
             assert!(result.is_err(), "run should be removed");
         }
 
+        #[test]
+        fn test_no_analyze_impact_refs_in_main() {
+            // OR-03: No stale references to analyze-impact in main.rs
+            // Check production code only (before #[cfg(test)] module)
+            let main_source = include_str!("main.rs");
+            let production_code = main_source
+                .split("#[cfg(test)]")
+                .next()
+                .unwrap_or(main_source);
+
+            let lines_with_analyze_impact: Vec<_> = production_code
+                .lines()
+                .enumerate()
+                .filter(|(_, line)| {
+                    line.contains("analyze-impact") && !line.trim().starts_with("//!")
+                })
+                .collect();
+            assert!(
+                lines_with_analyze_impact.is_empty(),
+                "Found stale analyze-impact references in production code: {:?}",
+                lines_with_analyze_impact
+            );
+        }
+
+        #[test]
+        fn test_no_run_apply_refs_in_main() {
+            // OR-04: No stale references to `run --apply` in main.rs
+            // Check production code only (before #[cfg(test)] module)
+            let main_source = include_str!("main.rs");
+            let production_code = main_source
+                .split("#[cfg(test)]")
+                .next()
+                .unwrap_or(main_source);
+
+            let lines_with_run_command: Vec<_> = production_code
+                .lines()
+                .enumerate()
+                .filter(|(_, line)| line.contains("Command::Run") || line.contains("execute_run"))
+                .collect();
+            assert!(
+                lines_with_run_command.is_empty(),
+                "Found stale run command references in production code: {:?}",
+                lines_with_run_command
+            );
+        }
+
+        #[test]
+        fn test_skills_use_new_commands() {
+            // OR-05: Skills invoke tug rename/analyze, not old commands
+            let tug_rename_skill = include_str!("../../../.claude/commands/tug-rename.md");
+            let tug_analyze_rename_skill =
+                include_str!("../../../.claude/commands/tug-analyze-rename.md");
+
+            // Verify new commands are present
+            assert!(
+                tug_rename_skill.contains("tug rename"),
+                "tug-rename.md should use 'tug rename'"
+            );
+            assert!(
+                tug_rename_skill.contains("tug analyze rename"),
+                "tug-rename.md should reference 'tug analyze rename'"
+            );
+            assert!(
+                tug_analyze_rename_skill.contains("tug analyze rename"),
+                "tug-analyze-rename.md should use 'tug analyze rename'"
+            );
+
+            // Verify old commands are NOT present
+            assert!(
+                !tug_rename_skill.contains("analyze-impact"),
+                "tug-rename.md should not reference 'analyze-impact'"
+            );
+            assert!(
+                !tug_rename_skill.contains("tug run"),
+                "tug-rename.md should not reference 'tug run'"
+            );
+            assert!(
+                !tug_analyze_rename_skill.contains("analyze-impact"),
+                "tug-analyze-rename.md should not reference 'analyze-impact'"
+            );
+            assert!(
+                !tug_analyze_rename_skill.contains("tug run"),
+                "tug-analyze-rename.md should not reference 'tug run'"
+            );
+        }
+
         // ====================================================================
         // rename command tests (existing from Step 13)
         // ====================================================================

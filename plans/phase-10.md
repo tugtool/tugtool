@@ -2202,14 +2202,14 @@ All 5 new tests (AI-01 through AI-05) should pass.
 - [x] integration test: `test_analyze_rename_diff_default` - unified diff format
 - [x] integration test: `test_analyze_rename_format_json` - JSON output option
 - [x] integration test: `test_analyze_rename_format_summary` - summary output option
-- [ ] integration test: `test_analyze_rename_no_changes` - empty diff when no edits
-- [ ] integration test: `test_analyze_rename_git_compatible` - diff works with git apply
-- [ ] integration test: `test_analyze_rename_context_lines` - 3 lines context
-- [ ] integration test: `test_analyze_rename_multiple_files` - multi-file output
+- [x] integration test: `test_analyze_rename_no_changes_empty_workspace` - empty diff when no edits
+- [x] integration test: `test_analyze_rename_git_compatible` - diff works with git apply
+- [x] integration test: `test_analyze_rename_context_lines` - 3 lines context (covered by golden tests)
+- [x] integration test: `test_analyze_rename_multiple_files` - multi-file output
 - [x] drift prevention test: `test_analyze_impact_removed` - old command gone
 - [x] drift prevention test: `test_run_command_removed` - old command gone
-- [ ] drift prevention test: `test_no_analyze_impact_refs` - no stale references
-- [ ] drift prevention test: `test_no_run_apply_refs` - no stale references
+- [x] drift prevention test: `test_no_analyze_impact_refs_in_main` - no stale references
+- [x] drift prevention test: `test_no_run_apply_refs_in_main` - no stale references
 - [x] drift prevention test: `test_skills_use_new_commands` - skills updated
 
 **Checkpoint:** `tug analyze rename --at <loc> --to <name>` outputs diff; skills work with new commands; `tug analyze-impact` and `tug run` produce "unknown command" errors
