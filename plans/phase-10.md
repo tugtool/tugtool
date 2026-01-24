@@ -1603,8 +1603,8 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Files:** `crates/tugtool-python/src/analyzer.rs`
 
 **Tasks:**
-- [ ] Add `compute_namespace_packages()` function
-- [ ] Compute at start of `analyze_files()`
+- [x] Add `compute_namespace_packages()` function
+- [x] Compute at start of `analyze_files()`
 
 **Tests:**
 
@@ -1622,15 +1622,15 @@ Uses **Table T01: Namespace Package Test Cases** from Section 10.3.
 | NP-06 | `test_compute_namespace_excludes_tug` | unit | .tug/ excluded |
 | NP-07 | `test_compute_namespace_deduplicates` | unit | Same dir not counted twice |
 
-- [ ] unit test: `test_compute_namespace_simple` - single namespace package detected
-- [ ] unit test: `test_compute_namespace_nested` - parent/child namespace packages
-- [ ] unit test: `test_compute_namespace_mixed` - regular and namespace packages coexist
-- [ ] unit test: `test_compute_namespace_excludes_git` - .git/ not included
-- [ ] unit test: `test_compute_namespace_excludes_pycache` - __pycache__/ not included
-- [ ] unit test: `test_compute_namespace_excludes_tug` - .tug/ not included
-- [ ] unit test: `test_compute_namespace_deduplicates` - visited dirs cached
+- [x] unit test: `test_compute_namespace_simple` - single namespace package detected
+- [x] unit test: `test_compute_namespace_nested` - parent/child namespace packages
+- [x] unit test: `test_compute_namespace_mixed` - regular and namespace packages coexist
+- [x] unit test: `test_compute_namespace_excludes_git` - .git/ not included
+- [x] unit test: `test_compute_namespace_excludes_pycache` - __pycache__/ not included
+- [x] unit test: `test_compute_namespace_excludes_tug` - .tug/ not included
+- [x] unit test: `test_compute_namespace_deduplicates` - visited dirs cached
 
-**Checkpoint:** `cargo nextest run -p tugtool-python namespace`
+**Checkpoint:** `cargo nextest run -p tugtool-python namespace` ✓
 
 ---
 

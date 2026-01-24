@@ -6,6 +6,48 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 7: Compute Namespace Packages | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 7 specification, [D05] design decision, Spec S03
+- `crates/tugtool-python/src/analyzer.rs` - Existing `analyze_files()` function and `FileAnalysisBundle` type
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `compute_namespace_packages()` function | Done |
+| Compute at start of `analyze_files()` | Done |
+| Add `namespace_packages` field to `FileAnalysisBundle` | Done |
+| Test: test_compute_namespace_simple | Done |
+| Test: test_compute_namespace_nested | Done |
+| Test: test_compute_namespace_mixed | Done |
+| Test: test_compute_namespace_excludes_git | Done |
+| Test: test_compute_namespace_excludes_pycache | Done |
+| Test: test_compute_namespace_excludes_tug | Done |
+| Test: test_compute_namespace_deduplicates | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added `namespace_packages: HashSet<String>` field to `FileAnalysisBundle`; added `compute_namespace_packages()` function and `is_excluded_directory()` helper; added call to `compute_namespace_packages()` in `analyze_files()`; added 7 unit tests in `namespace_package_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python namespace`: 8 tests passed
+- `cargo nextest run -p tugtool-python`: 322 tests passed
+- `cargo nextest run --workspace`: 1275 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python namespace`: PASS (all namespace package tests pass)
+
+**Key Decisions/Notes:**
+- **Algorithm**: For each `.py` file, walks up the directory tree and marks directories as namespace packages if they lack `__init__.py`
+- **Deduplication**: Uses `visited_dirs` HashSet to avoid reprocessing same directories
+- **Exclusions**: Filters out `.git/`, `.tug/`, `__pycache__/`, and any hidden directories (starting with `.`)
+- **Integration**: Namespace packages are computed immediately after `workspace_files` is built, before Pass 1 analysis begins
+
+---
+
 ## [phase-10.md] Step 6: tug doctor Command | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

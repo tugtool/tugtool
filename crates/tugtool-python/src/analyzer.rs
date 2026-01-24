@@ -310,6 +310,14 @@ pub struct FileAnalysisBundle {
     /// imports even when some files failed to parse (we know the file exists,
     /// we just couldn't analyze it).
     pub workspace_files: HashSet<String>,
+    /// Namespace packages detected in the workspace (PEP 420).
+    ///
+    /// A namespace package is a directory that contains `.py` files but no
+    /// `__init__.py`. This set contains the relative paths to such directories,
+    /// enabling import resolution for namespace packages.
+    ///
+    /// Computed by [`compute_namespace_packages`] at the start of analysis.
+    pub namespace_packages: HashSet<String>,
 }
 
 impl FileAnalysisBundle {
@@ -482,6 +490,10 @@ pub fn analyze_files(
         .iter()
         .map(|(path, _)| (*path).clone())
         .collect();
+
+    // Compute namespace packages (PEP 420) for import resolution
+    // This identifies directories with .py files but no __init__.py
+    bundle.namespace_packages = compute_namespace_packages(&bundle.workspace_files);
 
     // Keep a map of file_id -> content for content hash computation in Pass 2
     let mut file_contents: HashMap<FileId, &str> = HashMap::new();
@@ -1777,6 +1789,123 @@ pub fn resolve_relative_path(
             format!("{}/{}", base_path, module_path)
         }
     }
+}
+
+// ========================================================================
+// Namespace Package Detection (PEP 420)
+// ========================================================================
+
+/// Compute the set of namespace packages from workspace files.
+///
+/// A namespace package (PEP 420) is a directory that contains Python files
+/// but no `__init__.py`. This function scans the workspace file paths and
+/// identifies such directories.
+///
+/// # Algorithm
+///
+/// For each `.py` file in the workspace:
+/// 1. Walk up the directory tree from the file's parent directory
+/// 2. For each directory visited:
+///    - If it doesn't contain `__init__.py`, it's a namespace package
+///    - If it's excluded (`.git/`, `.tug/`, `__pycache__/`), skip it
+///    - Stop at the workspace root (empty path or single component)
+///
+/// # Arguments
+///
+/// * `workspace_files` - Set of all workspace file paths (relative to workspace root)
+///
+/// # Returns
+///
+/// A `HashSet<String>` of directory paths that are namespace packages.
+///
+/// # Example
+///
+/// ```ignore
+/// // Given files: ["utils/helpers.py", "utils/core.py"]
+/// // (no utils/__init__.py)
+/// let files: HashSet<String> = ["utils/helpers.py", "utils/core.py"]
+///     .iter().map(|s| s.to_string()).collect();
+/// let ns_packages = compute_namespace_packages(&files);
+/// assert!(ns_packages.contains("utils"));
+/// ```
+pub fn compute_namespace_packages(workspace_files: &HashSet<String>) -> HashSet<String> {
+    let mut namespace_packages = HashSet::new();
+    let mut visited_dirs: HashSet<String> = HashSet::new();
+
+    for path in workspace_files {
+        // Only process .py files
+        if !path.ends_with(".py") {
+            continue;
+        }
+
+        // Get parent directory
+        let path_obj = std::path::Path::new(path);
+        let mut current_dir = match path_obj.parent() {
+            Some(p) => p.to_path_buf(),
+            None => continue, // File at root level, no parent directories to check
+        };
+
+        // Walk up the directory tree
+        while !current_dir.as_os_str().is_empty() {
+            let dir_str = current_dir.to_string_lossy().replace('\\', "/");
+
+            // Skip if already visited (deduplication)
+            if visited_dirs.contains(&dir_str) {
+                break;
+            }
+            visited_dirs.insert(dir_str.clone());
+
+            // Skip excluded directories
+            if is_excluded_directory(&dir_str) {
+                break;
+            }
+
+            // Check if this directory has __init__.py
+            let init_path = if dir_str.is_empty() {
+                "__init__.py".to_string()
+            } else {
+                format!("{}/__init__.py", dir_str)
+            };
+
+            if !workspace_files.contains(&init_path) {
+                // No __init__.py, it's a namespace package
+                namespace_packages.insert(dir_str);
+            }
+
+            // Move to parent directory
+            match current_dir.parent() {
+                Some(p) => current_dir = p.to_path_buf(),
+                None => break,
+            }
+        }
+    }
+
+    namespace_packages
+}
+
+/// Check if a directory path should be excluded from namespace package detection.
+///
+/// Excluded directories:
+/// - `.git/` - Git repository metadata
+/// - `.tug/` - Tugtool session data
+/// - `__pycache__/` - Python bytecode cache
+/// - Any path starting with `.` (hidden directories)
+fn is_excluded_directory(dir_path: &str) -> bool {
+    // Check each component of the path
+    for component in dir_path.split('/') {
+        if component.is_empty() {
+            continue;
+        }
+        // Hidden directories (start with .)
+        if component.starts_with('.') {
+            return true;
+        }
+        // __pycache__
+        if component == "__pycache__" {
+            return true;
+        }
+    }
+    false
 }
 
 // ========================================================================
@@ -3155,6 +3284,155 @@ mod tests {
             // from . import utils in foo.py (at root) -> ""
             let result = resolve_relative_path("foo.py", 1, "");
             assert_eq!(result, "");
+        }
+    }
+
+    mod namespace_package_tests {
+        use super::*;
+
+        #[test]
+        fn test_compute_namespace_simple() {
+            // NP-01: Dir with .py but no __init__.py
+            // Given: utils/helpers.py exists, but utils/__init__.py does NOT exist
+            // Expected: "utils" should be detected as a namespace package
+            let files: HashSet<String> =
+                ["utils/helpers.py"].iter().map(|s| s.to_string()).collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(
+                ns_packages.contains("utils"),
+                "utils should be detected as a namespace package"
+            );
+            assert_eq!(ns_packages.len(), 1, "should only detect utils");
+        }
+
+        #[test]
+        fn test_compute_namespace_nested() {
+            // NP-02: Multiple levels without __init__.py
+            // Given: a/b/c/module.py exists, but none of a/, a/b/, a/b/c/ have __init__.py
+            // Expected: all three directories should be namespace packages
+            let files: HashSet<String> = ["a/b/c/module.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(ns_packages.contains("a"), "a should be a namespace package");
+            assert!(
+                ns_packages.contains("a/b"),
+                "a/b should be a namespace package"
+            );
+            assert!(
+                ns_packages.contains("a/b/c"),
+                "a/b/c should be a namespace package"
+            );
+            assert_eq!(ns_packages.len(), 3);
+        }
+
+        #[test]
+        fn test_compute_namespace_mixed() {
+            // NP-03: Some dirs have __init__.py, some don't
+            // Given:
+            //   - pkg/__init__.py (regular package)
+            //   - pkg/sub/module.py (no pkg/sub/__init__.py)
+            //   - ns/module.py (no ns/__init__.py)
+            // Expected: "pkg/sub" and "ns" are namespace packages, "pkg" is NOT
+            let files: HashSet<String> = [
+                "pkg/__init__.py",
+                "pkg/sub/module.py",
+                "ns/module.py",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(
+                !ns_packages.contains("pkg"),
+                "pkg has __init__.py, not a namespace package"
+            );
+            assert!(
+                ns_packages.contains("pkg/sub"),
+                "pkg/sub should be a namespace package"
+            );
+            assert!(
+                ns_packages.contains("ns"),
+                "ns should be a namespace package"
+            );
+        }
+
+        #[test]
+        fn test_compute_namespace_excludes_git() {
+            // NP-04: .git/ excluded
+            // Given: .git/hooks/script.py
+            // Expected: no namespace packages detected (entire .git tree excluded)
+            let files: HashSet<String> = [".git/hooks/script.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(
+                ns_packages.is_empty(),
+                ".git/ should be excluded from namespace detection"
+            );
+        }
+
+        #[test]
+        fn test_compute_namespace_excludes_pycache() {
+            // NP-05: __pycache__/ excluded
+            // Given: utils/__pycache__/module.cpython-311.pyc (if extension were .py)
+            // But using .py for test: __pycache__/module.py
+            // Expected: no namespace packages detected
+            let files: HashSet<String> = ["__pycache__/module.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(
+                ns_packages.is_empty(),
+                "__pycache__/ should be excluded from namespace detection"
+            );
+        }
+
+        #[test]
+        fn test_compute_namespace_excludes_tug() {
+            // NP-06: .tug/ excluded
+            // Given: .tug/cache/module.py
+            // Expected: no namespace packages detected
+            let files: HashSet<String> = [".tug/cache/module.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(
+                ns_packages.is_empty(),
+                ".tug/ should be excluded from namespace detection"
+            );
+        }
+
+        #[test]
+        fn test_compute_namespace_deduplicates() {
+            // NP-07: Same dir not counted twice
+            // Given: utils/a.py, utils/b.py, utils/c.py (all in same dir)
+            // Expected: "utils" appears only once in the result set
+            let files: HashSet<String> = ["utils/a.py", "utils/b.py", "utils/c.py"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+
+            let ns_packages = compute_namespace_packages(&files);
+
+            assert!(ns_packages.contains("utils"));
+            assert_eq!(ns_packages.len(), 1, "utils should only appear once");
         }
     }
 
