@@ -1492,8 +1492,8 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 **Files:** `crates/tugtool-python/src/analyzer.rs`, `cst_bridge.rs`
 
 **Tasks:**
-- [ ] Pass scope spans from ScopeInfo to CoreScopeInfo
-- [ ] Remove TODO at analyzer.rs:543
+- [x] Pass scope spans from ScopeInfo to CoreScopeInfo
+- [x] Remove TODO at analyzer.rs:543
 
 **Tests:**
 
@@ -1507,14 +1507,14 @@ Step 3 (Comprehension Scope Spans) will use a similar pattern but is simpler bec
 | SA-04 | `test_analyzer_class_scope_has_span` | unit | Class scopes retain existing spans |
 | SA-05 | `test_analyzer_module_scope_has_span` | unit | Module scope (whole file) span |
 
-- [ ] unit test: `test_analyzer_lambda_scope_has_span` - verify lambda span flows to CoreScopeInfo
-- [ ] unit test: `test_analyzer_listcomp_scope_has_span` - verify comprehension span flows to CoreScopeInfo
-- [ ] unit test: `test_analyzer_function_scope_has_span` - existing function spans unaffected
-- [ ] unit test: `test_analyzer_class_scope_has_span` - existing class spans unaffected
-- [ ] unit test: `test_analyzer_module_scope_has_span` - module scope covers full file
-- [ ] drift prevention test: verify TODO at analyzer.rs:543 is removed (grep for "TODO.*scope.*span")
+- [x] unit test: `test_analyzer_lambda_scope_has_span` - verify lambda span flows to CoreScopeInfo
+- [x] unit test: `test_analyzer_listcomp_scope_has_span` - verify comprehension span flows to CoreScopeInfo
+- [x] unit test: `test_analyzer_function_scope_has_span` - existing function spans unaffected
+- [x] unit test: `test_analyzer_class_scope_has_span` - existing class spans unaffected
+- [x] unit test: `test_analyzer_module_scope_has_span` - module scope covers full file
+- [x] drift prevention test: verify TODO at analyzer.rs:543 is removed (grep for "TODO.*scope.*span")
 
-**Checkpoint:** `cargo nextest run -p tugtool-python`
+**Checkpoint:** `cargo nextest run -p tugtool-python` ✓
 
 ---
 

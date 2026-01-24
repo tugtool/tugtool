@@ -161,12 +161,19 @@ impl From<CstScopeInfo> for ScopeInfo {
             }
         });
 
+        // Preserve byte span for CoreScopeInfo construction in analyzer
+        let byte_span = cst_scope.span.as_ref().map(|s| SpanInfo {
+            start: s.start as usize,
+            end: s.end as usize,
+        });
+
         ScopeInfo {
             id: cst_scope.id,
             kind: scope_kind_to_string(cst_scope.kind),
             name: cst_scope.name,
             parent: cst_scope.parent,
             span,
+            byte_span,
             globals: cst_scope.globals,
             nonlocals: cst_scope.nonlocals,
         }

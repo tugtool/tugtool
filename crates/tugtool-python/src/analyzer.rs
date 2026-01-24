@@ -122,6 +122,8 @@ pub struct Scope {
     pub name: Option<String>,
     /// Parent scope ID (None for module scope).
     pub parent_id: Option<ScopeId>,
+    /// Byte span of the scope (start, end offsets).
+    pub span: Option<Span>,
     /// Bindings in this scope: name → SymbolId.
     pub bindings: HashMap<String, SymbolId>,
     /// Names declared as `global` in this scope.
@@ -143,10 +145,17 @@ impl Scope {
             kind,
             name,
             parent_id,
+            span: None,
             bindings: HashMap::new(),
             globals: HashSet::new(),
             nonlocals: HashSet::new(),
         }
+    }
+
+    /// Set the byte span for this scope.
+    pub fn with_span(mut self, span: Option<Span>) -> Self {
+        self.span = span;
+        self
     }
 
     /// Check if a name is declared global in this scope.
@@ -538,10 +547,8 @@ pub fn analyze_files(
                 .parent_id
                 .and_then(|pid| local_to_global_scope.get(&pid).copied());
 
-            // Compute span for scope (currently we don't have precise scope spans,
-            // so we use a placeholder - this will be improved in future)
-            // TODO: Get actual scope spans from native analysis
-            let span = Span::new(0, 0);
+            // Use scope span from native analysis (default to 0,0 if not available)
+            let span = scope.span.unwrap_or_else(|| Span::new(0, 0));
 
             let mut core_scope =
                 CoreScopeInfo::new(core_scope_id, file_id, span, scope.to_core_kind());
@@ -1199,12 +1206,19 @@ fn build_scopes(native_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, Sco
             let scope_id = ScopeId::new(idx as u32);
             let parent_id = ns.parent.as_ref().and_then(|p| scope_map.get(p).copied());
 
+            // Convert byte_span from SpanInfo to Span
+            let span = ns
+                .byte_span
+                .as_ref()
+                .map(|s| Span::new(s.start as u64, s.end as u64));
+
             let mut scope = Scope::new(
                 scope_id,
                 ScopeKind::from(ns.kind.as_str()),
                 ns.name.clone(),
                 parent_id,
-            );
+            )
+            .with_span(span);
             // Populate globals and nonlocals from native scope info
             scope.globals = ns.globals.iter().cloned().collect();
             scope.nonlocals = ns.nonlocals.iter().cloned().collect();
@@ -2687,6 +2701,104 @@ mod tests {
 
             assert!(scope.is_nonlocal("value"));
             assert!(!scope.is_nonlocal("other"));
+        }
+    }
+
+    mod scope_span_tests {
+        use super::*;
+
+        /// Helper to analyze code and return the scopes with their spans
+        fn analyze_and_get_scopes(source: &str) -> Vec<Scope> {
+            let file_id = FileId::new(0);
+            let analysis = analyze_file(file_id, "test.py", source).unwrap();
+            analysis.scopes
+        }
+
+        #[test]
+        fn test_analyzer_module_scope_has_span() {
+            let source = "x = 1\ny = 2";
+            let scopes = analyze_and_get_scopes(source);
+
+            assert_eq!(scopes.len(), 1);
+            let module_scope = &scopes[0];
+            assert_eq!(module_scope.kind, ScopeKind::Module);
+
+            // Module scope should span the entire file (0 to len)
+            let span = module_scope.span.expect("Module scope should have span");
+            assert_eq!(span.start, 0, "Module scope should start at byte 0");
+            assert_eq!(
+                span.end,
+                source.len() as u64,
+                "Module scope should end at file length"
+            );
+        }
+
+        #[test]
+        fn test_analyzer_function_scope_has_span() {
+            let source = "def foo():\n    pass";
+            //           0123456789012345678
+            //           ^def at 0     ^pass ends at 19
+            let scopes = analyze_and_get_scopes(source);
+
+            assert_eq!(scopes.len(), 2);
+            let func_scope = &scopes[1];
+            assert_eq!(func_scope.kind, ScopeKind::Function);
+            assert_eq!(func_scope.name, Some("foo".to_string()));
+
+            // Function scope should have a span
+            let span = func_scope.span.expect("Function scope should have span");
+            assert_eq!(span.start, 0, "Function scope should start at 'def'");
+            assert!(span.end > 0, "Function scope should have positive end");
+        }
+
+        #[test]
+        fn test_analyzer_class_scope_has_span() {
+            let source = "class Foo:\n    pass";
+            let scopes = analyze_and_get_scopes(source);
+
+            assert_eq!(scopes.len(), 2);
+            let class_scope = &scopes[1];
+            assert_eq!(class_scope.kind, ScopeKind::Class);
+            assert_eq!(class_scope.name, Some("Foo".to_string()));
+
+            // Class scope should have a span
+            let span = class_scope.span.expect("Class scope should have span");
+            assert_eq!(span.start, 0, "Class scope should start at 'class'");
+            assert!(span.end > 0, "Class scope should have positive end");
+        }
+
+        #[test]
+        fn test_analyzer_lambda_scope_has_span() {
+            let source = "f = lambda x: x + 1";
+            //           01234567890123456789
+            //               ^lambda at 4    ^ends at 19
+            let scopes = analyze_and_get_scopes(source);
+
+            assert_eq!(scopes.len(), 2);
+            let lambda_scope = &scopes[1];
+            assert_eq!(lambda_scope.kind, ScopeKind::Lambda);
+
+            // Lambda scope should have a span starting at 'lambda' keyword
+            let span = lambda_scope.span.expect("Lambda scope should have span");
+            assert_eq!(span.start, 4, "Lambda scope should start at 'lambda' keyword");
+            assert_eq!(span.end, 19, "Lambda scope should end after body expression");
+        }
+
+        #[test]
+        fn test_analyzer_listcomp_scope_has_span() {
+            let source = "x = [i for i in range(10)]";
+            //           01234567890123456789012345
+            //               ^[ at 4             ^] at 26
+            let scopes = analyze_and_get_scopes(source);
+
+            assert_eq!(scopes.len(), 2);
+            let comp_scope = &scopes[1];
+            assert_eq!(comp_scope.kind, ScopeKind::Comprehension);
+
+            // List comprehension scope should have a span from '[' to ']'
+            let span = comp_scope.span.expect("Comprehension scope should have span");
+            assert_eq!(span.start, 4, "List comp scope should start at '['");
+            assert_eq!(span.end, 26, "List comp scope should end after ']'");
         }
     }
 

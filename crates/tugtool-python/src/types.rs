@@ -87,6 +87,10 @@ pub struct ScopeInfo {
     pub parent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<ScopeSpanInfo>,
+    /// Byte-offset span for the scope (start, end).
+    /// Used internally for CoreScopeInfo construction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub byte_span: Option<SpanInfo>,
     /// Names declared as `global` in this scope.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub globals: Vec<String>,
@@ -388,6 +392,7 @@ mod tests {
             name: None,
             parent: None,
             span: None,
+            byte_span: None,
             globals: vec!["x".to_string()],
             nonlocals: vec![],
         };

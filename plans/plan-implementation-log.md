@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 4: Connect Scope Spans to Analyzer | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 4 specification and [D02] design decision
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Native ScopeInfo with byte spans
+- `crates/tugtool-python/src/cst_bridge.rs` - CST-to-types conversion
+- `crates/tugtool-python/src/types.rs` - ScopeInfo intermediate type
+- `crates/tugtool-python/src/analyzer.rs` - Scope and CoreScopeInfo usage
+- `crates/tugtool-core/src/facts/mod.rs` - CoreScopeInfo definition
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Pass scope spans from ScopeInfo to CoreScopeInfo | Done |
+| Remove TODO at analyzer.rs:543 | Done |
+| Add test: test_analyzer_module_scope_has_span | Done |
+| Add test: test_analyzer_function_scope_has_span | Done |
+| Add test: test_analyzer_class_scope_has_span | Done |
+| Add test: test_analyzer_lambda_scope_has_span | Done |
+| Add test: test_analyzer_listcomp_scope_has_span | Done |
+| Verify TODO at analyzer.rs:543 is removed | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/types.rs` - Added `byte_span: Option<SpanInfo>` field to ScopeInfo struct; updated test
+- `crates/tugtool-python/src/cst_bridge.rs` - Updated From<CstScopeInfo> to preserve byte spans from CST
+- `crates/tugtool-python/src/analyzer.rs` - Added `span: Option<Span>` field to Scope struct; added `with_span()` method; updated `build_scopes()` to copy byte spans; replaced TODO with actual span usage; added 5 new tests in `scope_span_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python scope_span`: 5 tests passed
+- `cargo nextest run -p tugtool-python`: 315 tests passed
+- `cargo nextest run --workspace`: 1253 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python`: PASS (315 tests)
+- `grep "TODO.*scope.*span" analyzer.rs`: PASS (no matches found)
+
+**Key Decisions/Notes:**
+- **3-layer propagation pattern**: Byte spans flow from CST (tugtool-python-cst) through cst_bridge (SpanInfo) to analyzer (Span)
+- **Added `byte_span` field to types.rs ScopeInfo**: Keeps byte offsets separate from line/col `span` field (for JSON output)
+- **Scope struct now stores span**: Added `span: Option<Span>` field to internal Scope type in analyzer.rs
+- **Removed TODO comment**: Replaced placeholder `Span::new(0, 0)` with actual span from native analysis
+
+---
+
 ## [phase-10.md] Steps 3-14: Test Specifications | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24
