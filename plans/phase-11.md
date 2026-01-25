@@ -3454,6 +3454,26 @@ This step is split into 4 sub-steps:
 - Add `AliasKind` classification (Assignment vs Import vs ReExport)
 - Convert `AliasInfo` to `AliasEdgeData` with symbol index resolution
 
+**AliasGraph Transition Decision:**
+`AliasGraph` (in `alias.rs`) and `AliasEdge` (in FactsStore) **coexist** with different roles:
+
+| Layer | Type | Lifetime | Purpose |
+|-------|------|----------|---------|
+| CST/Analysis | `AliasGraph`, `AliasInfo` | Per-analysis (ephemeral) | In-memory graph for alias resolution during analysis |
+| FactsStore | `AliasEdge` | Persisted | Serializable alias facts for queries and output |
+
+**Coexistence rationale:**
+- `AliasGraph` provides efficient transitive closure computation needed during analysis
+- `AliasEdge` provides persistence and cross-file visibility after analysis
+- Converting at the boundary keeps each representation optimized for its use case
+
+**Conversion flow:**
+1. Python analyzer builds `AliasGraph` during multi-file analysis (Phase 10 infrastructure)
+2. At adapter boundary, convert `AliasInfo` entries to `AliasEdgeData`
+3. Integration layer converts `AliasEdgeData` to `AliasEdge` with SymbolId resolution
+
+**No removal:** `AliasGraph` is NOT deprecated or removed. It remains the in-memory representation for analysis passes.
+
 **Tasks:**
 - [ ] Extend `AliasInfo` (or create wrapper) to include `AliasKind`
 - [ ] Classify aliases during `AliasGraph::from_analysis`:
@@ -3502,6 +3522,24 @@ This step is split into 4 sub-steps:
 - Classify `ParamKind` from position in `Parameters` struct
 - Extract modifiers from decorators and async/def keywords
 
+**SignatureCollector Implementation Notes:**
+The `SignatureCollector` follows the existing visitor pattern in `tugtool-python-cst/src/visitor/`. Key reference implementations:
+- `ReferenceCollector` in `reference.rs` - similar traversal pattern
+- `MethodCallCollector` in `method_call.rs` - function node handling
+
+The collector extracts from `FunctionDef`/`AsyncFunctionDef` nodes:
+1. **Parameters** - The `Parameters` CST node contains `posonly_params`, `params`, `star_kwonly`, `kwonly_params`, `star_arg`, `kwarg`
+2. **ParamKind classification** - Determined by which field the param appears in:
+   - `posonly_params` → `PositionalOnly` (before `/` separator)
+   - `kwonly_params` → `KeywordOnly` (after `*` separator)
+   - `star_arg` → `VarArgs`
+   - `kwarg` → `KwArgs`
+   - `params` → `Regular`
+3. **Default spans** - From `Param.default` field
+4. **Annotations** - From `Param.annotation` and `FunctionDef.returns`
+
+**Risk Note:** This is a new collector but follows established patterns. Expect 2-3 iterations to handle edge cases (nested defaults, complex annotations). The `Parameters` struct documentation in `expression.rs` is authoritative.
+
 **Tasks:**
 - [ ] Create `SignatureCollector` visitor in `tugtool-python-cst`:
   - Visit `FunctionDef` and `AsyncFunctionDef` nodes
@@ -3520,6 +3558,24 @@ This step is split into 4 sub-steps:
 - [ ] Add `qualified_names: Vec<QualifiedNameData>` to `FileAnalysisResult`
 - [ ] Compute qualified names as `module_path.scope_path.symbol_name`
 - [ ] Add `type_params: Vec<TypeParamData>` to `FileAnalysisResult` (for generic functions)
+
+**QualifiedName Computation Ownership:**
+The **adapter** computes qualified name paths. This is the correct ownership because:
+1. Adapters already track scope hierarchy during analysis (needed for symbol resolution)
+2. Module path is known from the file being analyzed
+3. Scope path is built during traversal (class names, nested function names)
+
+**Computation algorithm (in adapter):**
+```
+qualified_name = module_path + "." + scope_chain.join(".") + "." + symbol_name
+```
+
+**Examples:**
+- `pkg/mod.py`, top-level `def foo()` → `"pkg.mod.foo"`
+- `pkg/mod.py`, `class Bar`, method `baz()` → `"pkg.mod.Bar.baz"`
+- `pkg/__init__.py`, `class X` → `"pkg.X"`
+
+**Note:** The integration layer does NOT recompute paths. It passes them through directly from `QualifiedNameData` to `QualifiedName`.
 - [ ] **Integration layer:** Convert to FactsStore types
 
 **Tests:**
@@ -3560,6 +3616,35 @@ This step is split into 4 sub-steps:
 - Add `AttributeAccessKind` (Read/Write/Call) detection
 - Extend `MethodCallCollector` with argument walking
 - Build module resolution map from file paths
+
+**Attribute Context Detection Implementation Notes:**
+This is the most complex part of Phase 11 semantic facts. Detecting Read/Write/Call requires tracking the AST context in which an attribute access appears:
+
+1. **Read context** (default): `obj.attr` used in an expression position (load)
+   - Right side of assignment: `x = obj.attr`
+   - Function argument: `f(obj.attr)`
+   - Return value: `return obj.attr`
+
+2. **Write context**: `obj.attr` is the target of an assignment or augmented assignment
+   - Assignment target: `obj.attr = value`
+   - Augmented assignment: `obj.attr += value`
+   - Tuple unpacking target: `obj.a, obj.b = values`
+
+3. **Call context**: `obj.attr` followed immediately by a call
+   - Method call: `obj.attr()`
+   - Method call with args: `obj.attr(x, y)`
+
+**Implementation approach:**
+- Extend `ReferenceCollector` to pass context from parent nodes
+- Track assignment targets during `visit_assign` and `visit_aug_assign`
+- Check if the attribute's parent expression is a `Call` node
+- Use a context stack or parent pointer pattern (similar to how scope tracking works)
+
+**Reference patterns:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs:visit_attribute` - current attribute handling
+- Python CST: `Assign.targets`, `AugAssign.target`, `Call.func` fields
+
+**Risk Note:** Context detection may require 2-3 iterations. Start with simple cases (direct assignment, direct call) and add complex cases (chained assignments, nested calls) incrementally.
 
 **Tasks:**
 - [ ] Create `AttributeAccessCollector` or extend `ReferenceCollector`:

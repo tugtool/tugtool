@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Plan Refinement Round 5: Minor Watchpoint Documentation | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Main plan document
+- Final assessment minor items table
+- Step 7b (Alias edges), Step 7c (Signatures), Step 7d (Attribute access)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add SignatureCollector implementation notes to Step 7c | Done |
+| Add attribute context detection guidance to Step 7d | Done |
+| Clarify AliasGraph → AliasEdge transition decision in Step 7b | Done |
+| Add QualifiedName computation ownership note to Step 7c | Done |
+
+**Files Modified:**
+- `plans/phase-11.md` - Added implementation notes and clarifications to Steps 7b, 7c, 7d
+
+**Key Decisions/Notes:**
+
+**SignatureCollector (Step 7c):**
+- Added implementation notes explaining `Parameters` CST struct fields
+- Documented `ParamKind` classification by field position
+- Risk note: Expect 2-3 iterations for edge cases
+
+**Attribute Context Detection (Step 7d):**
+- Added detailed guide for Read/Write/Call context detection
+- Documented implementation approach (context stack pattern)
+- Listed reference files: `reference.rs:visit_attribute`, `Assign.targets`, `Call.func`
+- Risk note: Start with simple cases, add complex incrementally
+
+**AliasGraph Transition (Step 7b):**
+- Decision: **Coexist** (not replace)
+- `AliasGraph` remains ephemeral in-memory graph for analysis
+- `AliasEdge` is persisted FactsStore representation
+- Conversion at adapter boundary
+
+**QualifiedName Computation (Step 7c):**
+- Ownership: **Adapter computes paths**
+- Algorithm: `module_path + scope_chain.join(".") + symbol_name`
+- Integration layer passes through unchanged
+
+---
+
 ## [phase-11.md] Plan Refinement Round 4: Semantic Facts Expansion and Step Splits | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25
