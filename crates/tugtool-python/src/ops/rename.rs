@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use thiserror::Error;
 
-use tugtool_core::facts::FactsStore;
+use tugtool_core::facts::{FactsStore, SymbolKind};
 use tugtool_core::output::{AliasOutput, Location, ReferenceInfo, SymbolInfo};
 use tugtool_core::patch::{FileId, MaterializedPatch, OutputEdit, Span};
 use tugtool_core::text::byte_offset_to_position_str;
@@ -467,6 +467,45 @@ fn find_symbol_scope_id(symbol_decl_span: &Span, file_analysis: &FileAnalysis) -
         .map(|ls| ls.scope_id)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModuleBinding {
+    Import,
+    Local,
+}
+
+/// Determine whether a module-scope binding for `name` is an import or local definition.
+fn module_binding_kind(name: &str, file_analysis: &FileAnalysis) -> Option<ModuleBinding> {
+    let mut has_import = false;
+
+    for symbol in &file_analysis.symbols {
+        if symbol.name != name {
+            continue;
+        }
+
+        let scope_kind = file_analysis
+            .scopes
+            .iter()
+            .find(|s| s.id == symbol.scope_id)
+            .map(|s| s.kind);
+
+        if scope_kind != Some(ScopeKind::Module) {
+            continue;
+        }
+
+        if symbol.kind == SymbolKind::Import {
+            has_import = true;
+        } else {
+            return Some(ModuleBinding::Local);
+        }
+    }
+
+    if has_import {
+        Some(ModuleBinding::Import)
+    } else {
+        None
+    }
+}
+
 /// Collect aliases for a symbol from files that import it.
 ///
 /// This function enables cross-file alias tracking: when renaming a symbol in
@@ -498,57 +537,75 @@ fn collect_cross_file_aliases(
     files: &[(String, String)],
 ) -> Vec<AliasOutput> {
     let mut aliases = Vec::new();
+    let mut visited: HashSet<(String, String)> = HashSet::new();
+    let mut queue: Vec<(String, String)> =
+        vec![(decl_file_path.to_string(), symbol_name.to_string())];
 
-    // Find all files that import this symbol
-    let key = (decl_file_path.to_string(), symbol_name.to_string());
-    let importers = match bundle.importers_index.get(&key) {
-        Some(importers) => importers,
-        None => return aliases, // No files import this symbol
-    };
+    while let Some((current_file, export_name)) = queue.pop() {
+        if !visited.insert((current_file.clone(), export_name.clone())) {
+            continue;
+        }
 
-    for (importing_file_id, local_name) in importers {
-        // Find the importing file's analysis
-        let file_analysis = match bundle
-            .file_analyses
-            .iter()
-            .find(|fa| fa.file_id == *importing_file_id)
-        {
-            Some(fa) => fa,
+        let key = (current_file.clone(), export_name.clone());
+        let importers = match bundle.importers_index.get(&key) {
+            Some(importers) => importers,
             None => continue,
         };
 
-        // Get file content for line/col computation
-        let file_content = match files.iter().find(|(p, _)| *p == file_analysis.path) {
-            Some((_, content)) => content,
-            None => continue,
-        };
-
-        // Search for aliases of local_name at module scope
-        // (imports bind at module level)
-        let scope_path = vec!["<module>".to_string()];
-        let file_aliases =
-            file_analysis
-                .alias_graph
-                .transitive_aliases(local_name, Some(&scope_path), None);
-
-        for alias_info in file_aliases {
-            // Compute line/col from alias span
-            let (line, col) = if let Some(span) = alias_info.alias_span {
-                byte_offset_to_position_str(file_content, span.start)
-            } else {
-                (1, 1) // Fallback if no span
+        for (importing_file_id, local_name) in importers {
+            // Find the importing file's analysis
+            let file_analysis = match bundle
+                .file_analyses
+                .iter()
+                .find(|fa| fa.file_id == *importing_file_id)
+            {
+                Some(fa) => fa,
+                None => continue,
             };
 
-            aliases.push(AliasOutput::new(
-                alias_info.alias_name,
-                alias_info.source_name,
-                file_analysis.path.clone(),
-                line,
-                col,
-                alias_info.scope_path,
-                alias_info.source_is_import,
-                alias_info.confidence,
-            ));
+            // Skip if this name is shadowed by a local definition in module scope
+            if module_binding_kind(local_name, file_analysis) == Some(ModuleBinding::Local) {
+                continue;
+            }
+
+            // Get file content for line/col computation
+            let file_content = match files.iter().find(|(p, _)| *p == file_analysis.path) {
+                Some((_, content)) => content,
+                None => continue,
+            };
+
+            // Search for aliases of local_name at module scope
+            // (imports bind at module level)
+            let scope_path = vec!["<module>".to_string()];
+            let file_aliases =
+                file_analysis
+                    .alias_graph
+                    .transitive_aliases(local_name, Some(&scope_path), None);
+
+            for alias_info in file_aliases {
+                // Compute line/col from alias span
+                let (line, col) = if let Some(span) = alias_info.alias_span {
+                    byte_offset_to_position_str(file_content, span.start)
+                } else {
+                    (1, 1) // Fallback if no span
+                };
+
+                aliases.push(AliasOutput::new(
+                    alias_info.alias_name,
+                    alias_info.source_name,
+                    file_analysis.path.clone(),
+                    line,
+                    col,
+                    alias_info.scope_path,
+                    alias_info.source_is_import,
+                    alias_info.confidence,
+                ));
+            }
+
+            // Follow re-export chain when this binding is an import
+            if module_binding_kind(local_name, file_analysis) == Some(ModuleBinding::Import) {
+                queue.push((file_analysis.path.clone(), local_name.to_string()));
+            }
         }
     }
 
@@ -1687,18 +1744,11 @@ def func():
 
             // The alias 'b' points to the LOCAL bar definition, not the import.
             // Since we're renaming file_a.py's bar, this alias should NOT appear.
-            // However, the current implementation searches module-scope aliases
-            // of the imported name, which may pick this up. Let's check the behavior.
-            // If shadowing is properly handled, the alias shouldn't appear.
-            // For now, we just document the behavior.
-            if has_shadowed_alias {
-                // If we have it, it means we're picking up the shadowed reference.
-                // This is technically acceptable as a warning case.
-                eprintln!(
-                    "Note: Cross-file alias detected despite shadowing. This may be expected."
-                );
-            }
-            // Test passes either way - this documents expected behavior.
+            assert!(
+                !has_shadowed_alias,
+                "should not detect shadowed alias 'b' in file_b.py; found aliases: {:?}",
+                result.aliases
+            );
         }
 
         #[test]
@@ -1775,33 +1825,14 @@ def func():
                 "renamed",
             );
 
-            // The ImportersIndex tracks file_b as importing bar from file_a,
-            // and file_c as importing bar from file_b. The cross-file alias
-            // detection looks at direct importers of the declaration file.
-            // For file_c to be detected, we'd need to follow the re-export chain.
-            // Current implementation only searches direct importers.
-            // Let's verify at minimum that file_b (the re-exporter) is searched.
-            // file_c might not be found without following the chain.
-
-            // Check if we find any cross-file aliases (at minimum from file_b if any)
-            let cross_file_aliases: Vec<_> = result
-                .aliases
-                .iter()
-                .filter(|a| a.file != "file_a.py")
-                .collect();
-
-            // Note: file_b has no alias (just import), so no alias from there.
-            // file_c has the alias but imports from file_b, not file_a directly.
-            // Current implementation won't find file_c's alias without chain following.
-            // This test documents expected behavior - chain following is a future enhancement.
-            eprintln!(
-                "Re-export chain test: found {} cross-file aliases: {:?}",
-                cross_file_aliases.len(),
-                cross_file_aliases
+            // Should find the alias 'b' in file_c.py via re-export chain
+            assert!(
+                result.aliases.iter().any(|a| a.alias_name == "b"
+                    && a.source_name == "bar"
+                    && a.file == "file_c.py"),
+                "should detect alias 'b = bar' in file_c.py via re-export chain; found aliases: {:?}",
+                result.aliases
             );
-
-            // Test passes - this documents the current behavior
-            // Future: Add chain following to detect file_c's alias
         }
     }
 }

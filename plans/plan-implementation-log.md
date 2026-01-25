@@ -6,6 +6,43 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 17: Cross-File Alias Chain Strictness | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 17 edge cases (17.4)
+- `crates/tugtool-python/src/ops/rename.rs` - Cross-file alias collection logic
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add module-scope binding classification to skip shadowed imports | Done |
+| Implement BFS traversal for re-export chain following | Done |
+| Update XFA-04 test to enforce shadowing behavior | Done |
+| Update XFA-06 test to enforce re-export chain detection | Done |
+| Update Phase 10 docs for new semantics | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename.rs` - Added module-scope binding classification to detect when a local definition shadows an import; added BFS traversal in `collect_cross_file_aliases()` to follow re-export chains; updated XFA-04 and XFA-06 tests with strict assertions
+- `plans/phase-10.md` - Updated re-export chain handling description in Step 17
+- `plans/plan-implementation-log.md` - Updated notes for shadowing and chain traversal
+
+**Test Results:**
+- All XFA tests pass with strict assertions
+
+**Checkpoints Verified:**
+- XFA-04 (shadowed import): PASS - alias refers to local, not import
+- XFA-06 (re-export chain): PASS - aliases in final importer detected
+
+**Key Decisions/Notes:**
+- **Shadowing detection**: When a file has both `from a import bar` and a local `def bar(): ...`, the local definition shadows the import. Aliases of `bar` in that file correctly refer to the local binding, not the imported one.
+- **Re-export chain traversal**: BFS following of chains like `a.py → b.py → c.py` ensures aliases in `c.py` are detected when renaming the original symbol in `a.py`.
+- **Strict test enforcement**: XFA-04 and XFA-06 now assert expected behavior rather than just documenting edge cases.
+
+---
+
 ## [phase-10.md] Step 17: Cross-File Alias Tracking | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24
@@ -67,8 +104,9 @@ Entries are sorted newest-first.
 - **ImportersIndex design**: Uses `HashMap<(String, String), Vec<(FileId, String)>>` mapping `(target_file, exported_name)` → importers. Built from `FileImportResolver` which already has resolved file information.
 - **iter_resolved_imports()**: Added new method to `FileImportResolver` to iterate over `(imported_name, local_name, resolved_file)` tuples for building the index.
 - **Scope filtering**: Cross-file aliases are searched at module scope only (imports bind at module level).
+- **Shadowed imports**: If an importing file defines a local binding with the same name at module scope, aliases are excluded to avoid attributing locals to the imported symbol.
 - **Naming cleanup**: Renamed internal functions to use proper names (`analyze`, `rename`) instead of legacy names (`analyze_impact`, `run`, `run_rename`).
-- **Re-export chains**: Current implementation searches direct importers only. Following re-export chains is a future enhancement.
+- **Re-export chains**: Followed by traversing ImportersIndex (BFS with visited set) so aliases in downstream importers are detected.
 
 ---
 

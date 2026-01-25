@@ -2459,7 +2459,7 @@ aliases.extend(cross_file_aliases);
 | Case | Handling |
 |------|----------|
 | `from a import bar as baz; b = baz` | ImportersIndex stores local_name="baz"; alias search finds "baz" aliases |
-| Re-export chains | Each link in chain appears in ImportersIndex; recursive traversal not needed (each file's alias graph is independent) |
+| Re-export chains | Follow chain via ImportersIndex (BFS with visited set) so aliases in downstream importers are detected |
 | Star imports | Handled by star import expansion in Pass 3; expanded names appear as regular imports |
 | Local shadowing | If importing file has its own `bar` definition, LocalSymbol takes precedence over import; alias graph tracks the local binding |
 
@@ -2485,7 +2485,7 @@ aliases.extend(cross_file_aliases);
 | XFA-03 | `test_cross_file_alias_star_import` | `from a import *; b = bar` detected |
 | XFA-04 | `test_cross_file_alias_shadowed` | Local definition shadows import; alias refers to local |
 | XFA-05 | `test_cross_file_alias_multiple_importers` | Multiple files import same symbol; all aliases collected |
-| XFA-06 | `test_cross_file_alias_reexport` | Re-export chain: aliases in final importer detected |
+| XFA-06 | `test_cross_file_alias_reexport` | Re-export chain: aliases in final importer detected (chain traversal) |
 
 **Checkpoint:** `tug analyze rename` shows aliases from importing files; all existing tests pass.
 
