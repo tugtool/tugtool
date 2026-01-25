@@ -6,6 +6,69 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Plan Refinement Round 4: Semantic Facts Expansion and Step Splits | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Main plan document
+- GPT recommendations for foundational semantic facts
+- Code-architect analysis of Python analyzer capabilities
+- `crates/tugtool-python/src/alias.rs` - Existing AliasGraph infrastructure
+- `crates/tugtool-python-cst/src/visitor/` - Existing CST visitors
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add CQ7 (AliasEdge vs AliasOutput relationship) | Done |
+| Add CQ8 (Python analyzer capability analysis) | Done |
+| Add CQ9 (confidence field optionality) | Done |
+| Add CQ10 (ParamKind generality with #[non_exhaustive]) | Done |
+| Split Step 2.7 into 5 sub-steps (2.7a-2.7e) | Done |
+| Split Step 7 into 4 sub-steps (7a-7d) | Done |
+| Update milestones M01d and M04 for new step structure | Done |
+| Add risks for semantic facts scope expansion | Done |
+| Update Public API Surface with newtype IDs | Done |
+| Apply CQ decisions to AliasEdge, ParamKind structs | Done |
+
+**Files Modified:**
+- `plans/phase-11.md` - Major expansion with semantic facts and step splits
+
+**Key Decisions/Notes:**
+
+**CQ7-CQ10 Resolutions:**
+- CQ7: AliasEdge (FactsStore, SymbolId) vs AliasOutput (JSON, strings) are different layers with conversion path
+- CQ8: Python analyzer has partial capability; alias=complete, signatures/calls/attributes=need new collectors
+- CQ9: `confidence: Option<f32>` - Python uses it, Rust sets `Some(1.0)`, no-aliasing languages use `None`
+- CQ10: ParamKind uses `#[non_exhaustive]` with language-tagged variants (Regular, Python, Rust Self*)
+
+**Step 2.7 Split (5 sub-steps):**
+- 2.7a: Alias edges with AliasEdgeId, AliasKind, optional confidence
+- 2.7b: Signatures and type parameters with ParamKind
+- 2.7c: Attribute access and call sites with newtype IDs
+- 2.7d: Qualified names and symbol modifiers
+- 2.7e: Module resolution map
+
+**Step 7 Split (4 sub-steps):**
+- 7a: Core PythonAdapter + LanguageAdapter implementation
+- 7b: Emit alias edges (builds on Phase 10 AliasGraph)
+- 7c: Emit signatures, modifiers, qualified names (new SignatureCollector)
+- 7d: Emit attribute access, call sites, module resolution (most CST work)
+
+**Newtype IDs Added:**
+- `AliasEdgeId(u32)`, `AttributeAccessId(u32)`, `CallSiteId(u32)`
+
+**Code-Architect Analysis Summary:**
+- Alias tracking: Complete (just add AliasKind, convert to symbol IDs)
+- Signatures: Infrastructure exists (need SignatureCollector, extract ParamKind)
+- Call sites: Partial (extend MethodCallCollector with argument walking)
+- Attribute access: Partial (add AttributeAccessKind Read/Write/Call detection)
+
+**Plan Readiness:** Ready for implementation starting with Step 0.
+
+---
+
 ## [phase-11.md] Plan Refinement Round 3: Final Clarifications and Edge Cases | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

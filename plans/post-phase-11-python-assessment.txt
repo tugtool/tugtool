@@ -1,0 +1,73 @@
+Below is a **web‑informed, fundamentals‑focused comparison** of post‑Phase‑11 tug vs. rope, bowler, and ruff. I’ll keep it grounded in modeling capability (not yet the breadth of refactorings).
+
+## What tug will have after Phase 11 (modeling fundamentals)
+- **Cross‑file symbol graph**: symbols, scopes, references, imports, exports, and inheritance.
+- **Explicit export model**: declared vs effective exports, re‑exports, precise spans.
+- **Visibility and module structure**: language‑agnostic visibility, module kinds (file/dir/inline/namespace).
+- **Structured type nodes** (partial): annotations + simple inference, with forward‑compatibility for richer types.
+- **Determinism + edit precision**: span‑based edits, order‑preserving adapter output.
+
+This is a *strong semantic foundation* for a refactoring engine—especially one that aims to be multi‑language.
+
+---
+
+## Rope (Python refactoring library)
+**Web facts:** Rope is a Python refactoring library using AST + static object inference and a project database; it supports rename/move/extract and import resolution.
+
+**Modeling fundamentals vs tug Phase 11:**
+- **Likely stronger today in Python‑specific semantic inference** (object inference, attribute resolution, import machinery).
+- **Less explicit about exports/visibility as first‑class data** (tug’s export model is unusually rich).
+- **Python‑only** (tug is building a multi‑language core).
+
+**Bottom line:** Rope likely **outperforms** post‑Phase‑11 tug on *Python‑specific semantic inference depth*, but tug is **stronger in explicit export/visibility modeling and multi‑language foundations**.
+
+---
+
+## Bowler (CST refactoring, lib2to3/fissix)
+**Web facts:** Bowler refactors via a concrete syntax tree (CST), preserving formatting; it’s pattern/transform‑driven.
+
+**Modeling fundamentals vs tug Phase 11:**
+- **Syntax fidelity:** Bowler excels at format‑preserving syntax rewrites.
+- **Semantic modeling:** Bowler is comparatively shallow (pattern‑based, limited cross‑file semantics).
+- Tug’s FactsStore is **far richer semantically** (symbols, refs, exports, visibility, types).
+
+**Bottom line:** Post‑Phase‑11 tug **beats Bowler on semantic modeling**, while Bowler remains a strong CST‑pattern tool.
+
+---
+
+## Ruff (linter/formatter with fixes)
+**Web facts:** Ruff is a fast linter/formatter with AST parsing and fixers; not a refactoring engine.
+
+**Modeling fundamentals vs tug Phase 11:**
+- Ruff’s modeling is **lint‑oriented** and primarily local.
+- No cross‑file symbol graph or rename/move refactor semantics.
+
+**Bottom line:** Post‑Phase‑11 tug is **significantly ahead** in refactoring fundamentals.
+
+---
+
+## Overall stacking (fundamentals only)
+- **Semantic depth (Python‑specific inference):** Rope > tug (Phase 11) > Bowler ≈ Ruff  
+- **Explicit export/visibility modeling:** tug > Rope > Bowler ≈ Ruff  
+- **Cross‑file symbol graph:** tug ≈ Rope > Bowler > Ruff  
+- **Syntax fidelity / CST precision:** Bowler ≈ tug (CST‑based) > Rope (AST) > Ruff  
+- **Multi‑language foundation:** tug >> Rope/Bowler/Ruff  
+
+---
+
+## What would still be missing to decisively beat rope on Python modeling
+Even with Phase 11, tug would still need **deep Python inference** to be “best‑in‑class”:
+- **Object inference + call resolution**
+- **Attribute/method resolution across inheritance and dynamic patterns**
+- **Protocol/ABC modeling**
+- **TypeVar / generics / type narrowing**
+- **Effective export computation for Python**
+- **Deeper import system modeling (pkg layout, `sys.path`, namespace packages)**
+
+None of those are *incompatible* with your design—they’re the next layer on top of a solid FactsStore.
+
+---
+
+### Final take
+Post‑Phase‑11, tug’s **fundamental data model is stronger than Bowler/Ruff**, and **competitive but not yet superior to Rope** for Python‑specific semantic inference. If your goal is “world’s best refactoring engine,” Phase 11 is a **great foundation**, but you’ll need to build deeper inference and object‑modeling to surpass Rope’s Python‑specific semantics.
+

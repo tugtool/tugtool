@@ -284,6 +284,88 @@ No integration needed; they serve different purposes.
 
 **Resolution:** Type collection should be part of adapter output. Add bundle-level `types: Vec<TypeInfoData>` to `AnalysisBundle` rather than per-file. The integration layer converts and inserts into `FactsStore`.
 
+#### [CQ7] AliasEdge vs AliasOutput Relationship (DECIDED) {#cq7-aliasedge-vs-aliasoutput}
+
+**Question:** What is the relationship between the new `AliasEdge` (FactsStore) and existing `AliasOutput` (output.rs)?
+
+**Resolution:** Different layers, same semantic concept:
+- `AliasEdge` → FactsStore storage, uses `SymbolId` for both alias and target
+- `AliasOutput` → Agent-facing JSON output, uses string names with file/line/col
+
+The conversion path is:
+1. Python CST collectors produce `AliasInfo` (ephemeral, strings)
+2. Adapter converts to `AliasEdgeData` (index-based references)
+3. Integration layer converts to `AliasEdge` (SymbolId-based, persisted)
+4. Query time: `AliasEdge` → `AliasOutput` for JSON serialization
+
+**Implication:** Add `aliases_from_edges()` query method to convert `AliasEdge` to `AliasOutput`.
+
+#### [CQ8] Python Analyzer Capability for New Facts (DECIDED) {#cq8-python-analyzer-capability}
+
+**Question:** Does the Python analyzer currently support attribute access, call sites, signatures, and aliases?
+
+**Resolution:** Based on code-architect analysis:
+
+| Capability | Status | Gap |
+|------------|--------|-----|
+| **Alias tracking** | ✅ Complete | Add `AliasKind` enum, convert to symbol IDs |
+| **Signatures** | ⚠️ Infrastructure exists | Create `SignatureCollector`, extract `ParamKind` |
+| **Call sites** | ⚠️ Partial | Extend `MethodCallCollector` with argument walking |
+| **Attribute access** | ⚠️ Partial | Add `AttributeAccessKind` (Read/Write/Call) detection |
+
+**Key infrastructure exists:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - `ReferenceKind::Attribute`
+- `crates/tugtool-python-cst/src/visitor/method_call.rs` - `MethodCallCollector`
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - `Parameters`, `Param`, `Arg` CST nodes
+- `crates/tugtool-python/src/alias.rs` - `AliasGraph`, `AliasInfo`
+
+**Work required:** Extend existing collectors, not build from scratch.
+
+#### [CQ9] Confidence Field in AliasEdge (DECIDED) {#cq9-confidence-field}
+
+**Question:** Is `AliasEdge.confidence: Option<f32>` Python-specific or language-agnostic?
+
+**Resolution:** Language-agnostic, but optional. Change to `confidence: Option<f32>`:
+- Python: `Some(0.0..1.0)` based on alias certainty (assignment vs conditional)
+- Rust: `Some(1.0)` for `let x = y` (always certain)
+- Languages with uncertain aliasing: Use graduated confidence
+- Languages with no aliasing concept: `None`
+
+This avoids fake values while supporting languages that need confidence scoring.
+
+#### [CQ10] ParamKind Generality (DECIDED) {#cq10-paramkind-generality}
+
+**Question:** The `ParamKind` enum has Python-specific variants. How does it generalize?
+
+**Resolution:** Use `#[non_exhaustive]` and language-tagged variants:
+
+```rust
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum ParamKind {
+    // Language-agnostic
+    Regular,           // Default: standard named parameter
+
+    // Python-specific
+    PositionalOnly,    // Before / separator
+    KeywordOnly,       // After * separator
+    VarArgs,           // *args
+    KwArgs,            // **kwargs
+
+    // Rust-specific (future)
+    SelfValue,         // self
+    SelfRef,           // &self
+    SelfMutRef,        // &mut self
+}
+```
+
+Languages set only the variants they need:
+- Python: All Python variants
+- Rust: `Regular`, `SelfValue`, `SelfRef`, `SelfMutRef`
+- Simple languages: Just `Regular`
+
+`#[non_exhaustive]` allows adding language-specific variants without breaking existing code.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -298,6 +380,9 @@ No integration needed; they serve different purposes.
 | Declared vs effective exports cause ambiguity | med | low | Document intent/origin semantics; add query helpers | Confusing export queries |
 | ReferenceKind additions break exhaustive matches | low | med | Update matches and add tests | Clippy warnings |
 | Origin module path unresolved | low | low | Log warning, leave origin_module_id None | Missing module mappings |
+| Semantic facts add significant scope | med | med | Split into sub-steps (2.7a-e, 7a-d); verify CST capability per [CQ8] | Any sub-step takes >2 days |
+| SignatureCollector requires new CST visitor | med | med | CST infrastructure exists ([CQ8]); just need extraction logic | Signature extraction blocked |
+| Attribute read/write/call context detection | med | med | Extend ReferenceCollector with context tracking | Attribute facts incomplete |
 
 **Risk R01: Schema Versioning Complexity** {#r01-schema-versioning}
 
@@ -1067,7 +1152,7 @@ If __all__ absent:
 **Rationale:** Alias chains are critical for safe refactors and analysis; do not keep them only in output.
 
 **Model:**
-- `AliasEdge { alias_symbol_id, target_symbol_id, kind: AliasKind, confidence: f32, span }`
+- `AliasEdge { alias_symbol_id, target_symbol_id, kind: AliasKind, confidence: Option<f32>, span }`
 - `AliasKind`: Assignment, Import, ReExport, Unknown
 
 #### [D19] Qualified Names and Modifiers (DECIDED) {#d19-qualified-names-modifiers}
@@ -1098,7 +1183,7 @@ If __all__ absent:
 **Model:**
 - `Signature { symbol_id, params: Vec<Parameter>, returns: Option<TypeNode> }`
 - `Parameter { name: String, kind: ParamKind, default_span: Option<Span>, annotation: Option<TypeNode> }`
-- `ParamKind`: PositionalOnly, PositionalOrKeyword, KeywordOnly, VarArgs, KwArgs
+- `ParamKind`: Regular, PositionalOnly, KeywordOnly, VarArgs, KwArgs, SelfValue, SelfRef, SelfMutRef
 - `TypeParam { name: String, bounds: Vec<TypeNode>, default: Option<TypeNode> }`
 
 ---
@@ -1395,6 +1480,9 @@ pub struct Module {
 // AttributeAccess
 // ============================================================================
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct AttributeAccessId(pub u32);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttributeAccessKind {
@@ -1405,7 +1493,7 @@ pub enum AttributeAccessKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttributeAccess {
-    pub access_id: u32,
+    pub access_id: AttributeAccessId,
     pub file_id: FileId,
     pub span: Span,
     pub base_symbol_id: Option<SymbolId>,
@@ -1417,6 +1505,9 @@ pub struct AttributeAccess {
 // CallSite
 // ============================================================================
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct CallSiteId(pub u32);
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallArg {
     /// Argument name for keyword args, None for positional.
@@ -1427,7 +1518,7 @@ pub struct CallArg {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallSite {
-    pub call_id: u32,
+    pub call_id: CallSiteId,
     pub file_id: FileId,
     pub span: Span,
     pub callee_symbol_id: Option<SymbolId>,
@@ -1437,6 +1528,9 @@ pub struct CallSite {
 // ============================================================================
 // AliasEdge
 // ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct AliasEdgeId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1449,13 +1543,15 @@ pub enum AliasKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AliasEdge {
-    pub alias_id: u32,
+    pub alias_id: AliasEdgeId,
     pub file_id: FileId,
     pub span: Span,
     pub alias_symbol_id: SymbolId,
-    pub target_symbol_id: SymbolId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_symbol_id: Option<SymbolId>,
     pub kind: AliasKind,
-    pub confidence: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
 }
 
 // ============================================================================
@@ -1503,12 +1599,16 @@ pub struct ModuleResolution {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ParamKind {
+    Regular,
     PositionalOnly,
-    PositionalOrKeyword,
     KeywordOnly,
     VarArgs,
     KwArgs,
+    SelfValue,
+    SelfRef,
+    SelfMutRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1892,8 +1992,8 @@ pub struct AliasEdgeData {
     pub span: Span,
     /// Alias kind
     pub kind: AliasKind,
-    /// Confidence score (0.0-1.0)
-    pub confidence: f32,
+    /// Confidence score (0.0-1.0), if available
+    pub confidence: Option<f32>,
 }
 
 /// Qualified name from single-file analysis.
@@ -2141,10 +2241,13 @@ pub trait LanguageAdapter {
 | `ModuleKind::Inline` | variant | `facts/mod.rs` | Rust inline module (`mod foo { ... }`) |
 | `ModuleKind::Namespace` | variant | `facts/mod.rs` | Virtual module with no concrete file |
 | `Module::decl_span` | field | `facts/mod.rs` | Optional span for inline module declarations |
+| `AttributeAccessId` | struct | `facts/mod.rs` | Newtype for u32 |
 | `AttributeAccess` | struct | `facts/mod.rs` | Attribute reads/writes/calls |
 | `AttributeAccessKind` | enum | `facts/mod.rs` | Read, Write, Call |
+| `CallSiteId` | struct | `facts/mod.rs` | Newtype for u32 |
 | `CallSite` | struct | `facts/mod.rs` | Call site facts |
 | `CallArg` | struct | `facts/mod.rs` | Call argument (pos/kw) |
+| `AliasEdgeId` | struct | `facts/mod.rs` | Newtype for u32 |
 | `AliasEdge` | struct | `facts/mod.rs` | Alias relationships |
 | `AliasKind` | enum | `facts/mod.rs` | Assignment, Import, ReExport |
 | `QualifiedName` | struct | `facts/mod.rs` | Fully-qualified symbol name |
@@ -2197,9 +2300,9 @@ Compact reference of new/expanded FactsStore tables introduced in Phase 11:
 | Table / Type | Purpose | Key fields |
 |-------------|---------|------------|
 | `PublicExport` | Canonical exports across languages | `export_kind`, `export_intent`, spans |
-| `AttributeAccess` | Member read/write/call facts | `base_symbol_id`, `name`, `kind` |
-| `CallSite` | Call sites with args | `callee_symbol_id`, `args`, `span` |
-| `AliasEdge` | Alias chains and provenance | `alias_symbol_id`, `target_symbol_id`, `kind` |
+| `AttributeAccess` | Member read/write/call facts | `access_id`, `base_symbol_id`, `name`, `kind` |
+| `CallSite` | Call sites with args | `call_id`, `callee_symbol_id`, `args`, `span` |
+| `AliasEdge` | Alias chains and provenance | `alias_id`, `alias_symbol_id`, `target_symbol_id`, `kind` |
 | `QualifiedName` | Fully-qualified symbol IDs | `symbol_id`, `path` |
 | `SymbolModifiers` | Semantic modifiers | `symbol_id`, `modifiers` |
 | `ModuleResolution` | Module path → module IDs | `module_path`, `module_ids` |
@@ -2365,10 +2468,7 @@ fn alias_kind_serialization() {
 
 #[test]
 fn param_kind_serialization() {
-    assert_eq!(
-        serde_json::to_string(&ParamKind::PositionalOnly).unwrap(),
-        "\"positional_only\""
-    );
+    assert_eq!(serde_json::to_string(&ParamKind::Regular).unwrap(), "\"regular\"");
 }
 
 #[test]
@@ -2653,42 +2753,276 @@ fn visibility_inference_public_dunder() {
 
 ---
 
-#### Step 2.7: Add Foundational Semantic Facts {#step-2-7}
+#### Step 2.7: Add Foundational Semantic Facts (Overview) {#step-2-7}
 
-**Commit:** `feat(facts): add attribute, call, alias, signature, and module maps`
+> **SEQUENTIAL EXECUTION:** Steps 2.7a through 2.7e should be executed in order.
+> Each step adds a distinct fact system to FactsStore.
 
-**References:** [D16] Attribute Access, [D17] Call Sites, [D18] Alias Edges, [D19] Qualified Names/Modifiers, [D20] Module Resolution, [D21] Signatures/TypeParams
+**References:** [D16]-[D21], [CQ7]-[CQ10]
+
+This step is split into 5 sub-steps for manageable commits:
+- **Step 2.7a:** Alias edges (builds on Phase 10 infrastructure)
+- **Step 2.7b:** Signatures and type parameters
+- **Step 2.7c:** Attribute access and call sites
+- **Step 2.7d:** Qualified names and symbol modifiers
+- **Step 2.7e:** Module resolution map
+
+---
+
+#### Step 2.7a: Add Alias Edges to FactsStore {#step-2-7a}
+
+**Commit:** `feat(facts): add AliasEdge for persisted alias tracking`
+
+**References:** [D18] Alias Edges, [CQ7] AliasEdge vs AliasOutput, [CQ9] Confidence Field
+
+**Rationale:** Alias tracking from Phase 10 is ephemeral (built at query time). Persisting aliases enables efficient cross-file refactors and alias chain reasoning.
 
 **Artifacts:**
-- Attribute access tables + indexes
-- Call site tables + indexes
-- Alias edge tables + indexes
-- Qualified name table
-- Module resolution map
-- Signature + parameter tables
-- Type parameter table
-- Symbol modifier table
+- `AliasEdge` struct in FactsStore
+- `AliasKind` enum
+- Storage tables and indexes
+- `aliases_from_edges()` query for AliasOutput conversion
 
 **Tasks:**
-- [ ] Add `AttributeAccess` + `AttributeAccessKind` to FactsStore
-- [ ] Add `CallSite` + `CallArg` to FactsStore
-- [ ] Add `AliasEdge` + `AliasKind` to FactsStore
-- [ ] Add `QualifiedName` and `SymbolModifiers` to FactsStore
-- [ ] Add `ModuleResolution` map to FactsStore
-- [ ] Add `Signature`, `Parameter`, `ParamKind`, `TypeParam` to FactsStore
-- [ ] Add ID generators, insert/query helpers, and indexes for the above
-- [ ] Ensure deterministic ordering for new tables
+- [ ] Add `AliasKind` enum: `Assignment`, `Import`, `ReExport`, `Unknown`
+- [ ] Add `AliasEdgeId` newtype
+- [ ] Add `AliasEdge` struct with fields:
+  - `alias_id: AliasEdgeId`
+  - `file_id: FileId`
+  - `span: Span`
+  - `alias_symbol_id: SymbolId`
+  - `target_symbol_id: Option<SymbolId>`
+  - `kind: AliasKind`
+  - `confidence: Option<f32>` (per [CQ9])
+- [ ] Add `alias_edges: BTreeMap<AliasEdgeId, AliasEdge>` to FactsStore
+- [ ] Add `alias_edges_by_file: HashMap<FileId, Vec<AliasEdgeId>>` index
+- [ ] Add `alias_edges_by_alias: HashMap<SymbolId, Vec<AliasEdgeId>>` index
+- [ ] Add `alias_edges_by_target: HashMap<SymbolId, Vec<AliasEdgeId>>` index
+- [ ] Add `next_alias_edge_id()`, `insert_alias_edge()`, `alias_edge()` methods
+- [ ] Add `alias_edges_for_symbol()` query (forward lookup)
+- [ ] Add `alias_sources_for_target()` query (reverse lookup)
+- [ ] Add `aliases_from_edges()` to convert `AliasEdge` → `AliasOutput` for JSON
 
 **Tests:**
-- [ ] Unit: Serialization for new enums/structs
-- [ ] Unit: Insert/query roundtrips for each new table
-- [ ] Unit: Deterministic ordering of new tables
+- [ ] Unit: `AliasKind` serialization (all variants)
+- [ ] Unit: `AliasEdge` with `confidence: None` serializes without field
+- [ ] Unit: `AliasEdge` with `confidence: Some(0.8)` serializes correctly
+- [ ] Unit: Insert/query roundtrip for `AliasEdge`
+- [ ] Unit: Forward and reverse lookups work correctly
+- [ ] Unit: `aliases_from_edges()` produces valid `AliasOutput`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core facts`
+- [ ] `cargo nextest run -p tugtool-core alias`
 
-**Rollback:**
-- Revert commit
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 2.7b: Add Signatures and Type Parameters {#step-2-7b}
+
+**Commit:** `feat(facts): add Signature and TypeParam for function modeling`
+
+**References:** [D21] Signature + Type Parameter Facts, [CQ10] ParamKind Generality
+
+**Rationale:** Signatures enable parameter rename, API migration, and function documentation. Type parameters support generic type reasoning.
+
+**Artifacts:**
+- `Signature`, `Parameter`, `ParamKind` in FactsStore
+- `TypeParam` in FactsStore
+- Storage and queries
+
+**Tasks:**
+- [ ] Add `ParamKind` enum with `#[non_exhaustive]`:
+  - `Regular` (default)
+  - `PositionalOnly` (Python)
+  - `KeywordOnly` (Python)
+  - `VarArgs` (Python `*args`)
+  - `KwArgs` (Python `**kwargs`)
+  - `SelfValue`, `SelfRef`, `SelfMutRef` (Rust, future)
+- [ ] Add `Parameter` struct:
+  - `name: String`
+  - `kind: ParamKind`
+  - `default_span: Option<Span>`
+  - `annotation: Option<TypeNode>`
+- [ ] Add `Signature` struct:
+  - `symbol_id: SymbolId`
+  - `params: Vec<Parameter>`
+  - `returns: Option<TypeNode>`
+- [ ] Add `TypeParam` struct:
+  - `name: String`
+  - `bounds: Vec<TypeNode>`
+  - `default: Option<TypeNode>`
+- [ ] Add `signatures: BTreeMap<SymbolId, Signature>` to FactsStore
+- [ ] Add `type_params: BTreeMap<SymbolId, Vec<TypeParam>>` to FactsStore
+- [ ] Add `insert_signature()`, `signature()`, `signatures()` methods
+- [ ] Add `insert_type_params()`, `type_params_for()` methods
+
+**Tests:**
+- [ ] Unit: `ParamKind` serialization (all variants)
+- [ ] Unit: `Parameter` with and without annotation
+- [ ] Unit: `Signature` with multiple params and return type
+- [ ] Unit: `TypeParam` with bounds and default
+- [ ] Unit: Insert/query roundtrip for signatures
+- [ ] Unit: Multiple type params per symbol
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core signature`
+- [ ] `cargo nextest run -p tugtool-core type_param`
+
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 2.7c: Add Attribute Access and Call Sites {#step-2-7c}
+
+**Commit:** `feat(facts): add AttributeAccess and CallSite for access patterns`
+
+**References:** [D16] Attribute Access Facts, [D17] Call Site Facts
+
+**Rationale:** Attribute access enables method resolution and property refactors. Call sites enable parameter rename and API migration.
+
+**Artifacts:**
+- `AttributeAccess`, `AttributeAccessKind` in FactsStore
+- `CallSite`, `CallArg` in FactsStore
+- Storage and indexes
+
+**Tasks:**
+- [ ] Add `AttributeAccessKind` enum: `Read`, `Write`, `Call`
+- [ ] Add `AttributeAccessId` newtype
+- [ ] Add `AttributeAccess` struct:
+  - `access_id: AttributeAccessId`
+  - `file_id: FileId`
+  - `span: Span`
+  - `base_symbol_id: Option<SymbolId>` (resolved base, if known)
+  - `name: String` (attribute name)
+  - `kind: AttributeAccessKind`
+- [ ] Add `CallArg` struct:
+  - `name: Option<String>` (keyword arg name, None for positional)
+  - `span: Span`
+- [ ] Add `CallSiteId` newtype
+- [ ] Add `CallSite` struct:
+  - `call_id: CallSiteId`
+  - `file_id: FileId`
+  - `span: Span`
+  - `callee_symbol_id: Option<SymbolId>` (resolved callee, if known)
+  - `args: Vec<CallArg>`
+- [ ] Add `attribute_accesses: BTreeMap<AttributeAccessId, AttributeAccess>` to FactsStore
+- [ ] Add `attribute_accesses_by_file: HashMap<FileId, Vec<AttributeAccessId>>` index
+- [ ] Add `attribute_accesses_by_name: HashMap<String, Vec<AttributeAccessId>>` index
+- [ ] Add `call_sites: BTreeMap<CallSiteId, CallSite>` to FactsStore
+- [ ] Add `call_sites_by_file: HashMap<FileId, Vec<CallSiteId>>` index
+- [ ] Add `call_sites_by_callee: HashMap<SymbolId, Vec<CallSiteId>>` index
+- [ ] Add `next_attribute_access_id()` and `next_call_site_id()` generators
+- [ ] Add insert/query methods for both tables
+
+**Tests:**
+- [ ] Unit: `AttributeAccessKind` serialization
+- [ ] Unit: `AttributeAccess` with resolved and unresolved base
+- [ ] Unit: `CallArg` with and without keyword name
+- [ ] Unit: `CallSite` with positional and keyword args
+- [ ] Unit: Insert/query roundtrip for attribute accesses
+- [ ] Unit: Insert/query roundtrip for call sites
+- [ ] Unit: Query by attribute name
+- [ ] Unit: Query by callee symbol
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core attribute`
+- [ ] `cargo nextest run -p tugtool-core call_site`
+
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 2.7d: Add Qualified Names and Symbol Modifiers {#step-2-7d}
+
+**Commit:** `feat(facts): add QualifiedName and Modifier for symbol metadata`
+
+**References:** [D19] Qualified Names and Modifiers
+
+**Rationale:** Qualified names enable stable cross-module identification. Modifiers capture semantic attributes (async, static, property) in a language-agnostic way.
+
+**Artifacts:**
+- `QualifiedName` in FactsStore
+- `Modifier` enum and `SymbolModifiers` in FactsStore
+- Storage and queries
+
+**Tasks:**
+- [ ] Add `Modifier` enum with `#[non_exhaustive]`:
+  - `Async`, `Static`, `ClassMethod`, `Property`
+  - `Abstract`, `Final`, `Override`, `Generator`
+- [ ] Add `QualifiedName` struct:
+  - `symbol_id: SymbolId`
+  - `path: String` (e.g., `"pkg.mod.Class.method"`)
+- [ ] Add `SymbolModifiers` struct:
+  - `symbol_id: SymbolId`
+  - `modifiers: Vec<Modifier>`
+- [ ] Add `qualified_names: BTreeMap<SymbolId, QualifiedName>` to FactsStore
+- [ ] Add `qualified_names_by_path: HashMap<String, SymbolId>` reverse index
+- [ ] Add `symbol_modifiers: BTreeMap<SymbolId, SymbolModifiers>` to FactsStore
+- [ ] Add insert/query methods:
+  - `insert_qualified_name()`, `qualified_name()`, `symbol_by_qualified_name()`
+  - `insert_modifiers()`, `modifiers_for()`
+- [ ] Add `has_modifier(symbol_id, modifier)` convenience query
+
+**Tests:**
+- [ ] Unit: `Modifier` serialization (all variants)
+- [ ] Unit: `QualifiedName` roundtrip
+- [ ] Unit: Reverse lookup by path
+- [ ] Unit: `SymbolModifiers` with multiple modifiers
+- [ ] Unit: `has_modifier()` query
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core qualified`
+- [ ] `cargo nextest run -p tugtool-core modifier`
+
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 2.7e: Add Module Resolution Map {#step-2-7e}
+
+**Commit:** `feat(facts): add ModuleResolution for import path mapping`
+
+**References:** [D20] Module Resolution Map
+
+**Rationale:** Module resolution supports namespace packages (multiple files for one module path), import resolution, and re-export tracing.
+
+**Artifacts:**
+- `ModuleResolution` in FactsStore
+- Storage and queries
+
+**Tasks:**
+- [ ] Add `ModuleResolution` struct:
+  - `module_path: String` (e.g., `"pkg.sub"`)
+  - `module_ids: Vec<ModuleId>` (supports namespace packages)
+- [ ] Add `module_resolutions: BTreeMap<String, ModuleResolution>` to FactsStore
+- [ ] Add `module_ids_by_path: HashMap<String, Vec<ModuleId>>` convenience index
+- [ ] Add insert/query methods:
+  - `insert_module_resolution()` (merges module_ids if path exists)
+  - `resolve_module_path()` → `Option<&ModuleResolution>`
+  - `module_ids_for_path()` → `&[ModuleId]`
+- [ ] Handle namespace package merging: if path exists, append module_ids
+- [ ] Add `all_module_paths()` iterator
+
+**Tests:**
+- [ ] Unit: `ModuleResolution` serialization
+- [ ] Unit: Single module per path
+- [ ] Unit: Namespace package (multiple modules per path)
+- [ ] Unit: Merge behavior on duplicate insert
+- [ ] Unit: `module_ids_for_path()` returns empty slice for unknown path
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core module_resolution`
+
+**Rollback:** Revert commit
 
 **Commit after all checkpoints pass.**
 
@@ -3020,27 +3354,41 @@ fn file_results_preserves_input_order() {
 
 ---
 
-#### Step 7: Implement LanguageAdapter for Python {#step-7}
+#### Step 7: Implement LanguageAdapter for Python (Overview) {#step-7}
 
-**Commit:** `feat(python): implement LanguageAdapter trait for Python analyzer`
+> **SEQUENTIAL EXECUTION:** Steps 7a through 7d should be executed in order.
+> Each step builds on the previous, incrementally adding semantic fact emission.
 
-**References:** [D06] LanguageAdapter Trait Design, [CQ5] Cross-File Resolution, [CQ6] TypeInfo in Adapter, (#language-adapter)
+**References:** [D06], [CQ5], [CQ6], [CQ8]
+
+**Integration Layer Responsibilities:**
+The integration layer (in `crates/tugtool-python/src/analyzer.rs`) is responsible for:
+1. Calling `adapter.analyze_files()` to get `AnalysisBundle`
+2. Allocating IDs via `FactsStore::next_*_id()` methods
+3. Converting adapter data types to FactsStore types
+4. Inserting into `FactsStore` via `insert_*()` methods
+5. Preserving `file_results` order (or remapping indices if order changes)
+
+This step is split into 4 sub-steps:
+- **Step 7a:** Core PythonAdapter + LanguageAdapter implementation
+- **Step 7b:** Emit alias edges (smallest gap per [CQ8])
+- **Step 7c:** Emit signatures and modifiers
+- **Step 7d:** Emit attribute access, call sites, and module resolution
+
+---
+
+#### Step 7a: Core PythonAdapter Implementation {#step-7a}
+
+**Commit:** `feat(python): implement LanguageAdapter trait`
+
+**References:** [D06] LanguageAdapter Trait Design, [CQ5] Cross-File Resolution, [CQ6] TypeInfo in Adapter
+
+**Rationale:** Establish the adapter pattern before adding semantic fact emission. This ensures the basic infrastructure works before layering on complexity.
 
 **Artifacts:**
 - `PythonAdapter` struct implementing `LanguageAdapter`
 - `PythonAnalyzerOptions` for configuration
-- Refactored `analyze_files` to use adapter internally
-- Integration layer for ID allocation
-
-**Integration Layer Responsibilities:**
-The integration layer (currently in CLI or caller code) is responsible for:
-1. Calling `adapter.analyze_files()` to get `AnalysisBundle`
-2. Allocating IDs via `FactsStore::next_*_id()` methods
-3. Converting adapter data types (`SymbolData`, `ScopeData`, etc.) to FactsStore types (`Symbol`, `ScopeInfo`, etc.)
-4. Inserting into `FactsStore` via `insert_*()` methods
-5. Preserving `file_results` order (or remapping indices if order changes)
-
-For Phase 11, this logic lives in the existing Python analyzer integration code (see `crates/tugtool-python/src/analyzer.rs`). Future phases may extract a reusable integration layer.
+- Basic conversion from `FileAnalysis` to `FileAnalysisResult`
 
 **Tasks:**
 - [ ] Create `PythonAdapter` struct in `analyzer.rs`
@@ -3054,27 +3402,19 @@ For Phase 11, this logic lives in the existing Python analyzer integration code 
 - [ ] Add `PythonAdapter::new()` constructor
 - [ ] Add `PythonAdapter::with_options(options: PythonAnalyzerOptions)` constructor
 - [ ] Export `PythonAdapter` from `tugtool_python`
-- [ ] Add conversion from `FileAnalysis` to `FileAnalysisResult`
+- [ ] Add basic conversion from `FileAnalysis` to `FileAnalysisResult`:
+  - Scopes → `ScopeData`
+  - Symbols → `SymbolData`
+  - References → `ReferenceData`
+  - Imports → `ImportData`
+  - Exports → `ExportData`
 - [ ] Add conversion from `FileAnalysisBundle` to `AnalysisBundle`
 - [ ] Update adapter conversion to include `ImportKind` and new export fields
 - [ ] Emit `ExportIntent::Declared` for explicit `__all__` exports
-- [ ] Do **not** emit `ExportIntent::Effective` for Python (deferred per [D13](#d13-python-effective-exports))
-- [ ] Map native reference kinds to adapter `ReferenceKind` (Definition/Read/Write/Call/Import/Attribute/TypeAnnotation/Delete)
-- [ ] Emit attribute access facts (read/write/call) in adapter output
-- [ ] Emit call site facts with argument structure
-- [ ] Emit alias edges for assignment/import aliasing
-- [ ] Emit qualified names for all symbols
-- [ ] Emit signatures + parameters (when available)
-- [ ] Emit type parameter facts (when available)
-- [ ] Emit symbol modifiers (async, static, property, etc.)
-- [ ] Emit module resolution map in `AnalysisBundle.modules`
-- [ ] **Integration layer:** Map adapter `ReferenceKind` to `facts::ReferenceKind` (including `Delete`)
-- [ ] **Integration layer:** Convert `ExportData.origin_module_path` to `PublicExport.origin_module_id` via module path lookup
+- [ ] Do **not** emit `ExportIntent::Effective` for Python (deferred per [D13])
+- [ ] Map native reference kinds to adapter `ReferenceKind`
+- [ ] **Integration layer:** Map adapter `ReferenceKind` to `facts::ReferenceKind`
 - [ ] **Integration layer:** Handle invalid `TypeInfoData` indices (log warning, skip entry, continue)
-- [ ] **Integration layer:** If `origin_module_path` cannot be resolved, log warning and leave `origin_module_id = None`
-- [ ] **Integration layer:** Convert attribute/call/alias/signature/modifier facts into FactsStore tables
-- [ ] **Integration layer:** Build `ModuleResolution` from `AnalysisBundle.modules`
-- [ ] **Integration layer:** Drop invalid module file indices (log warning, continue)
 - [ ] **Integration layer:** Verify existing ID allocation code works with adapter output
 
 **Tests:**
@@ -3083,13 +3423,6 @@ For Phase 11, this logic lives in the existing Python analyzer integration code 
 - [ ] Unit: `PythonAdapter::language` returns `Language::Python`
 - [ ] Unit: `AnalysisBundle.types` is populated with type information
 - [ ] Unit: Adapter `ReferenceKind::Definition` maps to FactsStore `ReferenceKind::Definition`
-- [ ] Unit: Unresolvable `origin_module_path` logs warning and leaves `origin_module_id = None`
-- [ ] Unit: `AnalysisBundle.modules` is populated for multi-file packages
-- [ ] Unit: Invalid `ModuleResolutionData.file_indices` are dropped with warning
-- [ ] Integration: AttributeAccess and CallSite facts are populated
-- [ ] Integration: Alias edges are populated for assignments/imports
-- [ ] Integration: Qualified names are populated for symbols
-- [ ] Integration: Signatures and modifiers are populated where available
 - [ ] Integration: `PythonAdapter::analyze_files` produces same results as direct function call
 - [ ] Integration: Integration layer correctly allocates IDs and populates FactsStore
 - [ ] Integration: Existing rename tests pass with adapter
@@ -3098,12 +3431,202 @@ For Phase 11, this logic lives in the existing Python analyzer integration code 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python adapter`
 - [ ] `cargo nextest run -p tugtool-python rename`
-- [ ] `cargo nextest run --workspace`
 
-**Rollback:**
-- Revert commit
+**Rollback:** Revert commit
 
 **Commit after all checkpoints pass.**
+
+---
+
+#### Step 7b: Emit Alias Edges {#step-7b}
+
+**Commit:** `feat(python): emit alias edges in adapter output`
+
+**References:** [D18] Alias Edges, [CQ7] AliasEdge vs AliasOutput, [CQ8] Python Analyzer Capability
+
+**Rationale:** Alias tracking has the smallest gap - infrastructure exists from Phase 10. Just need to add `AliasKind` and convert to adapter types.
+
+**Existing Infrastructure (per [CQ8]):**
+- `crates/tugtool-python/src/alias.rs` - `AliasGraph`, `AliasInfo` complete
+- `AliasInfo` has: `alias_name`, `source_name`, `scope_path`, `alias_span`, `source_is_import`, `confidence`
+
+**Work Required:**
+- Add `AliasKind` classification (Assignment vs Import vs ReExport)
+- Convert `AliasInfo` to `AliasEdgeData` with symbol index resolution
+
+**Tasks:**
+- [ ] Extend `AliasInfo` (or create wrapper) to include `AliasKind`
+- [ ] Classify aliases during `AliasGraph::from_analysis`:
+  - `source_is_import == true` → `AliasKind::Import`
+  - `source_is_import == false` → `AliasKind::Assignment`
+  - (ReExport detected via `__all__` membership → `AliasKind::ReExport`)
+- [ ] Add `aliases: Vec<AliasEdgeData>` to `FileAnalysisResult`
+- [ ] Convert `AliasInfo` to `AliasEdgeData`:
+  - Resolve `alias_name` → `alias_symbol_index` via symbol lookup
+  - Resolve `source_name` → `target_symbol_index` (may be `None` if unresolved)
+  - Map `confidence` directly
+- [ ] **Integration layer:** Convert `AliasEdgeData` to `AliasEdge` with SymbolId resolution
+- [ ] **Integration layer:** Add `aliases_from_edges()` query to convert for JSON output
+
+**Tests:**
+- [ ] Unit: Assignment alias classified as `AliasKind::Assignment`
+- [ ] Unit: Import alias classified as `AliasKind::Import`
+- [ ] Unit: `confidence` preserved through conversion
+- [ ] Integration: Alias edges populated in FactsStore
+- [ ] Integration: `aliases_from_edges()` produces valid `AliasOutput`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python alias`
+- [ ] `cargo nextest run -p tugtool-core alias`
+
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 7c: Emit Signatures and Modifiers {#step-7c}
+
+**Commit:** `feat(python): emit signatures, modifiers, and qualified names`
+
+**References:** [D19] Qualified Names/Modifiers, [D21] Signatures/TypeParams, [CQ8], [CQ10]
+
+**Rationale:** Signature infrastructure exists in CST but needs dedicated collection. This step creates `SignatureCollector` and wires it up.
+
+**Existing Infrastructure (per [CQ8]):**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - `Parameters`, `Param` CST nodes
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - Type annotations collected
+
+**Work Required:**
+- Create `SignatureCollector` visitor
+- Classify `ParamKind` from position in `Parameters` struct
+- Extract modifiers from decorators and async/def keywords
+
+**Tasks:**
+- [ ] Create `SignatureCollector` visitor in `tugtool-python-cst`:
+  - Visit `FunctionDef` and `AsyncFunctionDef` nodes
+  - Extract `Parameters` structure
+  - Classify each param by kind based on position
+  - Capture default value spans from `param.default`
+  - Capture return annotation from `node.returns`
+- [ ] Add `signatures: Vec<SignatureData>` to `FileAnalysisResult`
+- [ ] Add `modifiers: Vec<ModifierData>` to `FileAnalysisResult`
+- [ ] Detect modifiers from:
+  - `async def` → `Modifier::Async`
+  - `@staticmethod` → `Modifier::Static`
+  - `@classmethod` → `Modifier::ClassMethod`
+  - `@property` → `Modifier::Property`
+  - `@abstractmethod` → `Modifier::Abstract`
+- [ ] Add `qualified_names: Vec<QualifiedNameData>` to `FileAnalysisResult`
+- [ ] Compute qualified names as `module_path.scope_path.symbol_name`
+- [ ] Add `type_params: Vec<TypeParamData>` to `FileAnalysisResult` (for generic functions)
+- [ ] **Integration layer:** Convert to FactsStore types
+
+**Tests:**
+- [ ] Unit: `ParamKind::PositionalOnly` for params before `/`
+- [ ] Unit: `ParamKind::KeywordOnly` for params after `*`
+- [ ] Unit: `ParamKind::VarArgs` for `*args`
+- [ ] Unit: `ParamKind::KwArgs` for `**kwargs`
+- [ ] Unit: `Modifier::Async` detected for async functions
+- [ ] Unit: `Modifier::Property` detected for `@property`
+- [ ] Integration: Signatures populated in FactsStore
+- [ ] Integration: Modifiers populated for decorated functions
+- [ ] Integration: Qualified names computed correctly
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python signature`
+- [ ] `cargo nextest run -p tugtool-python modifier`
+
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 7d: Emit Attribute Access, Call Sites, and Module Resolution {#step-7d}
+
+**Commit:** `feat(python): emit attribute access, call sites, and module resolution`
+
+**References:** [D16] Attribute Access, [D17] Call Sites, [D20] Module Resolution, [CQ8]
+
+**Rationale:** Attribute access and call sites require the most CST work - extending collectors with read/write/call context detection and argument walking.
+
+**Existing Infrastructure (per [CQ8]):**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - `ReferenceKind::Attribute`
+- `crates/tugtool-python-cst/src/visitor/method_call.rs` - `MethodCallCollector`
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - `Arg` CST node
+
+**Work Required:**
+- Add `AttributeAccessKind` (Read/Write/Call) detection
+- Extend `MethodCallCollector` with argument walking
+- Build module resolution map from file paths
+
+**Tasks:**
+- [ ] Create `AttributeAccessCollector` or extend `ReferenceCollector`:
+  - Track `obj.attr` patterns with base expression context
+  - Detect `AttributeAccessKind::Read` for load context
+  - Detect `AttributeAccessKind::Write` for store context (`obj.attr = x`)
+  - Detect `AttributeAccessKind::Call` for call context (`obj.attr()`)
+- [ ] Add `attributes: Vec<AttributeAccessData>` to `FileAnalysisResult`
+- [ ] Extend `MethodCallCollector` or create `CallSiteCollector`:
+  - Walk `Call.args` to extract argument info
+  - `arg.keyword` is `Some` for keyword args, `None` for positional
+  - Capture spans for each argument
+- [ ] Add `calls: Vec<CallSiteData>` to `FileAnalysisResult`
+- [ ] Build module resolution map in `AnalysisBundle`:
+  - Map module paths to file indices
+  - Support namespace packages (multiple files per path)
+- [ ] Add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle`
+- [ ] **Integration layer:** Convert to FactsStore types
+- [ ] **Integration layer:** Convert `ExportData.origin_module_path` to `origin_module_id`
+- [ ] **Integration layer:** Build `ModuleResolution` from `AnalysisBundle.modules`
+- [ ] **Integration layer:** Drop invalid module file indices (log warning, continue)
+- [ ] **Integration layer:** If `origin_module_path` unresolvable, log warning, leave `origin_module_id = None`
+
+**Tests:**
+- [ ] Unit: `AttributeAccessKind::Read` for `obj.x` in load context
+- [ ] Unit: `AttributeAccessKind::Write` for `obj.x = 1`
+- [ ] Unit: `AttributeAccessKind::Call` for `obj.x()`
+- [ ] Unit: `CallArg` with keyword name for `f(x=1)`
+- [ ] Unit: `CallArg` without name for `f(1)`
+- [ ] Unit: Module resolution maps path to file
+- [ ] Unit: Namespace package maps path to multiple files
+- [ ] Unit: Unresolvable `origin_module_path` logs warning and leaves `origin_module_id = None`
+- [ ] Unit: Invalid `ModuleResolutionData.file_indices` are dropped with warning
+- [ ] Integration: AttributeAccess facts populated in FactsStore
+- [ ] Integration: CallSite facts populated in FactsStore
+- [ ] Integration: ModuleResolution populated in FactsStore
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python attribute`
+- [ ] `cargo nextest run -p tugtool-python call`
+- [ ] `cargo nextest run -p tugtool-python module_resolution`
+- [ ] `cargo nextest run --workspace`
+
+**Rollback:** Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 7 Summary {#step-7-summary}
+
+**Execution Order:** Step 7a → Step 7b → Step 7c → Step 7d
+
+Each step is a buildable commit:
+1. **Step 7a:** Core PythonAdapter (basic adapter infrastructure)
+2. **Step 7b:** Alias edges (smallest gap, builds on Phase 10)
+3. **Step 7c:** Signatures + modifiers + qualified names (new collector)
+4. **Step 7d:** Attribute access + call sites + module resolution (most CST work)
+
+After completing all steps, you will have:
+- `PythonAdapter` implementing `LanguageAdapter`
+- All semantic fact types emitted by the adapter
+- Integration layer converting adapter output to FactsStore
+
+**Final Step 7 Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python`
+- [ ] `cargo nextest run --workspace`
 
 ---
 
@@ -3359,9 +3882,12 @@ The following special patterns in subscripts MUST be recognized:
 - [ ] Adapter ReferenceKind includes Definition/Delete
 
 **Milestone M01d: Semantic Facts Foundation** {#m01d-semantic-facts}
-- [ ] Step 2.7 complete
-- [ ] Attribute access, call sites, aliases, signatures, modifiers captured
-- [ ] Qualified names and module resolution available
+- [ ] Steps 2.7a-2.7e complete
+- [ ] Alias edges persisted in FactsStore (Step 2.7a)
+- [ ] Signatures and type parameters available (Step 2.7b)
+- [ ] Attribute access and call sites captured (Step 2.7c)
+- [ ] Qualified names and modifiers available (Step 2.7d)
+- [ ] Module resolution map populated (Step 2.7e)
 
 **Milestone M02: Export Generalization** {#m02-export}
 - [ ] Steps 3, 3a, 3b, 3c complete
@@ -3375,8 +3901,12 @@ The following special patterns in subscripts MUST be recognized:
 - [ ] LanguageAdapter trait defined
 
 **Milestone M04: Python Adapter Complete** {#m04-python-adapter}
-- [ ] Steps 7-8 complete
-- [ ] PythonAdapter implements LanguageAdapter
+- [ ] Steps 7a-7d complete
+- [ ] Core PythonAdapter implements LanguageAdapter (Step 7a)
+- [ ] Alias edges emitted (Step 7b)
+- [ ] Signatures, modifiers, qualified names emitted (Step 7c)
+- [ ] Attribute access, call sites, module resolution emitted (Step 7d)
+- [ ] Step 8 complete (visibility inference)
 - [ ] Python visibility inference available
 
 **Milestone M05: Structured Types** {#m05-structured-types}
