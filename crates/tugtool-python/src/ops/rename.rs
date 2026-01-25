@@ -506,6 +506,46 @@ fn module_binding_kind(name: &str, file_analysis: &FileAnalysis) -> Option<Modul
     }
 }
 
+/// Collect aliases for a symbol from its declaration file.
+fn collect_same_file_aliases(
+    symbol_name: &str,
+    symbol_decl_span: &Span,
+    decl_file_analysis: &FileAnalysis,
+    decl_content: &str,
+) -> Vec<AliasOutput> {
+    let symbol_scope_path = match find_symbol_scope_id(symbol_decl_span, decl_file_analysis) {
+        Some(scope_id) => build_scope_path(scope_id, &decl_file_analysis.scopes),
+        None => return Vec::new(),
+    };
+
+    let file_aliases = decl_file_analysis.alias_graph.transitive_aliases(
+        symbol_name,
+        Some(&symbol_scope_path),
+        None,
+    );
+
+    file_aliases
+        .into_iter()
+        .map(|alias_info| {
+            let (line, col) = if let Some(span) = alias_info.alias_span {
+                tugtool_core::text::byte_offset_to_position_str(decl_content, span.start)
+            } else {
+                (1, 1)
+            };
+            AliasOutput::new(
+                alias_info.alias_name,
+                alias_info.source_name,
+                decl_file_analysis.path.clone(),
+                line,
+                col,
+                alias_info.scope_path,
+                alias_info.source_is_import,
+                alias_info.confidence,
+            )
+        })
+        .collect()
+}
+
 /// Collect aliases for a symbol from files that import it.
 ///
 /// This function enables cross-file alias tracking: when renaming a symbol in
@@ -741,37 +781,13 @@ pub fn analyze(
         .iter()
         .find(|fa| fa.path == decl_file.path)
     {
-        // Get the symbol's scope_path from its declaration
-        let symbol_scope_path = find_symbol_scope_id(&symbol.decl_span, decl_file_analysis)
-            .map(|scope_id| build_scope_path(scope_id, &decl_file_analysis.scopes))
-            .unwrap_or_else(|| vec!["<module>".to_string()]);
-
-        // Query with scope filtering (exact match per plan line 335-337)
-        let file_aliases = decl_file_analysis.alias_graph.transitive_aliases(
+        let same_file_aliases = collect_same_file_aliases(
             &symbol.name,
-            Some(&symbol_scope_path),
-            None,
+            &symbol.decl_span,
+            decl_file_analysis,
+            &decl_content,
         );
-
-        for alias_info in file_aliases {
-            // Compute line/col from alias span
-            let (line, col) = if let Some(span) = alias_info.alias_span {
-                tugtool_core::text::byte_offset_to_position_str(&decl_content, span.start)
-            } else {
-                (1, 1) // Fallback if no span
-            };
-
-            aliases.push(AliasOutput::new(
-                alias_info.alias_name,
-                alias_info.source_name,
-                decl_file_analysis.path.clone(),
-                line,
-                col,
-                alias_info.scope_path,
-                alias_info.source_is_import,
-                alias_info.confidence,
-            ));
-        }
+        aliases.extend(same_file_aliases);
     }
 
     // Collect cross-file aliases (from files that import this symbol)
@@ -1486,6 +1502,105 @@ def foo():
 
             analyze(workspace.path(), &file_list, &location, new_name)
                 .expect("analyze should succeed")
+        }
+
+        // =================================================================
+        // Scope Fallback Tests (Step 16)
+        // =================================================================
+
+        #[test]
+        fn test_alias_scope_resolution_failure() {
+            // SF-01: Symbol with no matching LocalSymbol span -> no aliases
+            let assignments = vec![crate::types::AssignmentInfo {
+                target: "b".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                type_source: "variable".to_string(),
+                inferred_type: None,
+                rhs_name: Some("bar".to_string()),
+                callee_name: None,
+                span: Some(crate::types::SpanInfo { start: 0, end: 1 }),
+                line: Some(1),
+                col: Some(1),
+            }];
+
+            let alias_graph =
+                crate::alias::AliasGraph::from_analysis(&assignments, &HashSet::new());
+            let scopes = vec![Scope::new(ScopeId(0), ScopeKind::Module, None, None)];
+            let file_analysis = FileAnalysis {
+                file_id: FileId(0),
+                path: "test.py".to_string(),
+                cst_id: "cst".to_string(),
+                scopes,
+                symbols: vec![crate::analyzer::LocalSymbol {
+                    name: "bar".to_string(),
+                    kind: SymbolKind::Function,
+                    scope_id: ScopeId(0),
+                    span: None, // no matching span
+                    line: None,
+                    col: None,
+                    container: None,
+                }],
+                references: vec![],
+                imports: vec![],
+                exports: vec![],
+                alias_graph,
+            };
+
+            let aliases =
+                collect_same_file_aliases("bar", &Span::new(10, 13), &file_analysis, "bar");
+
+            assert!(
+                aliases.is_empty(),
+                "no aliases should be returned when scope resolution fails"
+            );
+        }
+
+        #[test]
+        fn test_alias_module_scope_symbol() {
+            // SF-02: Module-scope symbol -> normal alias collection
+            let assignments = vec![crate::types::AssignmentInfo {
+                target: "b".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                type_source: "variable".to_string(),
+                inferred_type: None,
+                rhs_name: Some("bar".to_string()),
+                callee_name: None,
+                span: Some(crate::types::SpanInfo { start: 6, end: 7 }),
+                line: Some(2),
+                col: Some(1),
+            }];
+
+            let alias_graph =
+                crate::alias::AliasGraph::from_analysis(&assignments, &HashSet::new());
+            let scopes = vec![Scope::new(ScopeId(0), ScopeKind::Module, None, None)];
+            let file_analysis = FileAnalysis {
+                file_id: FileId(0),
+                path: "test.py".to_string(),
+                cst_id: "cst".to_string(),
+                scopes,
+                symbols: vec![crate::analyzer::LocalSymbol {
+                    name: "bar".to_string(),
+                    kind: SymbolKind::Variable,
+                    scope_id: ScopeId(0),
+                    span: Some(Span::new(0, 3)),
+                    line: Some(1),
+                    col: Some(1),
+                    container: None,
+                }],
+                references: vec![],
+                imports: vec![],
+                exports: vec![],
+                alias_graph,
+            };
+
+            let content = "bar\nb = bar\n";
+            let aliases =
+                collect_same_file_aliases("bar", &Span::new(0, 3), &file_analysis, content);
+
+            assert_eq!(aliases.len(), 1);
+            assert_eq!(aliases[0].alias_name, "b");
+            assert_eq!(aliases[0].source_name, "bar");
+            assert_eq!(aliases[0].file, "test.py");
         }
 
         #[test]

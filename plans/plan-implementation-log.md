@@ -6,6 +6,35 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 16: Scope Fallback Fix | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 16 specification
+- `crates/tugtool-python/src/ops/rename.rs` - Same-file alias collection logic
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add helper to return no aliases when scope lookup fails | Done |
+| Add SF-01 test (scope resolution failure) | Done |
+| Add SF-02 test (module scope symbol) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename.rs` - Added `collect_same_file_aliases()` helper; skip aliases when scope lookup fails; added SF-01/SF-02 tests
+- `plans/phase-10.md` - Marked Step 16 complete in Implementation Log
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1355 tests passed
+
+**Checkpoints Verified:**
+- SF-01: PASS - no aliases when scope is unknown
+- SF-02: PASS - module-scope alias collection unchanged
+
+---
+
 ## [phase-10.md] Step 17: Cross-File Alias Chain Strictness | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

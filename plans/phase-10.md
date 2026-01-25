@@ -62,12 +62,12 @@ This phase addresses these gaps before adding new refactoring operations.
 7. PEP 420 namespace package support
 8. Value-level alias tracking with impact analysis integration
 9. CLI simplification (`rename` and `analyze` commands)
+10. Cross-file alias tracking via ImportersIndex (Phase 10 Step 17)
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
 - Import resolution for installed packages (requires venv integration)
 - `__all__.extend()` pattern parsing (requires method call tracking)
-- Cross-file value-level alias tracking (requires import chain integration)
 - Automatic alias renaming (`--follow-aliases` flag)
 - VS Code extension
 
@@ -2387,47 +2387,81 @@ for analysis in &bundle.file_analyses {
 **New helper function:**
 
 ```rust
-/// Collect aliases for `symbol` from files that import it.
+/// Collect aliases for a symbol from files that import it.
 fn collect_cross_file_aliases(
-    symbol: &Symbol,
+    symbol_name: &str,
     decl_file_path: &str,
     bundle: &FileAnalysisBundle,
-    importers_index: &ImportersIndex,
+    files: &[(String, String)],
 ) -> Vec<AliasOutput> {
     let mut aliases = Vec::new();
+    let mut visited: HashSet<(String, String)> = HashSet::new();
+    let mut queue: Vec<(String, String)> =
+        vec![(decl_file_path.to_string(), symbol_name.to_string())];
 
-    // Find all files that import this symbol
-    let key = (decl_file_path.to_string(), symbol.name.clone());
-    let importers = importers_index.get(&key).unwrap_or(&Vec::new());
+    while let Some((current_file, export_name)) = queue.pop() {
+        if !visited.insert((current_file.clone(), export_name.clone())) {
+            continue;
+        }
 
-    for (importing_file_id, local_name) in importers {
-        // Find the importing file's analysis
-        let file_analysis = match bundle.file_analyses.iter()
-            .find(|fa| fa.file_id == *importing_file_id)
-        {
-            Some(fa) => fa,
+        // Find all files that import this symbol
+        let key = (current_file.clone(), export_name.clone());
+        let importers = match bundle.importers_index.get(&key) {
+            Some(importers) => importers,
             None => continue,
         };
 
-        // Search for aliases of local_name at module scope
-        // (imports bind at module level)
-        let file_aliases = file_analysis.alias_graph.transitive_aliases(
-            local_name,
-            Some(&["<module>".to_string()]),
-            None,
-        );
+        for (importing_file_id, local_name) in importers {
+            // Find the importing file's analysis
+            let file_analysis = match bundle
+                .file_analyses
+                .iter()
+                .find(|fa| fa.file_id == *importing_file_id)
+            {
+                Some(fa) => fa,
+                None => continue,
+            };
 
-        for alias_info in file_aliases {
-            aliases.push(AliasOutput::new(
-                &alias_info.alias_name,
-                &alias_info.source_name,
-                &file_analysis.path,
-                alias_info.line.unwrap_or(1),
-                alias_info.col.unwrap_or(1),
-                alias_info.scope_path.clone(),
-                alias_info.source_is_import,
-                alias_info.confidence,
-            ));
+            // Skip if this name is shadowed by a local definition in module scope
+            if module_binding_kind(local_name, file_analysis) == Some(ModuleBinding::Local) {
+                continue;
+            }
+
+            // Search for aliases of local_name at module scope
+            // (imports bind at module level)
+            let file_aliases = file_analysis.alias_graph.transitive_aliases(
+                local_name,
+                Some(&["<module>".to_string()]),
+                None,
+            );
+
+            for alias_info in file_aliases {
+                let (line, col) = if let Some(span) = alias_info.alias_span {
+                    let content = files
+                        .iter()
+                        .find(|(p, _)| *p == file_analysis.path)
+                        .map(|(_, c)| c.as_str())
+                        .unwrap_or("");
+                    byte_offset_to_position_str(content, span.start)
+                } else {
+                    (1, 1)
+                };
+                aliases.push(AliasOutput::new(
+                    &alias_info.alias_name,
+                    &alias_info.source_name,
+                    &file_analysis.path,
+                    line,
+                    col,
+                    alias_info.scope_path.clone(),
+                    alias_info.source_is_import,
+                    alias_info.confidence,
+                ));
+            }
+
+            // Follow re-export chain when this binding is an import
+            if module_binding_kind(local_name, file_analysis) == Some(ModuleBinding::Import) {
+                queue.push((file_analysis.path.clone(), local_name.clone()));
+            }
         }
     }
 
@@ -2439,18 +2473,14 @@ fn collect_cross_file_aliases(
 
 ##### 17.3 Integration
 
-Update `analyze_impact()` to call both same-file and cross-file alias collection:
+Update `analyze()` to call both same-file and cross-file alias collection:
 
 ```rust
-// In analyze_impact(), after existing alias collection:
+// In analyze(), after existing alias collection:
 
 // Collect cross-file aliases
-let cross_file_aliases = collect_cross_file_aliases(
-    &symbol,
-    &decl_file.path,
-    &bundle,
-    &bundle.importers_index,  // New field on FileAnalysisBundle
-);
+let cross_file_aliases =
+    collect_cross_file_aliases(&symbol.name, &decl_file.path, &bundle, files);
 aliases.extend(cross_file_aliases);
 ```
 
@@ -2519,5 +2549,5 @@ aliases.extend(cross_file_aliases);
 | Step 13 | done | 2026-01-24 | Add `rename` command |
 | Step 14 | done | 2026-01-24 | Add `analyze` command, remove old commands, update skills and docs |
 | Step 15 | done | 2026-01-24 | Final verification |
-| Step 16 | pending | | Fix scope resolution fallback |
+| Step 16 | done | 2026-01-24 | Fix scope resolution fallback (no aliases when scope unknown) |
 | Step 17 | done | 2026-01-24 | Cross-file alias tracking via ImportersIndex |
