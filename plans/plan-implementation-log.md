@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Plan Refinement Round 3: Final Clarifications and Edge Cases | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Main plan document
+- Prior plan refinement session addressing 8 proposals
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add sequential execution warning to Step 3 header | Done |
+| Add Python Module.decl_span clarification to Step 2.5 | Done |
+| Add origin_module_path → origin_module_id conversion task to Step 7 | Done |
+| Add deterministic ordering test fixture to Step 4 | Done |
+| Document TypeInfoData invalid index error handling | Done |
+| Add corresponding integration layer task and test for invalid indices | Done |
+
+**Files Modified:**
+- `plans/phase-11.md` - Five targeted clarifications for edge cases and implementation guidance
+
+**Key Decisions/Notes:**
+
+**1. Sequential Execution Warning (Step 3):**
+Added prominent blockquote warning that Steps 3, 3a, 3b, 3c MUST be executed in order and cannot be parallelized.
+
+**2. Python Module.decl_span (Step 2.5):**
+Explicit note that Python modules always have `decl_span: None` since Python doesn't support inline module definitions.
+
+**3. ExportData Path Resolution (Step 7):**
+New task to convert `ExportData.origin_module_path` (string) to `PublicExport.origin_module_id` (ModuleId) via module path lookup during integration.
+
+**4. Deterministic Ordering Test (Step 4):**
+Added test task and complete test fixture verifying that `file_results` preserves input order per D15.
+
+**5. Invalid Index Handling (TypeInfoData):**
+- Added documentation to TypeInfoData struct specifying error handling: log warning, skip entry, continue
+- Added integration layer task to implement this handling
+- Added unit test to verify graceful degradation (no panic)
+
+**Plan Readiness Assessment:**
+Plan is now ready for implementation with all identified gaps addressed.
+
+---
+
 ## [phase-11.md] Plan Refinement: Address Review Feedback and CQ Resolutions | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

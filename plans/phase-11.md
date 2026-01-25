@@ -71,6 +71,13 @@ This phase establishes the architectural foundation for Rust support and future 
 - Import model is generalized (`ImportKind`), and `ModuleKind` is no longer Python-biased
 - PublicExport can represent both declared exports and effective public API
 - FactsStore serialization includes `schema_version = 11`
+- Adapter reference kinds preserve definitions and deletes
+- `Module` includes an optional declaration span (inline module support)
+- Attribute access and call-site facts are captured for refactoring fidelity
+- Alias edges are persisted in FactsStore
+- Symbols expose qualified names and modifiers
+- Module resolution map supports namespace packages
+- Signature and type parameter facts are represented
 
 #### Scope {#scope}
 
@@ -80,18 +87,29 @@ This phase establishes the architectural foundation for Rust support and future 
 3. `PublicExport` spans for precise edits (decl span + name spans)
 4. `ImportKind` + generalized `Import` (replaces `is_star`)
 5. `ModuleKind` generalized for directory-based modules
-6. `ScopeKind` extended with Rust variants
-7. `TypeNode` structured type representation (extensible)
-8. `FACTS_SCHEMA_VERSION = 11`
+6. `Module.decl_span` optional field (inline module support)
+7. `ReferenceKind` includes `Delete` (adapter + FactsStore mapping)
+8. Attribute access facts (`AttributeAccess`)
+9. Call site facts (`CallSite`, `CallArg`)
+10. Alias edges (`AliasEdge`)
+11. Qualified names for symbols (`QualifiedName`)
+12. Module resolution map (`ModuleResolution`)
+13. Signature facts (`Signature`, `Parameter`)
+14. Type parameter facts (`TypeParam`)
+15. Symbol modifiers (`Modifier`)
+16. `ScopeKind` extended with Rust variants
+17. `TypeNode` structured type representation (extensible)
+18. `FACTS_SCHEMA_VERSION = 11`
 
 **Infrastructure:**
-9. `LanguageAdapter` trait definition (clarify ID ownership and FactsStore mutation)
-10. `PythonAdapter` implementing `LanguageAdapter`
-11. Python visibility inference (opt-in)
-12. Python type annotation → `TypeNode` conversion
+19. `LanguageAdapter` trait definition (clarify ID ownership and FactsStore mutation)
+20. `PythonAdapter` implementing `LanguageAdapter`
+21. Python visibility inference (opt-in)
+22. Python type annotation → `TypeNode` conversion
+23. Adapter output includes attribute access, call sites, alias edges, signatures, modifiers, type params
 
 **Cleanup:**
-13. Remove legacy `Export` type and all associated queries
+24. Remove legacy `Export` type and all associated queries
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -278,6 +296,8 @@ No integration needed; they serve different purposes.
 | TypeNode adds complexity without immediate benefit | med | low | Keep type_repr as primary, TypeNode as optional | Structured types unused after 6 months |
 | Import/Module generalization regresses Python analysis | med | med | Update analyzer + tests, add import-specific regression tests | Import tests fail |
 | Declared vs effective exports cause ambiguity | med | low | Document intent/origin semantics; add query helpers | Confusing export queries |
+| ReferenceKind additions break exhaustive matches | low | med | Update matches and add tests | Clippy warnings |
+| Origin module path unresolved | low | low | Log warning, leave origin_module_id None | Missing module mappings |
 
 **Risk R01: Schema Versioning Complexity** {#r01-schema-versioning}
 
@@ -508,24 +528,84 @@ pub enum ImportKind {
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum ModuleKind {
-    /// Single-file module.
+    /// Single-file module (e.g., `foo.rs`, `foo.py`).
     #[default]
     File,
     /// Directory-based module/package (Rust mod.rs, Go package, Python package).
     Directory,
+    /// Inline module defined within another file (Rust `mod foo { ... }`).
+    Inline,
     /// Namespace module (no concrete file, language-defined).
     Namespace,
 }
 ```
 
+**Import Builder Pattern:**
+
+```rust
+impl Import {
+    /// Create a new import. Defaults to `ImportKind::Module` (bare `import foo`).
+    pub fn new(module_path: &str) -> Self {
+        Self { kind: ImportKind::Module, module_path: module_path.to_string(), ... }
+    }
+
+    /// Set imported name. Auto-sets kind to `Named`.
+    pub fn with_imported_name(mut self, name: &str) -> Self {
+        self.imported_name = Some(name.to_string());
+        self.kind = ImportKind::Named;
+        self
+    }
+
+    /// Set alias. Auto-sets kind to `Alias`.
+    pub fn with_alias(mut self, alias: &str) -> Self {
+        self.alias = Some(alias.to_string());
+        self.kind = ImportKind::Alias;
+        self
+    }
+
+    /// Set glob import. Sets kind to `Glob`.
+    pub fn with_glob(mut self) -> Self {
+        self.kind = ImportKind::Glob;
+        self
+    }
+
+    /// Explicit kind override (for ReExport, Default, etc.).
+    pub fn with_kind(mut self, kind: ImportKind) -> Self {
+        self.kind = kind;
+        self
+    }
+}
+```
+
+**Builder Precedence (Order-Independent):**
+- If `with_kind(...)` is called, it **overrides** all auto-derived kinds.
+- Else, kind is derived from fields in this order:
+  1. `Glob` (if `with_glob()` called)
+  2. `Alias` (if `alias` is set)
+  3. `Named` (if `imported_name` is set)
+  4. `Module` (default)
+
+This makes `with_imported_name().with_alias()` and `with_alias().with_imported_name()` behave identically.
+
 **Rationale:**
 - `Import.is_star` is too narrow; different languages need richer import/re-export semantics.
 - `ModuleKind::Package` is Python-biased; `Directory` is language-agnostic.
+- `ModuleKind::Inline` needed for Rust `mod foo { ... }` blocks within a file.
 - Explicit `ImportKind` supports future refactors (move-module, re-export rewrites).
+- Builder pattern auto-sets `ImportKind` from context, reducing errors.
+- Inline modules need a declaration span for precise edits.
 
 **Implications:**
 - Replace `Import.is_star` with `Import.kind: ImportKind`
-- Update Python analyzer to populate `ImportKind` (Module/Named/Alias/Glob)
+- `Import::new()` defaults to `ImportKind::Module` (bare import)
+- `with_imported_name()` auto-sets `ImportKind::Named`
+- `with_alias()` auto-sets `ImportKind::Alias`
+- `with_glob()` replaces `with_star()` and sets `ImportKind::Glob`
+- Remove `with_star()` method entirely
+- Update Python analyzer to use new builder pattern
+- Builder precedence is order-independent (explicit `with_kind` overrides auto-derived kinds)
+- Add `Module.decl_span: Option<Span>` to capture inline module declarations
+- Inline modules set `file_id` to the containing file and `decl_span` to the module declaration
 - Update module docs to avoid `__init__.py`-specific language
 - Update any logic assuming `ModuleKind::Package`
 
@@ -595,9 +675,13 @@ This matches the current Python analyzer design where multi-file resolution happ
 /// - Symbol lookup at positions
 /// - Export collection
 ///
-/// **ID Ownership:** Adapters do NOT allocate SymbolId, ScopeId, etc.
-/// They use local indices for internal references. The integration layer
-/// (CLI or caller) allocates IDs when converting adapter data to FactsStore.
+/// **ID Ownership:** Adapters do NOT allocate any IDs (FileId, SymbolId, etc.).
+/// All cross-references within adapter data use indices:
+/// - `scope_index`: Index into `FileAnalysisResult.scopes`
+/// - `symbol_index`: Index into `FileAnalysisResult.symbols`
+/// - `file_index`: Index into `AnalysisBundle.file_results`
+///
+/// The integration layer allocates IDs and converts adapter data to FactsStore types.
 ///
 /// **FactsStore Usage:** The `store` parameter is read-only context.
 /// For Phase 11, it is typically empty. Adapters must not assume it
@@ -607,9 +691,11 @@ pub trait LanguageAdapter {
     type Error: std::error::Error;
 
     /// Analyze a single file and return local analysis results.
+    ///
+    /// **No FileId parameter:** Adapters do not need or allocate IDs.
+    /// The integration layer assigns FileId after receiving results.
     fn analyze_file(
         &self,
-        file_id: FileId,
         path: &str,
         content: &str,
     ) -> Result<FileAnalysisResult, Self::Error>;
@@ -840,6 +926,181 @@ These versions are **independent** with different cadences and consumers. Update
 - Set `FACTS_SCHEMA_VERSION = 11` for this phase; increment on future breaking schema changes
 - `SCHEMA_VERSION` in `output.rs` is not modified in this phase
 
+#### [D12] Re-export Modeling Rule (DECIDED) {#d12-reexport-rule}
+
+**Decision:** A re-export creates **both** an `Import` and a `PublicExport` record.
+
+```rust
+// For Rust `pub use foo::Bar;`:
+Import {
+    kind: ImportKind::ReExport,
+    module_path: "foo",
+    imported_name: Some("Bar"),
+    ...
+}
+PublicExport {
+    export_origin: ExportOrigin::ReExport,
+    exported_name: Some("Bar"),
+    origin_module_id: Some(foo_module_id),
+    ...
+}
+
+// For TypeScript `export { foo } from './bar';`:
+Import { kind: ImportKind::ReExport, ... }
+PublicExport { export_origin: ExportOrigin::ReExport, ... }
+```
+
+**Why both records:**
+- The `Import` answers "what does this module depend on?" (provenance)
+- The `PublicExport` answers "what does this module expose?" (visibility)
+- Move-module refactors need both: update the import path AND update consumers of the export
+
+**Language-specific notes:**
+| Language | Re-export Syntax | Records Created |
+|----------|-----------------|-----------------|
+| **Rust** | `pub use foo::Bar;` | `Import(ReExport)` + `PublicExport(ReExport)` |
+| **TypeScript** | `export { foo } from './bar';` | `Import(ReExport)` + `PublicExport(ReExport)` |
+| **Python** | (no re-export syntax) | If name in `__all__` is imported: `Import(Named)` + `PublicExport(Local)` |
+
+For Python, `origin_module_id` on `PublicExport` can point to where the symbol was originally defined to track re-export chains.
+
+**Rationale:**
+- Consistent representation across languages
+- Supports move-module and re-export rewrite refactors
+- Avoids duplicating logic to compute dependencies vs exports
+
+**Implications:**
+- Rust analyzer will create both records for `pub use`
+- TypeScript analyzer will create both records for `export from`
+- Python `__all__` with imported names creates `PublicExport(Local)` not `ReExport`
+
+#### [D13] Python Effective Exports Deferred (DECIDED) {#d13-python-effective-exports}
+
+**Decision:** For Phase 11, Python only emits `ExportIntent::Declared` for explicit `__all__` entries. `ExportIntent::Effective` computation is deferred to a future phase.
+
+**Rationale:**
+Python's "effective public API" when `__all__` is absent requires a second pass after all symbols are collected. It's orthogonal to the schema work and adds implementation complexity.
+
+**Deferred effective export rule (documented for future implementation):**
+```
+If __all__ exists:
+  effective_exports = declared_exports = __all__ entries
+
+If __all__ absent:
+  effective_exports = {
+    module-level symbols where:
+      - name doesn't start with "_", OR
+      - name is "__dunder__"
+    AND
+      - symbol is defined in this file (not imported)
+  }
+```
+
+**Phase 11 behavior:**
+- Python analyzer emits `ExportIntent::Declared` for `__all__` entries only
+- `ExportIntent::Effective` is reserved for languages like Go where public/private is implicit (uppercase)
+- No effective export computation for Python in this phase
+
+**Future phase:**
+- Add `PythonAnalyzerOptions.compute_effective_exports: bool`
+- When enabled, emit `ExportIntent::Effective` entries for module-level public symbols
+
+#### [D14] ReferenceKind Generalization (DECIDED) {#d14-referencekind-generalization}
+
+**Decision:** Preserve full reference semantics across adapter and FactsStore by:
+- Adding `Definition` and `Delete` to adapter `ReferenceKind`
+- Adding `Delete` to `facts::ReferenceKind`
+- Mapping adapter kinds directly to FactsStore kinds in the integration layer
+
+**Rationale:**
+- Definitions are critical for rename and symbol reasoning
+- Deletes are write-like but semantically distinct; future refactors need this fidelity
+- Keeping adapter kinds explicit avoids collapsing semantics too early
+
+**Mapping Rules (Adapter → FactsStore):**
+| Adapter `ReferenceKind` | FactsStore `ReferenceKind` | Output Kind |
+|-------------------------|----------------------------|-------------|
+| Definition | Definition | definition |
+| Read | Reference | reference |
+| Write | Write | reference |
+| Call | Call | call |
+| Import | Import | import |
+| Attribute | Attribute | attribute |
+| TypeAnnotation | TypeAnnotation | reference |
+| Delete | Delete | reference |
+
+**Output Note:** The JSON output schema does not include "delete"; `Delete` maps to `"reference"` for output compatibility.
+
+#### [D15] Deterministic Adapter Ordering (DECIDED) {#d15-deterministic-adapter-order}
+
+**Decision:** Adapter output order is deterministic and index-based:
+- `AnalysisBundle.file_results` **must preserve input order**
+- `file_index` references that order
+- Integration layer must not reorder without remapping indices
+
+**Flexibility:** If a caller needs sorted output, it can sort the input file list before calling the adapter. This keeps indices stable while allowing deterministic ordering.
+
+#### [D16] Attribute Access Facts (DECIDED) {#d16-attribute-access}
+
+**Decision:** Store attribute access as first-class facts.
+
+**Rationale:** Attribute access is foundational for method resolution, property refactors, and safe member renames.
+
+**Model (language-agnostic):**
+- `AttributeAccess { base_symbol_id: Option<SymbolId>, name: String, span: Span, kind: AttributeAccessKind }`
+- `AttributeAccessKind`: Read, Write, Call
+
+#### [D17] Call Site Facts (DECIDED) {#d17-call-sites}
+
+**Decision:** Store call sites with argument structure and spans.
+
+**Rationale:** Enables parameter rename, API migrations, and call‑site rewrites.
+
+**Model:**
+- `CallSite { callee_symbol_id: Option<SymbolId>, span: Span, args: Vec<CallArg> }`
+- `CallArg { name: Option<String>, span: Span }`
+
+#### [D18] Alias Edges in FactsStore (DECIDED) {#d18-alias-edges}
+
+**Decision:** Persist alias relationships as FactsStore tables.
+
+**Rationale:** Alias chains are critical for safe refactors and analysis; do not keep them only in output.
+
+**Model:**
+- `AliasEdge { alias_symbol_id, target_symbol_id, kind: AliasKind, confidence: f32, span }`
+- `AliasKind`: Assignment, Import, ReExport, Unknown
+
+#### [D19] Qualified Names and Modifiers (DECIDED) {#d19-qualified-names-modifiers}
+
+**Decision:** Store qualified names and modifiers for symbols.
+
+**Rationale:** Qualified names enable stable cross‑module identification; modifiers capture semantic attributes (async, static, classmethod, property, etc.) in a language‑agnostic way.
+
+**Model:**
+- `QualifiedName { symbol_id, path: String }`
+- `Modifier`: Async, Static, ClassMethod, Property, Abstract, Final, Override, Generator
+
+#### [D20] Module Resolution Map (DECIDED) {#d20-module-resolution}
+
+**Decision:** Add a module resolution table mapping module path → file/module IDs.
+
+**Rationale:** Supports namespace packages, multi‑file module resolution, and re‑export tracing.
+
+**Model:**
+- `ModuleResolution { module_path: String, module_ids: Vec<ModuleId> }`
+
+#### [D21] Signature + Type Parameter Facts (DECIDED) {#d21-signatures-typeparams}
+
+**Decision:** Store signatures and type parameters as first-class facts.
+
+**Rationale:** Enables parameter rename, API migration, and generic type reasoning without language‑specific hacks.
+
+**Model:**
+- `Signature { symbol_id, params: Vec<Parameter>, returns: Option<TypeNode> }`
+- `Parameter { name: String, kind: ParamKind, default_span: Option<Span>, annotation: Option<TypeNode> }`
+- `ParamKind`: PositionalOnly, PositionalOrKeyword, KeywordOnly, VarArgs, KwArgs
+- `TypeParam { name: String, bounds: Vec<TypeNode>, default: Option<TypeNode> }`
+
 ---
 
 ### 11.0.1 Deep Dive: Visibility Model Mapping {#visibility-mapping}
@@ -1048,6 +1309,7 @@ This section defines the generalized import and module model for multi-language 
 - Extended `ScopeKind` with Rust variants (Impl, Trait, Closure, Unsafe, MatchArm)
 - `ImportKind` and generalized `Import` model
 - Generalized `ModuleKind` (directory-based modules)
+- `Module.decl_span` for inline module declarations
 - `LanguageAdapter` trait definition
 - Python adapter implementing `LanguageAdapter`
 - Optional visibility inference for Python naming conventions
@@ -1055,6 +1317,15 @@ This section defines the generalized import and module model for multi-language 
 - `ExportTarget` for explicit export classification
 - `schema_version` included in FactsStore serialization
 - `TypeNode` is `#[non_exhaustive]` with `Extension` for future constructs
+- `ReferenceKind::Delete` in FactsStore + adapter `ReferenceKind::Definition`
+- Attribute access facts (`AttributeAccess`)
+- Call site facts (`CallSite`)
+- Alias edges (`AliasEdge`)
+- Qualified names (`QualifiedName`)
+- Module resolution map (`ModuleResolution`)
+- Signatures and parameters (`Signature`, `Parameter`, `ParamKind`)
+- Type parameters (`TypeParam`)
+- Symbol modifiers (`Modifier`)
 
 **Explicitly not supported:**
 - `pub(in path)` as first-class concept (mapped to Module)
@@ -1094,10 +1365,177 @@ pub enum Visibility {
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum ModuleKind {
+    /// Single-file module (e.g., `foo.rs`, `foo.py`).
     #[default]
     File,
+    /// Directory-based module/package (Rust mod.rs, Go package, Python package).
     Directory,
+    /// Inline module defined within another file (Rust `mod foo { ... }`).
+    Inline,
+    /// Namespace module (no concrete file, language-defined).
     Namespace,
+}
+
+// ============================================================================
+// Updated Module
+// ============================================================================
+
+pub struct Module {
+    pub module_id: ModuleId,
+    pub path: String,
+    pub kind: ModuleKind,
+    pub parent_module_id: Option<ModuleId>,
+    pub file_id: Option<FileId>,
+    /// Declaration span for inline modules (None for file/directory modules).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decl_span: Option<Span>,
+}
+
+// ============================================================================
+// AttributeAccess
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributeAccessKind {
+    Read,
+    Write,
+    Call,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributeAccess {
+    pub access_id: u32,
+    pub file_id: FileId,
+    pub span: Span,
+    pub base_symbol_id: Option<SymbolId>,
+    pub name: String,
+    pub kind: AttributeAccessKind,
+}
+
+// ============================================================================
+// CallSite
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallArg {
+    /// Argument name for keyword args, None for positional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallSite {
+    pub call_id: u32,
+    pub file_id: FileId,
+    pub span: Span,
+    pub callee_symbol_id: Option<SymbolId>,
+    pub args: Vec<CallArg>,
+}
+
+// ============================================================================
+// AliasEdge
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AliasKind {
+    Assignment,
+    Import,
+    ReExport,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AliasEdge {
+    pub alias_id: u32,
+    pub file_id: FileId,
+    pub span: Span,
+    pub alias_symbol_id: SymbolId,
+    pub target_symbol_id: SymbolId,
+    pub kind: AliasKind,
+    pub confidence: f32,
+}
+
+// ============================================================================
+// QualifiedName + Modifiers
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QualifiedName {
+    pub symbol_id: SymbolId,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Modifier {
+    Async,
+    Static,
+    ClassMethod,
+    Property,
+    Abstract,
+    Final,
+    Override,
+    Generator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SymbolModifiers {
+    pub symbol_id: SymbolId,
+    pub modifiers: Vec<Modifier>,
+}
+
+// ============================================================================
+// ModuleResolution
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModuleResolution {
+    pub module_path: String,
+    pub module_ids: Vec<ModuleId>,
+}
+
+// ============================================================================
+// Signature + TypeParam
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParamKind {
+    PositionalOnly,
+    PositionalOrKeyword,
+    KeywordOnly,
+    VarArgs,
+    KwArgs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Parameter {
+    pub name: String,
+    pub kind: ParamKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_span: Option<Span>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotation: Option<TypeNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Signature {
+    pub symbol_id: SymbolId,
+    pub params: Vec<Parameter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returns: Option<TypeNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypeParam {
+    pub name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub bounds: Vec<TypeNode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<TypeNode>,
 }
 
 // ============================================================================
@@ -1270,6 +1708,24 @@ pub enum TypeNode {
 }
 
 // ============================================================================
+// Updated ReferenceKind
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferenceKind {
+    Definition,
+    Call,
+    Reference,
+    Import,
+    Attribute,
+    TypeAnnotation,
+    Write,
+    /// Delete expression (e.g., Python `del`).
+    Delete,
+}
+
+// ============================================================================
 // Updated Symbol
 // ============================================================================
 
@@ -1368,6 +1824,22 @@ pub struct SymbolData {
     pub visibility: Option<Visibility>,
 }
 
+/// Reference kind for adapter output.
+///
+/// Mirrors `facts::ReferenceKind` but defined separately to keep adapters
+/// independent of FactsStore internals. The integration layer maps between them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceKind {
+    Definition,
+    Read,
+    Write,
+    Call,
+    Import,
+    Attribute,
+    TypeAnnotation,
+    Delete,  // Python del
+}
+
 /// Reference information from single-file analysis.
 pub struct ReferenceData {
     /// Name being referenced
@@ -1376,8 +1848,92 @@ pub struct ReferenceData {
     pub span: Span,
     /// Index of containing scope in the file's scope list
     pub scope_index: usize,
-    /// Whether this is a write (assignment target) or read
-    pub is_write: bool,
+    /// Kind of reference (read, write, call, etc.)
+    pub kind: ReferenceKind,
+}
+
+/// Attribute access from single-file analysis.
+pub struct AttributeAccessData {
+    /// Index of base symbol in the file's symbol list (if resolved)
+    pub base_symbol_index: Option<usize>,
+    /// Attribute name
+    pub name: String,
+    /// Byte span of the attribute name
+    pub span: Span,
+    /// Attribute access kind
+    pub kind: AttributeAccessKind,
+}
+
+/// Call site from single-file analysis.
+pub struct CallSiteData {
+    /// Index of callee symbol in the file's symbol list (if resolved)
+    pub callee_symbol_index: Option<usize>,
+    /// Byte span of the call expression
+    pub span: Span,
+    /// Call arguments
+    pub args: Vec<CallArgData>,
+}
+
+/// Call argument from single-file analysis.
+pub struct CallArgData {
+    /// Argument name for keyword args, None for positional
+    pub name: Option<String>,
+    /// Byte span of the argument expression
+    pub span: Span,
+}
+
+/// Alias edge from single-file analysis.
+pub struct AliasEdgeData {
+    /// Index of alias symbol in the file's symbol list
+    pub alias_symbol_index: usize,
+    /// Index of target symbol in the file's symbol list (if resolved)
+    pub target_symbol_index: Option<usize>,
+    /// Byte span of the aliasing expression
+    pub span: Span,
+    /// Alias kind
+    pub kind: AliasKind,
+    /// Confidence score (0.0-1.0)
+    pub confidence: f32,
+}
+
+/// Qualified name from single-file analysis.
+pub struct QualifiedNameData {
+    /// Index of symbol in the file's symbol list
+    pub symbol_index: usize,
+    /// Fully-qualified name
+    pub path: String,
+}
+
+/// Signature from single-file analysis.
+pub struct SignatureData {
+    /// Index of symbol in the file's symbol list
+    pub symbol_index: usize,
+    /// Parameters
+    pub params: Vec<ParameterData>,
+    /// Optional return type
+    pub returns: Option<TypeNode>,
+}
+
+/// Parameter from single-file analysis.
+pub struct ParameterData {
+    pub name: String,
+    pub kind: ParamKind,
+    pub default_span: Option<Span>,
+    pub annotation: Option<TypeNode>,
+}
+
+/// Type parameter from single-file analysis.
+pub struct TypeParamData {
+    pub name: String,
+    pub bounds: Vec<TypeNode>,
+    pub default: Option<TypeNode>,
+}
+
+/// Modifiers from single-file analysis.
+pub struct ModifierData {
+    /// Index of symbol in the file's symbol list
+    pub symbol_index: usize,
+    pub modifiers: Vec<Modifier>,
 }
 
 /// Import information from single-file analysis.
@@ -1422,11 +1978,25 @@ pub struct ExportData {
 ///
 /// Collected at the bundle level rather than per-file because type resolution
 /// may require cross-file context.
+///
+/// **Index Semantics:**
+/// - `file_index`: Index into `AnalysisBundle.file_results` array
+/// - `symbol_index`: Index into `FileAnalysisResult.symbols` for that file
+///
+/// The integration layer uses these indices to resolve actual IDs after
+/// allocating FileId/SymbolId for each entry.
+///
+/// **Invalid Index Handling:**
+/// If `file_index` or `symbol_index` is out of bounds during integration:
+/// - Log a warning with the invalid index and type_repr for debugging
+/// - Skip the TypeInfoData entry (do not insert into FactsStore)
+/// - Continue processing remaining entries
+/// This graceful degradation ensures partial analysis results are still usable.
 pub struct TypeInfoData {
-    /// Index of the symbol this type applies to (in the file's symbol list).
-    pub symbol_index: usize,
-    /// Index of the file containing the symbol.
+    /// Index into `AnalysisBundle.file_results` for the file containing this symbol.
     pub file_index: usize,
+    /// Index into that file's `symbols` array for the symbol this type applies to.
+    pub symbol_index: usize,
     /// String representation of the type.
     pub type_repr: String,
     /// Source of type information.
@@ -1435,13 +2005,37 @@ pub struct TypeInfoData {
     pub structured: Option<TypeNode>,
 }
 
+/// Module resolution info from analysis.
+///
+/// **Invalid Index Handling:**
+/// If any `file_indices` entry is out of bounds during integration:
+/// - Log a warning with the module_path and invalid index
+/// - Drop the invalid index and continue
+pub struct ModuleResolutionData {
+    /// Module path (e.g., "pkg.sub")
+    pub module_path: String,
+    /// File indices that implement this module
+    pub file_indices: Vec<usize>,
+}
+
 /// Result of single-file analysis.
+///
+/// **No FileId:** Adapters do not allocate IDs. The integration layer assigns
+/// FileId after receiving results. Use the index into `AnalysisBundle.file_results`
+/// as the file identifier within adapter data.
 pub struct FileAnalysisResult {
-    pub file_id: FileId,
+    /// Path to the analyzed file (used for ID allocation and error reporting).
     pub path: String,
     pub scopes: Vec<ScopeData>,
     pub symbols: Vec<SymbolData>,
     pub references: Vec<ReferenceData>,
+    pub attributes: Vec<AttributeAccessData>,
+    pub calls: Vec<CallSiteData>,
+    pub aliases: Vec<AliasEdgeData>,
+    pub qualified_names: Vec<QualifiedNameData>,
+    pub signatures: Vec<SignatureData>,
+    pub type_params: Vec<TypeParamData>,
+    pub modifiers: Vec<ModifierData>,
     pub imports: Vec<ImportData>,
     pub exports: Vec<ExportData>,
 }
@@ -1450,6 +2044,8 @@ pub struct FileAnalysisResult {
 pub struct AnalysisBundle {
     pub file_results: Vec<FileAnalysisResult>,
     pub failed_files: Vec<(String, String)>, // (path, error)
+    /// Module resolution map across files.
+    pub modules: Vec<ModuleResolutionData>,
     /// Type information collected across all files.
     ///
     /// Stored at bundle level because type resolution may require cross-file
@@ -1459,16 +2055,34 @@ pub struct AnalysisBundle {
 }
 
 /// Trait for language-specific analyzers.
+///
+/// **ID Ownership:** Adapters do NOT allocate any IDs (FileId, SymbolId, etc.).
+/// All cross-references within adapter data use indices:
+/// - `scope_index`: Index into `FileAnalysisResult.scopes`
+/// - `symbol_index`: Index into `FileAnalysisResult.symbols`
+/// - `file_index`: Index into `AnalysisBundle.file_results`
+///
+/// The integration layer allocates IDs and converts adapter data to FactsStore types.
+///
+/// **Ordering:** `file_results` preserves the input order passed to the adapter.
+/// If a caller reorders `file_results`, it must remap all index-based references.
 pub trait LanguageAdapter {
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// Analyze a single file and return local analysis results.
+    ///
+    /// **No FileId parameter:** The adapter does not need to know the FileId.
+    /// The integration layer will assign IDs after receiving results.
     fn analyze_file(
         &self,
-        file_id: FileId,
         path: &str,
         content: &str,
     ) -> Result<FileAnalysisResult, Self::Error>;
 
+    /// Analyze multiple files with cross-file resolution.
+    ///
+    /// The `store` is read-only context. For Phase 11, assume it is empty
+    /// and build all cross-file state internally.
     fn analyze_files(
         &self,
         files: &[(String, String)],
@@ -1524,6 +2138,23 @@ pub trait LanguageAdapter {
 | `ExportOrigin` | enum | `facts/mod.rs` | Local, ReExport, Implicit, Unknown |
 | `ImportKind` | enum | `facts/mod.rs` | Module, Named, Alias, Glob, ReExport, Default |
 | `ModuleKind::Directory` | variant | `facts/mod.rs` | Generalized directory-based module |
+| `ModuleKind::Inline` | variant | `facts/mod.rs` | Rust inline module (`mod foo { ... }`) |
+| `ModuleKind::Namespace` | variant | `facts/mod.rs` | Virtual module with no concrete file |
+| `Module::decl_span` | field | `facts/mod.rs` | Optional span for inline module declarations |
+| `AttributeAccess` | struct | `facts/mod.rs` | Attribute reads/writes/calls |
+| `AttributeAccessKind` | enum | `facts/mod.rs` | Read, Write, Call |
+| `CallSite` | struct | `facts/mod.rs` | Call site facts |
+| `CallArg` | struct | `facts/mod.rs` | Call argument (pos/kw) |
+| `AliasEdge` | struct | `facts/mod.rs` | Alias relationships |
+| `AliasKind` | enum | `facts/mod.rs` | Assignment, Import, ReExport |
+| `QualifiedName` | struct | `facts/mod.rs` | Fully-qualified symbol name |
+| `Modifier` | enum | `facts/mod.rs` | Async, Static, Property, etc. |
+| `SymbolModifiers` | struct | `facts/mod.rs` | Modifiers per symbol |
+| `ModuleResolution` | struct | `facts/mod.rs` | Module path to module IDs |
+| `Signature` | struct | `facts/mod.rs` | Function/class signature |
+| `Parameter` | struct | `facts/mod.rs` | Signature parameter |
+| `ParamKind` | enum | `facts/mod.rs` | Positional/Keyword/VarArgs/etc. |
+| `TypeParam` | struct | `facts/mod.rs` | Generic type parameters |
 | `TypeNode` | enum | `facts/mod.rs` | Structured types + `Extension` variant |
 | `FACTS_SCHEMA_VERSION` | const | `facts/mod.rs` | `u32 = 11` schema version |
 | `ScopeKind::Impl` | variant | `facts/mod.rs` | Rust impl block |
@@ -1533,17 +2164,51 @@ pub trait LanguageAdapter {
 | `ScopeKind::MatchArm` | variant | `facts/mod.rs` | Rust match arm |
 | `Symbol::visibility` | field | `facts/mod.rs` | `Option<Visibility>` |
 | `TypeInfo::structured` | field | `facts/mod.rs` | `Option<TypeNode>` |
+| `ReferenceKind::Delete` | variant | `facts/mod.rs` | Delete reference semantics |
 | `LanguageAdapter` | trait | `adapter.rs` | Analyzer interface |
 | `FileAnalysisResult` | struct | `adapter.rs` | Single-file result |
 | `AnalysisBundle` | struct | `adapter.rs` | Multi-file result |
 | `TypeInfoData` | struct | `adapter.rs` | Type info for adapter output |
+| `ModuleResolutionData` | struct | `adapter.rs` | Module path to file indices |
 | `ScopeData` | struct | `adapter.rs` | Scope info for adapter output |
 | `SymbolData` | struct | `adapter.rs` | Symbol info for adapter output |
 | `ReferenceData` | struct | `adapter.rs` | Reference info for adapter output |
+| `ReferenceKind` (adapter) | enum | `adapter.rs` | Definition, Read, Write, Call, Import, Attribute, TypeAnnotation, Delete |
+| `AttributeAccessData` | struct | `adapter.rs` | Attribute access facts |
+| `CallSiteData` | struct | `adapter.rs` | Call site facts |
+| `CallArgData` | struct | `adapter.rs` | Call argument facts |
+| `AliasEdgeData` | struct | `adapter.rs` | Alias relationships |
+| `QualifiedNameData` | struct | `adapter.rs` | Fully-qualified name |
+| `SignatureData` | struct | `adapter.rs` | Signature facts |
+| `ParameterData` | struct | `adapter.rs` | Signature parameter |
+| `TypeParamData` | struct | `adapter.rs` | Generic type parameter |
+| `ModifierData` | struct | `adapter.rs` | Modifiers per symbol |
 | `ImportData` | struct | `adapter.rs` | Import info for adapter output |
 | `ExportData` | struct | `adapter.rs` | Export info for adapter output |
 | `PythonAdapter` | struct | `tugtool-python/analyzer.rs` | Implements LanguageAdapter |
 | `PythonAnalyzerOptions` | struct | `tugtool-python/analyzer.rs` | Analysis configuration |
+
+---
+
+#### 11.2.4 FactsStore Tables Summary {#factsstore-tables-summary}
+
+Compact reference of new/expanded FactsStore tables introduced in Phase 11:
+
+| Table / Type | Purpose | Key fields |
+|-------------|---------|------------|
+| `PublicExport` | Canonical exports across languages | `export_kind`, `export_intent`, spans |
+| `AttributeAccess` | Member read/write/call facts | `base_symbol_id`, `name`, `kind` |
+| `CallSite` | Call sites with args | `callee_symbol_id`, `args`, `span` |
+| `AliasEdge` | Alias chains and provenance | `alias_symbol_id`, `target_symbol_id`, `kind` |
+| `QualifiedName` | Fully-qualified symbol IDs | `symbol_id`, `path` |
+| `SymbolModifiers` | Semantic modifiers | `symbol_id`, `modifiers` |
+| `ModuleResolution` | Module path → module IDs | `module_path`, `module_ids` |
+| `Signature` | Function/class signatures | `params`, `returns` |
+| `TypeParam` | Generic type parameters | `name`, `bounds`, `default` |
+| `Module` (updated) | Inline module span support | `decl_span` |
+| `ReferenceKind` (updated) | Delete semantics | `Delete` variant |
+
+Adapter outputs mirror these via `*Data` structs in `adapter.rs`.
 
 ---
 
@@ -1557,6 +2222,11 @@ pub trait LanguageAdapter {
 - [ ] Document PythonAdapter and options
 - [ ] Update `docs/AGENT_API.md` if output schema or agent guidance changes
 - [ ] Note FactsStore schema changes in internal docs where referenced
+- [ ] Document adapter index semantics and deterministic ordering
+- [ ] Document ReferenceKind mapping (Definition/Delete → output kind)
+- [ ] Document ModuleKind::Inline and Module.decl_span semantics
+- [ ] Document Import builder precedence and order-independence
+- [ ] Document attribute access, call sites, alias edges, signatures, modifiers, and qualified names
 
 ---
 
@@ -1566,10 +2236,10 @@ pub trait LanguageAdapter {
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test enum serialization, default values | Visibility, ExportKind, ExportTarget, ExportIntent, ExportOrigin, ImportKind, ModuleKind, TypeNode |
+| **Unit** | Test enum serialization, default values | Visibility, ExportKind, ExportTarget, ExportIntent, ExportOrigin, ImportKind, ModuleKind, TypeNode, ReferenceKind (adapter + facts) |
 | **Golden** | Verify new schema format correctness | JSON output for Symbol, PublicExport (incl. spans), TypeNode, schema_version |
 | **Integration** | Verify Python analyzer works with new types | End-to-end rename using new schema |
-| **Adapter** | Verify LanguageAdapter produces correct output | PythonAdapter results match expectations |
+| **Adapter** | Verify LanguageAdapter produces correct output | PythonAdapter results match expectations, index-based references |
 
 #### Test Fixtures {#test-fixtures}
 
@@ -1676,6 +2346,68 @@ fn import_kind_serialization() {
 #[test]
 fn module_kind_serialization() {
     assert_eq!(serde_json::to_string(&ModuleKind::Directory).unwrap(), "\"directory\"");
+    assert_eq!(serde_json::to_string(&ModuleKind::Inline).unwrap(), "\"inline\"");
+    assert_eq!(serde_json::to_string(&ModuleKind::Namespace).unwrap(), "\"namespace\"");
+}
+```
+
+**Attribute/Call/Alias/Signature Enums:**
+```rust
+#[test]
+fn attribute_access_kind_serialization() {
+    assert_eq!(serde_json::to_string(&AttributeAccessKind::Read).unwrap(), "\"read\"");
+}
+
+#[test]
+fn alias_kind_serialization() {
+    assert_eq!(serde_json::to_string(&AliasKind::Assignment).unwrap(), "\"assignment\"");
+}
+
+#[test]
+fn param_kind_serialization() {
+    assert_eq!(
+        serde_json::to_string(&ParamKind::PositionalOnly).unwrap(),
+        "\"positional_only\""
+    );
+}
+
+#[test]
+fn modifier_serialization() {
+    assert_eq!(serde_json::to_string(&Modifier::Async).unwrap(), "\"async\"");
+}
+```
+
+**Adapter ReferenceKind:**
+```rust
+#[test]
+fn adapter_reference_kind() {
+    // Adapter ReferenceKind is separate from facts::ReferenceKind
+    // but the integration layer maps between them
+    use tugtool_core::adapter::ReferenceKind;
+
+    let kinds = [
+        ReferenceKind::Definition,
+        ReferenceKind::Read,
+        ReferenceKind::Write,
+        ReferenceKind::Call,
+        ReferenceKind::Import,
+        ReferenceKind::Attribute,
+        ReferenceKind::TypeAnnotation,
+        ReferenceKind::Delete,
+    ];
+    assert_eq!(kinds.len(), 8);
+}
+```
+
+**Facts ReferenceKind (Delete):**
+```rust
+#[test]
+fn facts_reference_kind_delete_serializes() {
+    use tugtool_core::facts::ReferenceKind;
+    assert_eq!(
+        serde_json::to_string(&ReferenceKind::Delete).unwrap(),
+        "\"delete\""
+    );
 }
 ```
 
@@ -1832,32 +2564,47 @@ fn visibility_inference_public_dunder() {
 **Artifacts:**
 - `ImportKind` enum
 - `Import.kind` replacing `is_star`
-- Generalized `ModuleKind` (Directory, Namespace)
+- Builder pattern with auto-setting `ImportKind`
+- Generalized `ModuleKind` (Directory, Inline, Namespace)
+- `Module.decl_span` for inline module declarations
 - Updated docs for module/import semantics
 
 **Tasks:**
 - [ ] Add `ImportKind` enum to `facts/mod.rs`
 - [ ] Replace `Import.is_star: bool` with `Import.kind: ImportKind`
-- [ ] Update `Import::new()` to set `ImportKind::Named` by default
-- [ ] **Migration:** Replace all `Import::with_star(true)` calls with `Import::with_kind(ImportKind::Glob)`
-- [ ] **Migration:** Replace all `Import::with_star(false)` calls with appropriate `ImportKind` variant
+- [ ] Update `Import::new()` to set `ImportKind::Module` by default (bare `import foo`)
+- [ ] Add `Import::with_imported_name()` - auto-sets `ImportKind::Named`
+- [ ] Add `Import::with_alias()` - auto-sets `ImportKind::Alias`
+- [ ] Add `Import::with_glob()` - sets `ImportKind::Glob` (replaces `with_star()`)
+- [ ] Add `Import::with_kind()` - explicit override for `ReExport`, `Default`, etc.
+- [ ] Implement order-independent builder precedence (Alias overrides Named; Glob overrides Alias; `with_kind` overrides all)
+- [ ] **Migration:** Replace all `Import::with_star()` calls with `Import::with_glob()`
 - [ ] Remove `Import::with_star()` builder method entirely
-- [ ] Add `Import::with_kind(kind: ImportKind) -> Self` builder method
 - [ ] **Migration:** Rename `ModuleKind::Package` to `ModuleKind::Directory`
+- [ ] Add `ModuleKind::Inline` variant (for Rust `mod foo { ... }`)
 - [ ] Add `ModuleKind::Namespace` variant
+- [ ] Add `Module.decl_span: Option<Span>` for inline module declarations
+- [ ] Add `Module::with_decl_span(span: Span) -> Self` builder
 - [ ] Update `ModuleKind` docs to remove `__init__.py` references
-- [ ] Update Python analyzer to emit correct `ImportKind`:
-  - `import foo` → `ImportKind::Module`
-  - `from foo import bar` → `ImportKind::Named`
-  - `from foo import bar as baz` → `ImportKind::Alias`
-  - `from foo import *` → `ImportKind::Glob`
+- [ ] Update Python analyzer to use new builder pattern:
+  - `import foo` → `Import::new("foo")` (kind = Module by default)
+  - `from foo import bar` → `Import::new("foo").with_imported_name("bar")` (auto-sets Named)
+  - `from foo import bar as baz` → `Import::new("foo").with_imported_name("bar").with_alias("baz")` (auto-sets Alias)
+  - `from foo import *` → `Import::new("foo").with_glob()` (sets Glob)
 - [ ] **Migration:** Update all callers that check `is_star` to check `kind == ImportKind::Glob`
 - [ ] Update any core queries/tests that rely on `is_star` or `ModuleKind::Package`
+- [ ] Update module creation to set `decl_span` for inline modules when available
+
+**Python Note:** For Python modules, `Module.decl_span` is always `None` since Python does not support inline module definitions (unlike Rust's `mod foo { ... }`).
 
 **Tests:**
 - [ ] Unit: `ImportKind` serialization (all variants)
-- [ ] Unit: `ModuleKind` serialization (all variants)
-- [ ] Unit: `Import::with_kind` works correctly
+- [ ] Unit: `ModuleKind` serialization (all variants including `Inline`)
+- [ ] Unit: `Import::with_imported_name` auto-sets `ImportKind::Named`
+- [ ] Unit: `Import::with_alias` auto-sets `ImportKind::Alias`
+- [ ] Unit: `Import::with_glob` sets `ImportKind::Glob`
+- [ ] Unit: `Import` builder precedence is order-independent
+- [ ] Unit: `Module::with_decl_span` sets `decl_span`
 - [ ] Integration: Python analyzer emits `ImportKind::Module` for `import foo`
 - [ ] Integration: Python analyzer emits `ImportKind::Named` for `from foo import bar`
 - [ ] Integration: Python analyzer emits `ImportKind::Alias` for `from foo import bar as baz`
@@ -1876,7 +2623,81 @@ fn visibility_inference_public_dunder() {
 
 ---
 
+#### Step 2.6: Generalize ReferenceKind {#step-2-6}
+
+**Commit:** `feat(facts): add Delete to ReferenceKind`
+
+**References:** [D14] ReferenceKind Generalization
+
+**Artifacts:**
+- `ReferenceKind::Delete` in FactsStore
+- Output mapping for Delete
+
+**Tasks:**
+- [ ] Add `Delete` variant to `facts::ReferenceKind`
+- [ ] Update `ReferenceKind::to_output_kind()` to map `Delete` → `"reference"`
+- [ ] Update any exhaustive `ReferenceKind` matches in core code
+- [ ] Add/Update tests for ReferenceKind serialization and output mapping
+
+**Tests:**
+- [ ] Unit: `ReferenceKind::Delete` serialization
+- [ ] Unit: `ReferenceKind::Delete` maps to output kind `"reference"`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core reference_kind`
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 2.7: Add Foundational Semantic Facts {#step-2-7}
+
+**Commit:** `feat(facts): add attribute, call, alias, signature, and module maps`
+
+**References:** [D16] Attribute Access, [D17] Call Sites, [D18] Alias Edges, [D19] Qualified Names/Modifiers, [D20] Module Resolution, [D21] Signatures/TypeParams
+
+**Artifacts:**
+- Attribute access tables + indexes
+- Call site tables + indexes
+- Alias edge tables + indexes
+- Qualified name table
+- Module resolution map
+- Signature + parameter tables
+- Type parameter table
+- Symbol modifier table
+
+**Tasks:**
+- [ ] Add `AttributeAccess` + `AttributeAccessKind` to FactsStore
+- [ ] Add `CallSite` + `CallArg` to FactsStore
+- [ ] Add `AliasEdge` + `AliasKind` to FactsStore
+- [ ] Add `QualifiedName` and `SymbolModifiers` to FactsStore
+- [ ] Add `ModuleResolution` map to FactsStore
+- [ ] Add `Signature`, `Parameter`, `ParamKind`, `TypeParam` to FactsStore
+- [ ] Add ID generators, insert/query helpers, and indexes for the above
+- [ ] Ensure deterministic ordering for new tables
+
+**Tests:**
+- [ ] Unit: Serialization for new enums/structs
+- [ ] Unit: Insert/query roundtrips for each new table
+- [ ] Unit: Deterministic ordering of new tables
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core facts`
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
 #### Step 3: Add PublicExport Type {#step-3}
+
+> **SEQUENTIAL EXECUTION REQUIRED:** Steps 3, 3a, 3b, and 3c MUST be executed in order.
+> Each step depends on the previous step's completion. Do not parallelize these steps.
 
 **Commit:** `feat(facts): add PublicExport type as canonical export model`
 
@@ -1927,52 +2748,22 @@ fn visibility_inference_public_dunder() {
 
 ---
 
-#### Step 3a: Remove Legacy Export Type {#step-3a}
-
-**Commit:** `refactor(facts): remove legacy Export type and ExportId`
-
-**References:** [D03] PublicExport for Language-Agnostic Exports, (#export-generalization)
-
-**Artifacts:**
-- Legacy `Export` type removed from FactsStore
-- Legacy `ExportId` newtype removed
-- Legacy export storage and queries removed
-
-**Tasks:**
-- [ ] **Remove legacy `ExportId` newtype** from FactsStore
-- [ ] **Remove legacy `Export` type** from FactsStore
-- [ ] **Remove legacy export storage**: `exports`, `exports_by_file`, `exports_by_name`
-- [ ] **Remove legacy export queries**: `export()`, `exports_in_file()`, `exports_named()`, `exports()`
-- [ ] **Remove `next_export_id()` generator**
-- [ ] Update any code in `tugtool-core` that references legacy `Export` or `ExportId`
-
-**Tests:**
-- [ ] Unit: Legacy types no longer exist (compile check)
-- [ ] Unit: PublicExport types still work correctly
-
-**Checkpoint:**
-- [ ] `cargo build -p tugtool-core` (compiles without legacy types)
-- [ ] `cargo nextest run -p tugtool-core public_export`
-
-**Rollback:**
-- Revert commit
-
-**Commit after all checkpoints pass.**
-
----
-
-#### Step 3b: Update Python Analyzer to Emit PublicExport {#step-3b}
+#### Step 3a: Update Python Analyzer to Emit PublicExport {#step-3a}
 
 **Commit:** `feat(python): emit PublicExport for __all__ exports`
 
 **References:** [D03] PublicExport for Language-Agnostic Exports, Concept C01, (#export-generalization)
 
+> **Sequencing Note:** This step adds PublicExport support BEFORE removing legacy Export.
+> Both export types coexist temporarily. This ensures each commit is buildable.
+
 **Artifacts:**
-- Python analyzer emits `PublicExport` instead of legacy `Export`
+- Python analyzer emits `PublicExport` in addition to legacy `Export`
 - Export spans populated correctly for rename operations
 
 **Tasks:**
-- [ ] Update Python analyzer to emit `PublicExport` instead of legacy `Export`
+- [ ] Update Python analyzer to emit `PublicExport` for each `__all__` entry
+- [ ] Keep legacy `Export` emission temporarily (removed in Step 3c)
 - [ ] Populate `export_kind: ExportKind::PythonAll` for `__all__` entries
 - [ ] Populate `export_target: ExportTarget::Single` for individual `__all__` entries
 - [ ] Populate `export_intent: ExportIntent::Declared` for explicit `__all__` declarations
@@ -1981,6 +2772,8 @@ fn visibility_inference_public_dunder() {
 - [ ] Populate `exported_name_span` pointing at string content only (excluding quotes)
 - [ ] Populate `decl_span` covering the full string literal including quotes
 - [ ] Resolve `symbol_id` when the exported name matches a defined symbol
+- [ ] If no matching symbol exists, set `symbol_id = None` and keep the export (no error)
+- [ ] If `__all__` is empty, emit zero `PublicExport` entries
 
 **Span Semantics for Python `__all__`:**
 For `__all__ = ["foo", "bar"]`:
@@ -1993,6 +2786,9 @@ For `__all__ = ["foo", "bar"]`:
 - [ ] Unit: `exported_name_span` excludes quote characters
 - [ ] Unit: `decl_span` includes quote characters
 - [ ] Integration: Python analyzer correctly resolves `symbol_id` for exported names
+- [ ] Integration: `__all__` entries without matching symbols produce `symbol_id = None`
+- [ ] Integration: Empty `__all__` yields zero PublicExport entries
+- [ ] Integration: Both legacy Export and PublicExport are populated (temporary)
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python export`
@@ -2005,7 +2801,7 @@ For `__all__ = ["foo", "bar"]`:
 
 ---
 
-#### Step 3c: Update Rename Operations for PublicExport {#step-3c}
+#### Step 3b: Update Rename Operations for PublicExport {#step-3b}
 
 **Commit:** `refactor(python): use PublicExport in rename operations`
 
@@ -2038,9 +2834,58 @@ For `__all__ = ["foo", "bar"]`:
 
 ---
 
+#### Step 3c: Remove Legacy Export Type {#step-3c}
+
+**Commit:** `refactor(facts): remove legacy Export type and ExportId`
+
+**References:** [D03] PublicExport for Language-Agnostic Exports, (#export-generalization)
+
+> **Sequencing Note:** This step removes legacy Export AFTER PublicExport is fully working
+> and rename operations have been migrated.
+
+**Artifacts:**
+- Legacy `Export` type removed from FactsStore
+- Legacy `ExportId` newtype removed
+- Legacy export storage and queries removed
+- Python analyzer no longer emits legacy `Export`
+
+**Tasks:**
+- [ ] **Remove legacy `ExportId` newtype** from FactsStore
+- [ ] **Remove legacy `Export` type** from FactsStore
+- [ ] **Remove legacy export storage**: `exports`, `exports_by_file`, `exports_by_name`
+- [ ] **Remove legacy export queries**: `export()`, `exports_in_file()`, `exports_named()`, `exports()`
+- [ ] **Remove `next_export_id()` generator**
+- [ ] Remove legacy `Export` emission from Python analyzer (added temporarily in Step 3a)
+- [ ] Update any code that references legacy `Export` or `ExportId`
+
+**Tests:**
+- [ ] Unit: Legacy types no longer exist (compile check)
+- [ ] Unit: PublicExport types still work correctly
+- [ ] Integration: Python analyzer only emits PublicExport
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-core` (compiles without legacy types)
+- [ ] `cargo nextest run -p tugtool-core public_export`
+- [ ] `cargo nextest run -p tugtool-python`
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
 #### Step 3 Summary {#step-3-summary}
 
-After completing Steps 3, 3a, 3b, and 3c, you will have:
+**Execution Order:** Step 3 → Step 3a → Step 3b → Step 3c
+
+Each step is a buildable commit:
+1. **Step 3:** Add `PublicExport` type to FactsStore (new type exists alongside legacy)
+2. **Step 3a:** Update Python analyzer to emit `PublicExport` (both types emitted temporarily)
+3. **Step 3b:** Update rename operations to use `PublicExport` queries
+4. **Step 3c:** Remove legacy `Export` and `ExportId` (clean break, only `PublicExport` remains)
+
+After completing all steps, you will have:
 - `PublicExport` as the canonical export model in FactsStore
 - Legacy `Export` and `ExportId` types completely removed
 - Python analyzer emitting `PublicExport` with correct spans and metadata
@@ -2065,17 +2910,41 @@ After completing Steps 3, 3a, 3b, and 3c, you will have:
 **Tasks:**
 - [ ] Create `crates/tugtool-core/src/adapter.rs`
 - [ ] Define `ScopeData`, `SymbolData`, `ReferenceData`, `ImportData`, `ExportData` intermediate types
+- [ ] Define adapter `ReferenceKind` enum (Definition, Read, Write, Call, Import, Attribute, TypeAnnotation, Delete)
 - [ ] Define `FileAnalysisResult` struct
+- [ ] Define `TypeInfoData` struct and add `types: Vec<TypeInfoData>` to `AnalysisBundle`
+- [ ] Define `ModuleResolutionData` and add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle`
 - [ ] Define `AnalysisBundle` struct
 - [ ] Define `LanguageAdapter` trait with associated Error type
 - [ ] Use read-only `&FactsStore` in `analyze_files` for cross-file resolution
 - [ ] Add `pub mod adapter;` to `lib.rs`
 - [ ] Re-export adapter types from `tugtool_core`
 - [ ] Add documentation for the trait
+- [ ] Document deterministic ordering (adapter preserves input order for file_results)
 
 **Tests:**
 - [ ] Unit: Trait compiles (trait definition test)
+- [ ] Unit: `file_results` preserves input order (deterministic ordering per [D15](#d15-deterministic-adapter-order))
 - [ ] Documentation: Example in rustdoc compiles
+
+**Deterministic Ordering Test Fixture:**
+```rust
+#[test]
+fn file_results_preserves_input_order() {
+    let files = vec![
+        ("b.py".to_string(), "x = 1".to_string()),
+        ("a.py".to_string(), "y = 2".to_string()),
+        ("c.py".to_string(), "z = 3".to_string()),
+    ];
+    let store = FactsStore::new();
+    let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+    // Order must match input, not sorted alphabetically
+    assert_eq!(bundle.file_results[0].path, "b.py");
+    assert_eq!(bundle.file_results[1].path, "a.py");
+    assert_eq!(bundle.file_results[2].path, "c.py");
+}
+```
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-core adapter`
@@ -2169,8 +3038,9 @@ The integration layer (currently in CLI or caller code) is responsible for:
 2. Allocating IDs via `FactsStore::next_*_id()` methods
 3. Converting adapter data types (`SymbolData`, `ScopeData`, etc.) to FactsStore types (`Symbol`, `ScopeInfo`, etc.)
 4. Inserting into `FactsStore` via `insert_*()` methods
+5. Preserving `file_results` order (or remapping indices if order changes)
 
-For Phase 11, this logic lives in the existing Python analyzer integration code. Future phases may extract a reusable integration layer.
+For Phase 11, this logic lives in the existing Python analyzer integration code (see `crates/tugtool-python/src/analyzer.rs`). Future phases may extract a reusable integration layer.
 
 **Tasks:**
 - [ ] Create `PythonAdapter` struct in `analyzer.rs`
@@ -2188,7 +3058,23 @@ For Phase 11, this logic lives in the existing Python analyzer integration code.
 - [ ] Add conversion from `FileAnalysisBundle` to `AnalysisBundle`
 - [ ] Update adapter conversion to include `ImportKind` and new export fields
 - [ ] Emit `ExportIntent::Declared` for explicit `__all__` exports
-- [ ] Emit `ExportIntent::Effective` for effective public API entries (per Python rules)
+- [ ] Do **not** emit `ExportIntent::Effective` for Python (deferred per [D13](#d13-python-effective-exports))
+- [ ] Map native reference kinds to adapter `ReferenceKind` (Definition/Read/Write/Call/Import/Attribute/TypeAnnotation/Delete)
+- [ ] Emit attribute access facts (read/write/call) in adapter output
+- [ ] Emit call site facts with argument structure
+- [ ] Emit alias edges for assignment/import aliasing
+- [ ] Emit qualified names for all symbols
+- [ ] Emit signatures + parameters (when available)
+- [ ] Emit type parameter facts (when available)
+- [ ] Emit symbol modifiers (async, static, property, etc.)
+- [ ] Emit module resolution map in `AnalysisBundle.modules`
+- [ ] **Integration layer:** Map adapter `ReferenceKind` to `facts::ReferenceKind` (including `Delete`)
+- [ ] **Integration layer:** Convert `ExportData.origin_module_path` to `PublicExport.origin_module_id` via module path lookup
+- [ ] **Integration layer:** Handle invalid `TypeInfoData` indices (log warning, skip entry, continue)
+- [ ] **Integration layer:** If `origin_module_path` cannot be resolved, log warning and leave `origin_module_id = None`
+- [ ] **Integration layer:** Convert attribute/call/alias/signature/modifier facts into FactsStore tables
+- [ ] **Integration layer:** Build `ModuleResolution` from `AnalysisBundle.modules`
+- [ ] **Integration layer:** Drop invalid module file indices (log warning, continue)
 - [ ] **Integration layer:** Verify existing ID allocation code works with adapter output
 
 **Tests:**
@@ -2196,9 +3082,18 @@ For Phase 11, this logic lives in the existing Python analyzer integration code.
 - [ ] Unit: `PythonAdapter::can_handle` returns false for `.rs` files
 - [ ] Unit: `PythonAdapter::language` returns `Language::Python`
 - [ ] Unit: `AnalysisBundle.types` is populated with type information
+- [ ] Unit: Adapter `ReferenceKind::Definition` maps to FactsStore `ReferenceKind::Definition`
+- [ ] Unit: Unresolvable `origin_module_path` logs warning and leaves `origin_module_id = None`
+- [ ] Unit: `AnalysisBundle.modules` is populated for multi-file packages
+- [ ] Unit: Invalid `ModuleResolutionData.file_indices` are dropped with warning
+- [ ] Integration: AttributeAccess and CallSite facts are populated
+- [ ] Integration: Alias edges are populated for assignments/imports
+- [ ] Integration: Qualified names are populated for symbols
+- [ ] Integration: Signatures and modifiers are populated where available
 - [ ] Integration: `PythonAdapter::analyze_files` produces same results as direct function call
 - [ ] Integration: Integration layer correctly allocates IDs and populates FactsStore
 - [ ] Integration: Existing rename tests pass with adapter
+- [ ] Unit: Invalid `TypeInfoData` index logs warning and is skipped (not panic)
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python adapter`
@@ -2426,12 +3321,14 @@ The following special patterns in subscripts MUST be recognized:
 - [ ] `PublicExport` includes precise spans and export intent/origin
 - [ ] `ImportKind` replaces `Import.is_star`
 - [ ] `ModuleKind` generalized for directory-based modules
+- [ ] `Module.decl_span` captured for inline modules when present
 - [ ] `ScopeKind` extended with Rust variants, `#[non_exhaustive]`
 - [ ] `LanguageAdapter` trait defined in `tugtool-core`
 - [ ] `PythonAdapter` implements `LanguageAdapter` in `tugtool-python`
 - [ ] Python visibility inference works with `infer_visibility` option
 - [ ] `TypeNode` provides structured type representation
 - [ ] `TypeNode` is `#[non_exhaustive]` with `Extension`
+- [ ] `ReferenceKind::Delete` supported and adapter kinds mapped
 - [ ] Python type annotations convert to `TypeNode`
 - [ ] FactsStore serialization includes `schema_version`
 - [ ] Python tests pass after updating to the new schema
@@ -2454,6 +3351,17 @@ The following special patterns in subscripts MUST be recognized:
 **Milestone M01b: Import/Module Generalization** {#m01b-import-module}
 - [ ] Step 2.5 complete
 - [ ] ImportKind in place, ModuleKind generalized
+- [ ] Module decl_span available for inline modules
+
+**Milestone M01c: ReferenceKind Generalization** {#m01c-referencekind}
+- [ ] Step 2.6 complete
+- [ ] FactsStore ReferenceKind supports Delete
+- [ ] Adapter ReferenceKind includes Definition/Delete
+
+**Milestone M01d: Semantic Facts Foundation** {#m01d-semantic-facts}
+- [ ] Step 2.7 complete
+- [ ] Attribute access, call sites, aliases, signatures, modifiers captured
+- [ ] Qualified names and module resolution available
 
 **Milestone M02: Export Generalization** {#m02-export}
 - [ ] Steps 3, 3a, 3b, 3c complete
