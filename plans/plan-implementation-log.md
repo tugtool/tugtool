@@ -6,6 +6,67 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 0: Preparation and Design Validation | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- Rust visibility model (rustdoc-types, syn crates, Rust language docs)
+- `crates/tugtool-core/src/facts/mod.rs` - Current ScopeKind, Import, ModuleKind
+- `crates/tugtool-core/src/output.rs` - Existing SCHEMA_VERSION pattern
+- Plan sections: [D01], [D02], [D04], [D05], [D06], [D11], [CQ1], [CQ5]
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Review rust-analyzer's visibility model for alignment | Done |
+| Confirm #[non_exhaustive] approach for ScopeKind | Done |
+| Confirm adapter contract (read-only FactsStore, ID ownership) | Done |
+| Confirm ImportKind/ModuleKind generalization approach | Done |
+| Verify serde serialization for new enums | Done |
+| Confirm FACTS_SCHEMA_VERSION = 11 and defaulting | Done |
+
+**Files Modified:**
+- `plans/phase-11.md` - Checked off Step 0 tasks/checkpoints, updated status to "approved"
+
+**Test Results:**
+- N/A (design validation step - no code changes)
+
+**Checkpoints Verified:**
+- Plan reviewed and approved: PASS
+- No blocking questions remain: PASS
+
+**Key Decisions/Notes:**
+
+**Visibility Model Alignment:**
+- Rust: `pub` → Public, `pub(crate)` → Crate, `pub(super)` → Module, private → Private
+- `pub(in path)` maps to Module (approximate, per plan decision Q02)
+- Protected variant covers Java/C++ for future language support
+
+**#[non_exhaustive] Confirmation:**
+- Enables adding Rust variants (Impl, Trait, Closure, Unsafe, MatchArm) without breaking downstream
+- Downstream code must use wildcard patterns
+
+**Adapter Contract:**
+- FactsStore is read-only context (Model A for Phase 11)
+- Integration layer owns ID allocation
+- Adapters use local indices (usize) for cross-references
+
+**ImportKind/ModuleKind:**
+- `is_star: bool` → `ImportKind` enum (Module, Named, Alias, Glob, ReExport, Default)
+- `ModuleKind::Package` → `Directory` (language-agnostic)
+- New variants: Inline (Rust `mod foo { }`), Namespace
+
+**Serde Patterns:**
+- Consistent with codebase: `rename_all = "snake_case"`, `skip_serializing_if`
+
+**Schema Version:**
+- `FACTS_SCHEMA_VERSION = 11` in facts/mod.rs (u32)
+- Independent of `SCHEMA_VERSION = "1"` in output.rs (string)
+
+---
+
 ## [phase-11.md] Plan Refinement Round 5: Minor Watchpoint Documentation | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

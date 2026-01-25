@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | approved |
 | Target branch | main |
 | Tracking issue/PR | N/A |
 | Last updated | 2026-01-25 |
@@ -2554,19 +2554,19 @@ fn visibility_inference_public_dunder() {
 - Updated plan with resolved Q01
 
 **Tasks:**
-- [ ] Review rust-analyzer's visibility model for alignment
-- [ ] Confirm `#[non_exhaustive]` approach for ScopeKind
-- [ ] Confirm adapter contract (read-only FactsStore, ID ownership)
-- [ ] Confirm ImportKind/ModuleKind generalization approach
-- [ ] Verify serde serialization for new enums
-- [ ] Confirm `FACTS_SCHEMA_VERSION = 11` and defaulting in `FactsStore::new()`
+- [x] Review rust-analyzer's visibility model for alignment
+- [x] Confirm `#[non_exhaustive]` approach for ScopeKind
+- [x] Confirm adapter contract (read-only FactsStore, ID ownership)
+- [x] Confirm ImportKind/ModuleKind generalization approach
+- [x] Verify serde serialization for new enums
+- [x] Confirm `FACTS_SCHEMA_VERSION = 11` and defaulting in `FactsStore::new()`
 
 **Tests:**
 - N/A (design step)
 
 **Checkpoint:**
-- [ ] Plan reviewed and approved
-- [ ] No blocking questions remain
+- [x] Plan reviewed and approved
+- [x] No blocking questions remain
 
 **Rollback:**
 - Revert plan changes
