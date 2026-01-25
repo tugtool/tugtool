@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Plan Creation: Architectural Improvements to FactsStore | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `crates/tugtool-core/src/facts/mod.rs` - Current FactsStore schema analysis
+- `crates/tugtool-python/src/analyzer.rs` - Python analyzer implementation
+- `crates/tugtool-python/src/ops/rename.rs` - Export usage in rename operations
+- rust-analyzer visibility model (external research)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Analyze current FactsStore for Python-specific assumptions | Done |
+| Design Visibility enum (5 variants) | Done |
+| Design PublicExport + ExportKind + ExportTarget model | Done |
+| Design LanguageAdapter trait with adapter data types | Done |
+| Design TypeNode structured type representation | Done |
+| Define Python visibility inference strategy | Done |
+| Add schema versioning (FACTS_SCHEMA_VERSION = 11) | Done |
+| Create 13 execution steps (0-11 + 3a) | Done |
+| Define 5 milestones (M01-M05) | Done |
+| Document 11 design decisions (D01-D11) | Done |
+| Address review feedback (split Step 3, clarify ID ownership, TypeNode v1 scope) | Done |
+
+**Files Created:**
+- `plans/phase-11.md` - Complete phase plan for FactsStore architectural improvements
+
+**Files Modified:**
+- None (planning phase only)
+
+**Test Results:**
+- N/A (planning phase, no code changes)
+
+**Checkpoints Verified:**
+- Plan internally consistent with future-first, breaking-change posture: PASS
+- All design decisions resolved or explicitly deferred: PASS
+- Adapter boundary explicitly defined with data types: PASS
+- TypeNode v1 scope clearly bounded: PASS
+- Schema versioning specified: PASS
+
+**Key Decisions/Notes:**
+- **D01-D02**: Visibility is `Option<Visibility>` with 5 variants (Public, Crate, Module, Private, Protected)
+- **D03, D10**: PublicExport replaces legacy Export with ExportKind (6 variants) + ExportTarget (4 variants) for glob/module/implicit exports
+- **D06**: LanguageAdapter trait in tugtool-core with explicit adapter data types (ScopeData, SymbolData, etc.)
+- **D07-D08**: TypeNode provides structured types, optional alongside type_repr
+- **D09**: Python visibility inference opt-in via `infer_visibility` option
+- **D11**: FACTS_SCHEMA_VERSION = 11 at FactsStore root
+- Step 3 split into 3 (add PublicExport) and 3a (remove legacy Export + migrate) for manageable commits
+- ID assignment ownership clarified: adapters use local indices, FactsStore owns ID generation
+- TypeNode v1 scope explicitly defines which CST nodes must be handled vs return None
+
+---
+
 ## [phase-10.md] Step 16: Scope Fallback Fix | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24
