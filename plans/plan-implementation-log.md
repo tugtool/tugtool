@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Plan Refinement: Address Review Feedback and CQ Resolutions | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Main plan document
+- `plans/plan-skeleton.md` - Plan structure template
+- GPT and code-planner feedback on plan quality
+- Clarifying questions CQ1-CQ6 with user answers
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add CQ Summary Section (CQ1-CQ6 resolutions) | Done |
+| Update [D11] with two-schema-version model | Done |
+| Move FACTS_SCHEMA_VERSION from Step 6 to Step 1 | Done |
+| Add migration tasks to Step 2.5 (ImportKind, ModuleKind) | Done |
+| Split Step 3a into 3a/3b/3c for smaller commits | Done |
+| Add integration layer documentation to Step 7 | Done |
+| Add TypeInfoData to AnalysisBundle | Done |
+| Document Model A for cross-file resolution in D06 | Done |
+| Update Modified files section (clarify what's NOT modified) | Done |
+| Add Python __all__ span semantics clarification | Done |
+| Update Downstream Schema Consumers section | Done |
+| Update Milestone M02 for step split | Done |
+
+**Files Modified:**
+- `plans/phase-11.md` - Major refinements to address all review feedback
+
+**Key Decisions/Notes:**
+
+**CQ Resolutions Added:**
+- CQ1: FACTS_SCHEMA_VERSION and SCHEMA_VERSION are independent (different cadences)
+- CQ2: Visibility stays in FactsStore only; output schema not modified in Phase 11
+- CQ3: AliasOutput and PublicExport are orthogonal concepts
+- CQ4: No adapter schema_version method needed (compile-time checking)
+- CQ5: Model A - adapters treat FactsStore as empty read-only context, build state internally
+- CQ6: TypeInfoData added to AnalysisBundle (bundle-level, not per-file)
+
+**Step 3 Split:**
+- Step 3a: Remove legacy Export type and ExportId
+- Step 3b: Update Python analyzer to emit PublicExport (with span semantics)
+- Step 3c: Update rename operations for PublicExport
+
+**Python __all__ Span Semantics:**
+- `decl_span` covers full string literal including quotes
+- `exported_name_span` covers string content only (replacement-safe)
+
+**Additional Feedback (Not Yet Applied):**
+User identified 8 additional issues for future refinement:
+1. Adapter ID ownership (FileId vs index-based)
+2. Step 3a/3b/3c build sequencing
+3. ImportKind defaults and migration details
+4. Re-export modeling rule (Import vs PublicExport)
+5. Python effective export rules
+6. Rust inline modules (ModuleKind::Inline)
+7. ReferenceData richness (full ReferenceKind)
+8. TypeInfoData indexing semantics
+
+---
+
 ## [phase-11.md] Plan Creation: Architectural Improvements to FactsStore | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

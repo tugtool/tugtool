@@ -12,7 +12,7 @@
 | Status | draft |
 | Target branch | main |
 | Tracking issue/PR | N/A |
-| Last updated | 2026-01-24 |
+| Last updated | 2026-01-25 |
 
 ---
 
@@ -32,6 +32,8 @@ Additionally, the current design lacks features needed for multi-language suppor
 - No trait/impl/interface modeling (only class inheritance via `InheritanceInfo`)
 - `TypeInfo.type_repr` is just a string, with no structured type representation
 - No language-agnostic export model
+- Import shape is Python-centric (`is_star`) and cannot represent richer models
+- ModuleKind is Python-biased and cannot express directory-based modules cleanly
 
 This phase establishes the architectural foundation for Rust support and future languages without constraining the schema to current Python assumptions.
 
@@ -40,8 +42,12 @@ This phase establishes the architectural foundation for Rust support and future 
 - **Future-first schema**: Optimize the data model for multi-language support, even if it requires changes to current Python-facing types
 - **Visibility as a first-class concept**: Introduce a `Visibility` enum that generalizes across languages
 - **Export generalization**: Create a language-agnostic export model that becomes the single source of truth
+- **Export richness for refactors**: Store precise spans and metadata to support refactors beyond rename (move-class, move-module, etc.)
+- **Export intent/origin**: Track declared vs effective exports and re-export chains
 - **Adapter pattern**: Define a `LanguageAdapter` trait for language-specific analysis
 - **Rust visibility mapping**: Use Rust's `pub`/`pub(crate)`/`pub(super)`/private as the stepping stone for the visibility model
+- **Generalize imports and modules now**: Replace Python-only import/module assumptions in core schema
+- **Extensible type model**: Make `TypeNode` extensible without core rewrites
 - **Allow breaking changes**: Remove or replace Python-specific structures when a general model exists
 - **No language-specific assumptions in FactsStore**: All language-specific logic belongs in language adapters (tugtool-python), not tugtool-core
 
@@ -54,7 +60,7 @@ This phase establishes the architectural foundation for Rust support and future 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `Symbol` struct includes `visibility` with a language-agnostic meaning
-- `PublicExport` replaces legacy export modeling
+- `PublicExport` replaces legacy export modeling with precise spans and export intent/origin
 - `ExportTarget` explicitly classifies export intent
 - `ScopeKind` is extended (not replaced) for Rust scopes
 - Documentation explains the visibility model and export generalization
@@ -62,25 +68,30 @@ This phase establishes the architectural foundation for Rust support and future 
 - Python analyzer implements `LanguageAdapter` trait
 - Optional visibility inference for Python naming conventions (`_name`, `__name`) works correctly
 - Structured type representation available via `TypeNode`
+- Import model is generalized (`ImportKind`), and `ModuleKind` is no longer Python-biased
+- PublicExport can represent both declared exports and effective public API
 - FactsStore serialization includes `schema_version = 11`
 
 #### Scope {#scope}
 
 **Core schema changes:**
 1. `Visibility` enum + `Symbol.visibility` field
-2. `PublicExport` + `ExportKind` + `ExportTarget` (replaces legacy `Export`)
-3. `ScopeKind` extended with Rust variants
-4. `TypeNode` structured type representation
-5. `FACTS_SCHEMA_VERSION = 11`
+2. `PublicExport` + `ExportKind` + `ExportTarget` + `ExportIntent` + `ExportOrigin` (replaces legacy `Export`)
+3. `PublicExport` spans for precise edits (decl span + name spans)
+4. `ImportKind` + generalized `Import` (replaces `is_star`)
+5. `ModuleKind` generalized for directory-based modules
+6. `ScopeKind` extended with Rust variants
+7. `TypeNode` structured type representation (extensible)
+8. `FACTS_SCHEMA_VERSION = 11`
 
 **Infrastructure:**
-6. `LanguageAdapter` trait definition
-7. `PythonAdapter` implementing `LanguageAdapter`
-8. Python visibility inference (opt-in)
-9. Python type annotation → `TypeNode` conversion
+9. `LanguageAdapter` trait definition (clarify ID ownership and FactsStore mutation)
+10. `PythonAdapter` implementing `LanguageAdapter`
+11. Python visibility inference (opt-in)
+12. Python type annotation → `TypeNode` conversion
 
 **Cleanup:**
-10. Remove legacy `Export` type and all associated queries
+13. Remove legacy `Export` type and all associated queries
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -93,6 +104,22 @@ This phase establishes the architectural foundation for Rust support and future 
 - Phase 10 complete (cross-file alias tracking)
 - Understanding of Rust's visibility model
 - Review of rust-analyzer's semantic model (for future alignment)
+- Audit downstream schema consumers (output + docs + golden files)
+
+#### Downstream Schema Consumers (Audit Results) {#downstream-consumers}
+
+**Will be updated in this phase:**
+- `crates/tugtool-python/src/analyzer.rs` (exports, imports, ModuleKind, adapter)
+- `crates/tugtool-python/src/ops/rename.rs` (export edits and queries)
+- `crates/tugtool/tests/temporale_integration.rs` (export-driven assertions)
+- `crates/tugtool/tests/fixtures/golden/python/**` (FactsStore schema golden files)
+
+**Not updated in this phase (see [CQ1](#cq1-schema-version-independence), [CQ2](#cq2-visibility-output)):**
+- `crates/tugtool-core/src/output.rs` - No agent-facing output changes
+- `crates/tugtool-core/src/types.rs` - Visibility not exposed in SymbolInfo
+- `docs/AGENT_API.md` - No output schema changes
+- `crates/tugtool/tests/golden/output_schema/*.json` - Output schema unchanged
+- `crates/tugtool/src/main.rs` - Output `SCHEMA_VERSION` unchanged
 
 #### Constraints {#constraints}
 
@@ -169,6 +196,76 @@ This phase establishes the architectural foundation for Rust support and future 
 
 **Resolution:** DECIDED - Option A (recursive). Start simple with boxed recursive structure. Can migrate to arena if performance becomes an issue.
 
+#### [Q05] What is the adapter ownership boundary for IDs and FactsStore mutation? (DECIDED) {#q05-adapter-boundary}
+
+**Question:** Should language adapters directly mutate `FactsStore`, or should they return intermediate data that the caller inserts?
+
+**Why it matters:** This determines ID ownership, layering, and testability. If adapters mutate `FactsStore`, they must understand ID allocation and storage invariants. If they return data, an integration layer can centralize ID allocation and keep adapters simpler.
+
+**Options:**
+- Option A: **Pure adapters** - Adapters return data (`FileAnalysisResult`/`AnalysisBundle`) with local indices; caller assigns IDs and inserts into `FactsStore`.
+- Option B: **Mutating adapters** - Adapters receive `&mut FactsStore` and insert records directly (owning ID allocation).
+- Option C: **Hybrid** - Adapters return data but also read `FactsStore` for cross-file resolution (read-only).
+
+**Plan to resolve:** Design spike in Step 0. Document the chosen contract and enforce it in the trait signature and docs.
+
+**Resolution:** DECIDED - Option C. Adapters return data; `FactsStore` is read-only input for cross-file resolution. ID allocation and insertion are centralized in the integration layer.
+
+---
+
+### Clarifying Questions Summary {#cq-summary}
+
+This section documents clarifying questions raised during plan review and their resolutions.
+
+#### [CQ1] Schema Version Independence (DECIDED) {#cq1-schema-version-independence}
+
+**Question:** Should `SCHEMA_VERSION` (output.rs) and `FACTS_SCHEMA_VERSION` (facts/mod.rs) be aligned?
+
+**Resolution:** Keep independent. They have different cadences and consumers:
+- `SCHEMA_VERSION` in `output.rs` tracks agent-facing output format
+- `FACTS_SCHEMA_VERSION` in `facts/mod.rs` tracks internal FactsStore schema
+
+Update them independently as needed.
+
+#### [CQ2] Visibility in Agent-Facing SymbolInfo (DECIDED) {#cq2-visibility-output}
+
+**Question:** Should `Symbol.visibility` be exposed in the agent-facing `SymbolInfo` output type?
+
+**Resolution:** Defer to future phase. For Phase 11, visibility remains in FactsStore only. Output schema (`output.rs`, `types.rs`) is not modified to add visibility fields.
+
+#### [CQ3] AliasOutput vs PublicExport Relationship (DECIDED) {#cq3-alias-vs-export}
+
+**Question:** How does `AliasOutput` relate to `PublicExport`?
+
+**Resolution:** Orthogonal concepts:
+- `AliasOutput` tracks value-level aliases within files (variables assigned to other symbols)
+- `PublicExport` tracks module boundary exports (`__all__`, `pub use`, etc.)
+
+No integration needed; they serve different purposes.
+
+#### [CQ4] Adapter Schema Version Method (DECIDED) {#cq4-adapter-schema-version}
+
+**Question:** Should `LanguageAdapter` have a `schema_version()` method?
+
+**Resolution:** Not needed for Phase 11. Adapters compile against core types; version mismatch is a compile-time error. Defer runtime version checking to future phases if needed.
+
+#### [CQ5] Cross-File Resolution with Read-Only FactsStore (DECIDED) {#cq5-cross-file-resolution}
+
+**Question:** How should cross-file resolution work when adapters receive a read-only `&FactsStore`?
+
+**Resolution:** Model A for Phase 11:
+- Adapters treat `FactsStore` as **read-only context**
+- For Phase 11, assume `FactsStore` is empty; adapters build all multi-file state internally
+- Adapters return analysis data; the integration layer allocates IDs and inserts into `FactsStore`
+- Model B (pre-populated store for incremental analysis) can be a future extension
+- Model C (mutable store) is explicitly rejected
+
+#### [CQ6] TypeInfo in Adapter Pattern (DECIDED) {#cq6-typeinfo-in-adapter}
+
+**Question:** Should `FileAnalysisResult` include type information, or does type collection remain separate?
+
+**Resolution:** Type collection should be part of adapter output. Add bundle-level `types: Vec<TypeInfoData>` to `AnalysisBundle` rather than per-file. The integration layer converts and inserts into `FactsStore`.
+
 ---
 
 ### Risks and Mitigations {#risks}
@@ -179,6 +276,8 @@ This phase establishes the architectural foundation for Rust support and future 
 | Export generalization breaks Python rename | high | med | Update Python analyzer + rename ops to new model | Any export-related test failure |
 | ScopeKind additions cause match exhaustiveness issues | low | med | Add `#[non_exhaustive]` or wildcard patterns | Clippy warnings in dependents |
 | TypeNode adds complexity without immediate benefit | med | low | Keep type_repr as primary, TypeNode as optional | Structured types unused after 6 months |
+| Import/Module generalization regresses Python analysis | med | med | Update analyzer + tests, add import-specific regression tests | Import tests fail |
+| Declared vs effective exports cause ambiguity | med | low | Document intent/origin semantics; add query helpers | Confusing export queries |
 
 **Risk R01: Schema Versioning Complexity** {#r01-schema-versioning}
 
@@ -264,8 +363,22 @@ pub struct PublicExport {
     /// Original name in source (for rename operations).
     /// None for glob exports or implicit exports (Go uppercase).
     pub source_name: Option<String>,
-    /// Byte span of the export declaration (for edits).
-    pub span: Span,
+    /// Byte span of the entire export declaration.
+    pub decl_span: Span,
+    /// Byte span of the exported name (alias or __all__ string content).
+    /// None for glob/implicit exports where no explicit name exists.
+    pub exported_name_span: Option<Span>,
+    /// Byte span of the source/original name in the declaration.
+    /// None for implicit exports or when source name is not present.
+    pub source_name_span: Option<Span>,
+    /// Whether this is a declared export or an effective/export-surface entry.
+    pub export_intent: ExportIntent,
+    /// Where this export originates (local vs re-export vs implicit).
+    pub export_origin: ExportOrigin,
+    /// Module that originated the export (re-export chain support).
+    pub origin_module_id: Option<ModuleId>,
+    /// Optional pointer to a prior export in the chain (when available).
+    pub origin_export_id: Option<PublicExportId>,
     /// Kind of export mechanism.
     pub export_kind: ExportKind,
     /// Target classification (single, glob, module, implicit).
@@ -291,6 +404,28 @@ pub enum ExportKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ExportIntent {
+    /// Explicit declaration site (e.g., __all__, pub use, export statement).
+    Declared,
+    /// Effective public API entry (includes derived/re-exported visibility).
+    Effective,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportOrigin {
+    /// Exported from the same module where it is defined.
+    Local,
+    /// Exported via re-export from another module.
+    ReExport,
+    /// Exported implicitly (e.g., Go uppercase, Rust pub items).
+    Implicit,
+    /// Unknown or unresolved origin.
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExportTarget {
     Single,
     Glob,
@@ -301,27 +436,98 @@ pub enum ExportTarget {
 
 **Handling Special Export Cases:**
 
-| Export Type | `exported_name` | `source_name` | `symbol_id` | `export_kind` | `export_target` |
-|-------------|-----------------|---------------|-------------|---------------|-----------------|
-| Python `__all__ = ["foo"]` | `Some("foo")` | `Some("foo")` | resolved | `PythonAll` | `Single` |
-| Rust `pub use foo::Bar;` | `Some("Bar")` | `Some("Bar")` | resolved | `RustPubUse` | `Single` |
-| Rust `pub use foo::Bar as Baz;` | `Some("Baz")` | `Some("Bar")` | resolved | `RustPubUse` | `Single` |
-| Rust `pub use foo::*;` | `None` | `None` | `None` | `RustPubUseGlob` | `Glob` |
-| Rust `pub mod bar;` | `Some("bar")` | `Some("bar")` | module | `RustPubMod` | `Module` |
-| Go `func Foo()` | `Some("Foo")` | `None` | resolved | `GoExported` | `Implicit` |
+| Export Type | `exported_name` | `source_name` | `symbol_id` | `export_kind` | `export_target` | `export_intent` | `export_origin` |
+|-------------|-----------------|---------------|-------------|---------------|-----------------|-----------------|-----------------|
+| Python `__all__ = ["foo"]` | `Some("foo")` | `Some("foo")` | resolved | `PythonAll` | `Single` | `Declared` | `Local` |
+| Rust `pub use foo::Bar;` | `Some("Bar")` | `Some("Bar")` | resolved | `RustPubUse` | `Single` | `Declared` | `ReExport` |
+| Rust `pub use foo::Bar as Baz;` | `Some("Baz")` | `Some("Bar")` | resolved | `RustPubUse` | `Single` | `Declared` | `ReExport` |
+| Rust `pub use foo::*;` | `None` | `None` | `None` | `RustPubUseGlob` | `Glob` | `Declared` | `ReExport` |
+| Rust `pub mod bar;` | `Some("bar")` | `Some("bar")` | module | `RustPubMod` | `Module` | `Declared` | `Local` |
+| Go `func Foo()` | `Some("Foo")` | `None` | resolved | `GoExported` | `Implicit` | `Effective` | `Implicit` |
 
 **Rationale:**
 - Unifies "what is publicly exported" across languages
 - Keeps language-specific details in `ExportKind`
 - `symbol_id` links to the actual symbol for type-aware operations
 - `source_name` vs `exported_name` handles aliased exports (Python: `__all__ = ["new_name"]` where original is `old_name`)
+- `export_intent` allows storing both declared exports and effective public API entries
+- `export_origin` + optional origin fields support re-export chain reasoning
+- `exported_name_span`/`source_name_span` enable precise edits for rename, move, and future refactors
 - `Option` fields handle glob exports and implicit exports where names are not individually enumerable
+
+**Span semantics:**
+- `decl_span` always covers the full declaration
+- `exported_name_span` points at the alias/name being exported (or __all__ string content)
+- `source_name_span` points at the original source name when present
 - `export_target` disambiguates intent for consumers
+
+**Python `__all__` Span Semantics (Critical for Rename):**
+For `__all__ = ["foo", "bar"]`:
+```
+               decl_span (full string literal with quotes)
+               ├─────────┤
+__all__ = ["foo", "bar"]
+            │   │
+            exported_name_span (content only, no quotes)
+```
+- `decl_span` covers `"foo"` (bytes 12-17, including quotes)
+- `exported_name_span` covers `foo` (bytes 13-16, string content only)
+- This matches the legacy `content_span` semantics
+- Rename operations use `exported_name_span` for replacement (safe, preserves quotes)
 
 **Implications:**
 - Python analyzer will emit `PublicExport` directly for `__all__`
 - Rename operations should use `PublicExport` as the single export source
+- Effective exports can be computed and stored alongside declared exports for move-module operations
 - Legacy `Export` is removed or deprecated internally
+ - For Python `__all__`, `exported_name_span` points at the string content (replacement-safe)
+
+#### [D04] Import and Module Generalization (DECIDED) {#d04-import-module-generalization}
+
+**Decision:** Generalize the import model and module kinds to remove Python-specific assumptions.
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportKind {
+    /// `import module` (Python), `use module` (Rust), `import * as` (TS)
+    Module,
+    /// `from module import name`
+    Named,
+    /// `import module as alias` or `from module import name as alias`
+    Alias,
+    /// `from module import *` / glob import
+    Glob,
+    /// Re-export (e.g., Rust `pub use`, TypeScript `export { ... } from`)
+    ReExport,
+    /// Default import (JavaScript/TypeScript)
+    Default,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum ModuleKind {
+    /// Single-file module.
+    #[default]
+    File,
+    /// Directory-based module/package (Rust mod.rs, Go package, Python package).
+    Directory,
+    /// Namespace module (no concrete file, language-defined).
+    Namespace,
+}
+```
+
+**Rationale:**
+- `Import.is_star` is too narrow; different languages need richer import/re-export semantics.
+- `ModuleKind::Package` is Python-biased; `Directory` is language-agnostic.
+- Explicit `ImportKind` supports future refactors (move-module, re-export rewrites).
+
+**Implications:**
+- Replace `Import.is_star` with `Import.kind: ImportKind`
+- Update Python analyzer to populate `ImportKind` (Module/Named/Alias/Glob)
+- Update module docs to avoid `__init__.py`-specific language
+- Update any logic assuming `ModuleKind::Package`
 
 #### [D05] ScopeKind Extension Strategy (DECIDED) {#d05-scope-kind-extension}
 
@@ -367,7 +573,18 @@ pub enum ScopeKind {
 
 #### [D06] LanguageAdapter Trait Design (DECIDED) {#d06-language-adapter}
 
-**Decision:** Define a `LanguageAdapter` trait in `tugtool-core` that language-specific crates implement.
+**Decision:** Define a `LanguageAdapter` trait in `tugtool-core` that language-specific crates implement. Adapters return intermediate data; ID allocation and insertion into `FactsStore` is owned by the integration layer (CLI or caller). Adapters may read from `FactsStore` for cross-file resolution but do not mutate it.
+
+**Cross-File Resolution Model (Model A):**
+For Phase 11, adapters use **Model A**:
+1. `FactsStore` passed to `analyze_files` is **read-only context** (typically empty for fresh analysis)
+2. Adapters build all multi-file state **internally** (e.g., Python's multi-pass resolution)
+3. Adapters return `AnalysisBundle` with all analysis data
+4. The **integration layer** (CLI/caller) allocates IDs and inserts into `FactsStore`
+
+This matches the current Python analyzer design where multi-file resolution happens internally across passes. See [CQ5](#cq5-cross-file-resolution) for rationale.
+
+**Future extension (Model B):** For incremental analysis, the integration layer may pass a pre-populated `FactsStore` as context. The adapter reads existing data but still returns new analysis data for the caller to insert.
 
 ```rust
 /// Trait for language-specific analysis adapters.
@@ -377,6 +594,14 @@ pub enum ScopeKind {
 /// - Multi-file analysis with cross-file resolution
 /// - Symbol lookup at positions
 /// - Export collection
+///
+/// **ID Ownership:** Adapters do NOT allocate SymbolId, ScopeId, etc.
+/// They use local indices for internal references. The integration layer
+/// (CLI or caller) allocates IDs when converting adapter data to FactsStore.
+///
+/// **FactsStore Usage:** The `store` parameter is read-only context.
+/// For Phase 11, it is typically empty. Adapters must not assume it
+/// contains prior data.
 pub trait LanguageAdapter {
     /// The error type for this adapter.
     type Error: std::error::Error;
@@ -390,10 +615,13 @@ pub trait LanguageAdapter {
     ) -> Result<FileAnalysisResult, Self::Error>;
 
     /// Analyze multiple files with cross-file resolution.
+    ///
+    /// The `store` is read-only context. For Phase 11, assume it is empty
+    /// and build all cross-file state internally.
     fn analyze_files(
         &self,
         files: &[(String, String)],
-        store: &mut FactsStore,
+        store: &FactsStore,
     ) -> Result<AnalysisBundle, Self::Error>;
 
     /// Get the language this adapter supports.
@@ -409,15 +637,18 @@ pub trait LanguageAdapter {
 - `can_handle` enables automatic language detection
 - Associated error type allows language-specific error handling
 - `FactsStore` remains the single source of truth
+- Centralizing ID allocation preserves invariants and keeps adapters lightweight
+- Read-only `FactsStore` keeps adapters simple and testable
 
 **Implications:**
 - `tugtool-python` will implement `LanguageAdapter`
 - `tugtool-rust` will implement `LanguageAdapter` when developed
 - CLI can dispatch to appropriate adapter based on file type
+- Integration layer is responsible for ID allocation and FactsStore insertion
 
 #### [D07] TypeInfo Evolves with Optional Structured Types (DECIDED) {#d07-type-info-structured}
 
-**Decision:** Add optional `TypeNode` to `TypeInfo` while keeping `type_repr` as the primary representation.
+**Decision:** Add optional `TypeNode` to `TypeInfo` while keeping `type_repr` as the primary representation. `TypeNode` is `#[non_exhaustive]` and includes an `Extension` variant for forward compatibility.
 
 ```rust
 pub struct TypeInfo {
@@ -437,6 +668,7 @@ pub struct TypeInfo {
 - Structured types enable type-aware operations without parsing strings
 - Optional field means no overhead for simple cases
 - Can be populated incrementally as type inference improves
+- Forward-compatible with Rust-specific constructs via `Extension`
 
 **Implications:**
 - Python analyzer can populate `structured` for common patterns (instantiation, annotation)
@@ -454,6 +686,7 @@ pub struct TypeInfo {
 /// Used for type-aware refactoring operations like method resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TypeNode {
     /// A named type (class, struct, primitive).
     Named {
@@ -485,6 +718,17 @@ pub enum TypeNode {
         /// Element types.
         elements: Vec<TypeNode>,
     },
+    /// Language-specific extension node.
+    ///
+    /// Reserved for future Rust/other-language constructs (reference, pointer,
+    /// slice, array, trait objects, impl traits, never type, lifetimes).
+    Extension {
+        /// Extension name (e.g., "reference", "lifetime").
+        name: String,
+        /// Nested type arguments, if any.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        args: Vec<TypeNode>,
+    },
     /// Unknown/unresolved type.
     Unknown,
 }
@@ -495,6 +739,10 @@ pub enum TypeNode {
 - Tagged enum serializes nicely to JSON for agent consumption
 - `Unknown` variant for graceful degradation when type cannot be determined
 - Recursive structure via `Box<TypeNode>` is simple and natural
+- `#[non_exhaustive]` + `Extension` preserve forward compatibility for Rust-specific type constructs
+
+**Reserved extension names (not implemented in Phase 11):**
+- `reference`, `pointer`, `slice`, `array`, `trait_object`, `impl_trait`, `never`, `lifetime`
 
 **Implications:**
 - Python analyzer can build `TypeNode` from type annotations
@@ -572,17 +820,25 @@ pub enum ExportTarget {
 
 #### [D11] Schema Version Placement (DECIDED) {#d11-schema-version}
 
-**Decision:** Add `schema_version: u32` to the top-level FactsStore serialization output.
+**Decision:** Add `schema_version: u32` to the top-level FactsStore serialization output. This is `FACTS_SCHEMA_VERSION` in `facts/mod.rs`.
+
+**Two-Schema-Version Model:**
+- `FACTS_SCHEMA_VERSION` in `facts/mod.rs`: Internal FactsStore schema version (set to 11 in this phase)
+- `SCHEMA_VERSION` in `output.rs`: Agent-facing output format version (unchanged by this phase)
+
+These versions are **independent** with different cadences and consumers. Update them separately as needed. See [CQ1](#cq1-schema-version-independence) for rationale.
 
 **Rationale:**
 - Makes breaking schema changes explicit and machine-checkable
 - Keeps versioning centralized at the root of the serialized facts
 - Avoids duplicating version fields in nested structs
+- Separating internal and output schema versions allows independent evolution
 
 **Implications:**
 - All JSON output that includes serialized FactsStore must include `schema_version`
 - Golden tests should assert the version value
-- Set `schema_version = 11` for this phase; increment on future breaking schema changes
+- Set `FACTS_SCHEMA_VERSION = 11` for this phase; increment on future breaking schema changes
+- `SCHEMA_VERSION` in `output.rs` is not modified in this phase
 
 ---
 
@@ -642,6 +898,12 @@ An export is a declaration that makes a symbol accessible from outside its defin
 | TypeScript | `export` keyword | `export { foo, bar };` |
 | Go | Uppercase name | `func Foo()` vs `func foo()` |
 
+**Declared vs Effective Exports:**
+- **Declared**: Explicit export statements or lists (e.g., `__all__`, `pub use`, `export { ... }`).
+- **Effective**: The resulting public API surface after language rules and re-exports are applied.
+
+`PublicExport` supports both; it records intent (`ExportIntent`) and origin (`ExportOrigin`) so tools can differentiate use cases.
+
 **Python's `__all__` Specifics:**
 
 - String literals in a list: `__all__ = ["name1", "name2"]`
@@ -675,8 +937,10 @@ pub struct Export {
 The new `PublicExport` type captures the commonality:
 - Something is being made publicly accessible
 - There's a source name and an exported name (for aliasing)
-- There's a span for editing
+- There are precise spans for editing (declaration + name spans)
 - There's a mechanism (`ExportKind`) for language-specific handling
+- `ExportIntent` distinguishes declared exports from effective public API entries
+- `ExportOrigin` enables re-export chain reasoning
 
 ---
 
@@ -723,6 +987,21 @@ Step 9 will extend this to optionally build `TypeNode` when parsing type annotat
 
 ---
 
+### 11.0.4 Deep Dive: Import and Module Generalization {#import-generalization}
+
+This section defines the generalized import and module model for multi-language support.
+
+**Concept C03: Why ImportKind?**
+- Python’s `from x import *` maps to a glob import, but other languages have default imports, re-exports, and module imports.
+- `ImportKind` makes intent explicit and avoids Python-specific flags like `is_star`.
+
+**Concept C04: ModuleKind as a Directory Model**
+- Many languages model modules as directories: Rust (`mod.rs`), Go packages, Python packages.
+- `ModuleKind::Directory` is a language-agnostic replacement for `Package` semantics.
+- `ModuleKind::Namespace` captures virtual modules with no concrete file.
+
+---
+
 ### 11.1 Specification {#specification}
 
 #### 11.1.1 Inputs and Outputs (Data Model) {#inputs-outputs}
@@ -735,8 +1014,10 @@ Step 9 will extend this to optionally build `TypeNode` when parsing type annotat
 - New FactsStore schema with:
   - `Visibility` enum
   - `Symbol.visibility` field (optional)
-  - `PublicExport` type and related storage
+  - `PublicExport` type and related storage (intent/origin + precise spans)
   - Extended `ScopeKind` enum
+  - Generalized `Import` (`ImportKind`)
+  - Generalized `ModuleKind`
   - `TypeNode` structured type representation
   - `schema_version` at the root of FactsStore output
 - `LanguageAdapter` trait definition
@@ -762,13 +1043,18 @@ Step 9 will extend this to optionally build `TypeNode` when parsing type annotat
 - `Visibility` enum with 5 variants (Public, Crate, Module, Private, Protected)
 - Optional visibility on `Symbol`
 - `PublicExport` as the canonical export model
+- `ExportIntent` and `ExportOrigin` for declared vs effective exports
+- Precise export spans (declaration + name spans)
 - Extended `ScopeKind` with Rust variants (Impl, Trait, Closure, Unsafe, MatchArm)
+- `ImportKind` and generalized `Import` model
+- Generalized `ModuleKind` (directory-based modules)
 - `LanguageAdapter` trait definition
 - Python adapter implementing `LanguageAdapter`
 - Optional visibility inference for Python naming conventions
 - `TypeNode` for structured type representation
 - `ExportTarget` for explicit export classification
 - `schema_version` included in FactsStore serialization
+- `TypeNode` is `#[non_exhaustive]` with `Extension` for future constructs
 
 **Explicitly not supported:**
 - `pub(in path)` as first-class concept (mapped to Module)
@@ -801,6 +1087,20 @@ pub enum Visibility {
 }
 
 // ============================================================================
+// ModuleKind (generalized)
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum ModuleKind {
+    #[default]
+    File,
+    Directory,
+    Namespace,
+}
+
+// ============================================================================
 // PublicExport
 // ============================================================================
 
@@ -821,7 +1121,24 @@ pub struct PublicExport {
     /// Original name in source. None for glob exports or implicit exports.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_name: Option<String>,
-    pub span: Span,
+    /// Span of the entire export declaration.
+    pub decl_span: Span,
+    /// Span of exported name (alias or __all__ string content).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exported_name_span: Option<Span>,
+    /// Span of source/original name in the declaration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_name_span: Option<Span>,
+    /// Declared vs effective export entry.
+    pub export_intent: ExportIntent,
+    /// Origin classification (local vs re-export vs implicit).
+    pub export_origin: ExportOrigin,
+    /// Origin module for re-export chains (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_module_id: Option<ModuleId>,
+    /// Origin export for re-export chains (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_export_id: Option<PublicExportId>,
     pub export_kind: ExportKind,
     pub export_target: ExportTarget,
 }
@@ -846,6 +1163,24 @@ pub enum ExportTarget {
     Glob,
     Module,
     Implicit,
+}
+
+/// Declared vs effective export entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportIntent {
+    Declared,
+    Effective,
+}
+
+/// Origin classification for exports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportOrigin {
+    Local,
+    ReExport,
+    Implicit,
+    Unknown,
 }
 
 // ============================================================================
@@ -873,12 +1208,40 @@ pub enum ScopeKind {
 }
 
 // ============================================================================
+// ImportKind + generalized Import
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportKind {
+    Module,
+    Named,
+    Alias,
+    Glob,
+    ReExport,
+    Default,
+}
+
+/// An import statement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Import {
+    pub import_id: ImportId,
+    pub file_id: FileId,
+    pub span: Span,
+    pub module_path: String,
+    pub imported_name: Option<String>,
+    pub alias: Option<String>,
+    pub kind: ImportKind,
+}
+
+// ============================================================================
 // TypeNode
 // ============================================================================
 
 /// Structured representation of a type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TypeNode {
     Named {
         name: String,
@@ -897,6 +1260,11 @@ pub enum TypeNode {
     },
     Tuple {
         elements: Vec<TypeNode>,
+    },
+    Extension {
+        name: String,
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        args: Vec<TypeNode>,
     },
     Unknown,
 }
@@ -955,7 +1323,7 @@ impl FactsStore {
 **LanguageAdapter Trait in `tugtool_core::adapter`:**
 
 ```rust
-use crate::facts::{FactsStore, FileId, Language};
+use crate::facts::{ExportIntent, ExportOrigin, FactsStore, FileId, ImportKind, Language};
 use crate::patch::Span;
 
 // ============================================================================
@@ -972,6 +1340,7 @@ use crate::patch::Span;
 //   1. Calling adapter.analyze_files() to get adapter data types
 //   2. Converting adapter data types to FactsStore types (allocating IDs)
 //   3. Inserting into FactsStore via insert_*() methods
+// - FactsStore passed to adapters is read-only (for cross-file resolution)
 
 /// Scope information from single-file analysis.
 pub struct ScopeData {
@@ -1019,8 +1388,8 @@ pub struct ImportData {
     pub imported_name: Option<String>,
     /// Local alias (e.g., `as alias`)
     pub alias: Option<String>,
-    /// Whether this is a star import
-    pub is_star: bool,
+    /// Import kind classification
+    pub kind: ImportKind,
     /// Byte span of the import statement
     pub span: Span,
 }
@@ -1031,12 +1400,39 @@ pub struct ExportData {
     pub exported_name: Option<String>,
     /// Source name (None for glob exports or implicit)
     pub source_name: Option<String>,
-    /// Byte span of the export declaration
-    pub span: Span,
+    /// Span of the export declaration
+    pub decl_span: Span,
+    /// Span of exported name (alias or __all__ string content)
+    pub exported_name_span: Option<Span>,
+    /// Span of source/original name
+    pub source_name_span: Option<Span>,
     /// Export mechanism
     pub export_kind: ExportKind,
     /// Export target classification
     pub export_target: ExportTarget,
+    /// Declared vs effective export
+    pub export_intent: ExportIntent,
+    /// Origin classification
+    pub export_origin: ExportOrigin,
+    /// Origin module path (optional, for re-export chains)
+    pub origin_module_path: Option<String>,
+}
+
+/// Type information from analysis.
+///
+/// Collected at the bundle level rather than per-file because type resolution
+/// may require cross-file context.
+pub struct TypeInfoData {
+    /// Index of the symbol this type applies to (in the file's symbol list).
+    pub symbol_index: usize,
+    /// Index of the file containing the symbol.
+    pub file_index: usize,
+    /// String representation of the type.
+    pub type_repr: String,
+    /// Source of type information.
+    pub source: TypeSource,
+    /// Optional structured type representation.
+    pub structured: Option<TypeNode>,
 }
 
 /// Result of single-file analysis.
@@ -1054,6 +1450,12 @@ pub struct FileAnalysisResult {
 pub struct AnalysisBundle {
     pub file_results: Vec<FileAnalysisResult>,
     pub failed_files: Vec<(String, String)>, // (path, error)
+    /// Type information collected across all files.
+    ///
+    /// Stored at bundle level because type resolution may require cross-file
+    /// context. The integration layer converts these to `TypeInfo` entries
+    /// in `FactsStore`.
+    pub types: Vec<TypeInfoData>,
 }
 
 /// Trait for language-specific analyzers.
@@ -1070,7 +1472,7 @@ pub trait LanguageAdapter {
     fn analyze_files(
         &self,
         files: &[(String, String)],
-        store: &mut FactsStore,
+        store: &FactsStore,
     ) -> Result<AnalysisBundle, Self::Error>;
 
     fn language(&self) -> Language;
@@ -1093,11 +1495,21 @@ pub trait LanguageAdapter {
 
 | File | Changes |
 |------|---------|
-| `crates/tugtool-core/src/facts/mod.rs` | Add `Visibility`, `PublicExport`, `TypeNode`, extend `ScopeKind`, update `Symbol`, update `TypeInfo` |
+| `crates/tugtool-core/src/facts/mod.rs` | Add `Visibility`, `PublicExport`, `ImportKind`, `TypeNode`, extend `ScopeKind`, update `Symbol`, update `TypeInfo`, generalize `ModuleKind`, add `FACTS_SCHEMA_VERSION` |
 | `crates/tugtool-core/src/lib.rs` | Re-export `adapter` module |
 | `crates/tugtool-python/src/analyzer.rs` | Implement `LanguageAdapter`, add visibility inference option |
 | `crates/tugtool-python/src/lib.rs` | Export `PythonAdapter` type |
 | `crates/tugtool-python/src/type_tracker.rs` | Add `TypeNode` building from annotations |
+| `crates/tugtool-python/src/ops/rename.rs` | Migrate to `PublicExport` with name spans |
+| `crates/tugtool/tests/temporale_integration.rs` | Adjust export-related assertions |
+| `crates/tugtool/tests/golden/**` | Update golden output for schema changes |
+
+**Not modified in this phase (deferred):**
+| File | Reason |
+|------|--------|
+| `crates/tugtool-core/src/types.rs` | Visibility not exposed in agent-facing `SymbolInfo` (see [CQ2](#cq2-visibility-output)) |
+| `crates/tugtool-core/src/output.rs` | No output schema changes; `SCHEMA_VERSION` unchanged (see [CQ1](#cq1-schema-version-independence)) |
+| `docs/AGENT_API.md` | No agent-facing output changes in this phase |
 
 #### 11.2.3 Symbols to add {#symbols}
 
@@ -1108,7 +1520,11 @@ pub trait LanguageAdapter {
 | `PublicExport` | struct | `facts/mod.rs` | Language-agnostic export |
 | `ExportKind` | enum | `facts/mod.rs` | 6 variants: PythonAll, RustPubUse, RustPubUseGlob, RustPubMod, JsExport, GoExported |
 | `ExportTarget` | enum | `facts/mod.rs` | 4 variants: Single, Glob, Module, Implicit |
-| `TypeNode` | enum | `facts/mod.rs` | 6 variants for structured types |
+| `ExportIntent` | enum | `facts/mod.rs` | Declared vs Effective export entries |
+| `ExportOrigin` | enum | `facts/mod.rs` | Local, ReExport, Implicit, Unknown |
+| `ImportKind` | enum | `facts/mod.rs` | Module, Named, Alias, Glob, ReExport, Default |
+| `ModuleKind::Directory` | variant | `facts/mod.rs` | Generalized directory-based module |
+| `TypeNode` | enum | `facts/mod.rs` | Structured types + `Extension` variant |
 | `FACTS_SCHEMA_VERSION` | const | `facts/mod.rs` | `u32 = 11` schema version |
 | `ScopeKind::Impl` | variant | `facts/mod.rs` | Rust impl block |
 | `ScopeKind::Trait` | variant | `facts/mod.rs` | Rust trait definition |
@@ -1120,6 +1536,12 @@ pub trait LanguageAdapter {
 | `LanguageAdapter` | trait | `adapter.rs` | Analyzer interface |
 | `FileAnalysisResult` | struct | `adapter.rs` | Single-file result |
 | `AnalysisBundle` | struct | `adapter.rs` | Multi-file result |
+| `TypeInfoData` | struct | `adapter.rs` | Type info for adapter output |
+| `ScopeData` | struct | `adapter.rs` | Scope info for adapter output |
+| `SymbolData` | struct | `adapter.rs` | Symbol info for adapter output |
+| `ReferenceData` | struct | `adapter.rs` | Reference info for adapter output |
+| `ImportData` | struct | `adapter.rs` | Import info for adapter output |
+| `ExportData` | struct | `adapter.rs` | Export info for adapter output |
 | `PythonAdapter` | struct | `tugtool-python/analyzer.rs` | Implements LanguageAdapter |
 | `PythonAnalyzerOptions` | struct | `tugtool-python/analyzer.rs` | Analysis configuration |
 
@@ -1133,6 +1555,8 @@ pub trait LanguageAdapter {
 - [ ] Add examples showing Python (visibility=None) vs Rust (visibility set)
 - [ ] Document TypeNode structure and usage
 - [ ] Document PythonAdapter and options
+- [ ] Update `docs/AGENT_API.md` if output schema or agent guidance changes
+- [ ] Note FactsStore schema changes in internal docs where referenced
 
 ---
 
@@ -1142,8 +1566,8 @@ pub trait LanguageAdapter {
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | Test enum serialization, default values | Visibility, ExportKind, ExportTarget, TypeNode |
-| **Golden** | Verify new schema format correctness | JSON output for Symbol, PublicExport, TypeNode, schema_version |
+| **Unit** | Test enum serialization, default values | Visibility, ExportKind, ExportTarget, ExportIntent, ExportOrigin, ImportKind, ModuleKind, TypeNode |
+| **Golden** | Verify new schema format correctness | JSON output for Symbol, PublicExport (incl. spans), TypeNode, schema_version |
 | **Integration** | Verify Python analyzer works with new types | End-to-end rename using new schema |
 | **Adapter** | Verify LanguageAdapter produces correct output | PythonAdapter results match expectations |
 
@@ -1178,6 +1602,32 @@ fn symbol_with_visibility_serializes_correctly() {
 }
 ```
 
+**PublicExport span fields (precise edits):**
+```rust
+#[test]
+fn public_export_spans_serialized() {
+    let export = PublicExport {
+        // ... ids ...
+        exported_name: Some("Foo".to_string()),
+        source_name: Some("Bar".to_string()),
+        decl_span: Span::new(10, 30),
+        exported_name_span: Some(Span::new(24, 27)),
+        source_name_span: Some(Span::new(20, 23)),
+        export_intent: ExportIntent::Declared,
+        export_origin: ExportOrigin::ReExport,
+        origin_module_id: None,
+        origin_export_id: None,
+        export_kind: ExportKind::RustPubUse,
+        export_target: ExportTarget::Single,
+        // ... remaining fields ...
+    };
+    let json = serde_json::to_string(&export).unwrap();
+    assert!(json.contains("\"decl_span\""));
+    assert!(json.contains("\"exported_name_span\""));
+    assert!(json.contains("\"source_name_span\""));
+}
+```
+
 **TypeNode Serialization:**
 ```rust
 #[test]
@@ -1197,6 +1647,35 @@ fn typenode_named_serializes_correctly() {
 fn export_target_serialization() {
     assert_eq!(serde_json::to_string(&ExportTarget::Single).unwrap(), "\"single\"");
     assert_eq!(serde_json::to_string(&ExportTarget::Glob).unwrap(), "\"glob\"");
+}
+```
+
+**ExportIntent/Origin Serialization:**
+```rust
+#[test]
+fn export_intent_serialization() {
+    assert_eq!(serde_json::to_string(&ExportIntent::Declared).unwrap(), "\"declared\"");
+    assert_eq!(serde_json::to_string(&ExportIntent::Effective).unwrap(), "\"effective\"");
+}
+
+#[test]
+fn export_origin_serialization() {
+    assert_eq!(serde_json::to_string(&ExportOrigin::Local).unwrap(), "\"local\"");
+    assert_eq!(serde_json::to_string(&ExportOrigin::ReExport).unwrap(), "\"re_export\"");
+}
+```
+
+**ImportKind/ModuleKind Serialization:**
+```rust
+#[test]
+fn import_kind_serialization() {
+    assert_eq!(serde_json::to_string(&ImportKind::Glob).unwrap(), "\"glob\"");
+    assert_eq!(serde_json::to_string(&ImportKind::Module).unwrap(), "\"module\"");
+}
+
+#[test]
+fn module_kind_serialization() {
+    assert_eq!(serde_json::to_string(&ModuleKind::Directory).unwrap(), "\"directory\"");
 }
 ```
 
@@ -1245,6 +1724,8 @@ fn visibility_inference_public_dunder() {
 **Tasks:**
 - [ ] Review rust-analyzer's visibility model for alignment
 - [ ] Confirm `#[non_exhaustive]` approach for ScopeKind
+- [ ] Confirm adapter contract (read-only FactsStore, ID ownership)
+- [ ] Confirm ImportKind/ModuleKind generalization approach
 - [ ] Verify serde serialization for new enums
 - [ ] Confirm `FACTS_SCHEMA_VERSION = 11` and defaulting in `FactsStore::new()`
 
@@ -1262,18 +1743,23 @@ fn visibility_inference_public_dunder() {
 
 ---
 
-#### Step 1: Add Visibility Enum and Update Symbol {#step-1}
+#### Step 1: Add Visibility Enum, Update Symbol, and Schema Version {#step-1}
 
-**Commit:** `feat(facts): add Visibility enum and Symbol.visibility field`
+**Commit:** `feat(facts): add Visibility enum, Symbol.visibility field, and FACTS_SCHEMA_VERSION`
 
-**References:** [D01] Visibility Enum Design, [D02] Symbol Visibility Optional, Table T01, (#visibility-mapping)
+**References:** [D01] Visibility Enum Design, [D02] Symbol Visibility Optional, [D11] Schema Version Placement, Table T01, (#visibility-mapping)
 
 **Artifacts:**
 - `Visibility` enum in `facts/mod.rs`
 - `Symbol.visibility: Option<Visibility>` field
 - Updated `Symbol::new()` to default visibility to `None`
+- `FACTS_SCHEMA_VERSION = 11` constant
+- `FactsStore.schema_version` field
 
 **Tasks:**
+- [ ] Add `FACTS_SCHEMA_VERSION: u32 = 11` constant to `facts/mod.rs`
+- [ ] Add `schema_version: u32` field to `FactsStore` struct
+- [ ] Update `FactsStore::new()` to set `schema_version: FACTS_SCHEMA_VERSION`
 - [ ] Add `Visibility` enum with 5 variants
 - [ ] Add `visibility: Option<Visibility>` to `Symbol` struct
 - [ ] Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON
@@ -1284,10 +1770,13 @@ fn visibility_inference_public_dunder() {
 - [ ] Unit: `Visibility` serialization roundtrip
 - [ ] Unit: `Symbol` with `visibility: None` serializes correctly
 - [ ] Unit: `Symbol` with `visibility: Some(Public)` serializes correctly
+- [ ] Unit: `FACTS_SCHEMA_VERSION == 11`
+- [ ] Unit: `FactsStore::new()` sets `schema_version` to `FACTS_SCHEMA_VERSION`
 - [ ] Golden: Symbol schema matches new format
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-core visibility`
+- [ ] `cargo nextest run -p tugtool-core schema_version`
 - [ ] `cargo nextest run -p tugtool-python`
 
 **Rollback:**
@@ -1334,6 +1823,59 @@ fn visibility_inference_public_dunder() {
 
 ---
 
+#### Step 2.5: Generalize Import and ModuleKind {#step-2-5}
+
+**Commit:** `feat(facts): generalize imports and modules`
+
+**References:** [D04] Import and Module Generalization, Concept C03, Concept C04, (#import-generalization)
+
+**Artifacts:**
+- `ImportKind` enum
+- `Import.kind` replacing `is_star`
+- Generalized `ModuleKind` (Directory, Namespace)
+- Updated docs for module/import semantics
+
+**Tasks:**
+- [ ] Add `ImportKind` enum to `facts/mod.rs`
+- [ ] Replace `Import.is_star: bool` with `Import.kind: ImportKind`
+- [ ] Update `Import::new()` to set `ImportKind::Named` by default
+- [ ] **Migration:** Replace all `Import::with_star(true)` calls with `Import::with_kind(ImportKind::Glob)`
+- [ ] **Migration:** Replace all `Import::with_star(false)` calls with appropriate `ImportKind` variant
+- [ ] Remove `Import::with_star()` builder method entirely
+- [ ] Add `Import::with_kind(kind: ImportKind) -> Self` builder method
+- [ ] **Migration:** Rename `ModuleKind::Package` to `ModuleKind::Directory`
+- [ ] Add `ModuleKind::Namespace` variant
+- [ ] Update `ModuleKind` docs to remove `__init__.py` references
+- [ ] Update Python analyzer to emit correct `ImportKind`:
+  - `import foo` → `ImportKind::Module`
+  - `from foo import bar` → `ImportKind::Named`
+  - `from foo import bar as baz` → `ImportKind::Alias`
+  - `from foo import *` → `ImportKind::Glob`
+- [ ] **Migration:** Update all callers that check `is_star` to check `kind == ImportKind::Glob`
+- [ ] Update any core queries/tests that rely on `is_star` or `ModuleKind::Package`
+
+**Tests:**
+- [ ] Unit: `ImportKind` serialization (all variants)
+- [ ] Unit: `ModuleKind` serialization (all variants)
+- [ ] Unit: `Import::with_kind` works correctly
+- [ ] Integration: Python analyzer emits `ImportKind::Module` for `import foo`
+- [ ] Integration: Python analyzer emits `ImportKind::Named` for `from foo import bar`
+- [ ] Integration: Python analyzer emits `ImportKind::Alias` for `from foo import bar as baz`
+- [ ] Integration: Python analyzer emits `ImportKind::Glob` for `from foo import *`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core import`
+- [ ] `cargo nextest run -p tugtool-core module`
+- [ ] `cargo nextest run -p tugtool-python import`
+- [ ] `cargo clippy --workspace` (no unused code warnings for removed methods)
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
 #### Step 3: Add PublicExport Type {#step-3}
 
 **Commit:** `feat(facts): add PublicExport type as canonical export model`
@@ -1351,21 +1893,27 @@ fn visibility_inference_public_dunder() {
 - [ ] Add `PublicExportId` newtype with Display impl
 - [ ] Add `ExportKind` enum (PythonAll, RustPubUse, RustPubUseGlob, RustPubMod, JsExport, GoExported)
 - [ ] Add `ExportTarget` enum (Single, Glob, Module, Implicit)
-- [ ] Add `PublicExport` struct with `Option<String>` for `exported_name` and `source_name`
+- [ ] Add `ExportIntent` enum (Declared, Effective)
+- [ ] Add `ExportOrigin` enum (Local, ReExport, Implicit, Unknown)
+- [ ] Add `PublicExport` struct with precise spans and origin/intent fields
 - [ ] Add `public_exports: BTreeMap<PublicExportId, PublicExport>` to FactsStore
 - [ ] Add `public_exports_by_file: HashMap<FileId, Vec<PublicExportId>>` index
 - [ ] Add `public_exports_by_name: HashMap<String, Vec<PublicExportId>>` index (only for non-glob exports)
+- [ ] Add `public_exports_by_intent: HashMap<ExportIntent, Vec<PublicExportId>>` index
 - [ ] Add `next_public_export_id()` generator
 - [ ] Add `insert_public_export()` method
 - [ ] Add `public_export()` lookup by ID
 - [ ] Add `public_exports_in_file()` query
 - [ ] Add `public_exports_named()` query
+- [ ] Add `public_exports_with_intent()` query
 - [ ] Add `public_exports()` iterator
 
 **Tests:**
 - [ ] Unit: PublicExport CRUD operations
 - [ ] Unit: ExportKind serialization
 - [ ] Unit: ExportTarget serialization
+- [ ] Unit: ExportIntent serialization
+- [ ] Unit: ExportOrigin serialization
 - [ ] Unit: Query by name returns correct exports
 
 **Checkpoint:**
@@ -1379,38 +1927,127 @@ fn visibility_inference_public_dunder() {
 
 ---
 
-#### Step 3a: Remove Legacy Export and Migrate Python {#step-3a}
+#### Step 3a: Remove Legacy Export Type {#step-3a}
 
-**Commit:** `refactor(facts): remove legacy Export, migrate Python to PublicExport`
+**Commit:** `refactor(facts): remove legacy Export type and ExportId`
 
 **References:** [D03] PublicExport for Language-Agnostic Exports, (#export-generalization)
 
 **Artifacts:**
-- Legacy `Export` type removed
-- Python analyzer emits `PublicExport`
-- Rename operations use `PublicExport` queries
+- Legacy `Export` type removed from FactsStore
+- Legacy `ExportId` newtype removed
+- Legacy export storage and queries removed
 
 **Tasks:**
+- [ ] **Remove legacy `ExportId` newtype** from FactsStore
 - [ ] **Remove legacy `Export` type** from FactsStore
 - [ ] **Remove legacy export storage**: `exports`, `exports_by_file`, `exports_by_name`
 - [ ] **Remove legacy export queries**: `export()`, `exports_in_file()`, `exports_named()`, `exports()`
-- [ ] Update Python analyzer to emit `PublicExport` instead of legacy `Export`
-- [ ] Update rename operations (`ops/rename.rs`) to use `PublicExport` queries
-- [ ] Update any other code that references legacy `Export`
+- [ ] **Remove `next_export_id()` generator**
+- [ ] Update any code in `tugtool-core` that references legacy `Export` or `ExportId`
 
 **Tests:**
-- [ ] Integration: Python rename tests pass with new export model
+- [ ] Unit: Legacy types no longer exist (compile check)
+- [ ] Unit: PublicExport types still work correctly
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-core` (compiles without legacy types)
+- [ ] `cargo nextest run -p tugtool-core public_export`
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 3b: Update Python Analyzer to Emit PublicExport {#step-3b}
+
+**Commit:** `feat(python): emit PublicExport for __all__ exports`
+
+**References:** [D03] PublicExport for Language-Agnostic Exports, Concept C01, (#export-generalization)
+
+**Artifacts:**
+- Python analyzer emits `PublicExport` instead of legacy `Export`
+- Export spans populated correctly for rename operations
+
+**Tasks:**
+- [ ] Update Python analyzer to emit `PublicExport` instead of legacy `Export`
+- [ ] Populate `export_kind: ExportKind::PythonAll` for `__all__` entries
+- [ ] Populate `export_target: ExportTarget::Single` for individual `__all__` entries
+- [ ] Populate `export_intent: ExportIntent::Declared` for explicit `__all__` declarations
+- [ ] Populate `export_origin: ExportOrigin::Local` for locally-defined exports
+- [ ] Populate `exported_name` and `source_name` (same for non-aliased Python exports)
+- [ ] Populate `exported_name_span` pointing at string content only (excluding quotes)
+- [ ] Populate `decl_span` covering the full string literal including quotes
+- [ ] Resolve `symbol_id` when the exported name matches a defined symbol
+
+**Span Semantics for Python `__all__`:**
+For `__all__ = ["foo", "bar"]`:
+- `decl_span` covers `"foo"` (full string literal with quotes, e.g., bytes 12-17)
+- `exported_name_span` covers `foo` (string content only, e.g., bytes 13-16)
+- This matches the legacy `content_span` semantics for rename-safe replacements
+
+**Tests:**
+- [ ] Unit: Python `__all__` parsing produces correct `PublicExport` fields
+- [ ] Unit: `exported_name_span` excludes quote characters
+- [ ] Unit: `decl_span` includes quote characters
+- [ ] Integration: Python analyzer correctly resolves `symbol_id` for exported names
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python export`
+- [ ] `cargo nextest run -p tugtool-python`
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 3c: Update Rename Operations for PublicExport {#step-3c}
+
+**Commit:** `refactor(python): use PublicExport in rename operations`
+
+**References:** [D03] PublicExport for Language-Agnostic Exports, (#export-generalization)
+
+**Artifacts:**
+- Rename operations use `PublicExport` queries and name spans
+- Export edits use `exported_name_span` for precise replacement
+
+**Tasks:**
+- [ ] Update `ops/rename.rs` to query `public_exports_named()` instead of legacy `exports_named()`
+- [ ] Update export edit generation to use `PublicExport.exported_name_span` for replacement span
+- [ ] Verify rename correctly replaces string content without affecting quotes
+- [ ] Update any other rename-related code that references legacy export types
+
+**Tests:**
+- [ ] Integration: Rename updates `__all__` string content correctly
+- [ ] Integration: Quotes are preserved after rename
+- [ ] Integration: Multi-file rename with exports works correctly
 - [ ] Golden: PublicExport serialization matches expected format
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core`
-- [ ] `cargo nextest run -p tugtool-python`
+- [ ] `cargo nextest run -p tugtool-python rename`
 - [ ] `cargo nextest run -p tugtool` (CLI integration tests)
 
 **Rollback:**
 - Revert commit
 
 **Commit after all checkpoints pass.**
+
+---
+
+#### Step 3 Summary {#step-3-summary}
+
+After completing Steps 3, 3a, 3b, and 3c, you will have:
+- `PublicExport` as the canonical export model in FactsStore
+- Legacy `Export` and `ExportId` types completely removed
+- Python analyzer emitting `PublicExport` with correct spans and metadata
+- Rename operations using `PublicExport` for precise export edits
+
+**Final Step 3 Checkpoint:**
+- [ ] `cargo nextest run --workspace` (all export-related tests pass)
 
 ---
 
@@ -1431,6 +2068,7 @@ fn visibility_inference_public_dunder() {
 - [ ] Define `FileAnalysisResult` struct
 - [ ] Define `AnalysisBundle` struct
 - [ ] Define `LanguageAdapter` trait with associated Error type
+- [ ] Use read-only `&FactsStore` in `analyze_files` for cross-file resolution
 - [ ] Add `pub mod adapter;` to `lib.rs`
 - [ ] Re-export adapter types from `tugtool_core`
 - [ ] Add documentation for the trait
@@ -1467,6 +2105,7 @@ fn visibility_inference_public_dunder() {
 - [ ] Add examples in `PublicExport` rustdoc
 - [ ] Document `LanguageAdapter` usage pattern
 - [ ] Review and update CLAUDE.md if schema changes affect agents
+- [ ] Update `docs/AGENT_API.md` if output schema changes
 
 **Tests:**
 - [ ] `cargo doc --workspace` succeeds
@@ -1486,19 +2125,16 @@ fn visibility_inference_public_dunder() {
 
 **Commit:** `test: add golden tests for Phase 11 schema additions`
 
-**References:** (#test-plan-concepts)
+**References:** [D11] Schema Version Placement, (#test-plan-concepts)
 
 **Artifacts:**
 - New golden test files for schema validation
-- Schema version check
 
 **Tasks:**
 - [ ] Add golden test for Symbol with visibility
-- [ ] Add golden test for PublicExport
+- [ ] Add golden test for PublicExport (incl. spans + intent/origin)
 - [ ] Verify updated golden tests pass
-- [ ] Add schema version awareness if not present
-- [ ] Add `FACTS_SCHEMA_VERSION = 11` in `facts/mod.rs`
-- [ ] Set `FactsStore::new()` to use `FACTS_SCHEMA_VERSION`
+- [ ] Verify schema version is present in FactsStore serialization (added in Step 1)
 
 **Tests:**
 - [ ] Golden: New types serialize correctly (Symbol with visibility, PublicExport, TypeNode)
@@ -1519,18 +2155,30 @@ fn visibility_inference_public_dunder() {
 
 **Commit:** `feat(python): implement LanguageAdapter trait for Python analyzer`
 
-**References:** [D06] LanguageAdapter Trait Design, (#language-adapter)
+**References:** [D06] LanguageAdapter Trait Design, [CQ5] Cross-File Resolution, [CQ6] TypeInfo in Adapter, (#language-adapter)
 
 **Artifacts:**
 - `PythonAdapter` struct implementing `LanguageAdapter`
 - `PythonAnalyzerOptions` for configuration
 - Refactored `analyze_files` to use adapter internally
+- Integration layer for ID allocation
+
+**Integration Layer Responsibilities:**
+The integration layer (currently in CLI or caller code) is responsible for:
+1. Calling `adapter.analyze_files()` to get `AnalysisBundle`
+2. Allocating IDs via `FactsStore::next_*_id()` methods
+3. Converting adapter data types (`SymbolData`, `ScopeData`, etc.) to FactsStore types (`Symbol`, `ScopeInfo`, etc.)
+4. Inserting into `FactsStore` via `insert_*()` methods
+
+For Phase 11, this logic lives in the existing Python analyzer integration code. Future phases may extract a reusable integration layer.
 
 **Tasks:**
 - [ ] Create `PythonAdapter` struct in `analyzer.rs`
 - [ ] Create `PythonAnalyzerOptions` struct with defaults
 - [ ] Implement `LanguageAdapter::analyze_file` by wrapping existing `analyze_file` function
 - [ ] Implement `LanguageAdapter::analyze_files` by wrapping existing `analyze_files` function
+  - Build all cross-file state internally (multi-pass resolution)
+  - Treat `store` parameter as empty read-only context
 - [ ] Implement `LanguageAdapter::language` returning `Language::Python`
 - [ ] Implement `LanguageAdapter::can_handle` checking for `.py` extension
 - [ ] Add `PythonAdapter::new()` constructor
@@ -1538,12 +2186,18 @@ fn visibility_inference_public_dunder() {
 - [ ] Export `PythonAdapter` from `tugtool_python`
 - [ ] Add conversion from `FileAnalysis` to `FileAnalysisResult`
 - [ ] Add conversion from `FileAnalysisBundle` to `AnalysisBundle`
+- [ ] Update adapter conversion to include `ImportKind` and new export fields
+- [ ] Emit `ExportIntent::Declared` for explicit `__all__` exports
+- [ ] Emit `ExportIntent::Effective` for effective public API entries (per Python rules)
+- [ ] **Integration layer:** Verify existing ID allocation code works with adapter output
 
 **Tests:**
 - [ ] Unit: `PythonAdapter::can_handle` returns true for `.py` files
 - [ ] Unit: `PythonAdapter::can_handle` returns false for `.rs` files
 - [ ] Unit: `PythonAdapter::language` returns `Language::Python`
+- [ ] Unit: `AnalysisBundle.types` is populated with type information
 - [ ] Integration: `PythonAdapter::analyze_files` produces same results as direct function call
+- [ ] Integration: Integration layer correctly allocates IDs and populates FactsStore
 - [ ] Integration: Existing rename tests pass with adapter
 
 **Checkpoint:**
@@ -1620,8 +2274,10 @@ fn visibility_inference_public_dunder() {
   - `Optional { inner: Box<TypeNode> }`
   - `Callable { params: Vec<TypeNode>, returns: Box<TypeNode> }`
   - `Tuple { elements: Vec<TypeNode> }`
+  - `Extension { name: String, args: Vec<TypeNode> }`
   - `Unknown`
 - [ ] Add `#[serde(tag = "kind", rename_all = "snake_case")]` for clean JSON
+- [ ] Add `#[non_exhaustive]` to `TypeNode`
 - [ ] Add `structured: Option<TypeNode>` to `TypeInfo` struct
 - [ ] Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON
 - [ ] Add `TypeInfo::with_structured(self, node: TypeNode) -> Self` builder
@@ -1675,6 +2331,7 @@ The following special patterns in subscripts MUST be recognized:
 - `typing.TypeVar` bounds and constraints
 - Forward references as strings (`"MyClass"`)
 - Complex expressions (lambdas, conditionals in annotations)
+- Rust-specific constructs and `TypeNode::Extension` generation
 
 **Tasks:**
 - [ ] Add `build_typenode_from_annotation(annotation_expr: &Expression) -> Option<TypeNode>` function to `type_tracker.rs`
@@ -1737,6 +2394,7 @@ The following special patterns in subscripts MUST be recognized:
 - [ ] Verify JSON output matches expected schema
 - [ ] Update any CLI help text if needed
 - [ ] Remove any TODO comments from Phase 11 work
+- [ ] Update output schema docs/golden files if SymbolInfo or outputs changed
 
 **Tests:**
 - [ ] Full: `cargo nextest run --workspace`
@@ -1765,11 +2423,15 @@ The following special patterns in subscripts MUST be recognized:
 - [ ] `Visibility` enum added with 5 variants
 - [ ] `Symbol.visibility` is `Option<Visibility>` with explicit semantics
 - [ ] `PublicExport` type added with storage and queries as the canonical export model
+- [ ] `PublicExport` includes precise spans and export intent/origin
+- [ ] `ImportKind` replaces `Import.is_star`
+- [ ] `ModuleKind` generalized for directory-based modules
 - [ ] `ScopeKind` extended with Rust variants, `#[non_exhaustive]`
 - [ ] `LanguageAdapter` trait defined in `tugtool-core`
 - [ ] `PythonAdapter` implements `LanguageAdapter` in `tugtool-python`
 - [ ] Python visibility inference works with `infer_visibility` option
 - [ ] `TypeNode` provides structured type representation
+- [ ] `TypeNode` is `#[non_exhaustive]` with `Extension`
 - [ ] Python type annotations convert to `TypeNode`
 - [ ] FactsStore serialization includes `schema_version`
 - [ ] Python tests pass after updating to the new schema
@@ -1789,10 +2451,16 @@ The following special patterns in subscripts MUST be recognized:
 - [ ] Symbol can have visibility
 - [ ] ScopeKind ready for Rust
 
+**Milestone M01b: Import/Module Generalization** {#m01b-import-module}
+- [ ] Step 2.5 complete
+- [ ] ImportKind in place, ModuleKind generalized
+
 **Milestone M02: Export Generalization** {#m02-export}
-- [ ] Steps 3 + 3a complete
-- [ ] PublicExport type available
-- [ ] Legacy Export removed
+- [ ] Steps 3, 3a, 3b, 3c complete
+- [ ] PublicExport type available with precise spans
+- [ ] Legacy Export and ExportId removed
+- [ ] Python analyzer emits PublicExport
+- [ ] Rename operations use PublicExport
 
 **Milestone M03: Language Adapter Ready** {#m03-adapter}
 - [ ] Step 4 complete
