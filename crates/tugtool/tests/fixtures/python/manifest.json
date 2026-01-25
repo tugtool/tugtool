@@ -169,7 +169,7 @@
       "id": "edge_cases_dynamic_attr",
       "description": "Detect dynamic patterns and produce warnings instead of renaming",
       "workspace": "edge_cases",
-      "operation": "analyze_impact",
+      "operation": "analyze",
       "args": {
         "at": "dynamic_attr.py:8:9",
         "to": "handler"

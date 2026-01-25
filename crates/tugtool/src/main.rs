@@ -42,7 +42,7 @@ use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
 // Python feature-gated imports
 #[cfg(feature = "python")]
-use tugtool::cli::run_rename;
+use tugtool::cli::do_rename;
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
@@ -437,7 +437,7 @@ fn execute_analyze(global: &GlobalArgs, op: AnalyzeOp) -> Result<(), TugError> {
 
             // Run rename in dry-run mode with no verification
             // The analyze command is purely for previewing changes
-            let json = run_rename(
+            let json = do_rename(
                 &session,
                 Some(python_path),
                 &at,
@@ -586,7 +586,7 @@ fn execute_rename(
     let apply = !dry_run;
 
     // Run the rename operation
-    let json = run_rename(&session, Some(python_path), at, to, effective_verify, apply)?;
+    let json = do_rename(&session, Some(python_path), at, to, effective_verify, apply)?;
 
     // Output based on format
     match format {

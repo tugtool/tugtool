@@ -1,7 +1,7 @@
 {
   "status": "ok",
   "schema_version": "1",
-  "operation": "analyze_impact",
+  "operation": "analyze",
   "symbol": "process",
   "warnings": [
     {

@@ -367,6 +367,13 @@ pub struct FileAnalysisBundle {
     ///
     /// Computed by [`compute_namespace_packages`] at the start of analysis.
     pub namespace_packages: HashSet<String>,
+    /// Index mapping (target_file, exported_name) to importing files and local names.
+    ///
+    /// Used for cross-file alias tracking: when renaming a symbol in file A, we can
+    /// quickly find all files that import that symbol and check their alias graphs.
+    ///
+    /// Built during Pass 3 after import resolution.
+    pub importers_index: ImportersIndex,
 }
 
 impl FileAnalysisBundle {
@@ -428,6 +435,19 @@ pub type FileStarImportsMap<'a> = HashMap<&'a str, Vec<&'a LocalImport>>;
 /// import bindings across all files. This ensures that when `resolve_import_chain`
 /// follows a re-export chain, it can access the star-expanded bindings of each file.
 pub type FileImportResolversMap = HashMap<String, FileImportResolver>;
+
+/// Maps (target_file_path, exported_name) -> Vec<(importing_file_id, local_name)>.
+///
+/// This index tracks which files import each symbol from a given file. Used for
+/// cross-file alias tracking: when renaming a symbol in file A, we can quickly
+/// find all files that import that symbol and check their alias graphs.
+///
+/// Example: If file_b.py does `from file_a import bar as baz`:
+///   ("file_a.py", "bar") -> [(file_b_id, "baz")]
+///
+/// Built after import resolution in Pass 3, using the resolved file information
+/// from the FileImportResolvers.
+pub type ImportersIndex = HashMap<(String, String), Vec<(FileId, String)>>;
 
 /// Maps local file scope IDs to global FactsStore scope IDs.
 ///
@@ -818,6 +838,32 @@ pub fn analyze_files(
             (analysis.path.clone(), resolver)
         })
         .collect();
+
+    // ====================================================================
+    // Build ImportersIndex for Cross-File Alias Tracking
+    // ====================================================================
+    // This index maps (target_file_path, exported_name) -> Vec<(importing_file_id, local_name)>
+    // enabling efficient lookup of all files that import a given symbol.
+    let mut importers_index: ImportersIndex = HashMap::new();
+
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+        let import_resolver = file_import_resolvers
+            .get(&analysis.path)
+            .expect("Import resolver should exist for analyzed file");
+
+        // Iterate over all resolved imports and build the reverse index
+        for (imported_name, local_name, resolved_file) in import_resolver.iter_resolved_imports() {
+            let key = (resolved_file.to_string(), imported_name.to_string());
+            importers_index
+                .entry(key)
+                .or_default()
+                .push((file_id, local_name.to_string()));
+        }
+    }
+
+    // Store the importers_index in the bundle
+    bundle.importers_index = importers_index;
 
     for analysis in &bundle.file_analyses {
         let file_id = analysis.file_id;
@@ -1770,6 +1816,30 @@ impl FileImportResolver {
     #[cfg(test)]
     pub fn local_names(&self) -> impl Iterator<Item = &str> {
         self.by_local_name.keys().map(|s| s.as_str())
+    }
+
+    /// Iterate over all import entries for building ImportersIndex.
+    ///
+    /// Returns tuples of (imported_name, local_name, resolved_file) for each import
+    /// that has a resolved file. This allows building a reverse index from
+    /// (target_file, exported_name) to (importing_file, local_name).
+    ///
+    /// For `from x import foo as bar` with resolved file "x.py":
+    ///   yields ("foo", "bar", "x.py")
+    ///
+    /// For star imports, the imported_name equals local_name.
+    pub fn iter_resolved_imports(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        self.by_imported_name
+            .iter()
+            .filter_map(|(imported_name, local_name)| {
+                self.by_local_name
+                    .get(local_name)
+                    .and_then(|(_, resolved_file)| {
+                        resolved_file
+                            .as_ref()
+                            .map(|rf| (imported_name.as_str(), local_name.as_str(), rf.as_str()))
+                    })
+            })
     }
 
     /// Add an expanded star import binding.

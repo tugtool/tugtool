@@ -2259,9 +2259,244 @@ All 5 new tests (AI-01 through AI-05) should pass.
 #### Roadmap / Follow-ons {#roadmap}
 
 - [ ] Installed package import resolution
-- [ ] Cross-file value-level alias tracking
+- [x] Cross-file value-level alias tracking (see Addendum Steps 16-17)
 - [ ] Automatic alias renaming (`--follow-aliases`)
 - [ ] `__all__.extend()` pattern parsing
+
+---
+
+### 10.6 Addendum: Complete Alias Tracking {#addendum}
+
+**Motivation:** Audit identified two limitations in alias tracking that violate the "exact match only" requirement:
+
+1. **Scope fallback issue**: When symbol scope can't be resolved, code falls back to `["<module>"]`, potentially including incorrect module-scope aliases for non-module symbols.
+2. **Declaration-file-only**: Aliases are only searched in the symbol's declaration file; aliases in importing files (e.g., `from a import bar; b = bar`) are not detected.
+
+#### Step 16: Fix Scope Resolution Fallback {#step-16}
+
+**Problem:** Current fallback to `["<module>"]` when `find_symbol_scope_id()` fails can reintroduce incorrect aliases.
+
+```rust
+// CURRENT (problematic)
+let symbol_scope_path = find_symbol_scope_id(&symbol.decl_span, decl_file_analysis)
+    .map(|scope_id| build_scope_path(scope_id, &decl_file_analysis.scopes))
+    .unwrap_or_else(|| vec!["<module>".to_string()]);  // <-- BAD
+```
+
+**Solution:** Return empty aliases when scope resolution fails. False negatives are preferable to false positives.
+
+**Tasks:**
+- [ ] Change scope resolution failure to skip alias collection (no fallback)
+- [ ] Add optional warning to `ImpactAnalysis.warnings` when scope resolution fails
+- [ ] Add test: function-local symbol with scope resolution failure returns no aliases
+- [ ] Add test: module-scope symbol with container_symbol_id=None resolves correctly
+
+**File:** `crates/tugtool-python/src/ops/rename.rs`
+
+**Code change:**
+
+```rust
+// FIXED
+let symbol_scope_path = match find_symbol_scope_id(&symbol.decl_span, decl_file_analysis) {
+    Some(scope_id) => build_scope_path(scope_id, &decl_file_analysis.scopes),
+    None => {
+        // Scope resolution failed - skip alias collection to avoid false positives
+        // Note: We could add a warning here if warnings infrastructure is available
+        vec![]  // Empty path means no filtering possible; return empty aliases below
+    }
+};
+
+// Only collect aliases if we have a valid scope path
+let file_aliases = if !symbol_scope_path.is_empty() {
+    decl_file_analysis.alias_graph.transitive_aliases(
+        &symbol.name,
+        Some(&symbol_scope_path),
+        None,
+    )
+} else {
+    vec![]  // No aliases when scope unknown
+};
+```
+
+**Tests:**
+
+| ID | Test Name | Description |
+|----|-----------|-------------|
+| SF-01 | `test_alias_scope_resolution_failure` | Symbol with no matching LocalSymbol → no aliases |
+| SF-02 | `test_alias_module_scope_symbol` | Module-scope symbol (no container) → normal alias collection |
+
+**Checkpoint:** Scope resolution failure returns empty aliases; existing alias tests still pass.
+
+---
+
+#### Step 17: Cross-File Alias Tracking {#step-17}
+
+**Problem:** When renaming `bar` in `file_a.py`, aliases like `b = bar` in `file_b.py` (which imports `bar`) are not detected.
+
+**Scenario:**
+
+```python
+# file_a.py
+def bar():
+    pass
+
+# file_b.py
+from file_a import bar
+b = bar  # <-- NOT currently detected when renaming bar
+```
+
+**Solution:** Build an ImportersIndex to track which files import each symbol, then search those files' alias graphs.
+
+##### 17.1 Data Structure: ImportersIndex
+
+**Definition:**
+
+```rust
+/// Maps (target_file_path, exported_name) -> Vec<(importing_file_id, local_name)>
+///
+/// Example: If file_b.py does `from file_a import bar as baz`:
+///   ("file_a.py", "bar") -> [(file_b_id, "baz")]
+pub type ImportersIndex = HashMap<(String, String), Vec<(FileId, String)>>;
+```
+
+**Construction (in analyze_files Pass 3):**
+
+```rust
+// After import resolution
+let mut importers_index: ImportersIndex = HashMap::new();
+
+for analysis in &bundle.file_analyses {
+    for import in &analysis.imports {
+        if let Some(resolved_file) = &import.resolved_file {
+            for name in &import.names {
+                let local_name = name.alias.as_ref().unwrap_or(&name.name);
+                let key = (resolved_file.clone(), name.name.clone());
+                importers_index.entry(key)
+                    .or_default()
+                    .push((analysis.file_id, local_name.clone()));
+            }
+        }
+    }
+}
+```
+
+**File:** `crates/tugtool-python/src/analyzer.rs`
+
+##### 17.2 Cross-File Alias Collection
+
+**New helper function:**
+
+```rust
+/// Collect aliases for `symbol` from files that import it.
+fn collect_cross_file_aliases(
+    symbol: &Symbol,
+    decl_file_path: &str,
+    bundle: &FileAnalysisBundle,
+    importers_index: &ImportersIndex,
+) -> Vec<AliasOutput> {
+    let mut aliases = Vec::new();
+
+    // Find all files that import this symbol
+    let key = (decl_file_path.to_string(), symbol.name.clone());
+    let importers = importers_index.get(&key).unwrap_or(&Vec::new());
+
+    for (importing_file_id, local_name) in importers {
+        // Find the importing file's analysis
+        let file_analysis = match bundle.file_analyses.iter()
+            .find(|fa| fa.file_id == *importing_file_id)
+        {
+            Some(fa) => fa,
+            None => continue,
+        };
+
+        // Search for aliases of local_name at module scope
+        // (imports bind at module level)
+        let file_aliases = file_analysis.alias_graph.transitive_aliases(
+            local_name,
+            Some(&["<module>".to_string()]),
+            None,
+        );
+
+        for alias_info in file_aliases {
+            aliases.push(AliasOutput::new(
+                &alias_info.alias_name,
+                &alias_info.source_name,
+                &file_analysis.path,
+                alias_info.line.unwrap_or(1),
+                alias_info.col.unwrap_or(1),
+                alias_info.scope_path.clone(),
+                alias_info.source_is_import,
+                alias_info.confidence,
+            ));
+        }
+    }
+
+    aliases
+}
+```
+
+**File:** `crates/tugtool-python/src/ops/rename.rs`
+
+##### 17.3 Integration
+
+Update `analyze_impact()` to call both same-file and cross-file alias collection:
+
+```rust
+// In analyze_impact(), after existing alias collection:
+
+// Collect cross-file aliases
+let cross_file_aliases = collect_cross_file_aliases(
+    &symbol,
+    &decl_file.path,
+    &bundle,
+    &bundle.importers_index,  // New field on FileAnalysisBundle
+);
+aliases.extend(cross_file_aliases);
+```
+
+##### 17.4 Edge Cases
+
+| Case | Handling |
+|------|----------|
+| `from a import bar as baz; b = baz` | ImportersIndex stores local_name="baz"; alias search finds "baz" aliases |
+| Re-export chains | Each link in chain appears in ImportersIndex; recursive traversal not needed (each file's alias graph is independent) |
+| Star imports | Handled by star import expansion in Pass 3; expanded names appear as regular imports |
+| Local shadowing | If importing file has its own `bar` definition, LocalSymbol takes precedence over import; alias graph tracks the local binding |
+
+##### 17.5 Tasks
+
+**Analyzer changes:**
+- [x] Add `importers_index: ImportersIndex` field to `FileAnalysisBundle`
+- [x] Build ImportersIndex in Pass 3 after import resolution
+- [x] Handle aliased imports (`from a import bar as baz`)
+- [x] Handle star imports (use expanded names)
+
+**Rename changes:**
+- [x] Add `collect_cross_file_aliases()` helper function
+- [x] Integrate cross-file collection into `analyze_impact()`
+- [x] Ensure aliases are deduplicated and sorted
+
+**Tests:**
+
+| ID | Test Name | Description |
+|----|-----------|-------------|
+| XFA-01 | `test_cross_file_alias_simple` | `from a import bar; b = bar` detected |
+| XFA-02 | `test_cross_file_alias_aliased_import` | `from a import bar as baz; b = baz` detected |
+| XFA-03 | `test_cross_file_alias_star_import` | `from a import *; b = bar` detected |
+| XFA-04 | `test_cross_file_alias_shadowed` | Local definition shadows import; alias refers to local |
+| XFA-05 | `test_cross_file_alias_multiple_importers` | Multiple files import same symbol; all aliases collected |
+| XFA-06 | `test_cross_file_alias_reexport` | Re-export chain: aliases in final importer detected |
+
+**Checkpoint:** `tug analyze rename` shows aliases from importing files; all existing tests pass.
+
+---
+
+#### Step 16-17 Milestones
+
+| Milestone | Step | Focus | Effort |
+|-----------|------|-------|--------|
+| M08 | 16 | Scope fallback fix | 1-2 hours |
+| M09 | 17 | Cross-file alias tracking | 4-8 hours |
 
 ---
 
@@ -2284,3 +2519,5 @@ All 5 new tests (AI-01 through AI-05) should pass.
 | Step 13 | done | 2026-01-24 | Add `rename` command |
 | Step 14 | done | 2026-01-24 | Add `analyze` command, remove old commands, update skills and docs |
 | Step 15 | done | 2026-01-24 | Final verification |
+| Step 16 | pending | | Fix scope resolution fallback |
+| Step 17 | done | 2026-01-24 | Cross-file alias tracking via ImportersIndex |

@@ -246,7 +246,7 @@ fn golden_analyze_rename_success() {
             "--format",
             "json",
         ],
-        "analyze_impact_success.json",
+        "analyze_success.json",
         Some("rename_function"),
         &python,
     );

@@ -36,7 +36,7 @@ use tugtool_core::session::Session;
 #[cfg(feature = "python")]
 use tugtool_python::files::collect_python_files;
 #[cfg(feature = "python")]
-use tugtool_python::rename::{analyze_impact, run};
+use tugtool_python::rename::{analyze, rename};
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
@@ -44,7 +44,7 @@ use tugtool_python::verification::VerificationMode;
 // Python Language Support (Feature-Gated)
 // ============================================================================
 
-/// Run analyze-impact for rename-symbol.
+/// Analyze a rename operation (preview without applying).
 ///
 /// # Arguments
 ///
@@ -61,7 +61,7 @@ use tugtool_python::verification::VerificationMode;
 ///
 /// Requires the `python` feature flag.
 #[cfg(feature = "python")]
-pub fn run_analyze_impact(
+pub fn analyze_rename(
     session: &Session,
     _python_path: Option<PathBuf>,
     at: &str,
@@ -80,7 +80,7 @@ pub fn run_analyze_impact(
         .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
 
     // Run native analysis - RenameError converts to TugError via From impl
-    let analysis = analyze_impact(session.workspace_root(), &files, &location, to)?;
+    let analysis = analyze(session.workspace_root(), &files, &location, to)?;
 
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&analysis)
@@ -88,7 +88,7 @@ pub fn run_analyze_impact(
     Ok(json)
 }
 
-/// Run rename-symbol operation.
+/// Execute a rename operation.
 ///
 /// # Arguments
 ///
@@ -107,7 +107,7 @@ pub fn run_analyze_impact(
 ///
 /// Requires the `python` feature flag.
 #[cfg(feature = "python")]
-pub fn run_rename(
+pub fn do_rename(
     session: &Session,
     python_path: Option<PathBuf>,
     at: &str,
@@ -130,8 +130,8 @@ pub fn run_rename(
     let files = collect_python_files(session.workspace_root())
         .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
 
-    // Run native rename - RenameError converts to TugError via From impl
-    let result = run(
+    // Execute native rename - RenameError converts to TugError via From impl
+    let result = rename(
         session.workspace_root(),
         &files,
         &location,
@@ -243,7 +243,7 @@ mod tests {
             let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
 
             // Use an explicit python path to avoid resolution errors
-            let result = run_analyze_impact(
+            let result = analyze_rename(
                 &session,
                 Some(PathBuf::from("/usr/bin/python3")),
                 "bad:input", // Missing column
@@ -261,7 +261,7 @@ mod tests {
             let workspace = create_test_workspace();
             let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
 
-            let result = run_rename(
+            let result = do_rename(
                 &session,
                 Some(PathBuf::from("/usr/bin/python3")),
                 "test.py:1", // Missing column
@@ -291,25 +291,25 @@ mod tests {
         }
 
         #[test]
-        fn run_analyze_impact_accepts_session() {
+        fn analyze_rename_accepts_session() {
             // This test verifies the function signature accepts &Session
             let workspace = create_test_workspace();
             let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
 
             // Just verify the function can be called with Session
             // Result depends on Python availability - we only care about signature
-            let _result = run_analyze_impact(&session, None, "test.py:1:5", "bar");
+            let _result = analyze_rename(&session, None, "test.py:1:5", "bar");
         }
 
         #[test]
-        fn run_rename_accepts_session() {
+        fn do_rename_accepts_session() {
             // This test verifies the function signature accepts &Session
             let workspace = create_test_workspace();
             let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
 
             // Just verify the function can be called with Session
             // Result depends on Python availability - we only care about signature
-            let _result = run_rename(
+            let _result = do_rename(
                 &session,
                 None,
                 "test.py:1:5",

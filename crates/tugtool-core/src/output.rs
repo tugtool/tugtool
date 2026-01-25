@@ -1574,7 +1574,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn analyze_impact_references_sorted() {
+        fn analyze_references_sorted() {
             // Test from plan: AnalyzeImpactResponse references are sorted by (file, line, col)
             let refs = vec![
                 ReferenceInfo::new(Location::new("b.py", 10, 5), "call"),

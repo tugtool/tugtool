@@ -1,6 +1,6 @@
 {
   "description": "Expected warnings for dynamic attribute patterns when renaming 'process'",
-  "operation": "analyze_impact",
+  "operation": "analyze",
   "target": "process",
   "expected_warnings": [
     {

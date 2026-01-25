@@ -6,6 +6,72 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-10.md] Step 17: Cross-File Alias Tracking | COMPLETE | 2026-01-24
+
+**Completed:** 2026-01-24
+
+**References Reviewed:**
+- `plans/phase-10.md` - Step 17 specification (sections 17.1-17.5)
+- `crates/tugtool-python/src/analyzer.rs` - FileAnalysisBundle, Pass 3 import resolution
+- `crates/tugtool-python/src/ops/rename.rs` - analyze_impact alias collection logic
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `ImportersIndex` type definition to analyzer.rs | Done |
+| Add `importers_index` field to `FileAnalysisBundle` | Done |
+| Build ImportersIndex in Pass 3 after import resolution | Done |
+| Handle aliased imports (`from a import bar as baz`) | Done |
+| Handle star imports (use expanded names) | Done |
+| Add `collect_cross_file_aliases()` helper function | Done |
+| Integrate cross-file collection into `analyze_impact()` | Done |
+| Ensure aliases are deduplicated and sorted | Done |
+| Add test XFA-01: `test_cross_file_alias_simple` | Done |
+| Add test XFA-02: `test_cross_file_alias_aliased_import` | Done |
+| Add test XFA-03: `test_cross_file_alias_star_import` | Done |
+| Add test XFA-04: `test_cross_file_alias_shadowed` | Done |
+| Add test XFA-05: `test_cross_file_alias_multiple_importers` | Done |
+| Add test XFA-06: `test_cross_file_alias_reexport` | Done |
+| Rename `analyze_impact` → `analyze` throughout codebase | Done |
+| Rename `run` → `rename` throughout codebase | Done |
+| Rename `run_rename` → `do_rename` in CLI | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added `ImportersIndex` type, `importers_index` field to `FileAnalysisBundle`, `iter_resolved_imports()` method to `FileImportResolver`, ImportersIndex construction in Pass 3
+- `crates/tugtool-python/src/ops/rename.rs` - Added `collect_cross_file_aliases()` helper, integrated into `analyze()`, added 6 new tests (XFA-01 through XFA-06), renamed `analyze_impact` → `analyze`, `run` → `rename`
+- `crates/tugtool/src/cli.rs` - Renamed `run_analyze_impact` → `analyze_rename`, `run_rename` → `do_rename`, updated imports
+- `crates/tugtool/src/main.rs` - Updated import to use `do_rename`
+- `crates/tugtool/tests/temporale_integration.rs` - Updated `rename::run(` → `rename::rename(`
+- `crates/tugtool-core/src/output.rs` - Renamed test function `analyze_impact_references_sorted` → `analyze_references_sorted`
+- `crates/tugtool/tests/golden_tests.rs` - Updated golden file reference
+- `crates/tugtool/tests/golden/output_schema/analyze_impact_success.json` - Renamed to `analyze_success.json`
+- `crates/tugtool/tests/fixtures/golden/python/edge_cases/dynamic_attr.json` - Updated `"operation": "analyze"`
+- `crates/tugtool/tests/fixtures/python/edge_cases/dynamic_attr_expected.json` - Updated `"operation": "analyze"`
+- `crates/tugtool/tests/fixtures/python/manifest.json` - Updated `"operation": "analyze"`
+- `plans/phase-10.md` - Checked off Step 17 tasks, updated Implementation Log
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1353 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all -- --check`: Passes
+
+**Checkpoints Verified:**
+- Cross-file alias detection working: PASS (all 6 XFA tests pass)
+- Aliased imports handled: PASS (XFA-02)
+- Star imports handled: PASS (XFA-03)
+- Multiple importers detected: PASS (XFA-05)
+- Aliases deduplicated and sorted: PASS
+
+**Key Decisions/Notes:**
+- **ImportersIndex design**: Uses `HashMap<(String, String), Vec<(FileId, String)>>` mapping `(target_file, exported_name)` → importers. Built from `FileImportResolver` which already has resolved file information.
+- **iter_resolved_imports()**: Added new method to `FileImportResolver` to iterate over `(imported_name, local_name, resolved_file)` tuples for building the index.
+- **Scope filtering**: Cross-file aliases are searched at module scope only (imports bind at module level).
+- **Naming cleanup**: Renamed internal functions to use proper names (`analyze`, `rename`) instead of legacy names (`analyze_impact`, `run`, `run_rename`).
+- **Re-export chains**: Current implementation searches direct importers only. Following re-export chains is a future enhancement.
+
+---
+
 ## [phase-10.md] Phase 10 Audit Fixes | COMPLETE | 2026-01-24
 
 **Completed:** 2026-01-24

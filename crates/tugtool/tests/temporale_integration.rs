@@ -271,7 +271,7 @@ fn temporale_refactor_rename_date_class() {
     let location = Location::new(file_path.clone(), line, col);
 
     // Run the rename operation with syntax verification (compileall)
-    let result = rename::run(
+    let result = rename::rename(
         temp.path(),
         &files,
         &location,
@@ -370,7 +370,7 @@ fn temporale_refactor_rename_validation_error() {
     let location = Location::new(file_path.clone(), line, col);
 
     // Run rename with syntax verification
-    let result = rename::run(
+    let result = rename::rename(
         temp.path(),
         &files,
         &location,
@@ -459,7 +459,7 @@ fn temporale_refactor_rename_era_bce() {
     let location = Location::new(file_path.clone(), line, col);
 
     // Run rename with syntax verification
-    let result = rename::run(
+    let result = rename::rename(
         temp.path(),
         &files,
         &location,
