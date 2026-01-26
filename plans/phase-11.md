@@ -3184,20 +3184,20 @@ For `__all__ = ["foo", "bar"]`:
 - Export edits use `exported_name_span` for precise replacement
 
 **Tasks:**
-- [ ] Update `ops/rename.rs` to query `public_exports_named()` instead of legacy `exports_named()`
-- [ ] Update export edit generation to use `PublicExport.exported_name_span` for replacement span
-- [ ] Verify rename correctly replaces string content without affecting quotes
-- [ ] Update any other rename-related code that references legacy export types
+- [x] Update `ops/rename.rs` to query `public_exports_named()` instead of legacy `exports_named()`
+- [x] Update export edit generation to use `PublicExport.exported_name_span` for replacement span
+- [x] Verify rename correctly replaces string content without affecting quotes
+- [x] Update any other rename-related code that references legacy export types
 
 **Tests:**
-- [ ] Integration: Rename updates `__all__` string content correctly
-- [ ] Integration: Quotes are preserved after rename
-- [ ] Integration: Multi-file rename with exports works correctly
-- [ ] Golden: PublicExport serialization matches expected format
+- [x] Integration: Rename updates `__all__` string content correctly
+- [x] Integration: Quotes are preserved after rename
+- [x] Integration: Multi-file rename with exports works correctly
+- [x] Golden: PublicExport serialization matches expected format
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python rename`
-- [ ] `cargo nextest run -p tugtool` (CLI integration tests)
+- [x] `cargo nextest run -p tugtool-python rename`
+- [x] `cargo nextest run -p tugtool` (CLI integration tests)
 
 **Rollback:**
 - Revert commit

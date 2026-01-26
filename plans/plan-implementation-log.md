@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 3b: Update Rename Operations for PublicExport | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 3b specification (lines 3176-3205)
+- [D03] PublicExport for Language-Agnostic Exports (lines 452-589)
+- `crates/tugtool-python/src/ops/rename.rs` - existing export handling in rename operations
+- `crates/tugtool-core/src/facts/mod.rs` - `public_exports_named()` query and `PublicExport` struct
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `ops/rename.rs` to query `public_exports_named()` instead of legacy `exports_named()` | Done |
+| Update export edit generation to use `PublicExport.exported_name_span` for replacement span | Done |
+| Verify rename correctly replaces string content without affecting quotes | Done |
+| Update any other rename-related code that references legacy export types | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Changed line 968 from `store.exports_named(old_name)` to `store.public_exports_named(old_name)`
+  - Updated export edit generation to use `export.exported_name_span` instead of `export.content_span`
+  - Added `if let Some(span)` guard since `exported_name_span` is `Option<Span>`
+  - Updated comments to reflect new PublicExport model
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python rename`: 46 tests passed
+- `cargo nextest run -p tugtool`: 232 tests passed
+- `cargo nextest run -p tugtool-python 'all_export'`: 4 tests passed
+- `cargo clippy -p tugtool-python --lib`: Clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python rename`: PASS (46 tests)
+- `cargo nextest run -p tugtool` (CLI integration tests): PASS (232 tests)
+
+**Key Decisions/Notes:**
+- The `exported_name_span` field in `PublicExport` serves the same purpose as the legacy `content_span` in `Export` - it points to string content only (excluding quotes), enabling safe rename operations that preserve quote characters.
+- Other uses of legacy exports in the codebase (e.g., `store.exports()` in test code) are for verifying Step 3a's dual-emission requirement and will be removed in Step 3c.
+- Single-file rename functions (`rename_in_file`, `collect_rename_edits`) use local `FileAnalysis.exports` (a different type from FactsStore exports) and don't require changes.
+
+---
+
 ## [phase-11.md] Step 3a: Update Python Analyzer to Emit PublicExport | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

@@ -963,24 +963,26 @@ pub fn rename(
         }
     }
 
-    // Collect __all__ export edits
-    // FactsStore now tracks exports, so we can look them up directly
-    for export in store.exports_named(old_name) {
+    // Collect __all__ export edits using PublicExport (the new canonical model)
+    // PublicExport.exported_name_span points at the string content (no quotes)
+    for export in store.public_exports_named(old_name) {
         let file = store
             .file(export.file_id)
             .ok_or_else(|| RenameError::AnalyzerError {
                 message: "file not found for export".to_string(),
             })?;
 
-        // Use content_span for replacement (just the string content, not quotes)
-        let span = export.content_span;
-        // Check if this span is already in edits_by_file
-        let file_edits = edits_by_file.entry(file.path.clone()).or_default();
-        if !file_edits
-            .iter()
-            .any(|(s, _)| s.start == span.start && s.end == span.end)
-        {
-            file_edits.push((span, new_name));
+        // Use exported_name_span for replacement (just the string content, not quotes)
+        // This matches the legacy content_span semantics and preserves quotes during rename
+        if let Some(span) = export.exported_name_span {
+            // Check if this span is already in edits_by_file
+            let file_edits = edits_by_file.entry(file.path.clone()).or_default();
+            if !file_edits
+                .iter()
+                .any(|(s, _)| s.start == span.start && s.end == span.end)
+            {
+                file_edits.push((span, new_name));
+            }
         }
     }
 
