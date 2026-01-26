@@ -1754,23 +1754,27 @@ def process(x: "Bar") -> None:
         )]);
         let store = analyze_test_files(&file_list);
 
-        // Exports should be tracked
-        let exports: Vec<_> = store.exports().collect();
+        // Exports should be tracked via PublicExport
+        let exports: Vec<_> = store.public_exports().collect();
         assert_eq!(exports.len(), 2, "Expected 2 exports tracked");
 
-        let foo_export = exports.iter().find(|e| e.name == "foo");
-        let bar_export = exports.iter().find(|e| e.name == "bar");
+        let foo_export = exports
+            .iter()
+            .find(|e| e.exported_name.as_deref() == Some("foo"));
+        let bar_export = exports
+            .iter()
+            .find(|e| e.exported_name.as_deref() == Some("bar"));
         assert!(foo_export.is_some(), "Expected 'foo' export");
         assert!(bar_export.is_some(), "Expected 'bar' export");
 
-        // exports_named should work
-        let foo_by_name: Vec<_> = store.exports_named("foo").into_iter().collect();
+        // public_exports_named should work
+        let foo_by_name = store.public_exports_named("foo");
         assert_eq!(foo_by_name.len(), 1, "Expected 1 export named 'foo'");
-        assert_eq!(foo_by_name[0].name, "foo");
+        assert_eq!(foo_by_name[0].exported_name.as_deref(), Some("foo"));
 
-        // exports_in_file should work
+        // public_exports_in_file should work
         let module_file = store.file_by_path("module.py").unwrap();
-        let exports_in_module = store.exports_in_file(module_file.file_id);
+        let exports_in_module = store.public_exports_in_file(module_file.file_id);
         assert_eq!(
             exports_in_module.len(),
             2,
@@ -1787,12 +1791,16 @@ def process(x: "Bar") -> None:
         )]);
         let store = analyze_test_files(&file_list);
 
-        // Both exports should be tracked
-        let exports: Vec<_> = store.exports().collect();
+        // Both exports should be tracked via PublicExport
+        let exports: Vec<_> = store.public_exports().collect();
         assert_eq!(exports.len(), 2, "Expected 2 exports from concatenation");
 
-        let a_export = exports.iter().find(|e| e.name == "a");
-        let b_export = exports.iter().find(|e| e.name == "b");
+        let a_export = exports
+            .iter()
+            .find(|e| e.exported_name.as_deref() == Some("a"));
+        let b_export = exports
+            .iter()
+            .find(|e| e.exported_name.as_deref() == Some("b"));
         assert!(a_export.is_some(), "Expected 'a' export");
         assert!(b_export.is_some(), "Expected 'b' export");
     }

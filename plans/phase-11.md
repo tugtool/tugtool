@@ -3222,23 +3222,23 @@ For `__all__ = ["foo", "bar"]`:
 - Python analyzer no longer emits legacy `Export`
 
 **Tasks:**
-- [ ] **Remove legacy `ExportId` newtype** from FactsStore
-- [ ] **Remove legacy `Export` type** from FactsStore
-- [ ] **Remove legacy export storage**: `exports`, `exports_by_file`, `exports_by_name`
-- [ ] **Remove legacy export queries**: `export()`, `exports_in_file()`, `exports_named()`, `exports()`
-- [ ] **Remove `next_export_id()` generator**
-- [ ] Remove legacy `Export` emission from Python analyzer (added temporarily in Step 3a)
-- [ ] Update any code that references legacy `Export` or `ExportId`
+- [x] **Remove legacy `ExportId` newtype** from FactsStore
+- [x] **Remove legacy `Export` type** from FactsStore
+- [x] **Remove legacy export storage**: `exports`, `exports_by_file`, `exports_by_name`
+- [x] **Remove legacy export queries**: `export()`, `exports_in_file()`, `exports_named()`, `exports()`
+- [x] **Remove `next_export_id()` generator**
+- [x] Remove legacy `Export` emission from Python analyzer (added temporarily in Step 3a)
+- [x] Update any code that references legacy `Export` or `ExportId`
 
 **Tests:**
-- [ ] Unit: Legacy types no longer exist (compile check)
-- [ ] Unit: PublicExport types still work correctly
-- [ ] Integration: Python analyzer only emits PublicExport
+- [x] Unit: Legacy types no longer exist (compile check)
+- [x] Unit: PublicExport types still work correctly
+- [x] Integration: Python analyzer only emits PublicExport
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-core` (compiles without legacy types)
-- [ ] `cargo nextest run -p tugtool-core public_export`
-- [ ] `cargo nextest run -p tugtool-python`
+- [x] `cargo build -p tugtool-core` (compiles without legacy types)
+- [x] `cargo nextest run -p tugtool-core public_export`
+- [x] `cargo nextest run -p tugtool-python`
 
 **Rollback:**
 - Revert commit
@@ -3264,7 +3264,7 @@ After completing all steps, you will have:
 - Rename operations using `PublicExport` for precise export edits
 
 **Final Step 3 Checkpoint:**
-- [ ] `cargo nextest run --workspace` (all export-related tests pass)
+- [x] `cargo nextest run --workspace` (all export-related tests pass)
 
 ---
 

@@ -104,27 +104,10 @@ impl std::fmt::Display for ImportId {
     }
 }
 
-/// Unique identifier for an export (__all__ entry) within a snapshot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct ExportId(pub u32);
-
-impl ExportId {
-    /// Create a new export ID.
-    pub fn new(id: u32) -> Self {
-        ExportId(id)
-    }
-}
-
-impl std::fmt::Display for ExportId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "exp_{}", self.0)
-    }
-}
-
 /// Unique identifier for a public export within a snapshot.
 ///
-/// This is the language-agnostic export model that replaces the Python-specific
-/// `ExportId`. Use this for all new export-related functionality.
+/// This is the language-agnostic export model for tracking public API exports
+/// across all supported languages (Python `__all__`, Rust `pub use`, etc.).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct PublicExportId(pub u32);
 
@@ -902,47 +885,9 @@ impl Import {
     }
 }
 
-/// An export entry in __all__.
-///
-/// Tracks string literals in `__all__` assignments for rename operations.
-/// When a symbol is renamed, its name in `__all__` must also be updated.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Export {
-    /// Unique identifier for this export.
-    pub export_id: ExportId,
-    /// File containing this __all__ entry.
-    pub file_id: FileId,
-    /// Byte span of the entire string literal (including quotes).
-    pub span: Span,
-    /// Byte span of just the string content (for replacement).
-    pub content_span: Span,
-    /// The exported symbol name.
-    pub name: String,
-}
-
-impl Export {
-    /// Create a new export entry.
-    pub fn new(
-        export_id: ExportId,
-        file_id: FileId,
-        span: Span,
-        content_span: Span,
-        name: impl Into<String>,
-    ) -> Self {
-        Export {
-            export_id,
-            file_id,
-            span,
-            content_span,
-            name: name.into(),
-        }
-    }
-}
-
 /// Language-agnostic representation of a public export.
 ///
-/// This is the canonical export model for all languages. It replaces the
-/// Python-specific `Export` type and supports:
+/// This is the canonical export model for all supported languages:
 /// - Python `__all__` entries
 /// - Rust `pub use` and `pub mod` re-exports
 /// - JavaScript/TypeScript `export` statements
@@ -1812,7 +1757,6 @@ pub struct FactsStore {
     symbols: BTreeMap<SymbolId, Symbol>,
     references: BTreeMap<ReferenceId, Reference>,
     imports: BTreeMap<ImportId, Import>,
-    exports: BTreeMap<ExportId, Export>,
     scopes: BTreeMap<ScopeId, ScopeInfo>,
     alias_edges: BTreeMap<AliasEdgeId, AliasEdge>,
 
@@ -1851,10 +1795,6 @@ pub struct FactsStore {
     refs_by_file: HashMap<FileId, Vec<ReferenceId>>,
     /// file_id → scope_ids[] (scopes in file, sorted by scope_id).
     scopes_by_file: HashMap<FileId, Vec<ScopeId>>,
-    /// file_id → export_ids[] (exports in file, sorted by export_id).
-    exports_by_file: HashMap<FileId, Vec<ExportId>>,
-    /// export name → export_ids[] (exports with this name).
-    exports_by_name: HashMap<String, Vec<ExportId>>,
 
     // Alias edge indexes
     /// file_id → alias_edge_ids[] (alias edges in file).
@@ -1908,7 +1848,6 @@ pub struct FactsStore {
     next_symbol_id: u32,
     next_ref_id: u32,
     next_import_id: u32,
-    next_export_id: u32,
     next_scope_id: u32,
     next_alias_edge_id: u32,
     next_attribute_access_id: u32,
@@ -1925,7 +1864,6 @@ impl Default for FactsStore {
             symbols: BTreeMap::new(),
             references: BTreeMap::new(),
             imports: BTreeMap::new(),
-            exports: BTreeMap::new(),
             scopes: BTreeMap::new(),
             alias_edges: BTreeMap::new(),
             types: HashMap::new(),
@@ -1941,8 +1879,6 @@ impl Default for FactsStore {
             symbols_by_file: HashMap::new(),
             refs_by_file: HashMap::new(),
             scopes_by_file: HashMap::new(),
-            exports_by_file: HashMap::new(),
-            exports_by_name: HashMap::new(),
             alias_edges_by_file: HashMap::new(),
             alias_edges_by_alias: HashMap::new(),
             alias_edges_by_target: HashMap::new(),
@@ -1965,7 +1901,6 @@ impl Default for FactsStore {
             next_symbol_id: 0,
             next_ref_id: 0,
             next_import_id: 0,
-            next_export_id: 0,
             next_scope_id: 0,
             next_alias_edge_id: 0,
             next_attribute_access_id: 0,
@@ -2026,13 +1961,6 @@ impl FactsStore {
     pub fn next_scope_id(&mut self) -> ScopeId {
         let id = ScopeId::new(self.next_scope_id);
         self.next_scope_id += 1;
-        id
-    }
-
-    /// Generate the next ExportId.
-    pub fn next_export_id(&mut self) -> ExportId {
-        let id = ExportId::new(self.next_export_id);
-        self.next_export_id += 1;
         id
     }
 
@@ -2125,24 +2053,6 @@ impl FactsStore {
 
         // Insert into primary storage
         self.imports.insert(import.import_id, import);
-    }
-
-    /// Insert an export (__all__ entry).
-    pub fn insert_export(&mut self, export: Export) {
-        // Update file postings list
-        self.exports_by_file
-            .entry(export.file_id)
-            .or_default()
-            .push(export.export_id);
-
-        // Update name index
-        self.exports_by_name
-            .entry(export.name.clone())
-            .or_default()
-            .push(export.export_id);
-
-        // Insert into primary storage
-        self.exports.insert(export.export_id, export);
     }
 
     /// Insert a scope.
@@ -2357,11 +2267,6 @@ impl FactsStore {
         self.imports.get(&id)
     }
 
-    /// Get an export by ID.
-    pub fn export(&self, id: ExportId) -> Option<&Export> {
-        self.exports.get(&id)
-    }
-
     /// Get a public export by ID.
     pub fn public_export(&self, id: PublicExportId) -> Option<&PublicExport> {
         self.public_exports.get(&id)
@@ -2500,32 +2405,6 @@ impl FactsStore {
         self.imports_by_file
             .get(&file_id)
             .map(|ids| ids.iter().filter_map(|id| self.imports.get(id)).collect())
-            .unwrap_or_default()
-    }
-
-    /// Get all exports in a file.
-    ///
-    /// Returns exports in deterministic order (by ExportId).
-    pub fn exports_in_file(&self, file_id: FileId) -> Vec<&Export> {
-        self.exports_by_file
-            .get(&file_id)
-            .map(|ids| ids.iter().filter_map(|id| self.exports.get(id)).collect())
-            .unwrap_or_default()
-    }
-
-    /// Get all exports with a given name.
-    ///
-    /// Returns exports in deterministic order (by ExportId).
-    /// This is the primary method for finding exports to rename.
-    pub fn exports_named(&self, name: &str) -> Vec<&Export> {
-        self.exports_by_name
-            .get(name)
-            .map(|ids| {
-                let mut exports: Vec<_> =
-                    ids.iter().filter_map(|id| self.exports.get(id)).collect();
-                exports.sort_by_key(|e| e.export_id);
-                exports
-            })
             .unwrap_or_default()
     }
 
@@ -2914,11 +2793,6 @@ impl FactsStore {
         self.imports.values()
     }
 
-    /// Iterate over all exports in deterministic order.
-    pub fn exports(&self) -> impl Iterator<Item = &Export> {
-        self.exports.values()
-    }
-
     /// Iterate over all scopes in deterministic order.
     pub fn scopes(&self) -> impl Iterator<Item = &ScopeInfo> {
         self.scopes.values()
@@ -3076,7 +2950,6 @@ impl FactsStore {
         self.symbols.clear();
         self.references.clear();
         self.imports.clear();
-        self.exports.clear();
         self.scopes.clear();
 
         self.types.clear();
@@ -3094,8 +2967,6 @@ impl FactsStore {
         self.symbols_by_file.clear();
         self.refs_by_file.clear();
         self.scopes_by_file.clear();
-        self.exports_by_file.clear();
-        self.exports_by_name.clear();
 
         self.alias_edges.clear();
         self.alias_edges_by_file.clear();

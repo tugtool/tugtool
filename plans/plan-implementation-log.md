@@ -6,6 +6,80 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 3c: Remove Legacy Export Type | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 3c specification (lines 3209-3246)
+- [D03] PublicExport for Language-Agnostic Exports
+- `crates/tugtool-core/src/facts/mod.rs` - legacy ExportId, Export, and related storage/queries
+- `crates/tugtool-python/src/analyzer.rs` - legacy Export emission code
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - legacy export tests
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove legacy `ExportId` newtype from FactsStore | Done |
+| Remove legacy `Export` type from FactsStore | Done |
+| Remove legacy export storage: `exports`, `exports_by_file`, `exports_by_name` | Done |
+| Remove legacy export queries: `export()`, `exports_in_file()`, `exports_named()`, `exports()` | Done |
+| Remove `next_export_id()` generator | Done |
+| Remove legacy `Export` emission from Python analyzer | Done |
+| Update any code that references legacy `Export` or `ExportId` | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Removed `ExportId` newtype (lines 107-122)
+  - Removed `Export` struct and impl (lines 888-940)
+  - Removed `exports: BTreeMap<ExportId, Export>` storage field
+  - Removed `exports_by_file` and `exports_by_name` index fields
+  - Removed `next_export_id` counter field and initializations
+  - Removed `next_export_id()` generator method
+  - Removed `insert_export()` method
+  - Removed `export()`, `exports_in_file()`, `exports_named()`, `exports()` query methods
+  - Removed legacy export `clear()` calls
+  - Updated `PublicExportId` documentation (no longer references "replaces ExportId")
+  - Updated `PublicExport` documentation (no longer references "replaces Export")
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Removed `Export` from imports
+  - Removed legacy Export emission code (lines 899-904)
+  - Updated comment from "Emit both legacy Export and PublicExport" to "Emit PublicExport"
+  - Removed `test_public_export_and_legacy_export_both_populated` test
+
+- `crates/tugtool-python/tests/acceptance_criteria.rs`:
+  - Updated `exports_tracked_in_facts_store` test to use `public_exports()`, `public_exports_named()`, `public_exports_in_file()`
+  - Updated `exports_with_list_concatenation_tracked` test to use `public_exports()` and `exported_name` field
+
+- `plans/phase-11.md`:
+  - Checked off all 7 tasks for Step 3c
+  - Checked off all 3 tests for Step 3c
+  - Checked off all 3 checkpoints for Step 3c
+  - Checked off Final Step 3 Checkpoint
+
+**Test Results:**
+- `cargo build -p tugtool-core`: Compiles cleanly
+- `cargo nextest run -p tugtool-core public_export`: 14 tests passed
+- `cargo nextest run -p tugtool-python`: 396 tests passed
+- `cargo nextest run --workspace`: 1494 tests passed
+- `cargo clippy --workspace`: Clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-core` (compiles without legacy types): PASS
+- `cargo nextest run -p tugtool-core public_export`: PASS (14 tests)
+- `cargo nextest run -p tugtool-python`: PASS (396 tests)
+- `cargo nextest run --workspace` (Final Step 3 Checkpoint): PASS (1494 tests)
+
+**Key Decisions/Notes:**
+- Code-architect agent reviewed the removal and confirmed it was clean and complete
+- `ExportCollector` and `ExportInfo` in `tugtool-python-cst/src/visitor/exports.rs` are intentionally retained - they are CST visitor types for `__all__` extraction, not the legacy FactsStore type
+- `PublicExport` is now the sole canonical export model across all languages
+- All Step 3 substeps (3, 3a, 3b, 3c) are now complete with PublicExport as the single export representation
+
+---
+
 ## [phase-11.md] Step 3b: Update Rename Operations for PublicExport | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

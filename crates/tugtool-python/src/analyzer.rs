@@ -11,9 +11,9 @@
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::facts::{
-    Export, ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import,
-    Language, PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId,
-    ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
+    ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, Language,
+    PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo,
+    ScopeKind, Symbol, SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -894,16 +894,8 @@ pub fn analyze_files(
         }
 
         // Process exports (__all__ entries)
-        // Emit both legacy Export (for backward compatibility) and PublicExport (new canonical model)
+        // Emit PublicExport for each entry in __all__
         for local_export in &analysis.exports {
-            // Legacy Export emission (will be removed in Step 3c)
-            let export_id = store.next_export_id();
-            let span = local_export.span.unwrap_or_else(|| Span::new(0, 0));
-            let content_span = local_export.content_span.unwrap_or_else(|| Span::new(0, 0));
-            let export = Export::new(export_id, file_id, span, content_span, &local_export.name);
-            store.insert_export(export);
-
-            // PublicExport emission (new canonical model)
             // decl_span = full string literal including quotes
             // exported_name_span = string content only, no quotes
             let public_export_id = store.next_public_export_id();
@@ -7097,46 +7089,6 @@ def func():
             assert!(
                 public_exports.is_empty(),
                 "empty __all__ should produce zero public exports"
-            );
-        }
-
-        #[test]
-        fn test_public_export_and_legacy_export_both_populated() {
-            // Test: Both legacy Export and PublicExport are populated (temporary coexistence)
-            let mut store = FactsStore::new();
-            let files = vec![(
-                "test.py".to_string(),
-                r#"__all__ = ["foo", "bar"]
-def foo(): pass
-def bar(): pass
-"#
-                .to_string(),
-            )];
-
-            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
-
-            // Check legacy exports
-            let legacy_exports: Vec<_> = store.exports().collect();
-            assert_eq!(
-                legacy_exports.len(),
-                2,
-                "should have 2 legacy exports (temporary)"
-            );
-
-            // Check new PublicExport entries
-            let public_exports: Vec<_> = store.public_exports().collect();
-            assert_eq!(public_exports.len(), 2, "should have 2 public exports");
-
-            // Both should have the same names
-            let legacy_names: std::collections::HashSet<_> =
-                legacy_exports.iter().map(|e| &e.name).collect();
-            let public_names: std::collections::HashSet<_> = public_exports
-                .iter()
-                .filter_map(|e| e.exported_name.as_ref())
-                .collect();
-            assert_eq!(
-                legacy_names, public_names,
-                "legacy and public exports should have same names"
             );
         }
 
