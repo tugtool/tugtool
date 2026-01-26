@@ -188,6 +188,12 @@ impl<'pos> AttributeAccessCollector<'pos> {
 
     /// Get the receiver name as a string.
     /// Returns the string representation of the receiver expression.
+    ///
+    /// For simple names, returns the name directly (e.g., "obj").
+    /// For chained attributes, returns the dotted path (e.g., "obj.inner").
+    /// For call expressions, extracts the callee name (e.g., "get_obj" from "get_obj()").
+    /// For subscript expressions, returns "<subscript>".
+    /// For other expressions, returns "<expr>".
     fn get_receiver_string(expr: &Expression<'_>) -> String {
         match expr {
             Expression::Name(name) => name.value.to_string(),
@@ -195,7 +201,14 @@ impl<'pos> AttributeAccessCollector<'pos> {
                 let base = Self::get_receiver_string(&attr.value);
                 format!("{}.{}", base, attr.attr.value)
             }
-            Expression::Call(_) => "<call>".to_string(),
+            Expression::Call(call) => {
+                // Extract callee name from call expression.
+                // For `get_obj()`, extract "get_obj".
+                // For `get_obj().method()`, this would be an Attribute on a Call,
+                // so the recursive call handles the chaining.
+                Self::get_receiver_string(&call.func)
+            }
+            Expression::Subscript(_) => "<subscript>".to_string(),
             _ => "<expr>".to_string(),
         }
     }
@@ -591,5 +604,83 @@ class MyClass:
             .collect();
         assert_eq!(reads.len(), 1);
         assert_eq!(reads[0].attr_name, "attr");
+    }
+
+    // ========================================================================
+    // Receiver extraction from Call expressions
+    // ========================================================================
+
+    #[test]
+    fn test_receiver_extraction_simple_call() {
+        // get_obj().method -> receiver should be "get_obj"
+        let source = "get_obj().method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have one Call for `.method`
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].receiver, "get_obj");
+    }
+
+    #[test]
+    fn test_receiver_extraction_chained_calls() {
+        // get_a().get_b().method -> receiver should be "get_a.get_b"
+        let source = "get_a().get_b().method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have three Calls: get_b on get_a(), method on get_a().get_b()
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 2);
+
+        // Find the final method call
+        let method_call = calls.iter().find(|c| c.attr_name == "method").unwrap();
+        assert_eq!(method_call.receiver, "get_a.get_b");
+
+        // Find the intermediate get_b call
+        let get_b_call = calls.iter().find(|c| c.attr_name == "get_b").unwrap();
+        assert_eq!(get_b_call.receiver, "get_a");
+    }
+
+    #[test]
+    fn test_receiver_extraction_subscript() {
+        // data[0].method -> receiver should be "<subscript>"
+        let source = "data[0].method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have one Call for `.method`
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].receiver, "<subscript>");
+    }
+
+    #[test]
+    fn test_receiver_extraction_read_context() {
+        // get_obj().attr (read, not call) should also extract receiver
+        let source = "x = get_obj().attr";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have one Read for `.attr`
+        let reads: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Read)
+            .collect();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(reads[0].attr_name, "attr");
+        assert_eq!(reads[0].receiver, "get_obj");
     }
 }

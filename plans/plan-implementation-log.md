@@ -6,6 +6,44 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 6: Enhance Receiver Extraction for Call Expressions | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D04] Enhanced Receiver Extraction
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Current implementation of `get_receiver_string`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `get_receiver_string` with `Expression::Call` arm | Done |
+| Add `Expression::Subscript` case with `<subscript>` placeholder | Done |
+| Update tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`:
+  - Updated `get_receiver_string` to recursively extract callee name from `Expression::Call`
+  - Added `Expression::Subscript` case returning `"<subscript>"`
+  - Added 4 tests for receiver extraction
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst receiver`: 4 tests passed
+- `cargo nextest run -p tugtool-python-cst attribute_access`: 20 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 515 tests passed
+- `cargo clippy -p tugtool-python-cst -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst receiver`: PASS (4 tests)
+
+**Key Decisions/Notes:**
+- The `Expression::Call` handling recursively calls `get_receiver_string` on `call.func`
+- This enables chained call extraction: `get_a().get_b().method` resolves to receiver "get_a.get_b"
+- Added an extra test for read context to verify the change works for non-call attribute access too
+
+---
+
 ## [phase-11B.md] Step 5: Add Effective Export Computation | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

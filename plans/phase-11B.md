@@ -920,20 +920,20 @@ fn missing_span_warns_and_skips() {
 - Tests for complex receivers
 
 **Tasks:**
-- [ ] Update `get_receiver_string` in `attribute_access.rs`:
+- [x] Update `get_receiver_string` in `attribute_access.rs`:
   - Add `Expression::Call` arm
   - Recursively call on `call.func` to get callee name
   - Handle nested cases gracefully
-- [ ] Add `Expression::Subscript` case with `<subscript>` placeholder
-- [ ] Update tests
+- [x] Add `Expression::Subscript` case with `<subscript>` placeholder
+- [x] Update tests
 
 **Tests:**
-- [ ] Unit: `get_obj().method` -> receiver is "get_obj"
-- [ ] Unit: `get_a().get_b().method` -> receiver is "get_a.get_b"
-- [ ] Unit: `data[0].method` -> receiver is "<subscript>"
+- [x] Unit: `get_obj().method` -> receiver is "get_obj"
+- [x] Unit: `get_a().get_b().method` -> receiver is "get_a.get_b"
+- [x] Unit: `data[0].method` -> receiver is "<subscript>"
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst receiver`
+- [x] `cargo nextest run -p tugtool-python-cst receiver`
 
 **Rollback:**
 - Revert commit
