@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 3: Integrate TypeTracker with Attribute Access Resolution | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D02] TypeTracker Integration for Symbol Resolution
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker infrastructure
+- `crates/tugtool-python/src/analyzer.rs` - Adapter conversion functions
+- `crates/tugtool-python/src/cst_bridge.rs` - NativeAnalysisResult structure
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - AttributeAccessInfo type
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `resolve_receiver_to_symbol` method to `PythonAdapter` | Done |
+| Modify `convert_file_analysis` signature to accept `TypeTracker` reference | Done |
+| Build TypeTracker in `analyze_file` and pass to conversion | Done |
+| Integrate attribute access conversion with receiver type resolution | Done |
+| Update `analyze_files` to build and pass TypeTracker per file | Done |
+| Add `type_trackers` field to `FileAnalysisBundle` | Done |
+| Write unit tests for `resolve_receiver_to_symbol` | Done |
+| Write integration test for typed receiver resolution | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `resolve_receiver_to_symbol` method (lines 3186-3226)
+  - Added `build_type_tracker` helper function (lines 1491-1546)
+  - Modified `convert_file_analysis` signature to accept `Option<&TypeTracker>`
+  - Updated attribute access conversion to use type resolution
+  - Added `type_trackers: HashMap<FileId, TypeTracker>` field to `FileAnalysisBundle`
+  - Updated `convert_file_analysis_bundle` to pass TypeTrackers
+  - Updated `LanguageAdapter::analyze_file` to build TypeTracker
+  - Added 5 new tests for TypeTracker symbol resolution
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python resolve_receiver`: 4 tests passed
+- `cargo nextest run -p tugtool-python attribute`: 8 tests passed
+- `cargo nextest run -p tugtool-python type_tracker`: 33 tests passed
+- `cargo nextest run -p tugtool-python`: 457 tests passed
+- `cargo nextest run --workspace`: 1651 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python attribute`: PASS
+- `cargo nextest run -p tugtool-python type_tracker`: PASS
+
+**Key Decisions/Notes:**
+- The `resolve_receiver_to_symbol` method only resolves simple name receivers (not dotted paths like `obj.attr` which would require chained type resolution)
+- Cross-file symbol lookup (via `FactsStore`) is deferred to Step 3a/Step 7; this step implements local file lookup only
+- TypeTrackers are stored in `FileAnalysisBundle.type_trackers` so they're available during adapter conversion
+- For single-file analysis (`LanguageAdapter::analyze_file`), TypeTracker is built fresh from the CST result
+
+---
+
 ## [phase-11B.md] Step 2: Update Python Analyzer Conversion for Spans | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

@@ -778,25 +778,25 @@ fn missing_span_warns_and_skips() {
 - TypeTracker passed to `convert_file_analysis`
 
 **Tasks:**
-- [ ] Add `resolve_receiver_to_symbol` method to `PythonAdapter`
-- [ ] Modify `convert_file_analysis` signature to accept `TypeTracker` reference
-- [ ] Build TypeTracker in `analyze_file` and pass to conversion
-- [ ] In attribute access conversion:
+- [x] Add `resolve_receiver_to_symbol` method to `PythonAdapter`
+- [x] Modify `convert_file_analysis` signature to accept `TypeTracker` reference
+- [x] Build TypeTracker in `analyze_file` and pass to conversion
+- [x] In attribute access conversion:
   - Extract receiver name (simple name case)
   - Look up receiver type via TypeTracker
   - Look up type's symbol index (local map, then cross-file via `FactsStore`)
   - Set `base_symbol_index` if resolved
-- [ ] Update `analyze_files` to build and pass TypeTracker per file
-- [ ] Add helper: `lookup_symbol_in_store(type_name: &str) -> Option<usize>`
+- [x] Update `analyze_files` to build and pass TypeTracker per file
+- [x] Add helper: `lookup_symbol_in_store(type_name: &str) -> Option<usize>` (deferred to Step 3a/7 for cross-file lookup; local lookup via symbol_name_to_index is implemented)
 
 **Tests:**
-- [ ] Unit: `resolve_receiver_to_symbol` returns index for typed receiver
-- [ ] Unit: `resolve_receiver_to_symbol` returns None for untyped receiver
-- [ ] Integration: `h = Handler(); h.process()` -> base_symbol_index points to Handler
+- [x] Unit: `resolve_receiver_to_symbol` returns index for typed receiver
+- [x] Unit: `resolve_receiver_to_symbol` returns None for untyped receiver
+- [x] Integration: `h = Handler(); h.process()` -> base_symbol_index points to Handler
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python attribute`
-- [ ] `cargo nextest run -p tugtool-python type_tracker`
+- [x] `cargo nextest run -p tugtool-python attribute`
+- [x] `cargo nextest run -p tugtool-python type_tracker`
 
 **Rollback:**
 - Revert commit

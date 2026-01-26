@@ -364,6 +364,14 @@ pub struct FileAnalysisBundle {
     ///
     /// Built during Pass 3 after import resolution.
     pub importers_index: ImportersIndex,
+    /// TypeTrackers for each file, keyed by FileId.
+    ///
+    /// Built during Pass 4 (Type-Aware Method Resolution) and used for:
+    /// - Receiver type resolution in attribute accesses
+    /// - Method call callee resolution
+    ///
+    /// Note: TypeTracker is not Clone or Default, so we can't derive Default for the bundle.
+    pub type_trackers: HashMap<FileId, TypeTracker>,
 }
 
 impl FileAnalysisBundle {
@@ -1287,6 +1295,9 @@ pub fn analyze_files(
         }
     }
 
+    // Store TypeTrackers in bundle for use by adapter conversion
+    bundle.type_trackers = type_trackers;
+
     Ok(bundle)
 }
 
@@ -1434,6 +1445,61 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         attribute_accesses: native_result.attribute_accesses,
         call_sites: native_result.call_sites,
     })
+}
+
+/// Build a TypeTracker from native CST analysis result.
+///
+/// This converts CST assignments and annotations to the types module format
+/// and processes them to build type inference information.
+fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeTracker {
+    let mut tracker = TypeTracker::new();
+
+    // Convert CST AssignmentInfo to types::AssignmentInfo for TypeTracker
+    let cst_assignments: Vec<crate::types::AssignmentInfo> = native_result
+        .assignments
+        .iter()
+        .map(|a| crate::types::AssignmentInfo {
+            target: a.target.clone(),
+            scope_path: a.scope_path.clone(),
+            type_source: a.type_source.as_str().to_string(),
+            inferred_type: a.inferred_type.clone(),
+            rhs_name: a.rhs_name.clone(),
+            callee_name: a.callee_name.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+        })
+        .collect();
+
+    // Convert CST AnnotationInfo to types::AnnotationInfo for TypeTracker
+    let cst_annotations: Vec<crate::types::AnnotationInfo> = native_result
+        .annotations
+        .iter()
+        .map(|a| crate::types::AnnotationInfo {
+            name: a.name.clone(),
+            annotation_kind: a.annotation_kind.as_str().to_string(),
+            source_kind: a.source_kind.as_str().to_string(),
+            type_str: a.type_str.clone(),
+            scope_path: a.scope_path.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+            // Pass through the structured TypeNode built at CST collection time
+            type_node: a.type_node.clone(),
+        })
+        .collect();
+
+    tracker.process_assignments(&cst_assignments);
+    tracker.process_annotations(&cst_annotations);
+    tracker.resolve_types();
+
+    tracker
 }
 
 /// Build scope structure from native scope info.
@@ -3184,6 +3250,44 @@ impl PythonAdapter {
         // No convention -> None (visibility unknown)
         None
     }
+
+    /// Resolve a receiver expression to a symbol index via type inference.
+    ///
+    /// Given an attribute access like `obj.method`, this function attempts to resolve
+    /// `obj` to its type using the TypeTracker, then looks up that type in the local
+    /// symbol map.
+    ///
+    /// # Arguments
+    /// - `receiver`: The receiver expression string (e.g., "obj" from "obj.method")
+    /// - `scope_path`: The scope path where the access occurs
+    /// - `tracker`: Optional TypeTracker with type inference results
+    /// - `symbol_map`: Map from symbol name to adapter index
+    ///
+    /// # Returns
+    /// - `Some(index)` if the receiver's type is known and found in the symbol map
+    /// - `None` if the receiver's type is unknown or not in the symbol map
+    fn resolve_receiver_to_symbol(
+        &self,
+        receiver: &str,
+        scope_path: &[String],
+        tracker: Option<&TypeTracker>,
+        symbol_map: &HashMap<&str, usize>,
+    ) -> Option<usize> {
+        // If no tracker provided, we can't resolve
+        let tracker = tracker?;
+
+        // Only resolve simple name receivers (not dotted paths like "obj.attr")
+        // Dotted receivers would require chained type resolution
+        if receiver.contains('.') || receiver.starts_with('<') {
+            return None;
+        }
+
+        // Look up the receiver's type via TypeTracker
+        let receiver_type = tracker.type_of(scope_path, receiver)?;
+
+        // Look up the type's symbol index in the local map
+        symbol_map.get(receiver_type).copied()
+    }
 }
 
 impl LanguageAdapter for PythonAdapter {
@@ -3192,8 +3296,17 @@ impl LanguageAdapter for PythonAdapter {
     fn analyze_file(&self, path: &str, content: &str) -> Result<FileAnalysisResult, Self::Error> {
         // Use a temporary FileId (the adapter doesn't allocate IDs)
         let temp_file_id = FileId::new(0);
+
+        // Parse and analyze to get the native result for TypeTracker
+        let native_result = cst_bridge::parse_and_analyze(content)?;
+
+        // Build TypeTracker from assignments and annotations
+        let type_tracker = build_type_tracker(&native_result);
+
+        // Run standard analysis (which also parses, but we accept the redundancy for now)
         let analysis = analyze_file(temp_file_id, path, content)?;
-        Ok(self.convert_file_analysis(&analysis))
+
+        Ok(self.convert_file_analysis(&analysis, Some(&type_tracker)))
     }
 
     fn analyze_files(
@@ -3219,7 +3332,16 @@ impl LanguageAdapter for PythonAdapter {
 
 impl PythonAdapter {
     /// Convert a `FileAnalysis` to `FileAnalysisResult` for the adapter interface.
-    fn convert_file_analysis(&self, analysis: &FileAnalysis) -> FileAnalysisResult {
+    ///
+    /// # Arguments
+    /// - `analysis`: The file analysis result from the parser
+    /// - `type_tracker`: Optional TypeTracker for receiver type resolution. When provided,
+    ///   attribute access `base_symbol_index` will be populated for typed receivers.
+    fn convert_file_analysis(
+        &self,
+        analysis: &FileAnalysis,
+        type_tracker: Option<&TypeTracker>,
+    ) -> FileAnalysisResult {
         let mut result = FileAnalysisResult {
             path: analysis.path.clone(),
             ..Default::default()
@@ -3447,9 +3569,14 @@ impl PythonAdapter {
 
         // Convert attribute accesses
         for attr in &analysis.attribute_accesses {
-            // Try to resolve the receiver to a symbol index by matching the receiver name
-            // Note: For now, we use None since resolving receiver requires type inference
-            let base_symbol_index = None; // Future: resolve via receiver name and type info
+            // Try to resolve the receiver to a symbol index via type inference
+            // This enables downstream refactors to know what class a method belongs to
+            let base_symbol_index = self.resolve_receiver_to_symbol(
+                &attr.receiver,
+                &attr.scope_path,
+                type_tracker,
+                &symbol_name_to_index,
+            );
 
             result.attributes.push(AttributeAccessData {
                 base_symbol_index,
@@ -3499,10 +3626,12 @@ impl PythonAdapter {
         let mut result = AnalysisBundle::default();
 
         // Convert each file analysis (preserving input order per [D15])
+        // Use TypeTrackers from the bundle for receiver type resolution
         for analysis in &bundle.file_analyses {
+            let type_tracker = bundle.type_trackers.get(&analysis.file_id);
             result
                 .file_results
-                .push(self.convert_file_analysis(analysis));
+                .push(self.convert_file_analysis(analysis, type_tracker));
         }
 
         // Convert failed files
@@ -4838,6 +4967,160 @@ h.process(value)
                     assert!(span.start <= span.end, "Alias span should be valid");
                 }
             }
+        }
+
+        // ====================================================================
+        // TypeTracker Symbol Resolution Tests (Phase 11B Step 3)
+        // ====================================================================
+
+        #[test]
+        fn resolve_receiver_to_symbol_returns_index_for_typed_receiver() {
+            // Test: When receiver has a known type that exists as a symbol,
+            // resolve_receiver_to_symbol should return the symbol's index.
+            let adapter = PythonAdapter::new();
+
+            // Build a TypeTracker with a typed variable
+            let mut tracker = TypeTracker::new();
+            let assignments = vec![crate::types::AssignmentInfo {
+                target: "h".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                type_source: "constructor".to_string(),
+                inferred_type: Some("Handler".to_string()),
+                rhs_name: None,
+                callee_name: None,
+                span: None,
+                line: Some(1),
+                col: Some(1),
+            }];
+            tracker.process_assignments(&assignments);
+            tracker.resolve_types();
+
+            // Build a symbol map with Handler
+            let mut symbol_map: HashMap<&str, usize> = HashMap::new();
+            symbol_map.insert("Handler", 0);
+
+            // Resolve "h" in module scope - should find Handler at index 0
+            let result = adapter.resolve_receiver_to_symbol(
+                "h",
+                &["<module>".to_string()],
+                Some(&tracker),
+                &symbol_map,
+            );
+            assert_eq!(result, Some(0), "Should resolve 'h' to Handler symbol at index 0");
+        }
+
+        #[test]
+        fn resolve_receiver_to_symbol_returns_none_for_untyped_receiver() {
+            // Test: When receiver has no known type, resolve should return None.
+            let adapter = PythonAdapter::new();
+
+            // Empty TypeTracker - no type information
+            let tracker = TypeTracker::new();
+
+            // Build a symbol map with Handler
+            let mut symbol_map: HashMap<&str, usize> = HashMap::new();
+            symbol_map.insert("Handler", 0);
+
+            // Resolve "h" - should return None since type is unknown
+            let result = adapter.resolve_receiver_to_symbol(
+                "h",
+                &["<module>".to_string()],
+                Some(&tracker),
+                &symbol_map,
+            );
+            assert_eq!(result, None, "Should return None for untyped receiver");
+        }
+
+        #[test]
+        fn resolve_receiver_to_symbol_returns_none_for_dotted_receiver() {
+            // Test: Dotted receivers like "obj.attr" should not be resolved
+            // (would require chained type resolution).
+            let adapter = PythonAdapter::new();
+
+            // Build a TypeTracker with a typed variable
+            let mut tracker = TypeTracker::new();
+            let assignments = vec![crate::types::AssignmentInfo {
+                target: "obj".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                type_source: "constructor".to_string(),
+                inferred_type: Some("Container".to_string()),
+                rhs_name: None,
+                callee_name: None,
+                span: None,
+                line: Some(1),
+                col: Some(1),
+            }];
+            tracker.process_assignments(&assignments);
+            tracker.resolve_types();
+
+            // Build a symbol map
+            let mut symbol_map: HashMap<&str, usize> = HashMap::new();
+            symbol_map.insert("Container", 0);
+
+            // Resolve "obj.attr" - should return None since it's a dotted receiver
+            let result = adapter.resolve_receiver_to_symbol(
+                "obj.attr",
+                &["<module>".to_string()],
+                Some(&tracker),
+                &symbol_map,
+            );
+            assert_eq!(result, None, "Should return None for dotted receivers");
+        }
+
+        #[test]
+        fn resolve_receiver_to_symbol_returns_none_when_no_tracker() {
+            // Test: When no TypeTracker is provided, resolve should return None.
+            let adapter = PythonAdapter::new();
+
+            // Build a symbol map with Handler
+            let mut symbol_map: HashMap<&str, usize> = HashMap::new();
+            symbol_map.insert("Handler", 0);
+
+            // Resolve without a TypeTracker - should return None
+            let result = adapter.resolve_receiver_to_symbol(
+                "h",
+                &["<module>".to_string()],
+                None,
+                &symbol_map,
+            );
+            assert_eq!(result, None, "Should return None when no TypeTracker provided");
+        }
+
+        #[test]
+        fn attribute_access_base_symbol_index_resolved_for_typed_receiver() {
+            // Integration test: Analyze code with typed variable and verify
+            // base_symbol_index is populated for attribute accesses.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+h = Handler()
+h.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result
+                .symbols
+                .iter()
+                .position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Find the attribute access for "process" on "h"
+            let process_attr = result
+                .attributes
+                .iter()
+                .find(|a| a.name == "process");
+            assert!(process_attr.is_some(), "Should have attribute access for 'process'");
+
+            // The base_symbol_index should point to Handler
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index,
+                handler_idx,
+                "base_symbol_index should point to Handler class"
+            );
         }
     }
 
