@@ -121,6 +121,26 @@ impl std::fmt::Display for ExportId {
     }
 }
 
+/// Unique identifier for a public export within a snapshot.
+///
+/// This is the language-agnostic export model that replaces the Python-specific
+/// `ExportId`. Use this for all new export-related functionality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct PublicExportId(pub u32);
+
+impl PublicExportId {
+    /// Create a new public export ID.
+    pub fn new(id: u32) -> Self {
+        PublicExportId(id)
+    }
+}
+
+impl std::fmt::Display for PublicExportId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "pub_exp_{}", self.0)
+    }
+}
+
 /// Unique identifier for a scope within a snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ScopeId(pub u32);
@@ -524,6 +544,79 @@ pub enum Modifier {
 }
 
 // ============================================================================
+// Export Model Types
+// ============================================================================
+
+/// The mechanism used to export a symbol.
+///
+/// Classifies the language-specific syntax used for the export. This allows
+/// consumers to handle language-specific cases while using the common
+/// `PublicExport` type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportKind {
+    /// Python `__all__` string literal.
+    PythonAll,
+    /// Rust `pub use` re-export (named).
+    RustPubUse,
+    /// Rust `pub use` glob re-export (`pub use foo::*;`).
+    RustPubUseGlob,
+    /// Rust `pub mod` (module re-export).
+    RustPubMod,
+    /// JavaScript/TypeScript export statement.
+    JsExport,
+    /// Go exported identifier (uppercase).
+    GoExported,
+}
+
+/// What kind of target this export represents.
+///
+/// Classifies the intent of the export, which affects how consumers
+/// resolve and handle it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportTarget {
+    /// A single named symbol (e.g., `pub use foo::Bar;`, `__all__ = ["foo"]`).
+    Single,
+    /// A glob export (e.g., `pub use foo::*;`).
+    Glob,
+    /// A module export (e.g., `pub mod bar;`).
+    Module,
+    /// Implicit export by naming convention (e.g., Go uppercase).
+    Implicit,
+}
+
+/// Declared vs effective export entry.
+///
+/// Distinguishes between explicit export declarations and computed
+/// public API entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportIntent {
+    /// Explicit declaration site (e.g., `__all__`, `pub use`, `export` statement).
+    Declared,
+    /// Effective public API entry (includes derived/re-exported visibility).
+    Effective,
+}
+
+/// Origin classification for exports.
+///
+/// Tracks where an exported symbol originates, enabling re-export chain
+/// reasoning and move-module refactors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportOrigin {
+    /// Exported from the same module where it is defined.
+    Local,
+    /// Exported via re-export from another module.
+    ReExport,
+    /// Exported implicitly (e.g., Go uppercase, Rust `pub` items).
+    Implicit,
+    /// Unknown or unresolved origin.
+    Unknown,
+}
+
+// ============================================================================
 // Facts Tables
 // ============================================================================
 
@@ -843,6 +936,212 @@ impl Export {
             content_span,
             name: name.into(),
         }
+    }
+}
+
+/// Language-agnostic representation of a public export.
+///
+/// This is the canonical export model for all languages. It replaces the
+/// Python-specific `Export` type and supports:
+/// - Python `__all__` entries
+/// - Rust `pub use` and `pub mod` re-exports
+/// - JavaScript/TypeScript `export` statements
+/// - Go uppercase identifier exports
+///
+/// # Span Semantics
+///
+/// For Python `__all__ = ["foo", "bar"]`:
+/// - `decl_span` covers `"foo"` (full string literal including quotes)
+/// - `exported_name_span` covers `foo` (string content only, no quotes)
+///
+/// This enables safe rename operations that preserve quote characters.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Python __all__ entry
+/// PublicExport {
+///     export_kind: ExportKind::PythonAll,
+///     export_target: ExportTarget::Single,
+///     export_intent: ExportIntent::Declared,
+///     export_origin: ExportOrigin::Local,
+///     exported_name: Some("foo".into()),
+///     source_name: Some("foo".into()),
+///     // ...
+/// }
+///
+/// // Rust pub use with alias
+/// PublicExport {
+///     export_kind: ExportKind::RustPubUse,
+///     export_target: ExportTarget::Single,
+///     export_intent: ExportIntent::Declared,
+///     export_origin: ExportOrigin::ReExport,
+///     exported_name: Some("Baz".into()),  // alias
+///     source_name: Some("Bar".into()),    // original name
+///     // ...
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicExport {
+    /// Unique identifier for this export.
+    pub export_id: PublicExportId,
+    /// The symbol being exported (if resolved).
+    ///
+    /// `None` for glob exports (`pub use foo::*;`) or unresolved exports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_id: Option<SymbolId>,
+    /// File containing this export declaration.
+    pub file_id: FileId,
+    /// Name as exported (may differ from symbol name due to aliasing).
+    ///
+    /// `None` for glob exports (`pub use foo::*;`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exported_name: Option<String>,
+    /// Original name in source (for rename operations).
+    ///
+    /// `None` for glob exports or implicit exports (e.g., Go uppercase).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_name: Option<String>,
+    /// Byte span of the entire export declaration.
+    pub decl_span: Span,
+    /// Byte span of the exported name (alias or `__all__` string content).
+    ///
+    /// For Python `__all__`, this points at the string content (no quotes).
+    /// `None` for glob/implicit exports where no explicit name exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exported_name_span: Option<Span>,
+    /// Byte span of the source/original name in the declaration.
+    ///
+    /// `None` for implicit exports or when source name is not present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_name_span: Option<Span>,
+    /// Whether this is a declared export or an effective/export-surface entry.
+    pub export_intent: ExportIntent,
+    /// Where this export originates (local vs re-export vs implicit).
+    pub export_origin: ExportOrigin,
+    /// Module that originated the export (re-export chain support).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_module_id: Option<ModuleId>,
+    /// Optional pointer to a prior export in the chain (when available).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_export_id: Option<PublicExportId>,
+    /// Kind of export mechanism (language-specific).
+    pub export_kind: ExportKind,
+    /// Target classification (single, glob, module, implicit).
+    pub export_target: ExportTarget,
+}
+
+impl PublicExport {
+    /// Create a new public export entry.
+    ///
+    /// Most fields default to `None`. Use builder methods to set them.
+    pub fn new(
+        export_id: PublicExportId,
+        file_id: FileId,
+        decl_span: Span,
+        export_kind: ExportKind,
+        export_target: ExportTarget,
+        export_intent: ExportIntent,
+        export_origin: ExportOrigin,
+    ) -> Self {
+        PublicExport {
+            export_id,
+            symbol_id: None,
+            file_id,
+            exported_name: None,
+            source_name: None,
+            decl_span,
+            exported_name_span: None,
+            source_name_span: None,
+            export_intent,
+            export_origin,
+            origin_module_id: None,
+            origin_export_id: None,
+            export_kind,
+            export_target,
+        }
+    }
+
+    /// Set the symbol ID for this export.
+    pub fn with_symbol(mut self, symbol_id: SymbolId) -> Self {
+        self.symbol_id = Some(symbol_id);
+        self
+    }
+
+    /// Set the exported name.
+    pub fn with_exported_name(mut self, name: impl Into<String>) -> Self {
+        self.exported_name = Some(name.into());
+        self
+    }
+
+    /// Set the source name.
+    pub fn with_source_name(mut self, name: impl Into<String>) -> Self {
+        self.source_name = Some(name.into());
+        self
+    }
+
+    /// Set both exported and source names to the same value.
+    ///
+    /// Use this for non-aliased exports where the name doesn't change.
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        self.exported_name = Some(name.clone());
+        self.source_name = Some(name);
+        self
+    }
+
+    /// Set the exported name span.
+    pub fn with_exported_name_span(mut self, span: Span) -> Self {
+        self.exported_name_span = Some(span);
+        self
+    }
+
+    /// Set the source name span.
+    pub fn with_source_name_span(mut self, span: Span) -> Self {
+        self.source_name_span = Some(span);
+        self
+    }
+
+    /// Set the origin module ID for re-exports.
+    pub fn with_origin_module(mut self, module_id: ModuleId) -> Self {
+        self.origin_module_id = Some(module_id);
+        self
+    }
+
+    /// Set the origin export ID for re-export chains.
+    pub fn with_origin_export(mut self, export_id: PublicExportId) -> Self {
+        self.origin_export_id = Some(export_id);
+        self
+    }
+
+    /// Check if this is a glob export.
+    pub fn is_glob(&self) -> bool {
+        self.export_target == ExportTarget::Glob
+    }
+
+    /// Check if this is a single-symbol export.
+    pub fn is_single(&self) -> bool {
+        self.export_target == ExportTarget::Single
+    }
+
+    /// Check if this is a declared export.
+    pub fn is_declared(&self) -> bool {
+        self.export_intent == ExportIntent::Declared
+    }
+
+    /// Check if this is an effective export.
+    pub fn is_effective(&self) -> bool {
+        self.export_intent == ExportIntent::Effective
+    }
+
+    /// Check if this is a re-export.
+    pub fn is_reexport(&self) -> bool {
+        self.export_origin == ExportOrigin::ReExport
+    }
+
+    /// Check if this is a local export.
+    pub fn is_local(&self) -> bool {
+        self.export_origin == ExportOrigin::Local
     }
 }
 
@@ -1593,6 +1892,16 @@ pub struct FactsStore {
     /// module_path → module resolution (for import path resolution).
     module_resolutions: BTreeMap<String, ModuleResolution>,
 
+    // Public export storage (language-agnostic)
+    /// Primary storage for public exports.
+    public_exports: BTreeMap<PublicExportId, PublicExport>,
+    /// file_id → public_export_ids[] (public exports in file).
+    public_exports_by_file: HashMap<FileId, Vec<PublicExportId>>,
+    /// exported_name → public_export_ids[] (exports with this name, for non-glob exports).
+    public_exports_by_name: HashMap<String, Vec<PublicExportId>>,
+    /// export_intent → public_export_ids[] (for filtering by declared vs effective).
+    public_exports_by_intent: HashMap<ExportIntent, Vec<PublicExportId>>,
+
     // ID generators
     next_file_id: u32,
     next_module_id: u32,
@@ -1604,6 +1913,7 @@ pub struct FactsStore {
     next_alias_edge_id: u32,
     next_attribute_access_id: u32,
     next_call_site_id: u32,
+    next_public_export_id: u32,
 }
 
 impl Default for FactsStore {
@@ -1646,6 +1956,10 @@ impl Default for FactsStore {
             qualified_names_by_path: HashMap::new(),
             symbol_modifiers: BTreeMap::new(),
             module_resolutions: BTreeMap::new(),
+            public_exports: BTreeMap::new(),
+            public_exports_by_file: HashMap::new(),
+            public_exports_by_name: HashMap::new(),
+            public_exports_by_intent: HashMap::new(),
             next_file_id: 0,
             next_module_id: 0,
             next_symbol_id: 0,
@@ -1656,6 +1970,7 @@ impl Default for FactsStore {
             next_alias_edge_id: 0,
             next_attribute_access_id: 0,
             next_call_site_id: 0,
+            next_public_export_id: 0,
         }
     }
 }
@@ -1739,6 +2054,13 @@ impl FactsStore {
     pub fn next_call_site_id(&mut self) -> CallSiteId {
         let id = CallSiteId::new(self.next_call_site_id);
         self.next_call_site_id += 1;
+        id
+    }
+
+    /// Generate the next PublicExportId.
+    pub fn next_public_export_id(&mut self) -> PublicExportId {
+        let id = PublicExportId::new(self.next_public_export_id);
+        self.next_public_export_id += 1;
         id
     }
 
@@ -1975,6 +2297,37 @@ impl FactsStore {
         self.symbol_modifiers.insert(modifiers.symbol_id, modifiers);
     }
 
+    /// Insert a public export.
+    ///
+    /// Updates all relevant indexes for efficient lookup:
+    /// - `public_exports_by_file`: file → export IDs
+    /// - `public_exports_by_name`: exported_name → export IDs (for non-glob exports)
+    /// - `public_exports_by_intent`: intent → export IDs
+    pub fn insert_public_export(&mut self, export: PublicExport) {
+        // Update file index
+        self.public_exports_by_file
+            .entry(export.file_id)
+            .or_default()
+            .push(export.export_id);
+
+        // Update name index (only for non-glob exports with an exported_name)
+        if let Some(ref name) = export.exported_name {
+            self.public_exports_by_name
+                .entry(name.clone())
+                .or_default()
+                .push(export.export_id);
+        }
+
+        // Update intent index
+        self.public_exports_by_intent
+            .entry(export.export_intent)
+            .or_default()
+            .push(export.export_id);
+
+        // Insert into primary storage
+        self.public_exports.insert(export.export_id, export);
+    }
+
     // ========================================================================
     // Lookup by ID
     // ========================================================================
@@ -2007,6 +2360,11 @@ impl FactsStore {
     /// Get an export by ID.
     pub fn export(&self, id: ExportId) -> Option<&Export> {
         self.exports.get(&id)
+    }
+
+    /// Get a public export by ID.
+    pub fn public_export(&self, id: PublicExportId) -> Option<&PublicExport> {
+        self.public_exports.get(&id)
     }
 
     /// Get a scope by ID.
@@ -2169,6 +2527,69 @@ impl FactsStore {
                 exports
             })
             .unwrap_or_default()
+    }
+
+    /// Get all public exports in a file.
+    ///
+    /// Returns exports in deterministic order (by PublicExportId).
+    pub fn public_exports_in_file(&self, file_id: FileId) -> Vec<&PublicExport> {
+        self.public_exports_by_file
+            .get(&file_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.public_exports.get(id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all public exports with a given exported name.
+    ///
+    /// Returns exports in deterministic order (by PublicExportId).
+    /// This is the primary method for finding exports to rename.
+    ///
+    /// Note: Glob exports (which have no exported_name) will not appear in these results.
+    pub fn public_exports_named(&self, name: &str) -> Vec<&PublicExport> {
+        self.public_exports_by_name
+            .get(name)
+            .map(|ids| {
+                let mut exports: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.public_exports.get(id))
+                    .collect();
+                exports.sort_by_key(|e| e.export_id);
+                exports
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all public exports with a given intent (Declared or Effective).
+    ///
+    /// Returns exports in deterministic order (by PublicExportId).
+    pub fn public_exports_with_intent(&self, intent: ExportIntent) -> Vec<&PublicExport> {
+        self.public_exports_by_intent
+            .get(&intent)
+            .map(|ids| {
+                let mut exports: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.public_exports.get(id))
+                    .collect();
+                exports.sort_by_key(|e| e.export_id);
+                exports
+            })
+            .unwrap_or_default()
+    }
+
+    /// Iterate over all public exports in deterministic order.
+    ///
+    /// Returns an iterator over (PublicExportId, &PublicExport) pairs.
+    pub fn public_exports(&self) -> impl Iterator<Item = &PublicExport> {
+        self.public_exports.values()
+    }
+
+    /// Get the count of public exports.
+    pub fn public_export_count(&self) -> usize {
+        self.public_exports.len()
     }
 
     /// Get all symbols with a given name.
@@ -2655,6 +3076,7 @@ impl FactsStore {
         self.symbols.clear();
         self.references.clear();
         self.imports.clear();
+        self.exports.clear();
         self.scopes.clear();
 
         self.types.clear();
@@ -2672,6 +3094,8 @@ impl FactsStore {
         self.symbols_by_file.clear();
         self.refs_by_file.clear();
         self.scopes_by_file.clear();
+        self.exports_by_file.clear();
+        self.exports_by_name.clear();
 
         self.alias_edges.clear();
         self.alias_edges_by_file.clear();
@@ -2691,6 +3115,11 @@ impl FactsStore {
         self.symbol_modifiers.clear();
 
         self.module_resolutions.clear();
+
+        self.public_exports.clear();
+        self.public_exports_by_file.clear();
+        self.public_exports_by_name.clear();
+        self.public_exports_by_intent.clear();
 
         // Note: We don't reset ID generators to preserve uniqueness
     }
@@ -6492,6 +6921,504 @@ mod tests {
 
             assert_eq!(store.module_resolution_count(), 0);
             assert!(store.module_ids_for_path("pkg.a").is_empty());
+        }
+    }
+
+    /// Tests for PublicExport types and FactsStore operations.
+    mod public_export_tests {
+        use super::*;
+
+        #[test]
+        fn public_export_id_display() {
+            let id = PublicExportId::new(42);
+            assert_eq!(format!("{}", id), "pub_exp_42");
+        }
+
+        #[test]
+        fn export_kind_serialization() {
+            let kind = ExportKind::PythonAll;
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, r#""python_all""#);
+
+            let kind = ExportKind::RustPubUse;
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, r#""rust_pub_use""#);
+
+            let kind = ExportKind::RustPubUseGlob;
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, r#""rust_pub_use_glob""#);
+
+            let kind = ExportKind::GoExported;
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, r#""go_exported""#);
+        }
+
+        #[test]
+        fn export_target_serialization() {
+            let target = ExportTarget::Single;
+            let json = serde_json::to_string(&target).unwrap();
+            assert_eq!(json, r#""single""#);
+
+            let target = ExportTarget::Glob;
+            let json = serde_json::to_string(&target).unwrap();
+            assert_eq!(json, r#""glob""#);
+
+            let target = ExportTarget::Module;
+            let json = serde_json::to_string(&target).unwrap();
+            assert_eq!(json, r#""module""#);
+
+            let target = ExportTarget::Implicit;
+            let json = serde_json::to_string(&target).unwrap();
+            assert_eq!(json, r#""implicit""#);
+        }
+
+        #[test]
+        fn export_intent_serialization() {
+            let intent = ExportIntent::Declared;
+            let json = serde_json::to_string(&intent).unwrap();
+            assert_eq!(json, r#""declared""#);
+
+            let intent = ExportIntent::Effective;
+            let json = serde_json::to_string(&intent).unwrap();
+            assert_eq!(json, r#""effective""#);
+        }
+
+        #[test]
+        fn export_origin_serialization() {
+            let origin = ExportOrigin::Local;
+            let json = serde_json::to_string(&origin).unwrap();
+            assert_eq!(json, r#""local""#);
+
+            let origin = ExportOrigin::ReExport;
+            let json = serde_json::to_string(&origin).unwrap();
+            assert_eq!(json, r#""re_export""#);
+
+            let origin = ExportOrigin::Implicit;
+            let json = serde_json::to_string(&origin).unwrap();
+            assert_eq!(json, r#""implicit""#);
+
+            let origin = ExportOrigin::Unknown;
+            let json = serde_json::to_string(&origin).unwrap();
+            assert_eq!(json, r#""unknown""#);
+        }
+
+        #[test]
+        fn public_export_crud() {
+            let mut store = FactsStore::new();
+
+            // Create a file for the export
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(b"test"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            // Create a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Function,
+                "my_func",
+                file_id,
+                Span::new(0, 10),
+            );
+            store.insert_symbol(symbol);
+
+            // Create a public export
+            let export_id = store.next_public_export_id();
+            let export = PublicExport::new(
+                export_id,
+                file_id,
+                Span::new(100, 110),
+                ExportKind::PythonAll,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::Local,
+            )
+            .with_symbol(symbol_id)
+            .with_name("my_func")
+            .with_exported_name_span(Span::new(101, 109));
+
+            store.insert_public_export(export);
+
+            // Lookup by ID
+            let retrieved = store.public_export(export_id).unwrap();
+            assert_eq!(retrieved.export_id, export_id);
+            assert_eq!(retrieved.symbol_id, Some(symbol_id));
+            assert_eq!(retrieved.exported_name, Some("my_func".to_string()));
+            assert_eq!(retrieved.source_name, Some("my_func".to_string()));
+            assert_eq!(retrieved.export_kind, ExportKind::PythonAll);
+            assert_eq!(retrieved.export_target, ExportTarget::Single);
+            assert_eq!(retrieved.export_intent, ExportIntent::Declared);
+            assert_eq!(retrieved.export_origin, ExportOrigin::Local);
+            assert!(retrieved.is_declared());
+            assert!(retrieved.is_local());
+            assert!(retrieved.is_single());
+            assert!(!retrieved.is_glob());
+        }
+
+        #[test]
+        fn public_exports_query_by_name() {
+            let mut store = FactsStore::new();
+
+            let file_id = store.next_file_id();
+            store.insert_file(File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(b"test"),
+                Language::Python,
+            ));
+
+            // Insert multiple exports with same name
+            let export1_id = store.next_public_export_id();
+            let export1 = PublicExport::new(
+                export1_id,
+                file_id,
+                Span::new(0, 10),
+                ExportKind::PythonAll,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::Local,
+            )
+            .with_name("foo");
+            store.insert_public_export(export1);
+
+            let export2_id = store.next_public_export_id();
+            let export2 = PublicExport::new(
+                export2_id,
+                file_id,
+                Span::new(20, 30),
+                ExportKind::PythonAll,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::Local,
+            )
+            .with_name("foo");
+            store.insert_public_export(export2);
+
+            let export3_id = store.next_public_export_id();
+            let export3 = PublicExport::new(
+                export3_id,
+                file_id,
+                Span::new(40, 50),
+                ExportKind::PythonAll,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::Local,
+            )
+            .with_name("bar");
+            store.insert_public_export(export3);
+
+            // Query by name
+            let foo_exports = store.public_exports_named("foo");
+            assert_eq!(foo_exports.len(), 2);
+            assert_eq!(foo_exports[0].export_id, export1_id);
+            assert_eq!(foo_exports[1].export_id, export2_id);
+
+            let bar_exports = store.public_exports_named("bar");
+            assert_eq!(bar_exports.len(), 1);
+            assert_eq!(bar_exports[0].export_id, export3_id);
+
+            let baz_exports = store.public_exports_named("baz");
+            assert!(baz_exports.is_empty());
+        }
+
+        #[test]
+        fn public_exports_query_by_file() {
+            let mut store = FactsStore::new();
+
+            let file1_id = store.next_file_id();
+            store.insert_file(File::new(
+                file1_id,
+                "test1.py",
+                ContentHash::compute(b"test"),
+                Language::Python,
+            ));
+
+            let file2_id = store.next_file_id();
+            store.insert_file(File::new(
+                file2_id,
+                "test2.py",
+                ContentHash::compute(b"test2"),
+                Language::Python,
+            ));
+
+            // Insert exports in different files
+            let export1_id = store.next_public_export_id();
+            store.insert_public_export(
+                PublicExport::new(
+                    export1_id,
+                    file1_id,
+                    Span::new(0, 10),
+                    ExportKind::PythonAll,
+                    ExportTarget::Single,
+                    ExportIntent::Declared,
+                    ExportOrigin::Local,
+                )
+                .with_name("foo"),
+            );
+
+            let export2_id = store.next_public_export_id();
+            store.insert_public_export(
+                PublicExport::new(
+                    export2_id,
+                    file2_id,
+                    Span::new(0, 10),
+                    ExportKind::PythonAll,
+                    ExportTarget::Single,
+                    ExportIntent::Declared,
+                    ExportOrigin::Local,
+                )
+                .with_name("bar"),
+            );
+
+            // Query by file
+            let file1_exports = store.public_exports_in_file(file1_id);
+            assert_eq!(file1_exports.len(), 1);
+            assert_eq!(file1_exports[0].export_id, export1_id);
+
+            let file2_exports = store.public_exports_in_file(file2_id);
+            assert_eq!(file2_exports.len(), 1);
+            assert_eq!(file2_exports[0].export_id, export2_id);
+
+            // Unknown file returns empty
+            let unknown_id = FileId::new(999);
+            assert!(store.public_exports_in_file(unknown_id).is_empty());
+        }
+
+        #[test]
+        fn public_exports_query_by_intent() {
+            let mut store = FactsStore::new();
+
+            let file_id = store.next_file_id();
+            store.insert_file(File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(b"test"),
+                Language::Python,
+            ));
+
+            // Insert declared export
+            let declared_id = store.next_public_export_id();
+            store.insert_public_export(
+                PublicExport::new(
+                    declared_id,
+                    file_id,
+                    Span::new(0, 10),
+                    ExportKind::PythonAll,
+                    ExportTarget::Single,
+                    ExportIntent::Declared,
+                    ExportOrigin::Local,
+                )
+                .with_name("foo"),
+            );
+
+            // Insert effective export
+            let effective_id = store.next_public_export_id();
+            store.insert_public_export(
+                PublicExport::new(
+                    effective_id,
+                    file_id,
+                    Span::new(20, 30),
+                    ExportKind::GoExported,
+                    ExportTarget::Implicit,
+                    ExportIntent::Effective,
+                    ExportOrigin::Implicit,
+                )
+                .with_name("Bar"),
+            );
+
+            // Query by intent
+            let declared = store.public_exports_with_intent(ExportIntent::Declared);
+            assert_eq!(declared.len(), 1);
+            assert_eq!(declared[0].export_id, declared_id);
+
+            let effective = store.public_exports_with_intent(ExportIntent::Effective);
+            assert_eq!(effective.len(), 1);
+            assert_eq!(effective[0].export_id, effective_id);
+        }
+
+        #[test]
+        fn public_export_glob_not_in_name_index() {
+            let mut store = FactsStore::new();
+
+            let file_id = store.next_file_id();
+            store.insert_file(File::new(
+                file_id,
+                "test.rs",
+                ContentHash::compute(b"test"),
+                Language::Rust,
+            ));
+
+            // Insert a glob export (no exported_name)
+            let glob_id = store.next_public_export_id();
+            store.insert_public_export(PublicExport::new(
+                glob_id,
+                file_id,
+                Span::new(0, 20),
+                ExportKind::RustPubUseGlob,
+                ExportTarget::Glob,
+                ExportIntent::Declared,
+                ExportOrigin::ReExport,
+            ));
+
+            // Glob should be findable by file and iterator
+            let file_exports = store.public_exports_in_file(file_id);
+            assert_eq!(file_exports.len(), 1);
+            assert!(file_exports[0].is_glob());
+
+            // But not by name (no exported_name)
+            // The name index only contains non-glob exports
+            assert_eq!(store.public_export_count(), 1);
+        }
+
+        #[test]
+        fn public_export_iterator() {
+            let mut store = FactsStore::new();
+
+            let file_id = store.next_file_id();
+            store.insert_file(File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(b"test"),
+                Language::Python,
+            ));
+
+            for i in 0..5 {
+                let id = store.next_public_export_id();
+                store.insert_public_export(
+                    PublicExport::new(
+                        id,
+                        file_id,
+                        Span::new(i * 10, i * 10 + 5),
+                        ExportKind::PythonAll,
+                        ExportTarget::Single,
+                        ExportIntent::Declared,
+                        ExportOrigin::Local,
+                    )
+                    .with_name(format!("name_{}", i)),
+                );
+            }
+
+            // Iterator should return all exports
+            let all: Vec<_> = store.public_exports().collect();
+            assert_eq!(all.len(), 5);
+
+            // Count should match
+            assert_eq!(store.public_export_count(), 5);
+        }
+
+        #[test]
+        fn public_export_clear() {
+            let mut store = FactsStore::new();
+
+            let file_id = store.next_file_id();
+            store.insert_file(File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(b"test"),
+                Language::Python,
+            ));
+
+            let export_id = store.next_public_export_id();
+            store.insert_public_export(
+                PublicExport::new(
+                    export_id,
+                    file_id,
+                    Span::new(0, 10),
+                    ExportKind::PythonAll,
+                    ExportTarget::Single,
+                    ExportIntent::Declared,
+                    ExportOrigin::Local,
+                )
+                .with_name("foo"),
+            );
+
+            assert_eq!(store.public_export_count(), 1);
+
+            store.clear();
+
+            assert_eq!(store.public_export_count(), 0);
+            assert!(store.public_export(export_id).is_none());
+            assert!(store.public_exports_named("foo").is_empty());
+        }
+
+        #[test]
+        fn public_export_builder_methods() {
+            let export_id = PublicExportId::new(1);
+            let file_id = FileId::new(1);
+            let symbol_id = SymbolId::new(1);
+            let module_id = ModuleId::new(1);
+            let origin_export_id = PublicExportId::new(0);
+
+            let export = PublicExport::new(
+                export_id,
+                file_id,
+                Span::new(0, 100),
+                ExportKind::RustPubUse,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::ReExport,
+            )
+            .with_symbol(symbol_id)
+            .with_exported_name("Alias")
+            .with_source_name("Original")
+            .with_exported_name_span(Span::new(10, 15))
+            .with_source_name_span(Span::new(20, 28))
+            .with_origin_module(module_id)
+            .with_origin_export(origin_export_id);
+
+            assert_eq!(export.symbol_id, Some(symbol_id));
+            assert_eq!(export.exported_name, Some("Alias".to_string()));
+            assert_eq!(export.source_name, Some("Original".to_string()));
+            assert_eq!(export.exported_name_span, Some(Span::new(10, 15)));
+            assert_eq!(export.source_name_span, Some(Span::new(20, 28)));
+            assert_eq!(export.origin_module_id, Some(module_id));
+            assert_eq!(export.origin_export_id, Some(origin_export_id));
+            assert!(export.is_reexport());
+        }
+
+        #[test]
+        fn public_export_helper_methods() {
+            let export_id = PublicExportId::new(1);
+            let file_id = FileId::new(1);
+
+            // Test glob export
+            let glob = PublicExport::new(
+                export_id,
+                file_id,
+                Span::new(0, 10),
+                ExportKind::RustPubUseGlob,
+                ExportTarget::Glob,
+                ExportIntent::Declared,
+                ExportOrigin::ReExport,
+            );
+            assert!(glob.is_glob());
+            assert!(!glob.is_single());
+            assert!(glob.is_declared());
+            assert!(!glob.is_effective());
+            assert!(glob.is_reexport());
+            assert!(!glob.is_local());
+
+            // Test effective local export
+            let effective = PublicExport::new(
+                export_id,
+                file_id,
+                Span::new(0, 10),
+                ExportKind::GoExported,
+                ExportTarget::Implicit,
+                ExportIntent::Effective,
+                ExportOrigin::Local,
+            );
+            assert!(!effective.is_glob());
+            assert!(!effective.is_single());
+            assert!(!effective.is_declared());
+            assert!(effective.is_effective());
+            assert!(!effective.is_reexport());
+            assert!(effective.is_local());
         }
     }
 }

@@ -6,6 +6,70 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 3: Add PublicExport Type | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 3 specification (lines 3069-3119)
+- [D03] PublicExport for Language-Agnostic Exports (lines 452-589)
+- [D10] ExportTarget Classification (lines 962-990)
+- Concept C01: What is an "Export" (lines 1236-1290)
+- `crates/tugtool-core/src/facts/mod.rs` - existing FactsStore patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `PublicExportId` newtype with Display impl | Done |
+| Add `ExportKind` enum (PythonAll, RustPubUse, RustPubUseGlob, RustPubMod, JsExport, GoExported) | Done |
+| Add `ExportTarget` enum (Single, Glob, Module, Implicit) | Done |
+| Add `ExportIntent` enum (Declared, Effective) | Done |
+| Add `ExportOrigin` enum (Local, ReExport, Implicit, Unknown) | Done |
+| Add `PublicExport` struct with precise spans and origin/intent fields | Done |
+| Add `public_exports: BTreeMap<PublicExportId, PublicExport>` to FactsStore | Done |
+| Add `public_exports_by_file: HashMap<FileId, Vec<PublicExportId>>` index | Done |
+| Add `public_exports_by_name: HashMap<String, Vec<PublicExportId>>` index | Done |
+| Add `public_exports_by_intent: HashMap<ExportIntent, Vec<PublicExportId>>` index | Done |
+| Add `next_public_export_id()` generator | Done |
+| Add `insert_public_export()` method | Done |
+| Add `public_export()` lookup by ID | Done |
+| Add `public_exports_in_file()` query | Done |
+| Add `public_exports_named()` query | Done |
+| Add `public_exports_with_intent()` query | Done |
+| Add `public_exports()` iterator | Done |
+| Add `public_export_count()` method | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `PublicExportId` newtype with Display impl (`pub_exp_{id}` format)
+  - Added `ExportKind`, `ExportTarget`, `ExportIntent`, `ExportOrigin` enums
+  - Added `PublicExport` struct with precise spans and builder methods
+  - Added FactsStore storage fields and indexes
+  - Added ID generator, insert method, and query methods
+  - Updated `Default::default()` and `clear()` for new storage
+  - Added 14 unit tests in `public_export_tests` module
+  - Fixed existing `clear()` to also clear legacy exports storage (was missing)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core public_export`: 14 tests passed
+- `cargo nextest run -p tugtool-core`: 411 tests passed
+- `cargo nextest run --workspace`: 1478 tests passed
+- `cargo clippy -p tugtool-core`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core public_export`: PASS (14 tests)
+- `cargo build -p tugtool-python`: PASS (legacy Export still exists)
+
+**Key Decisions/Notes:**
+- `PublicExport` includes comprehensive builder methods (`with_symbol`, `with_name`, `with_exported_name_span`, etc.) for ergonomic construction
+- Helper methods (`is_glob`, `is_declared`, `is_reexport`, `is_local`) added for common queries
+- The `public_exports_by_name` index only includes non-glob exports (glob exports have no exported_name)
+- Fixed a bug where existing `clear()` method was not clearing legacy `exports`, `exports_by_file`, and `exports_by_name` storage
+- This step coexists with legacy `Export` type; removal happens in Step 3c after migration
+
+---
+
 ## [phase-11.md] Step 2.7e: Add Module Resolution Map | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

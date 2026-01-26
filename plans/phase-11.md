@@ -3083,35 +3083,35 @@ This step is split into 5 sub-steps for manageable commits:
 - FactsStore storage and queries for PublicExport
 
 **Tasks:**
-- [ ] Add `PublicExportId` newtype with Display impl
-- [ ] Add `ExportKind` enum (PythonAll, RustPubUse, RustPubUseGlob, RustPubMod, JsExport, GoExported)
-- [ ] Add `ExportTarget` enum (Single, Glob, Module, Implicit)
-- [ ] Add `ExportIntent` enum (Declared, Effective)
-- [ ] Add `ExportOrigin` enum (Local, ReExport, Implicit, Unknown)
-- [ ] Add `PublicExport` struct with precise spans and origin/intent fields
-- [ ] Add `public_exports: BTreeMap<PublicExportId, PublicExport>` to FactsStore
-- [ ] Add `public_exports_by_file: HashMap<FileId, Vec<PublicExportId>>` index
-- [ ] Add `public_exports_by_name: HashMap<String, Vec<PublicExportId>>` index (only for non-glob exports)
-- [ ] Add `public_exports_by_intent: HashMap<ExportIntent, Vec<PublicExportId>>` index
-- [ ] Add `next_public_export_id()` generator
-- [ ] Add `insert_public_export()` method
-- [ ] Add `public_export()` lookup by ID
-- [ ] Add `public_exports_in_file()` query
-- [ ] Add `public_exports_named()` query
-- [ ] Add `public_exports_with_intent()` query
-- [ ] Add `public_exports()` iterator
+- [x] Add `PublicExportId` newtype with Display impl
+- [x] Add `ExportKind` enum (PythonAll, RustPubUse, RustPubUseGlob, RustPubMod, JsExport, GoExported)
+- [x] Add `ExportTarget` enum (Single, Glob, Module, Implicit)
+- [x] Add `ExportIntent` enum (Declared, Effective)
+- [x] Add `ExportOrigin` enum (Local, ReExport, Implicit, Unknown)
+- [x] Add `PublicExport` struct with precise spans and origin/intent fields
+- [x] Add `public_exports: BTreeMap<PublicExportId, PublicExport>` to FactsStore
+- [x] Add `public_exports_by_file: HashMap<FileId, Vec<PublicExportId>>` index
+- [x] Add `public_exports_by_name: HashMap<String, Vec<PublicExportId>>` index (only for non-glob exports)
+- [x] Add `public_exports_by_intent: HashMap<ExportIntent, Vec<PublicExportId>>` index
+- [x] Add `next_public_export_id()` generator
+- [x] Add `insert_public_export()` method
+- [x] Add `public_export()` lookup by ID
+- [x] Add `public_exports_in_file()` query
+- [x] Add `public_exports_named()` query
+- [x] Add `public_exports_with_intent()` query
+- [x] Add `public_exports()` iterator
 
 **Tests:**
-- [ ] Unit: PublicExport CRUD operations
-- [ ] Unit: ExportKind serialization
-- [ ] Unit: ExportTarget serialization
-- [ ] Unit: ExportIntent serialization
-- [ ] Unit: ExportOrigin serialization
-- [ ] Unit: Query by name returns correct exports
+- [x] Unit: PublicExport CRUD operations
+- [x] Unit: ExportKind serialization
+- [x] Unit: ExportTarget serialization
+- [x] Unit: ExportIntent serialization
+- [x] Unit: ExportOrigin serialization
+- [x] Unit: Query by name returns correct exports
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core public_export`
-- [ ] `cargo build -p tugtool-python` (compiles, legacy Export still exists)
+- [x] `cargo nextest run -p tugtool-core public_export`
+- [x] `cargo build -p tugtool-python` (compiles, legacy Export still exists)
 
 **Rollback:**
 - Revert commit
