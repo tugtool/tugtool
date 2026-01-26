@@ -201,7 +201,6 @@ impl Scope {
     pub fn is_nonlocal(&self, name: &str) -> bool {
         self.nonlocals.contains(name)
     }
-
 }
 
 // ============================================================================
@@ -608,8 +607,7 @@ pub fn analyze_files(
             // Use scope span from native analysis (default to 0,0 if not available)
             let span = scope.span.unwrap_or_else(|| Span::new(0, 0));
 
-            let mut core_scope =
-                CoreScopeInfo::new(core_scope_id, file_id, span, scope.kind);
+            let mut core_scope = CoreScopeInfo::new(core_scope_id, file_id, span, scope.kind);
             if let Some(parent_id) = parent_core_id {
                 core_scope = core_scope.with_parent(parent_id);
             }
@@ -6242,9 +6240,7 @@ mod tests {
 
             // Should have a comprehension scope
             let scopes: Vec<_> = store.scopes().collect();
-            let comprehension_scope = scopes
-                .iter()
-                .find(|s| s.kind == ScopeKind::Comprehension);
+            let comprehension_scope = scopes.iter().find(|s| s.kind == ScopeKind::Comprehension);
             assert!(
                 comprehension_scope.is_some(),
                 "should have comprehension scope"

@@ -3065,11 +3065,26 @@ mod tests {
 
         #[test]
         fn visibility_serializes_to_snake_case() {
-            assert_eq!(serde_json::to_string(&Visibility::Public).unwrap(), "\"public\"");
-            assert_eq!(serde_json::to_string(&Visibility::Crate).unwrap(), "\"crate\"");
-            assert_eq!(serde_json::to_string(&Visibility::Module).unwrap(), "\"module\"");
-            assert_eq!(serde_json::to_string(&Visibility::Private).unwrap(), "\"private\"");
-            assert_eq!(serde_json::to_string(&Visibility::Protected).unwrap(), "\"protected\"");
+            assert_eq!(
+                serde_json::to_string(&Visibility::Public).unwrap(),
+                "\"public\""
+            );
+            assert_eq!(
+                serde_json::to_string(&Visibility::Crate).unwrap(),
+                "\"crate\""
+            );
+            assert_eq!(
+                serde_json::to_string(&Visibility::Module).unwrap(),
+                "\"module\""
+            );
+            assert_eq!(
+                serde_json::to_string(&Visibility::Private).unwrap(),
+                "\"private\""
+            );
+            assert_eq!(
+                serde_json::to_string(&Visibility::Protected).unwrap(),
+                "\"protected\""
+            );
         }
 
         #[test]
@@ -3093,8 +3108,8 @@ mod tests {
             let file = test_file(&mut store, "test.rs");
             let file_id = file.file_id;
 
-            let symbol = test_symbol(&mut store, "bar", file_id, 0)
-                .with_visibility(Visibility::Public);
+            let symbol =
+                test_symbol(&mut store, "bar", file_id, 0).with_visibility(Visibility::Public);
             assert_eq!(symbol.visibility, Some(Visibility::Public));
 
             // When serialized, visibility should appear in JSON
