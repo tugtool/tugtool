@@ -248,6 +248,8 @@ pub enum ReferenceKind {
     TypeAnnotation,
     /// Assignment target (write).
     Write,
+    /// Delete expression (e.g., Python `del`).
+    Delete,
 }
 
 impl ReferenceKind {
@@ -257,6 +259,7 @@ impl ReferenceKind {
     /// Internal kinds that don't map directly are converted to the closest equivalent:
     /// - `TypeAnnotation` → `"reference"` (type annotations are a form of reference)
     /// - `Write` → `"reference"` (writes are references with assignment)
+    /// - `Delete` → `"reference"` (deletes are write-like operations)
     pub fn to_output_kind(&self) -> &'static str {
         match self {
             ReferenceKind::Definition => "definition",
@@ -267,6 +270,7 @@ impl ReferenceKind {
             // Map internal-only kinds to spec-compliant equivalents
             ReferenceKind::TypeAnnotation => "reference",
             ReferenceKind::Write => "reference",
+            ReferenceKind::Delete => "reference",
         }
     }
 }
@@ -2428,6 +2432,70 @@ mod tests {
             assert_eq!(store.scope(func_id).unwrap().parent, Some(class_id));
             assert_eq!(store.scope(class_id).unwrap().parent, Some(module_id));
             assert_eq!(store.scope(module_id).unwrap().parent, None);
+        }
+    }
+
+    mod reference_kind_tests {
+        use super::*;
+
+        #[test]
+        fn reference_kind_delete_serialization() {
+            // Test that Delete variant serializes correctly
+            let json = serde_json::to_string(&ReferenceKind::Delete).unwrap();
+            assert_eq!(json, "\"delete\"");
+        }
+
+        #[test]
+        fn reference_kind_delete_deserialization() {
+            // Test that Delete variant deserializes correctly
+            let deserialized: ReferenceKind = serde_json::from_str("\"delete\"").unwrap();
+            assert_eq!(deserialized, ReferenceKind::Delete);
+        }
+
+        #[test]
+        fn reference_kind_delete_to_output_kind() {
+            // Per [D14]: Delete maps to "reference" for output compatibility
+            assert_eq!(ReferenceKind::Delete.to_output_kind(), "reference");
+        }
+
+        #[test]
+        fn reference_kind_serialization_roundtrip() {
+            // Test all variants serialize and deserialize correctly
+            let all_kinds = [
+                ReferenceKind::Definition,
+                ReferenceKind::Call,
+                ReferenceKind::Reference,
+                ReferenceKind::Import,
+                ReferenceKind::Attribute,
+                ReferenceKind::TypeAnnotation,
+                ReferenceKind::Write,
+                ReferenceKind::Delete,
+            ];
+
+            for kind in all_kinds {
+                let json = serde_json::to_string(&kind).unwrap();
+                let deserialized: ReferenceKind = serde_json::from_str(&json).unwrap();
+                assert_eq!(kind, deserialized, "Roundtrip failed for {:?}", kind);
+            }
+        }
+
+        #[test]
+        fn reference_kind_to_output_kind_all_variants() {
+            // Test all variants map to expected output kinds
+            assert_eq!(ReferenceKind::Definition.to_output_kind(), "definition");
+            assert_eq!(ReferenceKind::Call.to_output_kind(), "call");
+            assert_eq!(ReferenceKind::Reference.to_output_kind(), "reference");
+            assert_eq!(ReferenceKind::Import.to_output_kind(), "import");
+            assert_eq!(ReferenceKind::Attribute.to_output_kind(), "attribute");
+            // Internal kinds map to "reference"
+            assert_eq!(ReferenceKind::TypeAnnotation.to_output_kind(), "reference");
+            assert_eq!(ReferenceKind::Write.to_output_kind(), "reference");
+            assert_eq!(ReferenceKind::Delete.to_output_kind(), "reference");
+        }
+
+        #[test]
+        fn reference_kind_default() {
+            assert_eq!(ReferenceKind::default(), ReferenceKind::Reference);
         }
     }
 

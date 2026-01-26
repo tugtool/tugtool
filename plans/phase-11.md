@@ -2772,17 +2772,17 @@ fn visibility_inference_public_dunder() {
 - Output mapping for Delete
 
 **Tasks:**
-- [ ] Add `Delete` variant to `facts::ReferenceKind`
-- [ ] Update `ReferenceKind::to_output_kind()` to map `Delete` → `"reference"`
-- [ ] Update any exhaustive `ReferenceKind` matches in core code
-- [ ] Add/Update tests for ReferenceKind serialization and output mapping
+- [x] Add `Delete` variant to `facts::ReferenceKind`
+- [x] Update `ReferenceKind::to_output_kind()` to map `Delete` → `"reference"`
+- [x] Update any exhaustive `ReferenceKind` matches in core code
+- [x] Add/Update tests for ReferenceKind serialization and output mapping
 
 **Tests:**
-- [ ] Unit: `ReferenceKind::Delete` serialization
-- [ ] Unit: `ReferenceKind::Delete` maps to output kind `"reference"`
+- [x] Unit: `ReferenceKind::Delete` serialization
+- [x] Unit: `ReferenceKind::Delete` maps to output kind `"reference"`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core reference_kind`
+- [x] `cargo nextest run -p tugtool-core reference_kind`
 
 **Rollback:**
 - Revert commit

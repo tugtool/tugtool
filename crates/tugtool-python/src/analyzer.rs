@@ -2960,6 +2960,7 @@ fn reference_kind_from_str(kind: &str) -> ReferenceKind {
         "import" => ReferenceKind::Import,
         "attribute" => ReferenceKind::Attribute,
         "write" => ReferenceKind::Write,
+        "delete" => ReferenceKind::Delete,
         _ => ReferenceKind::Reference,
     }
 }
@@ -3333,6 +3334,7 @@ mod tests {
                 ReferenceKind::Attribute
             );
             assert_eq!(reference_kind_from_str("write"), ReferenceKind::Write);
+            assert_eq!(reference_kind_from_str("delete"), ReferenceKind::Delete);
             assert_eq!(reference_kind_from_str("unknown"), ReferenceKind::Reference);
         }
     }

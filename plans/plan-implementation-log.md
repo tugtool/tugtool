@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.6: Generalize ReferenceKind | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- [D14] ReferenceKind Generalization (lines 1093-1117 of phase-11.md)
+- Step 2.6 task list (lines 2764-2790 of phase-11.md)
+- Current `ReferenceKind` enum and `to_output_kind()` in `facts/mod.rs`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `Delete` variant to `facts::ReferenceKind` | Done |
+| Update `ReferenceKind::to_output_kind()` to map `Delete` → `"reference"` | Done |
+| Update any exhaustive `ReferenceKind` matches in core code | Done |
+| Add/Update tests for ReferenceKind serialization and output mapping | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `Delete` variant to `ReferenceKind` enum with doc comment
+  - Updated `to_output_kind()` match to handle `Delete` → `"reference"`
+  - Updated doc comment to document the Delete mapping
+  - Added new `reference_kind_tests` module with 6 tests:
+    - `reference_kind_delete_serialization`
+    - `reference_kind_delete_deserialization`
+    - `reference_kind_delete_to_output_kind`
+    - `reference_kind_serialization_roundtrip`
+    - `reference_kind_to_output_kind_all_variants`
+    - `reference_kind_default`
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated `reference_kind_from_str()` to handle "delete" → `ReferenceKind::Delete`
+  - Added test case for delete in `reference_kind_conversion` test
+
+- `plans/phase-11.md`:
+  - Checked off all tasks, tests, and checkpoint for Step 2.6
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core reference_kind`: 7 tests passed
+- `cargo nextest run -p tugtool-python reference_kind`: 2 tests passed
+- `cargo nextest run --workspace`: 1386 tests passed
+- `cargo clippy --workspace`: clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core reference_kind`: PASS (7 tests)
+
+**Key Decisions/Notes:**
+- Per [D14], `Delete` maps to `"reference"` for output compatibility since the JSON output schema does not include "delete" as a valid kind
+- Also updated Python analyzer's `reference_kind_from_str()` to support parsing "delete" references from CST, ensuring future Python `del` statement analysis can be integrated
+
+---
+
 ## [phase-11.md] Step 2.5: Generalize Import and ModuleKind | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25
