@@ -26,10 +26,14 @@ use tugtool_python_cst::{
     AnnotationCollector,
     AnnotationInfo as CstAnnotationInfo,
     AssignmentInfo as CstAssignmentInfo,
+    AttributeAccessCollector,
+    AttributeAccessInfo as CstAttributeAccessInfo,
     // P0 visitors
     BindingCollector,
     BindingInfo as CstBindingInfo,
     BindingKind as CstBindingKind,
+    CallSiteCollector,
+    CallSiteInfo as CstCallSiteInfo,
     ClassInheritanceInfo as CstClassInheritanceInfo,
     // P2 visitors
     DynamicPatternDetector,
@@ -116,6 +120,10 @@ pub struct NativeAnalysisResult {
     pub method_calls: Vec<CstMethodCallInfo>,
     /// Function/method signatures with parameters, modifiers, and type params.
     pub signatures: Vec<CstSignatureInfo>,
+    /// Attribute access patterns (obj.attr with Read/Write/Call context).
+    pub attribute_accesses: Vec<CstAttributeAccessInfo>,
+    /// Call sites with argument information.
+    pub call_sites: Vec<CstCallSiteInfo>,
 
     // P2 analysis (dynamic pattern detection)
     /// Dynamic patterns that may affect rename safety.
@@ -287,6 +295,12 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     // P1: Collect function/method signatures
     let signatures = SignatureCollector::collect(&parsed.module, &parsed.positions);
 
+    // P1: Collect attribute access patterns (obj.attr with Read/Write/Call context)
+    let attribute_accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+    // P1: Collect call sites with argument information
+    let call_sites = CallSiteCollector::collect(&parsed.module, &parsed.positions);
+
     // P2: Collect dynamic patterns
     let dynamic_patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
@@ -303,6 +317,8 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         class_inheritance,
         method_calls,
         signatures,
+        attribute_accesses,
+        call_sites,
         // P2
         dynamic_patterns,
     })

@@ -1559,6 +1559,8 @@ def foo():
                 exports: vec![],
                 alias_graph,
                 signatures: vec![],
+                attribute_accesses: vec![],
+                call_sites: vec![],
             };
 
             let aliases =
@@ -1607,6 +1609,8 @@ def foo():
                 exports: vec![],
                 alias_graph,
                 signatures: vec![],
+                attribute_accesses: vec![],
+                call_sites: vec![],
             };
 
             let content = "bar\nb = bar\n";

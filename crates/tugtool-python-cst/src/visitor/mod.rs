@@ -69,6 +69,8 @@ mod traits;
 
 // P1 visitors (extended analysis)
 mod annotation;
+mod attribute_access;
+mod call_site;
 mod import;
 mod inheritance;
 mod method_call;
@@ -93,6 +95,8 @@ pub use traits::{Transform, Transformer, VisitResult, Visitor};
 
 // P1 exports
 pub use annotation::{AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind};
+pub use attribute_access::{AttributeAccessCollector, AttributeAccessInfo, AttributeAccessKind};
+pub use call_site::{CallArgInfo, CallSiteCollector, CallSiteInfo};
 pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
 pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
 pub use method_call::{MethodCallCollector, MethodCallInfo};

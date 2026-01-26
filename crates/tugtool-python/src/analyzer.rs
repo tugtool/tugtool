@@ -11,14 +11,16 @@
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::adapter::{
-    AliasEdgeData, AnalysisBundle, ExportData, FileAnalysisResult, ImportData, LanguageAdapter,
-    ModifierData, ParameterData, QualifiedNameData, ReferenceData,
-    ReferenceKind as AdapterReferenceKind, ScopeData, SignatureData, SymbolData, TypeParamData,
+    AliasEdgeData, AnalysisBundle, AttributeAccessData, CallArgData, CallSiteData, ExportData,
+    FileAnalysisResult, ImportData, LanguageAdapter, ModifierData, ModuleResolutionData,
+    ParameterData, QualifiedNameData, ReferenceData, ReferenceKind as AdapterReferenceKind,
+    ScopeData, SignatureData, SymbolData, TypeParamData,
 };
 use tugtool_core::facts::{
-    ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind,
-    Language, Modifier, ParamKind, PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId,
-    ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind, TypeNode,
+    AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File,
+    Import, ImportKind, Language, Modifier, ParamKind, PublicExport, Reference, ReferenceKind,
+    ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
+    TypeNode,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -236,6 +238,10 @@ pub struct FileAnalysis {
     pub alias_graph: AliasGraph,
     /// Function/method signatures in this file.
     pub signatures: Vec<tugtool_python_cst::SignatureInfo>,
+    /// Attribute access patterns (obj.attr with Read/Write/Call context).
+    pub attribute_accesses: Vec<tugtool_python_cst::AttributeAccessInfo>,
+    /// Call sites with argument information.
+    pub call_sites: Vec<tugtool_python_cst::CallSiteInfo>,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -1408,6 +1414,8 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         exports,
         alias_graph,
         signatures: native_result.signatures,
+        attribute_accesses: native_result.attribute_accesses,
+        call_sites: native_result.call_sites,
     })
 }
 
@@ -3400,7 +3408,46 @@ impl PythonAdapter {
             }
         }
 
-        // Note: attributes, calls are populated in step 7d
+        // Convert attribute accesses
+        for attr in &analysis.attribute_accesses {
+            // Try to resolve the receiver to a symbol index by matching the receiver name
+            // Note: For now, we use None since resolving receiver requires type inference
+            let base_symbol_index = None; // Future: resolve via receiver name and type info
+
+            result.attributes.push(AttributeAccessData {
+                base_symbol_index,
+                name: attr.attr_name.clone(),
+                span: attr.attr_span.unwrap_or(Span::new(0, 0)),
+                kind: convert_cst_attribute_access_kind(attr.kind),
+            });
+        }
+
+        // Convert call sites
+        for call in &analysis.call_sites {
+            // Try to resolve the callee to a symbol index
+            // For function calls, look up the callee name in symbols
+            // For method calls, callee_symbol_index is typically None until type resolution
+            let callee_symbol_index = if !call.is_method_call {
+                symbol_name_to_index.get(call.callee.as_str()).copied()
+            } else {
+                None
+            };
+
+            let args: Vec<CallArgData> = call
+                .args
+                .iter()
+                .map(|arg| CallArgData {
+                    name: arg.name.clone(),
+                    span: arg.span.unwrap_or(Span::new(0, 0)),
+                })
+                .collect();
+
+            result.calls.push(CallSiteData {
+                callee_symbol_index,
+                span: call.span.unwrap_or(Span::new(0, 0)),
+                args,
+            });
+        }
 
         result
     }
@@ -3419,7 +3466,37 @@ impl PythonAdapter {
             result.failed_files.push((path.clone(), error.to_string()));
         }
 
-        // Note: types and modules are populated in later steps
+        // Build module resolution map from file paths
+        // This maps module paths (e.g., "pkg.sub") to file indices
+        let mut module_map: HashMap<String, Vec<usize>> = HashMap::new();
+
+        for (file_index, analysis) in bundle.file_analyses.iter().enumerate() {
+            let module_path = compute_module_path(&analysis.path);
+            module_map
+                .entry(module_path)
+                .or_default()
+                .push(file_index);
+        }
+
+        // Also add namespace packages from the bundle
+        // Namespace packages are directories without __init__.py that can contain modules
+        for ns_path in &bundle.namespace_packages {
+            let module_path = ns_path.replace(['/', '\\'], ".");
+            // Namespace packages have no associated file, so file_indices is empty
+            // but we still record them for import resolution
+            module_map.entry(module_path).or_default();
+        }
+
+        // Convert to ModuleResolutionData
+        result.modules = module_map
+            .into_iter()
+            .map(|(module_path, file_indices)| ModuleResolutionData {
+                module_path,
+                file_indices,
+            })
+            .collect();
+
+        // Note: types are populated in a later step
 
         result
     }
@@ -3542,6 +3619,17 @@ fn convert_cst_modifier(modifier: tugtool_python_cst::Modifier) -> Option<Modifi
         tugtool_python_cst::Modifier::Final => Some(Modifier::Final),
         tugtool_python_cst::Modifier::Override => Some(Modifier::Override),
         tugtool_python_cst::Modifier::Generator => Some(Modifier::Generator),
+    }
+}
+
+/// Convert CST AttributeAccessKind to FactsStore AttributeAccessKind.
+fn convert_cst_attribute_access_kind(
+    kind: tugtool_python_cst::AttributeAccessKind,
+) -> AttributeAccessKind {
+    match kind {
+        tugtool_python_cst::AttributeAccessKind::Read => AttributeAccessKind::Read,
+        tugtool_python_cst::AttributeAccessKind::Write => AttributeAccessKind::Write,
+        tugtool_python_cst::AttributeAccessKind::Call => AttributeAccessKind::Call,
     }
 }
 
@@ -4420,6 +4508,166 @@ mod tests {
                 "Nested function qualified name should include outer: {}",
                 inner_qn.unwrap().path
             );
+        }
+
+        // ====================================================================
+        // Attribute Access, Call Site, and Module Resolution Tests (Step 7d)
+        // ====================================================================
+
+        #[test]
+        fn attribute_access_read() {
+            // Test: AttributeAccessKind::Read for obj.x in load context
+            let adapter = PythonAdapter::new();
+            let content = "x = obj.attr";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.attributes.is_empty(), "Expected attribute access");
+            let attr = &result.attributes[0];
+            assert_eq!(attr.name, "attr");
+            assert_eq!(attr.kind, AttributeAccessKind::Read);
+        }
+
+        #[test]
+        fn attribute_access_write() {
+            // Test: AttributeAccessKind::Write for obj.x = 1
+            let adapter = PythonAdapter::new();
+            let content = "obj.attr = 1";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.attributes.is_empty(), "Expected attribute access");
+            let attr = result.attributes.iter().find(|a| a.name == "attr");
+            assert!(attr.is_some(), "Expected attribute named 'attr'");
+            assert_eq!(attr.unwrap().kind, AttributeAccessKind::Write);
+        }
+
+        #[test]
+        fn attribute_access_call() {
+            // Test: AttributeAccessKind::Call for obj.x()
+            let adapter = PythonAdapter::new();
+            let content = "obj.method()";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.attributes.is_empty(), "Expected attribute access");
+            let attr = result.attributes.iter().find(|a| a.name == "method");
+            assert!(attr.is_some(), "Expected attribute named 'method'");
+            assert_eq!(attr.unwrap().kind, AttributeAccessKind::Call);
+        }
+
+        #[test]
+        fn call_site_with_keyword_arg() {
+            // Test: CallArg with keyword name for f(x=1)
+            let adapter = PythonAdapter::new();
+            let content = "f(x=1)";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.calls.is_empty(), "Expected call site");
+            let call = &result.calls[0];
+            assert_eq!(call.args.len(), 1);
+            assert_eq!(call.args[0].name, Some("x".to_string()));
+        }
+
+        #[test]
+        fn call_site_with_positional_arg() {
+            // Test: CallArg without name for f(1)
+            let adapter = PythonAdapter::new();
+            let content = "f(1)";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.calls.is_empty(), "Expected call site");
+            let call = &result.calls[0];
+            assert_eq!(call.args.len(), 1);
+            assert!(call.args[0].name.is_none());
+        }
+
+        #[test]
+        fn call_site_mixed_args() {
+            // Test: CallArg mixed positional and keyword
+            let adapter = PythonAdapter::new();
+            let content = "f(1, key=2)";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.calls.is_empty(), "Expected call site");
+            let call = &result.calls[0];
+            assert_eq!(call.args.len(), 2);
+            assert!(call.args[0].name.is_none()); // positional
+            assert_eq!(call.args[1].name, Some("key".to_string())); // keyword
+        }
+
+        #[test]
+        fn module_resolution_maps_path_to_file() {
+            // Test: Module resolution maps path to file index
+            let adapter = PythonAdapter::new();
+            let files = vec![
+                ("pkg/mod.py".to_string(), "x = 1".to_string()),
+            ];
+            let store = FactsStore::new();
+            let result = adapter.analyze_files(&files, &store).unwrap();
+
+            assert!(!result.modules.is_empty(), "Expected module resolution");
+            let module = result.modules.iter().find(|m| m.module_path == "pkg.mod");
+            assert!(module.is_some(), "Expected module path 'pkg.mod'");
+            assert_eq!(module.unwrap().file_indices.len(), 1);
+            assert_eq!(module.unwrap().file_indices[0], 0); // First file
+        }
+
+        #[test]
+        fn module_resolution_multiple_files() {
+            // Test: Module resolution handles multiple files
+            let adapter = PythonAdapter::new();
+            let files = vec![
+                ("pkg/a.py".to_string(), "x = 1".to_string()),
+                ("pkg/b.py".to_string(), "y = 2".to_string()),
+            ];
+            let store = FactsStore::new();
+            let result = adapter.analyze_files(&files, &store).unwrap();
+
+            // Should have entries for both pkg.a and pkg.b
+            assert!(result.modules.len() >= 2);
+            let a_module = result.modules.iter().find(|m| m.module_path == "pkg.a");
+            let b_module = result.modules.iter().find(|m| m.module_path == "pkg.b");
+            assert!(a_module.is_some(), "Expected module path 'pkg.a'");
+            assert!(b_module.is_some(), "Expected module path 'pkg.b'");
+        }
+
+        #[test]
+        fn call_site_method_call() {
+            // Test: Method call captures receiver info
+            let adapter = PythonAdapter::new();
+            let content = "obj.method(1, 2)";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.calls.is_empty(), "Expected call site");
+            let call = &result.calls[0];
+            // Method calls should have 2 args
+            assert_eq!(call.args.len(), 2);
+        }
+
+        #[test]
+        fn attribute_access_augmented_assign() {
+            // Test: obj.count += 1 is Write context
+            let adapter = PythonAdapter::new();
+            let content = "obj.count += 1";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.attributes.is_empty(), "Expected attribute access");
+            let attr = result.attributes.iter().find(|a| a.name == "count");
+            assert!(attr.is_some(), "Expected attribute named 'count'");
+            assert_eq!(attr.unwrap().kind, AttributeAccessKind::Write);
+        }
+
+        #[test]
+        fn attribute_access_chained() {
+            // Test: obj.a.b.c should report accesses for a, b, c
+            let adapter = PythonAdapter::new();
+            let content = "x = obj.a.b.c";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have at least 3 attribute accesses
+            assert!(result.attributes.len() >= 3, "Expected at least 3 attribute accesses");
+            let names: Vec<_> = result.attributes.iter().map(|a| a.name.as_str()).collect();
+            assert!(names.contains(&"a"));
+            assert!(names.contains(&"b"));
+            assert!(names.contains(&"c"));
         }
     }
 

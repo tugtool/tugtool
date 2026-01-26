@@ -3685,46 +3685,46 @@ This is the most complex part of Phase 11 semantic facts. Detecting Read/Write/C
 **Risk Note:** Context detection may require 2-3 iterations. Start with simple cases (direct assignment, direct call) and add complex cases (chained assignments, nested calls) incrementally.
 
 **Tasks:**
-- [ ] Create `AttributeAccessCollector` or extend `ReferenceCollector`:
+- [x] Create `AttributeAccessCollector` or extend `ReferenceCollector`:
   - Track `obj.attr` patterns with base expression context
   - Detect `AttributeAccessKind::Read` for load context
   - Detect `AttributeAccessKind::Write` for store context (`obj.attr = x`)
   - Detect `AttributeAccessKind::Call` for call context (`obj.attr()`)
-- [ ] Add `attributes: Vec<AttributeAccessData>` to `FileAnalysisResult`
-- [ ] Extend `MethodCallCollector` or create `CallSiteCollector`:
+- [x] Add `attributes: Vec<AttributeAccessData>` to `FileAnalysisResult`
+- [x] Extend `MethodCallCollector` or create `CallSiteCollector`:
   - Walk `Call.args` to extract argument info
   - `arg.keyword` is `Some` for keyword args, `None` for positional
   - Capture spans for each argument
-- [ ] Add `calls: Vec<CallSiteData>` to `FileAnalysisResult`
-- [ ] Build module resolution map in `AnalysisBundle`:
+- [x] Add `calls: Vec<CallSiteData>` to `FileAnalysisResult`
+- [x] Build module resolution map in `AnalysisBundle`:
   - Map module paths to file indices
   - Support namespace packages (multiple files per path)
-- [ ] Add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle`
-- [ ] **Integration layer:** Convert to FactsStore types
-- [ ] **Integration layer:** Convert `ExportData.origin_module_path` to `origin_module_id`
-- [ ] **Integration layer:** Build `ModuleResolution` from `AnalysisBundle.modules`
-- [ ] **Integration layer:** Drop invalid module file indices (log warning, continue)
-- [ ] **Integration layer:** If `origin_module_path` unresolvable, log warning, leave `origin_module_id = None`
+- [x] Add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle`
+- [x] **Integration layer:** Convert to FactsStore types
+- [x] **Integration layer:** Convert `ExportData.origin_module_path` to `origin_module_id`
+- [x] **Integration layer:** Build `ModuleResolution` from `AnalysisBundle.modules`
+- [x] **Integration layer:** Drop invalid module file indices (log warning, continue)
+- [x] **Integration layer:** If `origin_module_path` unresolvable, log warning, leave `origin_module_id = None`
 
 **Tests:**
-- [ ] Unit: `AttributeAccessKind::Read` for `obj.x` in load context
-- [ ] Unit: `AttributeAccessKind::Write` for `obj.x = 1`
-- [ ] Unit: `AttributeAccessKind::Call` for `obj.x()`
-- [ ] Unit: `CallArg` with keyword name for `f(x=1)`
-- [ ] Unit: `CallArg` without name for `f(1)`
-- [ ] Unit: Module resolution maps path to file
-- [ ] Unit: Namespace package maps path to multiple files
-- [ ] Unit: Unresolvable `origin_module_path` logs warning and leaves `origin_module_id = None`
-- [ ] Unit: Invalid `ModuleResolutionData.file_indices` are dropped with warning
-- [ ] Integration: AttributeAccess facts populated in FactsStore
-- [ ] Integration: CallSite facts populated in FactsStore
-- [ ] Integration: ModuleResolution populated in FactsStore
+- [x] Unit: `AttributeAccessKind::Read` for `obj.x` in load context
+- [x] Unit: `AttributeAccessKind::Write` for `obj.x = 1`
+- [x] Unit: `AttributeAccessKind::Call` for `obj.x()`
+- [x] Unit: `CallArg` with keyword name for `f(x=1)`
+- [x] Unit: `CallArg` without name for `f(1)`
+- [x] Unit: Module resolution maps path to file
+- [x] Unit: Namespace package maps path to multiple files
+- [x] Unit: Unresolvable `origin_module_path` logs warning and leaves `origin_module_id = None`
+- [x] Unit: Invalid `ModuleResolutionData.file_indices` are dropped with warning
+- [x] Integration: AttributeAccess facts populated in FactsStore
+- [x] Integration: CallSite facts populated in FactsStore
+- [x] Integration: ModuleResolution populated in FactsStore
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python attribute`
-- [ ] `cargo nextest run -p tugtool-python call`
-- [ ] `cargo nextest run -p tugtool-python module_resolution`
-- [ ] `cargo nextest run --workspace`
+- [x] `cargo nextest run -p tugtool-python attribute`
+- [x] `cargo nextest run -p tugtool-python call`
+- [x] `cargo nextest run -p tugtool-python module_resolution`
+- [x] `cargo nextest run --workspace`
 
 **Rollback:** Revert commit
 
@@ -3748,8 +3748,8 @@ After completing all steps, you will have:
 - Integration layer converting adapter output to FactsStore
 
 **Final Step 7 Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python`
-- [ ] `cargo nextest run --workspace`
+- [x] `cargo nextest run -p tugtool-python`
+- [x] `cargo nextest run --workspace`
 
 ---
 

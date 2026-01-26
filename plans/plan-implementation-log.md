@@ -6,6 +6,106 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 7d: Emit Attribute Access, Call Sites, and Module Resolution | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 7d specification (lines 3640-3731)
+- [D16] Attribute Access Facts design decision
+- [D17] Call Site Facts design decision
+- [D20] Module Resolution design decision
+- [CQ8] Python Analyzer Capability (existing infrastructure)
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Existing reference collection patterns
+- `crates/tugtool-python-cst/src/visitor/method_call.rs` - MethodCallCollector for call pattern inspiration
+- `crates/tugtool-core/src/adapter.rs` - `AttributeAccessData`, `CallSiteData`, `CallArgData`, `ModuleResolutionData` types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `AttributeAccessCollector` with Read/Write/Call context detection | Done |
+| Add `attributes: Vec<AttributeAccessData>` to `FileAnalysisResult` | Done |
+| Create `CallSiteCollector` with argument walking | Done |
+| Add `calls: Vec<CallSiteData>` to `FileAnalysisResult` | Done |
+| Build module resolution map in `AnalysisBundle` | Done |
+| Add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle` | Done |
+| Integration layer: Convert to FactsStore types | Done |
+| Integration layer: Convert origin_module_path to origin_module_id | Done |
+| Integration layer: Build ModuleResolution from AnalysisBundle.modules | Done |
+
+**Files Created:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`:
+  - New `AttributeAccessCollector` visitor that detects Read/Write/Call context
+  - `AttributeAccessKind` enum (Read, Write, Call)
+  - `AttributeAccessInfo` struct with receiver, attr_name, kind, span, scope_path
+  - O(1) duplicate detection using `call_attrs` and `write_attrs` HashSets
+  - Handles tuple/list unpacking with starred elements
+  - 16 unit tests covering all attribute access patterns
+
+- `crates/tugtool-python-cst/src/visitor/call_site.rs`:
+  - New `CallSiteCollector` visitor for call site extraction
+  - `CallSiteInfo` and `CallArgInfo` structs
+  - Support for function calls, method calls, and argument extraction
+  - Positional and keyword argument classification
+  - 15 unit tests covering all call site patterns
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/mod.rs`:
+  - Added `mod attribute_access` and `mod call_site` declarations
+  - Added exports: `AttributeAccessCollector`, `AttributeAccessInfo`, `AttributeAccessKind`, `CallArgInfo`, `CallSiteCollector`, `CallSiteInfo`
+
+- `crates/tugtool-python-cst/src/lib.rs`:
+  - Added P1 visitor exports for attribute access and call site types
+
+- `crates/tugtool-python/src/cst_bridge.rs`:
+  - Added `AttributeAccessCollector`, `CallSiteCollector` imports
+  - Added `attribute_accesses: Vec<CstAttributeAccessInfo>` field to `NativeAnalysisResult`
+  - Added `call_sites: Vec<CstCallSiteInfo>` field to `NativeAnalysisResult`
+  - Added collector calls in `parse_and_analyze()`
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `AttributeAccessData`, `CallArgData`, `CallSiteData`, `ModuleResolutionData` imports
+  - Added `AttributeAccessKind` import from facts
+  - Added `attribute_accesses` and `call_sites` fields to `FileAnalysis`
+  - Added attribute access conversion in `convert_file_analysis()` (lines 3411-3422)
+  - Added call site conversion in `convert_file_analysis()` (lines 3425-3450)
+  - Added `convert_cst_attribute_access_kind()` helper function
+  - Added module resolution map building in `convert_file_analysis_bundle()`
+  - Added 14 integration tests for attribute access, call sites, and module resolution
+
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Added `attribute_accesses: vec![]` and `call_sites: vec![]` to test fixtures
+
+- `plans/phase-11.md`:
+  - Checked off all Step 7d tasks, tests, and checkpoints
+  - Checked off Final Step 7 Checkpoint
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst attribute_access`: 16 tests passed
+- `cargo nextest run -p tugtool-python-cst call_site`: 15 tests passed
+- `cargo nextest run -p tugtool-python attribute`: 6 tests passed
+- `cargo nextest run -p tugtool-python call`: 28 tests passed
+- `cargo nextest run -p tugtool-python module_resolution`: 5 tests passed
+- `cargo nextest run --workspace`: 1619 tests passed
+- `cargo clippy --workspace`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python attribute`: PASS
+- `cargo nextest run -p tugtool-python call`: PASS
+- `cargo nextest run -p tugtool-python module_resolution`: PASS
+- `cargo nextest run --workspace`: PASS
+- Final Step 7 Checkpoint: PASS
+
+**Key Decisions/Notes:**
+- **Context Detection Strategy**: Used HashSets (`call_attrs`, `write_attrs`) for O(1) duplicate detection instead of O(n) linear scanning. When visiting a `Call` or assignment node, we add the attribute span to the appropriate HashSet. Later, `visit_attribute` checks both sets to avoid re-adding as Read.
+- **Cleanup after code review**: Removed dead `AccessContext` enum and `context` field that were unused. The visitor-based approach naturally handles context without needing explicit state tracking.
+- **Starred element handling**: Fixed bug where `*obj.rest` in tuple unpacking was not detected as Write context. Updated to handle both `Element::Simple` and `Element::Starred` variants.
+- **Symbol resolution deferred**: `base_symbol_index` for attributes and `callee_symbol_index` for non-trivial calls are set to `None` - resolving these requires type inference which is out of scope for Phase 11.
+- **Module resolution**: Built from file paths using `compute_module_path()`. Namespace packages (directories without `__init__.py`) are also included with empty file_indices.
+
+---
+
 ## [phase-11.md] Step 7c: Emit Signatures and Modifiers | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
