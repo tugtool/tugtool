@@ -1448,6 +1448,48 @@ impl SymbolModifiers {
 }
 
 // ============================================================================
+// Module Resolution
+// ============================================================================
+
+/// Module resolution mapping from module path to module IDs.
+///
+/// This struct supports namespace packages where a single module path
+/// (e.g., `"pkg.sub"`) can map to multiple modules (multiple files/directories
+/// that contribute to the same logical module).
+///
+/// Examples:
+/// - Single file module: `"mypackage.utils"` → `[ModuleId(1)]`
+/// - Namespace package: `"mypackage.plugins"` → `[ModuleId(2), ModuleId(3)]`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModuleResolution {
+    /// Module path (e.g., `"pkg.sub"`, `"mypackage.utils"`).
+    pub module_path: String,
+    /// Module IDs that implement this module path.
+    ///
+    /// For regular modules, this contains exactly one ModuleId.
+    /// For namespace packages, this may contain multiple ModuleIds.
+    pub module_ids: Vec<ModuleId>,
+}
+
+impl ModuleResolution {
+    /// Create a new module resolution with a single module.
+    pub fn new(module_path: impl Into<String>, module_id: ModuleId) -> Self {
+        ModuleResolution {
+            module_path: module_path.into(),
+            module_ids: vec![module_id],
+        }
+    }
+
+    /// Create a new module resolution with multiple modules (namespace package).
+    pub fn with_modules(module_path: impl Into<String>, module_ids: Vec<ModuleId>) -> Self {
+        ModuleResolution {
+            module_path: module_path.into(),
+            module_ids,
+        }
+    }
+}
+
+// ============================================================================
 // FactsStore
 // ============================================================================
 
@@ -1547,6 +1589,10 @@ pub struct FactsStore {
     /// symbol_id → modifiers (semantic attributes like async, static, property).
     symbol_modifiers: BTreeMap<SymbolId, SymbolModifiers>,
 
+    // Module resolution
+    /// module_path → module resolution (for import path resolution).
+    module_resolutions: BTreeMap<String, ModuleResolution>,
+
     // ID generators
     next_file_id: u32,
     next_module_id: u32,
@@ -1599,6 +1645,7 @@ impl Default for FactsStore {
             qualified_names: BTreeMap::new(),
             qualified_names_by_path: HashMap::new(),
             symbol_modifiers: BTreeMap::new(),
+            module_resolutions: BTreeMap::new(),
             next_file_id: 0,
             next_module_id: 0,
             next_symbol_id: 0,
@@ -2028,6 +2075,45 @@ impl FactsStore {
             .is_some_and(|m| m.has(modifier))
     }
 
+    /// Insert a module resolution mapping.
+    ///
+    /// If a resolution for this module path already exists, the new module_ids
+    /// are merged (appended) to the existing ones. This supports namespace
+    /// packages where multiple directories contribute to the same module path.
+    ///
+    /// Duplicate module IDs are not filtered - the caller should ensure
+    /// uniqueness if required.
+    pub fn insert_module_resolution(&mut self, resolution: ModuleResolution) {
+        match self.module_resolutions.entry(resolution.module_path.clone()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                // Merge: append new module_ids to existing
+                entry.get_mut().module_ids.extend(resolution.module_ids);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(resolution);
+            }
+        }
+    }
+
+    /// Resolve a module path to its ModuleResolution.
+    ///
+    /// Returns None if the module path is not registered.
+    pub fn resolve_module_path(&self, module_path: &str) -> Option<&ModuleResolution> {
+        self.module_resolutions.get(module_path)
+    }
+
+    /// Get the module IDs for a module path.
+    ///
+    /// Returns an empty slice if the module path is not registered.
+    /// For regular modules, returns a slice with one element.
+    /// For namespace packages, may return multiple elements.
+    pub fn module_ids_for_path(&self, module_path: &str) -> &[ModuleId] {
+        self.module_resolutions
+            .get(module_path)
+            .map(|r| r.module_ids.as_slice())
+            .unwrap_or(&[])
+    }
+
     // ========================================================================
     // Query Surface
     // ========================================================================
@@ -2451,6 +2537,19 @@ impl FactsStore {
         self.symbol_modifiers.values()
     }
 
+    /// Iterate over all module paths in deterministic order.
+    ///
+    /// Returns the module paths (strings) for which resolutions exist.
+    /// Order is lexicographic by module path.
+    pub fn all_module_paths(&self) -> impl Iterator<Item = &str> {
+        self.module_resolutions.keys().map(|s| s.as_str())
+    }
+
+    /// Iterate over all module resolutions in deterministic order.
+    pub fn module_resolutions(&self) -> impl Iterator<Item = &ModuleResolution> {
+        self.module_resolutions.values()
+    }
+
     // ========================================================================
     // Counts
     // ========================================================================
@@ -2530,6 +2629,11 @@ impl FactsStore {
         self.symbol_modifiers.len()
     }
 
+    /// Number of module resolutions.
+    pub fn module_resolution_count(&self) -> usize {
+        self.module_resolutions.len()
+    }
+
     // ========================================================================
     // Bulk Operations
     // ========================================================================
@@ -2575,6 +2679,8 @@ impl FactsStore {
         self.qualified_names.clear();
         self.qualified_names_by_path.clear();
         self.symbol_modifiers.clear();
+
+        self.module_resolutions.clear();
 
         // Note: We don't reset ID generators to preserve uniqueness
     }
@@ -6172,6 +6278,188 @@ mod tests {
             let iter1: Vec<_> = store.all_modifiers().map(|m| m.symbol_id).collect();
             let iter2: Vec<_> = store.all_modifiers().map(|m| m.symbol_id).collect();
             assert_eq!(iter1, iter2);
+        }
+    }
+
+    /// Tests for ModuleResolution struct.
+    mod module_resolution_tests {
+        use super::*;
+
+        #[test]
+        fn module_resolution_serialization() {
+            let resolution = ModuleResolution::new("mypackage.utils", ModuleId::new(1));
+
+            let json = serde_json::to_string(&resolution).unwrap();
+            assert!(json.contains("\"module_path\""));
+            assert!(json.contains("\"mypackage.utils\""));
+            assert!(json.contains("\"module_ids\""));
+
+            // Roundtrip
+            let deserialized: ModuleResolution = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, resolution);
+        }
+
+        #[test]
+        fn module_resolution_single_module() {
+            let mut store = FactsStore::new();
+
+            // Create a module
+            let module_id = store.next_module_id();
+            let module = Module {
+                module_id,
+                path: "mypackage/utils.py".to_string(),
+                kind: ModuleKind::File,
+                parent_module_id: None,
+                file_id: None,
+                decl_span: None,
+            };
+            store.insert_module(module);
+
+            // Add module resolution
+            let resolution = ModuleResolution::new("mypackage.utils", module_id);
+            store.insert_module_resolution(resolution);
+
+            // Query by path
+            let resolved = store.resolve_module_path("mypackage.utils").unwrap();
+            assert_eq!(resolved.module_path, "mypackage.utils");
+            assert_eq!(resolved.module_ids.len(), 1);
+            assert_eq!(resolved.module_ids[0], module_id);
+
+            // Query module IDs directly
+            let ids = store.module_ids_for_path("mypackage.utils");
+            assert_eq!(ids.len(), 1);
+            assert_eq!(ids[0], module_id);
+        }
+
+        #[test]
+        fn module_resolution_namespace_package() {
+            let mut store = FactsStore::new();
+
+            // Create multiple modules for the same namespace
+            let module_id1 = store.next_module_id();
+            let module_id2 = store.next_module_id();
+
+            let module1 = Module {
+                module_id: module_id1,
+                path: "vendor1/pkg/plugins".to_string(),
+                kind: ModuleKind::Directory,
+                parent_module_id: None,
+                file_id: None,
+                decl_span: None,
+            };
+            let module2 = Module {
+                module_id: module_id2,
+                path: "vendor2/pkg/plugins".to_string(),
+                kind: ModuleKind::Directory,
+                parent_module_id: None,
+                file_id: None,
+                decl_span: None,
+            };
+
+            store.insert_module(module1);
+            store.insert_module(module2);
+
+            // Add namespace package resolution with multiple modules
+            let resolution =
+                ModuleResolution::with_modules("pkg.plugins", vec![module_id1, module_id2]);
+            store.insert_module_resolution(resolution);
+
+            // Query should return both modules
+            let ids = store.module_ids_for_path("pkg.plugins");
+            assert_eq!(ids.len(), 2);
+            assert!(ids.contains(&module_id1));
+            assert!(ids.contains(&module_id2));
+        }
+
+        #[test]
+        fn module_resolution_merge_behavior() {
+            let mut store = FactsStore::new();
+
+            // Create modules
+            let module_id1 = store.next_module_id();
+            let module_id2 = store.next_module_id();
+            let module_id3 = store.next_module_id();
+
+            // Insert first resolution
+            store.insert_module_resolution(ModuleResolution::new("pkg.plugins", module_id1));
+            assert_eq!(store.module_ids_for_path("pkg.plugins").len(), 1);
+
+            // Insert second resolution for same path - should merge
+            store.insert_module_resolution(ModuleResolution::new("pkg.plugins", module_id2));
+            let ids = store.module_ids_for_path("pkg.plugins");
+            assert_eq!(ids.len(), 2);
+            assert_eq!(ids[0], module_id1);
+            assert_eq!(ids[1], module_id2);
+
+            // Insert third resolution with multiple modules - should also merge
+            store.insert_module_resolution(ModuleResolution::with_modules(
+                "pkg.plugins",
+                vec![module_id3],
+            ));
+            let ids = store.module_ids_for_path("pkg.plugins");
+            assert_eq!(ids.len(), 3);
+            assert_eq!(ids[2], module_id3);
+        }
+
+        #[test]
+        fn module_ids_for_path_unknown_returns_empty() {
+            let store = FactsStore::new();
+
+            // Unknown path should return empty slice
+            let ids = store.module_ids_for_path("unknown.module");
+            assert!(ids.is_empty());
+        }
+
+        #[test]
+        fn module_resolution_all_paths_iterator() {
+            let mut store = FactsStore::new();
+
+            // Add several module resolutions
+            store.insert_module_resolution(ModuleResolution::new("zebra.module", ModuleId::new(1)));
+            store.insert_module_resolution(ModuleResolution::new("alpha.module", ModuleId::new(2)));
+            store.insert_module_resolution(ModuleResolution::new("beta.module", ModuleId::new(3)));
+
+            // all_module_paths should iterate in lexicographic order (BTreeMap)
+            let paths: Vec<_> = store.all_module_paths().collect();
+            assert_eq!(paths.len(), 3);
+            assert_eq!(paths[0], "alpha.module");
+            assert_eq!(paths[1], "beta.module");
+            assert_eq!(paths[2], "zebra.module");
+
+            // Count should match
+            assert_eq!(store.module_resolution_count(), 3);
+        }
+
+        #[test]
+        fn module_resolution_iteration() {
+            let mut store = FactsStore::new();
+
+            store.insert_module_resolution(ModuleResolution::new("pkg.a", ModuleId::new(1)));
+            store.insert_module_resolution(ModuleResolution::new("pkg.b", ModuleId::new(2)));
+
+            // module_resolutions() iterator
+            let resolutions: Vec<_> = store.module_resolutions().collect();
+            assert_eq!(resolutions.len(), 2);
+
+            // Iteration should be deterministic
+            let iter1: Vec<_> = store.module_resolutions().map(|r| &r.module_path).collect();
+            let iter2: Vec<_> = store.module_resolutions().map(|r| &r.module_path).collect();
+            assert_eq!(iter1, iter2);
+        }
+
+        #[test]
+        fn module_resolution_clear() {
+            let mut store = FactsStore::new();
+
+            store.insert_module_resolution(ModuleResolution::new("pkg.a", ModuleId::new(1)));
+            store.insert_module_resolution(ModuleResolution::new("pkg.b", ModuleId::new(2)));
+
+            assert_eq!(store.module_resolution_count(), 2);
+
+            store.clear();
+
+            assert_eq!(store.module_resolution_count(), 0);
+            assert!(store.module_ids_for_path("pkg.a").is_empty());
         }
     }
 }

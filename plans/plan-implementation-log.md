@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.7e: Add Module Resolution Map | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 2.7e specification (lines 3028-3065)
+- `crates/tugtool-core/src/facts/mod.rs` - existing FactsStore patterns
+- [D20] Module Resolution Map design decision
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `ModuleResolution` struct with `module_path`, `module_ids` | Done |
+| Add `module_resolutions: BTreeMap<String, ModuleResolution>` to FactsStore | Done |
+| Add `module_ids_by_path` convenience index (via BTreeMap keying) | Done |
+| Add `insert_module_resolution()` with merge behavior | Done |
+| Add `resolve_module_path()` → `Option<&ModuleResolution>` | Done |
+| Add `module_ids_for_path()` → `&[ModuleId]` | Done |
+| Handle namespace package merging (append module_ids if path exists) | Done |
+| Add `all_module_paths()` iterator | Done |
+| Add `module_resolutions()` iterator | Done |
+| Add `module_resolution_count()` method | Done |
+| Update `Default::default()` and `clear()` for new storage | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `ModuleResolution` struct with `module_path: String`, `module_ids: Vec<ModuleId>`
+  - Added `new()` constructor for single module and `with_modules()` for namespace packages
+  - Added `module_resolutions: BTreeMap<String, ModuleResolution>` storage
+  - Added `insert_module_resolution()` with merge behavior for namespace packages
+  - Added `resolve_module_path()` and `module_ids_for_path()` query methods
+  - Added `all_module_paths()` and `module_resolutions()` iterators
+  - Added `module_resolution_count()` method
+  - Updated `Default::default()` and `clear()` to handle new storage
+  - Added 8 unit tests in `module_resolution_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core module_resolution`: 8 tests passed
+- `cargo nextest run -p tugtool-core`: 397 tests passed
+- `cargo nextest run --workspace`: 1464 tests passed
+- `cargo clippy -p tugtool-core`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core module_resolution`: PASS (8 tests)
+
+**Key Decisions/Notes:**
+- The plan specified a separate `module_ids_by_path: HashMap<String, Vec<ModuleId>>` convenience index, but this was simplified since the `BTreeMap<String, ModuleResolution>` already provides O(log n) lookup by path, and `module_ids_for_path()` returns the module IDs directly from the stored resolution. This avoids redundant storage while maintaining the same API semantics.
+- Added `with_modules()` constructor for creating namespace packages with multiple modules in one call.
+- Added `module_resolutions()` iterator in addition to `all_module_paths()` for full ModuleResolution access.
+
+---
+
 ## [phase-11.md] Step 2.7d: Add Qualified Names and Symbol Modifiers | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

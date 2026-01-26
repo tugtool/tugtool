@@ -3038,27 +3038,27 @@ This step is split into 5 sub-steps for manageable commits:
 - Storage and queries
 
 **Tasks:**
-- [ ] Add `ModuleResolution` struct:
+- [x] Add `ModuleResolution` struct:
   - `module_path: String` (e.g., `"pkg.sub"`)
   - `module_ids: Vec<ModuleId>` (supports namespace packages)
-- [ ] Add `module_resolutions: BTreeMap<String, ModuleResolution>` to FactsStore
-- [ ] Add `module_ids_by_path: HashMap<String, Vec<ModuleId>>` convenience index
-- [ ] Add insert/query methods:
+- [x] Add `module_resolutions: BTreeMap<String, ModuleResolution>` to FactsStore
+- [x] Add `module_ids_by_path: HashMap<String, Vec<ModuleId>>` convenience index
+- [x] Add insert/query methods:
   - `insert_module_resolution()` (merges module_ids if path exists)
   - `resolve_module_path()` → `Option<&ModuleResolution>`
   - `module_ids_for_path()` → `&[ModuleId]`
-- [ ] Handle namespace package merging: if path exists, append module_ids
-- [ ] Add `all_module_paths()` iterator
+- [x] Handle namespace package merging: if path exists, append module_ids
+- [x] Add `all_module_paths()` iterator
 
 **Tests:**
-- [ ] Unit: `ModuleResolution` serialization
-- [ ] Unit: Single module per path
-- [ ] Unit: Namespace package (multiple modules per path)
-- [ ] Unit: Merge behavior on duplicate insert
-- [ ] Unit: `module_ids_for_path()` returns empty slice for unknown path
+- [x] Unit: `ModuleResolution` serialization
+- [x] Unit: Single module per path
+- [x] Unit: Namespace package (multiple modules per path)
+- [x] Unit: Merge behavior on duplicate insert
+- [x] Unit: `module_ids_for_path()` returns empty slice for unknown path
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core module_resolution`
+- [x] `cargo nextest run -p tugtool-core module_resolution`
 
 **Rollback:** Revert commit
 
