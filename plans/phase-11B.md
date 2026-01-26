@@ -880,27 +880,27 @@ fn missing_span_warns_and_skips() {
 - `ExportIntent::Effective` entries emitted
 
 **Tasks:**
-- [ ] Add `compute_effective_exports: bool` to `PythonAnalyzerOptions` (default false)
-- [ ] Add `is_effectively_public` helper function
-- [ ] Add `compute_effective_exports` function:
+- [x] Add `compute_effective_exports: bool` to `PythonAnalyzerOptions` (default false)
+- [x] Add `is_effectively_public` helper function
+- [x] Add `compute_effective_exports` function:
   - Check if module has explicit `__all__`
   - If not, collect module-level symbols
   - Filter by naming convention
   - Filter out imported symbols (use `analysis.imports` to collect bound names)
   - Build `ExportData` with `ExportIntent::Effective`
-- [ ] Call from conversion when option is enabled
-- [ ] Merge effective exports with declared exports in output
+- [x] Call from conversion when option is enabled
+- [x] Merge effective exports with declared exports in output
 
 **Tests:**
-- [ ] Unit: `is_effectively_public("foo")` -> true
-- [ ] Unit: `is_effectively_public("_foo")` -> false
-- [ ] Unit: `is_effectively_public("__init__")` -> true
-- [ ] Integration: Module without `__all__` produces effective exports when enabled
-- [ ] Integration: Module with `__all__` does not produce effective exports
-- [ ] Integration: Option disabled -> no effective exports
+- [x] Unit: `is_effectively_public("foo")` -> true
+- [x] Unit: `is_effectively_public("_foo")` -> false
+- [x] Unit: `is_effectively_public("__init__")` -> true
+- [x] Integration: Module without `__all__` produces effective exports when enabled
+- [x] Integration: Module with `__all__` does not produce effective exports
+- [x] Integration: Option disabled -> no effective exports
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python export`
+- [x] `cargo nextest run -p tugtool-python export`
 
 **Rollback:**
 - Revert commit

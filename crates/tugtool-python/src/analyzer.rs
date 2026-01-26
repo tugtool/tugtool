@@ -3164,6 +3164,7 @@ fn reference_kind_from_str(kind: &str) -> ReferenceKind {
 /// // Enable visibility inference
 /// let opts = PythonAnalyzerOptions {
 ///     infer_visibility: true,
+///     ..Default::default()
 /// };
 /// ```
 #[derive(Debug, Clone, Default)]
@@ -3178,6 +3179,21 @@ pub struct PythonAnalyzerOptions {
     ///
     /// Default: false (all symbols have visibility = None)
     pub infer_visibility: bool,
+
+    /// Compute effective exports for modules without `__all__`.
+    ///
+    /// When enabled and a module lacks an explicit `__all__`, emit
+    /// `ExportIntent::Effective` entries for module-level symbols
+    /// that are considered part of the public API by Python convention:
+    /// - Names not starting with `_` (public by convention)
+    /// - Dunder names (`__name__`) are also public
+    /// - Names starting with `_` (except dunders) are private
+    ///
+    /// This is opt-in because computing effective exports has overhead
+    /// and many use cases only need explicit `__all__` exports.
+    ///
+    /// Default: false (only explicit `__all__` exports are emitted)
+    pub compute_effective_exports: bool,
 }
 
 // ============================================================================
@@ -3595,6 +3611,12 @@ impl PythonAdapter {
             });
         }
 
+        // Compute effective exports if enabled and no explicit __all__
+        if self.options.compute_effective_exports {
+            let effective = compute_effective_exports(analysis);
+            result.exports.extend(effective);
+        }
+
         // Build name to symbol index mapping for alias resolution
         let symbol_name_to_index: HashMap<&str, usize> = result
             .symbols
@@ -3909,6 +3931,124 @@ fn convert_facts_reference_kind_to_adapter(kind: ReferenceKind) -> AdapterRefere
     }
 }
 
+// ============================================================================
+// Effective Export Computation
+// ============================================================================
+
+/// Check if a name is effectively public by Python naming conventions.
+///
+/// A name is effectively public if:
+/// - It is a dunder (`__name__`) - these are part of Python's public API
+/// - It does not start with an underscore
+///
+/// Names starting with `_` (except dunders) are considered private by convention.
+fn is_effectively_public(name: &str) -> bool {
+    // Dunders are public (e.g., __init__, __name__, __doc__)
+    // Must have at least 5 chars: __ + at least 1 char + __
+    if name.starts_with("__") && name.ends_with("__") && name.len() > 4 {
+        return true;
+    }
+    // Names starting with _ are private (single underscore or name mangling)
+    !name.starts_with('_')
+}
+
+/// Collect the set of names bound by imports in a file.
+///
+/// This includes:
+/// - Module import aliases (e.g., `import os as operating_system` -> "operating_system")
+/// - Module imports (e.g., `import os` -> "os")
+/// - Named imports (e.g., `from os import path` -> "path")
+/// - Named imports with aliases (e.g., `from os import path as p` -> "p")
+fn collect_imported_names(imports: &[LocalImport]) -> HashSet<String> {
+    let mut imported = HashSet::new();
+
+    for import in imports {
+        if import.kind == "import" {
+            // `import os` or `import os as operating_system`
+            if let Some(alias) = &import.alias {
+                imported.insert(alias.clone());
+            } else {
+                // For `import a.b.c`, the bound name is just "a"
+                let first_part = import.module_path.split('.').next().unwrap_or(&import.module_path);
+                imported.insert(first_part.to_string());
+            }
+        } else {
+            // `from x import ...`
+            for name in &import.names {
+                if let Some(alias) = &name.alias {
+                    imported.insert(alias.clone());
+                } else {
+                    imported.insert(name.name.clone());
+                }
+            }
+        }
+    }
+
+    imported
+}
+
+/// Compute effective exports for a file without explicit `__all__`.
+///
+/// Returns a vector of `ExportData` entries for module-level symbols that are
+/// considered part of the public API by Python naming conventions:
+/// - Public names (not starting with `_`)
+/// - Dunder names (`__init__`, etc.)
+/// - Symbols defined in this file (not imported)
+///
+/// Returns an empty vector if the file has an explicit `__all__`.
+fn compute_effective_exports(analysis: &FileAnalysis) -> Vec<ExportData> {
+    // Only compute if no explicit __all__
+    if !analysis.exports.is_empty() {
+        return vec![];
+    }
+
+    // Collect imported names to exclude from effective exports
+    let imported_names = collect_imported_names(&analysis.imports);
+
+    // Get module-level scope ID (first scope should be module level)
+    let module_scope_id = if let Some(scope) = analysis.scopes.first() {
+        if scope.kind == ScopeKind::Module {
+            scope.id
+        } else {
+            return vec![]; // No module scope found
+        }
+    } else {
+        return vec![]; // No scopes
+    };
+
+    analysis
+        .symbols
+        .iter()
+        .filter(|s| {
+            // Must be at module level
+            s.scope_id == module_scope_id
+        })
+        .filter(|s| {
+            // Must be effectively public by naming convention
+            is_effectively_public(&s.name)
+        })
+        .filter(|s| {
+            // Must not be imported (defined in this file)
+            !imported_names.contains(&s.name)
+        })
+        .filter_map(|s| {
+            // Must have a span for the declaration
+            s.span.map(|span| ExportData {
+                exported_name: Some(s.name.clone()),
+                source_name: Some(s.name.clone()),
+                decl_span: span,
+                exported_name_span: None, // No explicit export syntax
+                source_name_span: None,
+                export_kind: ExportKind::PythonAll, // Treat as implicit __all__
+                export_target: ExportTarget::Implicit,
+                export_intent: ExportIntent::Effective,
+                export_origin: ExportOrigin::Implicit,
+                origin_module_path: None,
+            })
+        })
+        .collect()
+}
+
 /// Convert LocalImport to ImportData for the adapter interface.
 fn convert_local_import_to_import_data(import: &LocalImport) -> ImportData {
     // Determine ImportKind from the import structure
@@ -4096,6 +4236,7 @@ mod tests {
         fn python_adapter_with_custom_options() {
             let opts = PythonAnalyzerOptions {
                 infer_visibility: true,
+                ..Default::default()
             };
             let adapter = PythonAdapter::with_options(opts);
             assert!(adapter.options().infer_visibility);
@@ -4145,6 +4286,7 @@ mod tests {
         fn visibility_inference_private_underscore() {
             let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
                 infer_visibility: true,
+                ..Default::default()
             });
             let content = "def _private_func(): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
@@ -4162,6 +4304,7 @@ mod tests {
         fn visibility_inference_public_dunder() {
             let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
                 infer_visibility: true,
+                ..Default::default()
             });
             let content = "class Foo:\n    def __init__(self): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
@@ -4179,6 +4322,7 @@ mod tests {
         fn visibility_inference_name_mangled() {
             let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
                 infer_visibility: true,
+                ..Default::default()
             });
             let content = "class Foo:\n    def __secret(self): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
@@ -4196,6 +4340,7 @@ mod tests {
         fn visibility_inference_public_no_convention() {
             let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
                 infer_visibility: true,
+                ..Default::default()
             });
             let content = "def public_func(): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
@@ -5672,6 +5817,211 @@ process()
             assert!(
                 call.is_some(),
                 "Should have call with callee_symbol_index pointing to process function"
+            );
+        }
+
+        // ====================================================================
+        // Effective Export Tests
+        // ====================================================================
+
+        #[test]
+        fn is_effectively_public_true_for_normal_names() {
+            // Unit test: Normal names (not starting with _) are public.
+            assert!(is_effectively_public("foo"), "foo should be public");
+            assert!(is_effectively_public("Bar"), "Bar should be public");
+            assert!(is_effectively_public("process"), "process should be public");
+            assert!(is_effectively_public("MyClass"), "MyClass should be public");
+            assert!(is_effectively_public("x"), "x should be public");
+        }
+
+        #[test]
+        fn is_effectively_public_false_for_underscore_names() {
+            // Unit test: Names starting with _ are private.
+            assert!(!is_effectively_public("_foo"), "_foo should be private");
+            assert!(!is_effectively_public("_Bar"), "_Bar should be private");
+            assert!(!is_effectively_public("_private"), "_private should be private");
+            assert!(!is_effectively_public("_"), "_ should be private");
+        }
+
+        #[test]
+        fn is_effectively_public_false_for_name_mangled() {
+            // Unit test: Name-mangled names (__name without trailing __) are private.
+            assert!(!is_effectively_public("__private"), "__private should be private");
+            assert!(!is_effectively_public("__internal_var"), "__internal_var should be private");
+        }
+
+        #[test]
+        fn is_effectively_public_true_for_dunders() {
+            // Unit test: Dunders (__name__) are public.
+            assert!(is_effectively_public("__init__"), "__init__ should be public");
+            assert!(is_effectively_public("__name__"), "__name__ should be public");
+            assert!(is_effectively_public("__doc__"), "__doc__ should be public");
+            assert!(is_effectively_public("__call__"), "__call__ should be public");
+            assert!(is_effectively_public("__enter__"), "__enter__ should be public");
+            // Edge case: exactly 4 characters (__) is NOT a dunder
+            assert!(!is_effectively_public("____"), "____ is too short to be a valid dunder");
+        }
+
+        #[test]
+        fn effective_exports_computed_without_all() {
+            // Integration test: Module without __all__ produces effective exports when enabled.
+            let opts = PythonAnalyzerOptions {
+                compute_effective_exports: true,
+                ..Default::default()
+            };
+            let adapter = PythonAdapter::with_options(opts);
+            let content = r#"
+def public_func():
+    pass
+
+def _private_func():
+    pass
+
+class PublicClass:
+    pass
+
+_private_var = 1
+public_var = 2
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have effective exports for: public_func, PublicClass, public_var
+            // Should NOT have exports for: _private_func, _private_var
+            let export_names: Vec<_> = result
+                .exports
+                .iter()
+                .filter_map(|e| e.exported_name.as_ref())
+                .collect();
+
+            assert!(
+                export_names.contains(&&"public_func".to_string()),
+                "public_func should be exported: {:?}",
+                export_names
+            );
+            assert!(
+                export_names.contains(&&"PublicClass".to_string()),
+                "PublicClass should be exported: {:?}",
+                export_names
+            );
+            assert!(
+                export_names.contains(&&"public_var".to_string()),
+                "public_var should be exported: {:?}",
+                export_names
+            );
+            assert!(
+                !export_names.contains(&&"_private_func".to_string()),
+                "_private_func should NOT be exported: {:?}",
+                export_names
+            );
+            assert!(
+                !export_names.contains(&&"_private_var".to_string()),
+                "_private_var should NOT be exported: {:?}",
+                export_names
+            );
+        }
+
+        #[test]
+        fn no_effective_exports_when_explicit_all() {
+            // Integration test: Module with __all__ does not produce effective exports.
+            let opts = PythonAnalyzerOptions {
+                compute_effective_exports: true,
+                ..Default::default()
+            };
+            let adapter = PythonAdapter::with_options(opts);
+            let content = r#"
+__all__ = ["foo"]
+
+def foo():
+    pass
+
+def bar():
+    pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should only have "foo" exported (from __all__), not "bar"
+            let export_names: Vec<_> = result
+                .exports
+                .iter()
+                .filter_map(|e| e.exported_name.as_ref())
+                .collect();
+
+            assert!(
+                export_names.contains(&&"foo".to_string()),
+                "foo should be exported from __all__: {:?}",
+                export_names
+            );
+            // With __all__ present, effective exports should not be computed
+            // so "bar" should NOT appear
+            assert!(
+                !export_names.contains(&&"bar".to_string()),
+                "bar should NOT be exported when __all__ is present: {:?}",
+                export_names
+            );
+        }
+
+        #[test]
+        fn no_effective_exports_when_option_disabled() {
+            // Integration test: Option disabled -> no effective exports.
+            let adapter = PythonAdapter::new(); // Default options (compute_effective_exports = false)
+            let content = r#"
+def public_func():
+    pass
+
+class PublicClass:
+    pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have no exports since there's no __all__ and option is disabled
+            assert!(
+                result.exports.is_empty(),
+                "No exports should be emitted when option is disabled: {:?}",
+                result.exports
+            );
+        }
+
+        #[test]
+        fn effective_exports_excludes_imported_symbols() {
+            // Integration test: Imported symbols should not be included in effective exports.
+            let opts = PythonAnalyzerOptions {
+                compute_effective_exports: true,
+                ..Default::default()
+            };
+            let adapter = PythonAdapter::with_options(opts);
+            let content = r#"
+from os import path
+
+def local_func():
+    pass
+
+class LocalClass:
+    pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            let export_names: Vec<_> = result
+                .exports
+                .iter()
+                .filter_map(|e| e.exported_name.as_ref())
+                .collect();
+
+            // Should have effective exports for local definitions
+            assert!(
+                export_names.contains(&&"local_func".to_string()),
+                "local_func should be exported: {:?}",
+                export_names
+            );
+            assert!(
+                export_names.contains(&&"LocalClass".to_string()),
+                "LocalClass should be exported: {:?}",
+                export_names
+            );
+            // "path" is imported, not defined here - should NOT be exported
+            assert!(
+                !export_names.contains(&&"path".to_string()),
+                "imported 'path' should NOT be exported: {:?}",
+                export_names
             );
         }
     }

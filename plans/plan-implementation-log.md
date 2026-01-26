@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 5: Add Effective Export Computation | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D03] Effective Export Computation
+- `crates/tugtool-python/src/analyzer.rs` - PythonAnalyzerOptions and convert_file_analysis
+- `crates/tugtool-core/src/adapter.rs` - ExportData and ExportIntent types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `compute_effective_exports: bool` to `PythonAnalyzerOptions` (default false) | Done |
+| Add `is_effectively_public` helper function | Done |
+| Add `compute_effective_exports` function | Done |
+| Call from conversion when option is enabled | Done |
+| Merge effective exports with declared exports in output | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `compute_effective_exports: bool` field to `PythonAnalyzerOptions` with default `false`
+  - Added `is_effectively_public(name: &str) -> bool` helper (dunders are public, underscore-prefixed are private)
+  - Added `collect_imported_names(imports: &[LocalImport]) -> HashSet<String>` helper
+  - Added `compute_effective_exports(analysis: &FileAnalysis) -> Vec<ExportData>` function
+  - Wired up call from `convert_file_analysis` when option is enabled
+  - Added 8 tests for effective export functionality
+  - Updated 5 existing tests to use `..Default::default()` for new field
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python export`: 33 tests passed
+- `cargo nextest run -p tugtool-python`: 473 tests passed
+- `cargo nextest run --workspace`: 1667 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python export`: PASS (33 tests)
+
+**Key Decisions/Notes:**
+- Effective exports only computed when `compute_effective_exports: true` and no explicit `__all__`
+- `is_effectively_public`: dunders (`__init__`, `__name__`) are public, underscore-prefixed names are private
+- Module-level scope filtering: only symbols at module scope (scope_id == module_scope_id) are exported
+- Import filtering: imported symbols are excluded from effective exports (they're not "defined here")
+- Effective exports use `ExportIntent::Effective` to distinguish from `ExportIntent::Declared`
+
+---
+
 ## [phase-11B.md] Step 4: Integrate TypeTracker with Call Site Resolution | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
