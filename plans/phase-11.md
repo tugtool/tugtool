@@ -3372,18 +3372,18 @@ fn file_results_preserves_input_order() {
 - New golden test files for schema validation
 
 **Tasks:**
-- [ ] Add golden test for Symbol with visibility
-- [ ] Add golden test for PublicExport (incl. spans + intent/origin)
-- [ ] Verify updated golden tests pass
-- [ ] Verify schema version is present in FactsStore serialization (added in Step 1)
+- [x] Add golden test for Symbol with visibility
+- [x] Add golden test for PublicExport (incl. spans + intent/origin)
+- [x] Verify updated golden tests pass
+- [x] Verify schema version is present in FactsStore serialization (added in Step 1)
 
 **Tests:**
-- [ ] Golden: New types serialize correctly (Symbol with visibility, PublicExport, TypeNode)
-- [ ] Golden: Schema version field present and correct (`schema_version = 11`)
+- [x] Golden: New types serialize correctly (Symbol with visibility, PublicExport, TypeNode)
+- [x] Golden: Schema version field present and correct (`schema_version = 11`)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool golden`
-- [ ] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if intentional changes)
+- [x] `cargo nextest run -p tugtool golden`
+- [x] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if intentional changes)
 
 **Rollback:**
 - Revert commit

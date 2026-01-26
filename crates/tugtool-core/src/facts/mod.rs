@@ -7449,5 +7449,195 @@ mod tests {
             assert!(!effective.is_reexport());
             assert!(effective.is_local());
         }
+
+        /// Golden test: PublicExport serializes all span fields and intent/origin correctly.
+        ///
+        /// This test verifies the JSON schema contract for PublicExport, ensuring:
+        /// - All required fields are present (export_id, file_id, decl_span, export_kind, etc.)
+        /// - Optional span fields serialize when present (exported_name_span, source_name_span)
+        /// - Intent and origin fields serialize with correct values
+        /// - Re-export chain fields work correctly (origin_module_id, origin_export_id)
+        #[test]
+        fn public_export_golden_serialization() {
+            let export = PublicExport::new(
+                PublicExportId::new(42),
+                FileId::new(1),
+                Span::new(100, 150),
+                ExportKind::RustPubUse,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::ReExport,
+            )
+            .with_symbol(SymbolId::new(7))
+            .with_exported_name("Alias")
+            .with_source_name("Original")
+            .with_exported_name_span(Span::new(110, 115))
+            .with_source_name_span(Span::new(120, 128))
+            .with_origin_module(ModuleId::new(3))
+            .with_origin_export(PublicExportId::new(10));
+
+            let json = serde_json::to_string_pretty(&export).unwrap();
+
+            // Verify all required fields
+            assert!(json.contains("\"export_id\": 42"), "Missing export_id");
+            assert!(json.contains("\"file_id\": 1"), "Missing file_id");
+            assert!(json.contains("\"decl_span\""), "Missing decl_span");
+            assert!(
+                json.contains("\"export_kind\": \"rust_pub_use\""),
+                "Missing/wrong export_kind"
+            );
+            assert!(
+                json.contains("\"export_target\": \"single\""),
+                "Missing/wrong export_target"
+            );
+            assert!(
+                json.contains("\"export_intent\": \"declared\""),
+                "Missing/wrong export_intent"
+            );
+            assert!(
+                json.contains("\"export_origin\": \"re_export\""),
+                "Missing/wrong export_origin"
+            );
+
+            // Verify optional fields are present
+            assert!(json.contains("\"symbol_id\": 7"), "Missing symbol_id");
+            assert!(
+                json.contains("\"exported_name\": \"Alias\""),
+                "Missing exported_name"
+            );
+            assert!(
+                json.contains("\"source_name\": \"Original\""),
+                "Missing source_name"
+            );
+
+            // Verify span fields
+            assert!(
+                json.contains("\"exported_name_span\""),
+                "Missing exported_name_span"
+            );
+            assert!(
+                json.contains("\"source_name_span\""),
+                "Missing source_name_span"
+            );
+
+            // Verify re-export chain fields
+            assert!(
+                json.contains("\"origin_module_id\": 3"),
+                "Missing origin_module_id"
+            );
+            assert!(
+                json.contains("\"origin_export_id\": 10"),
+                "Missing origin_export_id"
+            );
+        }
+
+        /// Golden test: PublicExport with minimal fields omits optional fields.
+        ///
+        /// Tests skip_serializing_if behavior for Option fields.
+        #[test]
+        fn public_export_minimal_serialization() {
+            let export = PublicExport::new(
+                PublicExportId::new(1),
+                FileId::new(1),
+                Span::new(0, 10),
+                ExportKind::PythonAll,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::Local,
+            );
+            // Note: Don't set any optional fields
+
+            let json = serde_json::to_string(&export).unwrap();
+
+            // Required fields are present
+            assert!(json.contains("\"export_id\""));
+            assert!(json.contains("\"file_id\""));
+            assert!(json.contains("\"decl_span\""));
+            assert!(json.contains("\"export_kind\":\"python_all\""));
+            assert!(json.contains("\"export_intent\":\"declared\""));
+            assert!(json.contains("\"export_origin\":\"local\""));
+
+            // Optional fields should NOT be present (skip_serializing_if)
+            assert!(!json.contains("symbol_id"), "symbol_id should be omitted");
+            assert!(
+                !json.contains("exported_name"),
+                "exported_name should be omitted"
+            );
+            assert!(
+                !json.contains("source_name"),
+                "source_name should be omitted"
+            );
+            assert!(
+                !json.contains("exported_name_span"),
+                "exported_name_span should be omitted"
+            );
+            assert!(
+                !json.contains("source_name_span"),
+                "source_name_span should be omitted"
+            );
+            assert!(
+                !json.contains("origin_module_id"),
+                "origin_module_id should be omitted"
+            );
+            assert!(
+                !json.contains("origin_export_id"),
+                "origin_export_id should be omitted"
+            );
+        }
+
+        /// Golden test: Verify Symbol with visibility serializes correctly.
+        ///
+        /// This test documents the expected JSON format for Symbol with visibility.
+        #[test]
+        fn symbol_with_visibility_golden_serialization() {
+            let symbol = Symbol::new(
+                SymbolId::new(42),
+                SymbolKind::Function,
+                "my_function",
+                FileId::new(1),
+                Span::new(10, 21),
+            )
+            .with_module(ModuleId::new(5))
+            .with_visibility(Visibility::Public);
+
+            let json = serde_json::to_string_pretty(&symbol).unwrap();
+
+            // Verify required fields
+            assert!(json.contains("\"symbol_id\": 42"));
+            assert!(json.contains("\"kind\": \"function\""));
+            assert!(json.contains("\"name\": \"my_function\""));
+            assert!(json.contains("\"decl_file_id\": 1"));
+            assert!(json.contains("\"decl_span\""));
+
+            // Verify optional fields are present
+            assert!(json.contains("\"module_id\": 5"));
+            assert!(json.contains("\"visibility\": \"public\""));
+        }
+
+        /// Golden test: Verify TypeNode nested structure serializes correctly.
+        ///
+        /// Documents expected format for complex types like Dict[str, List[int]].
+        #[test]
+        fn typenode_complex_golden_serialization() {
+            // Dict[str, List[int]]
+            let node = TypeNode::named_with_args(
+                "Dict",
+                vec![
+                    TypeNode::named("str"),
+                    TypeNode::named_with_args("List", vec![TypeNode::named("int")]),
+                ],
+            );
+
+            let json = serde_json::to_string_pretty(&node).unwrap();
+
+            // Verify structure
+            assert!(json.contains("\"kind\": \"named\""));
+            assert!(json.contains("\"name\": \"Dict\""));
+            assert!(json.contains("\"args\""));
+            // Nested types
+            assert!(json.contains("\"name\": \"str\""));
+            assert!(json.contains("\"name\": \"List\""));
+            assert!(json.contains("\"name\": \"int\""));
+        }
     }
 }

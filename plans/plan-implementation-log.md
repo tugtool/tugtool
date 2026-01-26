@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 6: Golden Test Validation | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 6 specification (lines 3365-3391)
+- [D11] Schema Version Placement (lines 992-1012)
+- Test Plan Concepts section (lines 2336-2415)
+- `crates/tugtool/tests/golden_tests.rs` - Existing golden test infrastructure
+- `crates/tugtool-core/src/facts/mod.rs` - Existing unit tests for serialization
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add golden test for Symbol with visibility | Done |
+| Add golden test for PublicExport (incl. spans + intent/origin) | Done |
+| Verify updated golden tests pass | Done |
+| Verify schema version is present in FactsStore serialization | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `public_export_golden_serialization` test verifying full PublicExport with all span fields (decl_span, exported_name_span, source_name_span), intent/origin, and re-export chain fields
+  - Added `public_export_minimal_serialization` test verifying skip_serializing_if behavior for optional fields
+  - Added `symbol_with_visibility_golden_serialization` test verifying Symbol with visibility serializes correctly
+  - Added `typenode_complex_golden_serialization` test verifying complex nested TypeNode (Dict[str, List[int]]) serializes correctly
+
+- `plans/phase-11.md`:
+  - Checked off all 4 tasks, 2 tests, and 2 checkpoints for Step 6
+
+**Test Results:**
+- `cargo nextest run -p tugtool golden`: 9 tests passed, 223 skipped
+- `cargo nextest run -p tugtool-core`: 436 tests passed
+- `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden`: 9 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool golden`: PASS
+- `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden`: PASS
+- `cargo clippy --workspace`: PASS (no warnings)
+
+**Key Decisions/Notes:**
+- Golden tests were added as unit tests in `tugtool-core/src/facts/mod.rs` rather than CLI integration tests, since the goal is to verify JSON serialization format correctness for internal schema types
+- Existing schema_version tests already verify `FACTS_SCHEMA_VERSION = 11` and that `FactsStore::new()` sets the field correctly
+- Added both "full" and "minimal" PublicExport tests to verify both complete serialization and skip_serializing_if behavior
+
+---
+
 ## [phase-11.md] Step 5: Update Documentation and Examples | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
