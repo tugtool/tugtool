@@ -1296,6 +1296,12 @@ pub struct TypeInfo {
     pub type_repr: String,
     /// Source of this type information.
     pub source: TypeSource,
+    /// Optional structured type representation.
+    ///
+    /// When present, provides machine-readable type information beyond the string
+    /// representation. Can be populated from type annotations or type inference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured: Option<TypeNode>,
 }
 
 impl TypeInfo {
@@ -1305,6 +1311,7 @@ impl TypeInfo {
             symbol_id,
             type_repr: type_repr.into(),
             source,
+            structured: None,
         }
     }
 
@@ -1316,6 +1323,25 @@ impl TypeInfo {
     /// Create type info for an annotated type.
     pub fn annotated(symbol_id: SymbolId, type_repr: impl Into<String>) -> Self {
         Self::new(symbol_id, type_repr, TypeSource::Annotated)
+    }
+
+    /// Set the structured type representation.
+    ///
+    /// Builder method that adds a machine-readable [`TypeNode`] to this type info.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tugtool_core::facts::{TypeInfo, TypeNode, TypeSource, SymbolId};
+    ///
+    /// let type_info = TypeInfo::annotated(SymbolId::new(1), "List[int]")
+    ///     .with_structured(TypeNode::named_with_args("List", vec![TypeNode::named("int")]));
+    ///
+    /// assert!(type_info.structured.is_some());
+    /// ```
+    pub fn with_structured(mut self, node: TypeNode) -> Self {
+        self.structured = Some(node);
+        self
     }
 }
 
@@ -4505,6 +4531,91 @@ mod tests {
             assert_eq!(t1.type_repr, t2.type_repr);
             assert_eq!(t1.source, t2.source);
         }
+
+        #[test]
+        fn type_info_structured_none_serialization() {
+            let type_info = TypeInfo::annotated(SymbolId::new(1), "List[int]");
+
+            // structured should be None by default
+            assert!(type_info.structured.is_none());
+
+            // When structured is None, it should not appear in JSON
+            let json = serde_json::to_string(&type_info).unwrap();
+            assert!(!json.contains("structured"), "structured field should be omitted when None");
+
+            // Required fields should be present
+            assert!(json.contains("\"symbol_id\""));
+            assert!(json.contains("\"type_repr\":\"List[int]\""));
+            assert!(json.contains("\"source\":\"annotated\""));
+        }
+
+        #[test]
+        fn type_info_structured_some_serialization() {
+            let type_info = TypeInfo::annotated(SymbolId::new(1), "List[int]")
+                .with_structured(TypeNode::named_with_args("List", vec![TypeNode::named("int")]));
+
+            // structured should be Some
+            assert!(type_info.structured.is_some());
+
+            // When structured is Some, it should appear in JSON
+            let json = serde_json::to_string(&type_info).unwrap();
+            assert!(json.contains("\"structured\""), "structured field should be present when Some");
+            assert!(json.contains("\"kind\":\"named\""));
+            assert!(json.contains("\"name\":\"List\""));
+            assert!(json.contains("\"args\""));
+        }
+
+        #[test]
+        fn type_info_with_structured_builder() {
+            let sym_id = SymbolId::new(42);
+            let structured_type = TypeNode::optional(TypeNode::named("str"));
+
+            let type_info = TypeInfo::annotated(sym_id, "Optional[str]")
+                .with_structured(structured_type.clone());
+
+            assert_eq!(type_info.symbol_id, sym_id);
+            assert_eq!(type_info.type_repr, "Optional[str]");
+            assert_eq!(type_info.source, TypeSource::Annotated);
+            assert_eq!(type_info.structured, Some(structured_type));
+        }
+
+        #[test]
+        fn type_info_structured_roundtrip() {
+            let type_info = TypeInfo::annotated(SymbolId::new(1), "Dict[str, int]")
+                .with_structured(TypeNode::named_with_args(
+                    "Dict",
+                    vec![TypeNode::named("str"), TypeNode::named("int")],
+                ));
+
+            let json = serde_json::to_string(&type_info).unwrap();
+            let parsed: TypeInfo = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed, type_info);
+            assert!(parsed.structured.is_some());
+        }
+
+        /// Golden test: TypeInfo with structured types.
+        ///
+        /// Documents expected JSON format for TypeInfo with structured field.
+        #[test]
+        fn type_info_structured_golden() {
+            let type_info = TypeInfo::annotated(SymbolId::new(1), "Callable[[int], str]")
+                .with_structured(TypeNode::callable(
+                    vec![TypeNode::named("int")],
+                    TypeNode::named("str"),
+                ));
+
+            let json = serde_json::to_string_pretty(&type_info).unwrap();
+
+            // Verify structure
+            assert!(json.contains("\"symbol_id\": 1"));
+            assert!(json.contains("\"type_repr\": \"Callable[[int], str]\""));
+            assert!(json.contains("\"source\": \"annotated\""));
+            assert!(json.contains("\"structured\""));
+            assert!(json.contains("\"kind\": \"callable\""));
+            assert!(json.contains("\"params\""));
+            assert!(json.contains("\"returns\""));
+        }
     }
 
     mod inheritance_tests {
@@ -6073,6 +6184,65 @@ mod tests {
                 ],
             );
 
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
+        }
+
+        #[test]
+        fn typenode_named_roundtrip() {
+            let node = TypeNode::named("MyClass");
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
+        }
+
+        #[test]
+        fn typenode_union_roundtrip() {
+            let node = TypeNode::union(vec![
+                TypeNode::named("str"),
+                TypeNode::named("int"),
+                TypeNode::named("None"),
+            ]);
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
+        }
+
+        #[test]
+        fn typenode_optional_roundtrip() {
+            let node = TypeNode::optional(TypeNode::named("str"));
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
+        }
+
+        #[test]
+        fn typenode_callable_roundtrip() {
+            let node = TypeNode::callable(
+                vec![TypeNode::named("int"), TypeNode::named("str")],
+                TypeNode::named("bool"),
+            );
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
+        }
+
+        #[test]
+        fn typenode_tuple_roundtrip() {
+            let node = TypeNode::tuple(vec![
+                TypeNode::named("int"),
+                TypeNode::named("str"),
+                TypeNode::named("bool"),
+            ]);
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
+        }
+
+        #[test]
+        fn typenode_unknown_roundtrip() {
+            let node = TypeNode::Unknown;
             let json = serde_json::to_string(&node).unwrap();
             let parsed: TypeNode = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, node);

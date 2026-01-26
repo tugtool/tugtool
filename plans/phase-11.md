@@ -3809,7 +3809,7 @@ After completing all steps, you will have:
 - Type annotation parser in `type_tracker.rs`
 
 **Tasks:**
-- [ ] Add `TypeNode` enum to `facts/mod.rs` with variants:
+- [x] Add `TypeNode` enum to `facts/mod.rs` with variants:
   - `Named { name: String, args: Vec<TypeNode> }`
   - `Union { members: Vec<TypeNode> }`
   - `Optional { inner: Box<TypeNode> }`
@@ -3817,27 +3817,27 @@ After completing all steps, you will have:
   - `Tuple { elements: Vec<TypeNode> }`
   - `Extension { name: String, args: Vec<TypeNode> }`
   - `Unknown`
-- [ ] Add `#[serde(tag = "kind", rename_all = "snake_case")]` for clean JSON
-- [ ] Add `#[non_exhaustive]` to `TypeNode`
-- [ ] Add `structured: Option<TypeNode>` to `TypeInfo` struct
-- [ ] Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON
-- [ ] Add `TypeInfo::with_structured(self, node: TypeNode) -> Self` builder
-- [ ] Update FactsStore to handle `TypeInfo.structured`
+- [x] Add `#[serde(tag = "kind", rename_all = "snake_case")]` for clean JSON
+- [x] Add `#[non_exhaustive]` to `TypeNode`
+- [x] Add `structured: Option<TypeNode>` to `TypeInfo` struct
+- [x] Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON
+- [x] Add `TypeInfo::with_structured(self, node: TypeNode) -> Self` builder
+- [x] Update FactsStore to handle `TypeInfo.structured`
 
 **Tests:**
-- [ ] Unit: `TypeNode::Named` serialization roundtrip
-- [ ] Unit: `TypeNode::Union` serialization roundtrip
-- [ ] Unit: `TypeNode::Optional` serialization roundtrip
-- [ ] Unit: `TypeNode::Callable` serialization roundtrip
-- [ ] Unit: `TypeNode::Tuple` serialization roundtrip
-- [ ] Unit: `TypeNode::Unknown` serialization roundtrip
-- [ ] Unit: `TypeInfo` with `structured: None` serializes without field
-- [ ] Unit: `TypeInfo` with `structured: Some(...)` includes field
-- [ ] Golden: TypeInfo with structured types
+- [x] Unit: `TypeNode::Named` serialization roundtrip
+- [x] Unit: `TypeNode::Union` serialization roundtrip
+- [x] Unit: `TypeNode::Optional` serialization roundtrip
+- [x] Unit: `TypeNode::Callable` serialization roundtrip
+- [x] Unit: `TypeNode::Tuple` serialization roundtrip
+- [x] Unit: `TypeNode::Unknown` serialization roundtrip
+- [x] Unit: `TypeInfo` with `structured: None` serializes without field
+- [x] Unit: `TypeInfo` with `structured: Some(...)` includes field
+- [x] Golden: TypeInfo with structured types
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core typenode`
-- [ ] `cargo nextest run -p tugtool-core type_info`
+- [x] `cargo nextest run -p tugtool-core typenode`
+- [x] `cargo nextest run -p tugtool-core type_info`
 
 **Rollback:**
 - Revert commit

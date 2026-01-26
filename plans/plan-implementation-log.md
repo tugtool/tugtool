@@ -6,6 +6,65 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 9: Structured Type Representation | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 9 specification (lines 3800-3845)
+- [D07] TypeInfo Evolves with Optional Structured Types design decision
+- [D08] TypeNode Design specification
+- Concept C02: Why Structured Types?
+- Table T02: TypeNode Coverage
+- `crates/tugtool-core/src/facts/mod.rs` - Existing `TypeNode` enum and `TypeInfo` struct
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `TypeNode` enum with all variants (Named, Union, Optional, Callable, Tuple, Extension, Unknown) | Done (already existed) |
+| Add `#[serde(tag = "kind", rename_all = "snake_case")]` to TypeNode | Done (already existed) |
+| Add `#[non_exhaustive]` to TypeNode | Done (already existed) |
+| Add `structured: Option<TypeNode>` to `TypeInfo` struct | Done |
+| Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON | Done |
+| Add `TypeInfo::with_structured(self, node: TypeNode) -> Self` builder | Done |
+| Update FactsStore to handle `TypeInfo.structured` | Done |
+
+**Finding:** The `TypeNode` enum with all variants and proper serde attributes already existed in `facts/mod.rs` from an earlier step. This step added the `structured: Option<TypeNode>` field to `TypeInfo` and the `with_structured()` builder method.
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `structured: Option<TypeNode>` field to `TypeInfo` struct with documentation
+  - Added `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON serialization
+  - Updated `TypeInfo::new()` to initialize `structured: None`
+  - Added `TypeInfo::with_structured(self, node: TypeNode) -> Self` builder with doc examples
+  - Added TypeNode roundtrip tests: `typenode_named_roundtrip`, `typenode_union_roundtrip`, `typenode_optional_roundtrip`, `typenode_callable_roundtrip`, `typenode_tuple_roundtrip`, `typenode_unknown_roundtrip`
+  - Added TypeInfo structured tests: `type_info_structured_none_serialization`, `type_info_structured_some_serialization`, `type_info_with_structured_builder`, `type_info_structured_roundtrip`, `type_info_structured_golden`
+
+- `plans/phase-11.md`:
+  - Checked off all Step 9 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core typenode`: 7 tests passed
+- `cargo nextest run -p tugtool-core type_info`: 12 tests passed
+- `cargo nextest run -p tugtool-core`: 447 tests passed
+- `cargo nextest run -p tugtool-python`: 449 tests passed
+- `cargo clippy -p tugtool-core`: clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core typenode`: PASS (7 tests)
+- `cargo nextest run -p tugtool-core type_info`: PASS (12 tests)
+
+**Key Decisions/Notes:**
+- `TypeNode` enum already existed with all required variants from earlier implementation work
+- Added `structured` field as `Option<TypeNode>` per design decision [D07] - backward compatible
+- `skip_serializing_if = "Option::is_none"` ensures clean JSON output without `structured: null` fields
+- Builder pattern `with_structured()` allows chaining with other builders like `with_structured(TypeNode::named("int"))`
+- Roundtrip tests verify all TypeNode variants serialize/deserialize correctly
+- Golden test documents expected JSON format for TypeInfo with structured types
+
+---
+
 ## [phase-11.md] Step 8: Python Visibility Inference from Naming Conventions | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
