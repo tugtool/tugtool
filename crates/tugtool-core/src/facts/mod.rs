@@ -4541,7 +4541,10 @@ mod tests {
 
             // When structured is None, it should not appear in JSON
             let json = serde_json::to_string(&type_info).unwrap();
-            assert!(!json.contains("structured"), "structured field should be omitted when None");
+            assert!(
+                !json.contains("structured"),
+                "structured field should be omitted when None"
+            );
 
             // Required fields should be present
             assert!(json.contains("\"symbol_id\""));
@@ -4551,15 +4554,19 @@ mod tests {
 
         #[test]
         fn type_info_structured_some_serialization() {
-            let type_info = TypeInfo::annotated(SymbolId::new(1), "List[int]")
-                .with_structured(TypeNode::named_with_args("List", vec![TypeNode::named("int")]));
+            let type_info = TypeInfo::annotated(SymbolId::new(1), "List[int]").with_structured(
+                TypeNode::named_with_args("List", vec![TypeNode::named("int")]),
+            );
 
             // structured should be Some
             assert!(type_info.structured.is_some());
 
             // When structured is Some, it should appear in JSON
             let json = serde_json::to_string(&type_info).unwrap();
-            assert!(json.contains("\"structured\""), "structured field should be present when Some");
+            assert!(
+                json.contains("\"structured\""),
+                "structured field should be present when Some"
+            );
             assert!(json.contains("\"kind\":\"named\""));
             assert!(json.contains("\"name\":\"List\""));
             assert!(json.contains("\"args\""));
@@ -4599,11 +4606,10 @@ mod tests {
         /// Documents expected JSON format for TypeInfo with structured field.
         #[test]
         fn type_info_structured_golden() {
-            let type_info = TypeInfo::annotated(SymbolId::new(1), "Callable[[int], str]")
-                .with_structured(TypeNode::callable(
-                    vec![TypeNode::named("int")],
-                    TypeNode::named("str"),
-                ));
+            let type_info =
+                TypeInfo::annotated(SymbolId::new(1), "Callable[[int], str]").with_structured(
+                    TypeNode::callable(vec![TypeNode::named("int")], TypeNode::named("str")),
+                );
 
             let json = serde_json::to_string_pretty(&type_info).unwrap();
 

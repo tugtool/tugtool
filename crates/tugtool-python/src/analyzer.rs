@@ -3259,7 +3259,9 @@ impl PythonAdapter {
 
         // Convert imports
         for import in &analysis.imports {
-            result.imports.push(convert_local_import_to_import_data(import));
+            result
+                .imports
+                .push(convert_local_import_to_import_data(import));
         }
 
         // Convert exports (from __all__)
@@ -3291,10 +3293,11 @@ impl PythonAdapter {
         for source_name in analysis.alias_graph.source_names() {
             for alias_info in analysis.alias_graph.direct_aliases(source_name) {
                 // Resolve alias_name to symbol index (must exist as it's a binding)
-                let alias_symbol_index = match symbol_name_to_index.get(alias_info.alias_name.as_str()) {
-                    Some(&idx) => idx,
-                    None => continue, // Skip if alias symbol not found
-                };
+                let alias_symbol_index =
+                    match symbol_name_to_index.get(alias_info.alias_name.as_str()) {
+                        Some(&idx) => idx,
+                        None => continue, // Skip if alias symbol not found
+                    };
 
                 // Resolve source_name to symbol index (may be None if unresolved)
                 let target_symbol_index = symbol_name_to_index
@@ -3458,7 +3461,9 @@ impl PythonAdapter {
 
         // Convert each file analysis (preserving input order per [D15])
         for analysis in &bundle.file_analyses {
-            result.file_results.push(self.convert_file_analysis(analysis));
+            result
+                .file_results
+                .push(self.convert_file_analysis(analysis));
         }
 
         // Convert failed files
@@ -3472,10 +3477,7 @@ impl PythonAdapter {
 
         for (file_index, analysis) in bundle.file_analyses.iter().enumerate() {
             let module_path = compute_module_path(&analysis.path);
-            module_map
-                .entry(module_path)
-                .or_default()
-                .push(file_index);
+            module_map.entry(module_path).or_default().push(file_index);
         }
 
         // Also add namespace packages from the bundle
@@ -3505,7 +3507,11 @@ impl PythonAdapter {
     ///
     /// This reconstructs the scope path by walking up the scope hierarchy
     /// from the symbol's containing scope to the module root.
-    fn build_scope_path_for_symbol(&self, analysis: &FileAnalysis, symbol_index: usize) -> Vec<String> {
+    fn build_scope_path_for_symbol(
+        &self,
+        analysis: &FileAnalysis,
+        symbol_index: usize,
+    ) -> Vec<String> {
         // Get the symbol's containing scope
         let symbol = match analysis.symbols.get(symbol_index) {
             Some(s) => s,
@@ -3577,16 +3583,13 @@ fn convert_local_import_to_import_data(import: &LocalImport) -> ImportData {
     };
 
     // Get alias from either module-level alias or first imported name's alias
-    let alias = import
-        .alias
-        .clone()
-        .or_else(|| {
-            if import.kind == "from" && !import.names.is_empty() {
-                import.names[0].alias.clone()
-            } else {
-                None
-            }
-        });
+    let alias = import.alias.clone().or_else(|| {
+        if import.kind == "from" && !import.names.is_empty() {
+            import.names[0].alias.clone()
+        } else {
+            None
+        }
+    });
 
     ImportData {
         module_path: import.module_path.clone(),
@@ -3998,12 +4001,19 @@ mod tests {
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Should have at least one alias
-            assert!(!result.aliases.is_empty(), "Expected aliases from 'b = bar'");
+            assert!(
+                !result.aliases.is_empty(),
+                "Expected aliases from 'b = bar'"
+            );
 
             // Find the alias for 'bar'
             let alias = result.aliases.iter().find(|a| {
                 // Find where alias_symbol_index points to a symbol named 'b'
-                result.symbols.get(a.alias_symbol_index).map(|s| s.name.as_str()) == Some("b")
+                result
+                    .symbols
+                    .get(a.alias_symbol_index)
+                    .map(|s| s.name.as_str())
+                    == Some("b")
             });
             assert!(alias.is_some(), "Expected alias from 'b = bar'");
 
@@ -4023,11 +4033,18 @@ mod tests {
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Should have at least one alias
-            assert!(!result.aliases.is_empty(), "Expected aliases from 'p = path'");
+            assert!(
+                !result.aliases.is_empty(),
+                "Expected aliases from 'p = path'"
+            );
 
             // Find the alias for 'path' (source is import)
             let alias = result.aliases.iter().find(|a| {
-                result.symbols.get(a.alias_symbol_index).map(|s| s.name.as_str()) == Some("p")
+                result
+                    .symbols
+                    .get(a.alias_symbol_index)
+                    .map(|s| s.name.as_str())
+                    == Some("p")
             });
             assert!(alias.is_some(), "Expected alias from 'p = path'");
 
@@ -4185,10 +4202,7 @@ mod tests {
 
             // 6. Verify we can query alias edges
             let edges_in_file = store.alias_edges_in_file(file_id);
-            assert!(
-                !edges_in_file.is_empty(),
-                "Should have alias edges in file"
-            );
+            assert!(!edges_in_file.is_empty(), "Should have alias edges in file");
 
             // 7. Verify edge properties
             for edge in edges_in_file {
@@ -4290,7 +4304,10 @@ mod tests {
             let content = "def foo(x, y): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
 
-            assert!(!result.signatures.is_empty(), "Expected signature for 'foo'");
+            assert!(
+                !result.signatures.is_empty(),
+                "Expected signature for 'foo'"
+            );
             let sig = &result.signatures[0];
             assert_eq!(sig.params.len(), 2);
             assert_eq!(sig.params[0].name, "x");
@@ -4392,7 +4409,10 @@ mod tests {
             let content = "async def foo(): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
 
-            assert!(!result.modifiers.is_empty(), "Expected modifiers for async function");
+            assert!(
+                !result.modifiers.is_empty(),
+                "Expected modifiers for async function"
+            );
             let mods = &result.modifiers[0];
             assert!(
                 mods.modifiers.contains(&Modifier::Async),
@@ -4407,7 +4427,10 @@ mod tests {
             let content = "@staticmethod\ndef foo(): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
 
-            assert!(!result.modifiers.is_empty(), "Expected modifiers for staticmethod");
+            assert!(
+                !result.modifiers.is_empty(),
+                "Expected modifiers for staticmethod"
+            );
             let mods = &result.modifiers[0];
             assert!(
                 mods.modifiers.contains(&Modifier::Static),
@@ -4422,7 +4445,10 @@ mod tests {
             let content = "@classmethod\ndef foo(cls): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
 
-            assert!(!result.modifiers.is_empty(), "Expected modifiers for classmethod");
+            assert!(
+                !result.modifiers.is_empty(),
+                "Expected modifiers for classmethod"
+            );
             let mods = &result.modifiers[0];
             assert!(
                 mods.modifiers.contains(&Modifier::ClassMethod),
@@ -4437,7 +4463,10 @@ mod tests {
             let content = "@property\ndef foo(self): pass";
             let result = adapter.analyze_file("test.py", content).unwrap();
 
-            assert!(!result.modifiers.is_empty(), "Expected modifiers for property");
+            assert!(
+                !result.modifiers.is_empty(),
+                "Expected modifiers for property"
+            );
             let mods = &result.modifiers[0];
             assert!(
                 mods.modifiers.contains(&Modifier::Property),
@@ -4611,9 +4640,7 @@ mod tests {
         fn module_resolution_maps_path_to_file() {
             // Test: Module resolution maps path to file index
             let adapter = PythonAdapter::new();
-            let files = vec![
-                ("pkg/mod.py".to_string(), "x = 1".to_string()),
-            ];
+            let files = vec![("pkg/mod.py".to_string(), "x = 1".to_string())];
             let store = FactsStore::new();
             let result = adapter.analyze_files(&files, &store).unwrap();
 
@@ -4677,7 +4704,10 @@ mod tests {
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Should have at least 3 attribute accesses
-            assert!(result.attributes.len() >= 3, "Expected at least 3 attribute accesses");
+            assert!(
+                result.attributes.len() >= 3,
+                "Expected at least 3 attribute accesses"
+            );
             let names: Vec<_> = result.attributes.iter().map(|a| a.name.as_str()).collect();
             assert!(names.contains(&"a"));
             assert!(names.contains(&"b"));
@@ -8822,14 +8852,21 @@ class ClassB: pass
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
             let public_exports: Vec<_> = store.public_exports().collect();
-            assert_eq!(public_exports.len(), 3, "should have 3 total public exports");
+            assert_eq!(
+                public_exports.len(),
+                3,
+                "should have 3 total public exports"
+            );
 
             // All exports should have resolved symbol_ids
             for export in &public_exports {
                 assert!(
                     export.symbol_id.is_some(),
                     "export '{}' should have resolved symbol_id",
-                    export.exported_name.as_ref().unwrap_or(&"<none>".to_string())
+                    export
+                        .exported_name
+                        .as_ref()
+                        .unwrap_or(&"<none>".to_string())
                 );
             }
         }

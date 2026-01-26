@@ -21,8 +21,9 @@
 //! The type tracker integrates with the analyzer to populate TypeInfo in the
 //! FactsStore, enabling method resolution on typed variables.
 
-use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeSource};
+use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
+use tugtool_python_cst::{BaseSlice, BinaryOp, Element, Expression, SubscriptElement};
 
 use crate::types::{AnnotationInfo, AssignmentInfo};
 use std::collections::HashMap;
@@ -426,6 +427,302 @@ impl TypeTracker {
 impl Default for TypeTracker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ============================================================================
+// TypeNode Building from CST Expressions
+// ============================================================================
+
+/// Build a `TypeNode` from a Python type annotation CST expression.
+///
+/// This function converts Python type annotation expressions into structured
+/// `TypeNode` representations for use in the FactsStore.
+///
+/// # V1 Scope
+///
+/// The following CST node types are handled:
+/// - `Name` - simple types (`int`, `str`, `MyClass`)
+/// - `Attribute` - qualified types (`typing.List`, `module.Type`)
+/// - `Subscript` - generic types (`List[int]`, `Dict[str, int]`)
+/// - `BinaryOperation` with `|` - PEP 604 unions (`str | int`)
+///
+/// The following special patterns in subscripts are recognized:
+/// - `Optional[T]` -> `TypeNode::Optional`
+/// - `Union[A, B, ...]` -> `TypeNode::Union`
+/// - `Callable[[...], R]` -> `TypeNode::Callable`
+/// - `Tuple[A, B, C]` -> `TypeNode::Tuple`
+///
+/// # Out of Scope (returns None)
+///
+/// - `typing.Annotated[T, ...]` - metadata annotations
+/// - `typing.Literal[...]` - literal types
+/// - `typing.TypeVar` bounds and constraints
+/// - Forward references as strings (`"MyClass"`)
+/// - Complex expressions (lambdas, conditionals in annotations)
+///
+/// # Arguments
+///
+/// * `annotation_expr` - The CST expression representing the type annotation
+///
+/// # Returns
+///
+/// `Some(TypeNode)` if the annotation can be converted, `None` otherwise.
+pub fn build_typenode_from_annotation(annotation_expr: &Expression<'_>) -> Option<TypeNode> {
+    match annotation_expr {
+        // Name: simple types like `int`, `str`, `MyClass`
+        Expression::Name(name) => Some(TypeNode::named(name.value)),
+
+        // Attribute: qualified types like `typing.List`, `module.Type`
+        Expression::Attribute(_attr) => {
+            let qualified_name = build_qualified_name(annotation_expr);
+            Some(TypeNode::named(qualified_name))
+        }
+
+        // Subscript: generic types like `List[int]`, `Dict[str, int]`
+        Expression::Subscript(sub) => build_typenode_from_subscript(sub),
+
+        // BinaryOperation: PEP 604 union syntax `str | int`
+        Expression::BinaryOperation(bin_op) => {
+            // Only handle BitOr (|) for union types
+            if matches!(&bin_op.operator, BinaryOp::BitOr { .. }) {
+                let mut members = Vec::new();
+                collect_union_members(&bin_op.left, &mut members);
+                collect_union_members(&bin_op.right, &mut members);
+
+                if members.is_empty() {
+                    None
+                } else {
+                    Some(TypeNode::Union { members })
+                }
+            } else {
+                None
+            }
+        }
+
+        // Tuple: for cases like bare tuple annotation `(int, str)`
+        // This is rare in annotations but can appear
+        Expression::Tuple(tuple) => {
+            let elements: Vec<TypeNode> = tuple
+                .elements
+                .iter()
+                .filter_map(|elem| match elem {
+                    Element::Simple { value, .. } => build_typenode_from_annotation(value),
+                    _ => None,
+                })
+                .collect();
+
+            if elements.is_empty() {
+                None
+            } else {
+                Some(TypeNode::Tuple { elements })
+            }
+        }
+
+        // Out of scope: string annotations (forward references), complex expressions
+        _ => None,
+    }
+}
+
+/// Build a `TypeNode` for a constructor call (inferred type).
+///
+/// This handles simple constructor calls like `MyClass()` to produce
+/// `TypeNode::Named { name: "MyClass", args: [] }`.
+///
+/// # Arguments
+///
+/// * `type_name` - The inferred type name from constructor analysis
+///
+/// # Returns
+///
+/// `Some(TypeNode)` for valid type names, always succeeds for non-empty names.
+pub fn build_typenode_for_inferred_type(type_name: &str) -> Option<TypeNode> {
+    if type_name.is_empty() {
+        None
+    } else {
+        Some(TypeNode::named(type_name))
+    }
+}
+
+/// Build a qualified name from an attribute access chain.
+///
+/// For `typing.List` this returns `"typing.List"`.
+/// For `a.b.c.Type` this returns `"a.b.c.Type"`.
+fn build_qualified_name(expr: &Expression<'_>) -> String {
+    match expr {
+        Expression::Name(name) => name.value.to_string(),
+        Expression::Attribute(attr) => {
+            let base = build_qualified_name(&attr.value);
+            format!("{}.{}", base, attr.attr.value)
+        }
+        _ => "<unknown>".to_string(),
+    }
+}
+
+/// Collect union members from a binary expression tree.
+///
+/// This handles chained unions like `int | str | bool` by recursively
+/// walking the BinaryOperation tree and collecting all leaf types.
+fn collect_union_members(expr: &Expression<'_>, members: &mut Vec<TypeNode>) {
+    match expr {
+        Expression::BinaryOperation(bin_op) if matches!(&bin_op.operator, BinaryOp::BitOr { .. }) => {
+            // Recursively collect from both sides
+            collect_union_members(&bin_op.left, members);
+            collect_union_members(&bin_op.right, members);
+        }
+        _ => {
+            // Leaf node - try to convert to TypeNode
+            if let Some(node) = build_typenode_from_annotation(expr) {
+                members.push(node);
+            }
+        }
+    }
+}
+
+/// Build a TypeNode from a subscript expression.
+///
+/// This handles generic types and special patterns:
+/// - `Optional[T]` -> `TypeNode::Optional { inner: T }`
+/// - `Union[A, B]` -> `TypeNode::Union { members: [A, B] }`
+/// - `Callable[[A, B], R]` -> `TypeNode::Callable { params: [A, B], returns: R }`
+/// - `Tuple[A, B, C]` -> `TypeNode::Tuple { elements: [A, B, C] }`
+/// - Other generics -> `TypeNode::Named { name, args }`
+fn build_typenode_from_subscript(sub: &tugtool_python_cst::Subscript<'_>) -> Option<TypeNode> {
+    // Get the base type name
+    let base_name = match sub.value.as_ref() {
+        Expression::Name(name) => name.value,
+        Expression::Attribute(_attr) => {
+            // Check for special qualified names like `typing.Optional`
+            let qualified = build_qualified_name(sub.value.as_ref());
+            return build_typenode_from_qualified_subscript(&qualified, &sub.slice);
+        }
+        _ => return None,
+    };
+
+    // Handle special patterns
+    match base_name {
+        "Optional" => build_optional_typenode(&sub.slice),
+        "Union" => build_union_typenode(&sub.slice),
+        "Callable" => build_callable_typenode(&sub.slice),
+        "Tuple" => build_tuple_typenode(&sub.slice),
+        // Check for out-of-scope types that should return None
+        "Annotated" | "Literal" | "TypeVar" => None,
+        // Generic type with type arguments
+        _ => {
+            let args = extract_type_args(&sub.slice);
+            Some(TypeNode::Named {
+                name: base_name.to_string(),
+                args,
+            })
+        }
+    }
+}
+
+/// Build a TypeNode from a qualified subscript like `typing.Optional[T]`.
+fn build_typenode_from_qualified_subscript(
+    qualified_name: &str,
+    slice: &[SubscriptElement<'_>],
+) -> Option<TypeNode> {
+    // Check for typing module special forms
+    match qualified_name {
+        "typing.Optional" => build_optional_typenode(slice),
+        "typing.Union" => build_union_typenode(slice),
+        "typing.Callable" => build_callable_typenode(slice),
+        "typing.Tuple" => build_tuple_typenode(slice),
+        "typing.Annotated" | "typing.Literal" | "typing.TypeVar" => None,
+        // Other qualified generics
+        _ => {
+            let args = extract_type_args(slice);
+            Some(TypeNode::Named {
+                name: qualified_name.to_string(),
+                args,
+            })
+        }
+    }
+}
+
+/// Build an Optional TypeNode from subscript slice.
+fn build_optional_typenode(slice: &[SubscriptElement<'_>]) -> Option<TypeNode> {
+    // Optional[T] has exactly one type argument
+    if slice.len() != 1 {
+        return None;
+    }
+
+    let inner = extract_single_type_arg(&slice[0])?;
+    Some(TypeNode::Optional {
+        inner: Box::new(inner),
+    })
+}
+
+/// Build a Union TypeNode from subscript slice.
+fn build_union_typenode(slice: &[SubscriptElement<'_>]) -> Option<TypeNode> {
+    let members = extract_type_args(slice);
+    if members.is_empty() {
+        None
+    } else {
+        Some(TypeNode::Union { members })
+    }
+}
+
+/// Build a Callable TypeNode from subscript slice.
+///
+/// Callable[[Param1, Param2], ReturnType]
+fn build_callable_typenode(slice: &[SubscriptElement<'_>]) -> Option<TypeNode> {
+    // Callable[[...], R] has two elements: params list and return type
+    if slice.len() != 2 {
+        return None;
+    }
+
+    // First element is the parameter types (as a list)
+    let params = match &slice[0].slice {
+        BaseSlice::Index(idx) => match &idx.value {
+            // Parameters are in a list: [[int, str], R]
+            Expression::List(list) => list
+                .elements
+                .iter()
+                .filter_map(|elem| match elem {
+                    Element::Simple { value, .. } => build_typenode_from_annotation(value),
+                    _ => None,
+                })
+                .collect(),
+            // Single parameter without list: [int, R] - less common
+            _ => {
+                if let Some(node) = build_typenode_from_annotation(&idx.value) {
+                    vec![node]
+                } else {
+                    Vec::new()
+                }
+            }
+        },
+        _ => return None,
+    };
+
+    // Second element is the return type
+    let returns = extract_single_type_arg(&slice[1])?;
+
+    Some(TypeNode::Callable {
+        params,
+        returns: Box::new(returns),
+    })
+}
+
+/// Build a Tuple TypeNode from subscript slice.
+fn build_tuple_typenode(slice: &[SubscriptElement<'_>]) -> Option<TypeNode> {
+    let elements = extract_type_args(slice);
+    // Tuple can have zero elements (empty tuple type)
+    Some(TypeNode::Tuple { elements })
+}
+
+/// Extract type arguments from a subscript slice.
+fn extract_type_args(slice: &[SubscriptElement<'_>]) -> Vec<TypeNode> {
+    slice.iter().filter_map(extract_single_type_arg).collect()
+}
+
+/// Extract a single type argument from a SubscriptElement.
+fn extract_single_type_arg(elem: &SubscriptElement<'_>) -> Option<TypeNode> {
+    match &elem.slice {
+        BaseSlice::Index(idx) => build_typenode_from_annotation(&idx.value),
+        BaseSlice::Slice(_) => None, // Slices are not type annotations
     }
 }
 
@@ -1572,6 +1869,354 @@ mod tests {
                 find_typed_method_references("LocalHandler", "process", &tracker, &method_calls);
             assert_eq!(refs2.len(), 1);
             assert_eq!(refs2[0].scope_path, vec!["<module>", "func"]);
+        }
+    }
+
+    /// Tests for TypeNode building from CST expressions.
+    mod typenode_building_tests {
+        use super::*;
+        use tugtool_python_cst::parse_module_with_positions;
+
+        /// Helper to extract the annotation expression from a simple annotated assignment.
+        /// Parses `x: <type_annotation>` and returns the expression AST node.
+        fn get_annotation_expr(source: &str) -> Option<tugtool_python_cst::Expression<'_>> {
+            // Parse and extract - this is a bit tricky because we need to navigate the CST
+            // For testing, we'll use a simpler approach: parse "x: Type" and extract the annotation
+            let parsed = parse_module_with_positions(source, None).ok()?;
+            // The module body should have one statement - AnnAssign
+            let body = parsed.module.body.clone();
+            for stmt in body {
+                if let tugtool_python_cst::Statement::Simple(simple) = stmt {
+                    if let Some(small) = simple.body.first() {
+                        if let tugtool_python_cst::SmallStatement::AnnAssign(ann) = small {
+                            return Some(ann.annotation.annotation.clone());
+                        }
+                    }
+                }
+            }
+            None
+        }
+
+        #[test]
+        fn typenode_name_simple_int() {
+            // CST Name("int") -> Named { name: "int", args: [] }
+            if let Some(expr) = get_annotation_expr("x: int") {
+                let node = build_typenode_from_annotation(&expr);
+                assert!(node.is_some());
+                let node = node.unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "int");
+                        assert!(args.is_empty());
+                    }
+                    _ => panic!("Expected TypeNode::Named, got {:?}", node),
+                }
+            } else {
+                panic!("Failed to parse annotation");
+            }
+        }
+
+        #[test]
+        fn typenode_name_simple_str() {
+            if let Some(expr) = get_annotation_expr("x: str") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "str");
+                        assert!(args.is_empty());
+                    }
+                    _ => panic!("Expected TypeNode::Named"),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_name_simple_myclass() {
+            if let Some(expr) = get_annotation_expr("x: MyClass") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "MyClass");
+                        assert!(args.is_empty());
+                    }
+                    _ => panic!("Expected TypeNode::Named"),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_subscript_list_str() {
+            // CST Subscript(Name("List"), Name("str")) -> Named with nested arg
+            if let Some(expr) = get_annotation_expr("x: List[str]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "List");
+                        assert_eq!(args.len(), 1);
+                        match &args[0] {
+                            TypeNode::Named {
+                                name: inner_name,
+                                args: inner_args,
+                            } => {
+                                assert_eq!(inner_name, "str");
+                                assert!(inner_args.is_empty());
+                            }
+                            _ => panic!("Expected inner Named"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Named"),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_dict_str_int() {
+            // CST for Dict[str, int] -> Named with two args
+            if let Some(expr) = get_annotation_expr("x: Dict[str, int]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "Dict");
+                        assert_eq!(args.len(), 2);
+                        // First arg: str
+                        match &args[0] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "str"),
+                            _ => panic!("Expected Named for first arg"),
+                        }
+                        // Second arg: int
+                        match &args[1] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                            _ => panic!("Expected Named for second arg"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Named"),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_optional_int() {
+            // CST for Optional[int] -> Optional { inner: Named("int") }
+            if let Some(expr) = get_annotation_expr("x: Optional[int]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Optional { inner } => match inner.as_ref() {
+                        TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                        _ => panic!("Expected inner Named"),
+                    },
+                    _ => panic!("Expected TypeNode::Optional, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_union_str_int() {
+            // CST for Union[str, int] -> Union { members: [str, int] }
+            if let Some(expr) = get_annotation_expr("x: Union[str, int]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Union { members } => {
+                        assert_eq!(members.len(), 2);
+                        match &members[0] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "str"),
+                            _ => panic!("Expected Named"),
+                        }
+                        match &members[1] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                            _ => panic!("Expected Named"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Union, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_pep604_union_str_int() {
+            // CST for str | int (BinOp) -> Union { members: [str, int] }
+            if let Some(expr) = get_annotation_expr("x: str | int") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Union { members } => {
+                        assert_eq!(members.len(), 2);
+                        match &members[0] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "str"),
+                            _ => panic!("Expected Named"),
+                        }
+                        match &members[1] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                            _ => panic!("Expected Named"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Union, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_callable_int_str() {
+            // CST for Callable[[int], str] -> Callable { params: [int], returns: str }
+            if let Some(expr) = get_annotation_expr("x: Callable[[int], str]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Callable { params, returns } => {
+                        assert_eq!(params.len(), 1);
+                        match &params[0] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                            _ => panic!("Expected Named for param"),
+                        }
+                        match returns.as_ref() {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "str"),
+                            _ => panic!("Expected Named for return"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Callable, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_tuple_int_str_bool() {
+            // CST for Tuple[int, str, bool] -> Tuple { elements: [int, str, bool] }
+            if let Some(expr) = get_annotation_expr("x: Tuple[int, str, bool]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Tuple { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        match &elements[0] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                            _ => panic!("Expected Named"),
+                        }
+                        match &elements[1] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "str"),
+                            _ => panic!("Expected Named"),
+                        }
+                        match &elements[2] {
+                            TypeNode::Named { name, .. } => assert_eq!(name, "bool"),
+                            _ => panic!("Expected Named"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Tuple, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_complex_returns_none() {
+            // Complex/malformed expressions should return None
+            // String forward reference - out of scope
+            if let Some(expr) = get_annotation_expr("x: \"ForwardRef\"") {
+                let node = build_typenode_from_annotation(&expr);
+                assert!(node.is_none());
+            }
+        }
+
+        #[test]
+        fn typenode_inferred_type_simple() {
+            // build_typenode_for_inferred_type for simple constructor call
+            let node = build_typenode_for_inferred_type("MyClass");
+            assert!(node.is_some());
+            match node.unwrap() {
+                TypeNode::Named { name, args } => {
+                    assert_eq!(name, "MyClass");
+                    assert!(args.is_empty());
+                }
+                _ => panic!("Expected TypeNode::Named"),
+            }
+        }
+
+        #[test]
+        fn typenode_inferred_type_empty() {
+            // Empty type name should return None
+            let node = build_typenode_for_inferred_type("");
+            assert!(node.is_none());
+        }
+
+        #[test]
+        fn typenode_qualified_attribute_type() {
+            // typing.List -> Named { name: "typing.List", args: [] }
+            if let Some(expr) = get_annotation_expr("x: typing.List") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "typing.List");
+                        assert!(args.is_empty());
+                    }
+                    _ => panic!("Expected TypeNode::Named"),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_typing_optional() {
+            // typing.Optional[int] -> Optional { inner: int }
+            if let Some(expr) = get_annotation_expr("x: typing.Optional[int]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Optional { inner } => match inner.as_ref() {
+                        TypeNode::Named { name, .. } => assert_eq!(name, "int"),
+                        _ => panic!("Expected inner Named"),
+                    },
+                    _ => panic!("Expected TypeNode::Optional, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_annotated_returns_none() {
+            // typing.Annotated[...] is out of scope and should return None
+            if let Some(expr) = get_annotation_expr("x: Annotated[int, \"metadata\"]") {
+                let node = build_typenode_from_annotation(&expr);
+                assert!(node.is_none(), "Annotated should return None");
+            }
+        }
+
+        #[test]
+        fn typenode_literal_returns_none() {
+            // typing.Literal[...] is out of scope and should return None
+            if let Some(expr) = get_annotation_expr("x: Literal[\"value\"]") {
+                let node = build_typenode_from_annotation(&expr);
+                assert!(node.is_none(), "Literal should return None");
+            }
+        }
+
+        #[test]
+        fn typenode_chained_union() {
+            // int | str | bool -> Union with 3 members
+            if let Some(expr) = get_annotation_expr("x: int | str | bool") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Union { members } => {
+                        assert_eq!(members.len(), 3);
+                    }
+                    _ => panic!("Expected TypeNode::Union, got {:?}", node),
+                }
+            }
+        }
+
+        #[test]
+        fn typenode_nested_generic() {
+            // List[Dict[str, int]] -> nested Named structures
+            if let Some(expr) = get_annotation_expr("x: List[Dict[str, int]]") {
+                let node = build_typenode_from_annotation(&expr).unwrap();
+                match node {
+                    TypeNode::Named { name, args } => {
+                        assert_eq!(name, "List");
+                        assert_eq!(args.len(), 1);
+                        match &args[0] {
+                            TypeNode::Named {
+                                name: inner_name,
+                                args: inner_args,
+                            } => {
+                                assert_eq!(inner_name, "Dict");
+                                assert_eq!(inner_args.len(), 2);
+                            }
+                            _ => panic!("Expected inner Named"),
+                        }
+                    }
+                    _ => panic!("Expected TypeNode::Named"),
+                }
+            }
         }
     }
 }

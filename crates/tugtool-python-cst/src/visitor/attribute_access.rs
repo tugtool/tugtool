@@ -165,7 +165,10 @@ impl<'pos> AttributeAccessCollector<'pos> {
     }
 
     /// Collect attribute accesses from a parsed module with position information.
-    pub fn collect(module: &Module<'_>, positions: &'pos PositionTable) -> Vec<AttributeAccessInfo> {
+    pub fn collect(
+        module: &Module<'_>,
+        positions: &'pos PositionTable,
+    ) -> Vec<AttributeAccessInfo> {
         let mut collector = AttributeAccessCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.accesses
@@ -300,10 +303,7 @@ impl<'a, 'pos> Visitor<'a> for AttributeAccessCollector<'pos> {
         VisitResult::Continue
     }
 
-    fn visit_del_target_expression(
-        &mut self,
-        node: &DelTargetExpression<'a>,
-    ) -> VisitResult {
+    fn visit_del_target_expression(&mut self, node: &DelTargetExpression<'a>) -> VisitResult {
         // Del targets are treated as Write (modification)
         if let DelTargetExpression::Attribute(attr) = node {
             self.add_attribute_access(attr, AttributeAccessKind::Write);
@@ -417,9 +417,18 @@ obj.call_attr()
 
         assert_eq!(accesses.len(), 3);
 
-        let reads: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Read).collect();
-        let writes: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Write).collect();
-        let calls: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Call).collect();
+        let reads: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Read)
+            .collect();
+        let writes: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Write)
+            .collect();
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
 
         assert_eq!(reads.len(), 1);
         assert_eq!(writes.len(), 1);
@@ -475,7 +484,10 @@ class MyClass:
         assert_eq!(accesses[0].receiver, "self");
         assert_eq!(accesses[0].attr_name, "value");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Read);
-        assert_eq!(accesses[0].scope_path, vec!["<module>", "MyClass", "method"]);
+        assert_eq!(
+            accesses[0].scope_path,
+            vec!["<module>", "MyClass", "method"]
+        );
     }
 
     #[test]
@@ -498,7 +510,10 @@ class MyClass:
         let parsed = parse_module_with_positions(source, None).unwrap();
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
-        let writes: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Write).collect();
+        let writes: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Write)
+            .collect();
         assert_eq!(writes.len(), 2);
         assert!(writes.iter().any(|w| w.attr_name == "a"));
         assert!(writes.iter().any(|w| w.attr_name == "b"));
@@ -522,7 +537,10 @@ class MyClass:
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
         // Should have a Write for obj.attr
-        let writes: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Write).collect();
+        let writes: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Write)
+            .collect();
         assert_eq!(writes.len(), 1);
         assert_eq!(writes[0].attr_name, "attr");
     }
@@ -534,7 +552,10 @@ class MyClass:
         let parsed = parse_module_with_positions(source, None).unwrap();
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
-        let writes: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Write).collect();
+        let writes: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Write)
+            .collect();
         assert_eq!(writes.len(), 2);
         assert!(writes.iter().any(|w| w.attr_name == "a"));
         assert!(writes.iter().any(|w| w.attr_name == "b"));
@@ -547,7 +568,10 @@ class MyClass:
         let parsed = parse_module_with_positions(source, None).unwrap();
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
-        let writes: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Write).collect();
+        let writes: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Write)
+            .collect();
         assert_eq!(writes.len(), 2);
         assert!(writes.iter().any(|w| w.attr_name == "first"));
         assert!(writes.iter().any(|w| w.attr_name == "rest"));
@@ -561,7 +585,10 @@ class MyClass:
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
         // Should have one Read for obj.attr (used as keyword argument)
-        let reads: Vec<_> = accesses.iter().filter(|a| a.kind == AttributeAccessKind::Read).collect();
+        let reads: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Read)
+            .collect();
         assert_eq!(reads.len(), 1);
         assert_eq!(reads[0].attr_name, "attr");
     }

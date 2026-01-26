@@ -498,11 +498,7 @@ fn expression_to_string(expr: &Expression<'_>) -> String {
     match expr {
         Expression::Name(n) => n.value.to_string(),
         Expression::Attribute(attr) => {
-            format!(
-                "{}.{}",
-                expression_to_string(&attr.value),
-                attr.attr.value
-            )
+            format!("{}.{}", expression_to_string(&attr.value), attr.attr.value)
         }
         Expression::Subscript(sub) => {
             format!(

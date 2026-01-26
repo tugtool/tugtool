@@ -6,6 +6,91 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 9.5: Preserve CST Information in Annotations | PLANNING COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26 (planning phase only - implementation pending)
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 9 and Step 10 specifications
+- [D07] TypeInfo Evolves with Optional Structured Types design decision
+- [D08] TypeNode Design specification
+- `crates/tugtool-python/src/type_tracker.rs` - Existing TypeTracker implementation
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - AnnotationCollector and `annotation_to_string()`
+- `crates/tugtool-python/src/cst_bridge.rs` - Bridge layer between CST and tugtool types
+- `crates/tugtool-python/src/analyzer.rs` - PythonAdapter and signature conversion
+
+**Context:**
+During Step 10 implementation, a critical architectural issue was discovered: CST `Expression<'a>` data is converted to strings too early in the pipeline. The `AnnotationCollector` in `tugtool-python-cst` calls `annotation_to_string()` (lines 239-287), discarding rich CST structure before it reaches analysis layers.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Discover CST-to-string early conversion issue | Done |
+| Add `build_typenode_from_annotation()` function to type_tracker.rs | Done (19 unit tests pass) |
+| Attempt integration tests | Blocked (CST not available at type_tracker layer) |
+| Code-architect audit of CST data flow | Done |
+| Identify root cause: `annotation_to_string()` in annotation.rs | Done |
+| Audit impact on prior Phase 11 steps (1-9) | Done |
+| Create Step 9.5 plan with remediation tasks | Done |
+| Update Step 10 to SUPERSEDED BY STEP 9.5 | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs`:
+  - Added `build_typenode_from_annotation()` function that works with CST Expression
+  - Added `build_typenode_for_inferred_type()` function
+  - Added helper functions: `build_qualified_name()`, `collect_union_members()`, `build_typenode_from_subscript()`, etc.
+  - Added 19 unit tests in `typenode_building_tests` module (all passing)
+  - Note: These functions work but are "orphaned" - CST not available at this layer
+
+- `plans/phase-11.md`:
+  - Inserted new Step 9.5 with comprehensive architectural audit findings
+  - Updated Step 10 to mark as SUPERSEDED BY STEP 9.5
+  - Added impact assessment table for Steps 1-9
+  - Added root cause analysis with code snippets
+  - Added remediation plan with P0/P1/P2 priorities
+  - Added files requiring updates table
+  - Added P1 remediation tasks for signature conversion
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python typenode_building`: 19 tests passed
+- `cargo nextest run -p tugtool-python`: 449 tests passed
+- `cargo clippy -p tugtool-python`: clean (warnings fixed: `attr` -> `_attr`)
+
+**Architectural Audit Findings:**
+
+| Step | Impact | Issue |
+|------|--------|-------|
+| Step 2.7b | Significant | Parameter.annotation created as flat TypeNode from string |
+| Step 4 | Minor | TypeInfoData.structured exists but typically None |
+| Step 7c | Significant | Signature emission uses flat TypeNode |
+| Step 9 | Critical | TypeInfo.structured schema added but couldn't populate |
+| Step 10 | Critical | Attempted to build TypeNode where CST unavailable |
+
+**Root Cause:**
+```rust
+// annotation.rs:239-287
+fn annotation_to_string(expr: &Expression<'_>) -> String {
+    // All paths return String, discarding CST structure
+}
+```
+
+**Key Decisions/Notes:**
+- Discovery that `tugtool-python-cst` already depends on `tugtool-core` means no dependency barrier for fix
+- Solution: Build `TypeNode` at collection time in annotation.rs where CST is still available
+- Step 10 code (19 unit tests) is valid but in wrong location - will be moved to annotation.rs
+- P1 remediation needed for signature conversion in analyzer.rs (approx. line 3351)
+
+**Remaining Work:**
+Step 9.5 implementation tasks (pending user approval):
+- Add `type_node: Option<TypeNode>` to `CstAnnotationInfo`
+- Move TypeNode building logic to annotation.rs
+- Update bridge types and cst_bridge
+- Update TypeTracker and populate_type_info
+- P1 remediation: Fix signature conversion in analyzer.rs
+
+---
+
 ## [phase-11.md] Step 9: Structured Type Representation | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

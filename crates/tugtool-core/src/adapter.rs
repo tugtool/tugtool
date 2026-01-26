@@ -487,7 +487,6 @@ pub struct FileAnalysisResult {
     pub exports: Vec<ExportData>,
 }
 
-
 /// Bundle of multi-file analysis results.
 ///
 /// Contains analysis results for all files plus cross-file data like module
@@ -513,7 +512,6 @@ pub struct AnalysisBundle {
     /// in `FactsStore`.
     pub types: Vec<TypeInfoData>,
 }
-
 
 // ============================================================================
 // Language Adapter Trait
@@ -893,7 +891,11 @@ mod tests {
     impl LanguageAdapter for MockAdapter {
         type Error = std::io::Error;
 
-        fn analyze_file(&self, path: &str, _content: &str) -> Result<FileAnalysisResult, Self::Error> {
+        fn analyze_file(
+            &self,
+            path: &str,
+            _content: &str,
+        ) -> Result<FileAnalysisResult, Self::Error> {
             let mut result = FileAnalysisResult::default();
             result.path = path.to_string();
             Ok(result)

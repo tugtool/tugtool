@@ -33,9 +33,7 @@ use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::traits::NodeId;
-use crate::nodes::{
-    Arg, Attribute, Call, ClassDef, Expression, FunctionDef, Module, Span,
-};
+use crate::nodes::{Arg, Attribute, Call, ClassDef, Expression, FunctionDef, Module, Span};
 
 /// Information about a call argument.
 #[derive(Debug, Clone)]

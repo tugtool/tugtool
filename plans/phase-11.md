@@ -3846,74 +3846,199 @@ After completing all steps, you will have:
 
 ---
 
-#### Step 10: Python Type Annotation to TypeNode Conversion {#step-10}
+#### Step 9.5: Preserve CST Information in Annotations {#step-9-5}
 
-**Commit:** `feat(python): build TypeNode from type annotations`
+**Commit:** `feat(python-cst): build TypeNode at annotation collection time`
 
-**References:** [D08] TypeNode Design, Table T02, (#structured-types)
+**References:** [D07] TypeInfo Evolves with Optional Structured Types, [D08] TypeNode Design, (#structured-types)
+
+**Rationale:** An architectural audit revealed that CST `Expression<'a>` data is being converted to strings too early in the pipeline. The `AnnotationCollector` in `tugtool-python-cst` calls `annotation_to_string()` on rich CST nodes, discarding structural information before it reaches the analysis layers that need it. By building `TypeNode` at collection time (where CST is still available), we preserve the structured representation for downstream consumers. This is possible because `tugtool-python-cst` already depends on `tugtool-core` (where `TypeNode` is defined).
+
+---
+
+**Architectural Audit: Impact on Prior Steps**
+
+A comprehensive audit of Phase 11 Steps 1-9 was conducted to assess the impact of the CST-to-string early conversion issue. The findings are recorded here for traceability.
+
+**Steps with NO CST Impact (schema/structural changes):**
+- Step 0: Preparation and Design Validation (planning only)
+- Step 1: Visibility Enum (determined by naming conventions, not types)
+- Step 2: ScopeKind Extension (syntactic structure, not types)
+- Step 2.1: ScopeKind Consolidation (code organization)
+- Step 2.5: Import/ModuleKind Generalization (path-based, not types)
+- Step 2.6: ReferenceKind Generalization (syntactic context)
+- Step 2.7a: Alias Edges (assignment patterns, not types)
+- Step 2.7d: Qualified Names/Modifiers (scope paths and decorators)
+- Step 2.7e: Module Resolution Map (path resolution)
+- Step 3, 3a, 3b, 3c: PublicExport (string literals in `__all__`)
+- Step 8: Python Visibility Inference (naming conventions only)
+
+**Steps with CST Impact Requiring Remediation:**
+
+| Step | Impact | Issue | Remediation |
+|------|--------|-------|-------------|
+| **2.7b** | Significant | `Parameter.annotation: Option<TypeNode>` is created as flat `TypeNode::Named` from string, losing structure (e.g., `List[int]` becomes `Named { name: "List[int]" }` instead of nested) | Update signature conversion in `analyzer.rs` to use pre-built TypeNode from annotations |
+| **4** | Minor | `TypeInfoData.structured: Option<TypeNode>` exists but is typically `None` | Ensure field flows through from annotation TypeNode |
+| **7c** | Significant | Same as 2.7b - signature emission uses flat TypeNode | Same as 2.7b |
+| **9** | Critical | Added `TypeInfo.structured` schema but could NOT populate it because CST was already converted to strings | **This is exactly what Step 9.5 fixes** |
+| **10** | Critical | Attempted to build TypeNode in `type_tracker.rs` but CST not available there | **Already marked SUPERSEDED BY STEP 9.5** |
+
+**Steps with Minor Impact (future enhancements):**
+- Step 2.7c: Attribute Access/Call Sites - could benefit from type-based resolution
+- Step 5: Documentation - should be updated after Step 9.5
+- Step 6: Golden Tests - should add tests for structured TypeInfo
+- Step 7a: Core PythonAdapter - should work automatically once upstream fixed
+- Step 7d: Same as 2.7c
+
+**Root Cause Analysis:**
+
+The conversion point is `annotation.rs:239-287`:
+```rust
+fn annotation_to_string(expr: &Expression<'_>) -> String {
+    match expr {
+        Expression::Name(name) => name.value.to_string(),
+        Expression::Subscript(sub) => format!("{}[{}]", base, slice),
+        // All paths return String, discarding CST structure
+    }
+}
+```
+
+This function is called from `add_annotation()` (line 340), converting the rich CST `Expression<'a>` to a simple `String` before storing in `AnnotationInfo.type_str`.
+
+**Remediation Plan (Priority Order):**
+
+1. **P0 - Step 9.5 (this step):** Fix the CST pipeline - build `TypeNode` at collection time
+2. **P1 - Step 2.7b/7c Integration:** After Step 9.5, update signature conversion in `analyzer.rs` (approx. line 3351) to use pre-built TypeNode from parameter annotations instead of creating flat `TypeNode::Named` from strings
+3. **P1 - Step 4 Integration:** Ensure `TypeInfoData.structured` is populated from annotation TypeNode
+4. **P2 - Step 6 Addition:** Add golden tests verifying `TypeInfo.structured` in output
+5. **P2 - Step 5 Update:** Update documentation to reflect TypeNode population
+
+**Files Requiring Updates After Step 9.5:**
+
+| File | Current State | Required Update |
+|------|--------------|-----------------|
+| `tugtool-python-cst/src/visitor/annotation.rs` | `type_str: String` only | Add `type_node: Option<TypeNode>`, build at collection |
+| `tugtool-python/src/types.rs` | Bridge `AnnotationInfo` has `type_str` only | Add `type_node` field |
+| `tugtool-python/src/cst_bridge.rs` | Passes `type_str` through | Pass `type_node` through |
+| `tugtool-python/src/type_tracker.rs` | Has orphaned `build_typenode_from_annotation()` | Use pre-built TypeNode, deprecate orphaned function |
+| `tugtool-python/src/analyzer.rs` | Signature conversion creates flat TypeNode | Use pre-built TypeNode from parameter annotations |
+
+---
 
 **Artifacts:**
-- CST-based TypeNode builder in `type_tracker.rs`
-- Updated type inference to populate `TypeInfo.structured`
+- `type_node: Option<TypeNode>` field in `CstAnnotationInfo` (CST crate)
+- `build_typenode_from_cst_annotation()` function in `annotation.rs`
+- Updated bridge `AnnotationInfo` with `type_node` field
+- Updated `cst_bridge.rs` to pass `type_node` through
+- Updated `TypeTracker` to use pre-built `type_node`
+- Updated `populate_type_info()` to set `TypeInfo.structured`
+- (Remediation) Updated signature conversion in `analyzer.rs` with proper TypeNode
+- (Remediation) `Parameter.annotation` populated with structured TypeNode
 
-**V1 Scope (Required for Phase Close):**
-The following CST node types MUST be handled:
-- `Name` - simple types (`int`, `str`, `MyClass`)
-- `Attribute` - qualified types (`typing.List`, `module.Type`)
-- `Subscript` - generic types (`List[int]`, `Dict[str, int]`)
-- `BinOp` with `|` - PEP 604 unions (`str | int`)
+**Tasks:**
+- [ ] Add `type_node: Option<TypeNode>` field to `CstAnnotationInfo` in `tugtool-python-cst/src/visitor/annotation.rs`
+- [ ] Move `build_typenode_from_annotation()` logic from `type_tracker.rs` to `annotation.rs` as `build_typenode_from_cst_annotation()`
+  - Function already works with CST `Expression<'a>` nodes
+  - Handles `Name`, `Attribute`, `Subscript`, `BinaryOperation` (for PEP 604 unions)
+  - Recognizes special patterns: `Optional[T]`, `Union[A, B]`, `Callable[[...], R]`, `Tuple[...]`
+  - Returns `None` for unsupported constructs (forward references, Annotated, Literal, etc.)
+- [ ] Update `AnnotationCollector::add_annotation()` to call `build_typenode_from_cst_annotation()` while CST `Expression<'a>` is available
+- [ ] Update `AnnotationCollector::visit_function_def()` to build `TypeNode` for return type annotations
+- [ ] Add `type_node: Option<TypeNode>` field to bridge `AnnotationInfo` in `tugtool-python/src/types.rs`
+- [ ] Update `cst_bridge.rs` conversion to pass `type_node` from `CstAnnotationInfo` to bridge `AnnotationInfo`
+- [ ] Update `TypeTracker::process_annotations()` to store `type_node` alongside `type_str` in annotated types map
+  - Change `annotated_types: HashMap<(Vec<String>, String), String>` to store `(String, Option<TypeNode>)` or add parallel map
+- [ ] Update `populate_type_info()` to set `TypeInfo.structured` from the stored `type_node` when available
+  - Use `TypeInfo::with_structured()` builder when `type_node` is `Some`
+- [ ] Deprecate `build_typenode_from_annotation()` in `type_tracker.rs` as public API (keep as private fallback if needed)
+
+**P1 Remediation Tasks (from audit):**
+- [ ] Update signature conversion in `analyzer.rs` (approx. line 3351) to use pre-built TypeNode from parameter annotations
+  - Current code: `annotation: p.annotation.as_ref().map(|s| TypeNode::Named { name: s.clone(), args: vec![] })`
+  - This creates flat `TypeNode::Named` from string, losing all generic structure
+  - After fix: Use `p.type_node` directly when available, falling back to flat conversion
+- [ ] Ensure `SignatureData.params[].annotation` flows through from CST-built TypeNode
+- [ ] Verify `TypeInfoData.structured` in adapter output is populated from annotation TypeNode
+- [ ] Add golden test for `TypeInfo` with populated `structured` field
+
+**V1 Scope (Required for Step Close):**
+The following CST expression types MUST produce `TypeNode`:
+- `Expression::Name` - simple types (`int`, `str`, `MyClass`)
+- `Expression::Attribute` - qualified types (`typing.List`, `module.Type`)
+- `Expression::Subscript` - generic types (`List[int]`, `Dict[str, int]`)
+- `Expression::BinaryOperation` with `BitOr` - PEP 604 unions (`str | int`)
 
 The following special patterns in subscripts MUST be recognized:
-- `Optional[T]`, `Union[A, B]`, `Callable[[...], R]`, `Tuple[...]`
+- `Optional[T]` and `typing.Optional[T]` -> `TypeNode::Optional`
+- `Union[A, B]` and `typing.Union[A, B]` -> `TypeNode::Union`
+- `Callable[[...], R]` -> `TypeNode::Callable`
+- `Tuple[...]` -> `TypeNode::Tuple`
 
-**Explicitly Out of V1 Scope (return `None`):**
+**Explicitly Out of Scope (return `None`):**
 - `typing.Annotated[T, ...]` - metadata annotations
 - `typing.Literal[...]` - literal types
 - `typing.TypeVar` bounds and constraints
 - Forward references as strings (`"MyClass"`)
 - Complex expressions (lambdas, conditionals in annotations)
-- Rust-specific constructs and `TypeNode::Extension` generation
-
-**Tasks:**
-- [ ] Add `build_typenode_from_annotation(annotation_expr: &Expression) -> Option<TypeNode>` function to `type_tracker.rs`
-  - Work with CST expression nodes directly (not string parsing)
-  - Use existing infrastructure in `tugtool-python-cst` for expression traversal
-- [ ] Handle CST node types for type annotations:
-  - `Name` node -> `Named { name, args: [] }` (simple types like `int`, `str`)
-  - `Attribute` node -> `Named { name: "module.Type", args: [] }` (qualified types)
-  - `Subscript` node -> Generic types (extract base and slice for type args)
-  - `BinOp` with `|` operator -> `Union { members: [...] }` (PEP 604 union syntax)
-- [ ] Handle special generic patterns in subscript slices:
-  - `Optional[T]` -> `Optional { inner: T }`
-  - `Union[A, B, ...]` -> `Union { members: [A, B, ...] }`
-  - `Callable[[A, B], R]` -> `Callable { params: [A, B], returns: R }`
-  - `Tuple[A, B, C]` -> `Tuple { elements: [A, B, C] }`
-  - Other generics -> `Named { name, args: [...] }`
-- [ ] Return `None` for unparseable or complex annotations (graceful fallback to `type_repr` only)
-- [ ] Update `analyze_types_from_analysis` to call `build_typenode_from_annotation` when annotation CST is available
-- [ ] Add `build_typenode_for_inferred_type` for constructor calls (e.g., `x = MyClass()` -> `Named { name: "MyClass", args: [] }`)
 
 **Tests:**
-- [ ] Unit: CST `Name("int")` -> correct `Named { name: "int", args: [] }`
-- [ ] Unit: CST `Subscript(Name("List"), Name("str"))` -> correct nested `Named`
-- [ ] Unit: CST for `Dict[str, int]` -> correct multi-arg `Named`
-- [ ] Unit: CST for `Optional[int]` -> correct `Optional`
-- [ ] Unit: CST for `Union[str, int]` -> correct `Union`
-- [ ] Unit: CST for `str | int` (BinOp) -> correct `Union`
-- [ ] Unit: CST for `Callable[[int], str]` -> correct `Callable`
-- [ ] Unit: CST for `Tuple[int, str, bool]` -> correct `Tuple`
-- [ ] Unit: Complex/malformed CST -> returns `None`
-- [ ] Integration: Annotated variable has `structured` populated
-- [ ] Integration: Inferred type from constructor has `structured` populated
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: Some(Named { name: "int", args: [] })` for `x: int`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: Some(Named { name: "List", args: [...] })` for `x: List[str]`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: Some(Optional { inner: ... })` for `x: Optional[int]`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: Some(Union { members: [...] })` for `x: str | int`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: Some(Callable { ... })` for `x: Callable[[int], str]`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: Some(Tuple { ... })` for `x: Tuple[int, str]`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: None` for forward reference `x: "MyClass"`
+- [ ] Unit: `CstAnnotationInfo` includes `type_node: None` for `Annotated[int, "meta"]`
+- [ ] Unit: Bridge `AnnotationInfo` preserves `type_node` from CST layer
+- [ ] Unit: `TypeTracker` stores `type_node` for annotated variables
+- [ ] Integration: `populate_type_info()` sets `TypeInfo.structured` from annotation `type_node`
+- [ ] Integration: End-to-end annotated variable has `structured` field in FactsStore JSON output
+- [ ] Golden: TypeInfo output with `structured` from annotation
+
+**Remediation Tests (from audit):**
+- [ ] Unit: `Parameter.annotation` for `x: List[int]` is `TypeNode::Named { name: "List", args: [Named { name: "int" }] }` (not flat)
+- [ ] Unit: `Signature.returns` for `-> Dict[str, int]` has nested TypeNode structure
+- [ ] Integration: Signature in FactsStore has structured parameter annotations
+- [ ] Golden: Signature output with nested TypeNode annotations
 
 **Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python-cst annotation`
 - [ ] `cargo nextest run -p tugtool-python type`
+- [ ] `cargo nextest run -p tugtool-python signature`
 - [ ] `cargo nextest run -p tugtool-python`
+- [ ] `cargo clippy -p tugtool-python-cst -p tugtool-python -- -D warnings`
 
 **Rollback:**
 - Revert commit
 
 **Commit after all checkpoints pass.**
+
+---
+
+#### Step 10: Python Type Annotation to TypeNode Conversion {#step-10}
+
+**STATUS: SUPERSEDED BY STEP 9.5**
+
+This step was originally designed to build `TypeNode` from type annotations in `type_tracker.rs`. However, an architectural audit revealed that CST `Expression` data is not available at the `type_tracker` layer—it's converted to strings too early in the pipeline.
+
+**Step 9.5 addresses this** by building `TypeNode` at collection time in `tugtool-python-cst/src/visitor/annotation.rs`, where CST is still available. The `build_typenode_from_annotation()` function added in the partial implementation of this step has been moved/adapted to the CST layer.
+
+**What was completed before supersession:**
+- [x] `build_typenode_from_annotation()` function prototype added to `type_tracker.rs`
+- [x] Unit tests demonstrating the function works when given CST expressions
+- [ ] Integration tests (blocked—CST not available at type_tracker layer)
+
+**Remaining work is now covered by Step 9.5:**
+- Building `TypeNode` at CST collection time
+- Passing `type_node` through the bridge types
+- Populating `TypeInfo.structured` in FactsStore
+
+**After Step 9.5 is complete:**
+- The `build_typenode_from_annotation()` function in `type_tracker.rs` can be removed or deprecated
+- All integration tests will pass because `TypeNode` flows from CST collection through to `TypeInfo`
+
+**No commit for this step—work is completed as part of Step 9.5.**
 
 ---
 
