@@ -245,12 +245,19 @@ pub struct AttributeAccessData {
 }
 
 /// Call argument from single-file analysis.
+///
+/// # Span Semantics
+///
+/// The `span` field is `Option<Span>` because argument spans may be unavailable
+/// in some parsing contexts (e.g., synthetic nodes, error recovery). When `None`:
+/// - Integration layer should log a warning and skip the argument for edit operations
+/// - Analysis and informational operations can proceed with reduced precision
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallArgData {
     /// Argument name for keyword args, None for positional.
     pub name: Option<String>,
-    /// Byte span of the argument expression.
-    pub span: Span,
+    /// Byte span of the argument expression, or `None` if unavailable.
+    pub span: Option<Span>,
 }
 
 /// Call site from single-file analysis.
@@ -830,16 +837,33 @@ mod tests {
             args: vec![
                 CallArgData {
                     name: None,
-                    span: Span::new(105, 108),
+                    span: Some(Span::new(105, 108)),
                 },
                 CallArgData {
                     name: Some("key".to_string()),
-                    span: Span::new(110, 118),
+                    span: Some(Span::new(110, 118)),
                 },
             ],
         };
         assert_eq!(call.args.len(), 2);
         assert_eq!(call.args[1].name, Some("key".to_string()));
+    }
+
+    #[test]
+    fn call_arg_data_can_have_none_span() {
+        // Per [D01] Span Validation Strategy: CallArgData.span is Option<Span>
+        // to handle cases where span may be unavailable
+        let arg = CallArgData {
+            name: Some("arg".to_string()),
+            span: None,
+        };
+        assert!(arg.span.is_none());
+
+        let arg_with_span = CallArgData {
+            name: None,
+            span: Some(Span::new(10, 20)),
+        };
+        assert!(arg_with_span.span.is_some());
     }
 
     #[test]

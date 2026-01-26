@@ -3445,7 +3445,7 @@ impl PythonAdapter {
                 .iter()
                 .map(|arg| CallArgData {
                     name: arg.name.clone(),
-                    span: arg.span.unwrap_or(Span::new(0, 0)),
+                    span: arg.span,
                 })
                 .collect();
 

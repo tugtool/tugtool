@@ -6,6 +6,42 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 1: Update Adapter Data Types for Optional Spans | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D01] Span Validation Strategy
+- `crates/tugtool-core/src/adapter.rs` - CallArgData definition and existing tests
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Change `CallArgData.span: Span` to `CallArgData.span: Option<Span>` in adapter.rs | Done |
+| Update any tests that construct `CallArgData` | Done |
+| Update doc comments to explain `None` semantics | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/adapter.rs` - Changed `CallArgData.span` to `Option<Span>`, added doc comments explaining `None` semantics, updated existing test to use `Some(span)`, added new test `call_arg_data_can_have_none_span`
+- `crates/tugtool-python/src/analyzer.rs` - Updated CallArgData construction to pass `arg.span` directly (required for clippy to pass)
+- `plans/phase-11B.md` - Marked Step 1 tasks and checkpoints as complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core`: 448 tests passed
+- `cargo nextest run --workspace`: 1641 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core`: PASS
+- `cargo clippy --workspace`: PASS (clean)
+
+**Key Notes:**
+- The analyzer.rs change was necessary for clippy to pass; the code now passes `arg.span` directly instead of `arg.span.unwrap_or(Span::new(0, 0))`
+- This aligns with the plan's intent for Step 2 but was required early for Step 1's checkpoint
+- Added comprehensive doc comments explaining that `None` span means integration layer should log a warning and skip the argument for edit operations
+
+---
+
 ## [phase-11B.md] Step 0: Audit and Categorize Span Usages | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

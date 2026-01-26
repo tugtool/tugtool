@@ -689,17 +689,17 @@ fn missing_span_warns_and_skips() {
 - Updated tests
 
 **Tasks:**
-- [ ] Change `CallArgData.span: Span` to `CallArgData.span: Option<Span>` in adapter.rs
-- [ ] Update any tests that construct `CallArgData`
-- [ ] Update doc comments to explain `None` semantics
+- [x] Change `CallArgData.span: Span` to `CallArgData.span: Option<Span>` in adapter.rs
+- [x] Update any tests that construct `CallArgData`
+- [x] Update doc comments to explain `None` semantics
 
 **Tests:**
-- [ ] Unit: `CallArgData` can be constructed with `None` span
-- [ ] Unit: Existing tests updated to use `Some(span)`
+- [x] Unit: `CallArgData` can be constructed with `None` span
+- [x] Unit: Existing tests updated to use `Some(span)`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core`
-- [ ] `cargo clippy --workspace`
+- [x] `cargo nextest run -p tugtool-core`
+- [x] `cargo clippy --workspace`
 
 **Rollback:**
 - Revert commit
