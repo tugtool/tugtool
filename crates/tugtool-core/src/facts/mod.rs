@@ -157,13 +157,35 @@ pub enum Language {
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum ModuleKind {
-    /// Regular module (single file).
+    /// Single-file module (e.g., `foo.rs`, `foo.py`).
     #[default]
     File,
-    /// Package module (__init__.py or mod.rs).
-    Package,
-    /// Namespace package (no __init__.py).
+    /// Directory-based module/package (Rust mod.rs, Go package, Python package).
+    Directory,
+    /// Inline module defined within another file (Rust `mod foo { ... }`).
+    Inline,
+    /// Namespace module (no concrete file, language-defined).
     Namespace,
+}
+
+/// Kind of import statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum ImportKind {
+    /// `import module` (Python), `use module` (Rust), `import * as` (TS)
+    #[default]
+    Module,
+    /// `from module import name`
+    Named,
+    /// `import module as alias` or `from module import name as alias`
+    Alias,
+    /// `from module import *` / glob import
+    Glob,
+    /// Re-export (e.g., Rust `pub use`, TypeScript `export { ... } from`)
+    ReExport,
+    /// Default import (JavaScript/TypeScript)
+    Default,
 }
 
 /// Kind of symbol definition.
@@ -375,6 +397,13 @@ pub struct Module {
     pub parent_module_id: Option<ModuleId>,
     /// File that defines this module.
     pub file_id: Option<FileId>,
+    /// Declaration span for inline modules (None for file/directory modules).
+    ///
+    /// For Rust `mod foo { ... }`, this is the span of the module declaration.
+    /// For Python modules, this is always `None` since Python does not support
+    /// inline module definitions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decl_span: Option<Span>,
 }
 
 impl Module {
@@ -392,7 +421,16 @@ impl Module {
             kind,
             parent_module_id,
             file_id,
+            decl_span: None,
         }
+    }
+
+    /// Set the declaration span for inline modules.
+    ///
+    /// Use this for Rust `mod foo { ... }` blocks within a file.
+    pub fn with_decl_span(mut self, span: Span) -> Self {
+        self.decl_span = Some(span);
+        self
     }
 }
 
@@ -512,12 +550,14 @@ pub struct Import {
     pub imported_name: Option<String>,
     /// Alias if using `as` (e.g., `import numpy as np` → alias = "np").
     pub alias: Option<String>,
-    /// Whether this is a star import (`from x import *`).
-    pub is_star: bool,
+    /// Kind of import statement.
+    pub kind: ImportKind,
 }
 
 impl Import {
     /// Create a new import entry.
+    ///
+    /// Defaults to `ImportKind::Module` (bare `import foo`).
     pub fn new(
         import_id: ImportId,
         file_id: FileId,
@@ -531,31 +571,68 @@ impl Import {
             module_path: module_path.into(),
             imported_name: None,
             alias: None,
-            is_star: false,
+            kind: ImportKind::Module,
         }
     }
 
-    /// Set the imported name.
+    /// Set the imported name. Auto-sets kind to `Named`.
+    ///
+    /// Example: `from foo import bar` → `Import::new(...).with_imported_name("bar")`
     pub fn with_imported_name(mut self, name: impl Into<String>) -> Self {
         self.imported_name = Some(name.into());
+        // Auto-set kind to Named (unless overridden by with_kind or higher-precedence builder)
+        self.kind = self.derive_kind_with_named();
         self
     }
 
-    /// Set the alias.
+    /// Set the alias. Auto-sets kind to `Alias`.
+    ///
+    /// Example: `from foo import bar as baz` → `Import::new(...).with_imported_name("bar").with_alias("baz")`
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.alias = Some(alias.into());
+        // Auto-set kind to Alias (unless overridden by with_kind or higher-precedence builder)
+        self.kind = self.derive_kind_with_alias();
         self
     }
 
-    /// Set as star import.
-    pub fn with_star(mut self) -> Self {
-        self.is_star = true;
+    /// Set as glob import. Sets kind to `Glob`.
+    ///
+    /// Example: `from foo import *` → `Import::new(...).with_glob()`
+    pub fn with_glob(mut self) -> Self {
+        self.kind = ImportKind::Glob;
+        self
+    }
+
+    /// Explicit kind override for `ReExport`, `Default`, etc.
+    ///
+    /// This overrides any auto-derived kinds from `with_imported_name` or `with_alias`.
+    pub fn with_kind(mut self, kind: ImportKind) -> Self {
+        self.kind = kind;
         self
     }
 
     /// Get the effective name (alias if present, otherwise imported_name).
     pub fn effective_name(&self) -> Option<&str> {
         self.alias.as_deref().or(self.imported_name.as_deref())
+    }
+
+    /// Derive import kind considering Named precedence.
+    ///
+    /// Order-independent: Alias > Named > Module
+    fn derive_kind_with_named(&self) -> ImportKind {
+        if self.alias.is_some() {
+            ImportKind::Alias
+        } else {
+            ImportKind::Named
+        }
+    }
+
+    /// Derive import kind considering Alias precedence.
+    ///
+    /// Order-independent: Alias > Named > Module
+    fn derive_kind_with_alias(&self) -> ImportKind {
+        // Alias has higher precedence than Named, so always return Alias
+        ImportKind::Alias
     }
 }
 
@@ -1699,7 +1776,7 @@ mod tests {
             let module = Module::new(
                 module_id,
                 "src.utils",
-                ModuleKind::Package,
+                ModuleKind::Directory,
                 None,
                 Some(file_id),
             );
@@ -1707,7 +1784,7 @@ mod tests {
 
             let retrieved = store.module(module_id).unwrap();
             assert_eq!(retrieved.path, "src.utils");
-            assert_eq!(retrieved.kind, ModuleKind::Package);
+            assert_eq!(retrieved.kind, ModuleKind::Directory);
             assert_eq!(retrieved.file_id, Some(file_id));
         }
 
@@ -1717,7 +1794,7 @@ mod tests {
 
             // Create parent module
             let parent_id = store.next_module_id();
-            let parent = Module::new(parent_id, "myproject", ModuleKind::Package, None, None);
+            let parent = Module::new(parent_id, "myproject", ModuleKind::Directory, None, None);
             store.insert_module(parent);
 
             // Create child module
@@ -1779,19 +1856,19 @@ mod tests {
         use super::*;
 
         #[test]
-        fn star_import() {
+        fn glob_import() {
             let mut store = FactsStore::new();
 
             let file = test_file(&mut store, "src/main.py");
             let file_id = file.file_id;
             store.insert_file(file);
 
-            let import = test_import(&mut store, file_id, "os.path").with_star();
+            let import = test_import(&mut store, file_id, "os.path").with_glob();
             let import_id = import.import_id;
             store.insert_import(import);
 
             let retrieved = store.import(import_id).unwrap();
-            assert!(retrieved.is_star);
+            assert_eq!(retrieved.kind, ImportKind::Glob);
             assert_eq!(retrieved.effective_name(), None);
         }
 
@@ -3130,6 +3207,223 @@ mod tests {
 
             assert_eq!(symbol.visibility, Some(Visibility::Private));
             assert_eq!(symbol.module_id, Some(ModuleId::new(1)));
+        }
+    }
+
+    mod import_kind_tests {
+        use super::*;
+
+        #[test]
+        fn import_kind_serialization_roundtrip() {
+            let variants = [
+                ImportKind::Module,
+                ImportKind::Named,
+                ImportKind::Alias,
+                ImportKind::Glob,
+                ImportKind::ReExport,
+                ImportKind::Default,
+            ];
+
+            for kind in variants {
+                let json = serde_json::to_string(&kind).unwrap();
+                let deserialized: ImportKind = serde_json::from_str(&json).unwrap();
+                assert_eq!(kind, deserialized);
+            }
+        }
+
+        #[test]
+        fn import_kind_serializes_to_snake_case() {
+            assert_eq!(
+                serde_json::to_string(&ImportKind::Module).unwrap(),
+                "\"module\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ImportKind::Named).unwrap(),
+                "\"named\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ImportKind::Alias).unwrap(),
+                "\"alias\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ImportKind::Glob).unwrap(),
+                "\"glob\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ImportKind::ReExport).unwrap(),
+                "\"re_export\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ImportKind::Default).unwrap(),
+                "\"default\""
+            );
+        }
+
+        #[test]
+        fn import_with_imported_name_sets_named_kind() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // from foo import bar → Named
+            let import = test_import(&mut store, file_id, "foo").with_imported_name("bar");
+            assert_eq!(import.kind, ImportKind::Named);
+            assert_eq!(import.imported_name, Some("bar".to_string()));
+        }
+
+        #[test]
+        fn import_with_alias_sets_alias_kind() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // import foo as f → Alias
+            let import = test_import(&mut store, file_id, "foo").with_alias("f");
+            assert_eq!(import.kind, ImportKind::Alias);
+            assert_eq!(import.alias, Some("f".to_string()));
+        }
+
+        #[test]
+        fn import_with_glob_sets_glob_kind() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // from foo import * → Glob
+            let import = test_import(&mut store, file_id, "foo").with_glob();
+            assert_eq!(import.kind, ImportKind::Glob);
+        }
+
+        #[test]
+        fn import_builder_precedence_is_order_independent() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // from foo import bar as baz
+            // Order 1: with_imported_name first, then with_alias
+            let import1 = test_import(&mut store, file_id, "foo")
+                .with_imported_name("bar")
+                .with_alias("baz");
+            assert_eq!(import1.kind, ImportKind::Alias);
+
+            // Order 2: with_alias first, then with_imported_name
+            let import2 = test_import(&mut store, file_id, "foo")
+                .with_alias("baz")
+                .with_imported_name("bar");
+            assert_eq!(import2.kind, ImportKind::Alias);
+        }
+
+        #[test]
+        fn import_with_kind_overrides_auto_derived() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Explicit kind override
+            let import = test_import(&mut store, file_id, "foo")
+                .with_imported_name("bar")
+                .with_kind(ImportKind::ReExport);
+            assert_eq!(import.kind, ImportKind::ReExport);
+        }
+
+        #[test]
+        fn import_default_kind_is_module() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // import foo → Module
+            let import = test_import(&mut store, file_id, "foo");
+            assert_eq!(import.kind, ImportKind::Module);
+        }
+    }
+
+    mod module_kind_tests {
+        use super::*;
+
+        #[test]
+        fn module_kind_serialization_roundtrip() {
+            let variants = [
+                ModuleKind::File,
+                ModuleKind::Directory,
+                ModuleKind::Inline,
+                ModuleKind::Namespace,
+            ];
+
+            for kind in variants {
+                let json = serde_json::to_string(&kind).unwrap();
+                let deserialized: ModuleKind = serde_json::from_str(&json).unwrap();
+                assert_eq!(kind, deserialized);
+            }
+        }
+
+        #[test]
+        fn module_kind_serializes_to_snake_case() {
+            assert_eq!(
+                serde_json::to_string(&ModuleKind::File).unwrap(),
+                "\"file\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ModuleKind::Directory).unwrap(),
+                "\"directory\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ModuleKind::Inline).unwrap(),
+                "\"inline\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ModuleKind::Namespace).unwrap(),
+                "\"namespace\""
+            );
+        }
+
+        #[test]
+        fn module_default_kind_is_file() {
+            assert_eq!(ModuleKind::default(), ModuleKind::File);
+        }
+
+        #[test]
+        fn module_with_decl_span_sets_span() {
+            let mut store = FactsStore::new();
+            let module_id = store.next_module_id();
+            let module = Module::new(module_id, "mymodule", ModuleKind::Inline, None, None)
+                .with_decl_span(Span::new(10, 50));
+
+            assert_eq!(module.kind, ModuleKind::Inline);
+            assert_eq!(module.decl_span, Some(Span::new(10, 50)));
+        }
+
+        #[test]
+        fn module_decl_span_none_not_serialized() {
+            let mut store = FactsStore::new();
+            let module_id = store.next_module_id();
+            let module = Module::new(module_id, "mymodule", ModuleKind::File, None, None);
+
+            // decl_span should be None by default
+            assert!(module.decl_span.is_none());
+
+            // When serialized, decl_span should not appear in JSON
+            let json = serde_json::to_string(&module).unwrap();
+            assert!(!json.contains("decl_span"));
+        }
+
+        #[test]
+        fn module_decl_span_some_serialized() {
+            let mut store = FactsStore::new();
+            let module_id = store.next_module_id();
+            let module = Module::new(module_id, "mymodule", ModuleKind::Inline, None, None)
+                .with_decl_span(Span::new(10, 50));
+
+            // When serialized, decl_span should appear in JSON
+            let json = serde_json::to_string(&module).unwrap();
+            assert!(json.contains("\"decl_span\""));
         }
     }
 

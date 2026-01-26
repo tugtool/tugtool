@@ -2708,51 +2708,51 @@ fn visibility_inference_public_dunder() {
 - Updated docs for module/import semantics
 
 **Tasks:**
-- [ ] Add `ImportKind` enum to `facts/mod.rs`
-- [ ] Replace `Import.is_star: bool` with `Import.kind: ImportKind`
-- [ ] Update `Import::new()` to set `ImportKind::Module` by default (bare `import foo`)
-- [ ] Add `Import::with_imported_name()` - auto-sets `ImportKind::Named`
-- [ ] Add `Import::with_alias()` - auto-sets `ImportKind::Alias`
-- [ ] Add `Import::with_glob()` - sets `ImportKind::Glob` (replaces `with_star()`)
-- [ ] Add `Import::with_kind()` - explicit override for `ReExport`, `Default`, etc.
-- [ ] Implement order-independent builder precedence (Alias overrides Named; Glob overrides Alias; `with_kind` overrides all)
-- [ ] **Migration:** Replace all `Import::with_star()` calls with `Import::with_glob()`
-- [ ] Remove `Import::with_star()` builder method entirely
-- [ ] **Migration:** Rename `ModuleKind::Package` to `ModuleKind::Directory`
-- [ ] Add `ModuleKind::Inline` variant (for Rust `mod foo { ... }`)
-- [ ] Add `ModuleKind::Namespace` variant
-- [ ] Add `Module.decl_span: Option<Span>` for inline module declarations
-- [ ] Add `Module::with_decl_span(span: Span) -> Self` builder
-- [ ] Update `ModuleKind` docs to remove `__init__.py` references
-- [ ] Update Python analyzer to use new builder pattern:
+- [x] Add `ImportKind` enum to `facts/mod.rs`
+- [x] Replace `Import.is_star: bool` with `Import.kind: ImportKind`
+- [x] Update `Import::new()` to set `ImportKind::Module` by default (bare `import foo`)
+- [x] Add `Import::with_imported_name()` - auto-sets `ImportKind::Named`
+- [x] Add `Import::with_alias()` - auto-sets `ImportKind::Alias`
+- [x] Add `Import::with_glob()` - sets `ImportKind::Glob` (replaces `with_star()`)
+- [x] Add `Import::with_kind()` - explicit override for `ReExport`, `Default`, etc.
+- [x] Implement order-independent builder precedence (Alias overrides Named; Glob overrides Alias; `with_kind` overrides all)
+- [x] **Migration:** Replace all `Import::with_star()` calls with `Import::with_glob()`
+- [x] Remove `Import::with_star()` builder method entirely
+- [x] **Migration:** Rename `ModuleKind::Package` to `ModuleKind::Directory`
+- [x] Add `ModuleKind::Inline` variant (for Rust `mod foo { ... }`)
+- [x] Add `ModuleKind::Namespace` variant
+- [x] Add `Module.decl_span: Option<Span>` for inline module declarations
+- [x] Add `Module::with_decl_span(span: Span) -> Self` builder
+- [x] Update `ModuleKind` docs to remove `__init__.py` references
+- [x] Update Python analyzer to use new builder pattern:
   - `import foo` → `Import::new("foo")` (kind = Module by default)
   - `from foo import bar` → `Import::new("foo").with_imported_name("bar")` (auto-sets Named)
   - `from foo import bar as baz` → `Import::new("foo").with_imported_name("bar").with_alias("baz")` (auto-sets Alias)
   - `from foo import *` → `Import::new("foo").with_glob()` (sets Glob)
-- [ ] **Migration:** Update all callers that check `is_star` to check `kind == ImportKind::Glob`
-- [ ] Update any core queries/tests that rely on `is_star` or `ModuleKind::Package`
-- [ ] Update module creation to set `decl_span` for inline modules when available
+- [x] **Migration:** Update all callers that check `is_star` to check `kind == ImportKind::Glob`
+- [x] Update any core queries/tests that rely on `is_star` or `ModuleKind::Package`
+- [x] Update module creation to set `decl_span` for inline modules when available
 
 **Python Note:** For Python modules, `Module.decl_span` is always `None` since Python does not support inline module definitions (unlike Rust's `mod foo { ... }`).
 
 **Tests:**
-- [ ] Unit: `ImportKind` serialization (all variants)
-- [ ] Unit: `ModuleKind` serialization (all variants including `Inline`)
-- [ ] Unit: `Import::with_imported_name` auto-sets `ImportKind::Named`
-- [ ] Unit: `Import::with_alias` auto-sets `ImportKind::Alias`
-- [ ] Unit: `Import::with_glob` sets `ImportKind::Glob`
-- [ ] Unit: `Import` builder precedence is order-independent
-- [ ] Unit: `Module::with_decl_span` sets `decl_span`
-- [ ] Integration: Python analyzer emits `ImportKind::Module` for `import foo`
-- [ ] Integration: Python analyzer emits `ImportKind::Named` for `from foo import bar`
-- [ ] Integration: Python analyzer emits `ImportKind::Alias` for `from foo import bar as baz`
-- [ ] Integration: Python analyzer emits `ImportKind::Glob` for `from foo import *`
+- [x] Unit: `ImportKind` serialization (all variants)
+- [x] Unit: `ModuleKind` serialization (all variants including `Inline`)
+- [x] Unit: `Import::with_imported_name` auto-sets `ImportKind::Named`
+- [x] Unit: `Import::with_alias` auto-sets `ImportKind::Alias`
+- [x] Unit: `Import::with_glob` sets `ImportKind::Glob`
+- [x] Unit: `Import` builder precedence is order-independent
+- [x] Unit: `Module::with_decl_span` sets `decl_span`
+- [x] Integration: Python analyzer emits `ImportKind::Module` for `import foo`
+- [x] Integration: Python analyzer emits `ImportKind::Named` for `from foo import bar`
+- [x] Integration: Python analyzer emits `ImportKind::Alias` for `from foo import bar as baz`
+- [x] Integration: Python analyzer emits `ImportKind::Glob` for `from foo import *`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core import`
-- [ ] `cargo nextest run -p tugtool-core module`
-- [ ] `cargo nextest run -p tugtool-python import`
-- [ ] `cargo clippy --workspace` (no unused code warnings for removed methods)
+- [x] `cargo nextest run -p tugtool-core import`
+- [x] `cargo nextest run -p tugtool-core module`
+- [x] `cargo nextest run -p tugtool-python import`
+- [x] `cargo clippy --workspace` (no unused code warnings for removed methods)
 
 **Rollback:**
 - Revert commit

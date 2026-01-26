@@ -1216,8 +1216,10 @@ mod ac4_import_resolution {
         // from foo import *  # star imports are recorded
         // Note: Full expansion of star imports (resolving to each exported symbol)
         // is a future enhancement (see Phase 8 Q02). For now, we verify:
-        // 1. Star imports are recorded with is_star = true
+        // 1. Star imports are recorded with kind = Glob
         // 2. Star imports don't crash analysis
+        use tugtool_core::facts::ImportKind;
+
         let file_list = files(&[
             ("foo.py", "x = 1\ny = 2\n"),
             ("main.py", "from foo import *\n"),
@@ -1227,8 +1229,11 @@ mod ac4_import_resolution {
         let main_file = store.file_by_path("main.py");
         assert!(main_file.is_some(), "Expected main.py to be analyzed");
 
-        // Star import should be recorded
-        let imports: Vec<_> = store.imports().filter(|i| i.is_star).collect();
+        // Star import should be recorded with Glob kind
+        let imports: Vec<_> = store
+            .imports()
+            .filter(|i| i.kind == ImportKind::Glob)
+            .collect();
         assert!(!imports.is_empty(), "Expected star import to be recorded");
     }
 
@@ -1236,6 +1241,8 @@ mod ac4_import_resolution {
     fn relative_star_import_handled() {
         // from .utils import *  # relative star imports should at minimum not crash
         // Full expansion is future work (Phase 8 Q02)
+        use tugtool_core::facts::ImportKind;
+
         let file_list = files(&[
             ("pkg/__init__.py", ""),
             ("pkg/utils.py", "x = 1\n__all__ = ['x']\n"),
@@ -1250,8 +1257,11 @@ mod ac4_import_resolution {
             "Expected pkg/consumer.py to be analyzed"
         );
 
-        // Star import should be recorded
-        let imports: Vec<_> = store.imports().filter(|i| i.is_star).collect();
+        // Star import should be recorded with Glob kind
+        let imports: Vec<_> = store
+            .imports()
+            .filter(|i| i.kind == ImportKind::Glob)
+            .collect();
         assert!(
             !imports.is_empty(),
             "Expected relative star import to be recorded"

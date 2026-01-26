@@ -6,6 +6,101 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.5: Generalize Import and ModuleKind | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- [D04] Import and Module Generalization (lines 590-696 of phase-11.md)
+- Concept C03: Why ImportKind?
+- Concept C04: ModuleKind as a Directory Model
+- Current `Import` struct and `ModuleKind` enum in `facts/mod.rs`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `ImportKind` enum to `facts/mod.rs` | Done |
+| Replace `Import.is_star: bool` with `Import.kind: ImportKind` | Done |
+| Update `Import::new()` to set `ImportKind::Module` by default | Done |
+| Add `Import::with_imported_name()` - auto-sets `ImportKind::Named` | Done |
+| Add `Import::with_alias()` - auto-sets `ImportKind::Alias` | Done |
+| Add `Import::with_glob()` - sets `ImportKind::Glob` | Done |
+| Add `Import::with_kind()` - explicit override | Done |
+| Implement order-independent builder precedence | Done |
+| Replace all `Import::with_star()` calls with `Import::with_glob()` | Done |
+| Remove `Import::with_star()` builder method | Done |
+| Rename `ModuleKind::Package` to `ModuleKind::Directory` | Done |
+| Add `ModuleKind::Inline` variant | Done |
+| Add `Module.decl_span: Option<Span>` for inline modules | Done |
+| Add `Module::with_decl_span()` builder | Done |
+| Update `ModuleKind` docs to remove `__init__.py` references | Done |
+| Update Python analyzer to use new builder pattern | Done |
+| Update all callers that check `is_star` to use `kind == ImportKind::Glob` | Done |
+| Update core queries/tests that rely on `is_star` or `ModuleKind::Package` | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `ImportKind` enum (Module, Named, Alias, Glob, ReExport, Default)
+  - Replaced `Import.is_star: bool` with `Import.kind: ImportKind`
+  - Updated `Import::new()` to default to `ImportKind::Module`
+  - Updated `with_imported_name()` to auto-set kind based on precedence
+  - Updated `with_alias()` to auto-set `ImportKind::Alias`
+  - Added `with_glob()` method (replaces `with_star()`)
+  - Added `with_kind()` for explicit override
+  - Removed `with_star()` method
+  - Renamed `ModuleKind::Package` to `ModuleKind::Directory`
+  - Added `ModuleKind::Inline` variant
+  - Updated `ModuleKind` docs to be language-agnostic
+  - Added `Module.decl_span: Option<Span>` with skip_serializing
+  - Added `Module::with_decl_span()` builder
+  - Updated test `star_import` to `glob_import`
+  - Updated tests using `ModuleKind::Package` to `ModuleKind::Directory`
+  - Added `import_kind_tests` module (8 tests)
+  - Added `module_kind_tests` module (6 tests)
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated import creation to use new builder pattern
+  - Fixed test using `is_star` to use `kind == ImportKind::Glob`
+
+- `crates/tugtool-python/tests/acceptance_criteria.rs`:
+  - Updated `star_imports_handled` test to use `ImportKind::Glob`
+  - Updated `relative_star_import_handled` test to use `ImportKind::Glob`
+
+- `plans/phase-11.md` - Checked off all Step 2.5 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core import`: 15 tests passed
+- `cargo nextest run -p tugtool-core module`: 10 tests passed
+- `cargo nextest run -p tugtool-python import`: 86 tests passed
+- `cargo clippy --workspace`: No warnings
+- `cargo nextest run --workspace`: 1380 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core import`: PASS
+- `cargo nextest run -p tugtool-core module`: PASS
+- `cargo nextest run -p tugtool-python import`: PASS
+- `cargo clippy --workspace`: PASS
+
+**Key Decisions/Notes:**
+
+**Builder Pattern with Order-Independent Precedence:**
+The `Import` builder now implements order-independent precedence:
+- `with_glob()` sets `ImportKind::Glob` directly
+- `with_alias()` always results in `ImportKind::Alias` (highest auto-derived precedence)
+- `with_imported_name()` sets `Named` unless alias is already set
+- `with_kind()` provides explicit override for ReExport, Default, etc.
+
+This means `import.with_imported_name("bar").with_alias("baz")` and `import.with_alias("baz").with_imported_name("bar")` both result in `ImportKind::Alias`.
+
+**Python-Specific Types Unchanged:**
+The CST layer (`tugtool-python-cst`) and internal analyzer types (`LocalImport`) retain their own `is_star` fields. Only the core `facts::Import` was changed to use `ImportKind`. This separation of concerns allows internal representations to differ from the normalized schema.
+
+**ModuleKind::Namespace Already Existed:**
+The `ModuleKind::Namespace` variant was already present in the codebase. The main changes were renaming `Package` to `Directory` and adding `Inline` for Rust support.
+
+---
+
 ## [phase-11.md] Step 2.1: Consolidate ScopeKind | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

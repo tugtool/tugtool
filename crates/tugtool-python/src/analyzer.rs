@@ -857,22 +857,31 @@ pub fn analyze_files(
             if local_import.kind == "from" && !local_import.is_star {
                 for imported_name in &local_import.names {
                     let name_import_id = store.next_import_id();
-                    let mut import =
-                        Import::new(name_import_id, file_id, span, &local_import.module_path);
-                    import.imported_name = Some(imported_name.name.clone());
-                    import.alias = imported_name.alias.clone();
-                    import.is_star = false;
+                    // from foo import bar → Named
+                    // from foo import bar as baz → Alias
+                    let import =
+                        Import::new(name_import_id, file_id, span, &local_import.module_path)
+                            .with_imported_name(&imported_name.name);
+                    let import = if let Some(alias) = &imported_name.alias {
+                        import.with_alias(alias)
+                    } else {
+                        import
+                    };
                     store.insert_import(import);
                 }
             } else if local_import.is_star {
-                // Star import
-                let mut import = Import::new(import_id, file_id, span, &local_import.module_path);
-                import.is_star = true;
+                // from foo import * → Glob
+                let import = Import::new(import_id, file_id, span, &local_import.module_path)
+                    .with_glob();
                 store.insert_import(import);
             } else {
-                // Regular module import
-                let mut import = Import::new(import_id, file_id, span, &local_import.module_path);
-                import.alias = local_import.alias.clone();
+                // import foo → Module
+                // import foo as bar → Alias (module import with alias)
+                let mut import =
+                    Import::new(import_id, file_id, span, &local_import.module_path);
+                if let Some(alias) = &local_import.alias {
+                    import = import.with_alias(alias);
+                }
                 store.insert_import(import);
             }
         }
@@ -6378,6 +6387,8 @@ mod tests {
 
         #[test]
         fn analyze_files_pass3_ac4_star_imports_return_none() {
+            use tugtool_core::facts::ImportKind;
+
             // Test: star imports return None (documented limitation)
             let mut store = FactsStore::new();
             let files = vec![("test.py".to_string(), "from os import *".to_string())];
@@ -6387,7 +6398,7 @@ mod tests {
 
             // Star imports are tracked but specific names can't be resolved
             let imports: Vec<_> = store.imports().collect();
-            let star_import = imports.iter().find(|i| i.is_star);
+            let star_import = imports.iter().find(|i| i.kind == ImportKind::Glob);
             assert!(star_import.is_some(), "should have star import tracked");
         }
 
