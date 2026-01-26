@@ -83,7 +83,7 @@ impl Location {
     /// Create a location from byte offset, computing line/col from content.
     ///
     /// This method lazily computes line and column from a byte offset using
-    /// the file content. Per design decision [D03], line/col is computed
+    /// the file content. Per design decision D03, line/col is computed
     /// at the output boundary rather than stored internally.
     ///
     /// # Arguments

@@ -9,7 +9,9 @@
 //! - Workspace snapshots
 //! - Sandboxed file operations
 //! - Text utilities and diff generation
+//! - Language adapter trait for pluggable language support
 
+pub mod adapter;
 pub mod diff;
 pub mod error;
 pub mod facts;

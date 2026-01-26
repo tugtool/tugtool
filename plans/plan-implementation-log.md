@@ -6,6 +6,80 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 4: Define LanguageAdapter Trait | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 4 specification (lines 3271-3328)
+- [D06] LanguageAdapter Trait Design (lines 1879-2196)
+- [D15] Deterministic Adapter Ordering
+- `crates/tugtool-core/src/facts/mod.rs` - Existing FactsStore types (Visibility, ScopeKind, SymbolKind, ImportKind, etc.)
+- `crates/tugtool-core/src/lib.rs` - Module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `crates/tugtool-core/src/adapter.rs` | Done |
+| Define `ScopeData`, `SymbolData`, `ReferenceData`, `ImportData`, `ExportData` intermediate types | Done |
+| Define adapter `ReferenceKind` enum (8 variants) | Done |
+| Define `FileAnalysisResult` struct | Done |
+| Define `TypeInfoData` struct and add to `AnalysisBundle` | Done |
+| Define `ModuleResolutionData` and add to `AnalysisBundle` | Done |
+| Define `AnalysisBundle` struct | Done |
+| Define `LanguageAdapter` trait with associated Error type | Done |
+| Use read-only `&FactsStore` in `analyze_files` for cross-file resolution | Done |
+| Add `pub mod adapter;` to `lib.rs` | Done |
+| Re-export adapter types from `tugtool_core` | Done |
+| Add documentation for the trait | Done |
+| Document deterministic ordering (adapter preserves input order for file_results) | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/adapter.rs`:
+  - `ReferenceKind` enum (8 variants: Definition, Read, Write, Call, Import, Attribute, TypeAnnotation, Delete)
+  - `ScopeData`, `SymbolData`, `ReferenceData` - core analysis data types
+  - `AttributeAccessData`, `CallArgData`, `CallSiteData` - call/attribute facts
+  - `AliasEdgeData`, `QualifiedNameData` - alias and qualified name data
+  - `ParameterData`, `SignatureData`, `TypeParamData`, `ModifierData` - signature facts
+  - `ImportData`, `ExportData` - import/export data types
+  - `TypeInfoData`, `ModuleResolutionData` - bundle-level data types
+  - `FileAnalysisResult`, `AnalysisBundle` - analysis result containers
+  - `LanguageAdapter` trait with `analyze_file`, `analyze_files`, `language`, `can_handle` methods
+  - Comprehensive documentation with examples and ID ownership explanation
+  - 21 unit tests including deterministic ordering test
+
+**Files Modified:**
+- `crates/tugtool-core/src/lib.rs`:
+  - Added `pub mod adapter;` to module list
+  - Updated module-level doc comment to mention language adapter trait
+
+- `crates/tugtool-core/src/types.rs`:
+  - Fixed pre-existing broken doc link: `[D03]` → `D03` (line 86)
+
+- `plans/phase-11.md`:
+  - Checked off all 13 tasks for Step 4
+  - Checked off all 3 tests for Step 4
+  - Checked off both checkpoints for Step 4
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core adapter`: 21 tests passed
+- `cargo nextest run -p tugtool-python`: 396 tests passed (no regressions)
+- `cargo clippy --workspace`: Clean (fixed derivable_impls warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core adapter`: PASS (21 tests)
+- `cargo doc -p tugtool-core --open` (adapter docs render): PASS
+
+**Key Decisions/Notes:**
+- Used `#[derive(Default)]` for `FileAnalysisResult` and `AnalysisBundle` per clippy recommendation
+- Adapter `ReferenceKind` is separate from `facts::ReferenceKind` to keep adapters independent of FactsStore internals
+- Integration layer mapping documented in ReferenceKind doc comments
+- Mock adapter in tests demonstrates trait usage and verifies deterministic ordering
+- Fixed pre-existing broken doc link in types.rs (`[D03]` was being interpreted as intra-doc link)
+
+---
+
 ## [phase-11.md] Step 3c: Remove Legacy Export Type | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

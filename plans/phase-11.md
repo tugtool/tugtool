@@ -3280,24 +3280,24 @@ After completing all steps, you will have:
 - Supporting types (`FileAnalysisResult`, `AnalysisBundle`)
 
 **Tasks:**
-- [ ] Create `crates/tugtool-core/src/adapter.rs`
-- [ ] Define `ScopeData`, `SymbolData`, `ReferenceData`, `ImportData`, `ExportData` intermediate types
-- [ ] Define adapter `ReferenceKind` enum (Definition, Read, Write, Call, Import, Attribute, TypeAnnotation, Delete)
-- [ ] Define `FileAnalysisResult` struct
-- [ ] Define `TypeInfoData` struct and add `types: Vec<TypeInfoData>` to `AnalysisBundle`
-- [ ] Define `ModuleResolutionData` and add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle`
-- [ ] Define `AnalysisBundle` struct
-- [ ] Define `LanguageAdapter` trait with associated Error type
-- [ ] Use read-only `&FactsStore` in `analyze_files` for cross-file resolution
-- [ ] Add `pub mod adapter;` to `lib.rs`
-- [ ] Re-export adapter types from `tugtool_core`
-- [ ] Add documentation for the trait
-- [ ] Document deterministic ordering (adapter preserves input order for file_results)
+- [x] Create `crates/tugtool-core/src/adapter.rs`
+- [x] Define `ScopeData`, `SymbolData`, `ReferenceData`, `ImportData`, `ExportData` intermediate types
+- [x] Define adapter `ReferenceKind` enum (Definition, Read, Write, Call, Import, Attribute, TypeAnnotation, Delete)
+- [x] Define `FileAnalysisResult` struct
+- [x] Define `TypeInfoData` struct and add `types: Vec<TypeInfoData>` to `AnalysisBundle`
+- [x] Define `ModuleResolutionData` and add `modules: Vec<ModuleResolutionData>` to `AnalysisBundle`
+- [x] Define `AnalysisBundle` struct
+- [x] Define `LanguageAdapter` trait with associated Error type
+- [x] Use read-only `&FactsStore` in `analyze_files` for cross-file resolution
+- [x] Add `pub mod adapter;` to `lib.rs`
+- [x] Re-export adapter types from `tugtool_core`
+- [x] Add documentation for the trait
+- [x] Document deterministic ordering (adapter preserves input order for file_results)
 
 **Tests:**
-- [ ] Unit: Trait compiles (trait definition test)
-- [ ] Unit: `file_results` preserves input order (deterministic ordering per [D15](#d15-deterministic-adapter-order))
-- [ ] Documentation: Example in rustdoc compiles
+- [x] Unit: Trait compiles (trait definition test)
+- [x] Unit: `file_results` preserves input order (deterministic ordering per [D15](#d15-deterministic-adapter-order))
+- [x] Documentation: Example in rustdoc compiles
 
 **Deterministic Ordering Test Fixture:**
 ```rust
@@ -3319,8 +3319,8 @@ fn file_results_preserves_input_order() {
 ```
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core adapter`
-- [ ] `cargo doc -p tugtool-core --open` (adapter docs render)
+- [x] `cargo nextest run -p tugtool-core adapter`
+- [x] `cargo doc -p tugtool-core --open` (adapter docs render)
 
 **Rollback:**
 - Revert commit, delete adapter.rs
