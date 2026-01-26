@@ -51,9 +51,3 @@ pub mod verification;
 
 // Re-export PythonAdapter and options for easy access
 pub use analyzer::{PythonAdapter, PythonAnalyzerOptions};
-
-// Legacy re-export for backward compatibility during migration
-// TODO: Remove this after updating all callers
-pub mod rename {
-    pub use super::ops::rename::*;
-}

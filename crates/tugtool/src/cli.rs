@@ -36,7 +36,7 @@ use tugtool_core::session::Session;
 #[cfg(feature = "python")]
 use tugtool_python::files::collect_python_files;
 #[cfg(feature = "python")]
-use tugtool_python::rename::{analyze, rename};
+use tugtool_python::ops::rename::{analyze, rename};
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 

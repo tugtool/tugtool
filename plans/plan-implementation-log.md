@@ -6,6 +6,67 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 11: Final Integration and Cleanup | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 11 tasks, tests, checkpoints, and exit criteria
+- `CLAUDE.md` - Checked for updates needed (none required)
+- CLI help text - Verified no updates needed
+- `crates/tugtool-core/src/output.rs` - Verified SCHEMA_VERSION unchanged
+- `crates/tugtool-core/src/facts/mod.rs` - Verified FACTS_SCHEMA_VERSION = 11
+- `crates/tugtool-core/src/adapter.rs` - Verified LanguageAdapter trait
+- `crates/tugtool-python/src/analyzer.rs` - Verified PythonAdapter implementation
+- Golden test files - Verified output schema compatibility
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Run full test suite | Done (1640 tests) |
+| Review and update CLAUDE.md with new capabilities | Done (no changes needed) |
+| Ensure all new public types are documented | Done |
+| Verify JSON output matches expected schema | Done |
+| Update any CLI help text if needed | Done (no changes needed) |
+| Remove any TODO comments from Phase 11 work | Done |
+| Update output schema docs/golden files if outputs changed | Done (no changes needed) |
+
+**Files Modified:**
+- `crates/tugtool/src/cli.rs`:
+  - Updated import from `tugtool_python::rename` to `tugtool_python::ops::rename`
+
+- `crates/tugtool-python/src/lib.rs`:
+  - Removed legacy `rename` module re-export and associated TODO comment
+
+- `plans/phase-11.md`:
+  - Checked off all Step 11 tasks, tests, and checkpoints
+  - Checked off all Phase Exit Criteria (18 items)
+  - Checked off all Milestone checkboxes (M01 through M05)
+  - Checked off all Acceptance tests
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1640 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo doc --workspace`: Docs build successfully
+- Golden tests: All passing
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo doc --workspace`: PASS
+- All exit criteria met: PASS
+
+**Key Decisions/Notes:**
+- CLAUDE.md does not need updates because Phase 11 changes are internal infrastructure (FactsStore schema, LanguageAdapter trait) that don't affect CLI usage or developer workflows
+- Output schema (SCHEMA_VERSION = "1") remains unchanged per [CQ1] and [CQ2] in the plan - only FACTS_SCHEMA_VERSION (internal) was updated to 11
+- Cleaned up legacy `rename` module re-export that was marked with a TODO comment
+- All 18 Phase Exit Criteria verified complete
+- All 5 milestones (M01-M05) verified complete
+- Phase 11: Architectural Improvements to FactsStore is now complete
+
+---
+
 ## [phase-11.md] Step 9.5: Preserve CST Information in Annotations | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

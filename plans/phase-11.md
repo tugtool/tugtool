@@ -4054,24 +4054,24 @@ This step was originally designed to build `TypeNode` from type annotations in `
 - Tests passing
 
 **Tasks:**
-- [ ] Run full test suite
-- [ ] Review and update CLAUDE.md with new capabilities
-- [ ] Ensure all new public types are documented
-- [ ] Verify JSON output matches expected schema
-- [ ] Update any CLI help text if needed
-- [ ] Remove any TODO comments from Phase 11 work
-- [ ] Update output schema docs/golden files if SymbolInfo or outputs changed
+- [x] Run full test suite
+- [x] Review and update CLAUDE.md with new capabilities
+- [x] Ensure all new public types are documented
+- [x] Verify JSON output matches expected schema
+- [x] Update any CLI help text if needed
+- [x] Remove any TODO comments from Phase 11 work
+- [x] Update output schema docs/golden files if SymbolInfo or outputs changed
 
 **Tests:**
-- [ ] Full: `cargo nextest run --workspace`
-- [ ] Clippy: `cargo clippy --workspace -- -D warnings`
-- [ ] Docs: `cargo doc --workspace`
+- [x] Full: `cargo nextest run --workspace`
+- [x] Clippy: `cargo clippy --workspace -- -D warnings`
+- [x] Docs: `cargo doc --workspace`
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace`
-- [ ] `cargo clippy --workspace -- -D warnings`
-- [ ] `cargo doc --workspace`
-- [ ] All exit criteria met
+- [x] `cargo nextest run --workspace`
+- [x] `cargo clippy --workspace -- -D warnings`
+- [x] `cargo doc --workspace`
+- [x] All exit criteria met
 
 **Rollback:**
 - Revert commit
@@ -4086,82 +4086,82 @@ This step was originally designed to build `TypeNode` from type annotations in `
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `Visibility` enum added with 5 variants
-- [ ] `Symbol.visibility` is `Option<Visibility>` with explicit semantics
-- [ ] `PublicExport` type added with storage and queries as the canonical export model
-- [ ] `PublicExport` includes precise spans and export intent/origin
-- [ ] `ImportKind` replaces `Import.is_star`
-- [ ] `ModuleKind` generalized for directory-based modules
-- [ ] `Module.decl_span` captured for inline modules when present
-- [ ] `ScopeKind` extended with Rust variants, `#[non_exhaustive]`
-- [ ] `LanguageAdapter` trait defined in `tugtool-core`
-- [ ] `PythonAdapter` implements `LanguageAdapter` in `tugtool-python`
-- [ ] Python visibility inference works with `infer_visibility` option
-- [ ] `TypeNode` provides structured type representation
-- [ ] `TypeNode` is `#[non_exhaustive]` with `Extension`
-- [ ] `ReferenceKind::Delete` supported and adapter kinds mapped
-- [ ] Python type annotations convert to `TypeNode`
-- [ ] FactsStore serialization includes `schema_version`
-- [ ] Python tests pass after updating to the new schema
-- [ ] Golden tests verify the new schema
-- [ ] Documentation complete
+- [x] `Visibility` enum added with 5 variants
+- [x] `Symbol.visibility` is `Option<Visibility>` with explicit semantics
+- [x] `PublicExport` type added with storage and queries as the canonical export model
+- [x] `PublicExport` includes precise spans and export intent/origin
+- [x] `ImportKind` replaces `Import.is_star`
+- [x] `ModuleKind` generalized for directory-based modules
+- [x] `Module.decl_span` captured for inline modules when present
+- [x] `ScopeKind` extended with Rust variants, `#[non_exhaustive]`
+- [x] `LanguageAdapter` trait defined in `tugtool-core`
+- [x] `PythonAdapter` implements `LanguageAdapter` in `tugtool-python`
+- [x] Python visibility inference works with `infer_visibility` option
+- [x] `TypeNode` provides structured type representation
+- [x] `TypeNode` is `#[non_exhaustive]` with `Extension`
+- [x] `ReferenceKind::Delete` supported and adapter kinds mapped
+- [x] Python type annotations convert to `TypeNode`
+- [x] FactsStore serialization includes `schema_version`
+- [x] Python tests pass after updating to the new schema
+- [x] Golden tests verify the new schema
+- [x] Documentation complete
 
 **Acceptance tests:**
-- [ ] `cargo nextest run --workspace` (all tests pass)
-- [ ] `cargo clippy --workspace -- -D warnings` (no warnings)
-- [ ] `cargo doc --workspace` (docs build)
-- [ ] Golden tests assert `schema_version = 11`
+- [x] `cargo nextest run --workspace` (all tests pass)
+- [x] `cargo clippy --workspace -- -D warnings` (no warnings)
+- [x] `cargo doc --workspace` (docs build)
+- [x] Golden tests assert `schema_version = 11`
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Visibility Infrastructure** {#m01-visibility}
-- [ ] Steps 1-2, 2.1 complete
-- [ ] Symbol can have visibility
-- [ ] ScopeKind ready for Rust
-- [ ] ScopeKind consolidated (no duplicate enum in Python analyzer)
+- [x] Steps 1-2, 2.1 complete
+- [x] Symbol can have visibility
+- [x] ScopeKind ready for Rust
+- [x] ScopeKind consolidated (no duplicate enum in Python analyzer)
 
 **Milestone M01b: Import/Module Generalization** {#m01b-import-module}
-- [ ] Step 2.5 complete
-- [ ] ImportKind in place, ModuleKind generalized
-- [ ] Module decl_span available for inline modules
+- [x] Step 2.5 complete
+- [x] ImportKind in place, ModuleKind generalized
+- [x] Module decl_span available for inline modules
 
 **Milestone M01c: ReferenceKind Generalization** {#m01c-referencekind}
-- [ ] Step 2.6 complete
-- [ ] FactsStore ReferenceKind supports Delete
-- [ ] Adapter ReferenceKind includes Definition/Delete
+- [x] Step 2.6 complete
+- [x] FactsStore ReferenceKind supports Delete
+- [x] Adapter ReferenceKind includes Definition/Delete
 
 **Milestone M01d: Semantic Facts Foundation** {#m01d-semantic-facts}
-- [ ] Steps 2.7a-2.7e complete
-- [ ] Alias edges persisted in FactsStore (Step 2.7a)
-- [ ] Signatures and type parameters available (Step 2.7b)
-- [ ] Attribute access and call sites captured (Step 2.7c)
-- [ ] Qualified names and modifiers available (Step 2.7d)
-- [ ] Module resolution map populated (Step 2.7e)
+- [x] Steps 2.7a-2.7e complete
+- [x] Alias edges persisted in FactsStore (Step 2.7a)
+- [x] Signatures and type parameters available (Step 2.7b)
+- [x] Attribute access and call sites captured (Step 2.7c)
+- [x] Qualified names and modifiers available (Step 2.7d)
+- [x] Module resolution map populated (Step 2.7e)
 
 **Milestone M02: Export Generalization** {#m02-export}
-- [ ] Steps 3, 3a, 3b, 3c complete
-- [ ] PublicExport type available with precise spans
-- [ ] Legacy Export and ExportId removed
-- [ ] Python analyzer emits PublicExport
-- [ ] Rename operations use PublicExport
+- [x] Steps 3, 3a, 3b, 3c complete
+- [x] PublicExport type available with precise spans
+- [x] Legacy Export and ExportId removed
+- [x] Python analyzer emits PublicExport
+- [x] Rename operations use PublicExport
 
 **Milestone M03: Language Adapter Ready** {#m03-adapter}
-- [ ] Step 4 complete
-- [ ] LanguageAdapter trait defined
+- [x] Step 4 complete
+- [x] LanguageAdapter trait defined
 
 **Milestone M04: Python Adapter Complete** {#m04-python-adapter}
-- [ ] Steps 7a-7d complete
-- [ ] Core PythonAdapter implements LanguageAdapter (Step 7a)
-- [ ] Alias edges emitted (Step 7b)
-- [ ] Signatures, modifiers, qualified names emitted (Step 7c)
-- [ ] Attribute access, call sites, module resolution emitted (Step 7d)
-- [ ] Step 8 complete (visibility inference)
-- [ ] Python visibility inference available
+- [x] Steps 7a-7d complete
+- [x] Core PythonAdapter implements LanguageAdapter (Step 7a)
+- [x] Alias edges emitted (Step 7b)
+- [x] Signatures, modifiers, qualified names emitted (Step 7c)
+- [x] Attribute access, call sites, module resolution emitted (Step 7d)
+- [x] Step 8 complete (visibility inference)
+- [x] Python visibility inference available
 
 **Milestone M05: Structured Types** {#m05-structured-types}
-- [ ] Steps 9-10 complete
-- [ ] TypeNode available
-- [ ] Python type annotations convert to TypeNode
+- [x] Steps 9-10 complete
+- [x] TypeNode available
+- [x] Python type annotations convert to TypeNode
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
