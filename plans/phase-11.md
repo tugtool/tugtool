@@ -3765,30 +3765,30 @@ After completing all steps, you will have:
 - Updated Symbol population with visibility
 
 **Tasks:**
-- [ ] Add `infer_visibility: bool` field to `PythonAnalyzerOptions` (default: false)
-- [ ] Create `infer_python_visibility(name: &str) -> Option<Visibility>` helper function:
+- [x] Add `infer_visibility: bool` field to `PythonAnalyzerOptions` (default: false)
+- [x] Create `infer_python_visibility(name: &str) -> Option<Visibility>` helper function:
   - `__name__` (dunders) -> `Some(Visibility::Public)`
   - `__name` (name mangling) -> `Some(Visibility::Private)`
   - `_name` (single underscore) -> `Some(Visibility::Private)`
   - `name` (no prefix) -> `None` (unknown)
-- [ ] Update symbol registration in `analyze_files` Pass 2:
+- [x] Update symbol registration in `analyze_files` Pass 2:
   - If `options.infer_visibility` is true, call `infer_python_visibility`
   - Set `Symbol.visibility` based on result
-- [ ] Ensure visibility is propagated through `with_visibility` builder
+- [x] Ensure visibility is propagated through `with_visibility` builder
 
 **Tests:**
-- [ ] Unit: `infer_python_visibility("_private")` returns `Some(Private)`
-- [ ] Unit: `infer_python_visibility("__mangled")` returns `Some(Private)`
-- [ ] Unit: `infer_python_visibility("__init__")` returns `Some(Public)`
-- [ ] Unit: `infer_python_visibility("public_func")` returns `None`
-- [ ] Integration: With `infer_visibility: false`, all symbols have `visibility: None`
-- [ ] Integration: With `infer_visibility: true`, `_helper` has `visibility: Some(Private)`
-- [ ] Integration: With `infer_visibility: true`, `__init__` has `visibility: Some(Public)`
-- [ ] Integration: Existing tests pass with default options
+- [x] Unit: `infer_python_visibility("_private")` returns `Some(Private)`
+- [x] Unit: `infer_python_visibility("__mangled")` returns `Some(Private)`
+- [x] Unit: `infer_python_visibility("__init__")` returns `Some(Public)`
+- [x] Unit: `infer_python_visibility("public_func")` returns `None`
+- [x] Integration: With `infer_visibility: false`, all symbols have `visibility: None`
+- [x] Integration: With `infer_visibility: true`, `_helper` has `visibility: Some(Private)`
+- [x] Integration: With `infer_visibility: true`, `__init__` has `visibility: Some(Public)`
+- [x] Integration: Existing tests pass with default options
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python visibility`
-- [ ] `cargo nextest run -p tugtool-python`
+- [x] `cargo nextest run -p tugtool-python visibility`
+- [x] `cargo nextest run -p tugtool-python`
 
 **Rollback:**
 - Revert commit

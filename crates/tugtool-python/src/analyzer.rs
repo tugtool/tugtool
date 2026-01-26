@@ -3836,6 +3836,20 @@ mod tests {
         }
 
         #[test]
+        fn visibility_inference_public_no_convention() {
+            let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
+                infer_visibility: true,
+            });
+            let content = "def public_func(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the function symbol - no underscore prefix means None (unknown)
+            let func_symbol = result.symbols.iter().find(|s| s.name == "public_func");
+            assert!(func_symbol.is_some());
+            assert_eq!(func_symbol.unwrap().visibility, None);
+        }
+
+        #[test]
         fn reference_kind_conversion_definition() {
             assert_eq!(
                 convert_facts_reference_kind_to_adapter(ReferenceKind::Definition),

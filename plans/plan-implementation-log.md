@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 8: Python Visibility Inference from Naming Conventions | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 8 specification (lines 3756-3797)
+- [D09] Python Visibility Inference Strategy design decision
+- Table T01: Python Visibility Conventions mapping
+- `crates/tugtool-python/src/analyzer.rs` - Existing `PythonAdapter` and `PythonAnalyzerOptions` implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `infer_visibility: bool` field to `PythonAnalyzerOptions` | Done (already existed from Step 7a) |
+| Create `infer_python_visibility` helper function | Done (already existed from Step 7a) |
+| Update symbol registration to call visibility inference | Done (already existed from Step 7a) |
+| Ensure visibility propagated through `with_visibility` builder | Done (already existed from Step 7a) |
+
+**Finding:** Visibility inference was already fully implemented during Step 7a (Core PythonAdapter Implementation). This step verified the implementation and added one missing test case.
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `visibility_inference_public_no_convention` test to verify symbols without underscore prefixes return `None`
+
+- `plans/phase-11.md`:
+  - Checked off all Step 8 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python visibility`: 5 tests passed
+- `cargo nextest run -p tugtool-python`: 449 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python visibility`: PASS (5 tests)
+- `cargo nextest run -p tugtool-python`: PASS (449 tests)
+
+**Key Decisions/Notes:**
+- The visibility inference functionality was implemented early during Step 7a as part of the `PythonAdapter` work
+- The `infer_visibility_from_name()` method correctly handles all Python naming conventions:
+  - `__name__` (dunders) → `Some(Visibility::Public)`
+  - `__name` (name mangling) → `Some(Visibility::Private)`
+  - `_name` (single underscore) → `Some(Visibility::Private)`
+  - `name` (no prefix) → `None` (unknown visibility)
+- Default behavior (`infer_visibility: false`) leaves all symbols with `visibility: None`
+- This step was primarily a verification step with one additional test added
+
+---
+
 ## [phase-11.md] Step 7d: Emit Attribute Access, Call Sites, and Module Resolution | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
