@@ -2629,24 +2629,62 @@ fn visibility_inference_public_dunder() {
 - `#[non_exhaustive]` attribute on ScopeKind
 
 **Tasks:**
-- [ ] Add `#[non_exhaustive]` attribute to `ScopeKind`
-- [ ] Add `Impl` variant
-- [ ] Add `Trait` variant
-- [ ] Add `Closure` variant
-- [ ] Add `Unsafe` variant
-- [ ] Add `MatchArm` variant
-- [ ] Update any exhaustive matches in `tugtool-core` to use wildcards
-- [ ] Update `ScopeKind` serialization (serde rename_all handles it)
+- [x] Add `#[non_exhaustive]` attribute to `ScopeKind`
+- [x] Add `Impl` variant
+- [x] Add `Trait` variant
+- [x] Add `Closure` variant
+- [x] Add `Unsafe` variant
+- [x] Add `MatchArm` variant
+- [x] Update any exhaustive matches in `tugtool-core` to use wildcards
+- [x] Update `ScopeKind` serialization (serde rename_all handles it)
 
 **Tests:**
-- [ ] Unit: New variant serialization
-- [ ] Unit: Deserialization of existing variants still works
-- [ ] Integration: Python analyzer still works
+- [x] Unit: New variant serialization
+- [x] Unit: Deserialization of existing variants still works
+- [x] Integration: Python analyzer still works
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core scope`
-- [ ] `cargo nextest run -p tugtool-python`
-- [ ] `cargo clippy --workspace` (no exhaustiveness warnings)
+- [x] `cargo nextest run -p tugtool-core scope`
+- [x] `cargo nextest run -p tugtool-python`
+- [x] `cargo clippy --workspace` (no exhaustiveness warnings)
+
+**Rollback:**
+- Revert commit
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 2.1: Consolidate ScopeKind {#step-2-1}
+
+**Commit:** `refactor(python): use core ScopeKind directly`
+
+**References:** Step 2 (ScopeKind extension), [D05] ScopeKind Extension Strategy
+
+**Motivation:** The Python analyzer defines a local `ScopeKind` enum that duplicates 5 variants from `tugtool_core::facts::ScopeKind`. With `#[non_exhaustive]` now on the core enum, this duplication is unnecessary and creates maintenance burden.
+
+**Artifacts:**
+- Remove `tugtool_python::analyzer::ScopeKind` local enum
+- Use `tugtool_core::facts::ScopeKind` directly throughout Python analyzer
+- Remove `Scope::to_core_kind()` conversion method
+
+**Tasks:**
+- [x] Remove local `ScopeKind` enum from `analyzer.rs`
+- [x] Import `tugtool_core::facts::ScopeKind` (can alias if needed)
+- [x] Update `From<&str>` impl to return core `ScopeKind` with `_ => ScopeKind::Module` fallback
+- [x] Remove `Scope::to_core_kind()` method (no longer needed)
+- [x] Update all `ScopeKind` usages in `analyzer.rs` to use core type
+- [x] Update `ops/rename.rs` to import from core instead of analyzer
+- [x] Add wildcard arm to any match statements: `_ => unreachable!("Python analyzer never produces Rust scope kinds")`
+
+**Tests:**
+- [x] Unit: Existing scope tests still pass
+- [x] Integration: Python analyzer produces correct scope kinds
+- [x] Integration: Rename operations still work
+
+**Checkpoint:**
+- [x] `cargo nextest run -p tugtool-python`
+- [x] `cargo clippy --workspace`
 
 **Rollback:**
 - Revert commit
@@ -3952,9 +3990,10 @@ The following special patterns in subscripts MUST be recognized:
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Visibility Infrastructure** {#m01-visibility}
-- [ ] Steps 1-2 complete
+- [ ] Steps 1-2, 2.1 complete
 - [ ] Symbol can have visibility
 - [ ] ScopeKind ready for Rust
+- [ ] ScopeKind consolidated (no duplicate enum in Python analyzer)
 
 **Milestone M01b: Import/Module Generalization** {#m01b-import-module}
 - [ ] Step 2.5 complete

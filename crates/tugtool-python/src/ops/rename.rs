@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use thiserror::Error;
 
-use tugtool_core::facts::{FactsStore, SymbolKind};
+use tugtool_core::facts::{FactsStore, ScopeKind, SymbolKind};
 use tugtool_core::output::{AliasOutput, Location, ReferenceInfo, SymbolInfo};
 use tugtool_core::patch::{FileId, MaterializedPatch, OutputEdit, Span};
 use tugtool_core::text::byte_offset_to_position_str;
@@ -42,7 +42,7 @@ use crate::verification::{
 use crate::cst_bridge;
 
 // Native analyze_files for multi-file analysis
-use crate::analyzer::{analyze_files, FileAnalysis, FileAnalysisBundle, Scope, ScopeId, ScopeKind};
+use crate::analyzer::{analyze_files, FileAnalysis, FileAnalysisBundle, Scope, ScopeId};
 
 // ============================================================================
 // Error Types
@@ -446,6 +446,8 @@ fn build_scope_path(scope_id: ScopeId, scopes: &[Scope]) -> Vec<String> {
                     .unwrap_or_else(|| "<anonymous>".to_string()),
                 ScopeKind::Lambda => "lambda".to_string(),
                 ScopeKind::Comprehension => "comprehension".to_string(),
+                // Rust-specific variants are never produced by Python analyzer
+                _ => unreachable!("Python analyzer never produces Rust scope kinds"),
             };
             path.push(name);
             current_id = scope.parent_id;

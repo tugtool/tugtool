@@ -12,7 +12,7 @@
 
 use tugtool_core::facts::{
     Export, FactsStore, File, Import, Language, Reference, ReferenceKind, ScopeId as CoreScopeId,
-    ScopeInfo as CoreScopeInfo, ScopeKind as CoreScopeKind, Symbol, SymbolId, SymbolKind,
+    ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -130,31 +130,18 @@ impl std::fmt::Display for ScopeId {
     }
 }
 
-/// Kind of scope in Python.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ScopeKind {
-    /// Module scope (top-level).
-    Module,
-    /// Class body scope.
-    Class,
-    /// Function body scope.
-    Function,
-    /// Lambda expression scope.
-    Lambda,
-    /// Comprehension scope (list/set/dict/generator).
-    Comprehension,
-}
-
-impl From<&str> for ScopeKind {
-    fn from(s: &str) -> Self {
-        match s {
-            "module" => ScopeKind::Module,
-            "class" => ScopeKind::Class,
-            "function" => ScopeKind::Function,
-            "lambda" => ScopeKind::Lambda,
-            "comprehension" => ScopeKind::Comprehension,
-            _ => ScopeKind::Module, // Default fallback
-        }
+/// Convert scope kind string to core ScopeKind.
+///
+/// Python CST produces scope kind strings that map to the core ScopeKind enum.
+/// Unknown kinds fall back to Module as a safe default.
+fn scope_kind_from_str(s: &str) -> ScopeKind {
+    match s {
+        "module" => ScopeKind::Module,
+        "class" => ScopeKind::Class,
+        "function" => ScopeKind::Function,
+        "lambda" => ScopeKind::Lambda,
+        "comprehension" => ScopeKind::Comprehension,
+        _ => ScopeKind::Module, // Default fallback for unknown kinds
     }
 }
 
@@ -215,16 +202,6 @@ impl Scope {
         self.nonlocals.contains(name)
     }
 
-    /// Convert local ScopeKind to core ScopeKind.
-    pub fn to_core_kind(&self) -> CoreScopeKind {
-        match self.kind {
-            ScopeKind::Module => CoreScopeKind::Module,
-            ScopeKind::Class => CoreScopeKind::Class,
-            ScopeKind::Function => CoreScopeKind::Function,
-            ScopeKind::Lambda => CoreScopeKind::Lambda,
-            ScopeKind::Comprehension => CoreScopeKind::Comprehension,
-        }
-    }
 }
 
 // ============================================================================
@@ -632,7 +609,7 @@ pub fn analyze_files(
             let span = scope.span.unwrap_or_else(|| Span::new(0, 0));
 
             let mut core_scope =
-                CoreScopeInfo::new(core_scope_id, file_id, span, scope.to_core_kind());
+                CoreScopeInfo::new(core_scope_id, file_id, span, scope.kind);
             if let Some(parent_id) = parent_core_id {
                 core_scope = core_scope.with_parent(parent_id);
             }
@@ -1382,7 +1359,7 @@ fn build_scopes(native_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, Sco
 
             let mut scope = Scope::new(
                 scope_id,
-                ScopeKind::from(ns.kind.as_str()),
+                scope_kind_from_str(ns.kind.as_str()),
                 ns.name.clone(),
                 parent_id,
             )
@@ -5950,7 +5927,7 @@ mod tests {
             // Find module scope (should have no parent)
             let module_scope = scopes
                 .iter()
-                .find(|s| s.kind == CoreScopeKind::Module)
+                .find(|s| s.kind == ScopeKind::Module)
                 .expect("should have module scope");
             assert!(
                 module_scope.parent.is_none(),
@@ -5960,7 +5937,7 @@ mod tests {
             // Function scopes should have parents
             let func_scopes: Vec<_> = scopes
                 .iter()
-                .filter(|s| s.kind == CoreScopeKind::Function)
+                .filter(|s| s.kind == ScopeKind::Function)
                 .collect();
             assert!(
                 func_scopes.len() >= 2,
@@ -6248,7 +6225,7 @@ mod tests {
             // This should parse without error - the x in method refers to module x (if any)
             // or is unresolved, NOT to class x. This tests that class scopes don't form closures.
             let scopes: Vec<_> = store.scopes().collect();
-            let class_scope = scopes.iter().find(|s| s.kind == CoreScopeKind::Class);
+            let class_scope = scopes.iter().find(|s| s.kind == ScopeKind::Class);
             assert!(class_scope.is_some(), "should have class scope");
         }
 
@@ -6267,7 +6244,7 @@ mod tests {
             let scopes: Vec<_> = store.scopes().collect();
             let comprehension_scope = scopes
                 .iter()
-                .find(|s| s.kind == CoreScopeKind::Comprehension);
+                .find(|s| s.kind == ScopeKind::Comprehension);
             assert!(
                 comprehension_scope.is_some(),
                 "should have comprehension scope"

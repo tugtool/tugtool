@@ -250,21 +250,46 @@ impl ReferenceKind {
 }
 
 /// Kind of scope in the code.
+///
+/// This enum is `#[non_exhaustive]` to allow adding language-specific variants
+/// without breaking downstream code. Match statements should include a wildcard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
+#[non_exhaustive]
 pub enum ScopeKind {
+    // ========================================================================
+    // Language-agnostic variants
+    // ========================================================================
     /// Module-level scope.
     #[default]
     Module,
-    /// Class body scope.
+    /// Class body scope (Python class, Rust struct/enum conceptually).
     Class,
     /// Function/method body scope.
     Function,
-    /// List/dict/set/generator comprehension scope.
+
+    // ========================================================================
+    // Python-specific variants
+    // ========================================================================
+    /// List/dict/set/generator comprehension scope (Python-specific).
     Comprehension,
-    /// Lambda expression scope.
+    /// Lambda expression scope (Python-specific; Rust closures use `Closure`).
     Lambda,
+
+    // ========================================================================
+    // Rust-specific variants
+    // ========================================================================
+    /// Rust impl block scope.
+    Impl,
+    /// Rust trait definition scope.
+    Trait,
+    /// Rust closure scope (different from Python lambda due to capture semantics).
+    Closure,
+    /// Rust unsafe block scope.
+    Unsafe,
+    /// Rust match arm scope (pattern bindings create a new scope).
+    MatchArm,
 }
 
 /// Source of type information for a symbol.
@@ -1990,13 +2015,20 @@ mod tests {
             let file_id = file.file_id;
             store.insert_file(file);
 
-            // Test all 5 ScopeKind variants
+            // Test all 10 ScopeKind variants (5 Python + 5 Rust)
             let kinds = [
+                // Python variants
                 ScopeKind::Module,
                 ScopeKind::Class,
                 ScopeKind::Function,
                 ScopeKind::Comprehension,
                 ScopeKind::Lambda,
+                // Rust variants
+                ScopeKind::Impl,
+                ScopeKind::Trait,
+                ScopeKind::Closure,
+                ScopeKind::Unsafe,
+                ScopeKind::MatchArm,
             ];
 
             for (i, kind) in kinds.iter().enumerate() {
@@ -2009,12 +2041,69 @@ mod tests {
                 assert_eq!(retrieved.kind, *kind);
             }
 
-            assert_eq!(store.scope_count(), 5);
+            assert_eq!(store.scope_count(), 10);
         }
 
         #[test]
         fn scope_kind_default() {
             assert_eq!(ScopeKind::default(), ScopeKind::Module);
+        }
+
+        #[test]
+        fn scope_kind_new_variants_serialization() {
+            // Test that new Rust-specific variants serialize correctly
+            let rust_kinds = [
+                (ScopeKind::Impl, "\"impl\""),
+                (ScopeKind::Trait, "\"trait\""),
+                (ScopeKind::Closure, "\"closure\""),
+                (ScopeKind::Unsafe, "\"unsafe\""),
+                (ScopeKind::MatchArm, "\"match_arm\""),
+            ];
+
+            for (kind, expected_json) in rust_kinds {
+                let json = serde_json::to_string(&kind).unwrap();
+                assert_eq!(json, expected_json, "Failed for {:?}", kind);
+            }
+        }
+
+        #[test]
+        fn scope_kind_existing_variants_deserialization() {
+            // Test that existing Python variants still deserialize correctly
+            let cases = [
+                ("\"module\"", ScopeKind::Module),
+                ("\"class\"", ScopeKind::Class),
+                ("\"function\"", ScopeKind::Function),
+                ("\"comprehension\"", ScopeKind::Comprehension),
+                ("\"lambda\"", ScopeKind::Lambda),
+            ];
+
+            for (json, expected_kind) in cases {
+                let deserialized: ScopeKind = serde_json::from_str(json).unwrap();
+                assert_eq!(deserialized, expected_kind, "Failed for {}", json);
+            }
+        }
+
+        #[test]
+        fn scope_kind_serialization_roundtrip() {
+            // Test all variants serialize and deserialize correctly
+            let all_kinds = [
+                ScopeKind::Module,
+                ScopeKind::Class,
+                ScopeKind::Function,
+                ScopeKind::Comprehension,
+                ScopeKind::Lambda,
+                ScopeKind::Impl,
+                ScopeKind::Trait,
+                ScopeKind::Closure,
+                ScopeKind::Unsafe,
+                ScopeKind::MatchArm,
+            ];
+
+            for kind in all_kinds {
+                let json = serde_json::to_string(&kind).unwrap();
+                let deserialized: ScopeKind = serde_json::from_str(&json).unwrap();
+                assert_eq!(kind, deserialized, "Roundtrip failed for {:?}", kind);
+            }
         }
 
         #[test]

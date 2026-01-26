@@ -6,6 +6,124 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.1: Consolidate ScopeKind | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- Step 2.1 plan (lines 2658-2693 of phase-11.md)
+- [D05] ScopeKind Extension Strategy
+- Local `ScopeKind` enum in `analyzer.rs` (lines 133-159)
+- `Scope::to_core_kind()` method (lines 218-227)
+- Core `ScopeKind` in `facts/mod.rs` (lines 260-291)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove local `ScopeKind` enum from `analyzer.rs` | Done |
+| Import `tugtool_core::facts::ScopeKind` directly | Done |
+| Update `From<&str>` impl to `scope_kind_from_str()` function | Done |
+| Remove `Scope::to_core_kind()` method (no longer needed) | Done |
+| Update all `ScopeKind` usages in `analyzer.rs` to use core type | Done |
+| Update `ops/rename.rs` to import from core instead of analyzer | Done |
+| Add wildcard arm to match statements for Rust variants | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Changed import from `ScopeKind as CoreScopeKind` to just `ScopeKind`
+  - Removed local `ScopeKind` enum (5 variants)
+  - Converted `From<&str>` impl to `scope_kind_from_str()` function
+  - Removed `Scope::to_core_kind()` method
+  - Updated usage to use `scope_kind_from_str()` and `scope.kind` directly
+  - Replaced all `CoreScopeKind` usages with `ScopeKind`
+
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Added `ScopeKind` to imports from `tugtool_core::facts`
+  - Removed `ScopeKind` from imports from `crate::analyzer`
+  - Added wildcard arm to match statement with `unreachable!()` for Rust variants
+
+- `plans/phase-11.md` - Checked off all Step 2.1 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 380 tests passed
+- `cargo nextest run --workspace`: 1366 tests passed
+- `cargo clippy --workspace`: No warnings or errors
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python`: PASS
+- `cargo clippy --workspace`: PASS
+
+**Key Decisions/Notes:**
+
+**`From<&str>` to Function Conversion:**
+The `From<&str>` trait impl was converted to a standalone `scope_kind_from_str()` function because `ScopeKind` is now imported from core (external crate), making orphan rule violations a concern. The function approach is cleaner and more explicit.
+
+**Wildcard Arms for Non-Exhaustive Enum:**
+Match statements on `ScopeKind` now use wildcard arms with `unreachable!()` for Rust-specific variants (Impl, Trait, Closure, Unsafe, MatchArm). This is safe because the Python analyzer only produces Python scope kinds, but the `#[non_exhaustive]` attribute on core `ScopeKind` requires handling unknown variants.
+
+**Scope.kind Direct Access:**
+With `ScopeKind` unified, `Scope::to_core_kind()` was removed entirely. Code now accesses `scope.kind` directly, reducing indirection and making the code cleaner.
+
+---
+
+## [phase-11.md] Step 2: Extend ScopeKind for Rust Support | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- [D05] ScopeKind Extension Strategy
+- Core `ScopeKind` enum in `facts/mod.rs`
+- rust-analyzer's scope model (for alignment)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `#[non_exhaustive]` attribute to `ScopeKind` | Done |
+| Add `Impl` variant | Done |
+| Add `Trait` variant | Done |
+| Add `Closure` variant | Done |
+| Add `Unsafe` variant | Done |
+| Add `MatchArm` variant | Done |
+| Update any exhaustive matches in `tugtool-core` to use wildcards | Done |
+| Update `ScopeKind` serialization (serde rename_all handles it) | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `#[non_exhaustive]` attribute to `ScopeKind` enum
+  - Added 5 Rust-specific variants: `Impl`, `Trait`, `Closure`, `Unsafe`, `MatchArm`
+  - Organized variants with doc comments for language-agnostic, Python-specific, and Rust-specific sections
+  - Added `scope_kind_tests` module with serialization tests
+
+- `plans/phase-11.md` - Checked off all Step 2 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core scope`: 22 tests passed
+- `cargo nextest run -p tugtool-python`: 380 tests passed
+- `cargo clippy --workspace`: No warnings or errors
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core scope`: PASS
+- `cargo nextest run -p tugtool-python`: PASS
+- `cargo clippy --workspace`: PASS (no exhaustiveness warnings)
+
+**Key Decisions/Notes:**
+
+**`#[non_exhaustive]` for Forward Compatibility:**
+The `#[non_exhaustive]` attribute was added to `ScopeKind` to allow adding new variants in future without breaking downstream code. This is essential for a multi-language architecture where new languages may introduce new scope concepts.
+
+**Organized Variant Groups:**
+Variants were organized into three documented sections:
+1. Language-agnostic: `Module`, `Class`, `Function`
+2. Python-specific: `Comprehension`, `Lambda`
+3. Rust-specific: `Impl`, `Trait`, `Closure`, `Unsafe`, `MatchArm`
+
+**No Changes to Python Analyzer:**
+The Python analyzer uses its own local `ScopeKind` enum and `to_core_kind()` conversion, so no changes were needed there. (This duplication was later addressed in Step 2.1.)
+
+---
+
 ## [phase-11.md] Step 1: Add Visibility Enum, Update Symbol, and Schema Version | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25
