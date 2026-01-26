@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 4: Integrate TypeTracker with Call Site Resolution | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D02] TypeTracker Integration for Symbol Resolution
+- `crates/tugtool-python/src/analyzer.rs` - Call site conversion in convert_file_analysis
+- `crates/tugtool-python-cst/src/visitor/call_site.rs` - CallSiteInfo struct with receiver field
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update call site conversion for method calls (extract receiver, lookup type, resolve symbol) | Done |
+| Direct function calls: existing logic preserved | Done |
+| Write integration test: method call callee_symbol_index points to Handler | Done |
+| Write integration test: direct function call callee_symbol_index points to function | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated call site conversion to use `resolve_receiver_to_symbol` for method calls
+  - Method calls now resolve receiver type via TypeTracker to find class symbol index
+  - Direct function calls continue to look up callee name in local symbols
+  - Added 2 integration tests for call site resolution
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python method_call_callee`: 1 test passed
+- `cargo nextest run -p tugtool-python direct_function_call`: 1 test passed
+- `cargo nextest run -p tugtool-python call`: 31 tests passed
+- `cargo nextest run -p tugtool-python`: 465 tests passed
+- `cargo nextest run --workspace`: 1659 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python call`: PASS (31 tests)
+
+**Key Decisions/Notes:**
+- Method call resolution reuses `resolve_receiver_to_symbol` helper from Step 3/3a
+- Uses `call.receiver` field which already contains the receiver name (e.g., "h" from "h.process()")
+- Resolution fallback order: local symbol map → cross-file map → None
+- `callee_symbol_index` for method calls points to the class symbol, not the method symbol
+
+---
+
 ## [phase-11B.md] Step 3a: Build Cross-File Symbol Map | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

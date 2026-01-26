@@ -3758,11 +3758,22 @@ impl PythonAdapter {
 
             // Try to resolve the callee to a symbol index
             // For function calls, look up the callee name in symbols
-            // For method calls, callee_symbol_index is typically None until type resolution
+            // For method calls, resolve the receiver type to find the class symbol
             let callee_symbol_index = if !call.is_method_call {
+                // Direct function call: look up callee name in local symbols
                 symbol_name_to_index.get(call.callee.as_str()).copied()
             } else {
-                None
+                // Method call: resolve the receiver's type to find the class symbol
+                // This enables downstream refactors to know what class a method belongs to
+                call.receiver.as_ref().and_then(|receiver| {
+                    self.resolve_receiver_to_symbol(
+                        receiver,
+                        &call.scope_path,
+                        type_tracker,
+                        &symbol_name_to_index,
+                        cross_file_map,
+                    )
+                })
             };
 
             let args: Vec<CallArgData> = call
@@ -5593,6 +5604,74 @@ h.process()
                 result,
                 Some(0),
                 "Should resolve via cross-file map when not in local map"
+            );
+        }
+
+        #[test]
+        fn method_call_callee_symbol_index_resolved_for_typed_receiver() {
+            // Integration test: Analyze code with typed variable and verify
+            // callee_symbol_index is populated for method calls.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+h = Handler()
+h.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result
+                .symbols
+                .iter()
+                .position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Find the call site for "process" method call on "h"
+            // There should be at least 2 calls: Handler() and h.process()
+            // We want the method call, not the constructor
+            let method_call = result
+                .calls
+                .iter()
+                .find(|c| {
+                    // Method call has callee_symbol_index pointing to Handler
+                    c.callee_symbol_index == handler_idx
+                });
+            assert!(
+                method_call.is_some(),
+                "Should have method call with callee_symbol_index pointing to Handler"
+            );
+        }
+
+        #[test]
+        fn direct_function_call_callee_symbol_index_resolved() {
+            // Integration test: Direct function calls should have callee_symbol_index
+            // pointing to the function symbol.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+def process():
+    pass
+
+process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the process function symbol
+            let process_idx = result
+                .symbols
+                .iter()
+                .position(|s| s.name == "process");
+            assert!(process_idx.is_some(), "Should have process symbol");
+
+            // Find the call site for "process()"
+            let call = result
+                .calls
+                .iter()
+                .find(|c| c.callee_symbol_index == process_idx);
+            assert!(
+                call.is_some(),
+                "Should have call with callee_symbol_index pointing to process function"
             );
         }
     }

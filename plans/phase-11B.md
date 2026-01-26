@@ -846,7 +846,7 @@ fn missing_span_warns_and_skips() {
 - `callee_symbol_index` populated for method calls when receiver type is known
 
 **Tasks:**
-- [ ] In call site conversion:
+- [x] In call site conversion:
   - For method calls (`is_method_call == true`):
     - Extract receiver name from callee (e.g., "h" from "h.process")
     - Look up receiver type via TypeTracker
@@ -855,11 +855,11 @@ fn missing_span_warns_and_skips() {
   - For direct function calls, existing logic remains
 
 **Tests:**
-- [ ] Integration: `h = Handler(); h.process()` -> callee_symbol_index for process call points to Handler
-- [ ] Integration: `process()` direct call -> callee_symbol_index points to process function
+- [x] Integration: `h = Handler(); h.process()` -> callee_symbol_index for process call points to Handler
+- [x] Integration: `process()` direct call -> callee_symbol_index points to process function
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python call`
+- [x] `cargo nextest run -p tugtool-python call`
 
 **Rollback:**
 - Revert commit
