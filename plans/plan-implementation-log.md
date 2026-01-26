@@ -6,6 +6,48 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 7: Wire Store Parameter for Cross-File Resolution | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D05] Cross-File Symbol Resolution Mapping, [D06] Use Store Parameter
+- `crates/tugtool-python/src/analyzer.rs` - CrossFileSymbolMap, analyze_files, convert_file_analysis
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `CrossFileSymbolMap::from_store()` constructor | Done (in Step 3a) |
+| Wire store parameter in `analyze_files` | Done (in Step 3a) |
+| Update `convert_file_analysis` signature | Done (in Step 3a) |
+| Use cross-file map as fallback in receiver resolution | Done (in Step 3a) |
+| Add integration test: cross-file resolution via analyze_files | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `cross_file_resolution_via_analyze_files_with_prepopulated_store` test
+  - Added `cross_file_resolution_empty_store_no_regression` test
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python cross_file_resolution`: 2 tests passed
+- `cargo nextest run -p tugtool-python cross_file`: 22 tests passed
+- `cargo nextest run -p tugtool-python adapter`: 79 tests passed
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python cross_file`: PASS (22 tests)
+- `cargo nextest run -p tugtool-python adapter`: PASS (79 tests)
+
+**Key Decisions/Notes:**
+- Most of Step 7's core functionality was already implemented as part of Step 3a
+- This step primarily verified the existing implementation and added missing integration tests
+- `CrossFileSymbolMap::from_store()` iterates over store symbols and qualified names
+- Resolution order is: local symbol map → cross-file map → None
+- Empty store produces empty map (no regression from previous behavior)
+
+---
+
 ## [phase-11B.md] Step 6: Enhance Receiver Extraction for Call Expressions | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

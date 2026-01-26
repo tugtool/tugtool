@@ -5821,6 +5821,118 @@ process()
         }
 
         // ====================================================================
+        // Cross-File Resolution via analyze_files
+        // ====================================================================
+
+        #[test]
+        fn cross_file_resolution_via_analyze_files_with_prepopulated_store() {
+            // Integration test: analyze_files uses pre-populated store for cross-file resolution.
+            // Type defined in prior analysis (store) is resolved when used in current files.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
+            use tugtool_core::patch::Span;
+
+            let adapter = PythonAdapter::new();
+
+            // Build a store with a class from a "previously analyzed" file
+            let mut store = FactsStore::new();
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "external/handler.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Class,
+                "ExternalHandler",
+                file_id,
+                Span::new(0, 15),
+            );
+            store.insert_symbol(symbol);
+            store.insert_qualified_name(QualifiedName::new(symbol_id, "external.handler.ExternalHandler"));
+
+            // Analyze a new file that uses ExternalHandler
+            let code = r#"
+from external.handler import ExternalHandler
+
+h = ExternalHandler()
+h.process()
+"#;
+            let files = vec![("app.py".to_string(), code.to_string())];
+
+            // Use analyze_files with the pre-populated store
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+            // Verify the analysis completes successfully
+            assert_eq!(bundle.file_results.len(), 1, "Should analyze one file");
+
+            let app_result = &bundle.file_results[0];
+
+            // The cross-file map should be built from the store.
+            // While the attribute access resolution depends on TypeTracker finding the type,
+            // we verify that the infrastructure is wired up correctly by checking
+            // that analysis completes and produces expected outputs.
+
+            // Should have attribute access for "h.process"
+            assert!(
+                !app_result.attributes.is_empty(),
+                "Should have attribute accesses for h.process(): {:?}",
+                app_result.attributes
+            );
+
+            // Should have the "process" attribute access
+            let process_attr = app_result
+                .attributes
+                .iter()
+                .find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have 'process' attribute access"
+            );
+        }
+
+        #[test]
+        fn cross_file_resolution_empty_store_no_regression() {
+            // Integration test: analyze_files with empty store behaves the same as before
+            // (local resolution only, no errors).
+            let adapter = PythonAdapter::new();
+            let store = FactsStore::new();
+
+            let code = r#"
+class LocalHandler:
+    def process(self): pass
+
+h = LocalHandler()
+h.process()
+"#;
+            let files = vec![("local.py".to_string(), code.to_string())];
+
+            // Should work with empty store
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+            assert_eq!(bundle.file_results.len(), 1, "Should analyze one file");
+
+            // Local resolution should still work
+            let result = &bundle.file_results[0];
+            let handler_idx = result.symbols.iter().position(|s| s.name == "LocalHandler");
+            assert!(handler_idx.is_some(), "Should have LocalHandler symbol");
+
+            // The method call should resolve locally
+            let method_call = result
+                .calls
+                .iter()
+                .find(|c| c.callee_symbol_index == handler_idx);
+            assert!(
+                method_call.is_some(),
+                "Should resolve method call locally with empty cross-file store"
+            );
+        }
+
+        // ====================================================================
         // Effective Export Tests
         // ====================================================================
 

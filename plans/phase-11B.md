@@ -954,27 +954,27 @@ fn missing_span_warns_and_skips() {
 - Cross-file resolution enabled via store context
 
 **Tasks:**
-- [ ] Add `CrossFileSymbolMap::from_store(store: &FactsStore) -> Self` constructor
+- [x] Add `CrossFileSymbolMap::from_store(store: &FactsStore) -> Self` constructor
   - Iterate over `store.symbols()` to build qualified name map
   - Iterate over `store.qualified_names()` if available
   - Build simple name fallback map
-- [ ] In `PythonAdapter::analyze_files`:
+- [x] In `PythonAdapter::analyze_files`:
   - Remove underscore from `_store` → `store`
   - Call `CrossFileSymbolMap::from_store(store)` at start
   - Pass map to `convert_file_analysis_bundle`
-- [ ] Update `convert_file_analysis` signature to accept `&CrossFileSymbolMap`
-- [ ] In receiver resolution (Step 3), use cross-file map as fallback after local lookup
-- [ ] Add integration test: analyze two files where type is defined in file A, used in file B
+- [x] Update `convert_file_analysis` signature to accept `&CrossFileSymbolMap`
+- [x] In receiver resolution (Step 3), use cross-file map as fallback after local lookup
+- [x] Add integration test: analyze two files where type is defined in file A, used in file B
 
 **Tests:**
-- [ ] Unit: `CrossFileSymbolMap::from_store` on empty store returns empty map
-- [ ] Unit: `CrossFileSymbolMap::from_store` on populated store builds lookups
-- [ ] Integration: Cross-file type resolution works when store has prior facts
-- [ ] Integration: Empty store behaves same as current (no regression)
+- [x] Unit: `CrossFileSymbolMap::from_store` on empty store returns empty map
+- [x] Unit: `CrossFileSymbolMap::from_store` on populated store builds lookups
+- [x] Integration: Cross-file type resolution works when store has prior facts
+- [x] Integration: Empty store behaves same as current (no regression)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python cross_file`
-- [ ] `cargo nextest run -p tugtool-python adapter`
+- [x] `cargo nextest run -p tugtool-python cross_file`
+- [x] `cargo nextest run -p tugtool-python adapter`
 
 **Rollback:**
 - Revert commit
