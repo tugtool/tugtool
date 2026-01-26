@@ -3180,6 +3180,146 @@ pub struct PythonAnalyzerOptions {
     pub infer_visibility: bool,
 }
 
+// ============================================================================
+// Cross-File Symbol Resolution
+// ============================================================================
+
+/// Cross-file symbol lookup helper for adapter conversion.
+///
+/// This map is built from a pre-populated [`FactsStore`] and provides lookup
+/// of symbols defined in other files during adapter conversion. It enables
+/// receiver type resolution for attribute accesses when the receiver's type
+/// is defined in a different file.
+///
+/// # Resolution Order
+///
+/// Resolution follows this priority:
+/// 1. Qualified name lookup (e.g., "mymodule.MyClass")
+/// 2. Simple name lookup (e.g., "MyClass") - only if unambiguous
+///
+/// If a simple name is ambiguous (multiple symbols with same name), the lookup
+/// returns `None` to avoid incorrect resolution.
+///
+/// # Example
+///
+/// ```ignore
+/// // File A defines: class Handler
+/// // File B uses: h = Handler(); h.process()
+///
+/// // Build map from FactsStore containing File A's analysis
+/// let cross_file_map = CrossFileSymbolMap::from_store(&store);
+///
+/// // Resolve "Handler" from File B
+/// let idx = cross_file_map.resolve("Handler");  // Some(idx) if unambiguous
+/// let idx = cross_file_map.resolve("pkg.Handler");  // Some(idx) by qualified name
+/// ```
+#[derive(Debug, Default)]
+pub struct CrossFileSymbolMap {
+    /// Fully-qualified name -> adapter symbol index in AnalysisBundle.
+    qualified_to_index: HashMap<String, usize>,
+    /// Simple name -> adapter symbol index.
+    /// If a name maps to multiple symbols, the entry is removed (ambiguous).
+    name_to_index: HashMap<String, Option<usize>>,
+}
+
+impl CrossFileSymbolMap {
+    /// Create a new empty cross-file symbol map.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Build a cross-file symbol map from a FactsStore.
+    ///
+    /// Iterates over all symbols in the store and builds lookup maps by:
+    /// 1. Qualified name (from store's qualified_names)
+    /// 2. Simple name (symbol.name) - marked ambiguous if duplicates exist
+    ///
+    /// The index values correspond to the order symbols appear when iterating
+    /// `store.symbols()`, which matches how adapter conversion builds its output.
+    ///
+    /// # Arguments
+    /// - `store`: The FactsStore containing symbols from prior analysis
+    ///
+    /// # Returns
+    /// A CrossFileSymbolMap ready for resolution lookups
+    pub fn from_store(store: &FactsStore) -> Self {
+        let mut map = Self::new();
+
+        // Build index mapping: SymbolId -> adapter index
+        // The adapter index corresponds to iteration order of store.symbols()
+        let symbol_id_to_index: HashMap<SymbolId, usize> = store
+            .symbols()
+            .enumerate()
+            .map(|(idx, sym)| (sym.symbol_id, idx))
+            .collect();
+
+        // Populate qualified name lookup from store's qualified_names
+        for qn in store.qualified_names() {
+            if let Some(&idx) = symbol_id_to_index.get(&qn.symbol_id) {
+                map.qualified_to_index.insert(qn.path.clone(), idx);
+            }
+        }
+
+        // Populate simple name lookup, tracking ambiguity
+        for (idx, symbol) in store.symbols().enumerate() {
+            let name = &symbol.name;
+            match map.name_to_index.get(name) {
+                None => {
+                    // First occurrence: record the index
+                    map.name_to_index.insert(name.clone(), Some(idx));
+                }
+                Some(Some(_)) => {
+                    // Second occurrence: mark as ambiguous (None)
+                    map.name_to_index.insert(name.clone(), None);
+                }
+                Some(None) => {
+                    // Already ambiguous, no change needed
+                }
+            }
+        }
+
+        map
+    }
+
+    /// Resolve a name to an adapter symbol index.
+    ///
+    /// Resolution order:
+    /// 1. Try qualified name lookup first (e.g., "mymodule.MyClass")
+    /// 2. Fall back to simple name lookup (e.g., "MyClass")
+    ///
+    /// # Arguments
+    /// - `name`: The name to resolve (qualified or simple)
+    ///
+    /// # Returns
+    /// - `Some(index)` if the name resolves unambiguously
+    /// - `None` if the name is not found or is ambiguous
+    pub fn resolve(&self, name: &str) -> Option<usize> {
+        // Try qualified name first (most specific)
+        self.qualified_to_index
+            .get(name)
+            .copied()
+            .or_else(|| {
+                // Fall back to simple name (may be None if ambiguous)
+                self.name_to_index.get(name).copied().flatten()
+            })
+    }
+
+    /// Check if the map is empty.
+    pub fn is_empty(&self) -> bool {
+        self.qualified_to_index.is_empty() && self.name_to_index.is_empty()
+    }
+
+    /// Get the number of qualified name entries.
+    pub fn qualified_count(&self) -> usize {
+        self.qualified_to_index.len()
+    }
+
+    /// Get the number of simple name entries (including ambiguous ones).
+    pub fn simple_name_count(&self) -> usize {
+        self.name_to_index.len()
+    }
+}
+
 /// Python language adapter implementing [`LanguageAdapter`].
 ///
 /// Wraps the existing Python analysis functions (`analyze_file`, `analyze_files`)
@@ -3255,23 +3395,30 @@ impl PythonAdapter {
     ///
     /// Given an attribute access like `obj.method`, this function attempts to resolve
     /// `obj` to its type using the TypeTracker, then looks up that type in the local
-    /// symbol map.
+    /// symbol map. If not found locally, falls back to cross-file resolution.
+    ///
+    /// # Resolution Order
+    /// 1. Look up receiver type via TypeTracker
+    /// 2. Look up type in local symbol map (current file)
+    /// 3. Fall back to cross-file map (other analyzed files)
     ///
     /// # Arguments
     /// - `receiver`: The receiver expression string (e.g., "obj" from "obj.method")
     /// - `scope_path`: The scope path where the access occurs
     /// - `tracker`: Optional TypeTracker with type inference results
-    /// - `symbol_map`: Map from symbol name to adapter index
+    /// - `symbol_map`: Map from symbol name to adapter index (local file)
+    /// - `cross_file_map`: Optional cross-file symbol map for fallback resolution
     ///
     /// # Returns
-    /// - `Some(index)` if the receiver's type is known and found in the symbol map
-    /// - `None` if the receiver's type is unknown or not in the symbol map
+    /// - `Some(index)` if the receiver's type is known and found in either map
+    /// - `None` if the receiver's type is unknown or not in any map
     fn resolve_receiver_to_symbol(
         &self,
         receiver: &str,
         scope_path: &[String],
         tracker: Option<&TypeTracker>,
         symbol_map: &HashMap<&str, usize>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
     ) -> Option<usize> {
         // If no tracker provided, we can't resolve
         let tracker = tracker?;
@@ -3285,8 +3432,14 @@ impl PythonAdapter {
         // Look up the receiver's type via TypeTracker
         let receiver_type = tracker.type_of(scope_path, receiver)?;
 
-        // Look up the type's symbol index in the local map
-        symbol_map.get(receiver_type).copied()
+        // Look up the type's symbol index in the local map first
+        symbol_map
+            .get(receiver_type)
+            .copied()
+            .or_else(|| {
+                // Fall back to cross-file resolution if available
+                cross_file_map.and_then(|map| map.resolve(receiver_type))
+            })
     }
 }
 
@@ -3306,19 +3459,24 @@ impl LanguageAdapter for PythonAdapter {
         // Run standard analysis (which also parses, but we accept the redundancy for now)
         let analysis = analyze_file(temp_file_id, path, content)?;
 
-        Ok(self.convert_file_analysis(&analysis, Some(&type_tracker)))
+        // Single file analysis: no cross-file map available
+        Ok(self.convert_file_analysis(&analysis, Some(&type_tracker), None))
     }
 
     fn analyze_files(
         &self,
         files: &[(String, String)],
-        _store: &FactsStore,
+        store: &FactsStore,
     ) -> Result<AnalysisBundle, Self::Error> {
+        // Build cross-file symbol map from the pre-populated store (per [D06])
+        // This enables resolution of types defined in files analyzed previously
+        let cross_file_map = CrossFileSymbolMap::from_store(store);
+
         // Create a temporary FactsStore for analysis
         // The adapter doesn't mutate the input store; it builds all state internally
         let mut temp_store = FactsStore::new();
         let bundle = analyze_files(files, &mut temp_store)?;
-        Ok(self.convert_file_analysis_bundle(&bundle))
+        Ok(self.convert_file_analysis_bundle(&bundle, &cross_file_map))
     }
 
     fn language(&self) -> Language {
@@ -3337,10 +3495,13 @@ impl PythonAdapter {
     /// - `analysis`: The file analysis result from the parser
     /// - `type_tracker`: Optional TypeTracker for receiver type resolution. When provided,
     ///   attribute access `base_symbol_index` will be populated for typed receivers.
+    /// - `cross_file_map`: Optional cross-file symbol map for resolving types defined
+    ///   in other files. Used as fallback when local symbol lookup fails.
     fn convert_file_analysis(
         &self,
         analysis: &FileAnalysis,
         type_tracker: Option<&TypeTracker>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
     ) -> FileAnalysisResult {
         let mut result = FileAnalysisResult {
             path: analysis.path.clone(),
@@ -3571,11 +3732,13 @@ impl PythonAdapter {
         for attr in &analysis.attribute_accesses {
             // Try to resolve the receiver to a symbol index via type inference
             // This enables downstream refactors to know what class a method belongs to
+            // Resolution order: local map -> cross-file map -> None
             let base_symbol_index = self.resolve_receiver_to_symbol(
                 &attr.receiver,
                 &attr.scope_path,
                 type_tracker,
                 &symbol_name_to_index,
+                cross_file_map,
             );
 
             result.attributes.push(AttributeAccessData {
@@ -3622,16 +3785,28 @@ impl PythonAdapter {
     }
 
     /// Convert a `FileAnalysisBundle` to `AnalysisBundle` for the adapter interface.
-    fn convert_file_analysis_bundle(&self, bundle: &FileAnalysisBundle) -> AnalysisBundle {
+    ///
+    /// # Arguments
+    /// - `bundle`: The file analysis bundle containing results for multiple files
+    /// - `cross_file_map`: Cross-file symbol map for resolving types defined in
+    ///   previously analyzed files (built from the FactsStore per [D06])
+    fn convert_file_analysis_bundle(
+        &self,
+        bundle: &FileAnalysisBundle,
+        cross_file_map: &CrossFileSymbolMap,
+    ) -> AnalysisBundle {
         let mut result = AnalysisBundle::default();
 
         // Convert each file analysis (preserving input order per [D15])
         // Use TypeTrackers from the bundle for receiver type resolution
+        // Pass cross_file_map for cross-file symbol resolution
         for analysis in &bundle.file_analyses {
             let type_tracker = bundle.type_trackers.get(&analysis.file_id);
-            result
-                .file_results
-                .push(self.convert_file_analysis(analysis, type_tracker));
+            result.file_results.push(self.convert_file_analysis(
+                analysis,
+                type_tracker,
+                Some(cross_file_map),
+            ));
         }
 
         // Convert failed files
@@ -5000,11 +5175,13 @@ h.process(value)
             symbol_map.insert("Handler", 0);
 
             // Resolve "h" in module scope - should find Handler at index 0
+            // No cross-file map needed for this test
             let result = adapter.resolve_receiver_to_symbol(
                 "h",
                 &["<module>".to_string()],
                 Some(&tracker),
                 &symbol_map,
+                None,  // No cross-file map
             );
             assert_eq!(result, Some(0), "Should resolve 'h' to Handler symbol at index 0");
         }
@@ -5027,6 +5204,7 @@ h.process(value)
                 &["<module>".to_string()],
                 Some(&tracker),
                 &symbol_map,
+                None,  // No cross-file map
             );
             assert_eq!(result, None, "Should return None for untyped receiver");
         }
@@ -5063,6 +5241,7 @@ h.process(value)
                 &["<module>".to_string()],
                 Some(&tracker),
                 &symbol_map,
+                None,  // No cross-file map
             );
             assert_eq!(result, None, "Should return None for dotted receivers");
         }
@@ -5080,8 +5259,9 @@ h.process(value)
             let result = adapter.resolve_receiver_to_symbol(
                 "h",
                 &["<module>".to_string()],
-                None,
+                None,  // No TypeTracker
                 &symbol_map,
+                None,  // No cross-file map
             );
             assert_eq!(result, None, "Should return None when no TypeTracker provided");
         }
@@ -5120,6 +5300,299 @@ h.process()
                 attr.base_symbol_index,
                 handler_idx,
                 "base_symbol_index should point to Handler class"
+            );
+        }
+
+        #[test]
+        fn cross_file_symbol_map_qualified_name_lookup_resolves_to_index() {
+            // Test: CrossFileSymbolMap resolves qualified names to adapter indices.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
+            use tugtool_core::patch::Span;
+
+            let mut store = FactsStore::new();
+
+            // Add a file
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "handler.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            // Add a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Class,
+                "Handler",
+                file_id,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol);
+
+            // Add qualified name
+            let qn = QualifiedName::new(symbol_id, "mymodule.Handler");
+            store.insert_qualified_name(qn);
+
+            // Build CrossFileSymbolMap from store
+            let map = CrossFileSymbolMap::from_store(&store);
+
+            // Should resolve qualified name to index 0 (first symbol)
+            let result = map.resolve("mymodule.Handler");
+            assert_eq!(
+                result,
+                Some(0),
+                "Qualified name lookup should resolve to index 0"
+            );
+        }
+
+        #[test]
+        fn cross_file_symbol_map_simple_name_lookup_resolves_when_unambiguous() {
+            // Test: Simple name lookup works when there's only one symbol with that name.
+            use tugtool_core::facts::{File, Symbol};
+            use tugtool_core::patch::Span;
+
+            let mut store = FactsStore::new();
+
+            // Add a file
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "handler.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Class,
+                "Handler",
+                file_id,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol);
+
+            // Build map
+            let map = CrossFileSymbolMap::from_store(&store);
+
+            // Should resolve simple name
+            let result = map.resolve("Handler");
+            assert_eq!(
+                result,
+                Some(0),
+                "Unambiguous simple name should resolve to index"
+            );
+        }
+
+        #[test]
+        fn cross_file_symbol_map_ambiguous_simple_name_returns_none() {
+            // Test: When multiple symbols have the same name, simple lookup returns None.
+            use tugtool_core::facts::{File, Symbol};
+            use tugtool_core::patch::Span;
+
+            let mut store = FactsStore::new();
+
+            // Add two files with symbols named "Handler"
+            let file_id1 = store.next_file_id();
+            let file1 = File::new(
+                file_id1,
+                "handlers/http.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file1);
+
+            let file_id2 = store.next_file_id();
+            let file2 = File::new(
+                file_id2,
+                "handlers/grpc.py",
+                ContentHash::from_hex_unchecked("def456"),
+                Language::Python,
+            );
+            store.insert_file(file2);
+
+            let symbol_id1 = store.next_symbol_id();
+            let symbol1 = Symbol::new(
+                symbol_id1,
+                SymbolKind::Class,
+                "Handler",
+                file_id1,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol1);
+
+            let symbol_id2 = store.next_symbol_id();
+            let symbol2 = Symbol::new(
+                symbol_id2,
+                SymbolKind::Class,
+                "Handler",
+                file_id2,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol2);
+
+            // Build map
+            let map = CrossFileSymbolMap::from_store(&store);
+
+            // Simple name should return None (ambiguous)
+            let result = map.resolve("Handler");
+            assert_eq!(
+                result, None,
+                "Ambiguous simple name lookup should return None"
+            );
+        }
+
+        #[test]
+        fn cross_file_symbol_map_qualified_resolves_even_when_simple_is_ambiguous() {
+            // Test: Qualified name lookup works even if simple name is ambiguous.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
+            use tugtool_core::patch::Span;
+
+            let mut store = FactsStore::new();
+
+            // Add two files with symbols named "Handler"
+            let file_id1 = store.next_file_id();
+            let file1 = File::new(
+                file_id1,
+                "handlers/http.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file1);
+
+            let file_id2 = store.next_file_id();
+            let file2 = File::new(
+                file_id2,
+                "handlers/grpc.py",
+                ContentHash::from_hex_unchecked("def456"),
+                Language::Python,
+            );
+            store.insert_file(file2);
+
+            let symbol_id1 = store.next_symbol_id();
+            let symbol1 = Symbol::new(
+                symbol_id1,
+                SymbolKind::Class,
+                "Handler",
+                file_id1,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol1);
+            store.insert_qualified_name(QualifiedName::new(symbol_id1, "handlers.http.Handler"));
+
+            let symbol_id2 = store.next_symbol_id();
+            let symbol2 = Symbol::new(
+                symbol_id2,
+                SymbolKind::Class,
+                "Handler",
+                file_id2,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol2);
+            store.insert_qualified_name(QualifiedName::new(symbol_id2, "handlers.grpc.Handler"));
+
+            // Build map
+            let map = CrossFileSymbolMap::from_store(&store);
+
+            // Simple name should return None (ambiguous)
+            assert_eq!(
+                map.resolve("Handler"),
+                None,
+                "Ambiguous simple name should return None"
+            );
+
+            // But qualified names should still work
+            assert_eq!(
+                map.resolve("handlers.http.Handler"),
+                Some(0),
+                "First qualified name should resolve to index 0"
+            );
+            assert_eq!(
+                map.resolve("handlers.grpc.Handler"),
+                Some(1),
+                "Second qualified name should resolve to index 1"
+            );
+        }
+
+        #[test]
+        fn cross_file_symbol_map_empty_store_returns_empty_map() {
+            // Test: Empty store produces empty map.
+            let store = FactsStore::new();
+            let map = CrossFileSymbolMap::from_store(&store);
+
+            assert!(map.is_empty(), "Empty store should produce empty map");
+            assert_eq!(map.resolve("anything"), None, "Empty map should resolve to None");
+        }
+
+        #[test]
+        fn receiver_resolution_falls_back_to_cross_file_map() {
+            // Integration test: Receiver resolution falls back to cross-file map
+            // when type is not found in local symbol map.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
+            use tugtool_core::patch::Span;
+
+            let adapter = PythonAdapter::new();
+
+            // Build a TypeTracker with a typed variable (type is "RemoteHandler")
+            let mut tracker = TypeTracker::new();
+            let assignments = vec![crate::types::AssignmentInfo {
+                target: "h".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                type_source: "constructor".to_string(),
+                inferred_type: Some("RemoteHandler".to_string()),
+                rhs_name: None,
+                callee_name: None,
+                span: None,
+                line: Some(1),
+                col: Some(1),
+            }];
+            tracker.process_assignments(&assignments);
+            tracker.resolve_types();
+
+            // Local symbol map does NOT have RemoteHandler
+            let symbol_map: HashMap<&str, usize> = HashMap::new();
+
+            // But cross-file map has it
+            let mut store = FactsStore::new();
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "remote.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Class,
+                "RemoteHandler",
+                file_id,
+                Span::new(0, 13),
+            );
+            store.insert_symbol(symbol);
+            store.insert_qualified_name(QualifiedName::new(symbol_id, "remote.RemoteHandler"));
+
+            let cross_file_map = CrossFileSymbolMap::from_store(&store);
+
+            // Resolve "h" - should fall back to cross-file map
+            let result = adapter.resolve_receiver_to_symbol(
+                "h",
+                &["<module>".to_string()],
+                Some(&tracker),
+                &symbol_map,
+                Some(&cross_file_map),
+            );
+
+            assert_eq!(
+                result,
+                Some(0),
+                "Should resolve via cross-file map when not in local map"
             );
         }
     }

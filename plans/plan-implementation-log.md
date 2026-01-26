@@ -6,6 +6,57 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 3a: Build Cross-File Symbol Map | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D05] Cross-File Symbol Resolution Mapping, [D06] Use Store Parameter
+- `crates/tugtool-python/src/analyzer.rs` - PythonAdapter and conversion functions
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore API for symbols and qualified names
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Build `CrossFileSymbolMap` from `FactsStore` symbols and qualified names | Done |
+| Pass the map into `convert_file_analysis` (and any helper resolution routines) | Done |
+| Resolve cross-file types by qualified name first, then simple name | Done |
+| Document ambiguity handling (returns `None` when multiple matches) | Done |
+| Write unit test: qualified name lookup resolves to adapter index | Done |
+| Write unit test: ambiguous simple-name lookup returns None | Done |
+| Write integration test: receiver type defined in another file resolves via map | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `CrossFileSymbolMap` struct with `new()`, `from_store()`, `resolve()`, `is_empty()`, `qualified_count()`, `simple_name_count()` methods
+  - Updated `resolve_receiver_to_symbol` to accept optional `CrossFileSymbolMap` parameter for fallback resolution
+  - Updated `convert_file_analysis` to accept optional `CrossFileSymbolMap` parameter
+  - Updated `convert_file_analysis_bundle` to accept and pass the `CrossFileSymbolMap`
+  - Updated `analyze_files` to remove underscore from `store` parameter and build `CrossFileSymbolMap` from it (per [D06])
+  - Added 7 new tests for CrossFileSymbolMap functionality
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python cross_file_symbol_map`: 5 tests passed
+- `cargo nextest run -p tugtool-python resolve_receiver`: 4 tests passed
+- `cargo nextest run -p tugtool-python receiver_resolution`: 1 test passed
+- `cargo nextest run -p tugtool-python adapter`: 67 tests passed
+- `cargo nextest run -p tugtool-python`: 463 tests passed
+- `cargo nextest run --workspace`: 1657 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python adapter`: PASS (67 tests)
+
+**Key Decisions/Notes:**
+- `CrossFileSymbolMap` uses two-tier resolution: qualified names (most specific) first, then simple names (only if unambiguous)
+- Simple name ambiguity is tracked during map construction: duplicate names are marked with `Option<usize> = None`
+- The `store` parameter in `analyze_files` is now used (was previously ignored with `_store`), enabling cross-file resolution
+- Resolution fallback order: local symbol map → cross-file map → None
+- Empty store produces empty map, maintaining backward compatibility
+
+---
+
 ## [phase-11B.md] Step 3: Integrate TypeTracker with Attribute Access Resolution | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

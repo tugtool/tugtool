@@ -816,18 +816,18 @@ fn missing_span_warns_and_skips() {
 - Resolution order documented in adapter conversion
 
 **Tasks:**
-- [ ] Build `CrossFileSymbolMap` from `FactsStore` symbols and qualified names
-- [ ] Pass the map into `convert_file_analysis` (and any helper resolution routines)
-- [ ] Resolve cross-file types by qualified name first, then simple name
-- [ ] Document ambiguity handling (returns `None` when multiple matches)
+- [x] Build `CrossFileSymbolMap` from `FactsStore` symbols and qualified names
+- [x] Pass the map into `convert_file_analysis` (and any helper resolution routines)
+- [x] Resolve cross-file types by qualified name first, then simple name
+- [x] Document ambiguity handling (returns `None` when multiple matches)
 
 **Tests:**
-- [ ] Unit: qualified name lookup resolves to adapter index
-- [ ] Unit: ambiguous simple-name lookup returns None
-- [ ] Integration: receiver type defined in another file resolves via map
+- [x] Unit: qualified name lookup resolves to adapter index
+- [x] Unit: ambiguous simple-name lookup returns None
+- [x] Integration: receiver type defined in another file resolves via map
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python adapter`
+- [x] `cargo nextest run -p tugtool-python adapter`
 
 **Rollback:**
 - Revert commit
