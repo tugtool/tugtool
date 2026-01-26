@@ -6,6 +6,74 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 1: Add Visibility Enum, Update Symbol, and Schema Version | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- [D01] Visibility Enum Design - 5 variants with serde `rename_all = "snake_case"`
+- [D02] Symbol Visibility Optional - `Option<Visibility>` with `skip_serializing_if`
+- [D11] Schema Version Placement - `FACTS_SCHEMA_VERSION = 11` constant
+- `crates/tugtool-core/src/facts/mod.rs` - Existing Symbol, FactsStore structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `FACTS_SCHEMA_VERSION: u32 = 11` constant to `facts/mod.rs` | Done |
+| Add `schema_version: u32` field to `FactsStore` struct | Done |
+| Update `FactsStore::new()` to set `schema_version: FACTS_SCHEMA_VERSION` | Done |
+| Add `Visibility` enum with 5 variants | Done |
+| Add `visibility: Option<Visibility>` to `Symbol` struct | Done |
+| Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON | Done |
+| Add `Symbol::with_visibility(self, v: Visibility) -> Self` builder method | Done |
+| Update all `Symbol::new()` calls to not break (field is Option, defaults to None) | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `FACTS_SCHEMA_VERSION: u32 = 11` constant after imports
+  - Added `Visibility` enum with 5 variants (Public, Crate, Module, Private, Protected)
+  - Added `visibility: Option<Visibility>` field to `Symbol` struct
+  - Updated `Symbol::new()` to initialize `visibility: None`
+  - Added `Symbol::with_visibility()` builder method
+  - Added `schema_version: u32` public field to `FactsStore`
+  - Replaced `#[derive(Default)]` with manual `Default` impl to set `schema_version`
+  - Added `visibility_tests` module with 5 tests
+  - Added `schema_version_tests` module with 3 tests
+
+- `plans/phase-11.md` - Checked off all Step 1 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core visibility`: 5 tests passed
+- `cargo nextest run -p tugtool-core schema_version`: 3 tests passed
+- `cargo nextest run -p tugtool-python`: 380 tests passed
+- `cargo nextest run -p tugtool golden`: 9 tests passed
+- `cargo clippy --workspace`: No warnings or errors
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core visibility`: PASS
+- `cargo nextest run -p tugtool-core schema_version`: PASS
+- `cargo nextest run -p tugtool-python`: PASS
+
+**Key Decisions/Notes:**
+
+**Visibility Enum Design:**
+- 5 variants: Public, Crate, Module, Private, Protected
+- Uses `serde(rename_all = "snake_case")` for JSON serialization
+- Comprehensive doc comments explain cross-language mapping
+
+**Symbol Visibility:**
+- `Option<Visibility>` - None for Python (no visibility semantics), Some for Rust
+- `skip_serializing_if = "Option::is_none"` - Keeps JSON clean for Python symbols
+- New `with_visibility()` builder method for fluent API
+
+**FactsStore Schema Version:**
+- Added `schema_version: u32` as public field
+- Manual `Default` implementation sets to `FACTS_SCHEMA_VERSION` (11)
+- `FactsStore::new()` delegates to `default()` for consistent initialization
+
+---
+
 ## [phase-11.md] Step 0: Preparation and Design Validation | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

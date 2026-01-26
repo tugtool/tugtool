@@ -2589,27 +2589,27 @@ fn visibility_inference_public_dunder() {
 - `FactsStore.schema_version` field
 
 **Tasks:**
-- [ ] Add `FACTS_SCHEMA_VERSION: u32 = 11` constant to `facts/mod.rs`
-- [ ] Add `schema_version: u32` field to `FactsStore` struct
-- [ ] Update `FactsStore::new()` to set `schema_version: FACTS_SCHEMA_VERSION`
-- [ ] Add `Visibility` enum with 5 variants
-- [ ] Add `visibility: Option<Visibility>` to `Symbol` struct
-- [ ] Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON
-- [ ] Add `Symbol::with_visibility(self, v: Visibility) -> Self` builder method
-- [ ] Update all `Symbol::new()` calls to not break (field is Option, defaults to None)
+- [x] Add `FACTS_SCHEMA_VERSION: u32 = 11` constant to `facts/mod.rs`
+- [x] Add `schema_version: u32` field to `FactsStore` struct
+- [x] Update `FactsStore::new()` to set `schema_version: FACTS_SCHEMA_VERSION`
+- [x] Add `Visibility` enum with 5 variants
+- [x] Add `visibility: Option<Visibility>` to `Symbol` struct
+- [x] Add `#[serde(skip_serializing_if = "Option::is_none")]` for clean JSON
+- [x] Add `Symbol::with_visibility(self, v: Visibility) -> Self` builder method
+- [x] Update all `Symbol::new()` calls to not break (field is Option, defaults to None)
 
 **Tests:**
-- [ ] Unit: `Visibility` serialization roundtrip
-- [ ] Unit: `Symbol` with `visibility: None` serializes correctly
-- [ ] Unit: `Symbol` with `visibility: Some(Public)` serializes correctly
-- [ ] Unit: `FACTS_SCHEMA_VERSION == 11`
-- [ ] Unit: `FactsStore::new()` sets `schema_version` to `FACTS_SCHEMA_VERSION`
-- [ ] Golden: Symbol schema matches new format
+- [x] Unit: `Visibility` serialization roundtrip
+- [x] Unit: `Symbol` with `visibility: None` serializes correctly
+- [x] Unit: `Symbol` with `visibility: Some(Public)` serializes correctly
+- [x] Unit: `FACTS_SCHEMA_VERSION == 11`
+- [x] Unit: `FactsStore::new()` sets `schema_version` to `FACTS_SCHEMA_VERSION`
+- [x] Golden: Symbol schema matches new format
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core visibility`
-- [ ] `cargo nextest run -p tugtool-core schema_version`
-- [ ] `cargo nextest run -p tugtool-python`
+- [x] `cargo nextest run -p tugtool-core visibility`
+- [x] `cargo nextest run -p tugtool-core schema_version`
+- [x] `cargo nextest run -p tugtool-python`
 
 **Rollback:**
 - Revert commit

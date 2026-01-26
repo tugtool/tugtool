@@ -17,6 +17,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 // ============================================================================
+// Schema Version
+// ============================================================================
+
+/// Schema version for FactsStore serialization.
+///
+/// This version tracks breaking changes to the internal FactsStore schema.
+/// It is independent of the agent-facing output schema version in `output.rs`.
+///
+/// Increment this when:
+/// - Adding/removing fields from serialized structs
+/// - Changing field types or serialization format
+/// - Breaking changes to enum variants
+pub const FACTS_SCHEMA_VERSION: u32 = 11;
+
+// ============================================================================
 // ID Types
 // ============================================================================
 
@@ -266,6 +281,28 @@ pub enum TypeSource {
     Unknown,
 }
 
+/// Access control level for a symbol.
+///
+/// This enum generalizes visibility across languages:
+/// - Rust: `pub` → Public, `pub(crate)` → Crate, `pub(super)` → Module, private → Private
+/// - Python: public → Public (opt-in), `_name` → Private, `__name` → Private
+/// - Java/C++: public/private/protected map directly
+/// - Go: uppercase → Public, lowercase → Private
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Visibility {
+    /// Accessible from anywhere (Python default, Rust `pub`).
+    Public,
+    /// Accessible within the crate/package (Rust `pub(crate)`).
+    Crate,
+    /// Accessible within the module and descendants (Rust `pub(super)`).
+    Module,
+    /// Accessible only within the defining scope (Rust private, Python `_name`).
+    Private,
+    /// Accessible within the class hierarchy (Java/C++ protected).
+    Protected,
+}
+
 // ============================================================================
 // Facts Tables
 // ============================================================================
@@ -351,10 +388,18 @@ pub struct Symbol {
     pub container_symbol_id: Option<SymbolId>,
     /// Module this symbol belongs to.
     pub module_id: Option<ModuleId>,
+    /// Visibility/access control for this symbol.
+    ///
+    /// `None` for languages without visibility semantics (Python default).
+    /// `Some(visibility)` for languages with explicit access control (Rust).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<Visibility>,
 }
 
 impl Symbol {
     /// Create a new symbol entry.
+    ///
+    /// Visibility defaults to `None` (not analyzed). Use `with_visibility()` to set it.
     pub fn new(
         symbol_id: SymbolId,
         kind: SymbolKind,
@@ -370,6 +415,7 @@ impl Symbol {
             decl_span,
             container_symbol_id: None,
             module_id: None,
+            visibility: None,
         }
     }
 
@@ -382,6 +428,12 @@ impl Symbol {
     /// Set the module.
     pub fn with_module(mut self, module: ModuleId) -> Self {
         self.module_id = Some(module);
+        self
+    }
+
+    /// Set the visibility.
+    pub fn with_visibility(mut self, visibility: Visibility) -> Self {
+        self.visibility = Some(visibility);
         self
     }
 }
@@ -619,8 +671,14 @@ impl InheritanceInfo {
 /// - O(1) lookup by ID for all entity types
 /// - Postings lists for common queries (refs by symbol, imports by file)
 /// - Deterministic iteration order (sorted by ID)
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct FactsStore {
+    /// Schema version for serialization compatibility checks.
+    ///
+    /// This is set to `FACTS_SCHEMA_VERSION` on creation and should be
+    /// checked when deserializing to detect incompatible schema changes.
+    pub schema_version: u32,
+
     // Primary storage (BTreeMap for deterministic iteration)
     files: BTreeMap<FileId, File>,
     modules: BTreeMap<ModuleId, Module>,
@@ -672,8 +730,45 @@ pub struct FactsStore {
     next_scope_id: u32,
 }
 
+impl Default for FactsStore {
+    fn default() -> Self {
+        FactsStore {
+            schema_version: FACTS_SCHEMA_VERSION,
+            files: BTreeMap::new(),
+            modules: BTreeMap::new(),
+            symbols: BTreeMap::new(),
+            references: BTreeMap::new(),
+            imports: BTreeMap::new(),
+            exports: BTreeMap::new(),
+            scopes: BTreeMap::new(),
+            types: HashMap::new(),
+            inheritance: Vec::new(),
+            parents_of: HashMap::new(),
+            children_of: HashMap::new(),
+            file_by_path: HashMap::new(),
+            symbols_by_name: HashMap::new(),
+            refs_by_symbol: HashMap::new(),
+            imports_by_file: HashMap::new(),
+            symbols_by_file: HashMap::new(),
+            refs_by_file: HashMap::new(),
+            scopes_by_file: HashMap::new(),
+            exports_by_file: HashMap::new(),
+            exports_by_name: HashMap::new(),
+            next_file_id: 0,
+            next_module_id: 0,
+            next_symbol_id: 0,
+            next_ref_id: 0,
+            next_import_id: 0,
+            next_export_id: 0,
+            next_scope_id: 0,
+        }
+    }
+}
+
 impl FactsStore {
     /// Create a new empty FactsStore.
+    ///
+    /// The schema version is automatically set to `FACTS_SCHEMA_VERSION`.
     pub fn new() -> Self {
         FactsStore::default()
     }
@@ -2855,6 +2950,103 @@ mod tests {
 
             assert_eq!(file_id.0, 1);
             assert_eq!(scope_id.0, 2);
+        }
+    }
+
+    mod visibility_tests {
+        use super::*;
+
+        #[test]
+        fn visibility_serialization_roundtrip() {
+            // Test all visibility variants serialize and deserialize correctly
+            let variants = [
+                Visibility::Public,
+                Visibility::Crate,
+                Visibility::Module,
+                Visibility::Private,
+                Visibility::Protected,
+            ];
+
+            for visibility in variants {
+                let json = serde_json::to_string(&visibility).unwrap();
+                let deserialized: Visibility = serde_json::from_str(&json).unwrap();
+                assert_eq!(visibility, deserialized);
+            }
+        }
+
+        #[test]
+        fn visibility_serializes_to_snake_case() {
+            assert_eq!(serde_json::to_string(&Visibility::Public).unwrap(), "\"public\"");
+            assert_eq!(serde_json::to_string(&Visibility::Crate).unwrap(), "\"crate\"");
+            assert_eq!(serde_json::to_string(&Visibility::Module).unwrap(), "\"module\"");
+            assert_eq!(serde_json::to_string(&Visibility::Private).unwrap(), "\"private\"");
+            assert_eq!(serde_json::to_string(&Visibility::Protected).unwrap(), "\"protected\"");
+        }
+
+        #[test]
+        fn symbol_visibility_none_not_serialized() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+
+            let symbol = test_symbol(&mut store, "foo", file_id, 0);
+            // Visibility should default to None
+            assert!(symbol.visibility.is_none());
+
+            // When serialized, visibility should not appear in JSON
+            let json = serde_json::to_string(&symbol).unwrap();
+            assert!(!json.contains("visibility"));
+        }
+
+        #[test]
+        fn symbol_visibility_some_serialized() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.rs");
+            let file_id = file.file_id;
+
+            let symbol = test_symbol(&mut store, "bar", file_id, 0)
+                .with_visibility(Visibility::Public);
+            assert_eq!(symbol.visibility, Some(Visibility::Public));
+
+            // When serialized, visibility should appear in JSON
+            let json = serde_json::to_string(&symbol).unwrap();
+            assert!(json.contains("\"visibility\":\"public\""));
+        }
+
+        #[test]
+        fn symbol_with_visibility_builder() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "test.rs");
+            let file_id = file.file_id;
+
+            // Test chaining with_visibility builder
+            let symbol = test_symbol(&mut store, "baz", file_id, 0)
+                .with_module(ModuleId::new(1))
+                .with_visibility(Visibility::Private);
+
+            assert_eq!(symbol.visibility, Some(Visibility::Private));
+            assert_eq!(symbol.module_id, Some(ModuleId::new(1)));
+        }
+    }
+
+    mod schema_version_tests {
+        use super::*;
+
+        #[test]
+        fn facts_schema_version_is_11() {
+            assert_eq!(FACTS_SCHEMA_VERSION, 11);
+        }
+
+        #[test]
+        fn facts_store_new_sets_schema_version() {
+            let store = FactsStore::new();
+            assert_eq!(store.schema_version, FACTS_SCHEMA_VERSION);
+        }
+
+        #[test]
+        fn facts_store_default_sets_schema_version() {
+            let store = FactsStore::default();
+            assert_eq!(store.schema_version, FACTS_SCHEMA_VERSION);
         }
     }
 }
