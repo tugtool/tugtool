@@ -487,6 +487,42 @@ pub enum AttributeAccessKind {
     Call,
 }
 
+/// Semantic modifier on a symbol.
+///
+/// Captures semantic attributes (async, static, property, etc.) in a
+/// language-agnostic way. Modifiers are stored per-symbol and can be
+/// queried efficiently.
+///
+/// This enum is `#[non_exhaustive]` to allow adding language-specific
+/// variants without breaking downstream code.
+///
+/// # Language Support
+///
+/// - **Python**: `Async`, `Static`, `ClassMethod`, `Property`, `Abstract`, `Generator`
+/// - **Rust**: `Async` (async fn), potentially others in future
+/// - **Java/TypeScript**: `Static`, `Abstract`, `Final`, `Override`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Modifier {
+    /// Async function/method (Python `async def`, Rust `async fn`).
+    Async,
+    /// Static method (Python `@staticmethod`).
+    Static,
+    /// Class method (Python `@classmethod`).
+    ClassMethod,
+    /// Property accessor (Python `@property`).
+    Property,
+    /// Abstract method (Python `@abstractmethod`, Java `abstract`).
+    Abstract,
+    /// Final/sealed method or class (Python `@final`, Java `final`).
+    Final,
+    /// Override of base class method (Python `@override`, Java `@Override`).
+    Override,
+    /// Generator function (Python function with `yield`).
+    Generator,
+}
+
 // ============================================================================
 // Facts Tables
 // ============================================================================
@@ -1356,6 +1392,61 @@ impl CallSite {
     }
 }
 
+/// A qualified name for a symbol.
+///
+/// Provides a stable cross-module identifier for a symbol, enabling
+/// consistent lookup across files and refactoring sessions.
+///
+/// # Examples
+///
+/// - `"myproject.utils.parse"` for a function
+/// - `"myproject.models.User.save"` for a method
+/// - `"myproject.constants.MAX_SIZE"` for a constant
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QualifiedName {
+    /// The symbol this qualified name belongs to.
+    pub symbol_id: SymbolId,
+    /// Fully-qualified path (e.g., `"pkg.mod.Class.method"`).
+    pub path: String,
+}
+
+impl QualifiedName {
+    /// Create a new qualified name for a symbol.
+    pub fn new(symbol_id: SymbolId, path: impl Into<String>) -> Self {
+        QualifiedName {
+            symbol_id,
+            path: path.into(),
+        }
+    }
+}
+
+/// Modifiers associated with a symbol.
+///
+/// Stores the semantic modifiers (async, static, property, etc.) for a symbol.
+/// This is keyed by `SymbolId` in FactsStore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SymbolModifiers {
+    /// The symbol these modifiers belong to.
+    pub symbol_id: SymbolId,
+    /// List of modifiers on this symbol.
+    pub modifiers: Vec<Modifier>,
+}
+
+impl SymbolModifiers {
+    /// Create new symbol modifiers.
+    pub fn new(symbol_id: SymbolId, modifiers: Vec<Modifier>) -> Self {
+        SymbolModifiers {
+            symbol_id,
+            modifiers,
+        }
+    }
+
+    /// Check if a specific modifier is present.
+    pub fn has(&self, modifier: Modifier) -> bool {
+        self.modifiers.contains(&modifier)
+    }
+}
+
 // ============================================================================
 // FactsStore
 // ============================================================================
@@ -1448,6 +1539,14 @@ pub struct FactsStore {
     /// callee_symbol_id → call_site_ids[] (calls to this callee).
     call_sites_by_callee: HashMap<SymbolId, Vec<CallSiteId>>,
 
+    // Qualified names and modifiers
+    /// symbol_id → qualified name (stable cross-module identifier).
+    qualified_names: BTreeMap<SymbolId, QualifiedName>,
+    /// qualified path → symbol_id (reverse lookup for symbol resolution).
+    qualified_names_by_path: HashMap<String, SymbolId>,
+    /// symbol_id → modifiers (semantic attributes like async, static, property).
+    symbol_modifiers: BTreeMap<SymbolId, SymbolModifiers>,
+
     // ID generators
     next_file_id: u32,
     next_module_id: u32,
@@ -1497,6 +1596,9 @@ impl Default for FactsStore {
             call_sites: BTreeMap::new(),
             call_sites_by_file: HashMap::new(),
             call_sites_by_callee: HashMap::new(),
+            qualified_names: BTreeMap::new(),
+            qualified_names_by_path: HashMap::new(),
+            symbol_modifiers: BTreeMap::new(),
             next_file_id: 0,
             next_module_id: 0,
             next_symbol_id: 0,
@@ -1801,6 +1903,31 @@ impl FactsStore {
         self.call_sites.insert(call.call_id, call);
     }
 
+    /// Insert a qualified name for a symbol.
+    ///
+    /// If the symbol already has a qualified name, this replaces it.
+    /// Also updates the reverse lookup index.
+    pub fn insert_qualified_name(&mut self, qname: QualifiedName) {
+        // Remove old path from reverse index if symbol had a previous qualified name
+        if let Some(old_qname) = self.qualified_names.get(&qname.symbol_id) {
+            self.qualified_names_by_path.remove(&old_qname.path);
+        }
+
+        // Update reverse index
+        self.qualified_names_by_path
+            .insert(qname.path.clone(), qname.symbol_id);
+
+        // Insert into primary storage
+        self.qualified_names.insert(qname.symbol_id, qname);
+    }
+
+    /// Insert modifiers for a symbol.
+    ///
+    /// If the symbol already has modifiers, this replaces them.
+    pub fn insert_modifiers(&mut self, modifiers: SymbolModifiers) {
+        self.symbol_modifiers.insert(modifiers.symbol_id, modifiers);
+    }
+
     // ========================================================================
     // Lookup by ID
     // ========================================================================
@@ -1868,6 +1995,37 @@ impl FactsStore {
     /// Get a call site by ID.
     pub fn call_site(&self, id: CallSiteId) -> Option<&CallSite> {
         self.call_sites.get(&id)
+    }
+
+    /// Get the qualified name for a symbol.
+    ///
+    /// Returns None if the symbol has no qualified name assigned.
+    pub fn qualified_name(&self, symbol_id: SymbolId) -> Option<&QualifiedName> {
+        self.qualified_names.get(&symbol_id)
+    }
+
+    /// Look up a symbol by its qualified path.
+    ///
+    /// Returns the SymbolId for the symbol with this qualified path,
+    /// or None if no symbol has this path.
+    pub fn symbol_by_qualified_name(&self, path: &str) -> Option<SymbolId> {
+        self.qualified_names_by_path.get(path).copied()
+    }
+
+    /// Get the modifiers for a symbol.
+    ///
+    /// Returns None if the symbol has no modifiers assigned.
+    pub fn modifiers_for(&self, symbol_id: SymbolId) -> Option<&SymbolModifiers> {
+        self.symbol_modifiers.get(&symbol_id)
+    }
+
+    /// Check if a symbol has a specific modifier.
+    ///
+    /// Returns false if the symbol has no modifiers or doesn't have the specified modifier.
+    pub fn has_modifier(&self, symbol_id: SymbolId, modifier: Modifier) -> bool {
+        self.symbol_modifiers
+            .get(&symbol_id)
+            .is_some_and(|m| m.has(modifier))
     }
 
     // ========================================================================
@@ -2283,6 +2441,16 @@ impl FactsStore {
         self.call_sites.values()
     }
 
+    /// Iterate over all qualified names in deterministic order.
+    pub fn qualified_names(&self) -> impl Iterator<Item = &QualifiedName> {
+        self.qualified_names.values()
+    }
+
+    /// Iterate over all symbol modifiers in deterministic order.
+    pub fn all_modifiers(&self) -> impl Iterator<Item = &SymbolModifiers> {
+        self.symbol_modifiers.values()
+    }
+
     // ========================================================================
     // Counts
     // ========================================================================
@@ -2352,6 +2520,16 @@ impl FactsStore {
         self.call_sites.len()
     }
 
+    /// Number of qualified names.
+    pub fn qualified_name_count(&self) -> usize {
+        self.qualified_names.len()
+    }
+
+    /// Number of symbols with modifiers.
+    pub fn symbol_modifiers_count(&self) -> usize {
+        self.symbol_modifiers.len()
+    }
+
     // ========================================================================
     // Bulk Operations
     // ========================================================================
@@ -2393,6 +2571,10 @@ impl FactsStore {
         self.call_sites.clear();
         self.call_sites_by_file.clear();
         self.call_sites_by_callee.clear();
+
+        self.qualified_names.clear();
+        self.qualified_names_by_path.clear();
+        self.symbol_modifiers.clear();
 
         // Note: We don't reset ID generators to preserve uniqueness
     }
@@ -5700,6 +5882,296 @@ mod tests {
         fn attribute_access_id_display() {
             let id = AttributeAccessId::new(42);
             assert_eq!(format!("{}", id), "attr_42");
+        }
+    }
+
+    /// Tests for Modifier enum.
+    mod modifier_tests {
+        use super::*;
+
+        #[test]
+        fn modifier_serialization_all_variants() {
+            // Test that all variants serialize to snake_case
+            let modifiers = vec![
+                (Modifier::Async, "async"),
+                (Modifier::Static, "static"),
+                (Modifier::ClassMethod, "class_method"),
+                (Modifier::Property, "property"),
+                (Modifier::Abstract, "abstract"),
+                (Modifier::Final, "final"),
+                (Modifier::Override, "override"),
+                (Modifier::Generator, "generator"),
+            ];
+
+            for (modifier, expected) in modifiers {
+                let json = serde_json::to_string(&modifier).unwrap();
+                assert_eq!(json, format!("\"{}\"", expected));
+
+                // Roundtrip
+                let deserialized: Modifier = serde_json::from_str(&json).unwrap();
+                assert_eq!(deserialized, modifier);
+            }
+        }
+
+        #[test]
+        fn modifier_hash_and_eq() {
+            use std::collections::HashSet;
+            let mut set = HashSet::new();
+            set.insert(Modifier::Async);
+            set.insert(Modifier::Static);
+            set.insert(Modifier::Async); // duplicate
+
+            assert_eq!(set.len(), 2);
+            assert!(set.contains(&Modifier::Async));
+            assert!(set.contains(&Modifier::Static));
+            assert!(!set.contains(&Modifier::Property));
+        }
+    }
+
+    /// Tests for QualifiedName struct.
+    mod qualified_name_tests {
+        use super::*;
+
+        #[test]
+        fn qualified_name_roundtrip() {
+            let symbol_id = SymbolId::new(42);
+            let qname = QualifiedName::new(symbol_id, "mypackage.mymodule.MyClass.my_method");
+
+            assert_eq!(qname.symbol_id, symbol_id);
+            assert_eq!(qname.path, "mypackage.mymodule.MyClass.my_method");
+
+            // Serialization roundtrip
+            let json = serde_json::to_string(&qname).unwrap();
+            let deserialized: QualifiedName = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, qname);
+        }
+
+        #[test]
+        fn qualified_name_insert_and_lookup() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let sym = test_symbol(&mut store, "foo", file_id, 10);
+            let sym_id = sym.symbol_id;
+            store.insert_symbol(sym);
+
+            let qname = QualifiedName::new(sym_id, "pkg.mod.foo");
+            store.insert_qualified_name(qname.clone());
+
+            // Lookup by symbol ID
+            let retrieved = store.qualified_name(sym_id).unwrap();
+            assert_eq!(retrieved.path, "pkg.mod.foo");
+
+            // Reverse lookup by path
+            let found_id = store.symbol_by_qualified_name("pkg.mod.foo").unwrap();
+            assert_eq!(found_id, sym_id);
+        }
+
+        #[test]
+        fn qualified_name_reverse_lookup() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Insert multiple symbols with qualified names
+            for name in ["foo", "bar", "baz"] {
+                let sym = test_symbol(&mut store, name, file_id, 10);
+                let sym_id = sym.symbol_id;
+                store.insert_symbol(sym);
+                store.insert_qualified_name(QualifiedName::new(sym_id, format!("pkg.{}", name)));
+            }
+
+            // Each should be lookupable by path
+            assert!(store.symbol_by_qualified_name("pkg.foo").is_some());
+            assert!(store.symbol_by_qualified_name("pkg.bar").is_some());
+            assert!(store.symbol_by_qualified_name("pkg.baz").is_some());
+
+            // Unknown path returns None
+            assert!(store.symbol_by_qualified_name("pkg.unknown").is_none());
+        }
+
+        #[test]
+        fn qualified_name_replace_updates_reverse_index() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let sym = test_symbol(&mut store, "foo", file_id, 10);
+            let sym_id = sym.symbol_id;
+            store.insert_symbol(sym);
+
+            // Insert initial qualified name
+            store.insert_qualified_name(QualifiedName::new(sym_id, "old.path.foo"));
+            assert!(store.symbol_by_qualified_name("old.path.foo").is_some());
+
+            // Replace with new qualified name
+            store.insert_qualified_name(QualifiedName::new(sym_id, "new.path.foo"));
+
+            // Old path should no longer work
+            assert!(store.symbol_by_qualified_name("old.path.foo").is_none());
+            // New path should work
+            assert_eq!(
+                store.symbol_by_qualified_name("new.path.foo").unwrap(),
+                sym_id
+            );
+        }
+
+        #[test]
+        fn qualified_name_iteration() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            for i in 0..5 {
+                let sym = test_symbol(&mut store, &format!("sym{}", i), file_id, i * 10);
+                let sym_id = sym.symbol_id;
+                store.insert_symbol(sym);
+                store.insert_qualified_name(QualifiedName::new(sym_id, format!("pkg.sym{}", i)));
+            }
+
+            assert_eq!(store.qualified_name_count(), 5);
+
+            // Iteration should be deterministic
+            let iter1: Vec<_> = store.qualified_names().map(|q| &q.path).collect();
+            let iter2: Vec<_> = store.qualified_names().map(|q| &q.path).collect();
+            assert_eq!(iter1, iter2);
+        }
+    }
+
+    /// Tests for SymbolModifiers struct.
+    mod symbol_modifiers_tests {
+        use super::*;
+
+        #[test]
+        fn symbol_modifiers_multiple() {
+            let symbol_id = SymbolId::new(42);
+            let modifiers = SymbolModifiers::new(
+                symbol_id,
+                vec![Modifier::Async, Modifier::Static, Modifier::ClassMethod],
+            );
+
+            assert_eq!(modifiers.symbol_id, symbol_id);
+            assert!(modifiers.has(Modifier::Async));
+            assert!(modifiers.has(Modifier::Static));
+            assert!(modifiers.has(Modifier::ClassMethod));
+            assert!(!modifiers.has(Modifier::Property));
+        }
+
+        #[test]
+        fn symbol_modifiers_insert_and_query() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let sym = test_symbol(&mut store, "my_method", file_id, 10);
+            let sym_id = sym.symbol_id;
+            store.insert_symbol(sym);
+
+            // Insert modifiers
+            store.insert_modifiers(SymbolModifiers::new(
+                sym_id,
+                vec![Modifier::Async, Modifier::Property],
+            ));
+
+            // Query
+            let mods = store.modifiers_for(sym_id).unwrap();
+            assert!(mods.has(Modifier::Async));
+            assert!(mods.has(Modifier::Property));
+            assert!(!mods.has(Modifier::Static));
+        }
+
+        #[test]
+        fn has_modifier_convenience() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let sym = test_symbol(&mut store, "generator_fn", file_id, 10);
+            let sym_id = sym.symbol_id;
+            store.insert_symbol(sym);
+
+            // Without modifiers, has_modifier returns false
+            assert!(!store.has_modifier(sym_id, Modifier::Generator));
+
+            // With modifiers
+            store.insert_modifiers(SymbolModifiers::new(sym_id, vec![Modifier::Generator]));
+            assert!(store.has_modifier(sym_id, Modifier::Generator));
+            assert!(!store.has_modifier(sym_id, Modifier::Async));
+
+            // Unknown symbol returns false
+            assert!(!store.has_modifier(SymbolId::new(999), Modifier::Async));
+        }
+
+        #[test]
+        fn symbol_modifiers_serialization() {
+            let modifiers = SymbolModifiers::new(
+                SymbolId::new(42),
+                vec![Modifier::Async, Modifier::Override],
+            );
+
+            let json = serde_json::to_string(&modifiers).unwrap();
+            assert!(json.contains("\"async\""));
+            assert!(json.contains("\"override\""));
+
+            // Roundtrip
+            let deserialized: SymbolModifiers = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, modifiers);
+        }
+
+        #[test]
+        fn symbol_modifiers_replace() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let sym = test_symbol(&mut store, "method", file_id, 10);
+            let sym_id = sym.symbol_id;
+            store.insert_symbol(sym);
+
+            // Initial modifiers
+            store.insert_modifiers(SymbolModifiers::new(sym_id, vec![Modifier::Static]));
+            assert!(store.has_modifier(sym_id, Modifier::Static));
+
+            // Replace with new modifiers
+            store.insert_modifiers(SymbolModifiers::new(
+                sym_id,
+                vec![Modifier::ClassMethod, Modifier::Abstract],
+            ));
+
+            // Old modifier gone, new modifiers present
+            assert!(!store.has_modifier(sym_id, Modifier::Static));
+            assert!(store.has_modifier(sym_id, Modifier::ClassMethod));
+            assert!(store.has_modifier(sym_id, Modifier::Abstract));
+        }
+
+        #[test]
+        fn symbol_modifiers_iteration() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            for i in 0..3 {
+                let sym = test_symbol(&mut store, &format!("method{}", i), file_id, i * 10);
+                let sym_id = sym.symbol_id;
+                store.insert_symbol(sym);
+                store.insert_modifiers(SymbolModifiers::new(sym_id, vec![Modifier::Async]));
+            }
+
+            assert_eq!(store.symbol_modifiers_count(), 3);
+
+            // Iteration should be deterministic
+            let iter1: Vec<_> = store.all_modifiers().map(|m| m.symbol_id).collect();
+            let iter2: Vec<_> = store.all_modifiers().map(|m| m.symbol_id).collect();
+            assert_eq!(iter1, iter2);
         }
     }
 }

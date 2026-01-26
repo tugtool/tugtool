@@ -6,6 +6,70 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.7d: Add Qualified Names and Symbol Modifiers | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 2.7d specification
+- `crates/tugtool-core/src/facts/mod.rs` - existing FactsStore structure
+- [D19] Qualified Names and Modifiers
+- Public API specification for Modifier, QualifiedName, SymbolModifiers
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `Modifier` enum with `#[non_exhaustive]` (8 variants) | Done |
+| Add `QualifiedName` struct with `symbol_id`, `path` | Done |
+| Add `SymbolModifiers` struct with `symbol_id`, `modifiers` | Done |
+| Add `qualified_names: BTreeMap<SymbolId, QualifiedName>` to FactsStore | Done |
+| Add `qualified_names_by_path: HashMap<String, SymbolId>` reverse index | Done |
+| Add `symbol_modifiers: BTreeMap<SymbolId, SymbolModifiers>` to FactsStore | Done |
+| Add insert/query methods: `insert_qualified_name()`, `qualified_name()`, `symbol_by_qualified_name()` | Done |
+| Add insert/query methods: `insert_modifiers()`, `modifiers_for()` | Done |
+| Add `has_modifier(symbol_id, modifier)` convenience query | Done |
+| Add iteration methods: `qualified_names()`, `all_modifiers()` | Done |
+| Add count methods: `qualified_name_count()`, `symbol_modifiers_count()` | Done |
+| Update `Default::default()` and `clear()` to handle new fields | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `Modifier` enum with `#[non_exhaustive]`: `Async`, `Static`, `ClassMethod`, `Property`, `Abstract`, `Final`, `Override`, `Generator`
+  - Added `QualifiedName` struct with `symbol_id: SymbolId`, `path: String`, `new()` constructor
+  - Added `SymbolModifiers` struct with `symbol_id: SymbolId`, `modifiers: Vec<Modifier>`, `new()` and `has()` methods
+  - Added storage: `qualified_names`, `qualified_names_by_path`, `symbol_modifiers`
+  - Added `insert_qualified_name()` with reverse index update on replacement
+  - Added `insert_modifiers()` for symbol modifiers
+  - Added `qualified_name()`, `symbol_by_qualified_name()`, `modifiers_for()`, `has_modifier()` queries
+  - Added iteration methods: `qualified_names()`, `all_modifiers()`
+  - Added count methods: `qualified_name_count()`, `symbol_modifiers_count()`
+  - Updated `Default::default()` and `clear()` for new fields
+  - Added test modules: `modifier_tests`, `qualified_name_tests`, `symbol_modifiers_tests` (13 tests total)
+
+- `plans/phase-11.md`:
+  - Checked off all Step 2.7d task, test, and checkpoint checkboxes
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core qualified`: 5 tests passed
+- `cargo nextest run -p tugtool-core modifier`: 8 tests passed
+- `cargo nextest run -p tugtool-core`: 389 tests passed (up from 376)
+- `cargo nextest run --workspace`: 1456 tests passed
+- `cargo clippy -p tugtool-core`: Clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core qualified`: PASS
+- `cargo nextest run -p tugtool-core modifier`: PASS
+
+**Key Decisions/Notes:**
+- `Modifier` enum is `#[non_exhaustive]` to allow adding language-specific variants without breaking downstream code
+- `insert_qualified_name()` handles replacement by removing the old path from the reverse index before inserting the new one
+- `has_modifier()` convenience query returns `false` for unknown symbols (no Option return)
+- Added `has()` method on `SymbolModifiers` struct for easy modifier checking
+- All new storage uses BTreeMap for deterministic iteration order
+
+---
+
 ## [phase-11.md] Step 2.7c: Add Attribute Access and Call Sites | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

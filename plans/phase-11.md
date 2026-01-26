@@ -2991,33 +2991,33 @@ This step is split into 5 sub-steps for manageable commits:
 - Storage and queries
 
 **Tasks:**
-- [ ] Add `Modifier` enum with `#[non_exhaustive]`:
+- [x] Add `Modifier` enum with `#[non_exhaustive]`:
   - `Async`, `Static`, `ClassMethod`, `Property`
   - `Abstract`, `Final`, `Override`, `Generator`
-- [ ] Add `QualifiedName` struct:
+- [x] Add `QualifiedName` struct:
   - `symbol_id: SymbolId`
   - `path: String` (e.g., `"pkg.mod.Class.method"`)
-- [ ] Add `SymbolModifiers` struct:
+- [x] Add `SymbolModifiers` struct:
   - `symbol_id: SymbolId`
   - `modifiers: Vec<Modifier>`
-- [ ] Add `qualified_names: BTreeMap<SymbolId, QualifiedName>` to FactsStore
-- [ ] Add `qualified_names_by_path: HashMap<String, SymbolId>` reverse index
-- [ ] Add `symbol_modifiers: BTreeMap<SymbolId, SymbolModifiers>` to FactsStore
-- [ ] Add insert/query methods:
+- [x] Add `qualified_names: BTreeMap<SymbolId, QualifiedName>` to FactsStore
+- [x] Add `qualified_names_by_path: HashMap<String, SymbolId>` reverse index
+- [x] Add `symbol_modifiers: BTreeMap<SymbolId, SymbolModifiers>` to FactsStore
+- [x] Add insert/query methods:
   - `insert_qualified_name()`, `qualified_name()`, `symbol_by_qualified_name()`
   - `insert_modifiers()`, `modifiers_for()`
-- [ ] Add `has_modifier(symbol_id, modifier)` convenience query
+- [x] Add `has_modifier(symbol_id, modifier)` convenience query
 
 **Tests:**
-- [ ] Unit: `Modifier` serialization (all variants)
-- [ ] Unit: `QualifiedName` roundtrip
-- [ ] Unit: Reverse lookup by path
-- [ ] Unit: `SymbolModifiers` with multiple modifiers
-- [ ] Unit: `has_modifier()` query
+- [x] Unit: `Modifier` serialization (all variants)
+- [x] Unit: `QualifiedName` roundtrip
+- [x] Unit: Reverse lookup by path
+- [x] Unit: `SymbolModifiers` with multiple modifiers
+- [x] Unit: `has_modifier()` query
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core qualified`
-- [ ] `cargo nextest run -p tugtool-core modifier`
+- [x] `cargo nextest run -p tugtool-core qualified`
+- [x] `cargo nextest run -p tugtool-core modifier`
 
 **Rollback:** Revert commit
 
