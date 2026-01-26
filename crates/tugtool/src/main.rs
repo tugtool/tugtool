@@ -149,7 +149,7 @@ enum RenameFormat {
 
 /// Output format for analyze command.
 ///
-/// Per Phase 10 [D11]: Unified diff is the default output format.
+/// Per Phase 10 D11: Unified diff is the default output format.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 enum AnalyzeFormat {
     /// Unified diff format (default, compatible with `git apply`).
@@ -168,7 +168,7 @@ enum Command {
     Snapshot,
     /// Analyze a refactoring operation without applying changes.
     ///
-    /// Per Phase 10 [D10]: Preview what changes would be made.
+    /// Per Phase 10 D10: Preview what changes would be made.
     /// Default output is unified diff format.
     Analyze {
         #[command(subcommand)]
@@ -176,7 +176,7 @@ enum Command {
     },
     /// Rename a symbol (apply-by-default).
     ///
-    /// Per Phase 10 [D09]: Primary command applies changes by default.
+    /// Per Phase 10 D09: Primary command applies changes by default.
     /// Use --dry-run to preview changes without modifying files.
     Rename {
         /// Location of the symbol to rename (file:line:col).
@@ -235,7 +235,7 @@ enum Command {
 
 /// Analyze operations (used by the `analyze` command).
 ///
-/// Per Phase 10 [D10]: Preview what changes a refactoring operation would make.
+/// Per Phase 10 D10: Preview what changes a refactoring operation would make.
 #[derive(Subcommand, Clone, Debug)]
 enum AnalyzeOp {
     /// Analyze a symbol rename operation.
@@ -250,7 +250,7 @@ enum AnalyzeOp {
         to: String,
         /// Output format.
         ///
-        /// Per Phase 10 [D11]: Default is unified diff.
+        /// Per Phase 10 D11: Default is unified diff.
         #[arg(long, value_enum, default_value = "diff")]
         format: AnalyzeFormat,
     },
@@ -423,8 +423,8 @@ fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
 
 /// Execute analyze command.
 ///
-/// Per Phase 10 [D10]: Preview what changes a refactoring operation would make.
-/// Per Phase 10 [D11]: Default output is unified diff.
+/// Per Phase 10 D10: Preview what changes a refactoring operation would make.
+/// Per Phase 10 D11: Default output is unified diff.
 ///
 /// This runs the rename operation in dry-run mode (no changes applied) and outputs
 /// the results in the requested format.
@@ -549,8 +549,8 @@ fn output_analyze_summary(result: &serde_json::Value) -> Result<(), TugError> {
 
 /// Execute rename command.
 ///
-/// Per Phase 10 [D09]: Apply-by-default. The `--dry-run` flag prevents file modification.
-/// Per Phase 10 [D12]: Default verification mode is `syntax`.
+/// Per Phase 10 D09: Apply-by-default. The `--dry-run` flag prevents file modification.
+/// Per Phase 10 D12: Default verification mode is `syntax`.
 ///
 /// # Arguments
 ///

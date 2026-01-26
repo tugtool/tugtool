@@ -127,7 +127,7 @@ impl AliasInfo {
 /// reverse lookups (alias -> sources). It is scope-aware but stores
 /// all scopes together, with filtering applied at query time.
 ///
-/// Per Spec S04 and [D07] in phase-10.md.
+/// Per Spec S04 and D07 in phase-10.md.
 #[derive(Debug, Default)]
 pub struct AliasGraph {
     /// Forward map: source_name -> list of AliasInfo.

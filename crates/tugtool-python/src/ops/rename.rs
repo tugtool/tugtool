@@ -134,7 +134,7 @@ pub struct ImpactAnalysis {
     pub references: Vec<ReferenceInfo>,
     /// Value-level aliases of the target symbol (per Spec S05).
     ///
-    /// These are informational only ([D06]): they show potential aliases
+    /// These are informational only (D06): they show potential aliases
     /// but are NOT automatically renamed.
     pub aliases: Vec<AliasOutput>,
     /// Impact summary.

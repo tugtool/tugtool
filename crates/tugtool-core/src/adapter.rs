@@ -1,8 +1,8 @@
 //! Language adapter trait and intermediate data types.
 //!
-//! This module defines the `LanguageAdapter` trait for pluggable language support,
+//! This module defines the [`LanguageAdapter`] trait for pluggable language support,
 //! along with the intermediate data types used to pass analysis results from
-//! language-specific analyzers to the `FactsStore`.
+//! language-specific analyzers to the [`FactsStore`].
 //!
 //! # Architecture
 //!
@@ -34,39 +34,99 @@
 //! adapter. All index-based references depend on this ordering. If a caller needs
 //! sorted output, it should sort the input file list before calling the adapter.
 //!
-//! # Example
+//! # Usage Pattern
 //!
-//! ```ignore
-//! use tugtool_core::adapter::{LanguageAdapter, AnalysisBundle};
-//! use tugtool_core::facts::{FactsStore, Language};
+//! The typical workflow for using a language adapter:
 //!
-//! struct MyAdapter;
+//! 1. **Check file type**: Use `can_handle()` to determine if the adapter supports a file
+//! 2. **Analyze files**: Call `analyze_files()` with source content
+//! 3. **Convert to FactsStore**: The integration layer allocates IDs and inserts data
 //!
-//! impl LanguageAdapter for MyAdapter {
-//!     type Error = std::io::Error;
+//! ## Example: Integration Layer
 //!
-//!     fn analyze_file(&self, path: &str, content: &str)
-//!         -> Result<FileAnalysisResult, Self::Error>
-//!     {
-//!         // Parse and analyze single file
-//!         todo!()
-//!     }
+//! ```
+//! use tugtool_core::adapter::{FileAnalysisResult, AnalysisBundle, SymbolData, ReferenceKind};
+//! use tugtool_core::facts::{FactsStore, File, Language, ScopeKind, SymbolKind};
+//! use tugtool_core::patch::{Span, ContentHash};
 //!
-//!     fn analyze_files(&self, files: &[(String, String)], _store: &FactsStore)
-//!         -> Result<AnalysisBundle, Self::Error>
-//!     {
-//!         // Analyze multiple files with cross-file resolution
-//!         todo!()
-//!     }
+//! // Integration layer receives adapter output and populates FactsStore
+//! fn populate_facts_store(bundle: &AnalysisBundle, store: &mut FactsStore) {
+//!     for (_file_index, file_result) in bundle.file_results.iter().enumerate() {
+//!         // 1. Create and register file
+//!         let file_id = store.next_file_id();
+//!         let content_hash = ContentHash::compute(b"");  // Compute hash from content
+//!         let file = File::new(
+//!             file_id,
+//!             &file_result.path,
+//!             content_hash,
+//!             Language::Python,
+//!         );
+//!         store.insert_file(file);
 //!
-//!     fn language(&self) -> Language {
-//!         Language::Python
-//!     }
+//!         // 2. Build index mapping: adapter index -> FactsStore ID
+//!         let mut symbol_id_map = Vec::new();
 //!
-//!     fn can_handle(&self, path: &str) -> bool {
-//!         path.ends_with(".py")
+//!         // 3. Insert symbols (allocate IDs via store.next_symbol_id())
+//!         for _symbol_data in &file_result.symbols {
+//!             let symbol_id = store.next_symbol_id();
+//!             symbol_id_map.push(symbol_id);
+//!
+//!             // Convert SymbolData to facts::Symbol using allocated IDs
+//!             // ... (actual conversion would go here)
+//!         }
+//!
+//!         // 4. Insert references, resolving symbol indices to IDs
+//!         // ... (reference insertion would go here)
 //!     }
 //! }
+//!
+//! // Example usage
+//! let bundle = AnalysisBundle::default();
+//! let mut store = FactsStore::new();
+//! populate_facts_store(&bundle, &mut store);
+//! ```
+//!
+//! ## Example: Creating Analysis Data
+//!
+//! ```
+//! use tugtool_core::adapter::{
+//!     FileAnalysisResult, ScopeData, SymbolData, ReferenceData, ReferenceKind
+//! };
+//! use tugtool_core::facts::{ScopeKind, SymbolKind};
+//! use tugtool_core::patch::Span;
+//!
+//! // Create a simple file analysis result
+//! let mut result = FileAnalysisResult::default();
+//! result.path = "example.py".to_string();
+//!
+//! // Add module scope (always index 0)
+//! result.scopes.push(ScopeData {
+//!     kind: ScopeKind::Module,
+//!     span: Span::new(0, 100),
+//!     parent_index: None,
+//!     name: None,
+//! });
+//!
+//! // Add a function symbol
+//! result.symbols.push(SymbolData {
+//!     kind: SymbolKind::Function,
+//!     name: "process".to_string(),
+//!     decl_span: Span::new(10, 17),
+//!     scope_index: 0,  // in module scope
+//!     visibility: None,
+//! });
+//!
+//! // Add a reference to the function
+//! result.references.push(ReferenceData {
+//!     name: "process".to_string(),
+//!     span: Span::new(50, 57),
+//!     scope_index: 0,
+//!     kind: ReferenceKind::Call,
+//! });
+//!
+//! assert_eq!(result.scopes.len(), 1);
+//! assert_eq!(result.symbols.len(), 1);
+//! assert_eq!(result.references.len(), 1);
 //! ```
 
 use crate::facts::{

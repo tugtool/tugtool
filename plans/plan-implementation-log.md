@@ -6,6 +6,74 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 5: Update Documentation and Examples | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 5 specification (lines 3332-3361)
+- Table T01: Visibility Mapping Across Languages (lines 1195-1229)
+- Concept C01: What is an "Export"? (lines 1236-1290)
+- `crates/tugtool-core/src/facts/mod.rs` - Current documentation state
+- `crates/tugtool-core/src/adapter.rs` - Current documentation state
+- `CLAUDE.md` - Reviewed for schema changes (no updates needed per [CQ1], [CQ2])
+- `docs/AGENT_API.md` - Reviewed for output schema changes (no updates needed per plan)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add module-level docs to `facts/mod.rs` explaining visibility model | Done |
+| Add examples in `Visibility` rustdoc | Done |
+| Add examples in `PublicExport` rustdoc | Done |
+| Document `LanguageAdapter` usage pattern | Done |
+| Review and update CLAUDE.md if schema changes affect agents | Done (no changes needed) |
+| Update `docs/AGENT_API.md` if output schema changes | Done (no changes needed) |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added module-level docs explaining visibility model with cross-language mapping table
+  - Added export model documentation with declared vs effective exports
+  - Added schema versioning documentation
+  - Added `Visibility` enum examples with language mapping tables and doc tests
+  - Added `PublicExport` examples for Python `__all__`, Rust `pub use`, and serialization
+
+- `crates/tugtool-core/src/adapter.rs`:
+  - Enhanced module-level docs with usage pattern section
+  - Added integration layer example showing ID allocation and FactsStore population
+  - Added analysis data creation example
+
+- `crates/tugtool-python/src/alias.rs`:
+  - Fixed pre-existing broken doc link: `[D07]` → `D07` (line 130)
+
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Fixed pre-existing broken doc link: `[D06]` → `D06` (line 137)
+
+- `crates/tugtool/src/main.rs`:
+  - Fixed 9 pre-existing broken doc links: `[D09]`, `[D10]`, `[D11]`, `[D12]` → without brackets
+
+- `plans/phase-11.md`:
+  - Checked off all 6 tasks, 2 tests, and 1 checkpoint for Step 5
+
+**Test Results:**
+- `cargo doc --workspace`: Succeeds (after fixing pre-existing broken links in 4 files)
+- `cargo test --doc -p tugtool-core`: 8 passed, 1 ignored
+- `cargo clippy --workspace`: Clean
+- `cargo nextest run -p tugtool-core`: 432 tests passed
+- `cargo nextest run -p tugtool-python`: 396 tests passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo test --doc -p tugtool-core`: PASS
+
+**Key Decisions/Notes:**
+- Per [CQ1] and [CQ2], the agent-facing output schema is unchanged in Phase 11
+- `Visibility` remains internal to FactsStore; not exposed in `SymbolInfo` output type
+- CLAUDE.md and AGENT_API.md do not need updates since output schema is unchanged
+- Fixed 12 pre-existing broken doc links across 4 files (plan doc references using brackets)
+- Doc examples use runnable code blocks (not `ignore`) for better verification
+
+---
+
 ## [phase-11.md] Step 4: Define LanguageAdapter Trait | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

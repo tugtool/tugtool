@@ -3341,19 +3341,19 @@ fn file_results_preserves_input_order() {
 - Example code in docs
 
 **Tasks:**
-- [ ] Add module-level docs to `facts/mod.rs` explaining visibility model
-- [ ] Add examples in `Visibility` rustdoc
-- [ ] Add examples in `PublicExport` rustdoc
-- [ ] Document `LanguageAdapter` usage pattern
-- [ ] Review and update CLAUDE.md if schema changes affect agents
-- [ ] Update `docs/AGENT_API.md` if output schema changes
+- [x] Add module-level docs to `facts/mod.rs` explaining visibility model
+- [x] Add examples in `Visibility` rustdoc
+- [x] Add examples in `PublicExport` rustdoc
+- [x] Document `LanguageAdapter` usage pattern
+- [x] Review and update CLAUDE.md if schema changes affect agents
+- [x] Update `docs/AGENT_API.md` if output schema changes
 
 **Tests:**
-- [ ] `cargo doc --workspace` succeeds
-- [ ] Doc tests pass
+- [x] `cargo doc --workspace` succeeds
+- [x] Doc tests pass
 
 **Checkpoint:**
-- [ ] `cargo test --doc -p tugtool-core`
+- [x] `cargo test --doc -p tugtool-core`
 
 **Rollback:**
 - Revert commit

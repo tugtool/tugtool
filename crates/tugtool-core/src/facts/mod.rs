@@ -1,16 +1,63 @@
 //! Facts model: normalized code facts tables and indexes.
 //!
 //! This module provides the semantic program data model for tug:
-//! - `File`: Source files with content hashes
-//! - `Module`: Python/Rust modules with hierarchy
-//! - `Symbol`: Definitions (functions, classes, variables, etc.)
-//! - `Reference`: Usages of symbols
-//! - `Import`: Import statements
+//! - [`File`]: Source files with content hashes
+//! - [`Module`]: Language modules with hierarchy
+//! - [`Symbol`]: Symbol definitions (functions, classes, variables, etc.)
+//! - [`Reference`]: Usages of symbols
+//! - [`Import`]: Import statements
+//! - [`PublicExport`]: Language-agnostic export declarations
 //!
-//! The `FactsStore` provides in-memory storage with:
+//! The [`FactsStore`] provides in-memory storage with:
 //! - Hash maps for O(1) ID lookups
 //! - Postings lists for efficient queries (symbol → refs, file → imports)
 //! - Deterministic iteration order
+//!
+//! # Visibility Model
+//!
+//! The [`Visibility`] enum provides a language-agnostic access control model that
+//! generalizes across supported languages. See the enum documentation for details.
+//!
+//! ## Language Mapping
+//!
+//! | Language | Public | Crate | Module | Private | Protected |
+//! |----------|--------|-------|--------|---------|-----------|
+//! | **Rust** | `pub` | `pub(crate)` | `pub(super)` | (default) | N/A |
+//! | **Python** | (default) | N/A | N/A | `_name` | N/A |
+//! | **Java** | `public` | `package` | N/A | `private` | `protected` |
+//! | **Go** | Uppercase | lowercase | N/A | lowercase | N/A |
+//!
+//! For Python, visibility is **optional** and can be inferred from naming conventions
+//! when enabled via analyzer options. By default, Python symbols have `visibility = None`.
+//!
+//! # Export Model
+//!
+//! The [`PublicExport`] type provides a unified export model across languages.
+//! An export is a declaration that makes a symbol accessible from outside its
+//! defining scope. Different languages have different mechanisms:
+//!
+//! | Language | Export Mechanism | Example |
+//! |----------|------------------|---------|
+//! | Python | `__all__` list | `__all__ = ["foo", "bar"]` |
+//! | Rust | `pub use` | `pub use crate::internal::Foo;` |
+//! | TypeScript | `export` keyword | `export { foo, bar };` |
+//! | Go | Uppercase name | `func Foo()` vs `func foo()` |
+//!
+//! ## Declared vs Effective Exports
+//!
+//! - **Declared** ([`ExportIntent::Declared`]): Explicit export statements or lists
+//! - **Effective** ([`ExportIntent::Effective`]): Resulting public API after language rules
+//!
+//! ## Export Origin
+//!
+//! - **Local** ([`ExportOrigin::Local`]): Symbol defined in the same module
+//! - **ReExport** ([`ExportOrigin::ReExport`]): Symbol re-exported from another module
+//! - **Implicit** ([`ExportOrigin::Implicit`]): No explicit export (e.g., Go uppercase)
+//!
+//! # Schema Versioning
+//!
+//! The [`FACTS_SCHEMA_VERSION`] constant tracks breaking changes to the FactsStore
+//! schema. This is independent of the agent-facing output schema version in `output.rs`.
 
 use crate::output::AliasOutput;
 use crate::patch::{ContentHash, FileId, Span};
@@ -458,6 +505,61 @@ pub enum ParamKind {
 /// - Python: public → Public (opt-in), `_name` → Private, `__name` → Private
 /// - Java/C++: public/private/protected map directly
 /// - Go: uppercase → Public, lowercase → Private
+///
+/// # Language-Specific Mapping
+///
+/// ## Rust
+///
+/// | Rust Syntax | Visibility |
+/// |-------------|------------|
+/// | `pub` | [`Visibility::Public`] |
+/// | `pub(crate)` | [`Visibility::Crate`] |
+/// | `pub(super)` | [`Visibility::Module`] |
+/// | `pub(in path)` | [`Visibility::Module`] (approximation) |
+/// | (default) | [`Visibility::Private`] |
+///
+/// ## Python
+///
+/// Python has no formal visibility syntax. When visibility inference is enabled:
+///
+/// | Python Pattern | Visibility |
+/// |----------------|------------|
+/// | `name` | `None` (no inference) or `Public` |
+/// | `_name` | [`Visibility::Private`] (convention) |
+/// | `__name` | [`Visibility::Private`] (name mangling) |
+/// | `__name__` | [`Visibility::Public`] (dunder methods) |
+///
+/// # Examples
+///
+/// ```
+/// use tugtool_core::facts::Visibility;
+///
+/// // Rust public function
+/// let vis = Visibility::Public;
+/// assert_eq!(vis, Visibility::Public);
+///
+/// // Rust crate-private item
+/// let vis = Visibility::Crate;
+/// assert_eq!(format!("{:?}", vis), "Crate");
+///
+/// // Python private convention (_name)
+/// let vis = Visibility::Private;
+/// assert_eq!(vis, Visibility::Private);
+/// ```
+///
+/// # Serialization
+///
+/// Visibility serializes to snake_case strings:
+///
+/// ```
+/// use tugtool_core::facts::Visibility;
+///
+/// let vis = Visibility::Public;
+/// assert_eq!(serde_json::to_string(&vis).unwrap(), "\"public\"");
+///
+/// let vis = Visibility::Crate;
+/// assert_eq!(serde_json::to_string(&vis).unwrap(), "\"crate\"");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Visibility {
@@ -903,28 +1005,84 @@ impl Import {
 ///
 /// # Examples
 ///
-/// ```ignore
-/// // Python __all__ entry
-/// PublicExport {
-///     export_kind: ExportKind::PythonAll,
-///     export_target: ExportTarget::Single,
-///     export_intent: ExportIntent::Declared,
-///     export_origin: ExportOrigin::Local,
-///     exported_name: Some("foo".into()),
-///     source_name: Some("foo".into()),
-///     // ...
-/// }
+/// ## Creating a Python `__all__` Export
 ///
-/// // Rust pub use with alias
-/// PublicExport {
-///     export_kind: ExportKind::RustPubUse,
-///     export_target: ExportTarget::Single,
-///     export_intent: ExportIntent::Declared,
-///     export_origin: ExportOrigin::ReExport,
-///     exported_name: Some("Baz".into()),  // alias
-///     source_name: Some("Bar".into()),    // original name
-///     // ...
-/// }
+/// ```
+/// use tugtool_core::facts::{
+///     PublicExport, PublicExportId, ExportKind, ExportTarget,
+///     ExportIntent, ExportOrigin,
+/// };
+/// use tugtool_core::patch::{FileId, Span};
+///
+/// let export = PublicExport::new(
+///     PublicExportId(1),
+///     FileId(1),
+///     Span::new(100, 105),  // decl_span covers "foo"
+///     ExportKind::PythonAll,
+///     ExportTarget::Single,
+///     ExportIntent::Declared,
+///     ExportOrigin::Local,
+/// )
+/// .with_name("foo")
+/// .with_exported_name_span(Span::new(101, 104));  // content without quotes
+///
+/// assert_eq!(export.exported_name, Some("foo".into()));
+/// assert!(export.is_single());
+/// assert!(export.is_declared());
+/// ```
+///
+/// ## Creating a Rust `pub use` Re-export with Alias
+///
+/// ```
+/// use tugtool_core::facts::{
+///     PublicExport, PublicExportId, ExportKind, ExportTarget,
+///     ExportIntent, ExportOrigin,
+/// };
+/// use tugtool_core::patch::{FileId, Span};
+///
+/// // For `pub use foo::Bar as Baz;`
+/// let export = PublicExport::new(
+///     PublicExportId(2),
+///     FileId(1),
+///     Span::new(0, 24),  // full declaration span
+///     ExportKind::RustPubUse,
+///     ExportTarget::Single,
+///     ExportIntent::Declared,
+///     ExportOrigin::ReExport,
+/// )
+/// .with_exported_name("Baz")  // the alias
+/// .with_source_name("Bar");   // original name
+///
+/// assert_eq!(export.exported_name, Some("Baz".into()));
+/// assert_eq!(export.source_name, Some("Bar".into()));
+/// assert!(!export.is_local());
+/// ```
+///
+/// ## Serialization
+///
+/// PublicExport serializes to JSON with optional fields omitted when `None`:
+///
+/// ```
+/// use tugtool_core::facts::{
+///     PublicExport, PublicExportId, ExportKind, ExportTarget,
+///     ExportIntent, ExportOrigin,
+/// };
+/// use tugtool_core::patch::{FileId, Span};
+///
+/// let export = PublicExport::new(
+///     PublicExportId(1),
+///     FileId(1),
+///     Span::new(10, 20),
+///     ExportKind::PythonAll,
+///     ExportTarget::Single,
+///     ExportIntent::Declared,
+///     ExportOrigin::Local,
+/// )
+/// .with_name("process_data");
+///
+/// let json = serde_json::to_string_pretty(&export).unwrap();
+/// assert!(json.contains("\"exported_name\": \"process_data\""));
+/// assert!(json.contains("\"export_kind\": \"python_all\""));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicExport {
