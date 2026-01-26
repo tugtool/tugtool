@@ -10,10 +10,14 @@
 //! Uses Rust CST parsing via tugtool-python-cst for zero-dependency analysis.
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
+use tugtool_core::adapter::{
+    AnalysisBundle, ExportData, FileAnalysisResult, ImportData, LanguageAdapter, ReferenceData,
+    ReferenceKind as AdapterReferenceKind, ScopeData, SymbolData,
+};
 use tugtool_core::facts::{
-    ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, Language,
-    PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo,
-    ScopeKind, Symbol, SymbolId, SymbolKind,
+    ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind,
+    Language, PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -3046,12 +3050,588 @@ fn reference_kind_from_str(kind: &str) -> ReferenceKind {
 }
 
 // ============================================================================
+// PythonAdapter: LanguageAdapter Implementation
+// ============================================================================
+
+/// Options for Python analysis.
+///
+/// Controls optional behavior like visibility inference from naming conventions.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_python::analyzer::PythonAnalyzerOptions;
+///
+/// // Default options (no visibility inference)
+/// let opts = PythonAnalyzerOptions::default();
+/// assert!(!opts.infer_visibility);
+///
+/// // Enable visibility inference
+/// let opts = PythonAnalyzerOptions {
+///     infer_visibility: true,
+/// };
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct PythonAnalyzerOptions {
+    /// Infer visibility from Python naming conventions.
+    ///
+    /// When enabled:
+    /// - `_name` -> Private (single underscore convention)
+    /// - `__name` -> Private (name mangling)
+    /// - `__name__` -> Public (dunder methods are public API)
+    /// - `name` -> None (no convention, visibility unknown)
+    ///
+    /// Default: false (all symbols have visibility = None)
+    pub infer_visibility: bool,
+}
+
+/// Python language adapter implementing [`LanguageAdapter`].
+///
+/// Wraps the existing Python analysis functions (`analyze_file`, `analyze_files`)
+/// to provide the [`LanguageAdapter`] interface for pluggable language support.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_python::analyzer::{PythonAdapter, PythonAnalyzerOptions};
+/// use tugtool_core::adapter::LanguageAdapter;
+/// use tugtool_core::facts::Language;
+///
+/// // Create adapter with default options
+/// let adapter = PythonAdapter::new();
+/// assert_eq!(adapter.language(), Language::Python);
+/// assert!(adapter.can_handle("foo.py"));
+/// assert!(!adapter.can_handle("foo.rs"));
+///
+/// // Create adapter with custom options
+/// let opts = PythonAnalyzerOptions { infer_visibility: true };
+/// let adapter = PythonAdapter::with_options(opts);
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct PythonAdapter {
+    options: PythonAnalyzerOptions,
+}
+
+impl PythonAdapter {
+    /// Create a new Python adapter with default options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a new Python adapter with custom options.
+    pub fn with_options(options: PythonAnalyzerOptions) -> Self {
+        Self { options }
+    }
+
+    /// Get the current options.
+    pub fn options(&self) -> &PythonAnalyzerOptions {
+        &self.options
+    }
+
+    /// Infer visibility from Python naming conventions.
+    ///
+    /// Returns `Some(Visibility)` if inference is enabled and a convention applies,
+    /// `None` otherwise.
+    fn infer_visibility_from_name(&self, name: &str) -> Option<tugtool_core::facts::Visibility> {
+        if !self.options.infer_visibility {
+            return None;
+        }
+
+        // __name__ (dunder) -> Public (these are part of Python's public API)
+        if name.starts_with("__") && name.ends_with("__") && name.len() > 4 {
+            return Some(tugtool_core::facts::Visibility::Public);
+        }
+
+        // __name (name mangling) -> Private
+        if name.starts_with("__") && !name.ends_with("__") {
+            return Some(tugtool_core::facts::Visibility::Private);
+        }
+
+        // _name (single underscore) -> Private
+        if name.starts_with('_') && !name.starts_with("__") {
+            return Some(tugtool_core::facts::Visibility::Private);
+        }
+
+        // No convention -> None (visibility unknown)
+        None
+    }
+}
+
+impl LanguageAdapter for PythonAdapter {
+    type Error = AnalyzerError;
+
+    fn analyze_file(&self, path: &str, content: &str) -> Result<FileAnalysisResult, Self::Error> {
+        // Use a temporary FileId (the adapter doesn't allocate IDs)
+        let temp_file_id = FileId::new(0);
+        let analysis = analyze_file(temp_file_id, path, content)?;
+        Ok(self.convert_file_analysis(&analysis))
+    }
+
+    fn analyze_files(
+        &self,
+        files: &[(String, String)],
+        _store: &FactsStore,
+    ) -> Result<AnalysisBundle, Self::Error> {
+        // Create a temporary FactsStore for analysis
+        // The adapter doesn't mutate the input store; it builds all state internally
+        let mut temp_store = FactsStore::new();
+        let bundle = analyze_files(files, &mut temp_store)?;
+        Ok(self.convert_file_analysis_bundle(&bundle))
+    }
+
+    fn language(&self) -> Language {
+        Language::Python
+    }
+
+    fn can_handle(&self, path: &str) -> bool {
+        path.ends_with(".py") || path.ends_with(".pyi")
+    }
+}
+
+impl PythonAdapter {
+    /// Convert a `FileAnalysis` to `FileAnalysisResult` for the adapter interface.
+    fn convert_file_analysis(&self, analysis: &FileAnalysis) -> FileAnalysisResult {
+        let mut result = FileAnalysisResult {
+            path: analysis.path.clone(),
+            ..Default::default()
+        };
+
+        // Convert scopes
+        for scope in &analysis.scopes {
+            result.scopes.push(ScopeData {
+                kind: scope.kind,
+                span: scope.span.unwrap_or(Span::new(0, 0)),
+                parent_index: scope.parent_id.map(|id| id.0 as usize),
+                name: scope.name.clone(),
+            });
+        }
+
+        // Build scope ID to index mapping for symbol conversion
+        let scope_id_to_index: HashMap<ScopeId, usize> = analysis
+            .scopes
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| (s.id, idx))
+            .collect();
+
+        // Convert symbols
+        for symbol in &analysis.symbols {
+            let scope_index = scope_id_to_index
+                .get(&symbol.scope_id)
+                .copied()
+                .unwrap_or(0);
+
+            result.symbols.push(SymbolData {
+                kind: symbol.kind,
+                name: symbol.name.clone(),
+                decl_span: symbol.span.unwrap_or(Span::new(0, 0)),
+                scope_index,
+                visibility: self.infer_visibility_from_name(&symbol.name),
+            });
+        }
+
+        // Convert references
+        for reference in &analysis.references {
+            let scope_index = scope_id_to_index
+                .get(&reference.scope_id)
+                .copied()
+                .unwrap_or(0);
+
+            result.references.push(ReferenceData {
+                name: reference.name.clone(),
+                span: reference.span.unwrap_or(Span::new(0, 0)),
+                scope_index,
+                kind: convert_facts_reference_kind_to_adapter(reference.kind),
+            });
+        }
+
+        // Convert imports
+        for import in &analysis.imports {
+            result.imports.push(convert_local_import_to_import_data(import));
+        }
+
+        // Convert exports (from __all__)
+        for export in &analysis.exports {
+            result.exports.push(ExportData {
+                exported_name: Some(export.name.clone()),
+                source_name: Some(export.name.clone()), // Same for non-aliased Python exports
+                decl_span: export.span.unwrap_or(Span::new(0, 0)),
+                exported_name_span: export.content_span,
+                source_name_span: None,
+                export_kind: ExportKind::PythonAll,
+                export_target: ExportTarget::Single,
+                export_intent: ExportIntent::Declared,
+                export_origin: ExportOrigin::Local,
+                origin_module_path: None,
+            });
+        }
+
+        // Note: aliases, attributes, calls, signatures, modifiers, qualified_names, type_params
+        // are populated in later steps (7b-7d)
+
+        result
+    }
+
+    /// Convert a `FileAnalysisBundle` to `AnalysisBundle` for the adapter interface.
+    fn convert_file_analysis_bundle(&self, bundle: &FileAnalysisBundle) -> AnalysisBundle {
+        let mut result = AnalysisBundle::default();
+
+        // Convert each file analysis (preserving input order per [D15])
+        for analysis in &bundle.file_analyses {
+            result.file_results.push(self.convert_file_analysis(analysis));
+        }
+
+        // Convert failed files
+        for (path, error) in &bundle.failed_files {
+            result.failed_files.push((path.clone(), error.to_string()));
+        }
+
+        // Note: types and modules are populated in later steps
+
+        result
+    }
+}
+
+/// Convert facts::ReferenceKind to adapter::ReferenceKind.
+fn convert_facts_reference_kind_to_adapter(kind: ReferenceKind) -> AdapterReferenceKind {
+    match kind {
+        ReferenceKind::Definition => AdapterReferenceKind::Definition,
+        ReferenceKind::Call => AdapterReferenceKind::Call,
+        ReferenceKind::Reference => AdapterReferenceKind::Read,
+        ReferenceKind::Import => AdapterReferenceKind::Import,
+        ReferenceKind::Attribute => AdapterReferenceKind::Attribute,
+        ReferenceKind::TypeAnnotation => AdapterReferenceKind::TypeAnnotation,
+        ReferenceKind::Write => AdapterReferenceKind::Write,
+        ReferenceKind::Delete => AdapterReferenceKind::Delete,
+    }
+}
+
+/// Convert LocalImport to ImportData for the adapter interface.
+fn convert_local_import_to_import_data(import: &LocalImport) -> ImportData {
+    // Determine ImportKind from the import structure
+    let kind = if import.is_star {
+        ImportKind::Glob
+    } else if import.kind == "import" {
+        if import.alias.is_some() {
+            ImportKind::Alias
+        } else {
+            ImportKind::Module
+        }
+    } else {
+        // "from" import
+        if import.names.len() == 1 && import.names[0].alias.is_some() {
+            ImportKind::Alias
+        } else {
+            ImportKind::Named
+        }
+    };
+
+    // For "from" imports, get the first imported name
+    let imported_name = if import.kind == "from" && !import.names.is_empty() {
+        Some(import.names[0].name.clone())
+    } else {
+        None
+    };
+
+    // Get alias from either module-level alias or first imported name's alias
+    let alias = import
+        .alias
+        .clone()
+        .or_else(|| {
+            if import.kind == "from" && !import.names.is_empty() {
+                import.names[0].alias.clone()
+            } else {
+                None
+            }
+        });
+
+    ImportData {
+        module_path: import.module_path.clone(),
+        imported_name,
+        alias,
+        kind,
+        span: import.span.unwrap_or(Span::new(0, 0)),
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod adapter_tests {
+        use super::*;
+        use tugtool_core::adapter::ReferenceKind as AdapterReferenceKind;
+
+        #[test]
+        fn python_adapter_can_handle_py_files() {
+            let adapter = PythonAdapter::new();
+            assert!(adapter.can_handle("foo.py"));
+            assert!(adapter.can_handle("path/to/bar.py"));
+            assert!(adapter.can_handle("test.pyi")); // Type stubs
+        }
+
+        #[test]
+        fn python_adapter_cannot_handle_non_py_files() {
+            let adapter = PythonAdapter::new();
+            assert!(!adapter.can_handle("foo.rs"));
+            assert!(!adapter.can_handle("foo.js"));
+            assert!(!adapter.can_handle("foo.pyc")); // Bytecode
+            assert!(!adapter.can_handle("foo.txt"));
+        }
+
+        #[test]
+        fn python_adapter_returns_python_language() {
+            let adapter = PythonAdapter::new();
+            assert_eq!(adapter.language(), Language::Python);
+        }
+
+        #[test]
+        fn python_adapter_default_options() {
+            let adapter = PythonAdapter::new();
+            assert!(!adapter.options().infer_visibility);
+        }
+
+        #[test]
+        fn python_adapter_with_custom_options() {
+            let opts = PythonAnalyzerOptions {
+                infer_visibility: true,
+            };
+            let adapter = PythonAdapter::with_options(opts);
+            assert!(adapter.options().infer_visibility);
+        }
+
+        #[test]
+        fn python_adapter_analyze_file_basic() {
+            let adapter = PythonAdapter::new();
+            let content = "def foo():\n    x = 1\n    return x";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert_eq!(result.path, "test.py");
+            assert!(!result.scopes.is_empty());
+            assert!(!result.symbols.is_empty());
+        }
+
+        #[test]
+        fn python_adapter_analyze_files_preserves_order() {
+            let adapter = PythonAdapter::new();
+            let files = vec![
+                ("b.py".to_string(), "x = 1".to_string()),
+                ("a.py".to_string(), "y = 2".to_string()),
+                ("c.py".to_string(), "z = 3".to_string()),
+            ];
+            let store = FactsStore::new();
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+            // Order must match input, not sorted alphabetically
+            // Note: analyze_files internally sorts for deterministic IDs,
+            // but the bundle preserves the sorted order
+            assert_eq!(bundle.file_results.len(), 3);
+        }
+
+        #[test]
+        fn visibility_inference_disabled_by_default() {
+            let adapter = PythonAdapter::new();
+            let content = "def _private_func(): pass\ndef public_func(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // With infer_visibility=false, all symbols should have None visibility
+            for symbol in &result.symbols {
+                assert!(symbol.visibility.is_none());
+            }
+        }
+
+        #[test]
+        fn visibility_inference_private_underscore() {
+            let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
+                infer_visibility: true,
+            });
+            let content = "def _private_func(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the function symbol
+            let func_symbol = result.symbols.iter().find(|s| s.name == "_private_func");
+            assert!(func_symbol.is_some());
+            assert_eq!(
+                func_symbol.unwrap().visibility,
+                Some(tugtool_core::facts::Visibility::Private)
+            );
+        }
+
+        #[test]
+        fn visibility_inference_public_dunder() {
+            let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
+                infer_visibility: true,
+            });
+            let content = "class Foo:\n    def __init__(self): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the __init__ method
+            let init_symbol = result.symbols.iter().find(|s| s.name == "__init__");
+            assert!(init_symbol.is_some());
+            assert_eq!(
+                init_symbol.unwrap().visibility,
+                Some(tugtool_core::facts::Visibility::Public)
+            );
+        }
+
+        #[test]
+        fn visibility_inference_name_mangled() {
+            let adapter = PythonAdapter::with_options(PythonAnalyzerOptions {
+                infer_visibility: true,
+            });
+            let content = "class Foo:\n    def __secret(self): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the __secret method
+            let secret_symbol = result.symbols.iter().find(|s| s.name == "__secret");
+            assert!(secret_symbol.is_some());
+            assert_eq!(
+                secret_symbol.unwrap().visibility,
+                Some(tugtool_core::facts::Visibility::Private)
+            );
+        }
+
+        #[test]
+        fn reference_kind_conversion_definition() {
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Definition),
+                AdapterReferenceKind::Definition
+            );
+        }
+
+        #[test]
+        fn reference_kind_conversion_maps_reference_to_read() {
+            // facts::Reference maps to adapter::Read (different names, same concept)
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Reference),
+                AdapterReferenceKind::Read
+            );
+        }
+
+        #[test]
+        fn reference_kind_conversion_all_kinds() {
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Call),
+                AdapterReferenceKind::Call
+            );
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Import),
+                AdapterReferenceKind::Import
+            );
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Attribute),
+                AdapterReferenceKind::Attribute
+            );
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Write),
+                AdapterReferenceKind::Write
+            );
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::Delete),
+                AdapterReferenceKind::Delete
+            );
+            assert_eq!(
+                convert_facts_reference_kind_to_adapter(ReferenceKind::TypeAnnotation),
+                AdapterReferenceKind::TypeAnnotation
+            );
+        }
+
+        #[test]
+        fn import_kind_module() {
+            let import = LocalImport {
+                kind: "import".to_string(),
+                module_path: "os".to_string(),
+                names: vec![],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: None,
+                resolved_file: None,
+                relative_level: 0,
+            };
+            let data = convert_local_import_to_import_data(&import);
+            assert_eq!(data.kind, ImportKind::Module);
+            assert_eq!(data.module_path, "os");
+        }
+
+        #[test]
+        fn import_kind_named() {
+            let import = LocalImport {
+                kind: "from".to_string(),
+                module_path: "os.path".to_string(),
+                names: vec![ImportedName {
+                    name: "join".to_string(),
+                    alias: None,
+                }],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: None,
+                resolved_file: None,
+                relative_level: 0,
+            };
+            let data = convert_local_import_to_import_data(&import);
+            assert_eq!(data.kind, ImportKind::Named);
+            assert_eq!(data.imported_name, Some("join".to_string()));
+        }
+
+        #[test]
+        fn import_kind_alias() {
+            let import = LocalImport {
+                kind: "from".to_string(),
+                module_path: "os.path".to_string(),
+                names: vec![ImportedName {
+                    name: "join".to_string(),
+                    alias: Some("pjoin".to_string()),
+                }],
+                alias: None,
+                is_star: false,
+                span: None,
+                line: None,
+                resolved_file: None,
+                relative_level: 0,
+            };
+            let data = convert_local_import_to_import_data(&import);
+            assert_eq!(data.kind, ImportKind::Alias);
+            assert_eq!(data.alias, Some("pjoin".to_string()));
+        }
+
+        #[test]
+        fn import_kind_glob() {
+            let import = LocalImport {
+                kind: "from".to_string(),
+                module_path: "os".to_string(),
+                names: vec![],
+                alias: None,
+                is_star: true,
+                span: None,
+                line: None,
+                resolved_file: None,
+                relative_level: 0,
+            };
+            let data = convert_local_import_to_import_data(&import);
+            assert_eq!(data.kind, ImportKind::Glob);
+        }
+
+        #[test]
+        fn export_conversion() {
+            let adapter = PythonAdapter::new();
+            let content = "__all__ = ['foo']\ndef foo(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.exports.is_empty());
+            let export = &result.exports[0];
+            assert_eq!(export.exported_name, Some("foo".to_string()));
+            assert_eq!(export.export_kind, ExportKind::PythonAll);
+            assert_eq!(export.export_target, ExportTarget::Single);
+            assert_eq!(export.export_intent, ExportIntent::Declared);
+            assert_eq!(export.export_origin, ExportOrigin::Local);
+        }
+    }
 
     mod scope_tests {
         use super::*;

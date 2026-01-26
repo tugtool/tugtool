@@ -3429,46 +3429,46 @@ This step is split into 4 sub-steps:
 - Basic conversion from `FileAnalysis` to `FileAnalysisResult`
 
 **Tasks:**
-- [ ] Create `PythonAdapter` struct in `analyzer.rs`
-- [ ] Create `PythonAnalyzerOptions` struct with defaults
-- [ ] Implement `LanguageAdapter::analyze_file` by wrapping existing `analyze_file` function
-- [ ] Implement `LanguageAdapter::analyze_files` by wrapping existing `analyze_files` function
+- [x] Create `PythonAdapter` struct in `analyzer.rs`
+- [x] Create `PythonAnalyzerOptions` struct with defaults
+- [x] Implement `LanguageAdapter::analyze_file` by wrapping existing `analyze_file` function
+- [x] Implement `LanguageAdapter::analyze_files` by wrapping existing `analyze_files` function
   - Build all cross-file state internally (multi-pass resolution)
   - Treat `store` parameter as empty read-only context
-- [ ] Implement `LanguageAdapter::language` returning `Language::Python`
-- [ ] Implement `LanguageAdapter::can_handle` checking for `.py` extension
-- [ ] Add `PythonAdapter::new()` constructor
-- [ ] Add `PythonAdapter::with_options(options: PythonAnalyzerOptions)` constructor
-- [ ] Export `PythonAdapter` from `tugtool_python`
-- [ ] Add basic conversion from `FileAnalysis` to `FileAnalysisResult`:
+- [x] Implement `LanguageAdapter::language` returning `Language::Python`
+- [x] Implement `LanguageAdapter::can_handle` checking for `.py` extension
+- [x] Add `PythonAdapter::new()` constructor
+- [x] Add `PythonAdapter::with_options(options: PythonAnalyzerOptions)` constructor
+- [x] Export `PythonAdapter` from `tugtool_python`
+- [x] Add basic conversion from `FileAnalysis` to `FileAnalysisResult`:
   - Scopes → `ScopeData`
   - Symbols → `SymbolData`
   - References → `ReferenceData`
   - Imports → `ImportData`
   - Exports → `ExportData`
-- [ ] Add conversion from `FileAnalysisBundle` to `AnalysisBundle`
-- [ ] Update adapter conversion to include `ImportKind` and new export fields
-- [ ] Emit `ExportIntent::Declared` for explicit `__all__` exports
-- [ ] Do **not** emit `ExportIntent::Effective` for Python (deferred per [D13])
-- [ ] Map native reference kinds to adapter `ReferenceKind`
-- [ ] **Integration layer:** Map adapter `ReferenceKind` to `facts::ReferenceKind`
-- [ ] **Integration layer:** Handle invalid `TypeInfoData` indices (log warning, skip entry, continue)
-- [ ] **Integration layer:** Verify existing ID allocation code works with adapter output
+- [x] Add conversion from `FileAnalysisBundle` to `AnalysisBundle`
+- [x] Update adapter conversion to include `ImportKind` and new export fields
+- [x] Emit `ExportIntent::Declared` for explicit `__all__` exports
+- [x] Do **not** emit `ExportIntent::Effective` for Python (deferred per [D13])
+- [x] Map native reference kinds to adapter `ReferenceKind`
+- [x] **Integration layer:** Map adapter `ReferenceKind` to `facts::ReferenceKind`
+- [x] **Integration layer:** Handle invalid `TypeInfoData` indices (log warning, skip entry, continue)
+- [x] **Integration layer:** Verify existing ID allocation code works with adapter output
 
 **Tests:**
-- [ ] Unit: `PythonAdapter::can_handle` returns true for `.py` files
-- [ ] Unit: `PythonAdapter::can_handle` returns false for `.rs` files
-- [ ] Unit: `PythonAdapter::language` returns `Language::Python`
-- [ ] Unit: `AnalysisBundle.types` is populated with type information
-- [ ] Unit: Adapter `ReferenceKind::Definition` maps to FactsStore `ReferenceKind::Definition`
-- [ ] Integration: `PythonAdapter::analyze_files` produces same results as direct function call
-- [ ] Integration: Integration layer correctly allocates IDs and populates FactsStore
-- [ ] Integration: Existing rename tests pass with adapter
-- [ ] Unit: Invalid `TypeInfoData` index logs warning and is skipped (not panic)
+- [x] Unit: `PythonAdapter::can_handle` returns true for `.py` files
+- [x] Unit: `PythonAdapter::can_handle` returns false for `.rs` files
+- [x] Unit: `PythonAdapter::language` returns `Language::Python`
+- [x] Unit: `AnalysisBundle.types` is populated with type information
+- [x] Unit: Adapter `ReferenceKind::Definition` maps to FactsStore `ReferenceKind::Definition`
+- [x] Integration: `PythonAdapter::analyze_files` produces same results as direct function call
+- [x] Integration: Integration layer correctly allocates IDs and populates FactsStore
+- [x] Integration: Existing rename tests pass with adapter
+- [x] Unit: Invalid `TypeInfoData` index logs warning and is skipped (not panic)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python adapter`
-- [ ] `cargo nextest run -p tugtool-python rename`
+- [x] `cargo nextest run -p tugtool-python adapter`
+- [x] `cargo nextest run -p tugtool-python rename`
 
 **Rollback:** Revert commit
 

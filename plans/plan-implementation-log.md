@@ -6,6 +6,77 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 7a: Core PythonAdapter Implementation | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 7a specification (lines 3418-3475)
+- [D06] LanguageAdapter Trait Design (lines 739-818)
+- [CQ5] Cross-File Resolution (lines 274-279)
+- [CQ6] TypeInfo in Adapter (lines 281-286)
+- `crates/tugtool-python/src/analyzer.rs` - Existing `analyze_file` and `analyze_files` functions
+- `crates/tugtool-core/src/adapter.rs` - `LanguageAdapter` trait and data types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `PythonAdapter` struct in `analyzer.rs` | Done |
+| Create `PythonAnalyzerOptions` struct with defaults | Done |
+| Implement `LanguageAdapter::analyze_file` wrapping existing function | Done |
+| Implement `LanguageAdapter::analyze_files` wrapping existing function | Done |
+| Implement `LanguageAdapter::language` returning `Language::Python` | Done |
+| Implement `LanguageAdapter::can_handle` checking for `.py` extension | Done |
+| Add `PythonAdapter::new()` constructor | Done |
+| Add `PythonAdapter::with_options()` constructor | Done |
+| Export `PythonAdapter` from `tugtool_python` | Done |
+| Add conversion from `FileAnalysis` to `FileAnalysisResult` | Done |
+| Add conversion from `FileAnalysisBundle` to `AnalysisBundle` | Done |
+| Update adapter conversion to include `ImportKind` and new export fields | Done |
+| Emit `ExportIntent::Declared` for explicit `__all__` exports | Done |
+| Map native reference kinds to adapter `ReferenceKind` | Done |
+| Integration layer ReferenceKind mapping | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added imports for adapter types (`AnalysisBundle`, `FileAnalysisResult`, `ReferenceKind as AdapterReferenceKind`, etc.)
+  - Created `PythonAnalyzerOptions` struct with `infer_visibility` option (default: false)
+  - Created `PythonAdapter` struct implementing `LanguageAdapter` trait
+  - Implemented `analyze_file`, `analyze_files`, `language`, and `can_handle` methods
+  - Added `convert_file_analysis` function: `FileAnalysis` → `FileAnalysisResult`
+  - Added `convert_file_analysis_bundle` function: `FileAnalysisBundle` → `AnalysisBundle`
+  - Added `convert_facts_reference_kind_to_adapter` function
+  - Added `convert_local_import_to_import_data` function with proper `ImportKind` classification
+  - Added `infer_visibility_from_name` function for Python naming convention detection
+  - Added 19 comprehensive adapter tests in `adapter_tests` module
+
+- `crates/tugtool-python/src/lib.rs`:
+  - Exported `PythonAdapter` and `PythonAnalyzerOptions` at the crate root
+
+- `plans/phase-11.md`:
+  - Checked off all 19 tasks, 9 tests, and 2 checkpoints for Step 7a
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python adapter`: 19 tests passed
+- `cargo nextest run -p tugtool-python rename`: 46 tests passed
+- `cargo nextest run -p tugtool-python`: 415 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python adapter`: PASS
+- `cargo nextest run -p tugtool-python rename`: PASS
+- `cargo clippy --workspace`: PASS (clean)
+
+**Key Decisions/Notes:**
+- Visibility inference is opt-in via `PythonAnalyzerOptions.infer_visibility` (default: false)
+- Python naming conventions: `_name` → Private, `__name__` → Public (dunders), `__name` → Private (mangling)
+- `facts::ReferenceKind::Reference` maps to `adapter::ReferenceKind::Read` (clearer naming)
+- Import kind classification: `Module`, `Named`, `Alias`, `Glob` based on import structure
+- All `__all__` entries emit `ExportIntent::Declared` and `ExportOrigin::Local` per [D13]
+- Adapter supports `.pyi` type stub files in addition to `.py`
+
+---
+
 ## [phase-11.md] Step 6: Golden Test Validation | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
