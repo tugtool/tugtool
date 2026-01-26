@@ -285,6 +285,29 @@ Python refactoring uses a native Rust CST parser (adapted from LibCST):
 
 No Python installation is required. All analysis is performed natively in Rust.
 
+### Analyzer Options
+
+The Python analyzer supports optional features via `PythonAnalyzerOptions`:
+
+```rust
+use tugtool_python::analyzer::{PythonAdapter, PythonAnalyzerOptions};
+
+let opts = PythonAnalyzerOptions {
+    infer_visibility: true,           // Infer visibility from naming conventions
+    compute_effective_exports: true,  // Compute exports for modules without __all__
+    ..Default::default()
+};
+let adapter = PythonAdapter::with_options(opts);
+```
+
+**`compute_effective_exports`** (default: `false`):
+- When enabled and a module lacks an explicit `__all__`, the analyzer emits `ExportIntent::Effective` entries for module-level symbols that are considered public by Python convention:
+  - Names not starting with `_` are public
+  - Dunder names (`__init__`, `__name__`) are public
+  - Names starting with `_` (except dunders) are private
+  - Imported symbols are excluded (they're not defined in this module)
+- Useful for API surface analysis and move-module refactors
+
 ## Fixture Commands
 
 Manage test fixtures (external repositories used for integration tests).

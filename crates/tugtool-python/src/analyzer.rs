@@ -3311,13 +3311,10 @@ impl CrossFileSymbolMap {
     /// - `None` if the name is not found or is ambiguous
     pub fn resolve(&self, name: &str) -> Option<usize> {
         // Try qualified name first (most specific)
-        self.qualified_to_index
-            .get(name)
-            .copied()
-            .or_else(|| {
-                // Fall back to simple name (may be None if ambiguous)
-                self.name_to_index.get(name).copied().flatten()
-            })
+        self.qualified_to_index.get(name).copied().or_else(|| {
+            // Fall back to simple name (may be None if ambiguous)
+            self.name_to_index.get(name).copied().flatten()
+        })
     }
 
     /// Check if the map is empty.
@@ -3449,13 +3446,10 @@ impl PythonAdapter {
         let receiver_type = tracker.type_of(scope_path, receiver)?;
 
         // Look up the type's symbol index in the local map first
-        symbol_map
-            .get(receiver_type)
-            .copied()
-            .or_else(|| {
-                // Fall back to cross-file resolution if available
-                cross_file_map.and_then(|map| map.resolve(receiver_type))
-            })
+        symbol_map.get(receiver_type).copied().or_else(|| {
+            // Fall back to cross-file resolution if available
+            cross_file_map.and_then(|map| map.resolve(receiver_type))
+        })
     }
 }
 
@@ -3969,7 +3963,11 @@ fn collect_imported_names(imports: &[LocalImport]) -> HashSet<String> {
                 imported.insert(alias.clone());
             } else {
                 // For `import a.b.c`, the bound name is just "a"
-                let first_part = import.module_path.split('.').next().unwrap_or(&import.module_path);
+                let first_part = import
+                    .module_path
+                    .split('.')
+                    .next()
+                    .unwrap_or(&import.module_path);
                 imported.insert(first_part.to_string());
             }
         } else {
@@ -4683,13 +4681,8 @@ mod tests {
                 let target_symbol_id = alias_data.target_symbol_index.map(|idx| symbol_id_map[idx]);
 
                 let edge_id = store.next_alias_edge_id();
-                let mut edge = AliasEdge::new(
-                    edge_id,
-                    file_id,
-                    span,
-                    alias_symbol_id,
-                    alias_data.kind,
-                );
+                let mut edge =
+                    AliasEdge::new(edge_id, file_id, span, alias_symbol_id, alias_data.kind);
                 if let Some(target_id) = target_symbol_id {
                     edge = edge.with_target(target_id);
                 }
@@ -4764,13 +4757,8 @@ mod tests {
                 let target_symbol_id = alias_data.target_symbol_index.map(|idx| symbol_id_map[idx]);
 
                 let edge_id = store.next_alias_edge_id();
-                let mut edge = AliasEdge::new(
-                    edge_id,
-                    file_id,
-                    span,
-                    alias_symbol_id,
-                    alias_data.kind,
-                );
+                let mut edge =
+                    AliasEdge::new(edge_id, file_id, span, alias_symbol_id, alias_data.kind);
                 if let Some(target_id) = target_symbol_id {
                     edge = edge.with_target(target_id);
                 }
@@ -5280,7 +5268,11 @@ h.process(value)
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Attribute accesses have Option<Span> - verify valid when present
-            let attrs_with_spans = result.attributes.iter().filter(|a| a.span.is_some()).count();
+            let attrs_with_spans = result
+                .attributes
+                .iter()
+                .filter(|a| a.span.is_some())
+                .count();
             // Most attribute accesses should have spans
             assert!(
                 attrs_with_spans > 0,
@@ -5337,9 +5329,13 @@ h.process(value)
                 &["<module>".to_string()],
                 Some(&tracker),
                 &symbol_map,
-                None,  // No cross-file map
+                None, // No cross-file map
             );
-            assert_eq!(result, Some(0), "Should resolve 'h' to Handler symbol at index 0");
+            assert_eq!(
+                result,
+                Some(0),
+                "Should resolve 'h' to Handler symbol at index 0"
+            );
         }
 
         #[test]
@@ -5360,7 +5356,7 @@ h.process(value)
                 &["<module>".to_string()],
                 Some(&tracker),
                 &symbol_map,
-                None,  // No cross-file map
+                None, // No cross-file map
             );
             assert_eq!(result, None, "Should return None for untyped receiver");
         }
@@ -5397,7 +5393,7 @@ h.process(value)
                 &["<module>".to_string()],
                 Some(&tracker),
                 &symbol_map,
-                None,  // No cross-file map
+                None, // No cross-file map
             );
             assert_eq!(result, None, "Should return None for dotted receivers");
         }
@@ -5415,11 +5411,14 @@ h.process(value)
             let result = adapter.resolve_receiver_to_symbol(
                 "h",
                 &["<module>".to_string()],
-                None,  // No TypeTracker
+                None, // No TypeTracker
                 &symbol_map,
-                None,  // No cross-file map
+                None, // No cross-file map
             );
-            assert_eq!(result, None, "Should return None when no TypeTracker provided");
+            assert_eq!(
+                result, None,
+                "Should return None when no TypeTracker provided"
+            );
         }
 
         #[test]
@@ -5437,24 +5436,20 @@ h.process()
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Find the Handler class symbol
-            let handler_idx = result
-                .symbols
-                .iter()
-                .position(|s| s.name == "Handler");
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
             assert!(handler_idx.is_some(), "Should have Handler symbol");
 
             // Find the attribute access for "process" on "h"
-            let process_attr = result
-                .attributes
-                .iter()
-                .find(|a| a.name == "process");
-            assert!(process_attr.is_some(), "Should have attribute access for 'process'");
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
 
             // The base_symbol_index should point to Handler
             let attr = process_attr.unwrap();
             assert_eq!(
-                attr.base_symbol_index,
-                handler_idx,
+                attr.base_symbol_index, handler_idx,
                 "base_symbol_index should point to Handler class"
             );
         }
@@ -5681,7 +5676,11 @@ h.process()
             let map = CrossFileSymbolMap::from_store(&store);
 
             assert!(map.is_empty(), "Empty store should produce empty map");
-            assert_eq!(map.resolve("anything"), None, "Empty map should resolve to None");
+            assert_eq!(
+                map.resolve("anything"),
+                None,
+                "Empty map should resolve to None"
+            );
         }
 
         #[test]
@@ -5767,22 +5766,16 @@ h.process()
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Find the Handler class symbol
-            let handler_idx = result
-                .symbols
-                .iter()
-                .position(|s| s.name == "Handler");
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
             assert!(handler_idx.is_some(), "Should have Handler symbol");
 
             // Find the call site for "process" method call on "h"
             // There should be at least 2 calls: Handler() and h.process()
             // We want the method call, not the constructor
-            let method_call = result
-                .calls
-                .iter()
-                .find(|c| {
-                    // Method call has callee_symbol_index pointing to Handler
-                    c.callee_symbol_index == handler_idx
-                });
+            let method_call = result.calls.iter().find(|c| {
+                // Method call has callee_symbol_index pointing to Handler
+                c.callee_symbol_index == handler_idx
+            });
             assert!(
                 method_call.is_some(),
                 "Should have method call with callee_symbol_index pointing to Handler"
@@ -5803,10 +5796,7 @@ process()
             let result = adapter.analyze_file("test.py", content).unwrap();
 
             // Find the process function symbol
-            let process_idx = result
-                .symbols
-                .iter()
-                .position(|s| s.name == "process");
+            let process_idx = result.symbols.iter().position(|s| s.name == "process");
             assert!(process_idx.is_some(), "Should have process symbol");
 
             // Find the call site for "process()"
@@ -5853,7 +5843,10 @@ process()
                 Span::new(0, 15),
             );
             store.insert_symbol(symbol);
-            store.insert_qualified_name(QualifiedName::new(symbol_id, "external.handler.ExternalHandler"));
+            store.insert_qualified_name(QualifiedName::new(
+                symbol_id,
+                "external.handler.ExternalHandler",
+            ));
 
             // Analyze a new file that uses ExternalHandler
             let code = r#"
@@ -5885,10 +5878,7 @@ h.process()
             );
 
             // Should have the "process" attribute access
-            let process_attr = app_result
-                .attributes
-                .iter()
-                .find(|a| a.name == "process");
+            let process_attr = app_result.attributes.iter().find(|a| a.name == "process");
             assert!(
                 process_attr.is_some(),
                 "Should have 'process' attribute access"
@@ -5951,27 +5941,51 @@ h.process()
             // Unit test: Names starting with _ are private.
             assert!(!is_effectively_public("_foo"), "_foo should be private");
             assert!(!is_effectively_public("_Bar"), "_Bar should be private");
-            assert!(!is_effectively_public("_private"), "_private should be private");
+            assert!(
+                !is_effectively_public("_private"),
+                "_private should be private"
+            );
             assert!(!is_effectively_public("_"), "_ should be private");
         }
 
         #[test]
         fn is_effectively_public_false_for_name_mangled() {
             // Unit test: Name-mangled names (__name without trailing __) are private.
-            assert!(!is_effectively_public("__private"), "__private should be private");
-            assert!(!is_effectively_public("__internal_var"), "__internal_var should be private");
+            assert!(
+                !is_effectively_public("__private"),
+                "__private should be private"
+            );
+            assert!(
+                !is_effectively_public("__internal_var"),
+                "__internal_var should be private"
+            );
         }
 
         #[test]
         fn is_effectively_public_true_for_dunders() {
             // Unit test: Dunders (__name__) are public.
-            assert!(is_effectively_public("__init__"), "__init__ should be public");
-            assert!(is_effectively_public("__name__"), "__name__ should be public");
+            assert!(
+                is_effectively_public("__init__"),
+                "__init__ should be public"
+            );
+            assert!(
+                is_effectively_public("__name__"),
+                "__name__ should be public"
+            );
             assert!(is_effectively_public("__doc__"), "__doc__ should be public");
-            assert!(is_effectively_public("__call__"), "__call__ should be public");
-            assert!(is_effectively_public("__enter__"), "__enter__ should be public");
+            assert!(
+                is_effectively_public("__call__"),
+                "__call__ should be public"
+            );
+            assert!(
+                is_effectively_public("__enter__"),
+                "__enter__ should be public"
+            );
             // Edge case: exactly 4 characters (__) is NOT a dunder
-            assert!(!is_effectively_public("____"), "____ is too short to be a valid dunder");
+            assert!(
+                !is_effectively_public("____"),
+                "____ is too short to be a valid dunder"
+            );
         }
 
         #[test]

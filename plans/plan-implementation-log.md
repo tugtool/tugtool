@@ -6,6 +6,63 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 8: Documentation and Final Verification | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, Step 8 and Post-Phase Verification sections
+- `CLAUDE.md` - Project documentation for adding analyzer options
+- `crates/tugtool-core/src/adapter.rs` - CallArgData span documentation
+- `crates/tugtool-python/src/analyzer.rs` - CrossFileSymbolMap and helper rustdoc
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Document `compute_effective_exports` in CLAUDE.md | Done |
+| Add rustdoc for CrossFileSymbolMap, resolve_receiver_to_symbol | Already present |
+| Update module docs for span handling semantics | Already present |
+| Run full test suite | Done (1673 tests) |
+| Run Temporale fixture tests | Done (1138 tests) |
+| Verify Span::new(0,0) only in optional contexts | Done |
+| Verify symbol resolution for typed receivers | Done |
+| Verify effective exports | Done |
+| Verify cross-file resolution | Done |
+
+**Files Modified:**
+- `CLAUDE.md`: Added "Analyzer Options" section documenting `compute_effective_exports` and `infer_visibility`
+- `plans/phase-11B.md`: Updated all checkboxes, changed status from "draft" to "complete"
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1673 tests passed
+- `cargo doc --workspace --no-deps`: Documentation generated successfully
+- `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`: 1138 tests passed
+
+**Checkpoints Verified:**
+- `cargo doc --workspace --no-deps`: PASS
+- `cargo nextest run --workspace`: PASS (1673 tests)
+- `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`: PASS (1138 tests)
+- Manual: attribute_access_base_symbol test passes: PASS
+- Manual: cross_file tests pass (22 tests): PASS
+
+**Post-Phase Verification (11B.7):**
+1. Span handling: `Span::new(0, 0)` only in optional contexts (scopes, imports) - VERIFIED
+2. Symbol resolution: `base_symbol_index` populated for typed receivers - VERIFIED
+3. Effective exports: 4 tests pass when enabled - VERIFIED
+4. Receiver extraction: `get_obj().method()` extracts "get_obj" - VERIFIED
+5. Cross-file resolution: 22 tests pass - VERIFIED
+6. Store parameter: `_store` underscore removed, `from_store()` called - VERIFIED
+7. Full regression: Temporale tests pass - VERIFIED
+
+**Key Decisions/Notes:**
+- Phase 11B is now **COMPLETE** (all steps 0-8 done)
+- All success criteria met
+- Plan status updated from "draft" to "complete"
+- Rustdoc for CrossFileSymbolMap and helpers was already comprehensive from Step 3a
+
+---
+
 ## [phase-11B.md] Step 7: Wire Store Parameter for Cross-File Resolution | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

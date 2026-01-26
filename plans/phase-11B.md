@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | N/A |
 | Last updated | 2026-01-26 |
@@ -49,18 +49,18 @@ Phase 11 successfully implemented the FactsStore architectural improvements, inc
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- [ ] No `Span::new(0, 0)` patterns remain in analyzer.rs conversion functions for required fields
-- [ ] Adapter data types use `Option<Span>` where spans may be absent
-- [ ] Integration layer logs warnings and skips entries with missing required spans
-- [ ] `base_symbol_index` is populated for attribute accesses when receiver type is known
-- [ ] `callee_symbol_index` is populated for method calls when receiver type is known
-- [ ] `PythonAnalyzerOptions.compute_effective_exports` exists and works
-- [ ] `Span::new(0, 0)` in call argument conversion is replaced with explicit handling
-- [ ] Receiver extraction handles `Call` expressions by extracting callee name
-- [ ] Tests verify symbol resolution for typed method calls
-- [ ] `store` parameter in `analyze_files` is used for cross-file resolution (not ignored)
-- [ ] `CrossFileSymbolMap::from_store()` exists and builds lookup maps
-- [ ] Cross-file type resolution works when store has prior analysis
+- [x] No `Span::new(0, 0)` patterns remain in analyzer.rs conversion functions for required fields
+- [x] Adapter data types use `Option<Span>` where spans may be absent
+- [x] Integration layer logs warnings and skips entries with missing required spans
+- [x] `base_symbol_index` is populated for attribute accesses when receiver type is known
+- [x] `callee_symbol_index` is populated for method calls when receiver type is known
+- [x] `PythonAnalyzerOptions.compute_effective_exports` exists and works
+- [x] `Span::new(0, 0)` in call argument conversion is replaced with explicit handling
+- [x] Receiver extraction handles `Call` expressions by extracting callee name
+- [x] Tests verify symbol resolution for typed method calls
+- [x] `store` parameter in `analyze_files` is used for cross-file resolution (not ignored)
+- [x] `CrossFileSymbolMap::from_store()` exists and builds lookup maps
+- [x] Cross-file type resolution works when store has prior analysis
 
 #### Scope {#scope}
 
@@ -580,10 +580,10 @@ None.
 
 ### 11B.3 Documentation Plan {#documentation-plan}
 
-- [ ] Update CLAUDE.md with `compute_effective_exports` option
-- [ ] Add rustdoc for receiver resolution logic
-- [ ] Document effective export rules in module docs
-- [ ] Update adapter.rs docs for `Option<Span>` semantics
+- [x] Update CLAUDE.md with `compute_effective_exports` option
+- [x] Add rustdoc for receiver resolution logic
+- [x] Document effective export rules in module docs
+- [x] Update adapter.rs docs for `Option<Span>` semantics
 
 ---
 
@@ -988,22 +988,22 @@ fn missing_span_warns_and_skips() {
 **Commit:** `docs: document Phase 11B changes`
 
 **Tasks:**
-- [ ] Document `compute_effective_exports` option in CLAUDE.md
-- [ ] Add rustdoc for `CrossFileSymbolMap`, `resolve_receiver_to_symbol`, helper methods
-- [ ] Update module docs for span handling semantics (`Option<Span>` vs `Span::new(0,0)`)
-- [ ] Run full test suite
-- [ ] Run analysis on Temporale fixture
-- [ ] Verify no `Span::new(0, 0)` in required span paths
-- [ ] Verify symbol resolution works for typed receivers
-- [ ] Verify effective exports work when enabled
-- [ ] Verify cross-file resolution works with pre-populated store
+- [x] Document `compute_effective_exports` option in CLAUDE.md
+- [x] Add rustdoc for `CrossFileSymbolMap`, `resolve_receiver_to_symbol`, helper methods
+- [x] Update module docs for span handling semantics (`Option<Span>` vs `Span::new(0,0)`)
+- [x] Run full test suite
+- [x] Run analysis on Temporale fixture
+- [x] Verify no `Span::new(0, 0)` in required span paths
+- [x] Verify symbol resolution works for typed receivers
+- [x] Verify effective exports work when enabled
+- [x] Verify cross-file resolution works with pre-populated store
 
 **Checkpoint:**
-- [ ] `cargo doc --workspace --no-deps`
-- [ ] `cargo nextest run --workspace`
-- [ ] `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`
-- [ ] Manual: Analyze sample file, check attribute access has base_symbol_index
-- [ ] Manual: Analyze two files, verify cross-file type resolution
+- [x] `cargo doc --workspace --no-deps`
+- [x] `cargo nextest run --workspace`
+- [x] `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`
+- [x] Manual: Analyze sample file, check attribute access has base_symbol_index
+- [x] Manual: Analyze two files, verify cross-file type resolution
 
 **Rollback:**
 - Revert commit (docs only)
