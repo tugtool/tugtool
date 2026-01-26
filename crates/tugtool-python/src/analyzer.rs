@@ -12,12 +12,13 @@
 
 use tugtool_core::adapter::{
     AliasEdgeData, AnalysisBundle, ExportData, FileAnalysisResult, ImportData, LanguageAdapter,
-    ReferenceData, ReferenceKind as AdapterReferenceKind, ScopeData, SymbolData,
+    ModifierData, ParameterData, QualifiedNameData, ReferenceData,
+    ReferenceKind as AdapterReferenceKind, ScopeData, SignatureData, SymbolData, TypeParamData,
 };
 use tugtool_core::facts::{
     ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind,
-    Language, PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId,
-    ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
+    Language, Modifier, ParamKind, PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind, TypeNode,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -233,6 +234,8 @@ pub struct FileAnalysis {
     pub exports: Vec<LocalExport>,
     /// Value-level aliases in this file (e.g., `b = bar`).
     pub alias_graph: AliasGraph,
+    /// Function/method signatures in this file.
+    pub signatures: Vec<tugtool_python_cst::SignatureInfo>,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -1404,6 +1407,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         imports,
         exports,
         alias_graph,
+        signatures: native_result.signatures,
     })
 }
 
@@ -3299,8 +3303,104 @@ impl PythonAdapter {
             }
         }
 
-        // Note: attributes, calls, signatures, modifiers, qualified_names, type_params
-        // are populated in later steps (7c-7d)
+        // Convert signatures, modifiers, qualified names, and type params
+        // Build a mapping from (function name, scope_path) to symbol_index for signature resolution
+        // This approach handles nested functions and methods correctly
+        let func_to_symbol: HashMap<(String, Vec<String>), usize> = result
+            .symbols
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.kind == SymbolKind::Function)
+            .map(|(idx, s)| {
+                // Construct scope_path from the scope hierarchy
+                let scope_path = self.build_scope_path_for_symbol(analysis, idx);
+                ((s.name.clone(), scope_path), idx)
+            })
+            .collect();
+
+        // Module path for qualified name computation
+        let module_path = compute_module_path(&analysis.path);
+
+        for sig in &analysis.signatures {
+            // Look up the symbol index using function name and scope path
+            let symbol_index = match func_to_symbol.get(&(sig.name.clone(), sig.scope_path.clone()))
+            {
+                Some(&idx) => idx,
+                None => continue, // Skip if symbol not found
+            };
+
+            // Convert parameters
+            let params: Vec<ParameterData> = sig
+                .params
+                .iter()
+                .map(|p| ParameterData {
+                    name: p.name.clone(),
+                    kind: convert_cst_param_kind(p.kind),
+                    default_span: p.default_span,
+                    annotation: p.annotation.as_ref().map(|s| TypeNode::Named {
+                        name: s.clone(),
+                        args: vec![],
+                    }),
+                })
+                .collect();
+
+            // Convert return type
+            let returns = sig.returns.as_ref().map(|s| TypeNode::Named {
+                name: s.clone(),
+                args: vec![],
+            });
+
+            result.signatures.push(SignatureData {
+                symbol_index,
+                params,
+                returns,
+            });
+
+            // Extract modifiers
+            if !sig.modifiers.is_empty() {
+                let modifiers: Vec<Modifier> = sig
+                    .modifiers
+                    .iter()
+                    .filter_map(|m| convert_cst_modifier(*m))
+                    .collect();
+                if !modifiers.is_empty() {
+                    result.modifiers.push(ModifierData {
+                        symbol_index,
+                        modifiers,
+                    });
+                }
+            }
+
+            // Compute qualified name
+            let qualified_name = compute_qualified_name(&module_path, &sig.scope_path, &sig.name);
+            result.qualified_names.push(QualifiedNameData {
+                symbol_index,
+                path: qualified_name,
+            });
+
+            // Convert type parameters
+            for tp in &sig.type_params {
+                result.type_params.push(TypeParamData {
+                    name: tp.name.clone(),
+                    bounds: tp
+                        .bound
+                        .as_ref()
+                        .map(|b| {
+                            vec![TypeNode::Named {
+                                name: b.clone(),
+                                args: vec![],
+                            }]
+                        })
+                        .unwrap_or_default(),
+                    default: tp.default.as_ref().map(|d| TypeNode::Named {
+                        name: d.clone(),
+                        args: vec![],
+                    }),
+                });
+            }
+        }
+
+        // Note: attributes, calls are populated in step 7d
 
         result
     }
@@ -3322,6 +3422,39 @@ impl PythonAdapter {
         // Note: types and modules are populated in later steps
 
         result
+    }
+
+    /// Build the scope path for a symbol at the given index.
+    ///
+    /// This reconstructs the scope path by walking up the scope hierarchy
+    /// from the symbol's containing scope to the module root.
+    fn build_scope_path_for_symbol(&self, analysis: &FileAnalysis, symbol_index: usize) -> Vec<String> {
+        // Get the symbol's containing scope
+        let symbol = match analysis.symbols.get(symbol_index) {
+            Some(s) => s,
+            None => return vec!["<module>".to_string()],
+        };
+
+        // Find the scope chain by walking up parent scopes
+        let mut scope_path = Vec::new();
+        let mut current_scope_id = Some(symbol.scope_id);
+
+        while let Some(scope_id) = current_scope_id {
+            if let Some(scope) = analysis.scopes.iter().find(|s| s.id == scope_id) {
+                if let Some(name) = &scope.name {
+                    scope_path.push(name.clone());
+                } else {
+                    scope_path.push("<module>".to_string());
+                }
+                current_scope_id = scope.parent_id;
+            } else {
+                break;
+            }
+        }
+
+        // Reverse since we built from leaf to root
+        scope_path.reverse();
+        scope_path
     }
 }
 
@@ -3385,6 +3518,92 @@ fn convert_local_import_to_import_data(import: &LocalImport) -> ImportData {
         kind,
         span: import.span.unwrap_or(Span::new(0, 0)),
     }
+}
+
+/// Convert CST ParamKind to FactsStore ParamKind.
+fn convert_cst_param_kind(kind: tugtool_python_cst::ParamKind) -> ParamKind {
+    match kind {
+        tugtool_python_cst::ParamKind::Regular => ParamKind::Regular,
+        tugtool_python_cst::ParamKind::PositionalOnly => ParamKind::PositionalOnly,
+        tugtool_python_cst::ParamKind::KeywordOnly => ParamKind::KeywordOnly,
+        tugtool_python_cst::ParamKind::VarArgs => ParamKind::VarArgs,
+        tugtool_python_cst::ParamKind::KwArgs => ParamKind::KwArgs,
+    }
+}
+
+/// Convert CST Modifier to FactsStore Modifier.
+fn convert_cst_modifier(modifier: tugtool_python_cst::Modifier) -> Option<Modifier> {
+    match modifier {
+        tugtool_python_cst::Modifier::Async => Some(Modifier::Async),
+        tugtool_python_cst::Modifier::Static => Some(Modifier::Static),
+        tugtool_python_cst::Modifier::ClassMethod => Some(Modifier::ClassMethod),
+        tugtool_python_cst::Modifier::Property => Some(Modifier::Property),
+        tugtool_python_cst::Modifier::Abstract => Some(Modifier::Abstract),
+        tugtool_python_cst::Modifier::Final => Some(Modifier::Final),
+        tugtool_python_cst::Modifier::Override => Some(Modifier::Override),
+        tugtool_python_cst::Modifier::Generator => Some(Modifier::Generator),
+    }
+}
+
+/// Compute the module path from a file path.
+///
+/// Converts "pkg/sub/mod.py" to "pkg.sub.mod"
+/// Handles `__init__.py` by using the directory name as the module.
+fn compute_module_path(file_path: &str) -> String {
+    let path = std::path::Path::new(file_path);
+
+    // Get the file name
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    // Get the parent components
+    let components: Vec<&str> = path
+        .parent()
+        .map(|p| {
+            p.components()
+                .filter_map(|c| match c {
+                    std::path::Component::Normal(s) => s.to_str(),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if file_name == "__init__.py" {
+        // For package __init__.py, the module is just the directory path
+        components.join(".")
+    } else {
+        // For regular modules, strip the .py extension
+        let module_name = file_name.strip_suffix(".py").unwrap_or(file_name);
+        if components.is_empty() {
+            module_name.to_string()
+        } else {
+            format!("{}.{}", components.join("."), module_name)
+        }
+    }
+}
+
+/// Compute the fully-qualified name for a symbol.
+///
+/// Combines module path, scope chain, and symbol name.
+/// Example: "pkg.mod", ["<module>", "Foo"], "bar" -> "pkg.mod.Foo.bar"
+fn compute_qualified_name(module_path: &str, scope_path: &[String], symbol_name: &str) -> String {
+    // Filter out "<module>" from scope path as it's implicit in the module path
+    let scope_parts: Vec<&str> = scope_path
+        .iter()
+        .filter(|s| *s != "<module>")
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut parts = Vec::new();
+    if !module_path.is_empty() {
+        parts.push(module_path);
+    }
+    for scope in &scope_parts {
+        parts.push(scope);
+    }
+    parts.push(symbol_name);
+
+    parts.join(".")
 }
 
 // ============================================================================
@@ -3956,6 +4175,251 @@ mod tests {
                 // Simple assignments have confidence 1.0
                 assert!((output.confidence - 1.0).abs() < 0.001);
             }
+        }
+
+        // ====================================================================
+        // Signature, Modifier, and QualifiedName Tests (Step 7c)
+        // ====================================================================
+
+        #[test]
+        fn signature_emitted_for_function() {
+            // Test: Signatures are emitted for functions
+            let adapter = PythonAdapter::new();
+            let content = "def foo(x, y): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty(), "Expected signature for 'foo'");
+            let sig = &result.signatures[0];
+            assert_eq!(sig.params.len(), 2);
+            assert_eq!(sig.params[0].name, "x");
+            assert_eq!(sig.params[1].name, "y");
+        }
+
+        #[test]
+        fn signature_param_kind_positional_only() {
+            // Test: Positional-only parameters classified correctly
+            let adapter = PythonAdapter::new();
+            let content = "def foo(x, /, y): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty());
+            let sig = &result.signatures[0];
+            assert_eq!(sig.params.len(), 2);
+            assert_eq!(sig.params[0].kind, ParamKind::PositionalOnly);
+            assert_eq!(sig.params[1].kind, ParamKind::Regular);
+        }
+
+        #[test]
+        fn signature_param_kind_keyword_only() {
+            // Test: Keyword-only parameters classified correctly
+            let adapter = PythonAdapter::new();
+            let content = "def foo(x, *, y): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty());
+            let sig = &result.signatures[0];
+            assert_eq!(sig.params.len(), 2);
+            assert_eq!(sig.params[0].kind, ParamKind::Regular);
+            assert_eq!(sig.params[1].kind, ParamKind::KeywordOnly);
+        }
+
+        #[test]
+        fn signature_param_kind_varargs_and_kwargs() {
+            // Test: *args and **kwargs classified correctly
+            let adapter = PythonAdapter::new();
+            let content = "def foo(*args, **kwargs): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty());
+            let sig = &result.signatures[0];
+            assert_eq!(sig.params.len(), 2);
+            assert_eq!(sig.params[0].kind, ParamKind::VarArgs);
+            assert_eq!(sig.params[1].kind, ParamKind::KwArgs);
+        }
+
+        #[test]
+        fn signature_all_param_kinds() {
+            // Test: All param kinds in one signature
+            let adapter = PythonAdapter::new();
+            let content = "def foo(a, /, b, *args, c, **kwargs): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty());
+            let sig = &result.signatures[0];
+            assert_eq!(sig.params.len(), 5);
+            assert_eq!(sig.params[0].kind, ParamKind::PositionalOnly); // a
+            assert_eq!(sig.params[1].kind, ParamKind::Regular); // b
+            assert_eq!(sig.params[2].kind, ParamKind::VarArgs); // args
+            assert_eq!(sig.params[3].kind, ParamKind::KeywordOnly); // c
+            assert_eq!(sig.params[4].kind, ParamKind::KwArgs); // kwargs
+        }
+
+        #[test]
+        fn signature_return_type() {
+            // Test: Return type captured in signature
+            let adapter = PythonAdapter::new();
+            let content = "def foo() -> int: pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty());
+            let sig = &result.signatures[0];
+            assert!(sig.returns.is_some());
+            match &sig.returns {
+                Some(TypeNode::Named { name, .. }) => assert_eq!(name, "int"),
+                _ => panic!("Expected Named type node for return"),
+            }
+        }
+
+        #[test]
+        fn signature_param_annotation() {
+            // Test: Parameter annotations captured
+            let adapter = PythonAdapter::new();
+            let content = "def foo(x: int, y: str): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.signatures.is_empty());
+            let sig = &result.signatures[0];
+            assert!(sig.params[0].annotation.is_some());
+            assert!(sig.params[1].annotation.is_some());
+        }
+
+        #[test]
+        fn modifier_async_detected() {
+            // Test: Async modifier detected
+            let adapter = PythonAdapter::new();
+            let content = "async def foo(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.modifiers.is_empty(), "Expected modifiers for async function");
+            let mods = &result.modifiers[0];
+            assert!(
+                mods.modifiers.contains(&Modifier::Async),
+                "Expected Async modifier"
+            );
+        }
+
+        #[test]
+        fn modifier_staticmethod_detected() {
+            // Test: @staticmethod detected
+            let adapter = PythonAdapter::new();
+            let content = "@staticmethod\ndef foo(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.modifiers.is_empty(), "Expected modifiers for staticmethod");
+            let mods = &result.modifiers[0];
+            assert!(
+                mods.modifiers.contains(&Modifier::Static),
+                "Expected Static modifier"
+            );
+        }
+
+        #[test]
+        fn modifier_classmethod_detected() {
+            // Test: @classmethod detected
+            let adapter = PythonAdapter::new();
+            let content = "@classmethod\ndef foo(cls): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.modifiers.is_empty(), "Expected modifiers for classmethod");
+            let mods = &result.modifiers[0];
+            assert!(
+                mods.modifiers.contains(&Modifier::ClassMethod),
+                "Expected ClassMethod modifier"
+            );
+        }
+
+        #[test]
+        fn modifier_property_detected() {
+            // Test: @property detected
+            let adapter = PythonAdapter::new();
+            let content = "@property\ndef foo(self): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.modifiers.is_empty(), "Expected modifiers for property");
+            let mods = &result.modifiers[0];
+            assert!(
+                mods.modifiers.contains(&Modifier::Property),
+                "Expected Property modifier"
+            );
+        }
+
+        #[test]
+        fn modifier_multiple() {
+            // Test: Multiple modifiers on one function
+            let adapter = PythonAdapter::new();
+            let content = "@staticmethod\n@final\nasync def foo(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.modifiers.is_empty());
+            let mods = &result.modifiers[0];
+            assert!(
+                mods.modifiers.contains(&Modifier::Static),
+                "Expected Static modifier"
+            );
+            assert!(
+                mods.modifiers.contains(&Modifier::Final),
+                "Expected Final modifier"
+            );
+            assert!(
+                mods.modifiers.contains(&Modifier::Async),
+                "Expected Async modifier"
+            );
+        }
+
+        #[test]
+        fn qualified_name_module_level_function() {
+            // Test: Qualified name for module-level function
+            let adapter = PythonAdapter::new();
+            let content = "def foo(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.qualified_names.is_empty());
+            let qn = &result.qualified_names[0];
+            // Module path is "test" (from test.py), function name is "foo"
+            assert!(
+                qn.path.ends_with("foo"),
+                "Qualified name should end with 'foo': {}",
+                qn.path
+            );
+        }
+
+        #[test]
+        fn qualified_name_method() {
+            // Test: Qualified name for method
+            let adapter = PythonAdapter::new();
+            let content = "class Foo:\n    def bar(self): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the qualified name for "bar"
+            let bar_qn = result
+                .qualified_names
+                .iter()
+                .find(|qn| qn.path.contains("bar"));
+            assert!(bar_qn.is_some(), "Expected qualified name for 'bar'");
+            assert!(
+                bar_qn.unwrap().path.contains("Foo"),
+                "Method qualified name should include class"
+            );
+        }
+
+        #[test]
+        fn qualified_name_nested_function() {
+            // Test: Qualified name for nested function
+            let adapter = PythonAdapter::new();
+            let content = "def outer():\n    def inner(): pass";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the qualified name for "inner"
+            let inner_qn = result
+                .qualified_names
+                .iter()
+                .find(|qn| qn.path.contains("inner"));
+            assert!(inner_qn.is_some(), "Expected qualified name for 'inner'");
+            assert!(
+                inner_qn.unwrap().path.contains("outer"),
+                "Nested function qualified name should include outer: {}",
+                inner_qn.unwrap().path
+            );
         }
     }
 

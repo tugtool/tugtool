@@ -72,6 +72,7 @@ mod annotation;
 mod import;
 mod inheritance;
 mod method_call;
+mod signature;
 mod type_inference;
 
 // P2 visitors (dynamic pattern detection)
@@ -95,6 +96,9 @@ pub use annotation::{AnnotationCollector, AnnotationInfo, AnnotationKind, Annota
 pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
 pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
 pub use method_call::{MethodCallCollector, MethodCallInfo};
+pub use signature::{
+    Modifier, ParamInfo, ParamKind, SignatureCollector, SignatureInfo, TypeParamInfo,
+};
 pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};
 
 // P2 exports

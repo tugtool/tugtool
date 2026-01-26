@@ -1558,6 +1558,7 @@ def foo():
                 imports: vec![],
                 exports: vec![],
                 alias_graph,
+                signatures: vec![],
             };
 
             let aliases =
@@ -1605,6 +1606,7 @@ def foo():
                 imports: vec![],
                 exports: vec![],
                 alias_graph,
+                signatures: vec![],
             };
 
             let content = "bar\nb = bar\n";

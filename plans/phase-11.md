@@ -3579,23 +3579,23 @@ The collector extracts from `FunctionDef`/`AsyncFunctionDef` nodes:
 **Risk Note:** This is a new collector but follows established patterns. Expect 2-3 iterations to handle edge cases (nested defaults, complex annotations). The `Parameters` struct documentation in `expression.rs` is authoritative.
 
 **Tasks:**
-- [ ] Create `SignatureCollector` visitor in `tugtool-python-cst`:
+- [x] Create `SignatureCollector` visitor in `tugtool-python-cst`:
   - Visit `FunctionDef` and `AsyncFunctionDef` nodes
   - Extract `Parameters` structure
   - Classify each param by kind based on position
   - Capture default value spans from `param.default`
   - Capture return annotation from `node.returns`
-- [ ] Add `signatures: Vec<SignatureData>` to `FileAnalysisResult`
-- [ ] Add `modifiers: Vec<ModifierData>` to `FileAnalysisResult`
-- [ ] Detect modifiers from:
+- [x] Add `signatures: Vec<SignatureData>` to `FileAnalysisResult`
+- [x] Add `modifiers: Vec<ModifierData>` to `FileAnalysisResult`
+- [x] Detect modifiers from:
   - `async def` → `Modifier::Async`
   - `@staticmethod` → `Modifier::Static`
   - `@classmethod` → `Modifier::ClassMethod`
   - `@property` → `Modifier::Property`
   - `@abstractmethod` → `Modifier::Abstract`
-- [ ] Add `qualified_names: Vec<QualifiedNameData>` to `FileAnalysisResult`
-- [ ] Compute qualified names as `module_path.scope_path.symbol_name`
-- [ ] Add `type_params: Vec<TypeParamData>` to `FileAnalysisResult` (for generic functions)
+- [x] Add `qualified_names: Vec<QualifiedNameData>` to `FileAnalysisResult`
+- [x] Compute qualified names as `module_path.scope_path.symbol_name`
+- [x] Add `type_params: Vec<TypeParamData>` to `FileAnalysisResult` (for generic functions)
 
 **QualifiedName Computation Ownership:**
 The **adapter** computes qualified name paths. This is the correct ownership because:
@@ -3614,22 +3614,22 @@ qualified_name = module_path + "." + scope_chain.join(".") + "." + symbol_name
 - `pkg/__init__.py`, `class X` → `"pkg.X"`
 
 **Note:** The integration layer does NOT recompute paths. It passes them through directly from `QualifiedNameData` to `QualifiedName`.
-- [ ] **Integration layer:** Convert to FactsStore types
+- [x] **Integration layer:** Convert to FactsStore types
 
 **Tests:**
-- [ ] Unit: `ParamKind::PositionalOnly` for params before `/`
-- [ ] Unit: `ParamKind::KeywordOnly` for params after `*`
-- [ ] Unit: `ParamKind::VarArgs` for `*args`
-- [ ] Unit: `ParamKind::KwArgs` for `**kwargs`
-- [ ] Unit: `Modifier::Async` detected for async functions
-- [ ] Unit: `Modifier::Property` detected for `@property`
-- [ ] Integration: Signatures populated in FactsStore
-- [ ] Integration: Modifiers populated for decorated functions
-- [ ] Integration: Qualified names computed correctly
+- [x] Unit: `ParamKind::PositionalOnly` for params before `/`
+- [x] Unit: `ParamKind::KeywordOnly` for params after `*`
+- [x] Unit: `ParamKind::VarArgs` for `*args`
+- [x] Unit: `ParamKind::KwArgs` for `**kwargs`
+- [x] Unit: `Modifier::Async` detected for async functions
+- [x] Unit: `Modifier::Property` detected for `@property`
+- [x] Integration: Signatures populated in FactsStore
+- [x] Integration: Modifiers populated for decorated functions
+- [x] Integration: Qualified names computed correctly
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python signature`
-- [ ] `cargo nextest run -p tugtool-python modifier`
+- [x] `cargo nextest run -p tugtool-python signature`
+- [x] `cargo nextest run -p tugtool-python modifier`
 
 **Rollback:** Revert commit
 

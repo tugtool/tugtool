@@ -51,6 +51,8 @@ use tugtool_python_cst::{
     ScopeCollector,
     ScopeInfo as CstScopeInfo,
     ScopeKind as CstScopeKind,
+    SignatureCollector,
+    SignatureInfo as CstSignatureInfo,
     TypeInferenceCollector,
 };
 
@@ -112,6 +114,8 @@ pub struct NativeAnalysisResult {
     pub class_inheritance: Vec<CstClassInheritanceInfo>,
     /// Method call patterns (obj.method()).
     pub method_calls: Vec<CstMethodCallInfo>,
+    /// Function/method signatures with parameters, modifiers, and type params.
+    pub signatures: Vec<CstSignatureInfo>,
 
     // P2 analysis (dynamic pattern detection)
     /// Dynamic patterns that may affect rename safety.
@@ -280,6 +284,9 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     // P1: Collect method call patterns
     let method_calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
 
+    // P1: Collect function/method signatures
+    let signatures = SignatureCollector::collect(&parsed.module, &parsed.positions);
+
     // P2: Collect dynamic patterns
     let dynamic_patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
@@ -295,6 +302,7 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         assignments,
         class_inheritance,
         method_calls,
+        signatures,
         // P2
         dynamic_patterns,
     })

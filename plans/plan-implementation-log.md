@@ -6,6 +6,109 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 7c: Emit Signatures and Modifiers | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 7c specification (lines 3546-3636)
+- [D19] Qualified Names and Modifiers design decision
+- [D21] Signatures and TypeParams design decision
+- [CQ8] Python Analyzer Capability (existing infrastructure)
+- [CQ10] ParamKind Generality
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - `Parameters`, `Param` CST nodes
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - `FunctionDef`, `TypeParameters`, `TypeParam` nodes
+- `crates/tugtool-core/src/adapter.rs` - `SignatureData`, `ModifierData`, `QualifiedNameData`, `TypeParamData` types
+- `crates/tugtool-core/src/facts/mod.rs` - `Signature`, `ParamKind`, `Modifier`, `Parameter` types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `SignatureCollector` visitor in `tugtool-python-cst` | Done |
+| Add `signatures: Vec<SignatureData>` to `FileAnalysisResult` | Done |
+| Add `modifiers: Vec<ModifierData>` to `FileAnalysisResult` | Done |
+| Detect modifiers from async/decorators | Done |
+| Add `qualified_names: Vec<QualifiedNameData>` to `FileAnalysisResult` | Done |
+| Compute qualified names as `module_path.scope_path.symbol_name` | Done |
+| Add `type_params: Vec<TypeParamData>` to `FileAnalysisResult` | Done |
+| Integration layer: Convert to FactsStore types | Done |
+
+**Files Created:**
+- `crates/tugtool-python-cst/src/visitor/signature.rs`:
+  - New `SignatureCollector` visitor that extracts function signatures
+  - `ParamKind` enum (Regular, PositionalOnly, KeywordOnly, VarArgs, KwArgs)
+  - `Modifier` enum (Async, Static, ClassMethod, Property, Abstract, Final, Override, Generator)
+  - `ParamInfo`, `TypeParamInfo`, `SignatureInfo` data types
+  - Parameter classification from `Parameters` struct position
+  - Modifier extraction from decorators and async keyword
+  - Type parameter extraction for Python 3.12+ generics
+  - 17 unit tests for signature collection
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/mod.rs`:
+  - Added `mod signature` declaration
+  - Added exports: `Modifier`, `ParamInfo`, `ParamKind`, `SignatureCollector`, `SignatureInfo`, `TypeParamInfo`
+
+- `crates/tugtool-python-cst/src/lib.rs`:
+  - Added P1 visitor exports for signature types
+
+- `crates/tugtool-python/src/cst_bridge.rs`:
+  - Added `SignatureCollector` and `CstSignatureInfo` imports
+  - Added `signatures: Vec<CstSignatureInfo>` field to `NativeAnalysisResult`
+  - Added signature collection in `parse_and_analyze()`
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added imports for `ModifierData`, `ParameterData`, `QualifiedNameData`, `SignatureData`, `TypeParamData`
+  - Added imports for `Modifier`, `ParamKind`, `TypeNode` from facts
+  - Added `signatures: Vec<tugtool_python_cst::SignatureInfo>` field to `FileAnalysis`
+  - Added `build_scope_path_for_symbol()` method to `PythonAdapter`
+  - Added signature conversion logic in `convert_file_analysis()`:
+    - Build `func_to_symbol` mapping for symbol index resolution
+    - Convert `SignatureInfo` to `SignatureData` with `ParameterData`
+    - Extract modifiers to `ModifierData`
+    - Compute qualified names to `QualifiedNameData`
+    - Convert type parameters to `TypeParamData`
+  - Added helper functions:
+    - `convert_cst_param_kind()` - CST to FactsStore ParamKind
+    - `convert_cst_modifier()` - CST to FactsStore Modifier
+    - `compute_module_path()` - file path to module path
+    - `compute_qualified_name()` - full qualified name computation
+  - Added 15 new tests for signatures, modifiers, and qualified names
+
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Updated test fixtures with `signatures: vec![]` field
+
+- `plans/phase-11.md`:
+  - Checked off all 8 tasks, 9 tests, and 2 checkpoints for Step 7c
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst signature`: 17 tests passed
+- `cargo nextest run -p tugtool-python signature`: 8 tests passed
+- `cargo nextest run -p tugtool-python modifier`: 5 tests passed
+- `cargo nextest run -p tugtool-python qualified`: 3 tests passed
+- `cargo nextest run -p tugtool-python adapter`: 41 tests passed
+- `cargo nextest run -p tugtool-python`: 437 tests passed (all)
+- `cargo clippy --workspace`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python signature`: PASS (8 tests)
+- `cargo nextest run -p tugtool-python modifier`: PASS (5 tests)
+
+**Key Decisions/Notes:**
+- SignatureCollector follows established visitor pattern in tugtool-python-cst
+- ParamKind classification determined by parameter's position in `Parameters` struct:
+  - `posonly_params` → PositionalOnly (before `/` separator)
+  - `params` → Regular
+  - `star_arg` → VarArgs
+  - `kwonly_params` → KeywordOnly (after `*` separator)
+  - `star_kwarg` → KwArgs
+- Qualified name computation owned by adapter (not integration layer) per plan spec
+- Type annotations converted to simple `TypeNode::Named` (structured parsing deferred)
+- Fixed clippy `collapsible_match` warning in signature.rs
+
+---
+
 ## [phase-11.md] Step 7b: Emit Alias Edges | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
