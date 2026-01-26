@@ -711,8 +711,7 @@ pub fn analyze_files(
         let file_id = analysis.file_id;
         for symbol in &analysis.symbols {
             // O(1) lookup instead of O(n) scan through entries
-            if let Some(&sym_id) =
-                symbol_lookup.get(&(file_id, symbol.name.as_str(), symbol.kind))
+            if let Some(&sym_id) = symbol_lookup.get(&(file_id, symbol.name.as_str(), symbol.kind))
             {
                 scope_symbols
                     .entry((file_id, symbol.scope_id))
@@ -879,14 +878,13 @@ pub fn analyze_files(
                 }
             } else if local_import.is_star {
                 // from foo import * → Glob
-                let import = Import::new(import_id, file_id, span, &local_import.module_path)
-                    .with_glob();
+                let import =
+                    Import::new(import_id, file_id, span, &local_import.module_path).with_glob();
                 store.insert_import(import);
             } else {
                 // import foo → Module
                 // import foo as bar → Alias (module import with alias)
-                let mut import =
-                    Import::new(import_id, file_id, span, &local_import.module_path);
+                let mut import = Import::new(import_id, file_id, span, &local_import.module_path);
                 if let Some(alias) = &local_import.alias {
                     import = import.with_alias(alias);
                 }
@@ -1503,7 +1501,6 @@ fn find_scope_for_path_indexed(scope_path: &[String], index: &ScopeIndex<'_>) ->
 
     current_parent
 }
-
 
 // ========================================================================
 // Import Resolution (Contract C3)

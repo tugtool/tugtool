@@ -2084,7 +2084,10 @@ impl FactsStore {
     /// Duplicate module IDs are not filtered - the caller should ensure
     /// uniqueness if required.
     pub fn insert_module_resolution(&mut self, resolution: ModuleResolution) {
-        match self.module_resolutions.entry(resolution.module_path.clone()) {
+        match self
+            .module_resolutions
+            .entry(resolution.module_path.clone())
+        {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 // Merge: append new module_ids to existing
                 entry.get_mut().module_ids.extend(resolution.module_ids);
@@ -2283,8 +2286,10 @@ impl FactsStore {
         self.alias_edges_by_alias
             .get(&alias_symbol_id)
             .map(|ids| {
-                let mut edges: Vec<_> =
-                    ids.iter().filter_map(|id| self.alias_edges.get(id)).collect();
+                let mut edges: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.alias_edges.get(id))
+                    .collect();
                 edges.sort_by_key(|e| e.alias_id);
                 edges
             })
@@ -2298,8 +2303,10 @@ impl FactsStore {
         self.alias_edges_by_target
             .get(&target_symbol_id)
             .map(|ids| {
-                let mut edges: Vec<_> =
-                    ids.iter().filter_map(|id| self.alias_edges.get(id)).collect();
+                let mut edges: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.alias_edges.get(id))
+                    .collect();
                 edges.sort_by_key(|e| e.alias_id);
                 edges
             })
@@ -2311,8 +2318,10 @@ impl FactsStore {
         self.alias_edges_by_file
             .get(&file_id)
             .map(|ids| {
-                let mut edges: Vec<_> =
-                    ids.iter().filter_map(|id| self.alias_edges.get(id)).collect();
+                let mut edges: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.alias_edges.get(id))
+                    .collect();
                 edges.sort_by_key(|e| e.alias_id);
                 edges
             })
@@ -2361,8 +2370,10 @@ impl FactsStore {
         self.call_sites_by_file
             .get(&file_id)
             .map(|ids| {
-                let mut calls: Vec<_> =
-                    ids.iter().filter_map(|id| self.call_sites.get(id)).collect();
+                let mut calls: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.call_sites.get(id))
+                    .collect();
                 calls.sort_by_key(|c| c.call_id);
                 calls
             })
@@ -2377,8 +2388,10 @@ impl FactsStore {
         self.call_sites_by_callee
             .get(&callee_symbol_id)
             .map(|ids| {
-                let mut calls: Vec<_> =
-                    ids.iter().filter_map(|id| self.call_sites.get(id)).collect();
+                let mut calls: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.call_sites.get(id))
+                    .collect();
                 calls.sort_by_key(|c| c.call_id);
                 calls
             })
@@ -2395,10 +2408,7 @@ impl FactsStore {
     ///
     /// # Returns
     /// A vector of `AliasOutput` structs suitable for JSON output.
-    pub fn aliases_from_edges(
-        &self,
-        file_contents: &HashMap<String, String>,
-    ) -> Vec<AliasOutput> {
+    pub fn aliases_from_edges(&self, file_contents: &HashMap<String, String>) -> Vec<AliasOutput> {
         // Precompute line indexes for all files (O(n) per file, done once)
         let line_indexes: HashMap<&str, LineIndex> = file_contents
             .iter()
@@ -4921,8 +4931,14 @@ mod tests {
             );
 
             let json = serde_json::to_string(&edge).unwrap();
-            assert!(!json.contains("confidence"), "confidence should be omitted when None");
-            assert!(!json.contains("target_symbol_id"), "target_symbol_id should be omitted when None");
+            assert!(
+                !json.contains("confidence"),
+                "confidence should be omitted when None"
+            );
+            assert!(
+                !json.contains("target_symbol_id"),
+                "target_symbol_id should be omitted when None"
+            );
         }
 
         #[test]
@@ -4937,7 +4953,11 @@ mod tests {
             .with_confidence(0.8);
 
             let json = serde_json::to_string(&edge).unwrap();
-            assert!(json.contains("\"confidence\":0.8"), "confidence should be in JSON: {}", json);
+            assert!(
+                json.contains("\"confidence\":0.8"),
+                "confidence should be in JSON: {}",
+                json
+            );
         }
 
         #[test]
@@ -4952,7 +4972,11 @@ mod tests {
             .with_target(SymbolId::new(2));
 
             let json = serde_json::to_string(&edge).unwrap();
-            assert!(json.contains("target_symbol_id"), "target_symbol_id should be in JSON: {}", json);
+            assert!(
+                json.contains("target_symbol_id"),
+                "target_symbol_id should be in JSON: {}",
+                json
+            );
         }
 
         #[test]
@@ -5045,14 +5069,26 @@ mod tests {
             // Create two alias edges pointing to the same target
             let edge1_id = store.next_alias_edge_id();
             store.insert_alias_edge(
-                AliasEdge::new(edge1_id, file_id, Span::new(10, 20), alias1_id, AliasKind::Assignment)
-                    .with_target(target_id),
+                AliasEdge::new(
+                    edge1_id,
+                    file_id,
+                    Span::new(10, 20),
+                    alias1_id,
+                    AliasKind::Assignment,
+                )
+                .with_target(target_id),
             );
 
             let edge2_id = store.next_alias_edge_id();
             store.insert_alias_edge(
-                AliasEdge::new(edge2_id, file_id, Span::new(20, 30), alias2_id, AliasKind::Assignment)
-                    .with_target(target_id),
+                AliasEdge::new(
+                    edge2_id,
+                    file_id,
+                    Span::new(20, 30),
+                    alias2_id,
+                    AliasKind::Assignment,
+                )
+                .with_target(target_id),
             );
 
             // Forward lookup: alias1 → edges
@@ -5098,14 +5134,23 @@ mod tests {
             // Create alias edge
             let edge_id = store.next_alias_edge_id();
             store.insert_alias_edge(
-                AliasEdge::new(edge_id, file_id, Span::new(10, 20), alias_id, AliasKind::Assignment)
-                    .with_target(target_id)
-                    .with_confidence(0.9),
+                AliasEdge::new(
+                    edge_id,
+                    file_id,
+                    Span::new(10, 20),
+                    alias_id,
+                    AliasKind::Assignment,
+                )
+                .with_target(target_id)
+                .with_confidence(0.9),
             );
 
             // Create file contents for position calculation
             let mut file_contents = std::collections::HashMap::new();
-            file_contents.insert("src/main.py".to_string(), "original\n\naliased = original".to_string());
+            file_contents.insert(
+                "src/main.py".to_string(),
+                "original\n\naliased = original".to_string(),
+            );
 
             let aliases = store.aliases_from_edges(&file_contents);
             assert_eq!(aliases.len(), 1);
@@ -5342,10 +5387,8 @@ mod tests {
 
             // Replace with 2 params
             store.insert_signature(
-                Signature::new(symbol_id).with_params(vec![
-                    Parameter::regular("x"),
-                    Parameter::regular("y"),
-                ]),
+                Signature::new(symbol_id)
+                    .with_params(vec![Parameter::regular("x"), Parameter::regular("y")]),
             );
 
             let sig = store.signature(symbol_id).unwrap();
@@ -5379,7 +5422,10 @@ mod tests {
         #[test]
         fn type_param_with_bounds_and_default() {
             let tp = TypeParam::new("T")
-                .with_bounds(vec![TypeNode::named("Comparable"), TypeNode::named("Hashable")])
+                .with_bounds(vec![
+                    TypeNode::named("Comparable"),
+                    TypeNode::named("Hashable"),
+                ])
                 .with_default(TypeNode::named("int"));
 
             assert_eq!(tp.name, "T");
@@ -5470,10 +5516,7 @@ mod tests {
             store.insert_type_params(symbol_id, vec![TypeParam::new("T")]);
 
             // Replace
-            store.insert_type_params(
-                symbol_id,
-                vec![TypeParam::new("K"), TypeParam::new("V")],
-            );
+            store.insert_type_params(symbol_id, vec![TypeParam::new("K"), TypeParam::new("V")]);
 
             let params = store.type_params_for(symbol_id).unwrap();
             assert_eq!(params.len(), 2);
@@ -5496,10 +5539,7 @@ mod tests {
 
         #[test]
         fn type_node_named_with_args_serialization() {
-            let node = TypeNode::named_with_args(
-                "List",
-                vec![TypeNode::named("int")],
-            );
+            let node = TypeNode::named_with_args("List", vec![TypeNode::named("int")]);
             let json = serde_json::to_string(&node).unwrap();
             assert!(json.contains("\"kind\":\"named\""));
             assert!(json.contains("\"name\":\"List\""));
@@ -5516,10 +5556,7 @@ mod tests {
 
         #[test]
         fn type_node_union_serialization() {
-            let node = TypeNode::union(vec![
-                TypeNode::named("str"),
-                TypeNode::named("int"),
-            ]);
+            let node = TypeNode::union(vec![TypeNode::named("str"), TypeNode::named("int")]);
             let json = serde_json::to_string(&node).unwrap();
             assert!(json.contains("\"kind\":\"union\""));
             assert!(json.contains("\"members\""));
@@ -5551,10 +5588,7 @@ mod tests {
 
         #[test]
         fn type_node_extension_serialization() {
-            let node = TypeNode::extension(
-                "reference",
-                vec![TypeNode::named("str")],
-            );
+            let node = TypeNode::extension("reference", vec![TypeNode::named("str")]);
             let json = serde_json::to_string(&node).unwrap();
             assert!(json.contains("\"kind\":\"extension\""));
             assert!(json.contains("\"name\":\"reference\""));
@@ -5965,8 +5999,8 @@ mod tests {
         fn call_site_with_mixed_args() {
             let call = CallSite::new(CallSiteId::new(1), FileId::new(0), Span::new(10, 50))
                 .with_args(vec![
-                    CallArg::positional(Span::new(15, 16)),      // x
-                    CallArg::positional(Span::new(18, 19)),      // y
+                    CallArg::positional(Span::new(15, 16)), // x
+                    CallArg::positional(Span::new(18, 19)), // y
                     CallArg::keyword("timeout", Span::new(21, 30)),
                     CallArg::keyword("retries", Span::new(32, 41)),
                 ]);
@@ -6217,10 +6251,8 @@ mod tests {
 
         #[test]
         fn symbol_modifiers_serialization() {
-            let modifiers = SymbolModifiers::new(
-                SymbolId::new(42),
-                vec![Modifier::Async, Modifier::Override],
-            );
+            let modifiers =
+                SymbolModifiers::new(SymbolId::new(42), vec![Modifier::Async, Modifier::Override]);
 
             let json = serde_json::to_string(&modifiers).unwrap();
             assert!(json.contains("\"async\""));

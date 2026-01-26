@@ -203,8 +203,7 @@ impl TypeTracker {
 
         // Collect scope paths once - they don't change during resolution
         // This avoids cloning all keys on every iteration of the while loop
-        let scope_paths: Vec<Vec<String>> =
-            self.assignments_by_scope.keys().cloned().collect();
+        let scope_paths: Vec<Vec<String>> = self.assignments_by_scope.keys().cloned().collect();
 
         while changed && iterations < MAX_ITERATIONS {
             changed = false;
