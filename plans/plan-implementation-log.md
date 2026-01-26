@@ -6,6 +6,135 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Performance Audit: O(n×m) Algorithm Fixes | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- Code-architect audit of codebase for O(n×m) algorithmic inefficiencies
+- `crates/tugtool-core/src/facts/mod.rs` - LineIndex optimization
+- `crates/tugtool-python/src/ops/rename.rs` - BFS, scope path, duplicate check fixes
+- `crates/tugtool-python/src/analyzer.rs` - Pass 4 lookup optimizations
+- `crates/tugtool-python/src/type_tracker.rs` - resolve_types cloning fix
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - context stack optimization
+
+**Implementation Progress:**
+
+| Issue | Severity | Location | Fix |
+|-------|----------|----------|-----|
+| span_to_line_col O(n) per call | High | facts/mod.rs | LineIndex with binary search |
+| Vec.contains() in BFS loop | High | rename.rs:1127 | HashSet.insert() |
+| Linear find in build_scope_path | High | rename.rs:432 | HashMap<ScopeId, &Scope> |
+| Repeated find on file_analyses | High | analyzer.rs:979,1045,1114 | Precomputed HashMap lookups |
+| Nested find in find_scope_for_path | High | analyzer.rs:1434 | ScopeIndex + indexed lookup |
+| Linear file lookup in collect_cross_file_aliases | Medium | rename.rs:579 | Precomputed HashMap lookups |
+| Quadratic duplicate check | Medium | rename.rs:228 | HashSet for seen spans |
+| Linear scan in scope_symbols | Medium | analyzer.rs:693 | Direct (FileId, name, kind) index |
+| Context stack iteration | Low | reference.rs:234 | HashSet for O(1) membership check |
+| Repeated cloning in resolve_types | Low | type_tracker.rs:198 | Clone scope_paths once outside loop |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Replaced `span_to_line_col()` with `LineIndex` struct using precomputed line starts
+  - `LineIndex::line_col()` uses binary search for O(log n) lookup
+  - Updated `aliases_from_edges()` to build LineIndex per file
+
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - `find_override_methods()`: Changed `descendant_classes` from Vec to HashSet
+  - `build_scope_path()`: Added HashMap<ScopeId, &Scope> for O(1) scope lookups
+  - `collect_cross_file_aliases()`: Precomputed analyses_by_id and content_by_path HashMaps
+  - `rename_in_file()`: Added seen_spans HashSet for O(1) duplicate detection
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Pass 4: Added `failed_paths` HashSet and `analyses_by_file_id` HashMap before loops
+  - `collect_symbols()`: Added `build_scope_index()` and class_names HashSet
+  - Added `ScopeIndex` type and `find_scope_for_path_indexed()` function
+  - Added `symbol_lookup` HashMap for O(1) (file_id, name, kind) → SymbolId
+
+- `crates/tugtool-python/src/type_tracker.rs`:
+  - `resolve_types()`: Moved scope_paths collection outside while loop
+  - Build key once per assignment instead of multiple times
+
+- `crates/tugtool-python-cst/src/visitor/reference.rs`:
+  - Added `context_names: HashSet<String>` to ReferenceCollector
+  - `get_current_kind()`: O(1) fast path when name not in context
+  - Updated all context_stack.push() sites to also update context_names
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1397 tests passed
+- `cargo clippy --workspace`: clean (no warnings)
+
+**Checkpoints Verified:**
+- All existing tests pass after optimizations: PASS
+- No behavioral changes (pure performance improvements): PASS
+
+**Key Decisions/Notes:**
+- Issue 6 (find_symbol_at_location) was skipped - single call per operation, not in a loop
+- context_names HashSet doesn't remove on pop (may have stale entries) but correctness preserved since we still check actual stack when name is in set
+- All fixes follow the pattern: precompute index once, use O(1) lookup in loop
+- LineIndex approach matches standard editor implementations for position calculation
+
+---
+
+## [phase-11.md] Step 2.7a: Add Alias Edges to FactsStore | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- [D18] Alias Edges design decision (phase-11.md)
+- [CQ7] AliasEdge vs AliasOutput clarification
+- [CQ9] Confidence Field design
+- Step 2.7a task list (lines 2810-2857 of phase-11.md)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `AliasKind` enum: Assignment, Import, ReExport, Unknown | Done |
+| Add `AliasEdgeId` newtype with Display trait | Done |
+| Add `AliasEdge` struct with all required fields | Done |
+| Add `alias_edges: BTreeMap<AliasEdgeId, AliasEdge>` storage | Done |
+| Add `alias_edges_by_file` index | Done |
+| Add `alias_edges_by_alias` index (forward lookup) | Done |
+| Add `alias_edges_by_target` index (reverse lookup) | Done |
+| Add `next_alias_edge_id()`, `insert_alias_edge()`, `alias_edge()` methods | Done |
+| Add `alias_edges_for_symbol()` query (forward lookup) | Done |
+| Add `alias_sources_for_target()` query (reverse lookup) | Done |
+| Add `aliases_from_edges()` to convert AliasEdge → AliasOutput | Done |
+| Add helper function `span_to_line_col()` for position calculation | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `AliasEdgeId` newtype with Display impl
+  - Added `AliasKind` enum with 4 variants
+  - Added `AliasEdge` struct with builder pattern (with_target, with_confidence)
+  - Added storage: `alias_edges`, `alias_edges_by_file`, `alias_edges_by_alias`, `alias_edges_by_target`
+  - Added `next_alias_edge_id` counter
+  - Added methods: `next_alias_edge_id()`, `insert_alias_edge()`, `alias_edge()`, `alias_edges_for_symbol()`, `alias_sources_for_target()`, `alias_edges_in_file()`, `alias_edges()`, `alias_edge_count()`
+  - Added `aliases_from_edges()` for AliasOutput conversion
+  - Added `span_to_line_col()` helper (later replaced by LineIndex in performance audit)
+  - Added `alias_edge_tests` module with 11 unit tests
+
+- `plans/phase-11.md`:
+  - Checked off all tasks, tests, and checkpoint for Step 2.7a
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core alias`: 20 tests passed (11 alias-specific + 9 existing)
+- `cargo nextest run --workspace`: 1397 tests passed
+- `cargo clippy --workspace`: clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core alias`: PASS (20 tests)
+
+**Key Decisions/Notes:**
+- `AliasEdge` uses builder pattern for optional fields (with_target, with_confidence)
+- Three indexes maintained: by_file (spatial), by_alias (forward), by_target (reverse)
+- `aliases_from_edges()` requires symbol lookups and file content for position calculation
+- Confidence field is optional per [CQ9] - language-agnostic with graduated values (0.0-1.0)
+- Used `skip_serializing_if` for optional fields to match existing patterns
+
+---
+
 ## [phase-11.md] Step 2.6: Generalize ReferenceKind | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

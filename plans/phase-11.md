@@ -2822,9 +2822,9 @@ This step is split into 5 sub-steps for manageable commits:
 - `aliases_from_edges()` query for AliasOutput conversion
 
 **Tasks:**
-- [ ] Add `AliasKind` enum: `Assignment`, `Import`, `ReExport`, `Unknown`
-- [ ] Add `AliasEdgeId` newtype
-- [ ] Add `AliasEdge` struct with fields:
+- [x] Add `AliasKind` enum: `Assignment`, `Import`, `ReExport`, `Unknown`
+- [x] Add `AliasEdgeId` newtype
+- [x] Add `AliasEdge` struct with fields:
   - `alias_id: AliasEdgeId`
   - `file_id: FileId`
   - `span: Span`
@@ -2832,25 +2832,25 @@ This step is split into 5 sub-steps for manageable commits:
   - `target_symbol_id: Option<SymbolId>`
   - `kind: AliasKind`
   - `confidence: Option<f32>` (per [CQ9])
-- [ ] Add `alias_edges: BTreeMap<AliasEdgeId, AliasEdge>` to FactsStore
-- [ ] Add `alias_edges_by_file: HashMap<FileId, Vec<AliasEdgeId>>` index
-- [ ] Add `alias_edges_by_alias: HashMap<SymbolId, Vec<AliasEdgeId>>` index
-- [ ] Add `alias_edges_by_target: HashMap<SymbolId, Vec<AliasEdgeId>>` index
-- [ ] Add `next_alias_edge_id()`, `insert_alias_edge()`, `alias_edge()` methods
-- [ ] Add `alias_edges_for_symbol()` query (forward lookup)
-- [ ] Add `alias_sources_for_target()` query (reverse lookup)
-- [ ] Add `aliases_from_edges()` to convert `AliasEdge` → `AliasOutput` for JSON
+- [x] Add `alias_edges: BTreeMap<AliasEdgeId, AliasEdge>` to FactsStore
+- [x] Add `alias_edges_by_file: HashMap<FileId, Vec<AliasEdgeId>>` index
+- [x] Add `alias_edges_by_alias: HashMap<SymbolId, Vec<AliasEdgeId>>` index
+- [x] Add `alias_edges_by_target: HashMap<SymbolId, Vec<AliasEdgeId>>` index
+- [x] Add `next_alias_edge_id()`, `insert_alias_edge()`, `alias_edge()` methods
+- [x] Add `alias_edges_for_symbol()` query (forward lookup)
+- [x] Add `alias_sources_for_target()` query (reverse lookup)
+- [x] Add `aliases_from_edges()` to convert `AliasEdge` → `AliasOutput` for JSON
 
 **Tests:**
-- [ ] Unit: `AliasKind` serialization (all variants)
-- [ ] Unit: `AliasEdge` with `confidence: None` serializes without field
-- [ ] Unit: `AliasEdge` with `confidence: Some(0.8)` serializes correctly
-- [ ] Unit: Insert/query roundtrip for `AliasEdge`
-- [ ] Unit: Forward and reverse lookups work correctly
-- [ ] Unit: `aliases_from_edges()` produces valid `AliasOutput`
+- [x] Unit: `AliasKind` serialization (all variants)
+- [x] Unit: `AliasEdge` with `confidence: None` serializes without field
+- [x] Unit: `AliasEdge` with `confidence: Some(0.8)` serializes correctly
+- [x] Unit: Insert/query roundtrip for `AliasEdge`
+- [x] Unit: Forward and reverse lookups work correctly
+- [x] Unit: `aliases_from_edges()` produces valid `AliasOutput`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core alias`
+- [x] `cargo nextest run -p tugtool-core alias`
 
 **Rollback:** Revert commit
 

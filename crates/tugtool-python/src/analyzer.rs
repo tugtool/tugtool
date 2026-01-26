@@ -694,22 +694,30 @@ pub fn analyze_files(
     // Maps (FileId, ScopeId) -> Vec of (name, SymbolId, SymbolKind)
     let mut scope_symbols: ScopeSymbolsMap = HashMap::new();
 
+    // Build direct lookup index for O(1) access: (file_id, name, kind) -> SymbolId
+    // This avoids O(n) linear scan in the entries vector for each symbol
+    let symbol_lookup: HashMap<(FileId, &str, SymbolKind), SymbolId> = global_symbols
+        .iter()
+        .flat_map(|((name, kind), entries)| {
+            entries
+                .iter()
+                .map(move |(file_id, sym_id)| ((*file_id, name.as_str(), *kind), *sym_id))
+        })
+        .collect();
+
     // Rebuild scope_symbols from symbols (we need to know which symbols are in which scope)
     // This is populated from the symbols we just registered
     for analysis in &bundle.file_analyses {
         let file_id = analysis.file_id;
         for symbol in &analysis.symbols {
-            // Find the SymbolId for this symbol in the global_symbols map
-            if let Some(entries) = global_symbols.get(&(symbol.name.clone(), symbol.kind)) {
-                for (fid, sym_id) in entries {
-                    if *fid == file_id {
-                        scope_symbols
-                            .entry((file_id, symbol.scope_id))
-                            .or_default()
-                            .push((symbol.name.clone(), *sym_id, symbol.kind));
-                        break;
-                    }
-                }
+            // O(1) lookup instead of O(n) scan through entries
+            if let Some(&sym_id) =
+                symbol_lookup.get(&(file_id, symbol.name.as_str(), symbol.kind))
+            {
+                scope_symbols
+                    .entry((file_id, symbol.scope_id))
+                    .or_default()
+                    .push((symbol.name.clone(), sym_id, symbol.kind));
             }
         }
     }
@@ -973,10 +981,22 @@ pub fn analyze_files(
     let mut all_class_inheritance: Vec<(FileId, tugtool_python_cst::ClassInheritanceInfo)> =
         Vec::new();
 
+    // Precompute O(1) lookup structures to avoid O(n) scans inside loops
+    let failed_paths: HashSet<&str> = bundle
+        .failed_files
+        .iter()
+        .map(|(p, _)| p.as_str())
+        .collect();
+    let analyses_by_file_id: HashMap<FileId, &FileAnalysis> = bundle
+        .file_analyses
+        .iter()
+        .map(|a| (a.file_id, a))
+        .collect();
+
     // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
     for (path, content) in files {
-        // Skip files that failed analysis in Pass 1
-        if bundle.failed_files.iter().any(|(p, _)| p == path) {
+        // Skip files that failed analysis in Pass 1 (O(1) lookup)
+        if failed_paths.contains(path.as_str()) {
             continue;
         }
 
@@ -1041,8 +1061,8 @@ pub fn analyze_files(
         type_trackers.insert(file_id, tracker);
 
         // Build MethodCallIndex from method calls
-        // First, get the FileAnalysis to access scope information
-        let analysis = bundle.file_analyses.iter().find(|a| a.file_id == file_id);
+        // First, get the FileAnalysis to access scope information (O(1) lookup)
+        let analysis = analyses_by_file_id.get(&file_id);
 
         for mc in &native_result.method_calls {
             // Resolve receiver type using TypeTracker
@@ -1110,8 +1130,8 @@ pub fn analyze_files(
             }
 
             // Try to resolve via imports
-            // Find the FileAnalysis for this file to get import info
-            if let Some(analysis) = bundle.file_analyses.iter().find(|a| a.file_id == *file_id) {
+            // Find the FileAnalysis for this file to get import info (O(1) lookup)
+            if let Some(analysis) = analyses_by_file_id.get(file_id) {
                 // Use FileImportResolver which resolves imports against workspace_files
                 let import_resolver = FileImportResolver::from_imports(
                     &analysis.imports,
@@ -1383,15 +1403,24 @@ fn build_scopes(native_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, Sco
 
 /// Collect symbols from native bindings.
 fn collect_symbols(bindings: &[BindingInfo], scopes: &[Scope]) -> Vec<LocalSymbol> {
+    // Precompute indexes for O(1) lookups instead of O(n) scans per binding
+    let scope_index = build_scope_index(scopes);
+    let class_names: HashSet<&str> = scopes
+        .iter()
+        .filter(|s| s.kind == ScopeKind::Class)
+        .filter_map(|s| s.name.as_deref())
+        .collect();
+
     let mut symbols = Vec::new();
 
     for binding in bindings {
         let kind = symbol_kind_from_str(&binding.kind);
 
-        // Determine scope from scope_path
-        let scope_id = find_scope_for_path(&binding.scope_path, scopes).unwrap_or(ScopeId(0));
+        // Determine scope from scope_path (O(D) with precomputed index)
+        let scope_id =
+            find_scope_for_path_indexed(&binding.scope_path, &scope_index).unwrap_or(ScopeId(0));
 
-        // Determine container for methods
+        // Determine container for methods (O(1) with precomputed set)
         let container = if binding.scope_path.len() >= 2 {
             let path_without_module: Vec<_> = binding
                 .scope_path
@@ -1401,10 +1430,7 @@ fn collect_symbols(bindings: &[BindingInfo], scopes: &[Scope]) -> Vec<LocalSymbo
 
             if !path_without_module.is_empty() {
                 let last_name = path_without_module.last().unwrap();
-                let is_class = scopes.iter().any(|s| {
-                    s.kind == ScopeKind::Class && s.name.as_deref() == Some(last_name.as_str())
-                });
-                if is_class {
+                if class_names.contains(last_name.as_str()) {
                     Some((*last_name).clone())
                 } else {
                     None
@@ -1430,8 +1456,25 @@ fn collect_symbols(bindings: &[BindingInfo], scopes: &[Scope]) -> Vec<LocalSymbo
     symbols
 }
 
-/// Find the scope that matches a scope_path.
-fn find_scope_for_path(scope_path: &[String], scopes: &[Scope]) -> Option<ScopeId> {
+/// Index for O(1) scope lookups by (parent_id, name).
+///
+/// The key uses `Option<String>` for name because module scopes have no name.
+type ScopeIndex<'a> = HashMap<(Option<ScopeId>, Option<&'a str>), &'a Scope>;
+
+/// Build an index for efficient scope path resolution.
+///
+/// Returns a map from (parent_id, scope_name) to Scope for O(1) lookup.
+fn build_scope_index(scopes: &[Scope]) -> ScopeIndex<'_> {
+    scopes
+        .iter()
+        .map(|s| ((s.parent_id, s.name.as_deref()), s))
+        .collect()
+}
+
+/// Find the scope that matches a scope_path using a precomputed index.
+///
+/// Complexity: O(D) where D = scope_path depth, vs O(D * M) for linear search.
+fn find_scope_for_path_indexed(scope_path: &[String], index: &ScopeIndex<'_>) -> Option<ScopeId> {
     if scope_path.is_empty() {
         return Some(ScopeId(0)); // Module scope
     }
@@ -1442,27 +1485,25 @@ fn find_scope_for_path(scope_path: &[String], scopes: &[Scope]) -> Option<ScopeI
     let mut current_parent: Option<ScopeId> = None;
 
     for name in scope_path {
-        // Find a scope with this name and matching parent
-        let found = scopes.iter().find(|s| {
-            let name_matches = if name == "<module>" {
-                s.kind == ScopeKind::Module
-            } else {
-                s.name.as_deref() == Some(name.as_str())
-            };
-            let parent_matches = s.parent_id == current_parent;
-            name_matches && parent_matches
-        });
+        // Look up scope by (parent_id, name) - O(1)
+        let key = if name == "<module>" {
+            (current_parent, None) // Module scope has no name
+        } else {
+            (current_parent, Some(name.as_str()))
+        };
 
-        if let Some(scope) = found {
+        if let Some(scope) = index.get(&key) {
             current_parent = Some(scope.id);
         } else {
             // Scope path doesn't match - return module scope as fallback
-            return scopes.first().map(|s| s.id);
+            // Module scope is (None, None)
+            return index.get(&(None, None)).map(|s| s.id);
         }
     }
 
     current_parent
 }
+
 
 // ========================================================================
 // Import Resolution (Contract C3)

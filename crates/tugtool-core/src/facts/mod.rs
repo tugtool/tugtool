@@ -12,6 +12,7 @@
 //! - Postings lists for efficient queries (symbol → refs, file → imports)
 //! - Deterministic iteration order
 
+use crate::output::AliasOutput;
 use crate::patch::{ContentHash, FileId, Span};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -137,6 +138,23 @@ impl std::fmt::Display for ScopeId {
     }
 }
 
+/// Unique identifier for an alias edge within a snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct AliasEdgeId(pub u32);
+
+impl AliasEdgeId {
+    /// Create a new alias edge ID.
+    pub fn new(id: u32) -> Self {
+        AliasEdgeId(id)
+    }
+}
+
+impl std::fmt::Display for AliasEdgeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "alias_{}", self.0)
+    }
+}
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -186,6 +204,25 @@ pub enum ImportKind {
     ReExport,
     /// Default import (JavaScript/TypeScript)
     Default,
+}
+
+/// Kind of alias relationship.
+///
+/// Classifies how an alias was created, enabling language-agnostic
+/// alias chain reasoning for refactoring operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum AliasKind {
+    /// Direct assignment alias (e.g., Python `b = a`).
+    #[default]
+    Assignment,
+    /// Alias created via import (e.g., Python `from foo import bar as baz`).
+    Import,
+    /// Re-export alias (e.g., Rust `pub use foo::Bar as Baz`).
+    ReExport,
+    /// Unknown or unclassified alias.
+    Unknown,
 }
 
 /// Kind of symbol definition.
@@ -767,6 +804,73 @@ impl InheritanceInfo {
     }
 }
 
+/// An alias relationship between symbols.
+///
+/// Represents that one symbol is an alias for another, tracking the kind
+/// of aliasing and optional confidence score for uncertain aliases.
+///
+/// # Examples
+///
+/// - Python assignment: `b = a` → `AliasEdge { alias: b, target: a, kind: Assignment }`
+/// - Python import alias: `from foo import bar as baz` → `AliasEdge { alias: baz, target: bar, kind: Import }`
+/// - Re-export: `pub use foo::Bar as Baz` → `AliasEdge { alias: Baz, target: Bar, kind: ReExport }`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AliasEdge {
+    /// Unique identifier for this alias edge.
+    pub alias_id: AliasEdgeId,
+    /// File containing this alias.
+    pub file_id: FileId,
+    /// Byte span of the alias expression.
+    pub span: Span,
+    /// The alias symbol (the new name).
+    pub alias_symbol_id: SymbolId,
+    /// The target symbol being aliased (if resolved).
+    /// None when the target cannot be resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_symbol_id: Option<SymbolId>,
+    /// Kind of alias relationship.
+    pub kind: AliasKind,
+    /// Confidence score for uncertain aliases.
+    /// - `None`: Language has no aliasing uncertainty concept
+    /// - `Some(1.0)`: Certain alias (direct assignment, import alias)
+    /// - `Some(0.0..1.0)`: Graduated confidence based on analysis
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+}
+
+impl AliasEdge {
+    /// Create a new alias edge.
+    pub fn new(
+        alias_id: AliasEdgeId,
+        file_id: FileId,
+        span: Span,
+        alias_symbol_id: SymbolId,
+        kind: AliasKind,
+    ) -> Self {
+        AliasEdge {
+            alias_id,
+            file_id,
+            span,
+            alias_symbol_id,
+            target_symbol_id: None,
+            kind,
+            confidence: None,
+        }
+    }
+
+    /// Set the target symbol.
+    pub fn with_target(mut self, target: SymbolId) -> Self {
+        self.target_symbol_id = Some(target);
+        self
+    }
+
+    /// Set the confidence score.
+    pub fn with_confidence(mut self, confidence: f32) -> Self {
+        self.confidence = Some(confidence);
+        self
+    }
+}
+
 // ============================================================================
 // FactsStore
 // ============================================================================
@@ -793,6 +897,7 @@ pub struct FactsStore {
     imports: BTreeMap<ImportId, Import>,
     exports: BTreeMap<ExportId, Export>,
     scopes: BTreeMap<ScopeId, ScopeInfo>,
+    alias_edges: BTreeMap<AliasEdgeId, AliasEdge>,
 
     // Type information (symbol_id → type)
     types: HashMap<SymbolId, TypeInfo>,
@@ -826,6 +931,14 @@ pub struct FactsStore {
     /// export name → export_ids[] (exports with this name).
     exports_by_name: HashMap<String, Vec<ExportId>>,
 
+    // Alias edge indexes
+    /// file_id → alias_edge_ids[] (alias edges in file).
+    alias_edges_by_file: HashMap<FileId, Vec<AliasEdgeId>>,
+    /// alias_symbol_id → alias_edge_ids[] (forward lookup: alias → edge).
+    alias_edges_by_alias: HashMap<SymbolId, Vec<AliasEdgeId>>,
+    /// target_symbol_id → alias_edge_ids[] (reverse lookup: target → edges).
+    alias_edges_by_target: HashMap<SymbolId, Vec<AliasEdgeId>>,
+
     // ID generators
     next_file_id: u32,
     next_module_id: u32,
@@ -834,6 +947,7 @@ pub struct FactsStore {
     next_import_id: u32,
     next_export_id: u32,
     next_scope_id: u32,
+    next_alias_edge_id: u32,
 }
 
 impl Default for FactsStore {
@@ -847,6 +961,7 @@ impl Default for FactsStore {
             imports: BTreeMap::new(),
             exports: BTreeMap::new(),
             scopes: BTreeMap::new(),
+            alias_edges: BTreeMap::new(),
             types: HashMap::new(),
             inheritance: Vec::new(),
             parents_of: HashMap::new(),
@@ -860,6 +975,9 @@ impl Default for FactsStore {
             scopes_by_file: HashMap::new(),
             exports_by_file: HashMap::new(),
             exports_by_name: HashMap::new(),
+            alias_edges_by_file: HashMap::new(),
+            alias_edges_by_alias: HashMap::new(),
+            alias_edges_by_target: HashMap::new(),
             next_file_id: 0,
             next_module_id: 0,
             next_symbol_id: 0,
@@ -867,6 +985,7 @@ impl Default for FactsStore {
             next_import_id: 0,
             next_export_id: 0,
             next_scope_id: 0,
+            next_alias_edge_id: 0,
         }
     }
 }
@@ -929,6 +1048,13 @@ impl FactsStore {
     pub fn next_export_id(&mut self) -> ExportId {
         let id = ExportId::new(self.next_export_id);
         self.next_export_id += 1;
+        id
+    }
+
+    /// Generate the next AliasEdgeId.
+    pub fn next_alias_edge_id(&mut self) -> AliasEdgeId {
+        let id = AliasEdgeId::new(self.next_alias_edge_id);
+        self.next_alias_edge_id += 1;
         id
     }
 
@@ -1053,6 +1179,35 @@ impl FactsStore {
         self.inheritance.push(info);
     }
 
+    /// Insert an alias edge.
+    ///
+    /// Records that `alias_symbol_id` is an alias for `target_symbol_id`.
+    /// Updates all relevant indexes for efficient lookup.
+    pub fn insert_alias_edge(&mut self, edge: AliasEdge) {
+        // Update file index
+        self.alias_edges_by_file
+            .entry(edge.file_id)
+            .or_default()
+            .push(edge.alias_id);
+
+        // Update alias (forward) index
+        self.alias_edges_by_alias
+            .entry(edge.alias_symbol_id)
+            .or_default()
+            .push(edge.alias_id);
+
+        // Update target (reverse) index if target is resolved
+        if let Some(target_id) = edge.target_symbol_id {
+            self.alias_edges_by_target
+                .entry(target_id)
+                .or_default()
+                .push(edge.alias_id);
+        }
+
+        // Insert into primary storage
+        self.alias_edges.insert(edge.alias_id, edge);
+    }
+
     // ========================================================================
     // Lookup by ID
     // ========================================================================
@@ -1090,6 +1245,11 @@ impl FactsStore {
     /// Get a scope by ID.
     pub fn scope(&self, id: ScopeId) -> Option<&ScopeInfo> {
         self.scopes.get(&id)
+    }
+
+    /// Get an alias edge by ID.
+    pub fn alias_edge(&self, id: AliasEdgeId) -> Option<&AliasEdge> {
+        self.alias_edges.get(&id)
     }
 
     // ========================================================================
@@ -1253,6 +1413,119 @@ impl FactsStore {
         self.parents_of.get(&symbol_id).cloned().unwrap_or_default()
     }
 
+    /// Get all alias edges where the given symbol is the alias.
+    ///
+    /// Forward lookup: given an alias symbol, find the edges describing
+    /// what it aliases to.
+    pub fn alias_edges_for_symbol(&self, alias_symbol_id: SymbolId) -> Vec<&AliasEdge> {
+        self.alias_edges_by_alias
+            .get(&alias_symbol_id)
+            .map(|ids| {
+                let mut edges: Vec<_> =
+                    ids.iter().filter_map(|id| self.alias_edges.get(id)).collect();
+                edges.sort_by_key(|e| e.alias_id);
+                edges
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all alias edges where the given symbol is the target.
+    ///
+    /// Reverse lookup: given a target symbol, find all symbols that alias to it.
+    pub fn alias_sources_for_target(&self, target_symbol_id: SymbolId) -> Vec<&AliasEdge> {
+        self.alias_edges_by_target
+            .get(&target_symbol_id)
+            .map(|ids| {
+                let mut edges: Vec<_> =
+                    ids.iter().filter_map(|id| self.alias_edges.get(id)).collect();
+                edges.sort_by_key(|e| e.alias_id);
+                edges
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all alias edges in a file.
+    pub fn alias_edges_in_file(&self, file_id: FileId) -> Vec<&AliasEdge> {
+        self.alias_edges_by_file
+            .get(&file_id)
+            .map(|ids| {
+                let mut edges: Vec<_> =
+                    ids.iter().filter_map(|id| self.alias_edges.get(id)).collect();
+                edges.sort_by_key(|e| e.alias_id);
+                edges
+            })
+            .unwrap_or_default()
+    }
+
+    /// Convert alias edges to AliasOutput format for JSON serialization.
+    ///
+    /// Performs symbol lookup to convert SymbolId references to string names.
+    /// Requires file content for line/column calculation.
+    ///
+    /// # Arguments
+    /// * `file_contents` - Map from file path to file content (for position calculation)
+    ///
+    /// # Returns
+    /// A vector of `AliasOutput` structs suitable for JSON output.
+    pub fn aliases_from_edges(
+        &self,
+        file_contents: &HashMap<String, String>,
+    ) -> Vec<AliasOutput> {
+        // Precompute line indexes for all files (O(n) per file, done once)
+        let line_indexes: HashMap<&str, LineIndex> = file_contents
+            .iter()
+            .map(|(path, content)| (path.as_str(), LineIndex::new(content)))
+            .collect();
+
+        self.alias_edges
+            .values()
+            .filter_map(|edge| {
+                // Get alias symbol name
+                let alias_symbol = self.symbol(edge.alias_symbol_id)?;
+                let alias_name = alias_symbol.name.clone();
+
+                // Get target symbol name
+                let source_name = if let Some(target_id) = edge.target_symbol_id {
+                    self.symbol(target_id).map(|s| s.name.clone())
+                } else {
+                    None
+                }?;
+
+                // Get file path
+                let file = self.file(edge.file_id)?;
+                let file_path = file.path.clone();
+
+                // Calculate line and column from span (O(log n) with precomputed index)
+                let (line, col) = if let Some(index) = line_indexes.get(file_path.as_str()) {
+                    index.line_col(edge.span.start)
+                } else {
+                    (1, 1) // Default to 1:1 if content unavailable
+                };
+
+                // Determine is_import_alias from AliasKind
+                let is_import_alias = matches!(edge.kind, AliasKind::Import | AliasKind::ReExport);
+
+                // Get confidence (default to 1.0 if not set)
+                let confidence = edge.confidence.unwrap_or(1.0);
+
+                // Build scope path (simplified - just module for now)
+                // Full scope path would require traversing scope hierarchy
+                let scope = vec!["module".to_string()];
+
+                Some(AliasOutput::new(
+                    alias_name,
+                    source_name,
+                    file_path,
+                    line,
+                    col,
+                    scope,
+                    is_import_alias,
+                    confidence,
+                ))
+            })
+            .collect()
+    }
+
     // ========================================================================
     // Iteration
     // ========================================================================
@@ -1295,6 +1568,11 @@ impl FactsStore {
     /// Iterate over all inheritance relationships.
     pub fn inheritance(&self) -> impl Iterator<Item = &InheritanceInfo> {
         self.inheritance.iter()
+    }
+
+    /// Iterate over all alias edges in deterministic order.
+    pub fn alias_edges(&self) -> impl Iterator<Item = &AliasEdge> {
+        self.alias_edges.values()
     }
 
     // ========================================================================
@@ -1341,6 +1619,11 @@ impl FactsStore {
         self.inheritance.len()
     }
 
+    /// Number of alias edges.
+    pub fn alias_edge_count(&self) -> usize {
+        self.alias_edges.len()
+    }
+
     // ========================================================================
     // Bulk Operations
     // ========================================================================
@@ -1368,7 +1651,53 @@ impl FactsStore {
         self.refs_by_file.clear();
         self.scopes_by_file.clear();
 
+        self.alias_edges.clear();
+        self.alias_edges_by_file.clear();
+        self.alias_edges_by_alias.clear();
+        self.alias_edges_by_target.clear();
+
         // Note: We don't reset ID generators to preserve uniqueness
+    }
+}
+
+// ============================================================================
+// Helper Types
+// ============================================================================
+
+/// Precomputed index of line start offsets for fast byte-to-line-col conversion.
+///
+/// Build once per file with O(n), then each lookup is O(log n) via binary search.
+struct LineIndex {
+    /// Byte offsets where each line begins.
+    /// line_starts[0] = 0 (line 1), line_starts[1] = first newline + 1 (line 2), etc.
+    line_starts: Vec<usize>,
+}
+
+impl LineIndex {
+    /// Build a line index from file content. O(n) where n is content length.
+    fn new(content: &str) -> Self {
+        let mut line_starts = vec![0]; // Line 1 starts at byte 0
+        for (offset, ch) in content.char_indices() {
+            if ch == '\n' {
+                line_starts.push(offset + 1);
+            }
+        }
+        LineIndex { line_starts }
+    }
+
+    /// Convert a byte offset to (line, col). O(log n) where n is number of lines.
+    ///
+    /// Both line and col are 1-indexed to match editor conventions.
+    fn line_col(&self, byte_offset: usize) -> (u32, u32) {
+        // Binary search to find which line contains this offset
+        let line_idx = match self.line_starts.binary_search(&byte_offset) {
+            Ok(idx) => idx,      // Exact match: offset is at line start
+            Err(idx) => idx - 1, // Between two line starts: use previous line
+        };
+        let line_start = self.line_starts[line_idx];
+        let col = byte_offset - line_start + 1; // 1-indexed column
+        let line = line_idx + 1; // 1-indexed line
+        (line as u32, col as u32)
     }
 }
 
@@ -3513,6 +3842,293 @@ mod tests {
         fn facts_store_default_sets_schema_version() {
             let store = FactsStore::default();
             assert_eq!(store.schema_version, FACTS_SCHEMA_VERSION);
+        }
+    }
+
+    mod alias_edge_tests {
+        use super::*;
+
+        #[test]
+        fn alias_kind_serialization() {
+            // Test all AliasKind variants serialize correctly
+            let kinds = [
+                (AliasKind::Assignment, "\"assignment\""),
+                (AliasKind::Import, "\"import\""),
+                (AliasKind::ReExport, "\"re_export\""),
+                (AliasKind::Unknown, "\"unknown\""),
+            ];
+
+            for (kind, expected_json) in kinds {
+                let json = serde_json::to_string(&kind).unwrap();
+                assert_eq!(json, expected_json, "Failed for {:?}", kind);
+            }
+        }
+
+        #[test]
+        fn alias_kind_deserialization() {
+            let cases = [
+                ("\"assignment\"", AliasKind::Assignment),
+                ("\"import\"", AliasKind::Import),
+                ("\"re_export\"", AliasKind::ReExport),
+                ("\"unknown\"", AliasKind::Unknown),
+            ];
+
+            for (json, expected_kind) in cases {
+                let deserialized: AliasKind = serde_json::from_str(json).unwrap();
+                assert_eq!(deserialized, expected_kind, "Failed for {}", json);
+            }
+        }
+
+        #[test]
+        fn alias_kind_default() {
+            assert_eq!(AliasKind::default(), AliasKind::Assignment);
+        }
+
+        #[test]
+        fn alias_edge_without_confidence_serializes_without_field() {
+            let edge = AliasEdge::new(
+                AliasEdgeId::new(0),
+                FileId::new(0),
+                Span::new(10, 20),
+                SymbolId::new(1),
+                AliasKind::Assignment,
+            );
+
+            let json = serde_json::to_string(&edge).unwrap();
+            assert!(!json.contains("confidence"), "confidence should be omitted when None");
+            assert!(!json.contains("target_symbol_id"), "target_symbol_id should be omitted when None");
+        }
+
+        #[test]
+        fn alias_edge_with_confidence_serializes_correctly() {
+            let edge = AliasEdge::new(
+                AliasEdgeId::new(0),
+                FileId::new(0),
+                Span::new(10, 20),
+                SymbolId::new(1),
+                AliasKind::Assignment,
+            )
+            .with_confidence(0.8);
+
+            let json = serde_json::to_string(&edge).unwrap();
+            assert!(json.contains("\"confidence\":0.8"), "confidence should be in JSON: {}", json);
+        }
+
+        #[test]
+        fn alias_edge_with_target_serializes_correctly() {
+            let edge = AliasEdge::new(
+                AliasEdgeId::new(0),
+                FileId::new(0),
+                Span::new(10, 20),
+                SymbolId::new(1),
+                AliasKind::Assignment,
+            )
+            .with_target(SymbolId::new(2));
+
+            let json = serde_json::to_string(&edge).unwrap();
+            assert!(json.contains("target_symbol_id"), "target_symbol_id should be in JSON: {}", json);
+        }
+
+        #[test]
+        fn alias_edge_insert_and_query_roundtrip() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create two symbols: alias and target
+            let target_id = store.next_symbol_id();
+            let target_sym = Symbol::new(
+                target_id,
+                SymbolKind::Variable,
+                "original",
+                file_id,
+                Span::new(0, 8),
+            );
+            store.insert_symbol(target_sym);
+
+            let alias_id = store.next_symbol_id();
+            let alias_sym = Symbol::new(
+                alias_id,
+                SymbolKind::Variable,
+                "aliased",
+                file_id,
+                Span::new(10, 17),
+            );
+            store.insert_symbol(alias_sym);
+
+            // Create alias edge
+            let edge_id = store.next_alias_edge_id();
+            let edge = AliasEdge::new(
+                edge_id,
+                file_id,
+                Span::new(10, 20),
+                alias_id,
+                AliasKind::Assignment,
+            )
+            .with_target(target_id)
+            .with_confidence(1.0);
+
+            store.insert_alias_edge(edge);
+
+            // Query by ID
+            let retrieved = store.alias_edge(edge_id).unwrap();
+            assert_eq!(retrieved.alias_symbol_id, alias_id);
+            assert_eq!(retrieved.target_symbol_id, Some(target_id));
+            assert_eq!(retrieved.kind, AliasKind::Assignment);
+            assert_eq!(retrieved.confidence, Some(1.0));
+        }
+
+        #[test]
+        fn alias_edge_forward_and_reverse_lookups() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create symbols
+            let target_id = store.next_symbol_id();
+            store.insert_symbol(Symbol::new(
+                target_id,
+                SymbolKind::Variable,
+                "target",
+                file_id,
+                Span::new(0, 6),
+            ));
+
+            let alias1_id = store.next_symbol_id();
+            store.insert_symbol(Symbol::new(
+                alias1_id,
+                SymbolKind::Variable,
+                "alias1",
+                file_id,
+                Span::new(10, 16),
+            ));
+
+            let alias2_id = store.next_symbol_id();
+            store.insert_symbol(Symbol::new(
+                alias2_id,
+                SymbolKind::Variable,
+                "alias2",
+                file_id,
+                Span::new(20, 26),
+            ));
+
+            // Create two alias edges pointing to the same target
+            let edge1_id = store.next_alias_edge_id();
+            store.insert_alias_edge(
+                AliasEdge::new(edge1_id, file_id, Span::new(10, 20), alias1_id, AliasKind::Assignment)
+                    .with_target(target_id),
+            );
+
+            let edge2_id = store.next_alias_edge_id();
+            store.insert_alias_edge(
+                AliasEdge::new(edge2_id, file_id, Span::new(20, 30), alias2_id, AliasKind::Assignment)
+                    .with_target(target_id),
+            );
+
+            // Forward lookup: alias1 → edges
+            let alias1_edges = store.alias_edges_for_symbol(alias1_id);
+            assert_eq!(alias1_edges.len(), 1);
+            assert_eq!(alias1_edges[0].alias_id, edge1_id);
+
+            // Reverse lookup: target → all aliasing edges
+            let target_edges = store.alias_sources_for_target(target_id);
+            assert_eq!(target_edges.len(), 2);
+
+            // Verify count
+            assert_eq!(store.alias_edge_count(), 2);
+        }
+
+        #[test]
+        fn aliases_from_edges_produces_valid_alias_output() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create symbols
+            let target_id = store.next_symbol_id();
+            store.insert_symbol(Symbol::new(
+                target_id,
+                SymbolKind::Variable,
+                "original",
+                file_id,
+                Span::new(0, 8),
+            ));
+
+            let alias_id = store.next_symbol_id();
+            store.insert_symbol(Symbol::new(
+                alias_id,
+                SymbolKind::Variable,
+                "aliased",
+                file_id,
+                Span::new(10, 17),
+            ));
+
+            // Create alias edge
+            let edge_id = store.next_alias_edge_id();
+            store.insert_alias_edge(
+                AliasEdge::new(edge_id, file_id, Span::new(10, 20), alias_id, AliasKind::Assignment)
+                    .with_target(target_id)
+                    .with_confidence(0.9),
+            );
+
+            // Create file contents for position calculation
+            let mut file_contents = std::collections::HashMap::new();
+            file_contents.insert("src/main.py".to_string(), "original\n\naliased = original".to_string());
+
+            let aliases = store.aliases_from_edges(&file_contents);
+            assert_eq!(aliases.len(), 1);
+
+            let alias_output = &aliases[0];
+            assert_eq!(alias_output.alias_name, "aliased");
+            assert_eq!(alias_output.source_name, "original");
+            assert_eq!(alias_output.file, "src/main.py");
+            assert!(!alias_output.is_import_alias);
+            assert!((alias_output.confidence - 0.9).abs() < 0.001);
+        }
+
+        #[test]
+        fn alias_edge_id_display() {
+            let id = AliasEdgeId::new(42);
+            assert_eq!(format!("{}", id), "alias_42");
+        }
+
+        #[test]
+        fn alias_edge_iteration() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let sym_id = store.next_symbol_id();
+            store.insert_symbol(Symbol::new(
+                sym_id,
+                SymbolKind::Variable,
+                "x",
+                file_id,
+                Span::new(0, 1),
+            ));
+
+            // Insert 3 alias edges
+            for i in 0..3 {
+                let edge_id = store.next_alias_edge_id();
+                store.insert_alias_edge(AliasEdge::new(
+                    edge_id,
+                    file_id,
+                    Span::new(i * 10, (i + 1) * 10),
+                    sym_id,
+                    AliasKind::Assignment,
+                ));
+            }
+
+            let edges: Vec<_> = store.alias_edges().collect();
+            assert_eq!(edges.len(), 3);
         }
     }
 }

@@ -201,18 +201,22 @@ impl TypeTracker {
         let mut iterations = 0;
         const MAX_ITERATIONS: u32 = 100; // Safety limit
 
+        // Collect scope paths once - they don't change during resolution
+        // This avoids cloning all keys on every iteration of the while loop
+        let scope_paths: Vec<Vec<String>> =
+            self.assignments_by_scope.keys().cloned().collect();
+
         while changed && iterations < MAX_ITERATIONS {
             changed = false;
             iterations += 1;
 
-            // Collect all assignments that need type propagation
-            let scope_paths: Vec<_> = self.assignments_by_scope.keys().cloned().collect();
-
-            for scope_path in scope_paths {
-                if let Some(assignments) = self.assignments_by_scope.get(&scope_path) {
+            for scope_path in &scope_paths {
+                if let Some(assignments) = self.assignments_by_scope.get(scope_path) {
                     for assignment in assignments.iter() {
-                        // Skip if already has a type (annotated or inferred)
+                        // Build key once for all lookups/inserts
                         let key = (scope_path.clone(), assignment.target.clone());
+
+                        // Skip if already has a type (annotated or inferred)
                         if self.annotated_types.contains_key(&key)
                             || self.inferred_types.contains_key(&key)
                         {
@@ -222,7 +226,7 @@ impl TypeTracker {
                         // Try to propagate from RHS variable
                         if let Some(ref rhs_name) = assignment.rhs_name {
                             if let Some(rhs_type) =
-                                self.lookup_type_in_scope_chain(&scope_path, rhs_name)
+                                self.lookup_type_in_scope_chain(scope_path, rhs_name)
                             {
                                 self.inferred_types.insert(key, rhs_type);
                                 changed = true;
@@ -233,7 +237,7 @@ impl TypeTracker {
                         // Level 3: Try to propagate from function call's return type
                         if let Some(ref callee_name) = assignment.callee_name {
                             if let Some(return_type) =
-                                self.lookup_return_type_in_scope_chain(&scope_path, callee_name)
+                                self.lookup_return_type_in_scope_chain(scope_path, callee_name)
                             {
                                 self.inferred_types.insert(key, return_type);
                                 changed = true;

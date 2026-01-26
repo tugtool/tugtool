@@ -231,13 +231,17 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
 
     // Collect all spans where the name appears
     let mut rewrites: Vec<(Span, String)> = Vec::new();
+    // Track seen spans for O(1) duplicate detection instead of O(n) scan
+    let mut seen_spans: HashSet<(usize, usize)> = HashSet::new();
 
     // Check bindings for the target name
     for binding in &analysis.bindings {
         if binding.name == old_name {
             if let Some(ref span_info) = binding.span {
                 let span = Span::new(span_info.start, span_info.end);
-                rewrites.push((span, new_name.to_string()));
+                if seen_spans.insert((span.start, span.end)) {
+                    rewrites.push((span, new_name.to_string()));
+                }
             }
         }
     }
@@ -248,11 +252,8 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
             for ref_info in refs {
                 if let Some(ref span_info) = ref_info.span {
                     let span = Span::new(span_info.start, span_info.end);
-                    // Avoid duplicates
-                    if !rewrites
-                        .iter()
-                        .any(|(s, _)| s.start == span.start && s.end == span.end)
-                    {
+                    // O(1) duplicate check
+                    if seen_spans.insert((span.start, span.end)) {
                         rewrites.push((span, new_name.to_string()));
                     }
                 }
@@ -266,11 +267,8 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
         if export.name == old_name {
             if let Some(ref content_span) = export.content_span {
                 let span = Span::new(content_span.start, content_span.end);
-                // Avoid duplicates
-                if !rewrites
-                    .iter()
-                    .any(|(s, _)| s.start == span.start && s.end == span.end)
-                {
+                // O(1) duplicate check
+                if seen_spans.insert((span.start, span.end)) {
                     rewrites.push((span, new_name.to_string()));
                 }
             }
@@ -433,11 +431,15 @@ pub fn apply_renames(source: &str, rewrites: &[(Span, String)]) -> RenameResult<
 ///
 /// Returns a Vec like `["<module>", "ClassName", "method_name"]`.
 fn build_scope_path(scope_id: ScopeId, scopes: &[Scope]) -> Vec<String> {
+    // Build HashMap for O(1) lookups instead of O(n) linear scan per level
+    let scope_map: std::collections::HashMap<ScopeId, &Scope> =
+        scopes.iter().map(|s| (s.id, s)).collect();
+
     let mut path = Vec::new();
     let mut current_id = Some(scope_id);
 
     while let Some(id) = current_id {
-        if let Some(scope) = scopes.iter().find(|s| s.id == id) {
+        if let Some(scope) = scope_map.get(&id) {
             let name = match scope.kind {
                 ScopeKind::Module => "<module>".to_string(),
                 ScopeKind::Class | ScopeKind::Function => scope
@@ -578,6 +580,17 @@ fn collect_cross_file_aliases(
     bundle: &FileAnalysisBundle,
     files: &[(String, String)],
 ) -> Vec<AliasOutput> {
+    // Precompute O(1) lookup indexes to avoid O(n) scans per importer
+    let analyses_by_id: std::collections::HashMap<FileId, &FileAnalysis> = bundle
+        .file_analyses
+        .iter()
+        .map(|fa| (fa.file_id, fa))
+        .collect();
+    let content_by_path: std::collections::HashMap<&str, &str> = files
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+
     let mut aliases = Vec::new();
     let mut visited: HashSet<(String, String)> = HashSet::new();
     let mut queue: Vec<(String, String)> =
@@ -595,13 +608,9 @@ fn collect_cross_file_aliases(
         };
 
         for (importing_file_id, local_name) in importers {
-            // Find the importing file's analysis
-            let file_analysis = match bundle
-                .file_analyses
-                .iter()
-                .find(|fa| fa.file_id == *importing_file_id)
-            {
-                Some(fa) => fa,
+            // Find the importing file's analysis (O(1) lookup)
+            let file_analysis = match analyses_by_id.get(importing_file_id) {
+                Some(fa) => *fa,
                 None => continue,
             };
 
@@ -610,9 +619,9 @@ fn collect_cross_file_aliases(
                 continue;
             }
 
-            // Get file content for line/col computation
-            let file_content = match files.iter().find(|(p, _)| *p == file_analysis.path) {
-                Some((_, content)) => content,
+            // Get file content for line/col computation (O(1) lookup)
+            let file_content = match content_by_path.get(file_analysis.path.as_str()) {
+                Some(content) => *content,
                 None => continue,
             };
 
@@ -1127,13 +1136,14 @@ fn find_override_methods(
     };
 
     // Collect all descendant classes using BFS
-    let mut descendant_classes = Vec::new();
+    // Use HashSet for O(1) contains checks instead of O(n) Vec scan
+    let mut descendant_classes = std::collections::HashSet::new();
     let mut queue = vec![class_id];
 
     while let Some(current_class) = queue.pop() {
         for child_id in store.children_of_class(current_class) {
-            if !descendant_classes.contains(&child_id) {
-                descendant_classes.push(child_id);
+            if descendant_classes.insert(child_id) {
+                // insert() returns true if the value was not present
                 queue.push(child_id);
             }
         }
@@ -1141,10 +1151,10 @@ fn find_override_methods(
 
     // Find methods with the same name in descendant classes
     let method_name = &method_symbol.name;
-    for descendant_id in descendant_classes {
+    for descendant_id in &descendant_classes {
         let candidate_methods = store.symbols_named(method_name);
         for method in candidate_methods {
-            if method.container_symbol_id == Some(descendant_id)
+            if method.container_symbol_id == Some(*descendant_id)
                 && (method.kind == SymbolKind::Method || method.kind == SymbolKind::Function)
             {
                 overrides.push(method.symbol_id);

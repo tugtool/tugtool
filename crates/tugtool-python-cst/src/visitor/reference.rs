@@ -38,7 +38,7 @@
 //! }
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
@@ -152,6 +152,9 @@ pub struct ReferenceCollector<'pos> {
     context_stack: Vec<ContextEntry>,
     /// Stack tracking how many skip contexts were pushed by each assignment.
     assign_skip_counts: Vec<usize>,
+    /// Set of names currently in context stack for O(1) membership check.
+    /// This optimizes the common case where a name is not in the stack.
+    context_names: HashSet<String>,
 }
 
 impl<'pos> ReferenceCollector<'pos> {
@@ -164,6 +167,7 @@ impl<'pos> ReferenceCollector<'pos> {
             references: HashMap::new(),
             context_stack: Vec::new(),
             assign_skip_counts: Vec::new(),
+            context_names: HashSet::new(),
         }
     }
 
@@ -176,6 +180,7 @@ impl<'pos> ReferenceCollector<'pos> {
             references: HashMap::new(),
             context_stack: Vec::new(),
             assign_skip_counts: Vec::new(),
+            context_names: HashSet::new(),
         }
     }
 
@@ -232,6 +237,13 @@ impl<'pos> ReferenceCollector<'pos> {
     /// Get the current reference kind based on context stack.
     /// Returns None if the name should be skipped (already handled as definition).
     fn get_current_kind(&self, name: &str) -> Option<ReferenceKind> {
+        // Fast path: if name not in context at all, it's a simple reference
+        // This O(1) check avoids O(depth) stack iteration for most names
+        if !self.context_names.contains(name) {
+            return Some(ReferenceKind::Reference);
+        }
+
+        // Name is in context - iterate stack to find specific kind
         for entry in self.context_stack.iter().rev() {
             match entry.kind {
                 ContextKind::CallFunc => {
@@ -328,6 +340,7 @@ impl<'pos> ReferenceCollector<'pos> {
         // Push skip contexts for all names
         let names: Vec<String> = names_with_ids.into_iter().map(|(n, _)| n).collect();
         for name in &names {
+            self.context_names.insert(name.clone());
             self.context_stack.push(ContextEntry {
                 kind: ContextKind::SkipName,
                 name: Some(name.clone()),
@@ -434,9 +447,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     fn visit_call(&mut self, node: &Call<'a>) -> VisitResult {
         // If the function is a simple Name, track it for Call kind
         if let Expression::Name(name) = node.func.as_ref() {
+            let name_str = name.value.to_string();
+            self.context_names.insert(name_str.clone());
             self.context_stack.push(ContextEntry {
                 kind: ContextKind::CallFunc,
-                name: Some(name.value.to_string()),
+                name: Some(name_str),
             });
         }
         VisitResult::Continue
@@ -459,9 +474,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
 
     fn visit_attribute(&mut self, node: &Attribute<'a>) -> VisitResult {
         // Track the attribute name for Attribute kind
+        let name_str = node.attr.value.to_string();
+        self.context_names.insert(name_str.clone());
         self.context_stack.push(ContextEntry {
             kind: ContextKind::AttributeAttr,
-            name: Some(node.attr.value.to_string()),
+            name: Some(name_str),
         });
         VisitResult::Continue
     }
@@ -560,9 +577,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
             node.name.node_id,
         );
         // Push skip context so the Name node inside isn't double-counted
+        let name_str = node.name.value.to_string();
+        self.context_names.insert(name_str.clone());
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
-            name: Some(node.name.value.to_string()),
+            name: Some(name_str),
         });
         VisitResult::Continue
     }
@@ -582,9 +601,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
             node.name.node_id,
         );
         // Push skip context so the Name node inside isn't double-counted
+        let name_str = node.name.value.to_string();
+        self.context_names.insert(name_str.clone());
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
-            name: Some(node.name.value.to_string()),
+            name: Some(name_str),
         });
         VisitResult::Continue
     }
@@ -604,9 +625,11 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
             node.name.node_id,
         );
         // Push skip context so the Name node inside isn't double-counted
+        let name_str = node.name.value.to_string();
+        self.context_names.insert(name_str.clone());
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
-            name: Some(node.name.value.to_string()),
+            name: Some(name_str),
         });
         VisitResult::Continue
     }
