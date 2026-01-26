@@ -2872,42 +2872,42 @@ This step is split into 5 sub-steps for manageable commits:
 - Storage and queries
 
 **Tasks:**
-- [ ] Add `ParamKind` enum with `#[non_exhaustive]`:
+- [x] Add `ParamKind` enum with `#[non_exhaustive]`:
   - `Regular` (default)
   - `PositionalOnly` (Python)
   - `KeywordOnly` (Python)
   - `VarArgs` (Python `*args`)
   - `KwArgs` (Python `**kwargs`)
   - `SelfValue`, `SelfRef`, `SelfMutRef` (Rust, future)
-- [ ] Add `Parameter` struct:
+- [x] Add `Parameter` struct:
   - `name: String`
   - `kind: ParamKind`
   - `default_span: Option<Span>`
   - `annotation: Option<TypeNode>`
-- [ ] Add `Signature` struct:
+- [x] Add `Signature` struct:
   - `symbol_id: SymbolId`
   - `params: Vec<Parameter>`
   - `returns: Option<TypeNode>`
-- [ ] Add `TypeParam` struct:
+- [x] Add `TypeParam` struct:
   - `name: String`
   - `bounds: Vec<TypeNode>`
   - `default: Option<TypeNode>`
-- [ ] Add `signatures: BTreeMap<SymbolId, Signature>` to FactsStore
-- [ ] Add `type_params: BTreeMap<SymbolId, Vec<TypeParam>>` to FactsStore
-- [ ] Add `insert_signature()`, `signature()`, `signatures()` methods
-- [ ] Add `insert_type_params()`, `type_params_for()` methods
+- [x] Add `signatures: BTreeMap<SymbolId, Signature>` to FactsStore
+- [x] Add `type_params: BTreeMap<SymbolId, Vec<TypeParam>>` to FactsStore
+- [x] Add `insert_signature()`, `signature()`, `signatures()` methods
+- [x] Add `insert_type_params()`, `type_params_for()` methods
 
 **Tests:**
-- [ ] Unit: `ParamKind` serialization (all variants)
-- [ ] Unit: `Parameter` with and without annotation
-- [ ] Unit: `Signature` with multiple params and return type
-- [ ] Unit: `TypeParam` with bounds and default
-- [ ] Unit: Insert/query roundtrip for signatures
-- [ ] Unit: Multiple type params per symbol
+- [x] Unit: `ParamKind` serialization (all variants)
+- [x] Unit: `Parameter` with and without annotation
+- [x] Unit: `Signature` with multiple params and return type
+- [x] Unit: `TypeParam` with bounds and default
+- [x] Unit: Insert/query roundtrip for signatures
+- [x] Unit: Multiple type params per symbol
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core signature`
-- [ ] `cargo nextest run -p tugtool-core type_param`
+- [x] `cargo nextest run -p tugtool-core signature`
+- [x] `cargo nextest run -p tugtool-core type_param`
 
 **Rollback:** Revert commit
 

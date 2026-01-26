@@ -369,6 +369,51 @@ pub enum TypeSource {
     Unknown,
 }
 
+/// Kind of parameter in a function/method signature.
+///
+/// This enum is `#[non_exhaustive]` to allow adding language-specific variants
+/// without breaking downstream code. Match statements should include a wildcard.
+///
+/// # Language Support
+///
+/// - **Python**: `Regular`, `PositionalOnly`, `KeywordOnly`, `VarArgs`, `KwArgs`
+/// - **Rust**: `Regular`, `SelfValue`, `SelfRef`, `SelfMutRef`
+/// - **Other languages**: Use `Regular` for standard parameters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+#[non_exhaustive]
+pub enum ParamKind {
+    // ========================================================================
+    // Language-agnostic variants
+    // ========================================================================
+    /// Standard named parameter (default).
+    #[default]
+    Regular,
+
+    // ========================================================================
+    // Python-specific variants
+    // ========================================================================
+    /// Python positional-only parameter (before `/` separator).
+    PositionalOnly,
+    /// Python keyword-only parameter (after `*` separator).
+    KeywordOnly,
+    /// Python variadic positional parameter (`*args`).
+    VarArgs,
+    /// Python variadic keyword parameter (`**kwargs`).
+    KwArgs,
+
+    // ========================================================================
+    // Rust-specific variants
+    // ========================================================================
+    /// Rust `self` (move semantics).
+    SelfValue,
+    /// Rust `&self` (shared reference).
+    SelfRef,
+    /// Rust `&mut self` (mutable reference).
+    SelfMutRef,
+}
+
 /// Access control level for a symbol.
 ///
 /// This enum generalizes visibility across languages:
@@ -871,6 +916,262 @@ impl AliasEdge {
     }
 }
 
+/// Structured representation of a type.
+///
+/// This provides machine-readable type information beyond string representations.
+/// Used for type-aware refactoring operations like method resolution.
+///
+/// This enum is `#[non_exhaustive]` to allow adding language-specific variants
+/// via the `Extension` variant without breaking downstream code.
+///
+/// # Examples
+///
+/// ```
+/// use tugtool_core::facts::TypeNode;
+///
+/// // Python: List[int]
+/// let list_int = TypeNode::Named {
+///     name: "List".to_string(),
+///     args: vec![TypeNode::Named { name: "int".to_string(), args: vec![] }],
+/// };
+///
+/// // Python: Optional[str]
+/// let opt_str = TypeNode::Optional {
+///     inner: Box::new(TypeNode::Named { name: "str".to_string(), args: vec![] }),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum TypeNode {
+    /// A named type (class, struct, primitive).
+    Named {
+        /// The fully-qualified type name.
+        name: String,
+        /// Generic type arguments, if any.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        args: Vec<TypeNode>,
+    },
+    /// A union of types (Python Union, TypeScript |).
+    Union {
+        /// The member types.
+        members: Vec<TypeNode>,
+    },
+    /// An optional type (Python Optional, Rust Option).
+    Optional {
+        /// The inner type.
+        inner: Box<TypeNode>,
+    },
+    /// A function/callable type.
+    Callable {
+        /// Parameter types.
+        params: Vec<TypeNode>,
+        /// Return type.
+        returns: Box<TypeNode>,
+    },
+    /// A tuple type.
+    Tuple {
+        /// Element types.
+        elements: Vec<TypeNode>,
+    },
+    /// Language-specific extension node.
+    ///
+    /// Reserved for future Rust/other-language constructs (reference, pointer,
+    /// slice, array, trait objects, impl traits, never type, lifetimes).
+    Extension {
+        /// Extension name (e.g., "reference", "lifetime").
+        name: String,
+        /// Nested type arguments, if any.
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        args: Vec<TypeNode>,
+    },
+    /// Unknown/unresolved type.
+    Unknown,
+}
+
+impl TypeNode {
+    /// Create a named type without arguments.
+    pub fn named(name: impl Into<String>) -> Self {
+        TypeNode::Named {
+            name: name.into(),
+            args: vec![],
+        }
+    }
+
+    /// Create a named type with arguments.
+    pub fn named_with_args(name: impl Into<String>, args: Vec<TypeNode>) -> Self {
+        TypeNode::Named {
+            name: name.into(),
+            args,
+        }
+    }
+
+    /// Create an optional type.
+    pub fn optional(inner: TypeNode) -> Self {
+        TypeNode::Optional {
+            inner: Box::new(inner),
+        }
+    }
+
+    /// Create a union type.
+    pub fn union(members: Vec<TypeNode>) -> Self {
+        TypeNode::Union { members }
+    }
+
+    /// Create a callable type.
+    pub fn callable(params: Vec<TypeNode>, returns: TypeNode) -> Self {
+        TypeNode::Callable {
+            params,
+            returns: Box::new(returns),
+        }
+    }
+
+    /// Create a tuple type.
+    pub fn tuple(elements: Vec<TypeNode>) -> Self {
+        TypeNode::Tuple { elements }
+    }
+
+    /// Create an extension type for language-specific constructs.
+    pub fn extension(name: impl Into<String>, args: Vec<TypeNode>) -> Self {
+        TypeNode::Extension {
+            name: name.into(),
+            args,
+        }
+    }
+}
+
+/// A parameter in a function or method signature.
+///
+/// Captures the parameter name, kind (positional-only, keyword-only, etc.),
+/// default value span (for refactoring), and optional type annotation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Parameter {
+    /// Parameter name.
+    pub name: String,
+    /// Kind of parameter.
+    pub kind: ParamKind,
+    /// Span of the default value expression (if present).
+    /// Used for refactoring operations that need to modify defaults.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_span: Option<Span>,
+    /// Type annotation as a structured TypeNode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotation: Option<TypeNode>,
+}
+
+impl Parameter {
+    /// Create a new parameter with the given name and kind.
+    pub fn new(name: impl Into<String>, kind: ParamKind) -> Self {
+        Parameter {
+            name: name.into(),
+            kind,
+            default_span: None,
+            annotation: None,
+        }
+    }
+
+    /// Create a regular parameter (most common case).
+    pub fn regular(name: impl Into<String>) -> Self {
+        Self::new(name, ParamKind::Regular)
+    }
+
+    /// Set the default value span.
+    pub fn with_default_span(mut self, span: Span) -> Self {
+        self.default_span = Some(span);
+        self
+    }
+
+    /// Set the type annotation.
+    pub fn with_annotation(mut self, annotation: TypeNode) -> Self {
+        self.annotation = Some(annotation);
+        self
+    }
+}
+
+/// A function or method signature.
+///
+/// Contains the parameters and optional return type for a callable symbol.
+/// Signatures are keyed by `SymbolId` in FactsStore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Signature {
+    /// The symbol this signature belongs to.
+    pub symbol_id: SymbolId,
+    /// Parameters in declaration order.
+    pub params: Vec<Parameter>,
+    /// Return type (if annotated).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returns: Option<TypeNode>,
+}
+
+impl Signature {
+    /// Create a new signature for a symbol.
+    pub fn new(symbol_id: SymbolId) -> Self {
+        Signature {
+            symbol_id,
+            params: vec![],
+            returns: None,
+        }
+    }
+
+    /// Set the parameters.
+    pub fn with_params(mut self, params: Vec<Parameter>) -> Self {
+        self.params = params;
+        self
+    }
+
+    /// Set the return type.
+    pub fn with_returns(mut self, returns: TypeNode) -> Self {
+        self.returns = Some(returns);
+        self
+    }
+}
+
+/// A generic type parameter.
+///
+/// Represents type parameters on generic functions/classes (e.g., `T`, `T: Bound`).
+/// Type parameters are stored per-symbol in FactsStore.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypeParam {
+    /// Type parameter name (e.g., "T", "K", "V").
+    pub name: String,
+    /// Bound constraints on the type parameter.
+    /// Empty for unconstrained type parameters.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub bounds: Vec<TypeNode>,
+    /// Default type if not specified by caller.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<TypeNode>,
+}
+
+impl TypeParam {
+    /// Create a new type parameter with the given name.
+    pub fn new(name: impl Into<String>) -> Self {
+        TypeParam {
+            name: name.into(),
+            bounds: vec![],
+            default: None,
+        }
+    }
+
+    /// Add a bound constraint.
+    pub fn with_bound(mut self, bound: TypeNode) -> Self {
+        self.bounds.push(bound);
+        self
+    }
+
+    /// Set multiple bound constraints.
+    pub fn with_bounds(mut self, bounds: Vec<TypeNode>) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set the default type.
+    pub fn with_default(mut self, default: TypeNode) -> Self {
+        self.default = Some(default);
+        self
+    }
+}
+
 // ============================================================================
 // FactsStore
 // ============================================================================
@@ -901,6 +1202,14 @@ pub struct FactsStore {
 
     // Type information (symbol_id → type)
     types: HashMap<SymbolId, TypeInfo>,
+
+    // Signatures (symbol_id → signature)
+    /// Function/method signatures keyed by symbol ID.
+    signatures: BTreeMap<SymbolId, Signature>,
+
+    // Type parameters (symbol_id → type params)
+    /// Generic type parameters per symbol (for generic functions/classes).
+    type_params: BTreeMap<SymbolId, Vec<TypeParam>>,
 
     // Inheritance relationships
     inheritance: Vec<InheritanceInfo>,
@@ -963,6 +1272,8 @@ impl Default for FactsStore {
             scopes: BTreeMap::new(),
             alias_edges: BTreeMap::new(),
             types: HashMap::new(),
+            signatures: BTreeMap::new(),
+            type_params: BTreeMap::new(),
             inheritance: Vec::new(),
             parents_of: HashMap::new(),
             children_of: HashMap::new(),
@@ -1208,6 +1519,22 @@ impl FactsStore {
         self.alias_edges.insert(edge.alias_id, edge);
     }
 
+    /// Insert a signature for a symbol.
+    ///
+    /// If the symbol already has a signature, this replaces it.
+    /// Typically used for functions, methods, and __init__ methods.
+    pub fn insert_signature(&mut self, signature: Signature) {
+        self.signatures.insert(signature.symbol_id, signature);
+    }
+
+    /// Insert type parameters for a symbol.
+    ///
+    /// If the symbol already has type parameters, this replaces them.
+    /// Typically used for generic functions, classes, or type aliases.
+    pub fn insert_type_params(&mut self, symbol_id: SymbolId, params: Vec<TypeParam>) {
+        self.type_params.insert(symbol_id, params);
+    }
+
     // ========================================================================
     // Lookup by ID
     // ========================================================================
@@ -1250,6 +1577,21 @@ impl FactsStore {
     /// Get an alias edge by ID.
     pub fn alias_edge(&self, id: AliasEdgeId) -> Option<&AliasEdge> {
         self.alias_edges.get(&id)
+    }
+
+    /// Get the signature for a symbol.
+    ///
+    /// Returns None if the symbol has no signature (e.g., variables, classes without __init__).
+    pub fn signature(&self, symbol_id: SymbolId) -> Option<&Signature> {
+        self.signatures.get(&symbol_id)
+    }
+
+    /// Get the type parameters for a symbol.
+    ///
+    /// Returns None if the symbol has no type parameters.
+    /// Returns Some(&[]) is technically not possible since we only store non-empty params.
+    pub fn type_params_for(&self, symbol_id: SymbolId) -> Option<&[TypeParam]> {
+        self.type_params.get(&symbol_id).map(|v| v.as_slice())
     }
 
     // ========================================================================
@@ -1575,6 +1917,20 @@ impl FactsStore {
         self.alias_edges.values()
     }
 
+    /// Iterate over all signatures in deterministic order (by SymbolId).
+    pub fn signatures(&self) -> impl Iterator<Item = &Signature> {
+        self.signatures.values()
+    }
+
+    /// Iterate over all type parameters in deterministic order (by SymbolId).
+    ///
+    /// Returns (symbol_id, type_params) pairs.
+    pub fn type_params(&self) -> impl Iterator<Item = (SymbolId, &[TypeParam])> {
+        self.type_params
+            .iter()
+            .map(|(id, params)| (*id, params.as_slice()))
+    }
+
     // ========================================================================
     // Counts
     // ========================================================================
@@ -1624,6 +1980,16 @@ impl FactsStore {
         self.alias_edges.len()
     }
 
+    /// Number of signatures.
+    pub fn signature_count(&self) -> usize {
+        self.signatures.len()
+    }
+
+    /// Number of symbols with type parameters.
+    pub fn type_params_count(&self) -> usize {
+        self.type_params.len()
+    }
+
     // ========================================================================
     // Bulk Operations
     // ========================================================================
@@ -1638,6 +2004,8 @@ impl FactsStore {
         self.scopes.clear();
 
         self.types.clear();
+        self.signatures.clear();
+        self.type_params.clear();
         self.inheritance.clear();
         self.parents_of.clear();
         self.children_of.clear();
@@ -4129,6 +4497,435 @@ mod tests {
 
             let edges: Vec<_> = store.alias_edges().collect();
             assert_eq!(edges.len(), 3);
+        }
+    }
+
+    mod signature_tests {
+        use super::*;
+
+        #[test]
+        fn param_kind_serialization() {
+            // Test all ParamKind variants serialize correctly
+            assert_eq!(
+                serde_json::to_string(&ParamKind::Regular).unwrap(),
+                "\"regular\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::PositionalOnly).unwrap(),
+                "\"positional_only\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::KeywordOnly).unwrap(),
+                "\"keyword_only\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::VarArgs).unwrap(),
+                "\"var_args\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::KwArgs).unwrap(),
+                "\"kw_args\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::SelfValue).unwrap(),
+                "\"self_value\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::SelfRef).unwrap(),
+                "\"self_ref\""
+            );
+            assert_eq!(
+                serde_json::to_string(&ParamKind::SelfMutRef).unwrap(),
+                "\"self_mut_ref\""
+            );
+        }
+
+        #[test]
+        fn param_kind_deserialization() {
+            // Round-trip test
+            let kinds = [
+                ParamKind::Regular,
+                ParamKind::PositionalOnly,
+                ParamKind::KeywordOnly,
+                ParamKind::VarArgs,
+                ParamKind::KwArgs,
+                ParamKind::SelfValue,
+                ParamKind::SelfRef,
+                ParamKind::SelfMutRef,
+            ];
+            for kind in kinds {
+                let json = serde_json::to_string(&kind).unwrap();
+                let parsed: ParamKind = serde_json::from_str(&json).unwrap();
+                assert_eq!(parsed, kind);
+            }
+        }
+
+        #[test]
+        fn parameter_without_annotation() {
+            let param = Parameter::regular("x");
+            assert_eq!(param.name, "x");
+            assert_eq!(param.kind, ParamKind::Regular);
+            assert!(param.default_span.is_none());
+            assert!(param.annotation.is_none());
+
+            // Serialization should skip None fields
+            let json = serde_json::to_string(&param).unwrap();
+            assert!(!json.contains("default_span"));
+            assert!(!json.contains("annotation"));
+        }
+
+        #[test]
+        fn parameter_with_annotation() {
+            let param = Parameter::new("count", ParamKind::KeywordOnly)
+                .with_annotation(TypeNode::named("int"))
+                .with_default_span(Span::new(10, 15));
+
+            assert_eq!(param.name, "count");
+            assert_eq!(param.kind, ParamKind::KeywordOnly);
+            assert_eq!(param.default_span, Some(Span::new(10, 15)));
+            assert!(param.annotation.is_some());
+
+            // Serialization should include all fields
+            let json = serde_json::to_string(&param).unwrap();
+            assert!(json.contains("\"kind\":\"keyword_only\""));
+            assert!(json.contains("\"name\":\"count\""));
+            assert!(json.contains("\"default_span\""));
+            assert!(json.contains("\"annotation\""));
+        }
+
+        #[test]
+        fn signature_with_multiple_params_and_return_type() {
+            let symbol_id = SymbolId::new(42);
+            let sig = Signature::new(symbol_id)
+                .with_params(vec![
+                    Parameter::regular("self"),
+                    Parameter::regular("x").with_annotation(TypeNode::named("int")),
+                    Parameter::new("y", ParamKind::KeywordOnly)
+                        .with_annotation(TypeNode::optional(TypeNode::named("str"))),
+                ])
+                .with_returns(TypeNode::named("bool"));
+
+            assert_eq!(sig.symbol_id, symbol_id);
+            assert_eq!(sig.params.len(), 3);
+            assert_eq!(sig.params[0].name, "self");
+            assert_eq!(sig.params[1].kind, ParamKind::Regular);
+            assert_eq!(sig.params[2].kind, ParamKind::KeywordOnly);
+            assert!(sig.returns.is_some());
+        }
+
+        #[test]
+        fn signature_insert_and_query() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let symbol = test_symbol(&mut store, "process", file_id, 10);
+            let symbol_id = symbol.symbol_id;
+            store.insert_symbol(symbol);
+
+            // Create and insert signature
+            let sig = Signature::new(symbol_id)
+                .with_params(vec![
+                    Parameter::regular("data"),
+                    Parameter::new("verbose", ParamKind::KeywordOnly)
+                        .with_annotation(TypeNode::named("bool")),
+                ])
+                .with_returns(TypeNode::named("Result"));
+
+            store.insert_signature(sig);
+
+            // Query signature
+            let retrieved = store.signature(symbol_id).unwrap();
+            assert_eq!(retrieved.params.len(), 2);
+            assert_eq!(retrieved.params[0].name, "data");
+            assert_eq!(retrieved.params[1].name, "verbose");
+            assert!(retrieved.returns.is_some());
+        }
+
+        #[test]
+        fn signature_count_and_iteration() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Insert 3 functions with signatures
+            for i in 0..3 {
+                let symbol = test_symbol(&mut store, &format!("func{}", i), file_id, i * 20);
+                let symbol_id = symbol.symbol_id;
+                store.insert_symbol(symbol);
+                store.insert_signature(Signature::new(symbol_id));
+            }
+
+            assert_eq!(store.signature_count(), 3);
+            let sigs: Vec<_> = store.signatures().collect();
+            assert_eq!(sigs.len(), 3);
+        }
+
+        #[test]
+        fn signature_replaces_on_duplicate_insert() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let symbol = test_symbol(&mut store, "func", file_id, 10);
+            let symbol_id = symbol.symbol_id;
+            store.insert_symbol(symbol);
+
+            // Insert initial signature with 1 param
+            store.insert_signature(
+                Signature::new(symbol_id).with_params(vec![Parameter::regular("a")]),
+            );
+
+            // Replace with 2 params
+            store.insert_signature(
+                Signature::new(symbol_id).with_params(vec![
+                    Parameter::regular("x"),
+                    Parameter::regular("y"),
+                ]),
+            );
+
+            let sig = store.signature(symbol_id).unwrap();
+            assert_eq!(sig.params.len(), 2);
+            assert_eq!(sig.params[0].name, "x");
+            assert_eq!(store.signature_count(), 1);
+        }
+
+        #[test]
+        fn signature_returns_none_for_missing() {
+            let store = FactsStore::new();
+            assert!(store.signature(SymbolId::new(999)).is_none());
+        }
+    }
+
+    mod type_param_tests {
+        use super::*;
+
+        #[test]
+        fn type_param_without_bounds() {
+            let tp = TypeParam::new("T");
+            assert_eq!(tp.name, "T");
+            assert!(tp.bounds.is_empty());
+            assert!(tp.default.is_none());
+
+            // Empty bounds should not serialize
+            let json = serde_json::to_string(&tp).unwrap();
+            assert!(!json.contains("bounds"));
+        }
+
+        #[test]
+        fn type_param_with_bounds_and_default() {
+            let tp = TypeParam::new("T")
+                .with_bounds(vec![TypeNode::named("Comparable"), TypeNode::named("Hashable")])
+                .with_default(TypeNode::named("int"));
+
+            assert_eq!(tp.name, "T");
+            assert_eq!(tp.bounds.len(), 2);
+            assert!(tp.default.is_some());
+        }
+
+        #[test]
+        fn type_param_serialization_roundtrip() {
+            let tp = TypeParam::new("K")
+                .with_bound(TypeNode::named("Hash"))
+                .with_default(TypeNode::named("str"));
+
+            let json = serde_json::to_string(&tp).unwrap();
+            let parsed: TypeParam = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed.name, tp.name);
+            assert_eq!(parsed.bounds.len(), tp.bounds.len());
+        }
+
+        #[test]
+        fn type_params_insert_and_query() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let symbol = test_symbol(&mut store, "GenericClass", file_id, 10);
+            let symbol_id = symbol.symbol_id;
+            store.insert_symbol(symbol);
+
+            // Insert type params
+            store.insert_type_params(
+                symbol_id,
+                vec![
+                    TypeParam::new("T"),
+                    TypeParam::new("U").with_bound(TypeNode::named("Numeric")),
+                ],
+            );
+
+            // Query
+            let params = store.type_params_for(symbol_id).unwrap();
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0].name, "T");
+            assert_eq!(params[1].name, "U");
+        }
+
+        #[test]
+        fn type_params_count_and_iteration() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Insert 2 generic symbols
+            for name in ["GenericA", "GenericB"] {
+                let symbol = test_symbol(&mut store, name, file_id, 0);
+                let symbol_id = symbol.symbol_id;
+                store.insert_symbol(symbol);
+                store.insert_type_params(symbol_id, vec![TypeParam::new("T")]);
+            }
+
+            assert_eq!(store.type_params_count(), 2);
+            let all: Vec<_> = store.type_params().collect();
+            assert_eq!(all.len(), 2);
+        }
+
+        #[test]
+        fn type_params_returns_none_for_missing() {
+            let store = FactsStore::new();
+            assert!(store.type_params_for(SymbolId::new(999)).is_none());
+        }
+
+        #[test]
+        fn type_params_replaces_on_duplicate_insert() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let symbol = test_symbol(&mut store, "Generic", file_id, 10);
+            let symbol_id = symbol.symbol_id;
+            store.insert_symbol(symbol);
+
+            // Insert initial
+            store.insert_type_params(symbol_id, vec![TypeParam::new("T")]);
+
+            // Replace
+            store.insert_type_params(
+                symbol_id,
+                vec![TypeParam::new("K"), TypeParam::new("V")],
+            );
+
+            let params = store.type_params_for(symbol_id).unwrap();
+            assert_eq!(params.len(), 2);
+            assert_eq!(params[0].name, "K");
+        }
+    }
+
+    mod type_node_tests {
+        use super::*;
+
+        #[test]
+        fn type_node_named_serialization() {
+            let node = TypeNode::named("int");
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"named\""));
+            assert!(json.contains("\"name\":\"int\""));
+            // Empty args should not be serialized
+            assert!(!json.contains("args"));
+        }
+
+        #[test]
+        fn type_node_named_with_args_serialization() {
+            let node = TypeNode::named_with_args(
+                "List",
+                vec![TypeNode::named("int")],
+            );
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"named\""));
+            assert!(json.contains("\"name\":\"List\""));
+            assert!(json.contains("\"args\""));
+        }
+
+        #[test]
+        fn type_node_optional_serialization() {
+            let node = TypeNode::optional(TypeNode::named("str"));
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"optional\""));
+            assert!(json.contains("\"inner\""));
+        }
+
+        #[test]
+        fn type_node_union_serialization() {
+            let node = TypeNode::union(vec![
+                TypeNode::named("str"),
+                TypeNode::named("int"),
+            ]);
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"union\""));
+            assert!(json.contains("\"members\""));
+        }
+
+        #[test]
+        fn type_node_callable_serialization() {
+            let node = TypeNode::callable(
+                vec![TypeNode::named("int"), TypeNode::named("str")],
+                TypeNode::named("bool"),
+            );
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"callable\""));
+            assert!(json.contains("\"params\""));
+            assert!(json.contains("\"returns\""));
+        }
+
+        #[test]
+        fn type_node_tuple_serialization() {
+            let node = TypeNode::tuple(vec![
+                TypeNode::named("int"),
+                TypeNode::named("str"),
+                TypeNode::named("bool"),
+            ]);
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"tuple\""));
+            assert!(json.contains("\"elements\""));
+        }
+
+        #[test]
+        fn type_node_extension_serialization() {
+            let node = TypeNode::extension(
+                "reference",
+                vec![TypeNode::named("str")],
+            );
+            let json = serde_json::to_string(&node).unwrap();
+            assert!(json.contains("\"kind\":\"extension\""));
+            assert!(json.contains("\"name\":\"reference\""));
+        }
+
+        #[test]
+        fn type_node_unknown_serialization() {
+            let node = TypeNode::Unknown;
+            let json = serde_json::to_string(&node).unwrap();
+            assert_eq!(json, "{\"kind\":\"unknown\"}");
+        }
+
+        #[test]
+        fn type_node_roundtrip() {
+            // Test complex nested type: Dict[str, List[Optional[int]]]
+            let node = TypeNode::named_with_args(
+                "Dict",
+                vec![
+                    TypeNode::named("str"),
+                    TypeNode::named_with_args(
+                        "List",
+                        vec![TypeNode::optional(TypeNode::named("int"))],
+                    ),
+                ],
+            );
+
+            let json = serde_json::to_string(&node).unwrap();
+            let parsed: TypeNode = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, node);
         }
     }
 }

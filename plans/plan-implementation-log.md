@@ -6,6 +6,70 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.7b: Add Signatures and Type Parameters | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 2.7b specification
+- `crates/tugtool-core/src/facts/mod.rs` - existing FactsStore structure
+- [D21] Signature + Type Parameter Facts
+- [CQ10] ParamKind Generality
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `ParamKind` enum with `#[non_exhaustive]` | Done |
+| Add `TypeNode` enum (required for Parameter/Signature annotations) | Done |
+| Add `Parameter` struct with builder methods | Done |
+| Add `Signature` struct with builder methods | Done |
+| Add `TypeParam` struct with builder methods | Done |
+| Add `signatures: BTreeMap<SymbolId, Signature>` to FactsStore | Done |
+| Add `type_params: BTreeMap<SymbolId, Vec<TypeParam>>` to FactsStore | Done |
+| Add `insert_signature()`, `signature()`, `signatures()`, `signature_count()` | Done |
+| Add `insert_type_params()`, `type_params_for()`, `type_params()`, `type_params_count()` | Done |
+| Update `clear()` to clear new fields | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `ParamKind` enum: `Regular`, `PositionalOnly`, `KeywordOnly`, `VarArgs`, `KwArgs`, `SelfValue`, `SelfRef`, `SelfMutRef`
+  - Added `TypeNode` enum: `Named`, `Union`, `Optional`, `Callable`, `Tuple`, `Extension`, `Unknown` with builder methods
+  - Added `Parameter` struct with `name`, `kind`, `default_span`, `annotation` fields and builder methods
+  - Added `Signature` struct with `symbol_id`, `params`, `returns` fields and builder methods
+  - Added `TypeParam` struct with `name`, `bounds`, `default` fields and builder methods
+  - Added storage: `signatures: BTreeMap<SymbolId, Signature>`, `type_params: BTreeMap<SymbolId, Vec<TypeParam>>`
+  - Added insert/query methods: `insert_signature()`, `signature()`, `signatures()`, `signature_count()`
+  - Added insert/query methods: `insert_type_params()`, `type_params_for()`, `type_params()`, `type_params_count()`
+  - Updated `Default::default()` to initialize new fields
+  - Updated `clear()` to clear new fields
+  - Added comprehensive test modules: `signature_tests`, `type_param_tests`, `type_node_tests`
+
+- `plans/phase-11.md`:
+  - Checked off all Step 2.7b task and test checkboxes
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core signature`: 9 tests passed
+- `cargo nextest run -p tugtool-core type_param`: 7 tests passed
+- `cargo nextest run -p tugtool-core type_node`: 9 tests passed
+- `cargo nextest run -p tugtool-core`: 355 tests passed
+- `cargo nextest run -p tugtool-python`: 380 tests passed
+- `cargo nextest run --workspace`: 1422 tests passed
+- `cargo clippy --workspace`: clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core signature`: PASS (9 tests)
+- `cargo nextest run -p tugtool-core type_param`: PASS (7 tests)
+
+**Key Decisions/Notes:**
+- Added `TypeNode` enum even though it wasn't explicitly in Step 2.7b because `Parameter.annotation` and `Signature.returns` require structured type representation
+- `TypeNode` includes `Extension` variant with `#[non_exhaustive]` for forward compatibility with Rust-specific type constructs (references, lifetimes, trait objects)
+- All enums use `#[serde(rename_all = "snake_case")]` for consistent JSON serialization
+- Builder patterns follow existing FactsStore conventions (e.g., `with_params()`, `with_returns()`)
+- Storage uses `BTreeMap<SymbolId, _>` for deterministic iteration order
+
+---
+
 ## [phase-11.md] Performance Audit: O(n×m) Algorithm Fixes | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25
