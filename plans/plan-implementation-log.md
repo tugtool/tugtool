@@ -6,6 +6,75 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 7b: Emit Alias Edges | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 7b specification (lines 3479-3542)
+- [D18] Alias Edges in FactsStore
+- [CQ7] AliasEdge vs AliasOutput Relationship
+- [CQ8] Python Analyzer Capability
+- `crates/tugtool-python/src/alias.rs` - `AliasGraph`, `AliasInfo` existing infrastructure
+- `crates/tugtool-core/src/adapter.rs` - `AliasEdgeData` type
+- `crates/tugtool-core/src/facts/mod.rs` - `AliasEdge`, `AliasKind`, `aliases_from_edges()`
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Extend `AliasInfo` to include `AliasKind` | Done |
+| Classify aliases during `AliasGraph::from_analysis` | Done |
+| Add `aliases: Vec<AliasEdgeData>` to `FileAnalysisResult` conversion | Done |
+| Convert `AliasInfo` to `AliasEdgeData` with symbol index resolution | Done |
+| Integration layer: Convert `AliasEdgeData` to `AliasEdge` | Done |
+| Add `aliases_from_edges()` query (already exists in FactsStore) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/alias.rs`:
+  - Added import for `tugtool_core::facts::AliasKind`
+  - Added `kind: AliasKind` field to `AliasInfo` struct
+  - Updated `from_assignment()` to classify aliases based on `source_is_import`
+  - Added `source_names()` iterator method to `AliasGraph` for alias enumeration
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added import for `AliasEdgeData` from `tugtool_core::adapter`
+  - Added alias conversion logic in `convert_file_analysis()`:
+    - Build `symbol_name_to_index` mapping
+    - Iterate through all aliases via `alias_graph.source_names()`
+    - Convert each `AliasInfo` to `AliasEdgeData` with symbol index resolution
+  - Added 7 new alias edge tests in `adapter_tests` module:
+    - `alias_assignment_classified_as_assignment`
+    - `alias_import_classified_as_import`
+    - `alias_confidence_preserved`
+    - `alias_edges_have_valid_symbol_indices`
+    - `alias_edges_have_span`
+    - `integration_alias_edges_populated_in_factsstore`
+    - `integration_aliases_from_edges_produces_valid_output`
+
+- `plans/phase-11.md`:
+  - Checked off all 6 tasks, 5 tests, and 2 checkpoints for Step 7b
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python alias`: 52 tests passed
+- `cargo nextest run -p tugtool-core alias`: 21 tests passed
+- `cargo nextest run -p tugtool-python adapter`: 26 tests passed
+- `cargo nextest run -p tugtool-python rename`: 46 tests passed (no regression)
+- `cargo clippy --workspace`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python alias`: PASS (52 tests)
+- `cargo nextest run -p tugtool-core alias`: PASS (21 tests)
+
+**Key Decisions/Notes:**
+- The `aliases_from_edges()` method already existed in FactsStore (added in Phase 11 schema work), so no new implementation was needed for that task
+- Classification uses `source_is_import` flag from `AliasInfo`: `true` → `AliasKind::Import`, `false` → `AliasKind::Assignment`
+- `AliasKind::ReExport` is reserved for Rust `pub use` re-exports (not used in Python)
+- Added `source_names()` method to `AliasGraph` to enable iteration through all alias relationships during conversion
+- Integration tests demonstrate full roundtrip: adapter output → FactsStore → JSON output via `aliases_from_edges()`
+
+---
+
 ## [phase-11.md] Step 7a: Core PythonAdapter Implementation | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

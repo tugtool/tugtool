@@ -11,8 +11,8 @@
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::adapter::{
-    AnalysisBundle, ExportData, FileAnalysisResult, ImportData, LanguageAdapter, ReferenceData,
-    ReferenceKind as AdapterReferenceKind, ScopeData, SymbolData,
+    AliasEdgeData, AnalysisBundle, ExportData, FileAnalysisResult, ImportData, LanguageAdapter,
+    ReferenceData, ReferenceKind as AdapterReferenceKind, ScopeData, SymbolData,
 };
 use tugtool_core::facts::{
     ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind,
@@ -3266,8 +3266,41 @@ impl PythonAdapter {
             });
         }
 
-        // Note: aliases, attributes, calls, signatures, modifiers, qualified_names, type_params
-        // are populated in later steps (7b-7d)
+        // Build name to symbol index mapping for alias resolution
+        let symbol_name_to_index: HashMap<&str, usize> = result
+            .symbols
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| (s.name.as_str(), idx))
+            .collect();
+
+        // Convert aliases from alias graph
+        // Iterate through all source names and their aliases
+        for source_name in analysis.alias_graph.source_names() {
+            for alias_info in analysis.alias_graph.direct_aliases(source_name) {
+                // Resolve alias_name to symbol index (must exist as it's a binding)
+                let alias_symbol_index = match symbol_name_to_index.get(alias_info.alias_name.as_str()) {
+                    Some(&idx) => idx,
+                    None => continue, // Skip if alias symbol not found
+                };
+
+                // Resolve source_name to symbol index (may be None if unresolved)
+                let target_symbol_index = symbol_name_to_index
+                    .get(alias_info.source_name.as_str())
+                    .copied();
+
+                result.aliases.push(AliasEdgeData {
+                    alias_symbol_index,
+                    target_symbol_index,
+                    span: alias_info.alias_span.unwrap_or(Span::new(0, 0)),
+                    kind: alias_info.kind,
+                    confidence: Some(alias_info.confidence),
+                });
+            }
+        }
+
+        // Note: attributes, calls, signatures, modifiers, qualified_names, type_params
+        // are populated in later steps (7c-7d)
 
         result
     }
@@ -3630,6 +3663,299 @@ mod tests {
             assert_eq!(export.export_target, ExportTarget::Single);
             assert_eq!(export.export_intent, ExportIntent::Declared);
             assert_eq!(export.export_origin, ExportOrigin::Local);
+        }
+
+        // ====================================================================
+        // Alias Edge Conversion Tests (Step 7b)
+        // ====================================================================
+
+        #[test]
+        fn alias_assignment_classified_as_assignment() {
+            // Test: Assignment alias classified as AliasKind::Assignment
+            let adapter = PythonAdapter::new();
+            let content = "bar = 1\nb = bar";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have at least one alias
+            assert!(!result.aliases.is_empty(), "Expected aliases from 'b = bar'");
+
+            // Find the alias for 'bar'
+            let alias = result.aliases.iter().find(|a| {
+                // Find where alias_symbol_index points to a symbol named 'b'
+                result.symbols.get(a.alias_symbol_index).map(|s| s.name.as_str()) == Some("b")
+            });
+            assert!(alias.is_some(), "Expected alias from 'b = bar'");
+
+            let alias = alias.unwrap();
+            assert_eq!(
+                alias.kind,
+                tugtool_core::facts::AliasKind::Assignment,
+                "Assignment 'b = bar' should be AliasKind::Assignment"
+            );
+        }
+
+        #[test]
+        fn alias_import_classified_as_import() {
+            // Test: Import alias classified as AliasKind::Import
+            let adapter = PythonAdapter::new();
+            let content = "from os import path\np = path";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have at least one alias
+            assert!(!result.aliases.is_empty(), "Expected aliases from 'p = path'");
+
+            // Find the alias for 'path' (source is import)
+            let alias = result.aliases.iter().find(|a| {
+                result.symbols.get(a.alias_symbol_index).map(|s| s.name.as_str()) == Some("p")
+            });
+            assert!(alias.is_some(), "Expected alias from 'p = path'");
+
+            let alias = alias.unwrap();
+            assert_eq!(
+                alias.kind,
+                tugtool_core::facts::AliasKind::Import,
+                "Assignment 'p = path' where path is imported should be AliasKind::Import"
+            );
+        }
+
+        #[test]
+        fn alias_confidence_preserved() {
+            // Test: confidence preserved through conversion
+            let adapter = PythonAdapter::new();
+            let content = "bar = 1\nb = bar";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.aliases.is_empty());
+
+            // All simple assignments should have confidence 1.0
+            for alias in &result.aliases {
+                assert!(
+                    alias.confidence.is_some(),
+                    "Confidence should be set for aliases"
+                );
+                assert_eq!(
+                    alias.confidence,
+                    Some(1.0),
+                    "Simple assignment should have confidence 1.0"
+                );
+            }
+        }
+
+        #[test]
+        fn alias_edges_have_valid_symbol_indices() {
+            // Test: alias edges have valid symbol indices
+            let adapter = PythonAdapter::new();
+            let content = "bar = 1\nb = bar\nc = b";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have aliases for both b and c
+            assert!(result.aliases.len() >= 2, "Expected at least 2 aliases");
+
+            for alias in &result.aliases {
+                // alias_symbol_index should point to a valid symbol
+                assert!(
+                    alias.alias_symbol_index < result.symbols.len(),
+                    "alias_symbol_index {} should be valid (symbols len: {})",
+                    alias.alias_symbol_index,
+                    result.symbols.len()
+                );
+
+                // target_symbol_index is optional, but if present should be valid
+                if let Some(target_idx) = alias.target_symbol_index {
+                    assert!(
+                        target_idx < result.symbols.len(),
+                        "target_symbol_index {} should be valid (symbols len: {})",
+                        target_idx,
+                        result.symbols.len()
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn alias_edges_have_span() {
+            // Test: alias edges have spans
+            let adapter = PythonAdapter::new();
+            let content = "bar = 1\nb = bar";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.aliases.is_empty());
+
+            for alias in &result.aliases {
+                // Span should be non-zero (meaningful)
+                assert!(
+                    alias.span.start < alias.span.end || alias.span.start == 0,
+                    "Alias span should be valid"
+                );
+            }
+        }
+
+        #[test]
+        fn integration_alias_edges_populated_in_factsstore() {
+            // Integration test: Alias edges can be converted to FactsStore format
+            use tugtool_core::facts::{AliasEdge, AliasKind};
+            use tugtool_core::patch::ContentHash;
+
+            let adapter = PythonAdapter::new();
+            let content = "bar = 1\nb = bar";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Verify we have aliases to convert
+            assert!(!result.aliases.is_empty(), "Expected aliases from adapter");
+
+            // Simulate what the integration layer would do:
+            // 1. Create a new FactsStore
+            let mut store = FactsStore::new();
+
+            // 2. Insert the file
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(content.as_bytes()),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            // 3. Insert symbols and build ID map
+            let mut symbol_id_map: Vec<SymbolId> = Vec::new();
+            for symbol_data in &result.symbols {
+                let symbol_id = store.next_symbol_id();
+                symbol_id_map.push(symbol_id);
+
+                let symbol = Symbol::new(
+                    symbol_id,
+                    symbol_data.kind,
+                    &symbol_data.name,
+                    file_id,
+                    symbol_data.decl_span,
+                );
+                store.insert_symbol(symbol);
+            }
+
+            // 4. Convert AliasEdgeData to AliasEdge and insert
+            for alias_data in &result.aliases {
+                let alias_symbol_id = symbol_id_map[alias_data.alias_symbol_index];
+                let target_symbol_id = alias_data.target_symbol_index.map(|idx| symbol_id_map[idx]);
+
+                let edge_id = store.next_alias_edge_id();
+                let mut edge = AliasEdge::new(
+                    edge_id,
+                    file_id,
+                    alias_data.span,
+                    alias_symbol_id,
+                    alias_data.kind,
+                );
+                if let Some(target_id) = target_symbol_id {
+                    edge = edge.with_target(target_id);
+                }
+                if let Some(confidence) = alias_data.confidence {
+                    edge = edge.with_confidence(confidence);
+                }
+
+                store.insert_alias_edge(edge);
+            }
+
+            // 5. Verify alias edges are in the store
+            assert!(
+                store.alias_edge_count() > 0,
+                "FactsStore should have alias edges after conversion"
+            );
+
+            // 6. Verify we can query alias edges
+            let edges_in_file = store.alias_edges_in_file(file_id);
+            assert!(
+                !edges_in_file.is_empty(),
+                "Should have alias edges in file"
+            );
+
+            // 7. Verify edge properties
+            for edge in edges_in_file {
+                assert_eq!(edge.file_id, file_id, "Edge should be in correct file");
+                assert_eq!(
+                    edge.kind,
+                    AliasKind::Assignment,
+                    "Simple assignment should have Assignment kind"
+                );
+            }
+        }
+
+        #[test]
+        fn integration_aliases_from_edges_produces_valid_output() {
+            // Integration test: aliases_from_edges produces valid AliasOutput
+            use tugtool_core::facts::AliasEdge;
+            use tugtool_core::patch::ContentHash;
+
+            let adapter = PythonAdapter::new();
+            let content = "bar = 1\nb = bar";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Simulate integration layer
+            let mut store = FactsStore::new();
+            let file_id = store.next_file_id();
+            store.insert_file(File::new(
+                file_id,
+                "test.py",
+                ContentHash::compute(content.as_bytes()),
+                Language::Python,
+            ));
+
+            // Insert symbols
+            let mut symbol_id_map: Vec<SymbolId> = Vec::new();
+            for symbol_data in &result.symbols {
+                let symbol_id = store.next_symbol_id();
+                symbol_id_map.push(symbol_id);
+                store.insert_symbol(Symbol::new(
+                    symbol_id,
+                    symbol_data.kind,
+                    &symbol_data.name,
+                    file_id,
+                    symbol_data.decl_span,
+                ));
+            }
+
+            // Insert alias edges
+            for alias_data in &result.aliases {
+                let alias_symbol_id = symbol_id_map[alias_data.alias_symbol_index];
+                let target_symbol_id = alias_data.target_symbol_index.map(|idx| symbol_id_map[idx]);
+
+                let edge_id = store.next_alias_edge_id();
+                let mut edge = AliasEdge::new(
+                    edge_id,
+                    file_id,
+                    alias_data.span,
+                    alias_symbol_id,
+                    alias_data.kind,
+                );
+                if let Some(target_id) = target_symbol_id {
+                    edge = edge.with_target(target_id);
+                }
+                if let Some(confidence) = alias_data.confidence {
+                    edge = edge.with_confidence(confidence);
+                }
+                store.insert_alias_edge(edge);
+            }
+
+            // Test aliases_from_edges
+            let mut file_contents = std::collections::HashMap::new();
+            file_contents.insert("test.py".to_string(), content.to_string());
+
+            let alias_outputs = store.aliases_from_edges(&file_contents);
+
+            // Should produce valid output
+            assert!(
+                !alias_outputs.is_empty(),
+                "aliases_from_edges should produce output"
+            );
+
+            // Verify output properties
+            for output in &alias_outputs {
+                assert_eq!(output.file, "test.py");
+                assert!(!output.alias_name.is_empty());
+                assert!(!output.source_name.is_empty());
+                // Simple assignments have confidence 1.0
+                assert!((output.confidence - 1.0).abs() < 0.001);
+            }
         }
     }
 

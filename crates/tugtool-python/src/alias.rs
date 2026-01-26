@@ -46,6 +46,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use tugtool_core::facts::AliasKind;
 use tugtool_core::patch::Span;
 
 use crate::types::AssignmentInfo;
@@ -93,12 +94,22 @@ pub struct AliasInfo {
     /// - 1.0 for simple assignments (`b = bar`)
     /// - Could be lower for complex patterns (future)
     pub confidence: f32,
+
+    /// Kind of alias relationship.
+    ///
+    /// Classified during alias graph construction based on context:
+    /// - `Assignment`: Direct variable assignment (`b = a`)
+    /// - `Import`: Source is an imported name (`from foo import bar; b = bar`)
+    /// - `ReExport`: Not used in Python (reserved for Rust `pub use`)
+    /// - `Unknown`: Fallback for unclassified aliases
+    pub kind: AliasKind,
 }
 
 impl AliasInfo {
     /// Create a new AliasInfo from an assignment.
     ///
-    /// Sets confidence to 1.0 for simple assignments.
+    /// Sets confidence to 1.0 for simple assignments and classifies the alias kind
+    /// based on whether the source is an imported name.
     pub fn from_assignment(
         alias_name: String,
         source_name: String,
@@ -106,6 +117,13 @@ impl AliasInfo {
         alias_span: Option<Span>,
         source_is_import: bool,
     ) -> Self {
+        // Classify alias kind based on context
+        let kind = if source_is_import {
+            AliasKind::Import
+        } else {
+            AliasKind::Assignment
+        };
+
         AliasInfo {
             alias_name,
             source_name,
@@ -113,6 +131,7 @@ impl AliasInfo {
             alias_span,
             source_is_import,
             confidence: 1.0, // Simple assignment = full confidence
+            kind,
         }
     }
 }
@@ -377,6 +396,14 @@ impl AliasGraph {
     /// Get the number of source names tracked.
     pub fn source_count(&self) -> usize {
         self.forward.len()
+    }
+
+    /// Get all source names in the graph.
+    ///
+    /// Returns an iterator over all source names that have aliases.
+    /// Used to iterate through all alias relationships for conversion.
+    pub fn source_names(&self) -> impl Iterator<Item = &str> {
+        self.forward.keys().map(|s| s.as_str())
     }
 
     /// Get the total number of alias relationships.

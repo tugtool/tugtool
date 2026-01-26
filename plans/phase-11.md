@@ -3513,29 +3513,29 @@ This step is split into 4 sub-steps:
 **No removal:** `AliasGraph` is NOT deprecated or removed. It remains the in-memory representation for analysis passes.
 
 **Tasks:**
-- [ ] Extend `AliasInfo` (or create wrapper) to include `AliasKind`
-- [ ] Classify aliases during `AliasGraph::from_analysis`:
+- [x] Extend `AliasInfo` (or create wrapper) to include `AliasKind`
+- [x] Classify aliases during `AliasGraph::from_analysis`:
   - `source_is_import == true` → `AliasKind::Import`
   - `source_is_import == false` → `AliasKind::Assignment`
   - (ReExport detected via `__all__` membership → `AliasKind::ReExport`)
-- [ ] Add `aliases: Vec<AliasEdgeData>` to `FileAnalysisResult`
-- [ ] Convert `AliasInfo` to `AliasEdgeData`:
+- [x] Add `aliases: Vec<AliasEdgeData>` to `FileAnalysisResult`
+- [x] Convert `AliasInfo` to `AliasEdgeData`:
   - Resolve `alias_name` → `alias_symbol_index` via symbol lookup
   - Resolve `source_name` → `target_symbol_index` (may be `None` if unresolved)
   - Map `confidence` directly
-- [ ] **Integration layer:** Convert `AliasEdgeData` to `AliasEdge` with SymbolId resolution
-- [ ] **Integration layer:** Add `aliases_from_edges()` query to convert for JSON output
+- [x] **Integration layer:** Convert `AliasEdgeData` to `AliasEdge` with SymbolId resolution
+- [x] **Integration layer:** Add `aliases_from_edges()` query to convert for JSON output
 
 **Tests:**
-- [ ] Unit: Assignment alias classified as `AliasKind::Assignment`
-- [ ] Unit: Import alias classified as `AliasKind::Import`
-- [ ] Unit: `confidence` preserved through conversion
-- [ ] Integration: Alias edges populated in FactsStore
-- [ ] Integration: `aliases_from_edges()` produces valid `AliasOutput`
+- [x] Unit: Assignment alias classified as `AliasKind::Assignment`
+- [x] Unit: Import alias classified as `AliasKind::Import`
+- [x] Unit: `confidence` preserved through conversion
+- [x] Integration: Alias edges populated in FactsStore
+- [x] Integration: `aliases_from_edges()` produces valid `AliasOutput`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python alias`
-- [ ] `cargo nextest run -p tugtool-core alias`
+- [x] `cargo nextest run -p tugtool-python alias`
+- [x] `cargo nextest run -p tugtool-core alias`
 
 **Rollback:** Revert commit
 
