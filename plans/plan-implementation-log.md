@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Plan Creation: Address Phase 11 Implementation Gaps | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Original Phase 11 plan and decisions
+- `crates/tugtool-python/src/analyzer.rs` - PythonAdapter implementation gaps
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker infrastructure
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Receiver extraction
+- `crates/tugtool-core/src/adapter.rs` - Adapter trait and data types
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore schema
+
+**Context:**
+Post-implementation review of Phase 11 identified 5 deficiencies that reduce refactoring fidelity and block future capabilities. This work investigated the issues and created a comprehensive remediation plan.
+
+**Findings Investigated:**
+
+| Finding | Severity | Root Cause |
+|---------|----------|-----------|
+| F1: `_store` parameter ignored | MEDIUM | `analyze_files` creates fresh store, ignoring pre-populated context |
+| F2: Symbol resolution missing | MEDIUM | TypeTracker exists but not integrated with conversion |
+| F3: Missing spans → Span::new(0,0) | HIGH | 15+ locations hide missing data with silent defaults |
+| F4: No effective exports | MEDIUM | Only explicit `__all__` emitted, no inference |
+| F5: Receiver placeholders | LOW | `<expr>` and `<call>` reduce resolution fidelity |
+
+**Files Created:**
+- `plans/phase-11B.md` - Comprehensive remediation plan with:
+  - 6 design decisions (D01-D06)
+  - 9 execution steps (Steps 0-8, including 3a)
+  - ~530 LOC estimated implementation
+  - Test fixtures and verification criteria
+
+**Design Decisions Made:**
+- D01: Replace `Span::new(0,0)` with explicit `Option<Span>` propagation
+- D02: Pass TypeTracker to conversion functions for receiver resolution
+- D03: Add opt-in `compute_effective_exports` option
+- D04: Extract callee name from Call expressions in receiver extraction
+- D05: Create `CrossFileSymbolMap` for cross-file symbol lookup
+- D06: Use `store` parameter in `analyze_files` (removed underscore, wire through)
+
+**Key Corrections:**
+- F1 initially marked as "LOW - docs only" was upgraded to "MEDIUM - actual implementation"
+- Step 7 changed from documentation placeholder to real implementation (~100 LOC)
+- Added `CrossFileSymbolMap::from_store()` to properly use the store parameter
+
+**Plan Summary:**
+
+| Finding | Steps | LOC |
+|---------|-------|-----|
+| F3: Missing spans | 0-2 | ~70 |
+| F2: Symbol resolution | 3, 3a, 4 | ~230 |
+| F4: Effective exports | 5 | ~100 |
+| F5: Receiver placeholders | 6 | ~30 |
+| F1: Cross-file resolution | 7 | ~100 |
+| Total | | ~530 |
+
+---
+
 ## [phase-11.md] Step 11: Final Integration and Cleanup | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
