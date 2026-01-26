@@ -6,6 +6,101 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 9.5: Preserve CST Information in Annotations | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 9.5 specification with architectural audit
+- [D07] TypeInfo Evolves with Optional Structured Types design decision
+- [D08] TypeNode Design specification
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - AnnotationCollector implementation
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - SignatureCollector implementation
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker with orphaned TypeNode code
+- `crates/tugtool-python/src/analyzer.rs` - Signature conversion code
+- `crates/tugtool-python/src/types.rs` - Bridge AnnotationInfo
+- `crates/tugtool-core/src/facts/mod.rs` - TypeNode enum definition
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `type_node: Option<TypeNode>` to CstAnnotationInfo | Done |
+| Move `build_typenode_from_annotation()` to annotation.rs | Done |
+| Update `add_annotation()` to build TypeNode | Done |
+| Update `visit_function_def()` for return type TypeNode | Done |
+| Add `type_node` to bridge AnnotationInfo (types.rs) | Done |
+| Update analyzer.rs conversion to pass type_node | Done |
+| Add `AnnotatedType` struct to TypeTracker | Done |
+| Update TypeTracker to store type_node alongside type_str | Done |
+| Update `populate_type_info()` to set TypeInfo.structured | Done |
+| Remove orphaned TypeNode code from type_tracker.rs | Done |
+| P1: Add `annotation_node` to ParamInfo (signature.rs) | Done |
+| P1: Add `returns_node` to SignatureInfo (signature.rs) | Done |
+| P1: Update SignatureCollector to build TypeNode | Done |
+| P1: Update signature conversion in analyzer.rs | Done |
+| Write unit tests for TypeNode building | Done (9 tests) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/annotation.rs`:
+  - Added `type_node: Option<TypeNode>` field to `AnnotationInfo`
+  - Added `build_typenode_from_cst_annotation()` and helper functions
+  - Updated `add_annotation()` and `visit_function_def()` to build TypeNode
+  - Added 9 unit tests for TypeNode building
+
+- `crates/tugtool-python-cst/src/visitor/signature.rs`:
+  - Added `annotation_node: Option<TypeNode>` to `ParamInfo`
+  - Added `returns_node: Option<TypeNode>` to `SignatureInfo`
+  - Updated `extract_params()` to build TypeNode for all 5 param kinds
+  - Updated `process_function()` to build TypeNode for return type
+
+- `crates/tugtool-python/src/types.rs`:
+  - Added `type_node: Option<TypeNode>` to bridge `AnnotationInfo`
+
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated CST-to-bridge annotation conversion to pass `type_node`
+  - Updated signature conversion to use `annotation_node`/`returns_node`
+
+- `crates/tugtool-python/src/type_tracker.rs`:
+  - Added `AnnotatedType` struct with `type_str` and `type_node`
+  - Changed `annotated_types` and `return_types` to use `AnnotatedType`
+  - Added `annotated_type_of()` method
+  - Updated all methods to extract `.type_str` when needed
+  - Updated `populate_type_info()` to use `TypeInfo::with_structured()`
+  - Removed orphaned TypeNode building code (~300 lines)
+  - Removed `typenode_building_tests` module
+
+- `plans/phase-11.md`:
+  - Marked all Step 9.5 tasks as complete
+  - Updated checkpoints as verified
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 511 tests passed
+- `cargo nextest run -p tugtool-python`: 449 tests passed
+- `cargo nextest run --workspace`: 1640 tests passed
+- `cargo clippy --workspace`: clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst annotation`: PASS (511 tests)
+- `cargo nextest run -p tugtool-python`: PASS (449 tests)
+- `cargo clippy -p tugtool-python-cst -p tugtool-python -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- **No deprecation warnings**: Since this is a new library with zero external users, orphaned code was removed entirely rather than deprecated
+- **AnnotatedType struct**: Created to store both `type_str` (for backwards compatibility) and `type_node` (for structured access)
+- **Fallback strategy**: Signature conversion uses `annotation_node.or_else(|| annotation.map(TypeNode::named))` for backwards compatibility
+- **Data flow verified**: TypeNode flows from CST collection → annotation.rs → types.rs → analyzer.rs → TypeTracker → FactsStore
+- **Code-architect review**: Confirmed implementation is correct, complete, and properly integrated
+
+**Architectural Review Summary:**
+- CST information is now properly preserved throughout the pipeline
+- FactsStore consumers can access structured TypeNode information
+- P1 remediation tasks (signature conversion) are complete
+- All TypeTracker methods correctly updated for AnnotatedType
+- No breaking API changes (all new fields are Option<TypeNode>)
+
+---
+
 ## [phase-11.md] Step 9.5: Preserve CST Information in Annotations | PLANNING COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26 (planning phase only - implementation pending)

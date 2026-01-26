@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tugtool_core::facts::TypeNode;
 
 // ============================================================================
 // Span Information
@@ -256,6 +257,13 @@ pub struct AnnotationInfo {
     /// Column number (1-indexed).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub col: Option<u32>,
+    /// Structured type representation built from CST at collection time.
+    ///
+    /// Contains the `TypeNode` representation of the type annotation,
+    /// preserving structural information (generics, unions, optionals, etc.)
+    /// for use in FactsStore and type-aware operations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_node: Option<TypeNode>,
 }
 
 // ============================================================================
@@ -526,6 +534,7 @@ mod tests {
             span: None,
             line: Some(1),
             col: Some(10),
+            type_node: None,
         };
 
         let json = serde_json::to_string(&annotation).unwrap();

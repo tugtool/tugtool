@@ -1104,6 +1104,8 @@ pub fn analyze_files(
                 }),
                 line: a.line,
                 col: a.col,
+                // Pass through the structured TypeNode built at CST collection time
+                type_node: a.type_node.clone(),
             })
             .collect();
 
@@ -3341,6 +3343,7 @@ impl PythonAdapter {
             };
 
             // Convert parameters
+            // Use structured TypeNode if available, otherwise fall back to flat Named
             let params: Vec<ParameterData> = sig
                 .params
                 .iter()
@@ -3348,18 +3351,19 @@ impl PythonAdapter {
                     name: p.name.clone(),
                     kind: convert_cst_param_kind(p.kind),
                     default_span: p.default_span,
-                    annotation: p.annotation.as_ref().map(|s| TypeNode::Named {
-                        name: s.clone(),
-                        args: vec![],
-                    }),
+                    annotation: p
+                        .annotation_node
+                        .clone()
+                        .or_else(|| p.annotation.as_ref().map(TypeNode::named)),
                 })
                 .collect();
 
             // Convert return type
-            let returns = sig.returns.as_ref().map(|s| TypeNode::Named {
-                name: s.clone(),
-                args: vec![],
-            });
+            // Use structured TypeNode if available, otherwise fall back to flat Named
+            let returns = sig
+                .returns_node
+                .clone()
+                .or_else(|| sig.returns.as_ref().map(TypeNode::named));
 
             result.signatures.push(SignatureData {
                 symbol_index,

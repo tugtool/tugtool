@@ -39,6 +39,7 @@
 //! }
 //! ```
 
+use super::annotation::build_typenode_from_cst_annotation;
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
@@ -47,6 +48,7 @@ use crate::nodes::{
     Annotation, ClassDef, Decorator, Expression, FunctionDef, Module, Parameters, Span, StarArg,
     TypeParameters, TypeVarLike,
 };
+use tugtool_core::facts::TypeNode;
 
 /// Parameter kind classification for Python functions.
 ///
@@ -140,6 +142,11 @@ pub struct ParamInfo {
     pub default_span: Option<Span>,
     /// Type annotation string (if present).
     pub annotation: Option<String>,
+    /// Structured type representation built from CST at collection time.
+    ///
+    /// Contains the `TypeNode` representation of the parameter's type annotation,
+    /// preserving structural information (generics, unions, optionals, etc.).
+    pub annotation_node: Option<TypeNode>,
     /// Source span for the parameter name.
     pub span: Option<Span>,
 }
@@ -152,6 +159,7 @@ impl ParamInfo {
             kind,
             default_span: None,
             annotation: None,
+            annotation_node: None,
             span: None,
         }
     }
@@ -177,6 +185,11 @@ pub struct SignatureInfo {
     pub params: Vec<ParamInfo>,
     /// Return type annotation string (if present).
     pub returns: Option<String>,
+    /// Structured return type representation built from CST at collection time.
+    ///
+    /// Contains the `TypeNode` representation of the return type annotation,
+    /// preserving structural information (generics, unions, optionals, etc.).
+    pub returns_node: Option<TypeNode>,
     /// Modifiers (async, decorators).
     pub modifiers: Vec<Modifier>,
     /// Type parameters for generic functions (Python 3.12+).
@@ -196,6 +209,7 @@ impl SignatureInfo {
             name,
             params: vec![],
             returns: None,
+            returns_node: None,
             modifiers: vec![],
             type_params: vec![],
             scope_path,
@@ -292,6 +306,8 @@ impl<'pos> SignatureCollector<'pos> {
             info.span = self.lookup_span(p.name.node_id);
             if let Some(ann) = &p.annotation {
                 info.annotation = Some(self.annotation_to_string(ann));
+                // Build TypeNode from CST while it's still available
+                info.annotation_node = build_typenode_from_cst_annotation(&ann.annotation);
             }
             if let Some(default) = &p.default {
                 info.default_span = expression_span(default);
@@ -305,6 +321,8 @@ impl<'pos> SignatureCollector<'pos> {
             info.span = self.lookup_span(p.name.node_id);
             if let Some(ann) = &p.annotation {
                 info.annotation = Some(self.annotation_to_string(ann));
+                // Build TypeNode from CST while it's still available
+                info.annotation_node = build_typenode_from_cst_annotation(&ann.annotation);
             }
             if let Some(default) = &p.default {
                 info.default_span = expression_span(default);
@@ -318,6 +336,8 @@ impl<'pos> SignatureCollector<'pos> {
             info.span = self.lookup_span(p.name.node_id);
             if let Some(ann) = &p.annotation {
                 info.annotation = Some(self.annotation_to_string(ann));
+                // Build TypeNode from CST while it's still available
+                info.annotation_node = build_typenode_from_cst_annotation(&ann.annotation);
             }
             result.push(info);
         }
@@ -329,6 +349,8 @@ impl<'pos> SignatureCollector<'pos> {
             info.span = self.lookup_span(p.name.node_id);
             if let Some(ann) = &p.annotation {
                 info.annotation = Some(self.annotation_to_string(ann));
+                // Build TypeNode from CST while it's still available
+                info.annotation_node = build_typenode_from_cst_annotation(&ann.annotation);
             }
             if let Some(default) = &p.default {
                 info.default_span = expression_span(default);
@@ -342,6 +364,8 @@ impl<'pos> SignatureCollector<'pos> {
             info.span = self.lookup_span(p.name.node_id);
             if let Some(ann) = &p.annotation {
                 info.annotation = Some(self.annotation_to_string(ann));
+                // Build TypeNode from CST while it's still available
+                info.annotation_node = build_typenode_from_cst_annotation(&ann.annotation);
             }
             result.push(info);
         }
@@ -398,6 +422,8 @@ impl<'pos> SignatureCollector<'pos> {
         // Extract return type
         if let Some(returns) = &node.returns {
             sig.returns = Some(self.annotation_to_string(returns));
+            // Build TypeNode from CST while it's still available
+            sig.returns_node = build_typenode_from_cst_annotation(&returns.annotation);
         }
 
         // Extract type parameters (Python 3.12+)
