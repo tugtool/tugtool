@@ -6,6 +6,46 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 0: Audit and Categorize Span Usages | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D01] Span Validation Strategy
+- `crates/tugtool-python/src/analyzer.rs` - All 16 `Span::new(0, 0)` occurrences
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| List all 15+ `Span::new(0, 0)` locations in analyzer.rs | Done |
+| Categorize each as required/optional/removable | Done |
+| Document findings in plan step | Done |
+
+**Files Modified:**
+- `plans/phase-11B.md` - Marked Step 0 tasks and checkpoints as complete
+
+**Audit Results:**
+
+Found 16 total `Span::new(0, 0)` occurrences in analyzer.rs:
+
+| Category | Count | Lines | Notes |
+|----------|-------|-------|-------|
+| Optional | 4 | 622, 875, 3217, 3603 | Scopes and imports are informational, keep fallback |
+| Required | 12 | 639, 663, 915, 961, 1138, 3241, 3256, 3274, 3312, 3427, 3448, 3454 | Need `Option<Span>` propagation |
+
+**Checkpoints Verified:**
+- All usages categorized: PASS (16 occurrences classified)
+- Plan updated with findings: PASS (tasks and checkpoints marked complete)
+
+**Key Notes:**
+- The preliminary audit table in the plan was accurate; all line numbers and categorizations verified against actual code
+- Step 0 is documentation-only (0 LOC change) as expected
+- Required spans (12) will be addressed in Steps 1-2 of Phase 11B
+- Optional spans (4) will keep `Span::new(0, 0)` fallback as appropriate for informational data
+
+---
+
 ## [phase-11B.md] Plan Creation: Address Phase 11 Implementation Gaps | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

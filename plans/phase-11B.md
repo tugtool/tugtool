@@ -639,9 +639,9 @@ fn missing_span_warns_and_skips() {
 **References:** [D01] Span Validation Strategy
 
 **Tasks:**
-- [ ] List all 15+ `Span::new(0, 0)` locations in analyzer.rs
-- [ ] Categorize each as: required (edits), optional (informational), or removable
-- [ ] Document findings in this step
+- [x] List all 15+ `Span::new(0, 0)` locations in analyzer.rs
+- [x] Categorize each as: required (edits), optional (informational), or removable
+- [x] Document findings in this step
 
 **Span Usage Audit (from grep):**
 
@@ -671,8 +671,8 @@ fn missing_span_warns_and_skips() {
 - N/A (audit step)
 
 **Checkpoint:**
-- [ ] All usages categorized
-- [ ] Plan updated with findings
+- [x] All usages categorized
+- [x] Plan updated with findings
 
 **LOC Estimate:** 0 (documentation only)
 
