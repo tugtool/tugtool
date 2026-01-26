@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 3a: Update Python Analyzer to Emit PublicExport | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 3a specification (lines 3123-3172)
+- [D03] PublicExport for Language-Agnostic Exports (lines 452-589)
+- Concept C01: What is an "Export" (lines 1236-1290)
+- `crates/tugtool-python/src/analyzer.rs` - existing export processing
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update Python analyzer to emit `PublicExport` for each `__all__` entry | Done |
+| Keep legacy `Export` emission temporarily (removed in Step 3c) | Done |
+| Populate `export_kind: ExportKind::PythonAll` for `__all__` entries | Done |
+| Populate `export_target: ExportTarget::Single` for individual `__all__` entries | Done |
+| Populate `export_intent: ExportIntent::Declared` for explicit `__all__` declarations | Done |
+| Populate `export_origin: ExportOrigin::Local` for locally-defined exports | Done |
+| Populate `exported_name` and `source_name` (same for non-aliased Python exports) | Done |
+| Populate `exported_name_span` pointing at string content only (excluding quotes) | Done |
+| Populate `decl_span` covering the full string literal including quotes | Done |
+| Resolve `symbol_id` when the exported name matches a defined symbol | Done |
+| If no matching symbol exists, set `symbol_id = None` and keep the export | Done |
+| If `__all__` is empty, emit zero `PublicExport` entries | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added imports for `ExportIntent`, `ExportKind`, `ExportOrigin`, `ExportTarget`, `PublicExport`
+  - Updated export processing loop (lines 895-948) to emit both legacy `Export` and new `PublicExport`
+  - Symbol resolution uses `symbol_lookup` map to find symbols by (file_id, name, kind)
+  - Added 17 comprehensive tests in `public_export_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python public_export`: 17 tests passed
+- `cargo nextest run -p tugtool-python export`: 29 tests passed
+- `cargo nextest run -p tugtool-python`: 397 tests passed
+- `cargo nextest run --workspace`: 1495 tests passed
+- `cargo clippy -p tugtool-python`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python export`: PASS (29 tests)
+- `cargo nextest run -p tugtool-python`: PASS (397 tests)
+
+**Key Decisions/Notes:**
+- Both legacy `Export` and new `PublicExport` are emitted for each `__all__` entry during the migration period
+- Symbol resolution checks multiple kinds (Function, Class, Variable, Constant, Import) to find matching symbols
+- The `exported_name_span` correctly excludes quotes (matches legacy `content_span` semantics)
+- Unresolved exports (no matching symbol) still produce a `PublicExport` with `symbol_id = None`
+
+---
+
 ## [phase-11.md] Step 3: Add PublicExport Type | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

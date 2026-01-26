@@ -3134,18 +3134,18 @@ This step is split into 5 sub-steps for manageable commits:
 - Export spans populated correctly for rename operations
 
 **Tasks:**
-- [ ] Update Python analyzer to emit `PublicExport` for each `__all__` entry
-- [ ] Keep legacy `Export` emission temporarily (removed in Step 3c)
-- [ ] Populate `export_kind: ExportKind::PythonAll` for `__all__` entries
-- [ ] Populate `export_target: ExportTarget::Single` for individual `__all__` entries
-- [ ] Populate `export_intent: ExportIntent::Declared` for explicit `__all__` declarations
-- [ ] Populate `export_origin: ExportOrigin::Local` for locally-defined exports
-- [ ] Populate `exported_name` and `source_name` (same for non-aliased Python exports)
-- [ ] Populate `exported_name_span` pointing at string content only (excluding quotes)
-- [ ] Populate `decl_span` covering the full string literal including quotes
-- [ ] Resolve `symbol_id` when the exported name matches a defined symbol
-- [ ] If no matching symbol exists, set `symbol_id = None` and keep the export (no error)
-- [ ] If `__all__` is empty, emit zero `PublicExport` entries
+- [x] Update Python analyzer to emit `PublicExport` for each `__all__` entry
+- [x] Keep legacy `Export` emission temporarily (removed in Step 3c)
+- [x] Populate `export_kind: ExportKind::PythonAll` for `__all__` entries
+- [x] Populate `export_target: ExportTarget::Single` for individual `__all__` entries
+- [x] Populate `export_intent: ExportIntent::Declared` for explicit `__all__` declarations
+- [x] Populate `export_origin: ExportOrigin::Local` for locally-defined exports
+- [x] Populate `exported_name` and `source_name` (same for non-aliased Python exports)
+- [x] Populate `exported_name_span` pointing at string content only (excluding quotes)
+- [x] Populate `decl_span` covering the full string literal including quotes
+- [x] Resolve `symbol_id` when the exported name matches a defined symbol
+- [x] If no matching symbol exists, set `symbol_id = None` and keep the export (no error)
+- [x] If `__all__` is empty, emit zero `PublicExport` entries
 
 **Span Semantics for Python `__all__`:**
 For `__all__ = ["foo", "bar"]`:
@@ -3154,17 +3154,17 @@ For `__all__ = ["foo", "bar"]`:
 - This matches the legacy `content_span` semantics for rename-safe replacements
 
 **Tests:**
-- [ ] Unit: Python `__all__` parsing produces correct `PublicExport` fields
-- [ ] Unit: `exported_name_span` excludes quote characters
-- [ ] Unit: `decl_span` includes quote characters
-- [ ] Integration: Python analyzer correctly resolves `symbol_id` for exported names
-- [ ] Integration: `__all__` entries without matching symbols produce `symbol_id = None`
-- [ ] Integration: Empty `__all__` yields zero PublicExport entries
-- [ ] Integration: Both legacy Export and PublicExport are populated (temporary)
+- [x] Unit: Python `__all__` parsing produces correct `PublicExport` fields
+- [x] Unit: `exported_name_span` excludes quote characters
+- [x] Unit: `decl_span` includes quote characters
+- [x] Integration: Python analyzer correctly resolves `symbol_id` for exported names
+- [x] Integration: `__all__` entries without matching symbols produce `symbol_id = None`
+- [x] Integration: Empty `__all__` yields zero PublicExport entries
+- [x] Integration: Both legacy Export and PublicExport are populated (temporary)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python export`
-- [ ] `cargo nextest run -p tugtool-python`
+- [x] `cargo nextest run -p tugtool-python export`
+- [x] `cargo nextest run -p tugtool-python`
 
 **Rollback:**
 - Revert commit

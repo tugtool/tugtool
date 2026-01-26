@@ -11,7 +11,8 @@
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
 
 use tugtool_core::facts::{
-    Export, FactsStore, File, Import, Language, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    Export, ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import,
+    Language, PublicExport, Reference, ReferenceKind, ScopeId as CoreScopeId,
     ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
@@ -893,12 +894,61 @@ pub fn analyze_files(
         }
 
         // Process exports (__all__ entries)
+        // Emit both legacy Export (for backward compatibility) and PublicExport (new canonical model)
         for local_export in &analysis.exports {
+            // Legacy Export emission (will be removed in Step 3c)
             let export_id = store.next_export_id();
             let span = local_export.span.unwrap_or_else(|| Span::new(0, 0));
             let content_span = local_export.content_span.unwrap_or_else(|| Span::new(0, 0));
             let export = Export::new(export_id, file_id, span, content_span, &local_export.name);
             store.insert_export(export);
+
+            // PublicExport emission (new canonical model)
+            // decl_span = full string literal including quotes
+            // exported_name_span = string content only, no quotes
+            let public_export_id = store.next_public_export_id();
+            let decl_span = local_export.span.unwrap_or_else(|| Span::new(0, 0));
+            let exported_name_span = local_export.content_span;
+
+            // Resolve symbol_id: look up the exported name as a module-level symbol
+            // Check each symbol kind that could be exported (Function, Class, Variable, Constant)
+            let resolved_symbol_id = [
+                SymbolKind::Function,
+                SymbolKind::Class,
+                SymbolKind::Variable,
+                SymbolKind::Constant,
+                SymbolKind::Import,
+            ]
+            .iter()
+            .find_map(|&kind| {
+                symbol_lookup
+                    .get(&(file_id, local_export.name.as_str(), kind))
+                    .copied()
+            });
+
+            // Build PublicExport with all required fields
+            let mut public_export = PublicExport::new(
+                public_export_id,
+                file_id,
+                decl_span,
+                ExportKind::PythonAll,
+                ExportTarget::Single,
+                ExportIntent::Declared,
+                ExportOrigin::Local,
+            )
+            .with_name(&local_export.name); // Sets both exported_name and source_name
+
+            // Add exported_name_span (string content without quotes)
+            if let Some(name_span) = exported_name_span {
+                public_export = public_export.with_exported_name_span(name_span);
+            }
+
+            // Add symbol_id if resolved
+            if let Some(sym_id) = resolved_symbol_id {
+                public_export = public_export.with_symbol(sym_id);
+            }
+
+            store.insert_public_export(public_export);
         }
 
         // Process references
@@ -6719,6 +6769,485 @@ def call_handler(h: Handler):
                 refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
                 "should have Call reference to process method from annotated parameter"
             );
+        }
+    }
+
+    // ========================================================================
+    // PublicExport Tests (Step 3a)
+    // ========================================================================
+
+    mod public_export_tests {
+        use super::*;
+
+        #[test]
+        fn test_public_export_all_entries_produces_public_exports() {
+            // Test: Python __all__ entries produce PublicExport records
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["foo", "bar"]
+
+def foo():
+    pass
+
+def bar():
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify PublicExport records were created
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 2, "should have 2 public exports");
+
+            // Verify names are correct
+            let names: Vec<_> = public_exports
+                .iter()
+                .filter_map(|e| e.exported_name.as_ref())
+                .collect();
+            assert!(names.contains(&&"foo".to_string()));
+            assert!(names.contains(&&"bar".to_string()));
+        }
+
+        #[test]
+        fn test_public_export_kind_is_python_all() {
+            // Test: ExportKind is PythonAll for __all__ entries
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["func"]
+def func(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+            assert_eq!(
+                public_exports[0].export_kind,
+                ExportKind::PythonAll,
+                "export_kind should be PythonAll"
+            );
+        }
+
+        #[test]
+        fn test_public_export_target_is_single() {
+            // Test: ExportTarget is Single for individual __all__ entries
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["func"]
+def func(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+            assert_eq!(
+                public_exports[0].export_target,
+                ExportTarget::Single,
+                "export_target should be Single"
+            );
+        }
+
+        #[test]
+        fn test_public_export_intent_is_declared() {
+            // Test: ExportIntent is Declared for explicit __all__ entries
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["func"]
+def func(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+            assert_eq!(
+                public_exports[0].export_intent,
+                ExportIntent::Declared,
+                "export_intent should be Declared"
+            );
+        }
+
+        #[test]
+        fn test_public_export_origin_is_local() {
+            // Test: ExportOrigin is Local for locally-defined exports
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["func"]
+def func(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+            assert_eq!(
+                public_exports[0].export_origin,
+                ExportOrigin::Local,
+                "export_origin should be Local"
+            );
+        }
+
+        #[test]
+        fn test_public_export_exported_name_span_excludes_quotes() {
+            // Test: exported_name_span points at string content only (no quotes)
+            let mut store = FactsStore::new();
+            let source = r#"__all__ = ["foo"]
+def foo(): pass
+"#;
+            let files = vec![("test.py".to_string(), source.to_string())];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            let name_span = export
+                .exported_name_span
+                .expect("should have exported_name_span");
+
+            // The string content is "foo" (without quotes)
+            let content = &source[name_span.start..name_span.end];
+            assert_eq!(content, "foo", "exported_name_span should cover 'foo' only");
+
+            // Verify it doesn't include quotes
+            assert!(
+                !content.starts_with('"'),
+                "span should not include opening quote"
+            );
+            assert!(
+                !content.ends_with('"'),
+                "span should not include closing quote"
+            );
+        }
+
+        #[test]
+        fn test_public_export_decl_span_includes_quotes() {
+            // Test: decl_span covers the full string literal including quotes
+            let mut store = FactsStore::new();
+            let source = r#"__all__ = ["foo"]
+def foo(): pass
+"#;
+            let files = vec![("test.py".to_string(), source.to_string())];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            let decl_span = export.decl_span;
+
+            // The full string literal is "\"foo\"" (with quotes)
+            let content = &source[decl_span.start..decl_span.end];
+            assert_eq!(content, "\"foo\"", "decl_span should cover '\"foo\"'");
+        }
+
+        #[test]
+        fn test_public_export_symbol_id_resolved_for_function() {
+            // Test: symbol_id is resolved when exported name matches a defined function
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["my_func"]
+def my_func():
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            assert!(
+                export.symbol_id.is_some(),
+                "symbol_id should be resolved for my_func"
+            );
+
+            // Verify the resolved symbol is the function
+            let symbol = store.symbol(export.symbol_id.unwrap());
+            assert!(symbol.is_some());
+            assert_eq!(symbol.unwrap().name, "my_func");
+            assert_eq!(symbol.unwrap().kind, SymbolKind::Function);
+        }
+
+        #[test]
+        fn test_public_export_symbol_id_resolved_for_class() {
+            // Test: symbol_id is resolved when exported name matches a defined class
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["MyClass"]
+class MyClass:
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            assert!(
+                export.symbol_id.is_some(),
+                "symbol_id should be resolved for MyClass"
+            );
+
+            let symbol = store.symbol(export.symbol_id.unwrap());
+            assert!(symbol.is_some());
+            assert_eq!(symbol.unwrap().name, "MyClass");
+            assert_eq!(symbol.unwrap().kind, SymbolKind::Class);
+        }
+
+        #[test]
+        fn test_public_export_symbol_id_resolved_for_variable() {
+            // Test: symbol_id is resolved when exported name matches a defined variable
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["CONSTANT"]
+CONSTANT = 42
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            assert!(
+                export.symbol_id.is_some(),
+                "symbol_id should be resolved for CONSTANT"
+            );
+
+            let symbol = store.symbol(export.symbol_id.unwrap());
+            assert!(symbol.is_some());
+            assert_eq!(symbol.unwrap().name, "CONSTANT");
+        }
+
+        #[test]
+        fn test_public_export_symbol_id_none_for_unmatched() {
+            // Test: symbol_id is None when exported name doesn't match any symbol
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["nonexistent"]
+def actual_func():
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            assert!(
+                export.symbol_id.is_none(),
+                "symbol_id should be None for unmatched name"
+            );
+            assert_eq!(
+                export.exported_name.as_ref().unwrap(),
+                "nonexistent",
+                "name should still be preserved"
+            );
+        }
+
+        #[test]
+        fn test_public_export_empty_all_yields_zero_exports() {
+            // Test: Empty __all__ yields zero PublicExport entries
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = []
+def func():
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert!(
+                public_exports.is_empty(),
+                "empty __all__ should produce zero public exports"
+            );
+        }
+
+        #[test]
+        fn test_public_export_and_legacy_export_both_populated() {
+            // Test: Both legacy Export and PublicExport are populated (temporary coexistence)
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["foo", "bar"]
+def foo(): pass
+def bar(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Check legacy exports
+            let legacy_exports: Vec<_> = store.exports().collect();
+            assert_eq!(
+                legacy_exports.len(),
+                2,
+                "should have 2 legacy exports (temporary)"
+            );
+
+            // Check new PublicExport entries
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 2, "should have 2 public exports");
+
+            // Both should have the same names
+            let legacy_names: std::collections::HashSet<_> =
+                legacy_exports.iter().map(|e| &e.name).collect();
+            let public_names: std::collections::HashSet<_> = public_exports
+                .iter()
+                .filter_map(|e| e.exported_name.as_ref())
+                .collect();
+            assert_eq!(
+                legacy_names, public_names,
+                "legacy and public exports should have same names"
+            );
+        }
+
+        #[test]
+        fn test_public_export_source_name_equals_exported_name() {
+            // Test: For non-aliased Python exports, source_name == exported_name
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["func"]
+def func(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 1);
+
+            let export = &public_exports[0];
+            assert_eq!(
+                export.exported_name, export.source_name,
+                "exported_name should equal source_name for non-aliased exports"
+            );
+            assert_eq!(export.exported_name.as_ref().unwrap(), "func");
+        }
+
+        #[test]
+        fn test_public_export_augmented_all() {
+            // Test: Augmented __all__ (+=) produces PublicExport entries
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"__all__ = ["foo"]
+__all__ += ["bar"]
+def foo(): pass
+def bar(): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 2, "should have 2 public exports");
+
+            let names: Vec<_> = public_exports
+                .iter()
+                .filter_map(|e| e.exported_name.as_ref())
+                .collect();
+            assert!(names.contains(&&"foo".to_string()));
+            assert!(names.contains(&&"bar".to_string()));
+        }
+
+        #[test]
+        fn test_public_export_no_all_produces_zero_exports() {
+            // Test: File without __all__ produces zero PublicExport entries
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"def func():
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert!(
+                public_exports.is_empty(),
+                "file without __all__ should have zero public exports"
+            );
+        }
+
+        #[test]
+        fn test_public_export_multi_file_with_exports() {
+            // Integration test: Multiple files with exports, symbol resolution works across files
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "mod_a.py".to_string(),
+                    r#"__all__ = ["func_a"]
+def func_a(): pass
+"#
+                    .to_string(),
+                ),
+                (
+                    "mod_b.py".to_string(),
+                    r#"__all__ = ["func_b", "ClassB"]
+def func_b(): pass
+class ClassB: pass
+"#
+                    .to_string(),
+                ),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let public_exports: Vec<_> = store.public_exports().collect();
+            assert_eq!(public_exports.len(), 3, "should have 3 total public exports");
+
+            // All exports should have resolved symbol_ids
+            for export in &public_exports {
+                assert!(
+                    export.symbol_id.is_some(),
+                    "export '{}' should have resolved symbol_id",
+                    export.exported_name.as_ref().unwrap_or(&"<none>".to_string())
+                );
+            }
         }
     }
 }
