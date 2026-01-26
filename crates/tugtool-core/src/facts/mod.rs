@@ -155,6 +155,40 @@ impl std::fmt::Display for AliasEdgeId {
     }
 }
 
+/// Unique identifier for an attribute access within a snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct AttributeAccessId(pub u32);
+
+impl AttributeAccessId {
+    /// Create a new attribute access ID.
+    pub fn new(id: u32) -> Self {
+        AttributeAccessId(id)
+    }
+}
+
+impl std::fmt::Display for AttributeAccessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "attr_{}", self.0)
+    }
+}
+
+/// Unique identifier for a call site within a snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct CallSiteId(pub u32);
+
+impl CallSiteId {
+    /// Create a new call site ID.
+    pub fn new(id: u32) -> Self {
+        CallSiteId(id)
+    }
+}
+
+impl std::fmt::Display for CallSiteId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "call_{}", self.0)
+    }
+}
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -434,6 +468,23 @@ pub enum Visibility {
     Private,
     /// Accessible within the class hierarchy (Java/C++ protected).
     Protected,
+}
+
+/// Kind of attribute access.
+///
+/// Classifies how an attribute is being accessed, enabling method resolution,
+/// property refactors, and safe member renames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum AttributeAccessKind {
+    /// Attribute read (e.g., `x = obj.attr`).
+    #[default]
+    Read,
+    /// Attribute write (e.g., `obj.attr = x`).
+    Write,
+    /// Attribute call (e.g., `obj.method()`).
+    Call,
 }
 
 // ============================================================================
@@ -1172,6 +1223,139 @@ impl TypeParam {
     }
 }
 
+/// An attribute access (e.g., `obj.attr`, `obj.method()`).
+///
+/// Represents accessing an attribute on an object, enabling method resolution,
+/// property refactors, and safe member renames.
+///
+/// # Examples
+///
+/// - `obj.attr` → Read access
+/// - `obj.attr = value` → Write access
+/// - `obj.method()` → Call access
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributeAccess {
+    /// Unique identifier for this attribute access.
+    pub access_id: AttributeAccessId,
+    /// File containing this attribute access.
+    pub file_id: FileId,
+    /// Byte span of the attribute name.
+    pub span: Span,
+    /// The base symbol being accessed (if resolved).
+    /// None when the base expression cannot be resolved to a symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_symbol_id: Option<SymbolId>,
+    /// Attribute name being accessed.
+    pub name: String,
+    /// Kind of attribute access.
+    pub kind: AttributeAccessKind,
+}
+
+impl AttributeAccess {
+    /// Create a new attribute access.
+    pub fn new(
+        access_id: AttributeAccessId,
+        file_id: FileId,
+        span: Span,
+        name: impl Into<String>,
+        kind: AttributeAccessKind,
+    ) -> Self {
+        AttributeAccess {
+            access_id,
+            file_id,
+            span,
+            base_symbol_id: None,
+            name: name.into(),
+            kind,
+        }
+    }
+
+    /// Set the base symbol.
+    pub fn with_base_symbol(mut self, symbol_id: SymbolId) -> Self {
+        self.base_symbol_id = Some(symbol_id);
+        self
+    }
+}
+
+/// An argument in a call expression.
+///
+/// Represents a single argument passed to a function/method call.
+/// Used to track positional and keyword arguments for parameter rename operations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallArg {
+    /// Argument name for keyword args, None for positional args.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Byte span of the argument expression.
+    pub span: Span,
+}
+
+impl CallArg {
+    /// Create a positional argument.
+    pub fn positional(span: Span) -> Self {
+        CallArg { name: None, span }
+    }
+
+    /// Create a keyword argument.
+    pub fn keyword(name: impl Into<String>, span: Span) -> Self {
+        CallArg {
+            name: Some(name.into()),
+            span,
+        }
+    }
+}
+
+/// A call site in the code.
+///
+/// Represents a function/method call, including the callee and arguments.
+/// Used for parameter rename operations and API migration.
+///
+/// # Examples
+///
+/// - `foo()` → Call with no arguments
+/// - `foo(1, 2)` → Call with positional arguments
+/// - `foo(a=1, b=2)` → Call with keyword arguments
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallSite {
+    /// Unique identifier for this call site.
+    pub call_id: CallSiteId,
+    /// File containing this call site.
+    pub file_id: FileId,
+    /// Byte span of the entire call expression.
+    pub span: Span,
+    /// The callee symbol (if resolved).
+    /// None when the callee cannot be resolved to a symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callee_symbol_id: Option<SymbolId>,
+    /// Arguments in call order.
+    pub args: Vec<CallArg>,
+}
+
+impl CallSite {
+    /// Create a new call site.
+    pub fn new(call_id: CallSiteId, file_id: FileId, span: Span) -> Self {
+        CallSite {
+            call_id,
+            file_id,
+            span,
+            callee_symbol_id: None,
+            args: vec![],
+        }
+    }
+
+    /// Set the callee symbol.
+    pub fn with_callee(mut self, symbol_id: SymbolId) -> Self {
+        self.callee_symbol_id = Some(symbol_id);
+        self
+    }
+
+    /// Set the arguments.
+    pub fn with_args(mut self, args: Vec<CallArg>) -> Self {
+        self.args = args;
+        self
+    }
+}
+
 // ============================================================================
 // FactsStore
 // ============================================================================
@@ -1248,6 +1432,22 @@ pub struct FactsStore {
     /// target_symbol_id → alias_edge_ids[] (reverse lookup: target → edges).
     alias_edges_by_target: HashMap<SymbolId, Vec<AliasEdgeId>>,
 
+    // Attribute access storage
+    /// Primary storage for attribute accesses.
+    attribute_accesses: BTreeMap<AttributeAccessId, AttributeAccess>,
+    /// file_id → attribute_access_ids[] (attribute accesses in file).
+    attribute_accesses_by_file: HashMap<FileId, Vec<AttributeAccessId>>,
+    /// attribute_name → attribute_access_ids[] (accesses to this attribute name).
+    attribute_accesses_by_name: HashMap<String, Vec<AttributeAccessId>>,
+
+    // Call site storage
+    /// Primary storage for call sites.
+    call_sites: BTreeMap<CallSiteId, CallSite>,
+    /// file_id → call_site_ids[] (call sites in file).
+    call_sites_by_file: HashMap<FileId, Vec<CallSiteId>>,
+    /// callee_symbol_id → call_site_ids[] (calls to this callee).
+    call_sites_by_callee: HashMap<SymbolId, Vec<CallSiteId>>,
+
     // ID generators
     next_file_id: u32,
     next_module_id: u32,
@@ -1257,6 +1457,8 @@ pub struct FactsStore {
     next_export_id: u32,
     next_scope_id: u32,
     next_alias_edge_id: u32,
+    next_attribute_access_id: u32,
+    next_call_site_id: u32,
 }
 
 impl Default for FactsStore {
@@ -1289,6 +1491,12 @@ impl Default for FactsStore {
             alias_edges_by_file: HashMap::new(),
             alias_edges_by_alias: HashMap::new(),
             alias_edges_by_target: HashMap::new(),
+            attribute_accesses: BTreeMap::new(),
+            attribute_accesses_by_file: HashMap::new(),
+            attribute_accesses_by_name: HashMap::new(),
+            call_sites: BTreeMap::new(),
+            call_sites_by_file: HashMap::new(),
+            call_sites_by_callee: HashMap::new(),
             next_file_id: 0,
             next_module_id: 0,
             next_symbol_id: 0,
@@ -1297,6 +1505,8 @@ impl Default for FactsStore {
             next_export_id: 0,
             next_scope_id: 0,
             next_alias_edge_id: 0,
+            next_attribute_access_id: 0,
+            next_call_site_id: 0,
         }
     }
 }
@@ -1366,6 +1576,20 @@ impl FactsStore {
     pub fn next_alias_edge_id(&mut self) -> AliasEdgeId {
         let id = AliasEdgeId::new(self.next_alias_edge_id);
         self.next_alias_edge_id += 1;
+        id
+    }
+
+    /// Generate the next AttributeAccessId.
+    pub fn next_attribute_access_id(&mut self) -> AttributeAccessId {
+        let id = AttributeAccessId::new(self.next_attribute_access_id);
+        self.next_attribute_access_id += 1;
+        id
+    }
+
+    /// Generate the next CallSiteId.
+    pub fn next_call_site_id(&mut self) -> CallSiteId {
+        let id = CallSiteId::new(self.next_call_site_id);
+        self.next_call_site_id += 1;
         id
     }
 
@@ -1535,6 +1759,48 @@ impl FactsStore {
         self.type_params.insert(symbol_id, params);
     }
 
+    /// Insert an attribute access.
+    ///
+    /// Updates all relevant indexes for efficient lookup.
+    pub fn insert_attribute_access(&mut self, access: AttributeAccess) {
+        // Update file index
+        self.attribute_accesses_by_file
+            .entry(access.file_id)
+            .or_default()
+            .push(access.access_id);
+
+        // Update name index
+        self.attribute_accesses_by_name
+            .entry(access.name.clone())
+            .or_default()
+            .push(access.access_id);
+
+        // Insert into primary storage
+        self.attribute_accesses.insert(access.access_id, access);
+    }
+
+    /// Insert a call site.
+    ///
+    /// Updates all relevant indexes for efficient lookup.
+    pub fn insert_call_site(&mut self, call: CallSite) {
+        // Update file index
+        self.call_sites_by_file
+            .entry(call.file_id)
+            .or_default()
+            .push(call.call_id);
+
+        // Update callee index if callee is resolved
+        if let Some(callee_id) = call.callee_symbol_id {
+            self.call_sites_by_callee
+                .entry(callee_id)
+                .or_default()
+                .push(call.call_id);
+        }
+
+        // Insert into primary storage
+        self.call_sites.insert(call.call_id, call);
+    }
+
     // ========================================================================
     // Lookup by ID
     // ========================================================================
@@ -1592,6 +1858,16 @@ impl FactsStore {
     /// Returns Some(&[]) is technically not possible since we only store non-empty params.
     pub fn type_params_for(&self, symbol_id: SymbolId) -> Option<&[TypeParam]> {
         self.type_params.get(&symbol_id).map(|v| v.as_slice())
+    }
+
+    /// Get an attribute access by ID.
+    pub fn attribute_access(&self, id: AttributeAccessId) -> Option<&AttributeAccess> {
+        self.attribute_accesses.get(&id)
+    }
+
+    /// Get a call site by ID.
+    pub fn call_site(&self, id: CallSiteId) -> Option<&CallSite> {
+        self.call_sites.get(&id)
     }
 
     // ========================================================================
@@ -1799,6 +2075,72 @@ impl FactsStore {
             .unwrap_or_default()
     }
 
+    /// Get all attribute accesses in a file.
+    ///
+    /// Returns attribute accesses in deterministic order (by AttributeAccessId).
+    pub fn attribute_accesses_in_file(&self, file_id: FileId) -> Vec<&AttributeAccess> {
+        self.attribute_accesses_by_file
+            .get(&file_id)
+            .map(|ids| {
+                let mut accesses: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.attribute_accesses.get(id))
+                    .collect();
+                accesses.sort_by_key(|a| a.access_id);
+                accesses
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all attribute accesses with a given attribute name.
+    ///
+    /// Returns attribute accesses in deterministic order (by AttributeAccessId).
+    /// This is the primary method for finding attribute accesses to rename.
+    pub fn attribute_accesses_named(&self, name: &str) -> Vec<&AttributeAccess> {
+        self.attribute_accesses_by_name
+            .get(name)
+            .map(|ids| {
+                let mut accesses: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.attribute_accesses.get(id))
+                    .collect();
+                accesses.sort_by_key(|a| a.access_id);
+                accesses
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all call sites in a file.
+    ///
+    /// Returns call sites in deterministic order (by CallSiteId).
+    pub fn call_sites_in_file(&self, file_id: FileId) -> Vec<&CallSite> {
+        self.call_sites_by_file
+            .get(&file_id)
+            .map(|ids| {
+                let mut calls: Vec<_> =
+                    ids.iter().filter_map(|id| self.call_sites.get(id)).collect();
+                calls.sort_by_key(|c| c.call_id);
+                calls
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all call sites calling a given symbol.
+    ///
+    /// Returns call sites in deterministic order (by CallSiteId).
+    /// This is the primary method for finding call sites for API migration.
+    pub fn call_sites_to_callee(&self, callee_symbol_id: SymbolId) -> Vec<&CallSite> {
+        self.call_sites_by_callee
+            .get(&callee_symbol_id)
+            .map(|ids| {
+                let mut calls: Vec<_> =
+                    ids.iter().filter_map(|id| self.call_sites.get(id)).collect();
+                calls.sort_by_key(|c| c.call_id);
+                calls
+            })
+            .unwrap_or_default()
+    }
+
     /// Convert alias edges to AliasOutput format for JSON serialization.
     ///
     /// Performs symbol lookup to convert SymbolId references to string names.
@@ -1931,6 +2273,16 @@ impl FactsStore {
             .map(|(id, params)| (*id, params.as_slice()))
     }
 
+    /// Iterate over all attribute accesses in deterministic order.
+    pub fn attribute_accesses(&self) -> impl Iterator<Item = &AttributeAccess> {
+        self.attribute_accesses.values()
+    }
+
+    /// Iterate over all call sites in deterministic order.
+    pub fn call_sites(&self) -> impl Iterator<Item = &CallSite> {
+        self.call_sites.values()
+    }
+
     // ========================================================================
     // Counts
     // ========================================================================
@@ -1990,6 +2342,16 @@ impl FactsStore {
         self.type_params.len()
     }
 
+    /// Number of attribute accesses.
+    pub fn attribute_access_count(&self) -> usize {
+        self.attribute_accesses.len()
+    }
+
+    /// Number of call sites.
+    pub fn call_site_count(&self) -> usize {
+        self.call_sites.len()
+    }
+
     // ========================================================================
     // Bulk Operations
     // ========================================================================
@@ -2023,6 +2385,14 @@ impl FactsStore {
         self.alias_edges_by_file.clear();
         self.alias_edges_by_alias.clear();
         self.alias_edges_by_target.clear();
+
+        self.attribute_accesses.clear();
+        self.attribute_accesses_by_file.clear();
+        self.attribute_accesses_by_name.clear();
+
+        self.call_sites.clear();
+        self.call_sites_by_file.clear();
+        self.call_sites_by_callee.clear();
 
         // Note: We don't reset ID generators to preserve uniqueness
     }
@@ -4926,6 +5296,410 @@ mod tests {
             let json = serde_json::to_string(&node).unwrap();
             let parsed: TypeNode = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, node);
+        }
+    }
+
+    mod attribute_access_tests {
+        use super::*;
+
+        #[test]
+        fn attribute_access_kind_serialization() {
+            // Test all variants serialize correctly
+            assert_eq!(
+                serde_json::to_string(&AttributeAccessKind::Read).unwrap(),
+                "\"read\""
+            );
+            assert_eq!(
+                serde_json::to_string(&AttributeAccessKind::Write).unwrap(),
+                "\"write\""
+            );
+            assert_eq!(
+                serde_json::to_string(&AttributeAccessKind::Call).unwrap(),
+                "\"call\""
+            );
+        }
+
+        #[test]
+        fn attribute_access_kind_deserialization() {
+            let read: AttributeAccessKind = serde_json::from_str("\"read\"").unwrap();
+            assert_eq!(read, AttributeAccessKind::Read);
+
+            let write: AttributeAccessKind = serde_json::from_str("\"write\"").unwrap();
+            assert_eq!(write, AttributeAccessKind::Write);
+
+            let call: AttributeAccessKind = serde_json::from_str("\"call\"").unwrap();
+            assert_eq!(call, AttributeAccessKind::Call);
+        }
+
+        #[test]
+        fn attribute_access_kind_default() {
+            assert_eq!(AttributeAccessKind::default(), AttributeAccessKind::Read);
+        }
+
+        #[test]
+        fn attribute_access_with_resolved_base() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol for the base object
+            let base_symbol = test_symbol(&mut store, "obj", file_id, 10);
+            let base_symbol_id = base_symbol.symbol_id;
+            store.insert_symbol(base_symbol);
+
+            // Create an attribute access with resolved base
+            let access_id = store.next_attribute_access_id();
+            let access = AttributeAccess::new(
+                access_id,
+                file_id,
+                Span::new(50, 54),
+                "attr",
+                AttributeAccessKind::Read,
+            )
+            .with_base_symbol(base_symbol_id);
+            store.insert_attribute_access(access);
+
+            let retrieved = store.attribute_access(access_id).unwrap();
+            assert_eq!(retrieved.name, "attr");
+            assert_eq!(retrieved.kind, AttributeAccessKind::Read);
+            assert_eq!(retrieved.base_symbol_id, Some(base_symbol_id));
+        }
+
+        #[test]
+        fn attribute_access_with_unresolved_base() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create an attribute access without resolved base
+            let access_id = store.next_attribute_access_id();
+            let access = AttributeAccess::new(
+                access_id,
+                file_id,
+                Span::new(50, 54),
+                "method",
+                AttributeAccessKind::Call,
+            );
+            store.insert_attribute_access(access);
+
+            let retrieved = store.attribute_access(access_id).unwrap();
+            assert_eq!(retrieved.name, "method");
+            assert_eq!(retrieved.kind, AttributeAccessKind::Call);
+            assert_eq!(retrieved.base_symbol_id, None);
+        }
+
+        #[test]
+        fn attribute_access_insert_query_roundtrip() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Insert multiple attribute accesses
+            for (i, name) in ["attr1", "attr2", "attr3"].iter().enumerate() {
+                let access_id = store.next_attribute_access_id();
+                let access = AttributeAccess::new(
+                    access_id,
+                    file_id,
+                    Span::new(i * 10, i * 10 + 5),
+                    *name,
+                    AttributeAccessKind::Read,
+                );
+                store.insert_attribute_access(access);
+            }
+
+            assert_eq!(store.attribute_access_count(), 3);
+
+            // Query by file
+            let in_file = store.attribute_accesses_in_file(file_id);
+            assert_eq!(in_file.len(), 3);
+        }
+
+        #[test]
+        fn attribute_access_query_by_name() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Insert accesses to same attribute name in different positions
+            for i in 0..3 {
+                let access_id = store.next_attribute_access_id();
+                let access = AttributeAccess::new(
+                    access_id,
+                    file_id,
+                    Span::new(i * 10, i * 10 + 4),
+                    "data",
+                    AttributeAccessKind::Read,
+                );
+                store.insert_attribute_access(access);
+            }
+
+            // Insert one access to a different name
+            let access_id = store.next_attribute_access_id();
+            let access = AttributeAccess::new(
+                access_id,
+                file_id,
+                Span::new(100, 106),
+                "config",
+                AttributeAccessKind::Read,
+            );
+            store.insert_attribute_access(access);
+
+            // Query by name should find all "data" accesses
+            let data_accesses = store.attribute_accesses_named("data");
+            assert_eq!(data_accesses.len(), 3);
+
+            let config_accesses = store.attribute_accesses_named("config");
+            assert_eq!(config_accesses.len(), 1);
+
+            let unknown = store.attribute_accesses_named("unknown");
+            assert!(unknown.is_empty());
+        }
+
+        #[test]
+        fn attribute_access_iteration() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            for i in 0..5 {
+                let access_id = store.next_attribute_access_id();
+                let access = AttributeAccess::new(
+                    access_id,
+                    file_id,
+                    Span::new(i * 10, i * 10 + 4),
+                    format!("attr{}", i),
+                    AttributeAccessKind::Read,
+                );
+                store.insert_attribute_access(access);
+            }
+
+            // Iteration should be deterministic
+            let iter1: Vec<_> = store.attribute_accesses().map(|a| a.access_id).collect();
+            let iter2: Vec<_> = store.attribute_accesses().map(|a| a.access_id).collect();
+            assert_eq!(iter1, iter2);
+            assert_eq!(iter1.len(), 5);
+        }
+
+        #[test]
+        fn attribute_access_serialization() {
+            let access = AttributeAccess::new(
+                AttributeAccessId::new(1),
+                FileId::new(0),
+                Span::new(10, 14),
+                "attr",
+                AttributeAccessKind::Write,
+            );
+
+            let json = serde_json::to_string(&access).unwrap();
+            assert!(json.contains("\"access_id\":1"));
+            assert!(json.contains("\"name\":\"attr\""));
+            assert!(json.contains("\"kind\":\"write\""));
+            // base_symbol_id should not appear when None
+            assert!(!json.contains("base_symbol_id"));
+        }
+    }
+
+    mod call_site_tests {
+        use super::*;
+
+        #[test]
+        fn call_arg_positional() {
+            let arg = CallArg::positional(Span::new(10, 15));
+            assert_eq!(arg.name, None);
+            assert_eq!(arg.span.start, 10);
+        }
+
+        #[test]
+        fn call_arg_keyword() {
+            let arg = CallArg::keyword("value", Span::new(20, 30));
+            assert_eq!(arg.name, Some("value".to_string()));
+            assert_eq!(arg.span.start, 20);
+        }
+
+        #[test]
+        fn call_arg_serialization() {
+            let positional = CallArg::positional(Span::new(10, 15));
+            let json = serde_json::to_string(&positional).unwrap();
+            // name should not appear when None
+            assert!(!json.contains("\"name\""));
+            assert!(json.contains("\"span\""));
+
+            let keyword = CallArg::keyword("arg", Span::new(20, 25));
+            let json = serde_json::to_string(&keyword).unwrap();
+            assert!(json.contains("\"name\":\"arg\""));
+        }
+
+        #[test]
+        fn call_site_with_resolved_callee() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol for the callee
+            let callee_symbol = test_symbol(&mut store, "process", file_id, 10);
+            let callee_symbol_id = callee_symbol.symbol_id;
+            store.insert_symbol(callee_symbol);
+
+            // Create a call site with resolved callee
+            let call_id = store.next_call_site_id();
+            let call = CallSite::new(call_id, file_id, Span::new(50, 70))
+                .with_callee(callee_symbol_id)
+                .with_args(vec![
+                    CallArg::positional(Span::new(58, 59)),
+                    CallArg::keyword("value", Span::new(61, 69)),
+                ]);
+            store.insert_call_site(call);
+
+            let retrieved = store.call_site(call_id).unwrap();
+            assert_eq!(retrieved.callee_symbol_id, Some(callee_symbol_id));
+            assert_eq!(retrieved.args.len(), 2);
+            assert_eq!(retrieved.args[0].name, None);
+            assert_eq!(retrieved.args[1].name, Some("value".to_string()));
+        }
+
+        #[test]
+        fn call_site_with_unresolved_callee() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let call_id = store.next_call_site_id();
+            let call = CallSite::new(call_id, file_id, Span::new(50, 60));
+            store.insert_call_site(call);
+
+            let retrieved = store.call_site(call_id).unwrap();
+            assert_eq!(retrieved.callee_symbol_id, None);
+            assert!(retrieved.args.is_empty());
+        }
+
+        #[test]
+        fn call_site_insert_query_roundtrip() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Insert multiple call sites
+            for i in 0..3 {
+                let call_id = store.next_call_site_id();
+                let call = CallSite::new(call_id, file_id, Span::new(i * 20, i * 20 + 10));
+                store.insert_call_site(call);
+            }
+
+            assert_eq!(store.call_site_count(), 3);
+
+            // Query by file
+            let in_file = store.call_sites_in_file(file_id);
+            assert_eq!(in_file.len(), 3);
+        }
+
+        #[test]
+        fn call_site_query_by_callee() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create callee symbols
+            let callee1 = test_symbol(&mut store, "foo", file_id, 10);
+            let callee1_id = callee1.symbol_id;
+            store.insert_symbol(callee1);
+
+            let callee2 = test_symbol(&mut store, "bar", file_id, 50);
+            let callee2_id = callee2.symbol_id;
+            store.insert_symbol(callee2);
+
+            // Insert calls to callee1 (3 calls)
+            for i in 0..3 {
+                let call_id = store.next_call_site_id();
+                let call = CallSite::new(call_id, file_id, Span::new(100 + i * 10, 105 + i * 10))
+                    .with_callee(callee1_id);
+                store.insert_call_site(call);
+            }
+
+            // Insert calls to callee2 (1 call)
+            let call_id = store.next_call_site_id();
+            let call = CallSite::new(call_id, file_id, Span::new(200, 210)).with_callee(callee2_id);
+            store.insert_call_site(call);
+
+            // Query by callee
+            let calls_to_foo = store.call_sites_to_callee(callee1_id);
+            assert_eq!(calls_to_foo.len(), 3);
+
+            let calls_to_bar = store.call_sites_to_callee(callee2_id);
+            assert_eq!(calls_to_bar.len(), 1);
+
+            // Unknown callee returns empty
+            let unknown = store.call_sites_to_callee(SymbolId::new(999));
+            assert!(unknown.is_empty());
+        }
+
+        #[test]
+        fn call_site_iteration() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            for i in 0..5 {
+                let call_id = store.next_call_site_id();
+                let call = CallSite::new(call_id, file_id, Span::new(i * 20, i * 20 + 10));
+                store.insert_call_site(call);
+            }
+
+            // Iteration should be deterministic
+            let iter1: Vec<_> = store.call_sites().map(|c| c.call_id).collect();
+            let iter2: Vec<_> = store.call_sites().map(|c| c.call_id).collect();
+            assert_eq!(iter1, iter2);
+            assert_eq!(iter1.len(), 5);
+        }
+
+        #[test]
+        fn call_site_serialization() {
+            let call = CallSite::new(CallSiteId::new(1), FileId::new(0), Span::new(10, 30))
+                .with_args(vec![CallArg::positional(Span::new(15, 20))]);
+
+            let json = serde_json::to_string(&call).unwrap();
+            assert!(json.contains("\"call_id\":1"));
+            assert!(json.contains("\"args\""));
+            // callee_symbol_id should not appear when None
+            assert!(!json.contains("callee_symbol_id"));
+        }
+
+        #[test]
+        fn call_site_with_mixed_args() {
+            let call = CallSite::new(CallSiteId::new(1), FileId::new(0), Span::new(10, 50))
+                .with_args(vec![
+                    CallArg::positional(Span::new(15, 16)),      // x
+                    CallArg::positional(Span::new(18, 19)),      // y
+                    CallArg::keyword("timeout", Span::new(21, 30)),
+                    CallArg::keyword("retries", Span::new(32, 41)),
+                ]);
+
+            assert_eq!(call.args.len(), 4);
+            assert_eq!(call.args[0].name, None);
+            assert_eq!(call.args[1].name, None);
+            assert_eq!(call.args[2].name, Some("timeout".to_string()));
+            assert_eq!(call.args[3].name, Some("retries".to_string()));
+        }
+
+        #[test]
+        fn call_site_id_display() {
+            let id = CallSiteId::new(42);
+            assert_eq!(format!("{}", id), "call_42");
+        }
+
+        #[test]
+        fn attribute_access_id_display() {
+            let id = AttributeAccessId::new(42);
+            assert_eq!(format!("{}", id), "attr_42");
         }
     }
 }

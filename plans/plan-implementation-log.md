@@ -6,6 +6,78 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11.md] Step 2.7c: Add Attribute Access and Call Sites | COMPLETE | 2026-01-25
+
+**Completed:** 2026-01-25
+
+**References Reviewed:**
+- `plans/phase-11.md` - Step 2.7c specification
+- `crates/tugtool-core/src/facts/mod.rs` - existing FactsStore structure
+- [D16] Attribute Access Facts
+- [D17] Call Site Facts
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `AttributeAccessKind` enum: `Read`, `Write`, `Call` | Done |
+| Add `AttributeAccessId` newtype with Display impl | Done |
+| Add `AttributeAccess` struct with all fields | Done |
+| Add `CallArg` struct with positional/keyword constructors | Done |
+| Add `CallSiteId` newtype with Display impl | Done |
+| Add `CallSite` struct with all fields | Done |
+| Add `attribute_accesses: BTreeMap<AttributeAccessId, AttributeAccess>` to FactsStore | Done |
+| Add `attribute_accesses_by_file` index | Done |
+| Add `attribute_accesses_by_name` index | Done |
+| Add `call_sites: BTreeMap<CallSiteId, CallSite>` to FactsStore | Done |
+| Add `call_sites_by_file` index | Done |
+| Add `call_sites_by_callee` index | Done |
+| Add `next_attribute_access_id()` and `next_call_site_id()` generators | Done |
+| Add insert/query methods for both tables | Done |
+| Update Default impl and clear() method | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `AttributeAccessId` newtype with Display impl (`attr_42`)
+  - Added `CallSiteId` newtype with Display impl (`call_42`)
+  - Added `AttributeAccessKind` enum: `Read`, `Write`, `Call` with Default
+  - Added `AttributeAccess` struct with `access_id`, `file_id`, `span`, `base_symbol_id`, `name`, `kind` and builder methods
+  - Added `CallArg` struct with `name: Option<String>`, `span` and `positional()`/`keyword()` constructors
+  - Added `CallSite` struct with `call_id`, `file_id`, `span`, `callee_symbol_id`, `args` and builder methods
+  - Added storage: `attribute_accesses`, `call_sites` BTreeMaps
+  - Added indexes: `attribute_accesses_by_file`, `attribute_accesses_by_name`, `call_sites_by_file`, `call_sites_by_callee`
+  - Added ID generators: `next_attribute_access_id()`, `next_call_site_id()`
+  - Added insert methods: `insert_attribute_access()`, `insert_call_site()`
+  - Added query methods: `attribute_access()`, `attribute_accesses_in_file()`, `attribute_accesses_named()`, `call_site()`, `call_sites_in_file()`, `call_sites_to_callee()`
+  - Added iteration methods: `attribute_accesses()`, `call_sites()`
+  - Added count methods: `attribute_access_count()`, `call_site_count()`
+  - Updated `Default::default()` to initialize new fields
+  - Updated `clear()` to clear new fields
+  - Added comprehensive test modules: `attribute_access_tests`, `call_site_tests` (22 tests)
+
+- `plans/phase-11.md`:
+  - Checked off all Step 2.7c task and test checkboxes
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core attribute`: 10 tests passed
+- `cargo nextest run -p tugtool-core call_site`: 12 tests passed
+- `cargo nextest run -p tugtool-core`: 376 tests passed
+- `cargo nextest run -p tugtool-python`: 380 tests passed
+- `cargo nextest run --workspace`: 1443 tests passed
+- `cargo clippy -p tugtool-core`: clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core attribute`: PASS (10 tests)
+- `cargo nextest run -p tugtool-core call_site`: PASS (12 tests)
+
+**Key Decisions/Notes:**
+- `AttributeAccessKind::Read` is the default (most common case)
+- `CallArg` provides convenience constructors: `positional()` and `keyword()` for ergonomic API
+- Optional `base_symbol_id` and `callee_symbol_id` support unresolved references (when the base/callee cannot be determined statically)
+- All indexes use deterministic ordering via BTreeMap for reproducible iteration
+
+---
+
 ## [phase-11.md] Step 2.7b: Add Signatures and Type Parameters | COMPLETE | 2026-01-25
 
 **Completed:** 2026-01-25

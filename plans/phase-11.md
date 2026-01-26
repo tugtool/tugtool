@@ -2929,47 +2929,47 @@ This step is split into 5 sub-steps for manageable commits:
 - Storage and indexes
 
 **Tasks:**
-- [ ] Add `AttributeAccessKind` enum: `Read`, `Write`, `Call`
-- [ ] Add `AttributeAccessId` newtype
-- [ ] Add `AttributeAccess` struct:
+- [x] Add `AttributeAccessKind` enum: `Read`, `Write`, `Call`
+- [x] Add `AttributeAccessId` newtype
+- [x] Add `AttributeAccess` struct:
   - `access_id: AttributeAccessId`
   - `file_id: FileId`
   - `span: Span`
   - `base_symbol_id: Option<SymbolId>` (resolved base, if known)
   - `name: String` (attribute name)
   - `kind: AttributeAccessKind`
-- [ ] Add `CallArg` struct:
+- [x] Add `CallArg` struct:
   - `name: Option<String>` (keyword arg name, None for positional)
   - `span: Span`
-- [ ] Add `CallSiteId` newtype
-- [ ] Add `CallSite` struct:
+- [x] Add `CallSiteId` newtype
+- [x] Add `CallSite` struct:
   - `call_id: CallSiteId`
   - `file_id: FileId`
   - `span: Span`
   - `callee_symbol_id: Option<SymbolId>` (resolved callee, if known)
   - `args: Vec<CallArg>`
-- [ ] Add `attribute_accesses: BTreeMap<AttributeAccessId, AttributeAccess>` to FactsStore
-- [ ] Add `attribute_accesses_by_file: HashMap<FileId, Vec<AttributeAccessId>>` index
-- [ ] Add `attribute_accesses_by_name: HashMap<String, Vec<AttributeAccessId>>` index
-- [ ] Add `call_sites: BTreeMap<CallSiteId, CallSite>` to FactsStore
-- [ ] Add `call_sites_by_file: HashMap<FileId, Vec<CallSiteId>>` index
-- [ ] Add `call_sites_by_callee: HashMap<SymbolId, Vec<CallSiteId>>` index
-- [ ] Add `next_attribute_access_id()` and `next_call_site_id()` generators
-- [ ] Add insert/query methods for both tables
+- [x] Add `attribute_accesses: BTreeMap<AttributeAccessId, AttributeAccess>` to FactsStore
+- [x] Add `attribute_accesses_by_file: HashMap<FileId, Vec<AttributeAccessId>>` index
+- [x] Add `attribute_accesses_by_name: HashMap<String, Vec<AttributeAccessId>>` index
+- [x] Add `call_sites: BTreeMap<CallSiteId, CallSite>` to FactsStore
+- [x] Add `call_sites_by_file: HashMap<FileId, Vec<CallSiteId>>` index
+- [x] Add `call_sites_by_callee: HashMap<SymbolId, Vec<CallSiteId>>` index
+- [x] Add `next_attribute_access_id()` and `next_call_site_id()` generators
+- [x] Add insert/query methods for both tables
 
 **Tests:**
-- [ ] Unit: `AttributeAccessKind` serialization
-- [ ] Unit: `AttributeAccess` with resolved and unresolved base
-- [ ] Unit: `CallArg` with and without keyword name
-- [ ] Unit: `CallSite` with positional and keyword args
-- [ ] Unit: Insert/query roundtrip for attribute accesses
-- [ ] Unit: Insert/query roundtrip for call sites
-- [ ] Unit: Query by attribute name
-- [ ] Unit: Query by callee symbol
+- [x] Unit: `AttributeAccessKind` serialization
+- [x] Unit: `AttributeAccess` with resolved and unresolved base
+- [x] Unit: `CallArg` with and without keyword name
+- [x] Unit: `CallSite` with positional and keyword args
+- [x] Unit: Insert/query roundtrip for attribute accesses
+- [x] Unit: Insert/query roundtrip for call sites
+- [x] Unit: Query by attribute name
+- [x] Unit: Query by callee symbol
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core attribute`
-- [ ] `cargo nextest run -p tugtool-core call_site`
+- [x] `cargo nextest run -p tugtool-core attribute`
+- [x] `cargo nextest run -p tugtool-core call_site`
 
 **Rollback:** Revert commit
 
