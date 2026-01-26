@@ -232,14 +232,21 @@ pub struct ReferenceData {
 /// Attribute access from single-file analysis.
 ///
 /// Represents attribute reads, writes, or calls (e.g., `obj.attr`, `obj.method()`).
+///
+/// # Span Semantics
+///
+/// The `span` field is `Option<Span>` because attribute spans may be unavailable
+/// in some parsing contexts (e.g., synthetic nodes, error recovery). When `None`:
+/// - Integration layer should log a warning and skip for edit operations
+/// - Analysis and informational operations can proceed with reduced precision
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeAccessData {
     /// Index of base symbol in the file's symbol list (if resolved).
     pub base_symbol_index: Option<usize>,
     /// Attribute name.
     pub name: String,
-    /// Byte span of the attribute name.
-    pub span: Span,
+    /// Byte span of the attribute name, or `None` if unavailable.
+    pub span: Option<Span>,
     /// Attribute access kind.
     pub kind: AttributeAccessKind,
 }
@@ -276,14 +283,21 @@ pub struct CallSiteData {
 /// Alias edge from single-file analysis.
 ///
 /// Represents an alias relationship between two symbols (e.g., `b = a`).
+///
+/// # Span Semantics
+///
+/// The `span` field is `Option<Span>` because alias spans may be unavailable
+/// in some parsing contexts (e.g., synthetic nodes, error recovery). When `None`:
+/// - Integration layer should log a warning and skip for edit operations
+/// - Analysis and informational operations can proceed with reduced precision
 #[derive(Debug, Clone, PartialEq)]
 pub struct AliasEdgeData {
     /// Index of alias symbol in the file's symbol list.
     pub alias_symbol_index: usize,
     /// Index of target symbol in the file's symbol list (if resolved).
     pub target_symbol_index: Option<usize>,
-    /// Byte span of the aliasing expression.
-    pub span: Span,
+    /// Byte span of the aliasing expression, or `None` if unavailable.
+    pub span: Option<Span>,
     /// Alias kind.
     pub kind: AliasKind,
     /// Confidence score (0.0-1.0), if available.
@@ -799,12 +813,25 @@ mod tests {
         let alias = AliasEdgeData {
             alias_symbol_index: 3,
             target_symbol_index: Some(1),
-            span: Span::new(20, 30),
+            span: Some(Span::new(20, 30)),
             kind: AliasKind::Assignment,
             confidence: Some(0.95),
         };
         assert_eq!(alias.kind, AliasKind::Assignment);
         assert_eq!(alias.confidence, Some(0.95));
+        assert!(alias.span.is_some());
+    }
+
+    #[test]
+    fn alias_edge_data_can_have_none_span() {
+        let alias = AliasEdgeData {
+            alias_symbol_index: 1,
+            target_symbol_index: None,
+            span: None,
+            kind: AliasKind::Assignment,
+            confidence: None,
+        };
+        assert!(alias.span.is_none());
     }
 
     #[test]
@@ -871,10 +898,22 @@ mod tests {
         let attr = AttributeAccessData {
             base_symbol_index: Some(0),
             name: "method".to_string(),
-            span: Span::new(50, 56),
+            span: Some(Span::new(50, 56)),
             kind: AttributeAccessKind::Call,
         };
         assert_eq!(attr.kind, AttributeAccessKind::Call);
+        assert!(attr.span.is_some());
+    }
+
+    #[test]
+    fn attribute_access_data_can_have_none_span() {
+        let attr = AttributeAccessData {
+            base_symbol_index: None,
+            name: "attr".to_string(),
+            span: None,
+            kind: AttributeAccessKind::Read,
+        };
+        assert!(attr.span.is_none());
     }
 
     #[test]

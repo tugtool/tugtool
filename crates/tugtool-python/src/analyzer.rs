@@ -629,14 +629,17 @@ pub fn analyze_files(
         }
 
         // Pass 2b: First pass - register class symbols to enable method linking
+        // Filter entries without spans per [D01] - symbols without spans can't be edit targets
         for symbol in &analysis.symbols {
             if symbol.kind == SymbolKind::Class {
+                // Skip classes without spans - they can't be renamed
+                let Some(span) = symbol.span else {
+                    continue;
+                };
+
                 // Reserve SymbolId for class
                 let symbol_id = store.next_symbol_id();
                 class_symbols.insert((file_id, symbol.name.clone()), symbol_id);
-
-                // Get span (use default if not available)
-                let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
 
                 // Insert class symbol
                 let sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
@@ -651,16 +654,19 @@ pub fn analyze_files(
         }
 
         // Pass 2c: Register non-class symbols with container linking
+        // Filter entries without spans per [D01] - symbols without spans can't be edit targets
         for symbol in &analysis.symbols {
             if symbol.kind == SymbolKind::Class {
                 // Already handled above
                 continue;
             }
 
-            let symbol_id = store.next_symbol_id();
+            // Skip symbols without spans - they can't be renamed
+            let Some(span) = symbol.span else {
+                continue;
+            };
 
-            // Get span (use default if not available)
-            let span = symbol.span.unwrap_or_else(|| Span::new(0, 0));
+            let symbol_id = store.next_symbol_id();
 
             // Create symbol
             let mut sym = Symbol::new(symbol_id, symbol.kind, &symbol.name, file_id, span);
@@ -908,11 +914,16 @@ pub fn analyze_files(
 
         // Process exports (__all__ entries)
         // Emit PublicExport for each entry in __all__
+        // Filter entries without spans per [D01] - exports without spans can't be edit targets
         for local_export in &analysis.exports {
+            // Skip exports without declaration spans
+            let Some(decl_span) = local_export.span else {
+                continue;
+            };
+
             // decl_span = full string literal including quotes
             // exported_name_span = string content only, no quotes
             let public_export_id = store.next_public_export_id();
-            let decl_span = local_export.span.unwrap_or_else(|| Span::new(0, 0));
             let exported_name_span = local_export.content_span;
 
             // Resolve symbol_id: look up the exported name as a module-level symbol
@@ -957,8 +968,12 @@ pub fn analyze_files(
         }
 
         // Process references
+        // Filter entries without spans per [D01] - references without spans can't be edit targets
         for local_ref in &analysis.references {
-            let ref_span = local_ref.span.unwrap_or_else(|| Span::new(0, 0));
+            // Skip references without spans
+            let Some(ref_span) = local_ref.span else {
+                continue;
+            };
 
             // For import references (the imported name in "from x import name as alias"),
             // we need special handling because the import_resolver tracks the alias,
@@ -3228,8 +3243,13 @@ impl PythonAdapter {
             .map(|(idx, s)| (s.id, idx))
             .collect();
 
-        // Convert symbols
+        // Convert symbols (filter entries without spans per [D01])
         for symbol in &analysis.symbols {
+            // A symbol without a declaration span can't be an edit target - skip it
+            let Some(decl_span) = symbol.span else {
+                continue;
+            };
+
             let scope_index = scope_id_to_index
                 .get(&symbol.scope_id)
                 .copied()
@@ -3238,14 +3258,19 @@ impl PythonAdapter {
             result.symbols.push(SymbolData {
                 kind: symbol.kind,
                 name: symbol.name.clone(),
-                decl_span: symbol.span.unwrap_or(Span::new(0, 0)),
+                decl_span,
                 scope_index,
                 visibility: self.infer_visibility_from_name(&symbol.name),
             });
         }
 
-        // Convert references
+        // Convert references (filter entries without spans per [D01])
         for reference in &analysis.references {
+            // A reference without a span can't be an edit target - skip it
+            let Some(span) = reference.span else {
+                continue;
+            };
+
             let scope_index = scope_id_to_index
                 .get(&reference.scope_id)
                 .copied()
@@ -3253,7 +3278,7 @@ impl PythonAdapter {
 
             result.references.push(ReferenceData {
                 name: reference.name.clone(),
-                span: reference.span.unwrap_or(Span::new(0, 0)),
+                span,
                 scope_index,
                 kind: convert_facts_reference_kind_to_adapter(reference.kind),
             });
@@ -3266,12 +3291,17 @@ impl PythonAdapter {
                 .push(convert_local_import_to_import_data(import));
         }
 
-        // Convert exports (from __all__)
+        // Convert exports from __all__ (filter entries without spans per [D01])
         for export in &analysis.exports {
+            // An export without a declaration span can't be an edit target - skip it
+            let Some(decl_span) = export.span else {
+                continue;
+            };
+
             result.exports.push(ExportData {
                 exported_name: Some(export.name.clone()),
                 source_name: Some(export.name.clone()), // Same for non-aliased Python exports
-                decl_span: export.span.unwrap_or(Span::new(0, 0)),
+                decl_span,
                 exported_name_span: export.content_span,
                 source_name_span: None,
                 export_kind: ExportKind::PythonAll,
@@ -3309,7 +3339,7 @@ impl PythonAdapter {
                 result.aliases.push(AliasEdgeData {
                     alias_symbol_index,
                     target_symbol_index,
-                    span: alias_info.alias_span.unwrap_or(Span::new(0, 0)),
+                    span: alias_info.alias_span,
                     kind: alias_info.kind,
                     confidence: Some(alias_info.confidence),
                 });
@@ -3424,13 +3454,18 @@ impl PythonAdapter {
             result.attributes.push(AttributeAccessData {
                 base_symbol_index,
                 name: attr.attr_name.clone(),
-                span: attr.attr_span.unwrap_or(Span::new(0, 0)),
+                span: attr.attr_span,
                 kind: convert_cst_attribute_access_kind(attr.kind),
             });
         }
 
-        // Convert call sites
+        // Convert call sites (filter entries without spans per [D01])
         for call in &analysis.call_sites {
+            // A call site without a span can't be an edit target - skip it
+            let Some(span) = call.span else {
+                continue;
+            };
+
             // Try to resolve the callee to a symbol index
             // For function calls, look up the callee name in symbols
             // For method calls, callee_symbol_index is typically None until type resolution
@@ -3451,7 +3486,7 @@ impl PythonAdapter {
 
             result.calls.push(CallSiteData {
                 callee_symbol_index,
-                span: call.span.unwrap_or(Span::new(0, 0)),
+                span,
                 args,
             });
         }
@@ -4116,7 +4151,7 @@ mod tests {
 
         #[test]
         fn alias_edges_have_span() {
-            // Test: alias edges have spans
+            // Test: alias edges have spans (may be None if unavailable)
             let adapter = PythonAdapter::new();
             let content = "bar = 1\nb = bar";
             let result = adapter.analyze_file("test.py", content).unwrap();
@@ -4124,11 +4159,13 @@ mod tests {
             assert!(!result.aliases.is_empty());
 
             for alias in &result.aliases {
-                // Span should be non-zero (meaningful)
-                assert!(
-                    alias.span.start < alias.span.end || alias.span.start == 0,
-                    "Alias span should be valid"
-                );
+                // Most aliases should have a span; if present, verify it's valid
+                if let Some(span) = alias.span {
+                    assert!(
+                        span.start < span.end || span.start == 0,
+                        "Alias span should be valid when present"
+                    );
+                }
             }
         }
 
@@ -4176,7 +4213,12 @@ mod tests {
             }
 
             // 4. Convert AliasEdgeData to AliasEdge and insert
+            // Per [D01]: Skip entries with missing spans
             for alias_data in &result.aliases {
+                let Some(span) = alias_data.span else {
+                    // Integration layer skips entries with missing spans
+                    continue;
+                };
                 let alias_symbol_id = symbol_id_map[alias_data.alias_symbol_index];
                 let target_symbol_id = alias_data.target_symbol_index.map(|idx| symbol_id_map[idx]);
 
@@ -4184,7 +4226,7 @@ mod tests {
                 let mut edge = AliasEdge::new(
                     edge_id,
                     file_id,
-                    alias_data.span,
+                    span,
                     alias_symbol_id,
                     alias_data.kind,
                 );
@@ -4253,8 +4295,11 @@ mod tests {
                 ));
             }
 
-            // Insert alias edges
+            // Insert alias edges (skip entries with missing spans per [D01])
             for alias_data in &result.aliases {
+                let Some(span) = alias_data.span else {
+                    continue;
+                };
                 let alias_symbol_id = symbol_id_map[alias_data.alias_symbol_index];
                 let target_symbol_id = alias_data.target_symbol_index.map(|idx| symbol_id_map[idx]);
 
@@ -4262,7 +4307,7 @@ mod tests {
                 let mut edge = AliasEdge::new(
                     edge_id,
                     file_id,
-                    alias_data.span,
+                    span,
                     alias_symbol_id,
                     alias_data.kind,
                 );
@@ -4716,6 +4761,83 @@ mod tests {
             assert!(names.contains(&"a"));
             assert!(names.contains(&"b"));
             assert!(names.contains(&"c"));
+        }
+
+        // ====================================================================
+        // Span Handling Tests (Phase 11B Step 2)
+        // ====================================================================
+
+        #[test]
+        fn attribute_access_has_option_span() {
+            // Test: AttributeAccessData.span is Option<Span>, populated when available
+            let adapter = PythonAdapter::new();
+            let content = "obj.attr";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.attributes.is_empty(), "Expected attribute access");
+            let attr = &result.attributes[0];
+            // Span should be present for well-formed code
+            assert!(attr.span.is_some(), "Expected span to be present");
+            let span = attr.span.unwrap();
+            assert!(span.start < span.end, "Span should be valid");
+        }
+
+        #[test]
+        fn call_arg_has_option_span() {
+            // Test: CallArgData.span is Option<Span>
+            // Note: CST may not provide spans for all expression types
+            let adapter = PythonAdapter::new();
+            let content = "f(x, y=1)";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            assert!(!result.calls.is_empty(), "Expected call site");
+            let call = &result.calls[0];
+            assert_eq!(call.args.len(), 2);
+
+            // Args have Option<Span> - verify the type works correctly
+            // Span may be Some or None depending on CST coverage
+            for arg in &call.args {
+                if let Some(span) = arg.span {
+                    assert!(span.start <= span.end, "Span should be valid when present");
+                }
+                // None is also valid - the type correctly represents optionality
+            }
+        }
+
+        #[test]
+        fn integration_analyze_file_span_handling() {
+            // Integration test: analyze a file and verify span types are Option<Span>
+            // Note: Not all spans will be present due to CST coverage limitations
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self, data):
+        self.result = data
+
+h = Handler()
+h.process(value)
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Attribute accesses have Option<Span> - verify valid when present
+            let attrs_with_spans = result.attributes.iter().filter(|a| a.span.is_some()).count();
+            // Most attribute accesses should have spans
+            assert!(
+                attrs_with_spans > 0,
+                "Expected at least some attribute accesses to have spans"
+            );
+            for attr in &result.attributes {
+                if let Some(span) = attr.span {
+                    assert!(span.start <= span.end, "Attribute span should be valid");
+                }
+            }
+
+            // Aliases have Option<Span> - verify valid when present
+            for alias in &result.aliases {
+                if let Some(span) = alias.span {
+                    assert!(span.start <= span.end, "Alias span should be valid");
+                }
+            }
         }
     }
 

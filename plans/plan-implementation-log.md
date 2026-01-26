@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11B.md] Step 2: Update Python Analyzer Conversion for Spans | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan, [D01] Span Validation Strategy (revised)
+- `crates/tugtool-core/src/adapter.rs` - Adapter data types
+- `crates/tugtool-python/src/analyzer.rs` - Conversion functions and FactsStore population
+- Code architect analysis of span usage categories
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `CallArgData` conversion (done in Step 1) | Done |
+| Update `AttributeAccessData.span` to `Option<Span>` | Done |
+| Update `AliasEdgeData.span` to `Option<Span>` | Done |
+| Revise [D01] to distinguish derived vs syntactic data | Done |
+| Update Step 0 audit with corrected categorization | Done |
+| Add filtering in adapter conversion for syntactic data | Done |
+| Add filtering in FactsStore population for syntactic data | Done |
+| Keep `Span::new(0,0)` only for Optional fields | Done |
+
+**Key Architectural Decision:**
+
+Span handling differs based on data category:
+1. **Derived/computed data** (`CallArgData`, `AttributeAccessData`, `AliasEdgeData`) - spans may genuinely be absent → Change type to `Option<Span>`
+2. **Syntactic data** (`SymbolData`, `ReferenceData`, `ExportData`, `CallSiteData`) - represent actual syntax nodes → Keep as `Span`, filter entries without spans at conversion time
+
+**Files Modified:**
+- `crates/tugtool-core/src/adapter.rs` - Changed `AttributeAccessData.span` and `AliasEdgeData.span` to `Option<Span>`, added doc comments, updated tests
+- `crates/tugtool-python/src/analyzer.rs` - Added filtering in 8 locations:
+  - Adapter conversion: SymbolData, ReferenceData, ExportData, CallSiteData
+  - FactsStore population: class symbols, non-class symbols, exports, references
+  - Updated integration tests for `Option<Span>` handling
+  - Added span handling tests
+- `plans/phase-11B.md` - Revised [D01] decision, updated Step 0 audit categorization, marked Step 2 complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 452 tests passed
+- `cargo nextest run --workspace`: 1646 tests passed
+- `cargo clippy --workspace`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python`: PASS
+- No warnings in normal analysis of Temporale: PASS
+
+**Remaining `Span::new(0,0)` Occurrences (all Optional):**
+- Lines 622, 3232: Scopes (structural/informational)
+- Lines 881, 3638: Imports (structural/informational)
+- Line 1153: IndexedMethodCall (internal index lookup, not edit target)
+
+---
+
 ## [phase-11B.md] Step 1: Update Adapter Data Types for Optional Spans | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

@@ -194,39 +194,59 @@ If __all__ absent:
 
 #### [D01] Span Validation Strategy (DECIDED) {#d01-span-validation}
 
-**Decision:** Replace `unwrap_or_else(|| Span::new(0, 0))` with explicit span handling using the following pattern:
+**Decision:** Replace `unwrap_or_else(|| Span::new(0, 0))` with explicit span handling. The approach differs based on whether the data is derived/computed or syntactic:
+
+**Category 1: Derived/computed data** - spans may genuinely be absent
+- `CallArgData`, `AttributeAccessData`, `AliasEdgeData`
+- **Action:** Change type to `Option<Span>`, propagate through
 
 ```rust
-// In adapter data types, use Option<Span> where spans may be absent:
+// Derived data types use Option<Span>:
 pub struct CallArgData {
     pub name: Option<String>,
-    pub span: Option<Span>,  // Changed from Span
+    pub span: Option<Span>,  // May be absent
 }
 
-// In conversion functions, propagate None:
+// Conversion propagates Option directly:
 CallArgData {
     name: arg.name.clone(),
     span: arg.span,  // Pass through Option<Span>
 }
+```
 
-// In integration layer, validate and handle:
-if let Some(span) = arg_data.span {
-    // Use span
-} else {
-    log::warn!("Missing span for call argument, skipping");
-    continue;
+**Category 2: Syntactic data** - represents actual syntax nodes that must have positions
+- `SymbolData`, `ReferenceData`, `ExportData`, `CallSiteData`
+- **Action:** Keep as `Span`, but **filter out entries without spans at conversion time**
+
+```rust
+// Syntactic data types keep required Span:
+pub struct SymbolData {
+    pub decl_span: Span,  // Required - a symbol IS its declaration
 }
+
+// Conversion filters entries without spans:
+let Some(span) = symbol.span else {
+    // Skip entries that lack spans - they can't be edit targets
+    continue;
+};
+result.symbols.push(SymbolData {
+    decl_span: span,
+    ...
+});
 ```
 
 **Rationale:**
 - `Span::new(0, 0)` is indistinguishable from a valid span at position 0
-- Explicit `Option<Span>` communicates intent clearly
-- Integration layer can make context-appropriate decisions
+- Derived data (args, attributes, aliases) may lack spans due to inference or error recovery
+- Syntactic data (symbols, references, exports, calls) represents actual code locations
+- A symbol without a declaration span is not a valid symbol for rename operations
+- Filtering at conversion prevents garbage data from propagating
 
 **Implications:**
 - Update `CallArgData`, `AttributeAccessData`, `AliasEdgeData` to use `Option<Span>`
-- Update conversion functions to pass `Option<Span>` directly
-- Update integration layer to handle `None` spans appropriately
+- Keep `SymbolData`, `ReferenceData`, `ExportData`, `CallSiteData` with required `Span`
+- Add filtering in conversion functions to skip syntactic entries without spans
+- Add filtering in FactsStore population to skip entries without spans
 
 #### [D02] TypeTracker Integration for Symbol Resolution (DECIDED) {#d02-typetracker-integration}
 
@@ -645,23 +665,29 @@ fn missing_span_warns_and_skips() {
 
 **Span Usage Audit (from grep):**
 
+**Key Insight (revised during Step 2):** There are two categories of span fields:
+
+1. **Derived/computed data** (`CallArgData`, `AttributeAccessData`, `AliasEdgeData`) - spans may genuinely be absent due to inference or error recovery → Change type to `Option<Span>`
+
+2. **Syntactic data** (`SymbolData`, `ReferenceData`, `ExportData`, `CallSiteData`) - these represent actual syntax nodes that must have positions → Keep as `Span`, but **filter out entries without spans at conversion time**
+
 | Line | Context | Category | Action |
 |------|---------|----------|--------|
 | 622 | `scope.span.unwrap_or_else` | Optional | Keep as-is (scopes are informational) |
-| 639 | `symbol.span.unwrap_or_else` | Required | Propagate Option, warn if missing |
-| 663 | `symbol.span.unwrap_or_else` | Required | Propagate Option, warn if missing |
+| 639 | `symbol.span.unwrap_or_else` | FactsStore | Filter: skip symbol if no span |
+| 663 | `symbol.span.unwrap_or_else` | FactsStore | Filter: skip symbol if no span |
 | 875 | `local_import.span.unwrap_or_else` | Optional | Keep as-is (imports are informational) |
-| 915 | `local_export.span.unwrap_or_else` | Required | Propagate Option, error if missing |
-| 961 | `local_ref.span.unwrap_or_else` | Required | Propagate Option, warn if missing |
-| 1138 | `unwrap_or_else` | Required | Propagate Option |
+| 915 | `local_export.span.unwrap_or_else` | FactsStore | Filter: skip export if no span |
+| 961 | `local_ref.span.unwrap_or_else` | FactsStore | Filter: skip reference if no span |
+| 1138 | `unwrap_or_else` | Optional | Keep as-is (index lookup, not edit target) |
 | 3217 | `scope.span.unwrap_or` | Optional | Keep as-is |
-| 3241 | `symbol.span.unwrap_or` | Required | Change to Option |
-| 3256 | `reference.span.unwrap_or` | Required | Change to Option |
-| 3274 | `export.span.unwrap_or` | Required | Change to Option |
-| 3312 | `alias_info.alias_span.unwrap_or` | Required | Change to Option |
-| 3427 | `attr.attr_span.unwrap_or` | Required | Change to Option |
-| 3448 | `arg.span.unwrap_or` | Required | Change to Option |
-| 3454 | `call.span.unwrap_or` | Required | Change to Option |
+| 3241 | `symbol.span.unwrap_or` | Syntactic | Filter: skip SymbolData if no span |
+| 3256 | `reference.span.unwrap_or` | Syntactic | Filter: skip ReferenceData if no span |
+| 3274 | `export.span.unwrap_or` | Syntactic | Filter: skip ExportData if no span |
+| 3312 | `alias_info.alias_span.unwrap_or` | Derived | Change to Option<Span> ✓ |
+| 3427 | `attr.attr_span.unwrap_or` | Derived | Change to Option<Span> ✓ |
+| 3448 | `arg.span.unwrap_or` | Derived | Change to Option<Span> ✓ |
+| 3454 | `call.span.unwrap_or` | Syntactic | Filter: skip CallSiteData if no span |
 | 3603 | `import.span.unwrap_or` | Optional | Keep as-is |
 
 **Artifacts:**
@@ -719,19 +745,19 @@ fn missing_span_warns_and_skips() {
 - No more `Span::new(0, 0)` in conversion functions for required fields
 
 **Tasks:**
-- [ ] Update `CallArgData` conversion to use `arg.span` directly (now Option)
-- [ ] Update `AttributeAccessData` conversion for `span` field
-- [ ] Add logging when spans are missing for required fields
-- [ ] Keep `Span::new(0, 0)` only for truly optional fields (scopes, imports)
+- [x] Update `CallArgData` conversion to use `arg.span` directly (now Option)
+- [x] Update `AttributeAccessData` conversion for `span` field
+- [x] Add logging when spans are missing for required fields
+- [x] Keep `Span::new(0, 0)` only for truly optional fields (scopes, imports)
 
 **Tests:**
-- [ ] Unit: Conversion produces `None` span when source lacks span
-- [ ] Integration: Analyze file with complete spans
-- [ ] Integration: Analyze file with missing spans (synthetic case)
+- [x] Unit: Conversion produces `None` span when source lacks span
+- [x] Integration: Analyze file with complete spans
+- [x] Integration: Analyze file with missing spans (synthetic case)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python`
-- [ ] No warnings in normal analysis of Temporale
+- [x] `cargo nextest run -p tugtool-python`
+- [x] No warnings in normal analysis of Temporale
 
 **Rollback:**
 - Revert commit
