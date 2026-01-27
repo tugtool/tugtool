@@ -6,6 +6,44 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 1b: Process Class-Level Annotations for Attribute Types | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 1b specification
+- [D02] Attribute Type Tracking - describes collection rules for attribute types
+- Q-B clarifying question - explains when TypeNode is available and how to extract canonical names
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| In `TypeTracker.process_annotations`, detect annotations with `source_kind: "attribute"` | Done |
+| For attribute annotations, extract class name from scope_path | Done |
+| Insert into `attribute_types` map with AttributeTypeInfo (preserve TypeNode) | Done |
+| Respect precedence: annotation overrides inferred | Done |
+| Unit test: `class C: attr: Handler` resolves correctly | Done |
+| Unit test: annotation overrides inference | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs`: Added attribute annotation handling in `process_annotations`, added 3 unit tests (`class_level_annotation_populates_attribute_types`, `annotation_overrides_manual_insertion`, `annotation_preserves_type_node`)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python attribute`: 16 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python attribute`: PASS (16 tests passed)
+- `cargo clippy -p tugtool-python`: PASS (no warnings)
+
+**Key Decisions/Notes:**
+- Class-level annotations like `class C: attr: Handler` have scope_path `["<module>", "C"]`
+- Last element of scope_path is the class name for attribute annotations
+- Annotations insert unconditionally (highest precedence); Step 1c will check for existing annotation before inserting inferred types
+- TypeNode is preserved from CST collection for later use in callable return extraction
+
+---
+
 ## [phase-11C.md] Step 1a: Detect Self-Attribute Patterns in TypeInferenceCollector | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

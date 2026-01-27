@@ -1567,17 +1567,17 @@ class Outer:
 **References:** [D02] Attribute Type Tracking, Q-B
 
 **Tasks:**
-- [ ] In `TypeTracker.process_annotations`, detect annotations with `source_kind: "attribute"`
-- [ ] For attribute annotations, extract class name from scope_path
-- [ ] Insert into `attribute_types` map: `(class_name, attr_name) -> AttributeTypeInfo` (preserve TypeNode when present)
-- [ ] Respect precedence: annotation overrides inferred
+- [x] In `TypeTracker.process_annotations`, detect annotations with `source_kind: "attribute"`
+- [x] For attribute annotations, extract class name from scope_path
+- [x] Insert into `attribute_types` map: `(class_name, attr_name) -> AttributeTypeInfo` (preserve TypeNode when present)
+- [x] Respect precedence: annotation overrides inferred
 
 **Tests:**
-- [ ] Unit: `class C: attr: Handler` -> `attribute_type_of("C", "attr").type_str == "Handler"`
-- [ ] Unit: Both annotation and inference present -> annotation wins
+- [x] Unit: `class C: attr: Handler` -> `attribute_type_of("C", "attr").type_str == "Handler"`
+- [x] Unit: Both annotation and inference present -> annotation wins
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python attribute`
+- [x] `cargo nextest run -p tugtool-python attribute`
 
 **Rollback:**
 - Revert commit

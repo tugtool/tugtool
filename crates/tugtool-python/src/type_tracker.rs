@@ -163,7 +163,7 @@ impl TypeTracker {
     /// - Function parameters: `def foo(x: int)`
     /// - Return types: `def foo() -> int` (stored in return_types for propagation)
     /// - Variable annotations: `x: int = 5`
-    /// - Class attributes: `class Foo: x: int`
+    /// - Class attributes: `class Foo: x: int` (also stored in attribute_types)
     /// - Implicit self/cls in methods
     ///
     /// Annotated types take precedence over inferred types.
@@ -194,6 +194,28 @@ impl TypeTracker {
                     self.return_types.insert(key, annotated_type);
                 }
                 continue;
+            }
+
+            // Handle class-level attribute annotations: class C: attr: Type
+            // These are stored in attribute_types for receiver resolution.
+            // The annotation takes precedence over inferred types (inserted first).
+            if ann.source_kind == "attribute" {
+                // Extract the class name from scope_path.
+                // For `class C: attr: Handler`, scope_path is ["<module>", "C"]
+                // The last element is the class name.
+                if !ann.scope_path.is_empty() {
+                    let class_name = ann.scope_path.last().unwrap().clone();
+                    let attr_name = ann.name.clone();
+                    let key = (class_name, attr_name);
+
+                    // Annotations have highest precedence, so we always insert.
+                    // Later inferred types (from __init__) should NOT override this.
+                    let attr_info = AttributeTypeInfo {
+                        type_str: ann.type_str.clone(),
+                        type_node: ann.type_node.clone(),
+                    };
+                    self.attribute_types.insert(key, attr_info);
+                }
             }
 
             let key = (ann.scope_path.clone(), ann.name.clone());
@@ -1659,6 +1681,112 @@ mod tests {
 
             // Unknown attribute on known class returns None
             assert!(tracker.attribute_type_of("Service", "unknown").is_none());
+        }
+
+        #[test]
+        fn class_level_annotation_populates_attribute_types() {
+            // Test: class C: attr: Handler -> attribute_type_of("C", "attr").type_str == "Handler"
+            use crate::types::AnnotationInfo;
+
+            let mut tracker = TypeTracker::new();
+
+            // Simulate a class-level attribute annotation: class C: attr: Handler
+            let annotations = vec![AnnotationInfo {
+                name: "attr".to_string(),
+                type_str: "Handler".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "attribute".to_string(), // This is the key: "attribute"
+                scope_path: vec!["<module>".to_string(), "C".to_string()],
+                span: None,
+                line: Some(2),
+                col: Some(5),
+                type_node: None,
+            }];
+
+            tracker.process_annotations(&annotations);
+
+            // The attribute_types map should now have the entry
+            let result = tracker.attribute_type_of("C", "attr");
+            assert!(result.is_some(), "attribute_type_of should find the attribute");
+            assert_eq!(result.unwrap().type_str, "Handler");
+        }
+
+        #[test]
+        fn annotation_overrides_manual_insertion() {
+            // Test: Both annotation and inference present -> annotation wins
+            use crate::types::AnnotationInfo;
+
+            let mut tracker = TypeTracker::new();
+
+            // First, manually insert an "inferred" type (simulating what Step 1c will do)
+            tracker.attribute_types.insert(
+                ("C".to_string(), "attr".to_string()),
+                AttributeTypeInfo {
+                    type_str: "InferredType".to_string(),
+                    type_node: None,
+                },
+            );
+
+            // Now process an annotation that should override it
+            let annotations = vec![AnnotationInfo {
+                name: "attr".to_string(),
+                type_str: "AnnotatedType".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "attribute".to_string(),
+                scope_path: vec!["<module>".to_string(), "C".to_string()],
+                span: None,
+                line: Some(2),
+                col: Some(5),
+                type_node: None,
+            }];
+
+            tracker.process_annotations(&annotations);
+
+            // The annotation should have overwritten the inferred type
+            let result = tracker.attribute_type_of("C", "attr");
+            assert!(result.is_some());
+            assert_eq!(
+                result.unwrap().type_str, "AnnotatedType",
+                "annotation should override inferred type"
+            );
+        }
+
+        #[test]
+        fn annotation_preserves_type_node() {
+            // Test: TypeNode is preserved when available
+            use crate::types::AnnotationInfo;
+            use tugtool_core::facts::TypeNode;
+
+            let mut tracker = TypeTracker::new();
+
+            // Create annotation with a TypeNode
+            let annotations = vec![AnnotationInfo {
+                name: "handler".to_string(),
+                type_str: "Handler".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "attribute".to_string(),
+                scope_path: vec!["<module>".to_string(), "Service".to_string()],
+                span: None,
+                line: Some(2),
+                col: Some(5),
+                type_node: Some(TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }),
+            }];
+
+            tracker.process_annotations(&annotations);
+
+            let result = tracker.attribute_type_of("Service", "handler");
+            assert!(result.is_some());
+            let attr_info = result.unwrap();
+            assert_eq!(attr_info.type_str, "Handler");
+            assert!(attr_info.type_node.is_some(), "TypeNode should be preserved");
+            if let Some(TypeNode::Named { name, .. }) = &attr_info.type_node {
+                assert_eq!(name, "Handler");
+            } else {
+                panic!("Expected TypeNode::Named");
+            }
         }
     }
 
