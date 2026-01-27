@@ -6,6 +6,138 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Plan Finalization: Enhanced Type Inference and Scope Tracking | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan document
+- `plans/phase-11.md` - Prior Phase 11 plan for context
+- `plans/phase-11B.md` - Prior Phase 11B plan for context
+- `crates/tugtool-python/src/analyzer.rs` - Current resolver implementation
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker infrastructure
+
+**Planning Progress:**
+
+| Task | Status |
+|------|--------|
+| Initial plan creation (code-planner) | Done |
+| First code-architect review | Done |
+| Fix algorithmic gaps (D01 Attr case, constructor calls, etc.) | Done |
+| Second code-architect review | Done |
+| Fix scope-unsafe symbol lookups | Done |
+| Add scope-aware `symbol_kinds` with outward lookup | Done |
+| Add import boundary handling (SymbolKind::Import) | Done |
+| Third code-architect review | Done |
+| Add `lookup_symbol_kind_in_scope_chain` helper | Done |
+| Add `lookup_symbol_index_in_scope_chain` helper | Done |
+| Add scope-aware `symbol_map` | Done |
+| Add callable attribute handling (D10) | Done |
+| Fourth code-architect review | Done |
+| Rename TypeInfo → AttributeTypeInfo | Done |
+| Clarify Symbol.scope_path usage | Done |
+| Add `callable_return_type_of` pseudocode | Done |
+| Add test fixtures F11-F16 | Done |
+| Add Verification Case 6 (nested class self) | Done |
+| Final review and status update | Done |
+
+**Files Modified:**
+- `plans/phase-11C.md`: Comprehensive plan for enhanced receiver resolution (~2000 lines)
+
+**Key Plan Components:**
+- **D01**: Step-by-step receiver resolution algorithm with scope-aware lookups
+- **D02**: Attribute type tracking from class-level annotations and `__init__`
+- **D03**: Call expression receiver resolution via return types
+- **D04**: Nested class scope depth tracking via `symbol_kinds`
+- **D05**: Resolution depth limit (MAX_RESOLUTION_DEPTH = 4)
+- **D06**: Structured ReceiverPath/ReceiverStep types
+- **D07**: Resolution precedence (TypeNode > annotation > constructor > propagation)
+- **D08**: Method vs function call resolution
+- **D09**: Cross-file attribute type resolution (stop at import boundary)
+- **D10**: Callable attribute resolution via `Callable[..., T]`
+
+**Test Fixtures Defined:**
+- 11C-F01: Dotted path resolution (`self.handler.process()`)
+- 11C-F02: Call expression resolution (`get_handler().process()`)
+- 11C-F03: Nested class
+- 11C-F04: Chained calls (`Builder().with_name().build().process()`)
+- 11C-F05: Depth limit (5 levels, returns None)
+- 11C-F06: False positive prevention (no return type)
+- 11C-F07: Annotated attribute
+- 11C-F08: Function call receiver (not typed variable)
+- 11C-F09: Constructor call (`Handler().process()`)
+- 11C-F10: Cross-file type mid-chain
+- 11C-F11: Class/function shadowing (scope-aware lookup)
+- 11C-F12: Single-element ReceiverPath
+- 11C-F13: Callable attribute
+- 11C-F14: cls.attr pattern (classmethod)
+- 11C-F15: Multiple assignments (last-write-wins)
+- 11C-F16: Nested class self type
+
+**Checkpoints Verified:**
+- Plan status: implementation-ready: PASS
+- Algorithm handles constructor calls correctly: PASS
+- Algorithm handles function calls correctly: PASS
+- Scope-aware lookup prevents shadowing bugs: PASS
+- Import boundary stops cross-file chain resolution: PASS
+- Callable attributes handled via pending_callable_return: PASS
+- All verification trace-throughs documented: PASS
+
+**Key Decisions/Notes:**
+- **Scope-aware maps**: Both `symbol_kinds` and `symbol_map` are keyed by `(Vec<String>, String)` to prevent shadowing bugs
+- **Outward lookup**: `lookup_symbol_kind_in_scope_chain` walks from innermost scope to module scope
+- **Import boundary**: When resolved kind is `SymbolKind::Import`, stop chain and return `CrossFile` or `None`
+- **AttributeTypeInfo**: Renamed from `TypeInfo` to avoid naming conflicts; holds `type_str` + optional `TypeNode`
+- **pending_callable_return**: Tracks callable attribute return types for the Call step
+- **LOC estimate**: ~840 lines for implementation across 6 steps
+
+---
+
+## [phase-11B.md] Post-Phase Assessment Fixes | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11B.md` - Phase 11B plan
+- `crates/tugtool-core/src/adapter.rs` - AttributeAccessData and CallSiteData structures
+- `crates/tugtool-python/src/analyzer.rs` - CrossFileSymbolMap and symbol resolution
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Fix cross-file resolution (HIGH - Option B) | Done |
+| Add `base_symbol_qualified_name` to AttributeAccessData | Done |
+| Add `callee_symbol_qualified_name` to CallSiteData | Done |
+| Create `ResolvedSymbol` enum (Local vs CrossFile) | Done |
+| Update `CrossFileSymbolMap.resolve_to_qualified_name()` | Done |
+| Add warning logs for missing span skips (MEDIUM) | Done |
+| Fix `from x import *` handling in effective exports (MEDIUM) | Done |
+| Add comprehensive tests for cross-file correctness | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/adapter.rs`: Added `base_symbol_qualified_name` to `AttributeAccessData`, added `callee_symbol_qualified_name` to `CallSiteData`, updated docstrings, added tests
+- `crates/tugtool-python/src/analyzer.rs`: Added `ResolvedSymbol` enum, refactored `CrossFileSymbolMap` to return qualified names, added `tracing::debug!` for missing span skips, added star import check in effective exports, added 7 comprehensive correctness tests
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1681 tests passed
+- `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`: 1138 tests passed
+
+**Checkpoints Verified:**
+- Local resolution sets `base_symbol_index`, NOT `base_symbol_qualified_name`: PASS
+- Cross-file resolution sets `base_symbol_qualified_name`, NOT `base_symbol_index`: PASS
+- Indices are valid for file's symbol list (not global FactsStore indices): PASS
+- Missing spans logged via tracing::debug!: PASS
+- Star imports prevent effective export computation: PASS
+
+**Key Decisions/Notes:**
+- **Issue 1 (HIGH):** The original bug was that `CrossFileSymbolMap` returned global FactsStore indices into fields documented as "Index in the file's symbol list". This could silently corrupt symbol resolution. Fixed by adding qualified name fields and returning qualified names for cross-file resolution.
+- **Issue 2 (MEDIUM):** Added `tracing::debug!` calls when skipping entries due to missing spans (symbols, references, exports, call sites).
+- **Issue 3 (MEDIUM):** `compute_effective_exports` now returns empty when star imports are present since we can't determine which names are imported.
+- Added 7 comprehensive tests that would have caught the original cross-file resolution bug.
+
+---
+
 ## [phase-11B.md] Step 8: Documentation and Final Verification | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

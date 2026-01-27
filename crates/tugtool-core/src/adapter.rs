@@ -233,6 +233,15 @@ pub struct ReferenceData {
 ///
 /// Represents attribute reads, writes, or calls (e.g., `obj.attr`, `obj.method()`).
 ///
+/// # Symbol Resolution
+///
+/// The base symbol (receiver type) can be resolved two ways:
+/// - **Local resolution**: `base_symbol_index` contains an index into the file's symbol list
+/// - **Cross-file resolution**: `base_symbol_qualified_name` contains a fully-qualified name
+///
+/// At most one of these fields should be `Some`. If both are `None`, the receiver type
+/// could not be resolved (unknown type, complex expression, etc.).
+///
 /// # Span Semantics
 ///
 /// The `span` field is `Option<Span>` because attribute spans may be unavailable
@@ -241,8 +250,18 @@ pub struct ReferenceData {
 /// - Analysis and informational operations can proceed with reduced precision
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeAccessData {
-    /// Index of base symbol in the file's symbol list (if resolved).
+    /// Index of base symbol in the file's symbol list (if resolved locally).
+    ///
+    /// This is set when the receiver's type is defined in the same file.
+    /// Mutually exclusive with `base_symbol_qualified_name`.
     pub base_symbol_index: Option<usize>,
+    /// Qualified name of base symbol (if resolved cross-file).
+    ///
+    /// This is set when the receiver's type is defined in a different file
+    /// (resolved via a pre-populated FactsStore). The qualified name can be
+    /// used to look up the symbol in the FactsStore.
+    /// Mutually exclusive with `base_symbol_index`.
+    pub base_symbol_qualified_name: Option<String>,
     /// Attribute name.
     pub name: String,
     /// Byte span of the attribute name, or `None` if unavailable.
@@ -270,10 +289,30 @@ pub struct CallArgData {
 /// Call site from single-file analysis.
 ///
 /// Represents a function/method call with its arguments.
+///
+/// # Symbol Resolution
+///
+/// The callee symbol can be resolved two ways:
+/// - **Local resolution**: `callee_symbol_index` contains an index into the file's symbol list
+/// - **Cross-file resolution**: `callee_symbol_qualified_name` contains a fully-qualified name
+///
+/// At most one of these fields should be `Some`. If both are `None`, the callee could not
+/// be resolved (unknown function, complex expression, etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallSiteData {
-    /// Index of callee symbol in the file's symbol list (if resolved).
+    /// Index of callee symbol in the file's symbol list (if resolved locally).
+    ///
+    /// This is set when the callee is defined in the same file (for direct calls)
+    /// or when the receiver's type is defined in the same file (for method calls).
+    /// Mutually exclusive with `callee_symbol_qualified_name`.
     pub callee_symbol_index: Option<usize>,
+    /// Qualified name of callee symbol (if resolved cross-file).
+    ///
+    /// This is set when the callee or receiver's type is defined in a different file
+    /// (resolved via a pre-populated FactsStore). The qualified name can be
+    /// used to look up the symbol in the FactsStore.
+    /// Mutually exclusive with `callee_symbol_index`.
+    pub callee_symbol_qualified_name: Option<String>,
     /// Byte span of the call expression.
     pub span: Span,
     /// Call arguments.
@@ -860,6 +899,7 @@ mod tests {
     fn call_site_data_can_be_constructed() {
         let call = CallSiteData {
             callee_symbol_index: Some(5),
+            callee_symbol_qualified_name: None,
             span: Span::new(100, 120),
             args: vec![
                 CallArgData {
@@ -874,6 +914,19 @@ mod tests {
         };
         assert_eq!(call.args.len(), 2);
         assert_eq!(call.args[1].name, Some("key".to_string()));
+    }
+
+    #[test]
+    fn call_site_data_with_cross_file_resolution() {
+        // Cross-file resolution uses qualified_name instead of index
+        let call = CallSiteData {
+            callee_symbol_index: None,
+            callee_symbol_qualified_name: Some("pkg.module.SomeClass".to_string()),
+            span: Span::new(100, 120),
+            args: vec![],
+        };
+        assert!(call.callee_symbol_index.is_none());
+        assert!(call.callee_symbol_qualified_name.is_some());
     }
 
     #[test]
@@ -897,6 +950,7 @@ mod tests {
     fn attribute_access_data_can_be_constructed() {
         let attr = AttributeAccessData {
             base_symbol_index: Some(0),
+            base_symbol_qualified_name: None,
             name: "method".to_string(),
             span: Some(Span::new(50, 56)),
             kind: AttributeAccessKind::Call,
@@ -909,11 +963,26 @@ mod tests {
     fn attribute_access_data_can_have_none_span() {
         let attr = AttributeAccessData {
             base_symbol_index: None,
+            base_symbol_qualified_name: None,
             name: "attr".to_string(),
             span: None,
             kind: AttributeAccessKind::Read,
         };
         assert!(attr.span.is_none());
+    }
+
+    #[test]
+    fn attribute_access_data_with_cross_file_resolution() {
+        // Cross-file resolution uses qualified_name instead of index
+        let attr = AttributeAccessData {
+            base_symbol_index: None,
+            base_symbol_qualified_name: Some("pkg.module.MyClass".to_string()),
+            name: "method".to_string(),
+            span: Some(Span::new(50, 56)),
+            kind: AttributeAccessKind::Call,
+        };
+        assert!(attr.base_symbol_index.is_none());
+        assert!(attr.base_symbol_qualified_name.is_some());
     }
 
     #[test]

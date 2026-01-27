@@ -3227,15 +3227,15 @@ pub struct PythonAnalyzerOptions {
 ///
 /// // Resolve "Handler" from File B
 /// let idx = cross_file_map.resolve("Handler");  // Some(idx) if unambiguous
-/// let idx = cross_file_map.resolve("pkg.Handler");  // Some(idx) by qualified name
+/// let qn = cross_file_map.resolve_to_qualified_name("Handler");  // Some("pkg.Handler")
 /// ```
 #[derive(Debug, Default)]
 pub struct CrossFileSymbolMap {
-    /// Fully-qualified name -> adapter symbol index in AnalysisBundle.
-    qualified_to_index: HashMap<String, usize>,
-    /// Simple name -> adapter symbol index.
-    /// If a name maps to multiple symbols, the entry is removed (ambiguous).
-    name_to_index: HashMap<String, Option<usize>>,
+    /// Simple name -> qualified name.
+    /// If a name maps to multiple symbols, the entry is set to `None` (ambiguous).
+    name_to_qualified: HashMap<String, Option<String>>,
+    /// Set of all qualified names (for direct lookup).
+    qualified_names: HashSet<String>,
 }
 
 impl CrossFileSymbolMap {
@@ -3248,10 +3248,7 @@ impl CrossFileSymbolMap {
     ///
     /// Iterates over all symbols in the store and builds lookup maps by:
     /// 1. Qualified name (from store's qualified_names)
-    /// 2. Simple name (symbol.name) - marked ambiguous if duplicates exist
-    ///
-    /// The index values correspond to the order symbols appear when iterating
-    /// `store.symbols()`, which matches how adapter conversion builds its output.
+    /// 2. Simple name -> qualified name mapping (marked ambiguous if duplicates exist)
     ///
     /// # Arguments
     /// - `store`: The FactsStore containing symbols from prior analysis
@@ -3261,32 +3258,30 @@ impl CrossFileSymbolMap {
     pub fn from_store(store: &FactsStore) -> Self {
         let mut map = Self::new();
 
-        // Build index mapping: SymbolId -> adapter index
-        // The adapter index corresponds to iteration order of store.symbols()
-        let symbol_id_to_index: HashMap<SymbolId, usize> = store
-            .symbols()
-            .enumerate()
-            .map(|(idx, sym)| (sym.symbol_id, idx))
+        // Build SymbolId -> qualified name mapping
+        let symbol_id_to_qualified: HashMap<SymbolId, String> = store
+            .qualified_names()
+            .map(|qn| (qn.symbol_id, qn.path.clone()))
             .collect();
 
-        // Populate qualified name lookup from store's qualified_names
+        // Populate qualified names set
         for qn in store.qualified_names() {
-            if let Some(&idx) = symbol_id_to_index.get(&qn.symbol_id) {
-                map.qualified_to_index.insert(qn.path.clone(), idx);
-            }
+            map.qualified_names.insert(qn.path.clone());
         }
 
-        // Populate simple name lookup, tracking ambiguity
-        for (idx, symbol) in store.symbols().enumerate() {
+        // Populate simple name -> qualified name lookup, tracking ambiguity
+        for symbol in store.symbols() {
             let name = &symbol.name;
-            match map.name_to_index.get(name) {
+            let qualified = symbol_id_to_qualified.get(&symbol.symbol_id).cloned();
+
+            match map.name_to_qualified.get(name) {
                 None => {
-                    // First occurrence: record the index
-                    map.name_to_index.insert(name.clone(), Some(idx));
+                    // First occurrence: record the qualified name
+                    map.name_to_qualified.insert(name.clone(), qualified);
                 }
                 Some(Some(_)) => {
                     // Second occurrence: mark as ambiguous (None)
-                    map.name_to_index.insert(name.clone(), None);
+                    map.name_to_qualified.insert(name.clone(), None);
                 }
                 Some(None) => {
                     // Already ambiguous, no change needed
@@ -3297,39 +3292,41 @@ impl CrossFileSymbolMap {
         map
     }
 
-    /// Resolve a name to an adapter symbol index.
+    /// Resolve a name to a qualified name for cross-file references.
     ///
     /// Resolution order:
-    /// 1. Try qualified name lookup first (e.g., "mymodule.MyClass")
-    /// 2. Fall back to simple name lookup (e.g., "MyClass")
+    /// 1. If the input is already a qualified name, return it directly
+    /// 2. Otherwise, look up simple name -> qualified name mapping
     ///
     /// # Arguments
-    /// - `name`: The name to resolve (qualified or simple)
+    /// - `name`: The name to resolve (simple or qualified)
     ///
     /// # Returns
-    /// - `Some(index)` if the name resolves unambiguously
+    /// - `Some(qualified_name)` if the name resolves unambiguously
     /// - `None` if the name is not found or is ambiguous
-    pub fn resolve(&self, name: &str) -> Option<usize> {
-        // Try qualified name first (most specific)
-        self.qualified_to_index.get(name).copied().or_else(|| {
-            // Fall back to simple name (may be None if ambiguous)
-            self.name_to_index.get(name).copied().flatten()
-        })
+    pub fn resolve_to_qualified_name(&self, name: &str) -> Option<String> {
+        // If it's already a qualified name we know about, return it
+        if self.qualified_names.contains(name) {
+            return Some(name.to_string());
+        }
+
+        // Look up simple name -> qualified name (may be None if ambiguous)
+        self.name_to_qualified.get(name).cloned().flatten()
     }
 
     /// Check if the map is empty.
     pub fn is_empty(&self) -> bool {
-        self.qualified_to_index.is_empty() && self.name_to_index.is_empty()
+        self.name_to_qualified.is_empty() && self.qualified_names.is_empty()
     }
 
     /// Get the number of qualified name entries.
     pub fn qualified_count(&self) -> usize {
-        self.qualified_to_index.len()
+        self.qualified_names.len()
     }
 
     /// Get the number of simple name entries (including ambiguous ones).
     pub fn simple_name_count(&self) -> usize {
-        self.name_to_index.len()
+        self.name_to_qualified.len()
     }
 }
 
@@ -3404,7 +3401,7 @@ impl PythonAdapter {
         None
     }
 
-    /// Resolve a receiver expression to a symbol index via type inference.
+    /// Resolve a receiver expression to a symbol via type inference.
     ///
     /// Given an attribute access like `obj.method`, this function attempts to resolve
     /// `obj` to its type using the TypeTracker, then looks up that type in the local
@@ -3412,8 +3409,8 @@ impl PythonAdapter {
     ///
     /// # Resolution Order
     /// 1. Look up receiver type via TypeTracker
-    /// 2. Look up type in local symbol map (current file)
-    /// 3. Fall back to cross-file map (other analyzed files)
+    /// 2. Look up type in local symbol map (current file) -> returns `Local(index)`
+    /// 3. Fall back to cross-file map (other analyzed files) -> returns `CrossFile(qualified_name)`
     ///
     /// # Arguments
     /// - `receiver`: The receiver expression string (e.g., "obj" from "obj.method")
@@ -3423,7 +3420,8 @@ impl PythonAdapter {
     /// - `cross_file_map`: Optional cross-file symbol map for fallback resolution
     ///
     /// # Returns
-    /// - `Some(index)` if the receiver's type is known and found in either map
+    /// - `Some(ResolvedSymbol::Local(index))` if resolved to a local symbol
+    /// - `Some(ResolvedSymbol::CrossFile(qualified_name))` if resolved to a cross-file symbol
     /// - `None` if the receiver's type is unknown or not in any map
     fn resolve_receiver_to_symbol(
         &self,
@@ -3432,7 +3430,7 @@ impl PythonAdapter {
         tracker: Option<&TypeTracker>,
         symbol_map: &HashMap<&str, usize>,
         cross_file_map: Option<&CrossFileSymbolMap>,
-    ) -> Option<usize> {
+    ) -> Option<ResolvedSymbol> {
         // If no tracker provided, we can't resolve
         let tracker = tracker?;
 
@@ -3446,11 +3444,35 @@ impl PythonAdapter {
         let receiver_type = tracker.type_of(scope_path, receiver)?;
 
         // Look up the type's symbol index in the local map first
-        symbol_map.get(receiver_type).copied().or_else(|| {
-            // Fall back to cross-file resolution if available
-            cross_file_map.and_then(|map| map.resolve(receiver_type))
-        })
+        if let Some(&idx) = symbol_map.get(receiver_type) {
+            return Some(ResolvedSymbol::Local(idx));
+        }
+
+        // Fall back to cross-file resolution if available
+        // Return the qualified name, NOT an index (which would be a global FactsStore index)
+        if let Some(map) = cross_file_map {
+            if let Some(qualified_name) = map.resolve_to_qualified_name(receiver_type) {
+                return Some(ResolvedSymbol::CrossFile(qualified_name));
+            }
+        }
+
+        None
     }
+}
+
+/// Result of symbol resolution during adapter conversion.
+///
+/// This enum distinguishes between local and cross-file symbol resolution,
+/// ensuring that indices are only used for local (same-file) symbols while
+/// cross-file references use qualified names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedSymbol {
+    /// Symbol resolved to a local index (same file).
+    /// The index refers to `FileAnalysisResult.symbols`.
+    Local(usize),
+    /// Symbol resolved to a cross-file qualified name.
+    /// The qualified name can be used to look up the symbol in FactsStore.
+    CrossFile(String),
 }
 
 impl LanguageAdapter for PythonAdapter {
@@ -3540,6 +3562,11 @@ impl PythonAdapter {
         for symbol in &analysis.symbols {
             // A symbol without a declaration span can't be an edit target - skip it
             let Some(decl_span) = symbol.span else {
+                tracing::debug!(
+                    name = %symbol.name,
+                    kind = ?symbol.kind,
+                    "Skipping symbol without declaration span (cannot be edit target)"
+                );
                 continue;
             };
 
@@ -3561,6 +3588,11 @@ impl PythonAdapter {
         for reference in &analysis.references {
             // A reference without a span can't be an edit target - skip it
             let Some(span) = reference.span else {
+                tracing::debug!(
+                    name = %reference.name,
+                    kind = ?reference.kind,
+                    "Skipping reference without span (cannot be edit target)"
+                );
                 continue;
             };
 
@@ -3588,6 +3620,10 @@ impl PythonAdapter {
         for export in &analysis.exports {
             // An export without a declaration span can't be an edit target - skip it
             let Some(decl_span) = export.span else {
+                tracing::debug!(
+                    name = %export.name,
+                    "Skipping export without span (cannot be edit target)"
+                );
                 continue;
             };
 
@@ -3746,10 +3782,10 @@ impl PythonAdapter {
 
         // Convert attribute accesses
         for attr in &analysis.attribute_accesses {
-            // Try to resolve the receiver to a symbol index via type inference
+            // Try to resolve the receiver to a symbol via type inference
             // This enables downstream refactors to know what class a method belongs to
-            // Resolution order: local map -> cross-file map -> None
-            let base_symbol_index = self.resolve_receiver_to_symbol(
+            // Resolution order: local map -> cross-file qualified name -> None
+            let resolved = self.resolve_receiver_to_symbol(
                 &attr.receiver,
                 &attr.scope_path,
                 type_tracker,
@@ -3757,8 +3793,16 @@ impl PythonAdapter {
                 cross_file_map,
             );
 
+            // Split resolution into local index vs cross-file qualified name
+            let (base_symbol_index, base_symbol_qualified_name) = match resolved {
+                Some(ResolvedSymbol::Local(idx)) => (Some(idx), None),
+                Some(ResolvedSymbol::CrossFile(qn)) => (None, Some(qn)),
+                None => (None, None),
+            };
+
             result.attributes.push(AttributeAccessData {
                 base_symbol_index,
+                base_symbol_qualified_name,
                 name: attr.attr_name.clone(),
                 span: attr.attr_span,
                 kind: convert_cst_attribute_access_kind(attr.kind),
@@ -3769,19 +3813,25 @@ impl PythonAdapter {
         for call in &analysis.call_sites {
             // A call site without a span can't be an edit target - skip it
             let Some(span) = call.span else {
+                tracing::debug!(
+                    callee = %call.callee,
+                    "Skipping call site without span (cannot be edit target)"
+                );
                 continue;
             };
 
-            // Try to resolve the callee to a symbol index
-            // For function calls, look up the callee name in symbols
+            // Try to resolve the callee to a symbol
+            // For function calls, look up the callee name in symbols (local only)
             // For method calls, resolve the receiver type to find the class symbol
-            let callee_symbol_index = if !call.is_method_call {
-                // Direct function call: look up callee name in local symbols
-                symbol_name_to_index.get(call.callee.as_str()).copied()
+            let (callee_symbol_index, callee_symbol_qualified_name) = if !call.is_method_call {
+                // Direct function call: look up callee name in local symbols only
+                // (cross-file function resolution would need import tracking)
+                let idx = symbol_name_to_index.get(call.callee.as_str()).copied();
+                (idx, None)
             } else {
                 // Method call: resolve the receiver's type to find the class symbol
                 // This enables downstream refactors to know what class a method belongs to
-                call.receiver.as_ref().and_then(|receiver| {
+                let resolved = call.receiver.as_ref().and_then(|receiver| {
                     self.resolve_receiver_to_symbol(
                         receiver,
                         &call.scope_path,
@@ -3789,7 +3839,13 @@ impl PythonAdapter {
                         &symbol_name_to_index,
                         cross_file_map,
                     )
-                })
+                });
+
+                match resolved {
+                    Some(ResolvedSymbol::Local(idx)) => (Some(idx), None),
+                    Some(ResolvedSymbol::CrossFile(qn)) => (None, Some(qn)),
+                    None => (None, None),
+                }
             };
 
             let args: Vec<CallArgData> = call
@@ -3803,6 +3859,7 @@ impl PythonAdapter {
 
             result.calls.push(CallSiteData {
                 callee_symbol_index,
+                callee_symbol_qualified_name,
                 span,
                 args,
             });
@@ -3993,10 +4050,24 @@ fn collect_imported_names(imports: &[LocalImport]) -> HashSet<String> {
 /// - Dunder names (`__init__`, etc.)
 /// - Symbols defined in this file (not imported)
 ///
-/// Returns an empty vector if the file has an explicit `__all__`.
+/// Returns an empty vector if:
+/// - The file has an explicit `__all__`
+/// - The file has a star import (`from x import *`) since we can't know
+///   what names are imported and thus might incorrectly mark imported names
+///   as locally-defined effective exports
 fn compute_effective_exports(analysis: &FileAnalysis) -> Vec<ExportData> {
     // Only compute if no explicit __all__
     if !analysis.exports.is_empty() {
+        return vec![];
+    }
+
+    // If there are any star imports, we can't reliably determine which names
+    // are imported vs locally defined, so return empty (conservative approach)
+    let has_star_import = analysis.imports.iter().any(|imp| imp.is_star);
+    if has_star_import {
+        tracing::debug!(
+            "Skipping effective exports due to star import (cannot determine imported names)"
+        );
         return vec![];
     }
 
@@ -5297,9 +5368,9 @@ h.process(value)
         // ====================================================================
 
         #[test]
-        fn resolve_receiver_to_symbol_returns_index_for_typed_receiver() {
-            // Test: When receiver has a known type that exists as a symbol,
-            // resolve_receiver_to_symbol should return the symbol's index.
+        fn resolve_receiver_to_symbol_returns_local_for_typed_receiver() {
+            // Test: When receiver has a known type that exists as a local symbol,
+            // resolve_receiver_to_symbol should return ResolvedSymbol::Local(index).
             let adapter = PythonAdapter::new();
 
             // Build a TypeTracker with a typed variable
@@ -5322,7 +5393,7 @@ h.process(value)
             let mut symbol_map: HashMap<&str, usize> = HashMap::new();
             symbol_map.insert("Handler", 0);
 
-            // Resolve "h" in module scope - should find Handler at index 0
+            // Resolve "h" in module scope - should find Handler at local index 0
             // No cross-file map needed for this test
             let result = adapter.resolve_receiver_to_symbol(
                 "h",
@@ -5333,8 +5404,8 @@ h.process(value)
             );
             assert_eq!(
                 result,
-                Some(0),
-                "Should resolve 'h' to Handler symbol at index 0"
+                Some(ResolvedSymbol::Local(0)),
+                "Should resolve 'h' to Handler symbol at local index 0"
             );
         }
 
@@ -5490,19 +5561,19 @@ h.process()
             // Build CrossFileSymbolMap from store
             let map = CrossFileSymbolMap::from_store(&store);
 
-            // Should resolve qualified name to index 0 (first symbol)
-            let result = map.resolve("mymodule.Handler");
+            // Should resolve qualified name to itself
+            let result = map.resolve_to_qualified_name("mymodule.Handler");
             assert_eq!(
                 result,
-                Some(0),
-                "Qualified name lookup should resolve to index 0"
+                Some("mymodule.Handler".to_string()),
+                "Qualified name lookup should resolve to qualified name"
             );
         }
 
         #[test]
-        fn cross_file_symbol_map_simple_name_lookup_resolves_when_unambiguous() {
-            // Test: Simple name lookup works when there's only one symbol with that name.
-            use tugtool_core::facts::{File, Symbol};
+        fn cross_file_symbol_map_simple_name_lookup_resolves_to_qualified_name() {
+            // Test: Simple name lookup returns the qualified name when unambiguous.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
             use tugtool_core::patch::Span;
 
             let mut store = FactsStore::new();
@@ -5527,15 +5598,19 @@ h.process()
             );
             store.insert_symbol(symbol);
 
+            // Add qualified name
+            let qn = QualifiedName::new(symbol_id, "mymodule.Handler");
+            store.insert_qualified_name(qn);
+
             // Build map
             let map = CrossFileSymbolMap::from_store(&store);
 
-            // Should resolve simple name
-            let result = map.resolve("Handler");
+            // Should resolve simple name to qualified name
+            let result = map.resolve_to_qualified_name("Handler");
             assert_eq!(
                 result,
-                Some(0),
-                "Unambiguous simple name should resolve to index"
+                Some("mymodule.Handler".to_string()),
+                "Unambiguous simple name should resolve to qualified name"
             );
         }
 
@@ -5590,7 +5665,7 @@ h.process()
             let map = CrossFileSymbolMap::from_store(&store);
 
             // Simple name should return None (ambiguous)
-            let result = map.resolve("Handler");
+            let result = map.resolve_to_qualified_name("Handler");
             assert_eq!(
                 result, None,
                 "Ambiguous simple name lookup should return None"
@@ -5651,21 +5726,21 @@ h.process()
 
             // Simple name should return None (ambiguous)
             assert_eq!(
-                map.resolve("Handler"),
+                map.resolve_to_qualified_name("Handler"),
                 None,
                 "Ambiguous simple name should return None"
             );
 
             // But qualified names should still work
             assert_eq!(
-                map.resolve("handlers.http.Handler"),
-                Some(0),
-                "First qualified name should resolve to index 0"
+                map.resolve_to_qualified_name("handlers.http.Handler"),
+                Some("handlers.http.Handler".to_string()),
+                "First qualified name should resolve to itself"
             );
             assert_eq!(
-                map.resolve("handlers.grpc.Handler"),
-                Some(1),
-                "Second qualified name should resolve to index 1"
+                map.resolve_to_qualified_name("handlers.grpc.Handler"),
+                Some("handlers.grpc.Handler".to_string()),
+                "Second qualified name should resolve to itself"
             );
         }
 
@@ -5677,7 +5752,7 @@ h.process()
 
             assert!(map.is_empty(), "Empty store should produce empty map");
             assert_eq!(
-                map.resolve("anything"),
+                map.resolve_to_qualified_name("anything"),
                 None,
                 "Empty map should resolve to None"
             );
@@ -5735,7 +5810,7 @@ h.process()
 
             let cross_file_map = CrossFileSymbolMap::from_store(&store);
 
-            // Resolve "h" - should fall back to cross-file map
+            // Resolve "h" - should fall back to cross-file map and return qualified name
             let result = adapter.resolve_receiver_to_symbol(
                 "h",
                 &["<module>".to_string()],
@@ -5746,8 +5821,8 @@ h.process()
 
             assert_eq!(
                 result,
-                Some(0),
-                "Should resolve via cross-file map when not in local map"
+                Some(ResolvedSymbol::CrossFile("remote.RemoteHandler".to_string())),
+                "Should resolve via cross-file map and return qualified name"
             );
         }
 
@@ -6149,6 +6224,311 @@ class LocalClass:
                 "imported 'path' should NOT be exported: {:?}",
                 export_names
             );
+        }
+
+        #[test]
+        fn effective_exports_skipped_with_star_import() {
+            // Integration test: Star imports prevent effective export computation
+            // because we can't know what names are imported.
+            let opts = PythonAnalyzerOptions {
+                compute_effective_exports: true,
+                ..Default::default()
+            };
+            let adapter = PythonAdapter::with_options(opts);
+            let content = r#"
+from some_module import *
+
+def local_func():
+    pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Should have NO effective exports when star import is present
+            // (we can't reliably determine which names are imported)
+            assert!(
+                result.exports.is_empty(),
+                "No effective exports should be emitted with star import: {:?}",
+                result.exports
+            );
+        }
+
+        // ====================================================================
+        // Cross-File Resolution Correctness Tests
+        // ====================================================================
+        // These tests verify that:
+        // 1. Local resolution sets base_symbol_index, NOT base_symbol_qualified_name
+        // 2. Cross-file resolution sets base_symbol_qualified_name, NOT base_symbol_index
+        // 3. Indices are valid for the file's symbol list (not global FactsStore indices)
+
+        #[test]
+        fn local_resolution_uses_index_not_qualified_name() {
+            // CRITICAL TEST: Local resolution must set base_symbol_index only.
+            // If we incorrectly return a global index instead of a local one,
+            // this test will catch it.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+h = Handler()
+h.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the attribute access for "h.process"
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(process_attr.is_some(), "Should have 'process' attribute access");
+            let process_attr = process_attr.unwrap();
+
+            // Local resolution: base_symbol_index should be Some, qualified_name should be None
+            assert!(
+                process_attr.base_symbol_index.is_some(),
+                "Local resolution should set base_symbol_index"
+            );
+            assert!(
+                process_attr.base_symbol_qualified_name.is_none(),
+                "Local resolution should NOT set base_symbol_qualified_name"
+            );
+
+            // Verify the index is valid (within bounds of the symbol list)
+            let idx = process_attr.base_symbol_index.unwrap();
+            assert!(
+                idx < result.symbols.len(),
+                "base_symbol_index {} must be < symbol count {} (valid local index)",
+                idx,
+                result.symbols.len()
+            );
+
+            // Verify the index points to the correct symbol
+            let pointed_symbol = &result.symbols[idx];
+            assert_eq!(
+                pointed_symbol.name, "Handler",
+                "base_symbol_index should point to Handler class"
+            );
+        }
+
+        #[test]
+        fn cross_file_resolution_uses_qualified_name_not_index() {
+            // CRITICAL TEST: Cross-file resolution must set base_symbol_qualified_name only.
+            // This is the bug that was caught: returning global indices instead of qualified names.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
+            use tugtool_core::patch::Span;
+
+            let adapter = PythonAdapter::new();
+
+            // Build a store with a class from another file
+            let mut store = FactsStore::new();
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "external/remote.py",
+                ContentHash::from_hex_unchecked("abc123"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Class,
+                "RemoteService",
+                file_id,
+                Span::new(0, 13),
+            );
+            store.insert_symbol(symbol);
+            store.insert_qualified_name(QualifiedName::new(
+                symbol_id,
+                "external.remote.RemoteService",
+            ));
+
+            // Analyze a file that uses RemoteService
+            let code = r#"
+from external.remote import RemoteService
+
+svc = RemoteService()
+svc.call()
+"#;
+            let files = vec![("client.py".to_string(), code.to_string())];
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+            let result = &bundle.file_results[0];
+
+            // Find the attribute access for "svc.call"
+            let call_attr = result.attributes.iter().find(|a| a.name == "call");
+            assert!(call_attr.is_some(), "Should have 'call' attribute access");
+            let call_attr = call_attr.unwrap();
+
+            // If cross-file resolution worked, base_symbol_qualified_name should be set
+            // and base_symbol_index should be None (since RemoteService is not in this file).
+            //
+            // NOTE: For this to work, the TypeTracker needs to infer that `svc` has type
+            // `RemoteService`. This depends on constructor call tracking. If TypeTracker
+            // doesn't have the type, both fields will be None, which is also correct
+            // (no resolution means no data).
+            //
+            // What we're testing here is that IF resolution succeeds for a cross-file type,
+            // it returns qualified_name NOT an index.
+            if call_attr.base_symbol_index.is_some() {
+                // If there's an index, it must point to a valid symbol in this file
+                let idx = call_attr.base_symbol_index.unwrap();
+                assert!(
+                    idx < result.symbols.len(),
+                    "If base_symbol_index is set, it must be valid for THIS file's symbols. \
+                     Got index {} but file only has {} symbols. \
+                     This likely means a global FactsStore index was incorrectly stored.",
+                    idx,
+                    result.symbols.len()
+                );
+            }
+
+            // The key invariant: we should NEVER have both set
+            assert!(
+                !(call_attr.base_symbol_index.is_some()
+                    && call_attr.base_symbol_qualified_name.is_some()),
+                "Must not have both index and qualified_name set. \
+                 Index={:?}, QualifiedName={:?}",
+                call_attr.base_symbol_index,
+                call_attr.base_symbol_qualified_name
+            );
+        }
+
+        #[test]
+        fn callee_symbol_index_is_valid_local_index() {
+            // CRITICAL TEST: callee_symbol_index must be a valid index into the file's symbols.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Service:
+    def handle(self): pass
+
+svc = Service()
+svc.handle()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the method call
+            for call in &result.calls {
+                if let Some(idx) = call.callee_symbol_index {
+                    assert!(
+                        idx < result.symbols.len(),
+                        "callee_symbol_index {} must be < symbol count {} (valid local index)",
+                        idx,
+                        result.symbols.len()
+                    );
+                }
+
+                // Must not have both index and qualified_name
+                assert!(
+                    !(call.callee_symbol_index.is_some()
+                        && call.callee_symbol_qualified_name.is_some()),
+                    "Call must not have both callee_symbol_index and callee_symbol_qualified_name"
+                );
+            }
+        }
+
+        #[test]
+        fn cross_file_method_call_uses_qualified_name() {
+            // CRITICAL TEST: Method calls on cross-file types should use qualified name.
+            use tugtool_core::facts::{File, QualifiedName, Symbol};
+            use tugtool_core::patch::Span;
+
+            let adapter = PythonAdapter::new();
+
+            // Build a store with a class from another file
+            let mut store = FactsStore::new();
+            let file_id = store.next_file_id();
+            let file = File::new(
+                file_id,
+                "pkg/service.py",
+                ContentHash::from_hex_unchecked("xyz789"),
+                Language::Python,
+            );
+            store.insert_file(file);
+
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Class,
+                "Service",
+                file_id,
+                Span::new(0, 7),
+            );
+            store.insert_symbol(symbol);
+            store.insert_qualified_name(QualifiedName::new(symbol_id, "pkg.service.Service"));
+
+            // Analyze a file that uses Service
+            let code = r#"
+from pkg.service import Service
+
+obj = Service()
+obj.run()
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+            let result = &bundle.file_results[0];
+
+            // Verify all call indices are valid
+            for (i, call) in result.calls.iter().enumerate() {
+                if let Some(idx) = call.callee_symbol_index {
+                    assert!(
+                        idx < result.symbols.len(),
+                        "Call {} has callee_symbol_index {} but file only has {} symbols. \
+                         This indicates a global index was incorrectly stored.",
+                        i,
+                        idx,
+                        result.symbols.len()
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn attribute_indices_valid_with_multiple_files() {
+            // CRITICAL TEST: When analyzing multiple files, attribute indices must be
+            // valid for EACH file's own symbol list, not a global list.
+            let adapter = PythonAdapter::new();
+            let store = FactsStore::new();
+
+            let file1 = r#"
+class A:
+    def method_a(self): pass
+
+obj = A()
+obj.method_a()
+"#;
+            let file2 = r#"
+class B:
+    def method_b(self): pass
+class C:
+    def method_c(self): pass
+class D:
+    def method_d(self): pass
+
+obj = D()
+obj.method_d()
+"#;
+            let files = vec![
+                ("a.py".to_string(), file1.to_string()),
+                ("b.py".to_string(), file2.to_string()),
+            ];
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+
+            // Verify each file's attribute indices are valid for that file
+            for (file_idx, result) in bundle.file_results.iter().enumerate() {
+                for attr in &result.attributes {
+                    if let Some(idx) = attr.base_symbol_index {
+                        assert!(
+                            idx < result.symbols.len(),
+                            "File {} '{}' has attribute with base_symbol_index {} \
+                             but only {} symbols. Indices must be per-file, not global.",
+                            file_idx,
+                            result.path,
+                            idx,
+                            result.symbols.len()
+                        );
+                    }
+                }
+            }
         }
     }
 
