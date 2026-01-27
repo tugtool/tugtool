@@ -6,6 +6,43 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 0: Audit Current Receiver Resolution | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Section 11C.5 Execution Steps, Step 0
+- Phase 11C Context section describing receiver resolution limitations
+- Temporale fixture codebase (54 Python files, 19,564 LOC)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Grep Temporale for `self.attr.method()` patterns | Done |
+| Count occurrences of dotted receivers in attribute accesses | Done |
+| Identify most common patterns (2-segment, 3-segment, etc.) | Done |
+| Document findings in `docs/receiver-patterns.md` | Done |
+
+**Files Created:**
+- `docs/receiver-patterns.md`: Comprehensive receiver pattern analysis with frequency data, examples, and recommendations
+
+**Files Modified:**
+- `plans/phase-11C.md`: Checked off all Step 0 tasks and checkpoint items
+
+**Checkpoints Verified:**
+- Pattern analysis documented: PASS (created `docs/receiver-patterns.md` with summary table, key findings, and detailed examples)
+- Findings guide depth limit decision: PASS (0 patterns exceeding 3 segments validates `MAX_RESOLUTION_DEPTH = 4`)
+
+**Key Findings:**
+- **Simple patterns dominate (96%)**: 1,252 simple method calls, 421 simple attribute accesses
+- **Dotted receivers are rare**: Only 37 occurrences of `obj.attr.method()` (2.8%)
+- **self.attr.something is very rare**: Only 4 occurrences (all `self._tz.offset_seconds`/`is_utc`)
+- **No deep chains in real code**: 0 patterns with 4+ segments validates depth limit
+- **No constructor chains**: 0 `ClassName().method()` patterns in production code
+
+---
+
 ## [phase-11C.md] Plan Finalization: Enhanced Type Inference and Scope Tracking | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

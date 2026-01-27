@@ -1483,10 +1483,10 @@ class Outer:
 **References:** [D01] Step-by-Step Resolution, (#context)
 
 **Tasks:**
-- [ ] Grep Temporale for `self.attr.method()` patterns
-- [ ] Count occurrences of dotted receivers in attribute accesses
-- [ ] Identify most common patterns (2-segment, 3-segment, etc.)
-- [ ] Document findings in `docs/receiver-patterns.md`
+- [x] Grep Temporale for `self.attr.method()` patterns
+- [x] Count occurrences of dotted receivers in attribute accesses
+- [x] Identify most common patterns (2-segment, 3-segment, etc.)
+- [x] Document findings in `docs/receiver-patterns.md`
 
 **Artifacts:**
 - `docs/receiver-patterns.md`: List of common receiver patterns in real code with frequency analysis
@@ -1495,8 +1495,8 @@ class Outer:
 - N/A (audit step)
 
 **Checkpoint:**
-- [ ] Pattern analysis documented
-- [ ] Findings guide depth limit decision
+- [x] Pattern analysis documented
+- [x] Findings guide depth limit decision
 
 **Rollback:**
 - N/A (documentation only)
