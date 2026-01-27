@@ -1538,20 +1538,20 @@ class Outer:
 **References:** [D02] Attribute Type Tracking, Q-A
 
 **Tasks:**
-- [ ] Add `is_self_attribute: bool` field to `AssignmentInfo` (default false)
-- [ ] Add `attribute_name: Option<String>` field to `AssignmentInfo`
-- [ ] Update `visit_assign` to detect `AssignTargetExpression::Attribute` targets
-- [ ] When target is `self.attr` or `cls.attr`, set `is_self_attribute: true` and extract `attribute_name`
-- [ ] Extract class name from scope_path for `__init__` context detection
+- [x] Add `is_self_attribute: bool` field to `AssignmentInfo` (default false)
+- [x] Add `attribute_name: Option<String>` field to `AssignmentInfo`
+- [x] Update `visit_assign` to detect `AssignTargetExpression::Attribute` targets
+- [x] When target is `self.attr` or `cls.attr`, set `is_self_attribute: true` and extract `attribute_name`
+- [x] Extract class name from scope_path for `__init__` context detection
 
 **Tests:**
-- [ ] Unit: `self.handler = Handler()` sets `is_self_attribute: true`, `attribute_name: Some("handler")`
-- [ ] Unit: `self.handler: Handler = ...` (annotated) also sets flags
-- [ ] Unit: `other.attr = ...` does NOT set `is_self_attribute`
-- [ ] Unit: Assignment outside `__init__` still detected (for annotation-based types)
+- [x] Unit: `self.handler = Handler()` sets `is_self_attribute: true`, `attribute_name: Some("handler")`
+- [x] Unit: `self.handler: Handler = ...` (annotated) also sets flags
+- [x] Unit: `other.attr = ...` does NOT set `is_self_attribute`
+- [x] Unit: Assignment outside `__init__` still detected (for annotation-based types)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst type_inference`
+- [x] `cargo nextest run -p tugtool-python-cst type_inference`
 
 **Rollback:**
 - Revert commit

@@ -36,7 +36,8 @@ use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::traits::NodeId;
 use crate::nodes::{
-    Assign, AssignTargetExpression, Call, ClassDef, Expression, FunctionDef, Module, Span,
+    AnnAssign, Assign, AssignTargetExpression, Call, ClassDef, Expression, FunctionDef, Module,
+    Span,
 };
 
 /// How the type was determined for an assignment.
@@ -91,6 +92,11 @@ pub struct AssignmentInfo {
     pub line: Option<u32>,
     /// Column number (1-indexed).
     pub col: Option<u32>,
+    /// True if this assignment targets `self.attr` or `cls.attr` (instance/class attribute).
+    /// Default: false for backward compatibility.
+    pub is_self_attribute: bool,
+    /// Attribute name when is_self_attribute is true (e.g., "handler" for `self.handler = ...`).
+    pub attribute_name: Option<String>,
 }
 
 impl AssignmentInfo {
@@ -106,6 +112,8 @@ impl AssignmentInfo {
             span: None,
             line: None,
             col: None,
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
@@ -121,6 +129,8 @@ impl AssignmentInfo {
             span: None,
             line: None,
             col: None,
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
@@ -136,6 +146,8 @@ impl AssignmentInfo {
             span: None,
             line: None,
             col: None,
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
@@ -151,12 +163,21 @@ impl AssignmentInfo {
             span: None,
             line: None,
             col: None,
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
     /// Set the span for this assignment.
     fn with_span(mut self, span: Option<Span>) -> Self {
         self.span = span;
+        self
+    }
+
+    /// Mark this assignment as targeting a self/cls attribute.
+    fn with_self_attribute(mut self, attribute_name: String) -> Self {
+        self.is_self_attribute = true;
+        self.attribute_name = Some(attribute_name);
         self
     }
 }
@@ -290,33 +311,55 @@ impl<'pos> TypeInferenceCollector<'pos> {
         }
     }
 
+    /// Check if an expression is `self` or `cls` (instance or class reference).
+    fn is_self_or_cls(expr: &Expression<'_>) -> bool {
+        if let Expression::Name(name) = expr {
+            name.value == "self" || name.value == "cls"
+        } else {
+            false
+        }
+    }
+
     /// Process an assignment and determine type information.
+    ///
+    /// # Arguments
+    /// * `target` - The target name (variable name or "self"/"cls" for attribute targets)
+    /// * `value` - The RHS expression
+    /// * `node_id` - Optional node ID for span lookup
+    /// * `self_attr_name` - If Some, this is a `self.attr = ...` pattern; contains the attribute name
     fn process_assignment(
         &mut self,
         target: &str,
         value: &Expression<'_>,
         node_id: Option<NodeId>,
+        self_attr_name: Option<&str>,
     ) {
         // Look up span from the PositionTable using the node_id
         let span = self.lookup_span(node_id);
 
         // Check for constructor call: x = MyClass()
         if let Some(class_name) = Self::get_constructor_name(value) {
-            let info = AssignmentInfo::new_constructor(
+            let mut info = AssignmentInfo::new_constructor(
                 target.to_string(),
                 class_name,
                 self.scope_path.clone(),
             )
             .with_span(span);
+            if let Some(attr_name) = self_attr_name {
+                info = info.with_self_attribute(attr_name.to_string());
+            }
             self.assignments.push(info);
             return;
         }
 
         // Check for variable reference: y = x
         if let Some(rhs_name) = Self::get_variable_name(value) {
-            let info =
+            let mut info =
                 AssignmentInfo::new_variable(target.to_string(), rhs_name, self.scope_path.clone())
                     .with_span(span);
+            if let Some(attr_name) = self_attr_name {
+                info = info.with_self_attribute(attr_name.to_string());
+            }
             self.assignments.push(info);
             return;
         }
@@ -324,20 +367,26 @@ impl<'pos> TypeInferenceCollector<'pos> {
         // Check for function call: z = get_handler()
         if let Expression::Call(call) = value {
             if let Some(callee_name) = Self::get_callee_name(call) {
-                let info = AssignmentInfo::new_function_call(
+                let mut info = AssignmentInfo::new_function_call(
                     target.to_string(),
                     callee_name,
                     self.scope_path.clone(),
                 )
                 .with_span(span);
+                if let Some(attr_name) = self_attr_name {
+                    info = info.with_self_attribute(attr_name.to_string());
+                }
                 self.assignments.push(info);
                 return;
             }
         }
 
         // Unknown type source
-        let info = AssignmentInfo::new_unknown(target.to_string(), self.scope_path.clone())
+        let mut info = AssignmentInfo::new_unknown(target.to_string(), self.scope_path.clone())
             .with_span(span);
+        if let Some(attr_name) = self_attr_name {
+            info = info.with_self_attribute(attr_name.to_string());
+        }
         self.assignments.push(info);
     }
 }
@@ -364,9 +413,46 @@ impl<'a, 'pos> Visitor<'a> for TypeInferenceCollector<'pos> {
     fn visit_assign(&mut self, node: &Assign<'a>) -> VisitResult {
         // Process each target in the assignment
         for target in &node.targets {
-            // Only handle simple name targets for type inference
-            if let AssignTargetExpression::Name(name) = &target.target {
-                self.process_assignment(name.value, &node.value, name.node_id);
+            match &target.target {
+                // Handle simple name targets: x = ...
+                AssignTargetExpression::Name(name) => {
+                    self.process_assignment(name.value, &node.value, name.node_id, None);
+                }
+                // Handle attribute targets: self.attr = ... or cls.attr = ...
+                AssignTargetExpression::Attribute(attr) => {
+                    if Self::is_self_or_cls(&attr.value) {
+                        let attr_name = attr.attr.value;
+                        self.process_assignment(
+                            "self", // Use "self" as the target name
+                            &node.value,
+                            attr.attr.node_id,
+                            Some(attr_name),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        VisitResult::Continue
+    }
+
+    fn visit_ann_assign(&mut self, node: &AnnAssign<'a>) -> VisitResult {
+        // Annotated assignments: target: annotation = value
+        // We only process the assignment if there's a value
+        if let Some(ref value) = node.value {
+            match &node.target {
+                // Handle simple name targets: x: Type = ...
+                AssignTargetExpression::Name(name) => {
+                    self.process_assignment(name.value, value, name.node_id, None);
+                }
+                // Handle attribute targets: self.attr: Type = ...
+                AssignTargetExpression::Attribute(attr) => {
+                    if Self::is_self_or_cls(&attr.value) {
+                        let attr_name = attr.attr.value;
+                        self.process_assignment("self", value, attr.attr.node_id, Some(attr_name));
+                    }
+                }
+                _ => {}
             }
         }
         VisitResult::Continue
@@ -522,5 +608,136 @@ mod tests {
         let span = assignments[0].span.unwrap();
         assert_eq!(span.start, 0);
         assert_eq!(span.end, 1); // "x" is 1 character
+    }
+
+    // Self-attribute detection tests for Phase 11C Step 1a
+
+    #[test]
+    fn test_self_attr_constructor() {
+        // Test: self.handler = Handler() sets is_self_attribute: true, attribute_name: Some("handler")
+        let source = r#"class MyClass:
+    def __init__(self):
+        self.handler = Handler()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(assignments.len(), 1);
+        let assign = &assignments[0];
+        assert_eq!(assign.target, "self");
+        assert!(assign.is_self_attribute);
+        assert_eq!(assign.attribute_name, Some("handler".to_string()));
+        assert_eq!(assign.type_source, TypeSource::Constructor);
+        assert_eq!(assign.inferred_type, Some("Handler".to_string()));
+        assert_eq!(
+            assign.scope_path,
+            vec!["<module>", "MyClass", "__init__"]
+        );
+    }
+
+    #[test]
+    fn test_self_attr_annotated() {
+        // Test: self.handler: Handler = ... (annotated) also sets flags
+        let source = r#"class MyClass:
+    def __init__(self):
+        self.handler: Handler = create_handler()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(assignments.len(), 1);
+        let assign = &assignments[0];
+        assert_eq!(assign.target, "self");
+        assert!(assign.is_self_attribute);
+        assert_eq!(assign.attribute_name, Some("handler".to_string()));
+        // The RHS is a function call, so type_source should be FunctionCall
+        assert_eq!(assign.type_source, TypeSource::FunctionCall);
+        assert_eq!(assign.callee_name, Some("create_handler".to_string()));
+    }
+
+    #[test]
+    fn test_other_attr_not_self() {
+        // Test: other.attr = ... does NOT set is_self_attribute
+        let source = r#"class MyClass:
+    def method(self, other):
+        other.attr = Handler()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // other.attr should NOT be tracked as a self attribute
+        assert_eq!(assignments.len(), 0);
+    }
+
+    #[test]
+    fn test_self_attr_outside_init() {
+        // Test: Assignment outside __init__ still detected (for annotation-based types)
+        let source = r#"class MyClass:
+    def method(self):
+        self.data = SomeData()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(assignments.len(), 1);
+        let assign = &assignments[0];
+        assert!(assign.is_self_attribute);
+        assert_eq!(assign.attribute_name, Some("data".to_string()));
+        assert_eq!(assign.type_source, TypeSource::Constructor);
+        assert_eq!(assign.inferred_type, Some("SomeData".to_string()));
+        // Scope path shows it's not in __init__
+        assert_eq!(
+            assign.scope_path,
+            vec!["<module>", "MyClass", "method"]
+        );
+    }
+
+    #[test]
+    fn test_cls_attr_in_classmethod() {
+        // Test: cls.attr in classmethod also detected
+        let source = r#"class MyClass:
+    @classmethod
+    def factory(cls):
+        cls.instance = MyClass()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(assignments.len(), 1);
+        let assign = &assignments[0];
+        assert!(assign.is_self_attribute);
+        assert_eq!(assign.attribute_name, Some("instance".to_string()));
+        assert_eq!(assign.type_source, TypeSource::Constructor);
+        assert_eq!(assign.inferred_type, Some("MyClass".to_string()));
+    }
+
+    #[test]
+    fn test_self_attr_variable_assignment() {
+        // Test: self.data = other_var propagates variable info
+        let source = r#"class MyClass:
+    def __init__(self, handler):
+        self.handler = handler
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(assignments.len(), 1);
+        let assign = &assignments[0];
+        assert!(assign.is_self_attribute);
+        assert_eq!(assign.attribute_name, Some("handler".to_string()));
+        assert_eq!(assign.type_source, TypeSource::Variable);
+        assert_eq!(assign.rhs_name, Some("handler".to_string()));
+    }
+
+    #[test]
+    fn test_regular_assignment_no_self_attr() {
+        // Test: Regular assignment should NOT have is_self_attribute set
+        let source = "x = Handler()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let assignments = TypeInferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(assignments.len(), 1);
+        assert!(!assignments[0].is_self_attribute);
+        assert_eq!(assignments[0].attribute_name, None);
     }
 }

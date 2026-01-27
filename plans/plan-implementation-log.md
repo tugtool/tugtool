@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 1a: Detect Self-Attribute Patterns in TypeInferenceCollector | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 1a specification
+- [D02] Attribute Type Tracking - describes extension needed for TypeInferenceCollector
+- Q-A clarifying question - detailed guidance on detecting `self.attr = ...` patterns
+- Existing TypeInferenceCollector implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `is_self_attribute: bool` field to `AssignmentInfo` (default false) | Done |
+| Add `attribute_name: Option<String>` field to `AssignmentInfo` | Done |
+| Update `visit_assign` to detect `AssignTargetExpression::Attribute` targets | Done |
+| When target is `self.attr` or `cls.attr`, set `is_self_attribute: true` and extract `attribute_name` | Done |
+| Extract class name from scope_path for `__init__` context detection | Done |
+| Unit test: `self.handler = Handler()` sets flags | Done |
+| Unit test: `self.handler: Handler = ...` (annotated) sets flags | Done |
+| Unit test: `other.attr = ...` does NOT set `is_self_attribute` | Done |
+| Unit test: Assignment outside `__init__` still detected | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/type_inference.rs`: Added `is_self_attribute` and `attribute_name` fields to `AssignmentInfo`, added `with_self_attribute()` builder method, added `is_self_or_cls()` helper, updated `process_assignment()` signature to accept optional attribute name, updated `visit_assign()` to handle Attribute targets, implemented `visit_ann_assign()` for annotated assignments, added 7 new unit tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst type_inference`: 18 tests passed (7 new tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst type_inference`: PASS (18 tests passed)
+- `cargo clippy -p tugtool-python-cst`: PASS (no warnings)
+- `cargo build --workspace`: PASS (compiles successfully)
+
+**Key Decisions/Notes:**
+- Added `AnnAssign` to imports to support annotated assignments like `self.handler: Handler = ...`
+- Used "self" as the target name for self-attribute assignments (the actual receiver name)
+- Added `with_self_attribute()` builder method for clean chaining with existing `with_span()`
+- Added tests for both `self.` and `cls.` patterns (classmethod support)
+- The scope_path is already being tracked correctly - class context is available
+
+---
+
 ## [phase-11C.md] Step 1: Add Attribute Type Infrastructure to TypeTracker | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26
