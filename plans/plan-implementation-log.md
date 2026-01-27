@@ -6,6 +6,62 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 1d: Add Method Return Type Tracking | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 1d specification (lines 1728-1756)
+- [D08] Call Resolution - how TypeTracker accesses signatures
+- [D10] Callable Attribute Resolution - callable_return_type_of implementation
+- Q-E clarification - accessing signatures via NativeAnalysisResult
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `method_return_types: HashMap<(String, String), String>` to TypeTracker | Done |
+| Add `method_return_type_of(class: &str, method: &str) -> Option<&str>` method | Done |
+| Add `process_signatures(signatures: &[SignatureInfo])` method | Done |
+| Add `callable_return_type_of(type_info: &AttributeTypeInfo) -> Option<String>` helper | Done |
+| Add `extract_type_name(type_node: &TypeNode) -> Option<String>` helper | Done |
+| Add `find_top_level_comma(s: &str) -> Option<usize>` helper for Callable parsing | Done |
+| Wire `process_signatures` into analyzer (`analyze_files` and `build_type_tracker`) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs`:
+  - Added `method_return_types` HashMap field to TypeTracker struct
+  - Added `method_return_type_of` method (lines 618-621)
+  - Added `process_signatures` method (lines 630-655)
+  - Added `callable_return_type_of` static method (lines 665-690)
+  - Added `extract_type_name` helper (lines 695-712)
+  - Added `find_top_level_comma` helper (lines 771-785)
+  - Added 10 tests in `method_return_type_tests` module
+  - Added 8 tests in `callable_return_type_tests` module
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated `analyze_files` function (line 1146) to call `process_signatures`
+  - Updated `build_type_tracker` function (line 1531) to call `process_signatures`
+  - Updated docstrings for processing order (5 steps instead of 4)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python method_return`: 10 tests passed
+- `cargo nextest run -p tugtool-python callable_return`: 8 tests passed
+- `cargo nextest run -p tugtool-python`: 519 tests passed
+- `cargo nextest run --workspace`: 1726 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python method_return`: PASS (10 tests)
+- `cargo nextest run -p tugtool-python callable_return`: PASS (8 tests)
+
+**Key Decisions/Notes:**
+- `process_signatures` extracts class name from the last element of `scope_path` for methods
+- `callable_return_type_of` prefers TypeNode if available, falls back to string parsing
+- `extract_type_name` recursively builds full type representation (e.g., `List[Item]` not just `List`)
+- `find_top_level_comma` handles nested brackets for parsing `Callable[[List[int]], Result]`
+- First definition wins for duplicate method signatures (shouldn't happen in practice)
+
+---
+
 ## [phase-11C.md] Step 1c: Process Instance Attributes from __init__ | VERIFIED | 2026-01-26
 
 **Completed:** 2026-01-26

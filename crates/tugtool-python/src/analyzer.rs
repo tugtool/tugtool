@@ -1137,10 +1137,12 @@ pub fn analyze_files(
         // Process in correct order for type precedence:
         // 1. Annotations (highest priority - explicit type declarations)
         // 2. Instance attributes (self.attr = ... patterns from __init__)
-        // 3. Assignments (regular variable type inference)
-        // 4. Resolve types (propagate through aliases)
+        // 3. Signatures (method return types for call resolution)
+        // 4. Assignments (regular variable type inference)
+        // 5. Resolve types (propagate through aliases)
         tracker.process_annotations(&cst_annotations);
         tracker.process_instance_attributes(&cst_assignments);
+        tracker.process_signatures(&native_result.signatures);
         tracker.process_assignments(&cst_assignments);
         tracker.resolve_types();
 
@@ -1467,8 +1469,9 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
 /// The TypeTracker methods are called in this specific order:
 /// 1. `process_annotations` - Class-level and explicit annotations (highest priority)
 /// 2. `process_instance_attributes` - `self.attr = ...` patterns from `__init__`
-/// 3. `process_assignments` - Regular variable assignments
-/// 4. `resolve_types` - Propagate types through variable aliases
+/// 3. `process_signatures` - Method return types for call resolution
+/// 4. `process_assignments` - Regular variable assignments
+/// 5. `resolve_types` - Propagate types through variable aliases
 ///
 /// This order ensures that explicit annotations take precedence over inferred types,
 /// and that instance attribute types are properly tracked before variable assignments.
@@ -1521,10 +1524,12 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
     // Process in correct order for type precedence:
     // 1. Annotations (highest priority - explicit type declarations)
     // 2. Instance attributes (self.attr = ... patterns from __init__)
-    // 3. Assignments (regular variable type inference)
-    // 4. Resolve types (propagate through aliases)
+    // 3. Signatures (method return types for call resolution)
+    // 4. Assignments (regular variable type inference)
+    // 5. Resolve types (propagate through aliases)
     tracker.process_annotations(&cst_annotations);
     tracker.process_instance_attributes(&cst_assignments);
+    tracker.process_signatures(&native_result.signatures);
     tracker.process_assignments(&cst_assignments);
     tracker.resolve_types();
 

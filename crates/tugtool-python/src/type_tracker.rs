@@ -25,6 +25,7 @@ use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
 
 use crate::types::{AnnotationInfo, AssignmentInfo, AttributeTypeInfo};
+use tugtool_python_cst::SignatureInfo;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -95,6 +96,11 @@ pub struct TypeTracker {
     /// Stores both string and optional TypeNode for callable return extraction.
     /// Populated from class-level annotations and `self.attr = ...` in __init__.
     attribute_types: HashMap<(String, String), AttributeTypeInfo>,
+
+    /// Map from (class_name, method_name) to return type string.
+    /// Populated from signatures where `is_method` is true and return type is present.
+    /// Used for method call resolution in dotted paths like `self.handler.process()`.
+    method_return_types: HashMap<(String, String), String>,
 }
 
 /// An assignment tracked for type inference.
@@ -124,6 +130,7 @@ impl TypeTracker {
             return_types: HashMap::new(),
             assignments_by_scope: HashMap::new(),
             attribute_types: HashMap::new(),
+            method_return_types: HashMap::new(),
         }
     }
 
@@ -322,6 +329,49 @@ impl TypeTracker {
                     type_node: None, // No TypeNode for inferred types
                 };
                 self.attribute_types.insert(key, attr_info);
+            }
+        }
+    }
+
+    /// Process function/method signatures to extract method return types.
+    ///
+    /// This populates the `method_return_types` map for methods with return type
+    /// annotations. The map is keyed by `(class_name, method_name)` and stores
+    /// the return type string.
+    ///
+    /// # Arguments
+    /// - `signatures`: Signature information from CST analysis
+    ///
+    /// # Note
+    /// Only signatures where `is_method` is true are processed. Top-level function
+    /// return types are already handled by `process_annotations` via `__return__`
+    /// annotations and stored in `return_types`.
+    pub fn process_signatures(&mut self, signatures: &[SignatureInfo]) {
+        for sig in signatures {
+            // Only process methods (functions defined inside classes)
+            if !sig.is_method {
+                continue;
+            }
+
+            // Only process if there's a return type annotation
+            let return_type = match &sig.returns {
+                Some(ret) => ret.clone(),
+                None => continue,
+            };
+
+            // Extract class name from scope_path.
+            // For methods, scope_path is like ["<module>", "MyClass"]
+            // The method name is in sig.name, class name is the last element of scope_path.
+            let class_name = match sig.scope_path.last() {
+                Some(name) => name.clone(),
+                None => continue,
+            };
+
+            let key = (class_name, sig.name.clone());
+
+            // Don't override if already present (first wins, matching other precedence patterns)
+            if !self.method_return_types.contains_key(&key) {
+                self.method_return_types.insert(key, return_type);
             }
         }
     }
@@ -568,6 +618,100 @@ impl TypeTracker {
         self.attribute_types.get(&key)
     }
 
+    /// Get the return type of a method on a class.
+    ///
+    /// Looks up the return type of a method on a class, populated from
+    /// function signatures where `is_method` is true.
+    ///
+    /// # Arguments
+    /// - `class_name`: The name of the class (e.g., "Handler")
+    /// - `method_name`: The name of the method (e.g., "process")
+    ///
+    /// # Returns
+    /// - `Some(&str)` with the return type string if the method has a return type annotation
+    /// - `None` if the method has no return type or is not tracked
+    ///
+    /// # Note
+    /// This is distinct from `return_type_of`, which handles top-level functions.
+    /// Method return types are keyed by (class_name, method_name), while function
+    /// return types are keyed by (scope_path, function_name).
+    pub fn method_return_type_of(&self, class_name: &str, method_name: &str) -> Option<&str> {
+        let key = (class_name.to_string(), method_name.to_string());
+        self.method_return_types.get(&key).map(|s| s.as_str())
+    }
+
+    /// Extract the return type from a Callable type annotation.
+    ///
+    /// When an attribute is annotated as `Callable[..., T]`, this method extracts `T`
+    /// as the return type. This enables resolution of callable attribute invocations
+    /// like `self.handler_factory().process()`.
+    ///
+    /// # Arguments
+    /// - `type_info`: The attribute type information containing the Callable annotation
+    ///
+    /// # Returns
+    /// - `Some(return_type)` if the type is `Callable[..., T]` and T can be extracted
+    /// - `None` if the type is not Callable or the return type cannot be extracted
+    ///
+    /// # Supported Patterns
+    /// - `Callable[[], Handler]` → `Some("Handler")`
+    /// - `Callable[[int, str], Handler]` → `Some("Handler")`
+    /// - `Callable[..., Handler]` → `Some("Handler")`
+    ///
+    /// # Limitations
+    /// - Complex return types like `Union[A, B]` or `List[T]` return `None` when
+    ///   extracted from string parsing (TypeNode may provide better support)
+    /// - Only simple named return types are reliably extracted from string annotations
+    pub fn callable_return_type_of(type_info: &AttributeTypeInfo) -> Option<String> {
+        // Prefer TypeNode if available (most precise)
+        if let Some(ref type_node) = type_info.type_node {
+            if let TypeNode::Callable { returns, .. } = type_node {
+                // Extract the type name from the returns TypeNode
+                return Self::extract_type_name(returns);
+            }
+        }
+
+        // Fall back to parsing type_str for "Callable[..., ReturnType]" pattern
+        // This is a conservative parse - return None if uncertain
+        let type_str = &type_info.type_str;
+        if type_str.starts_with("Callable[") && type_str.ends_with(']') {
+            // Find the last comma that separates params from return type
+            // Handle nested brackets: Callable[[int, str], Handler]
+            let inner = &type_str[9..type_str.len() - 1]; // Strip "Callable[" and "]"
+            if let Some(last_comma) = find_top_level_comma(inner) {
+                let return_part = inner[last_comma + 1..].trim();
+                if !return_part.is_empty() && return_part != "None" {
+                    return Some(return_part.to_string());
+                }
+            }
+        }
+
+        None // Conservative: return None if we can't extract return type
+    }
+
+    /// Extract a type name string from a TypeNode.
+    ///
+    /// Returns the full type representation including type arguments.
+    /// For example: `Named { name: "List", args: [Named { name: "Item", ... }] }` → `"List[Item]"`
+    fn extract_type_name(type_node: &TypeNode) -> Option<String> {
+        match type_node {
+            TypeNode::Named { name, args } if args.is_empty() => Some(name.clone()),
+            TypeNode::Named { name, args } => {
+                // Build full representation like "List[Item]" or "Dict[str, int]"
+                let arg_strs: Vec<String> = args
+                    .iter()
+                    .filter_map(|arg| Self::extract_type_name(arg))
+                    .collect();
+                if arg_strs.is_empty() {
+                    Some(name.clone())
+                } else {
+                    Some(format!("{}[{}]", name, arg_strs.join(", ")))
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Get all tracked types as a flat list.
     ///
     /// Returns (scope_path, variable_name, type_name) tuples.
@@ -615,6 +759,38 @@ impl TypeTracker {
     pub fn inferred_count(&self) -> usize {
         self.inferred_types.len()
     }
+}
+
+/// Find the last comma at the top level (not inside brackets) in a string.
+///
+/// Used for parsing `Callable[..., ReturnType]` annotations where we need to
+/// find the comma separating the parameter types from the return type.
+///
+/// # Arguments
+/// - `s`: The string to search (should be the inner part of `Callable[...]`)
+///
+/// # Returns
+/// - `Some(index)` of the last top-level comma
+/// - `None` if no top-level comma is found
+///
+/// # Examples
+/// - `"[], Handler"` → `Some(2)` (the comma after `[]`)
+/// - `"[int, str], Handler"` → `Some(11)` (the comma after `]`)
+/// - `"Handler"` → `None` (no comma)
+fn find_top_level_comma(s: &str) -> Option<usize> {
+    let mut depth: usize = 0;
+    let mut last_comma = None;
+
+    for (i, c) in s.char_indices() {
+        match c {
+            '[' | '(' | '{' => depth += 1,
+            ']' | ')' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => last_comma = Some(i),
+            _ => {}
+        }
+    }
+
+    last_comma
 }
 
 impl Default for TypeTracker {
@@ -2371,6 +2547,379 @@ mod tests {
                 find_typed_method_references("LocalHandler", "process", &tracker, &method_calls);
             assert_eq!(refs2.len(), 1);
             assert_eq!(refs2[0].scope_path, vec!["<module>", "func"]);
+        }
+    }
+
+    mod method_return_type_tests {
+        use super::*;
+        use tugtool_python_cst::SignatureInfo;
+
+        fn make_signature(
+            name: &str,
+            scope_path: Vec<&str>,
+            is_method: bool,
+            returns: Option<&str>,
+        ) -> SignatureInfo {
+            SignatureInfo {
+                name: name.to_string(),
+                scope_path: scope_path.into_iter().map(String::from).collect(),
+                is_method,
+                returns: returns.map(String::from),
+                params: vec![],
+                returns_node: None,
+                modifiers: vec![],
+                type_params: vec![],
+                span: None,
+            }
+        }
+
+        #[test]
+        fn method_return_type_of_basic() {
+            // Test: class Handler: def process(self) -> Result
+            // method_return_type_of("Handler", "process") == Some("Result")
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_signature(
+                "process",
+                vec!["<module>", "Handler"],
+                true, // is_method
+                Some("Result"),
+            )];
+
+            tracker.process_signatures(&signatures);
+
+            assert_eq!(
+                tracker.method_return_type_of("Handler", "process"),
+                Some("Result")
+            );
+        }
+
+        #[test]
+        fn method_return_type_of_unknown_class() {
+            // method_return_type_of for unknown class returns None
+            let tracker = TypeTracker::new();
+
+            assert!(tracker.method_return_type_of("UnknownClass", "method").is_none());
+        }
+
+        #[test]
+        fn method_return_type_of_unknown_method() {
+            // method_return_type_of for unknown method on known class returns None
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_signature(
+                "process",
+                vec!["<module>", "Handler"],
+                true,
+                Some("Result"),
+            )];
+
+            tracker.process_signatures(&signatures);
+
+            // Known class, unknown method
+            assert!(tracker.method_return_type_of("Handler", "unknown_method").is_none());
+        }
+
+        #[test]
+        fn method_return_type_of_no_return_annotation() {
+            // Method without return annotation is not stored
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_signature(
+                "process",
+                vec!["<module>", "Handler"],
+                true,
+                None, // No return annotation
+            )];
+
+            tracker.process_signatures(&signatures);
+
+            // Should not be stored since there's no return type
+            assert!(tracker.method_return_type_of("Handler", "process").is_none());
+        }
+
+        #[test]
+        fn method_return_type_of_function_not_stored() {
+            // Functions (is_method=false) should not be stored in method_return_types
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_signature(
+                "get_handler",
+                vec!["<module>"],
+                false, // is_method = false (it's a function)
+                Some("Handler"),
+            )];
+
+            tracker.process_signatures(&signatures);
+
+            // Should not be stored since it's not a method
+            // Note: "module" would be the "class name" if we incorrectly stored it
+            assert!(tracker.method_return_type_of("<module>", "get_handler").is_none());
+        }
+
+        #[test]
+        fn method_return_type_of_multiple_methods_same_class() {
+            // Multiple methods on same class
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![
+                make_signature(
+                    "process",
+                    vec!["<module>", "Handler"],
+                    true,
+                    Some("Result"),
+                ),
+                make_signature(
+                    "validate",
+                    vec!["<module>", "Handler"],
+                    true,
+                    Some("bool"),
+                ),
+            ];
+
+            tracker.process_signatures(&signatures);
+
+            assert_eq!(
+                tracker.method_return_type_of("Handler", "process"),
+                Some("Result")
+            );
+            assert_eq!(
+                tracker.method_return_type_of("Handler", "validate"),
+                Some("bool")
+            );
+        }
+
+        #[test]
+        fn method_return_type_of_same_method_different_classes() {
+            // Same method name on different classes
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![
+                make_signature(
+                    "process",
+                    vec!["<module>", "HandlerA"],
+                    true,
+                    Some("ResultA"),
+                ),
+                make_signature(
+                    "process",
+                    vec!["<module>", "HandlerB"],
+                    true,
+                    Some("ResultB"),
+                ),
+            ];
+
+            tracker.process_signatures(&signatures);
+
+            assert_eq!(
+                tracker.method_return_type_of("HandlerA", "process"),
+                Some("ResultA")
+            );
+            assert_eq!(
+                tracker.method_return_type_of("HandlerB", "process"),
+                Some("ResultB")
+            );
+        }
+
+        #[test]
+        fn method_return_type_of_first_wins() {
+            // If same method appears twice, first one wins (shouldn't happen in practice)
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![
+                make_signature(
+                    "process",
+                    vec!["<module>", "Handler"],
+                    true,
+                    Some("FirstResult"),
+                ),
+                make_signature(
+                    "process",
+                    vec!["<module>", "Handler"],
+                    true,
+                    Some("SecondResult"),
+                ),
+            ];
+
+            tracker.process_signatures(&signatures);
+
+            // First one wins
+            assert_eq!(
+                tracker.method_return_type_of("Handler", "process"),
+                Some("FirstResult")
+            );
+        }
+
+        #[test]
+        fn method_return_type_of_nested_class() {
+            // Nested class: class Outer: class Inner: def method(self) -> T
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_signature(
+                "method",
+                vec!["<module>", "Outer", "Inner"],
+                true,
+                Some("InnerResult"),
+            )];
+
+            tracker.process_signatures(&signatures);
+
+            // The class name is the last element of scope_path (Inner)
+            assert_eq!(
+                tracker.method_return_type_of("Inner", "method"),
+                Some("InnerResult")
+            );
+            // Outer doesn't have this method
+            assert!(tracker.method_return_type_of("Outer", "method").is_none());
+        }
+
+        #[test]
+        fn method_return_type_of_generic_return() {
+            // Generic return type: def items(self) -> List[Item]
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_signature(
+                "items",
+                vec!["<module>", "Container"],
+                true,
+                Some("List[Item]"),
+            )];
+
+            tracker.process_signatures(&signatures);
+
+            assert_eq!(
+                tracker.method_return_type_of("Container", "items"),
+                Some("List[Item]")
+            );
+        }
+    }
+
+    mod callable_return_type_tests {
+        use super::*;
+        use crate::types::AttributeTypeInfo;
+        use tugtool_core::facts::TypeNode;
+
+        #[test]
+        fn callable_return_type_of_simple() {
+            // Callable[[], Handler] -> return type is "Handler"
+            let attr_info = AttributeTypeInfo {
+                type_str: "Callable[[], Handler]".to_string(),
+                type_node: Some(TypeNode::Callable {
+                    params: vec![],
+                    returns: Box::new(TypeNode::Named {
+                        name: "Handler".to_string(),
+                        args: vec![],
+                    }),
+                }),
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert_eq!(result, Some("Handler".to_string()));
+        }
+
+        #[test]
+        fn callable_return_type_of_with_params() {
+            // Callable[[int, str], Result] -> return type is "Result"
+            let attr_info = AttributeTypeInfo {
+                type_str: "Callable[[int, str], Result]".to_string(),
+                type_node: Some(TypeNode::Callable {
+                    params: vec![
+                        TypeNode::Named { name: "int".to_string(), args: vec![] },
+                        TypeNode::Named { name: "str".to_string(), args: vec![] },
+                    ],
+                    returns: Box::new(TypeNode::Named {
+                        name: "Result".to_string(),
+                        args: vec![],
+                    }),
+                }),
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert_eq!(result, Some("Result".to_string()));
+        }
+
+        #[test]
+        fn callable_return_type_of_generic_return() {
+            // Callable[[], List[Item]] -> return type is "List[Item]"
+            let attr_info = AttributeTypeInfo {
+                type_str: "Callable[[], List[Item]]".to_string(),
+                type_node: Some(TypeNode::Callable {
+                    params: vec![],
+                    returns: Box::new(TypeNode::Named {
+                        name: "List".to_string(),
+                        args: vec![TypeNode::Named {
+                            name: "Item".to_string(),
+                            args: vec![],
+                        }],
+                    }),
+                }),
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert_eq!(result, Some("List[Item]".to_string()));
+        }
+
+        #[test]
+        fn callable_return_type_of_non_callable() {
+            // Non-Callable type returns None
+            let attr_info = AttributeTypeInfo {
+                type_str: "Handler".to_string(),
+                type_node: Some(TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }),
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn callable_return_type_of_fallback_to_type_str() {
+            // No TypeNode, fallback to parsing type_str
+            let attr_info = AttributeTypeInfo {
+                type_str: "Callable[[int], Handler]".to_string(),
+                type_node: None,
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert_eq!(result, Some("Handler".to_string()));
+        }
+
+        #[test]
+        fn callable_return_type_of_fallback_empty_params() {
+            // No TypeNode, fallback to parsing type_str with empty params
+            let attr_info = AttributeTypeInfo {
+                type_str: "Callable[[], Result]".to_string(),
+                type_node: None,
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert_eq!(result, Some("Result".to_string()));
+        }
+
+        #[test]
+        fn callable_return_type_of_fallback_nested() {
+            // No TypeNode, fallback parsing with nested brackets
+            let attr_info = AttributeTypeInfo {
+                type_str: "Callable[[List[int]], Dict[str, int]]".to_string(),
+                type_node: None,
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert_eq!(result, Some("Dict[str, int]".to_string()));
+        }
+
+        #[test]
+        fn callable_return_type_of_non_callable_string() {
+            // Non-Callable type_str, no TypeNode
+            let attr_info = AttributeTypeInfo {
+                type_str: "Handler".to_string(),
+                type_node: None,
+            };
+
+            let result = TypeTracker::callable_return_type_of(&attr_info);
+            assert!(result.is_none());
         }
     }
 }
