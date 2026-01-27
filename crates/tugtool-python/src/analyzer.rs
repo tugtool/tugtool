@@ -9,6 +9,53 @@
 //!
 //! Uses Rust CST parsing via tugtool-python-cst for zero-dependency analysis.
 //! See [`analyze_file`] and [`analyze_files`] for the main entry points.
+//!
+//! # Receiver Resolution
+//!
+//! The analyzer supports resolving receivers in attribute accesses and method calls
+//! via [`ReceiverPath`] structures. Supported patterns include:
+//!
+//! - Simple names: `obj.method()`
+//! - Dotted paths: `self.handler.process()`
+//! - Call expressions: `get_handler().process()`
+//! - Callable attributes: `self.factory()` where factory has type `Callable[[], T]`
+//!
+//! ## Unsupported Patterns
+//!
+//! The following patterns return `None` during resolution:
+//!
+//! - **Subscript expressions**: `data[0].method()` - index access is not tracked
+//! - **Complex expressions**: `(a or b).method()` - boolean/conditional expressions
+//! - **Generic type parameters**: `List[T]` → `T` resolution is not performed
+//! - **Duck typing**: Protocol-based type inference is not supported
+//! - **Property decorators**: `@property` methods are not resolved as types
+//! - **Inheritance (MRO)**: Method resolution order is not followed
+//!
+//! ## Resolution Depth Limit
+//!
+//! Receiver resolution is limited to `MAX_RESOLUTION_DEPTH` (4 steps).
+//! This covers common patterns like `self.manager.handler.process()` while
+//! avoiding pathological chains. Deeper chains return `None`.
+//!
+//! ## Resolution Precedence Rules
+//!
+//! When resolving a [`ReceiverPath`], each step follows these precedence rules:
+//!
+//! 1. **Name steps**: Check `TypeTracker::type_of()` first. If not found, treat as
+//!    function/class name for `Call` step resolution.
+//!
+//! 2. **Attr steps**: Check `TypeTracker::attribute_type_of()` on the current class.
+//!    If not found, assume it's a method name for the next `Call` step.
+//!
+//! 3. **Call steps** (in order):
+//!    - Callable attribute: If previous step had a `Callable[..., ReturnType]`,
+//!      use the extracted return type.
+//!    - Method call: Check `TypeTracker::method_return_type_of()`.
+//!    - Function call: Check `TypeTracker::return_type_of()`.
+//!    - Constructor: If name is a class, type becomes the class name.
+//!
+//! 4. **Cross-file fallback**: If local resolution fails and the type appears
+//!    to be an import, check the cross-file symbol map.
 
 use tugtool_core::adapter::{
     AliasEdgeData, AnalysisBundle, AttributeAccessData, CallArgData, CallSiteData, ExportData,

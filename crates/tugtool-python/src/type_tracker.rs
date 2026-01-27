@@ -611,6 +611,24 @@ impl TypeTracker {
     /// # Returns
     /// - `Some(&AttributeTypeInfo)` if the attribute type is known
     /// - `None` if the attribute type is not tracked
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // For Python code:
+    /// // class Service:
+    /// //     handler: Handler  # class-level annotation
+    /// //
+    /// //     def __init__(self):
+    /// //         self.helper = Helper()  # __init__ assignment
+    ///
+    /// // After processing with TypeTracker:
+    /// let attr_info = tracker.attribute_type_of("Service", "handler");
+    /// assert_eq!(attr_info.unwrap().type_str, "Handler");
+    ///
+    /// let attr_info = tracker.attribute_type_of("Service", "helper");
+    /// assert_eq!(attr_info.unwrap().type_str, "Helper");
+    /// ```
     pub fn attribute_type_of(
         &self,
         class_name: &str,
@@ -637,6 +655,19 @@ impl TypeTracker {
     /// This is distinct from `return_type_of`, which handles top-level functions.
     /// Method return types are keyed by (class_name, method_name), while function
     /// return types are keyed by (scope_path, function_name).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // For Python code:
+    /// // class Handler:
+    /// //     def process(self) -> Result:
+    /// //         return Result()
+    ///
+    /// // After processing with TypeTracker:
+    /// let ret_type = tracker.method_return_type_of("Handler", "process");
+    /// assert_eq!(ret_type, Some("Result"));
+    /// ```
     pub fn method_return_type_of(&self, class_name: &str, method_name: &str) -> Option<&str> {
         let key = (class_name.to_string(), method_name.to_string());
         self.method_return_types.get(&key).map(|s| s.as_str())

@@ -308,6 +308,32 @@ let adapter = PythonAdapter::with_options(opts);
   - Imported symbols are excluded (they're not defined in this module)
 - Useful for API surface analysis and move-module refactors
 
+### Receiver Resolution
+
+The analyzer supports resolving receivers in attribute accesses and method calls:
+
+**Supported Patterns:**
+- Simple names: `obj.method()` (resolves `obj` to its type)
+- Dotted paths: `self.handler.process()` (follows attribute chain)
+- Call expressions: `get_handler().process()` (uses return type)
+- Callable attributes: `self.handler_factory().process()` where handler_factory has type `Callable[[], Handler]`
+- Chained calls: `factory().create().process()` (follows call chain up to depth limit)
+
+**Unsupported Patterns (returns None):**
+- Subscript expressions: `data[0].method()`
+- Complex expressions: `(a or b).method()`
+- Generic type parameters: `List[T]` → `T` resolution
+- Duck typing / protocol-based inference
+- Property decorators
+- Inheritance-based method resolution (MRO)
+
+**Depth Limit:** Resolution is limited to 4 steps (`MAX_RESOLUTION_DEPTH`). Deeper chains like `a.b.c.d.e.method()` return None.
+
+**TypeTracker Methods:**
+- `attribute_type_of(class_name, attr_name)` - Get type of class attribute
+- `method_return_type_of(class_name, method_name)` - Get return type of method
+- `type_of(scope_path, name)` - Get type of variable in scope
+
 ## Fixture Commands
 
 Manage test fixtures (external repositories used for integration tests).

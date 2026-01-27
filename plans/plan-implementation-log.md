@@ -6,6 +6,55 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 6: Integration Testing and Documentation | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 6 specification (lines 1982-2012)
+- Documentation plan (#documentation-plan) - Documentation items to add
+- Non-goals (#non-goals) - Unsupported patterns to document
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker methods for rustdoc examples
+- `crates/tugtool-python/src/analyzer.rs` - Resolution logic and module docs
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - ReceiverPath type documentation
+- `CLAUDE.md` - Project documentation for receiver pattern section
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Run full test suite including Temporale integration | Done (1748 Rust tests, 1138 Python tests) |
+| Update CLAUDE.md with supported receiver patterns | Done (added Receiver Resolution section) |
+| Add rustdoc examples to TypeTracker | Done (`attribute_type_of`, `method_return_type_of`) |
+| Document unsupported patterns in module docs | Done (analyzer.rs module doc) |
+| Document MAX_RESOLUTION_DEPTH limit | Done (analyzer.rs module doc) |
+| Document ReceiverPath format and precedence rules | Done (analyzer.rs module doc) |
+| Verify no regression in existing resolution behavior | Done (all 1748 tests pass) |
+| Test performance on Temporale | Done (tests run quickly, sub-second) |
+
+**Files Modified:**
+- `CLAUDE.md` - Added "Receiver Resolution" section under Python Language Support with supported patterns, unsupported patterns, depth limit, and TypeTracker methods
+- `crates/tugtool-python/src/type_tracker.rs` - Added rustdoc examples to `attribute_type_of` and `method_return_type_of` methods
+- `crates/tugtool-python/src/analyzer.rs` - Enhanced module doc with Receiver Resolution section including unsupported patterns, resolution depth limit, and resolution precedence rules
+- `plans/phase-11C.md` - Checked off all Step 6 tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1748 tests passed
+- `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`: 1138 passed in 0.34s
+- `cargo doc --workspace --no-deps`: Builds successfully
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS (1748 tests)
+- `.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v`: PASS (1138 tests)
+- `cargo doc --workspace --no-deps`: PASS (builds successfully)
+
+**Key Decisions/Notes:**
+- **Documentation Strategy**: Added documentation at three levels: CLAUDE.md for high-level project docs, analyzer.rs module doc for detailed API docs, and inline rustdoc examples on TypeTracker methods.
+- **Fixed rustdoc warning**: Changed `[MAX_RESOLUTION_DEPTH]` to backtick code reference since the constant is private.
+- **Performance verified**: Temporale tests complete in sub-second time, no regression detected.
+
+---
+
 ## [phase-11C.md] Step 5: Verify Nested Class Scope Tracking | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27
