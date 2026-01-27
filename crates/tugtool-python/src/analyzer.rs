@@ -3645,7 +3645,7 @@ impl PythonAdapter {
                                 == Some(SymbolKind::Import)
                         {
                             // Not a local symbol - check cross-file
-                            if let Some(ref map) = cross_file_map {
+                            if let Some(map) = cross_file_map {
                                 if let Some(qn) = map.resolve_to_qualified_name(class_type) {
                                     return Some(ResolvedSymbol::CrossFile(qn));
                                 }
@@ -3673,6 +3673,24 @@ impl PythonAdapter {
                 }
                 ReceiverStep::Call => {
                     if let Some(ref class_type) = current_type {
+                        // Handle callable attribute invocation first.
+                        // When we have a pending_callable_return, we know the return type
+                        // already (extracted from Callable[..., ReturnType]), so we don't
+                        // need to look up the current_type (which is the Callable type string).
+                        if pending_callable_return.is_some() && last_method_name.is_none() {
+                            // Callable attribute: use callable return type
+                            // Strip forward reference quotes if present
+                            current_type = pending_callable_return
+                                .take()
+                                .map(|s| strip_forward_ref_quotes(&s).to_string());
+                            // Clear all state flags and continue to next step
+                            last_method_name = None;
+                            last_name_was_class = false;
+                            last_name_is_unresolved_callable = false;
+                            // pending_callable_return already taken
+                            continue;
+                        }
+
                         // Check if current_type is cross-file BEFORE continuing
                         if !last_name_was_class
                             && (lookup_symbol_index_in_scope_chain(
@@ -3688,7 +3706,7 @@ impl PythonAdapter {
                                 ) == Some(SymbolKind::Import))
                         {
                             // Not a local symbol - check cross-file
-                            if let Some(ref map) = cross_file_map {
+                            if let Some(map) = cross_file_map {
                                 if let Some(qn) = map.resolve_to_qualified_name(class_type) {
                                     return Some(ResolvedSymbol::CrossFile(qn));
                                 }
@@ -3696,13 +3714,7 @@ impl PythonAdapter {
                             return None; // Can't resolve - type not found locally or cross-file
                         }
 
-                        if pending_callable_return.is_some() && last_method_name.is_none() {
-                            // Callable attribute: use callable return type
-                            // Strip forward reference quotes if present
-                            current_type = pending_callable_return
-                                .take()
-                                .map(|s| strip_forward_ref_quotes(&s).to_string());
-                        } else if let Some(method_name) = last_method_name {
+                        if let Some(method_name) = last_method_name {
                             // Method call: lookup method return type
                             // Strip forward reference quotes (e.g., -> "Widget")
                             current_type = tracker
@@ -6724,6 +6736,150 @@ class Service:
             assert!(
                 attr.base_symbol_index.is_none() || attr.base_symbol_qualified_name.is_some(),
                 "Cross-file type should return None for local index or have qualified name"
+            );
+        }
+
+        #[test]
+        fn resolve_call_receiver_get_handler_with_return_type() {
+            // Unit test: get_handler() receiver resolves when return type annotated.
+            // Fixture 11C-F02 pattern: call expression with annotated return type.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+def get_handler() -> Handler:
+    return Handler()
+
+h = get_handler()
+h.process()
+
+get_handler().process()  # Direct call receiver
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Both h.process() and get_handler().process() should resolve to Handler
+            let process_attrs: Vec<_> = result
+                .attributes
+                .iter()
+                .filter(|a| a.name == "process")
+                .collect();
+            assert_eq!(
+                process_attrs.len(),
+                2,
+                "Should have two 'process' attribute accesses"
+            );
+
+            // Both should resolve to Handler
+            for attr in process_attrs {
+                assert_eq!(
+                    attr.base_symbol_index, handler_idx,
+                    "get_handler() call should resolve to Handler via return type annotation"
+                );
+            }
+        }
+
+        #[test]
+        fn resolve_call_receiver_callable_attribute() {
+            // Unit test: self.handler_factory().process() resolves via Callable return type.
+            // Fixture 11C-F13 pattern: callable attribute invocation.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+from typing import Callable
+
+class Handler:
+    def process(self): pass
+
+class Service:
+    handler_factory: Callable[[], Handler]
+
+    def run(self):
+        self.handler_factory().process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // The attribute access for "process" should resolve to Handler
+            // via self.handler_factory (Callable[[], Handler]) -> process
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, handler_idx,
+                "Callable attribute invocation should resolve via Callable return type"
+            );
+        }
+
+        #[test]
+        fn resolve_call_receiver_full_method_call_integration() {
+            // Integration test: Full method call chain get_handler().process()
+            // Tests that base_symbol_index is set correctly for direct call receivers.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+    def cleanup(self): pass
+
+def get_handler() -> Handler:
+    return Handler()
+
+# Direct call receiver patterns
+get_handler().process()
+get_handler().cleanup()
+
+# Chained: h = get_handler(), h.process()
+h = get_handler()
+h.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+            let handler_idx = handler_idx.unwrap();
+
+            // All method accesses on Handler should resolve correctly
+            let process_attrs: Vec<_> = result
+                .attributes
+                .iter()
+                .filter(|a| a.name == "process")
+                .collect();
+            assert_eq!(
+                process_attrs.len(),
+                2,
+                "Should have two 'process' accesses"
+            );
+
+            for attr in &process_attrs {
+                assert_eq!(
+                    attr.base_symbol_index,
+                    Some(handler_idx),
+                    "process() should resolve to Handler"
+                );
+            }
+
+            // cleanup() should also resolve
+            let cleanup_attrs: Vec<_> = result
+                .attributes
+                .iter()
+                .filter(|a| a.name == "cleanup")
+                .collect();
+            assert_eq!(cleanup_attrs.len(), 1, "Should have one 'cleanup' access");
+            assert_eq!(
+                cleanup_attrs[0].base_symbol_index,
+                Some(handler_idx),
+                "cleanup() should resolve to Handler"
             );
         }
 

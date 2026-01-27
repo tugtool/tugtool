@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 4: Implement Call Expression Receiver Resolution | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 4 specification (lines 1913-1946)
+- [D03] Call Expression Receiver Resolution design decision
+- [D08] Call Resolution for Methods and Functions design decision
+- Fixtures 11C-F02, 11C-F04, 11C-F06, 11C-F13 for test patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Resolve `Call` steps in `resolve_receiver_path` using [D08] logic | Done |
+| For `Name -> Call`, use function return type (lookup via return_types) | Done |
+| For `Attr -> Call`, use method return type from `method_return_types` | Done |
+| For callable attributes, use `callable_return_type_of` when pending | Done |
+| Allow `Call` steps inside dotted chains | Done |
+| Return `None` for calls without return types (no false positives) | Done |
+| Fix callable attribute resolution ordering bug | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Fixed callable attribute resolution by moving `pending_callable_return` check before cross-file lookup (lines 3680-3691); added 3 new tests for call expression receiver resolution
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python call`: 45 tests passed
+- `cargo nextest run -p tugtool-python return_type`: 26 tests passed
+
+**Checkpoints Verified:**
+- `resolve_call_receiver_get_handler_with_return_type`: PASS - `get_handler()` resolves via return type annotation (F02)
+- `resolve_receiver_path_unknown_intermediate_type_returns_none`: PASS - No return type returns None (F06)
+- `resolve_receiver_path_function_return_type_resolves`: PASS - `factory().create()` chained call resolves (F04)
+- `resolve_call_receiver_callable_attribute`: PASS - `self.handler_factory().process()` resolves via Callable return type (F13)
+- `resolve_call_receiver_full_method_call_integration`: PASS - Integration test for `get_handler().process()`
+- `resolve_receiver_path_simple_receivers_still_work`: PASS - Regression test for simple names
+
+**Key Decisions/Notes:**
+- **Bug Fix**: The callable attribute resolution was failing because the cross-file check ran before the `pending_callable_return` check. When `current_type` was `"Callable[[], Handler]"` (a type string), the symbol lookup failed and returned `None` early, never reaching the callable handling code.
+- **Solution**: Moved the `pending_callable_return` check to execute FIRST with a `continue` to skip the cross-file check when we already know the callable's return type from the `Callable[..., ReturnType]` annotation.
+- Most Step 4 implementation was already done in Step 3; this step primarily fixed the callable attribute ordering bug and added missing tests.
+
+---
+
 ## [phase-11C.md] Step 3: Implement Dotted Path Resolution | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27

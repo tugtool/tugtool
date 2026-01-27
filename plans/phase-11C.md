@@ -1921,24 +1921,24 @@ Regression tests (verify existing behavior not broken):
 - Return type lookup integration
 
 **Tasks:**
-- [ ] Resolve `Call` steps in `resolve_receiver_path` using [D08] logic
-- [ ] For `Name -> Call`, use function return type (lookup via return_types)
-- [ ] For `Attr -> Call`, use method return type from `method_return_types`
-- [ ] For callable attributes, use `callable_return_type_of` when pending
-- [ ] Allow `Call` steps inside dotted chains (e.g., `factory().create().process()`)
-- [ ] Return `None` for calls without return types (no false positives)
+- [x] Resolve `Call` steps in `resolve_receiver_path` using [D08] logic → `analyzer.rs:3674-3750`
+- [x] For `Name -> Call`, use function return type (lookup via return_types) → `analyzer.rs:3726-3731`
+- [x] For `Attr -> Call`, use method return type from `method_return_types` → `analyzer.rs:3717-3722`
+- [x] For callable attributes, use `callable_return_type_of` when pending → `analyzer.rs:3680-3691` (fixed ordering)
+- [x] Allow `Call` steps inside dotted chains (e.g., `factory().create().process()`) → loop structure handles chained calls
+- [x] Return `None` for calls without return types (no false positives) → Option propagation throughout
 
 **Tests:**
-- [ ] Unit: `get_handler()` receiver resolves when return type annotated (Fixture 11C-F02)
-- [ ] Unit: `get_handler()` returns None when no return type (Fixture 11C-F06)
-- [ ] Unit: `factory().create()` chained call resolves (Fixture 11C-F04)
-- [ ] Unit: `self.handler_factory().process()` resolves via Callable return type (Fixture 11C-F13)
-- [ ] Integration: Full method call `get_handler().process()` -> base_symbol_index set
-- [ ] Regression: Non-call simple names still work
+- [x] Unit: `get_handler()` receiver resolves when return type annotated (Fixture 11C-F02) → `resolve_call_receiver_get_handler_with_return_type`
+- [x] Unit: `get_handler()` returns None when no return type (Fixture 11C-F06) → `resolve_receiver_path_unknown_intermediate_type_returns_none`
+- [x] Unit: `factory().create()` chained call resolves (Fixture 11C-F04) → `resolve_receiver_path_function_return_type_resolves`
+- [x] Unit: `self.handler_factory().process()` resolves via Callable return type (Fixture 11C-F13) → `resolve_call_receiver_callable_attribute`
+- [x] Integration: Full method call `get_handler().process()` -> base_symbol_index set → `resolve_call_receiver_full_method_call_integration`
+- [x] Regression: Non-call simple names still work → `resolve_receiver_path_simple_receivers_still_work`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python call`
-- [ ] `cargo nextest run -p tugtool-python return_type`
+- [x] `cargo nextest run -p tugtool-python call` → 45 tests passed (2026-01-27)
+- [x] `cargo nextest run -p tugtool-python return_type` → 26 tests passed (2026-01-27)
 
 **Rollback:**
 - Revert commit
