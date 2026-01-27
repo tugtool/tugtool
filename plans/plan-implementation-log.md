@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 2: Collect Structured Receiver Paths | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 2 specification (lines 1813-1848)
+- [D06] Structured Receiver Path design decision (lines 848-905)
+- Existing `attribute_access.rs` and `call_site.rs` for current patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `ReceiverStep` enum and `ReceiverPath` struct to `attribute_access.rs` | Done |
+| Add `extract_receiver_path(expr: &Expression) -> Option<ReceiverPath>` helper | Done |
+| Update `AttributeAccessInfo` to include `receiver_path: Option<ReceiverPath>` | Done |
+| Update `CallSiteInfo` to include `receiver_path: Option<ReceiverPath>` | Done |
+| Call `extract_receiver_path` in `add_attribute_access` and call site collection | Done |
+| Keep `receiver` string for display/debugging | Done |
+| Re-export types from `lib.rs` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/Cargo.toml`: Added `serde` as regular dependency for ReceiverPath serialization
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`: Added ReceiverStep enum, ReceiverPath struct, extract_receiver_path function, updated AttributeAccessInfo with receiver_path field, added 8 unit tests
+- `crates/tugtool-python-cst/src/visitor/call_site.rs`: Updated CallSiteInfo with receiver_path field, integrated extract_receiver_path in visit_call
+- `crates/tugtool-python-cst/src/visitor/mod.rs`: Re-exported ReceiverStep, ReceiverPath, extract_receiver_path
+- `crates/tugtool-python-cst/src/lib.rs`: Re-exported ReceiverStep, ReceiverPath, extract_receiver_path
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst receiver`: 12 tests passed
+- `cargo nextest run -p tugtool-python attribute`: 27 tests passed
+- `cargo nextest run --workspace`: 1726 tests passed
+- `cargo clippy --workspace`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst receiver`: PASS (12 tests)
+- `cargo nextest run -p tugtool-python attribute`: PASS (27 tests)
+
+**Key Decisions/Notes:**
+- Added `serde` as a regular dependency (was only in dev-dependencies) because ReceiverPath needs serialization for JSON output in the analyzer
+- ReceiverStep uses adjacently tagged serde format for clear JSON: `{"type": "name", "value": "self"}`
+- The `receiver` string field is kept for display/debugging; `receiver_path` is the structured representation for resolution
+- Unsupported patterns (subscript, complex expressions) return `None` for receiver_path while preserving the string receiver for debugging
+
+---
+
 ## [phase-11C.md] Step 1e: Remove Dead Code for Obsolete Python Worker | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

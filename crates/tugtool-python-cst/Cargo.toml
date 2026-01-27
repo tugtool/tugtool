@@ -23,6 +23,7 @@ peg = "0.8"
 annotate-snippets = "0.11"
 regex = "1.11"
 memchr = "2.7"
+serde = { version = "1.0", features = ["derive"] }
 tugtool-python-cst-derive = { path = "../tugtool-python-cst-derive" }
 tugtool-core = { path = "../tugtool-core" }
 

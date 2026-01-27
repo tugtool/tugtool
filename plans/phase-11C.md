@@ -1822,25 +1822,25 @@ Regression tests (verify existing behavior not broken):
 - Call site collector emits receiver path (if applicable)
 
 **Tasks:**
-- [ ] Add `ReceiverStep` enum and `ReceiverPath` struct to `attribute_access.rs`
-- [ ] Add `extract_receiver_path(expr: &Expression) -> Option<ReceiverPath>` helper
-- [ ] Update `AttributeAccessInfo` to include `receiver_path: Option<ReceiverPath>`
-- [ ] Update `CallSiteInfo` to include `receiver_path: Option<ReceiverPath>`
-- [ ] Call `extract_receiver_path` in `add_attribute_access` and call site collection
-- [ ] Preserve legacy `receiver` string for debugging only (do not resolve from it)
-- [ ] Re-export types from `lib.rs`
+- [x] Add `ReceiverStep` enum and `ReceiverPath` struct to `attribute_access.rs`
+- [x] Add `extract_receiver_path(expr: &Expression) -> Option<ReceiverPath>` helper
+- [x] Update `AttributeAccessInfo` to include `receiver_path: Option<ReceiverPath>`
+- [x] Update `CallSiteInfo` to include `receiver_path: Option<ReceiverPath>`
+- [x] Call `extract_receiver_path` in `add_attribute_access` and call site collection
+- [x] Keep `receiver` string for display/debugging (resolution uses `receiver_path`)
+- [x] Re-export types from `lib.rs`
 
 **Tests:**
-- [ ] Unit: `self.handler.process()` emits steps `[Name(self), Attr(handler), Attr(process), Call]`
-- [ ] Unit: `get_handler().process()` emits `[Name(get_handler), Call, Attr(process), Call]`
-- [ ] Unit: `factory().create().process()` emits correct chain
-- [ ] Unit: `obj.method()` emits single-element receiver `[Name(obj)]` (Fixture 11C-F12)
-- [ ] Unit: `data[0].method()` emits `None` (subscript unsupported)
-- [ ] Unit: `(a or b).method()` emits `None` (expr unsupported)
+- [x] Unit: `self.handler.process()` emits steps `[Name(self), Attr(handler), Attr(process), Call]`
+- [x] Unit: `get_handler().process()` emits `[Name(get_handler), Call, Attr(process), Call]`
+- [x] Unit: `factory().create().process()` emits correct chain
+- [x] Unit: `obj.method()` emits single-element receiver `[Name(obj)]` (Fixture 11C-F12)
+- [x] Unit: `data[0].method()` emits `None` (subscript unsupported)
+- [x] Unit: `(a or b).method()` emits `None` (expr unsupported)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst receiver`
-- [ ] `cargo nextest run -p tugtool-python attribute`
+- [x] `cargo nextest run -p tugtool-python-cst receiver`
+- [x] `cargo nextest run -p tugtool-python attribute`
 
 **Rollback:**
 - Revert commit

@@ -29,6 +29,7 @@
 //! }
 //! ```
 
+use super::attribute_access::{extract_receiver_path, ReceiverPath};
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
@@ -67,6 +68,9 @@ pub struct CallSiteInfo {
     /// Whether this is a method call (has a receiver).
     pub is_method_call: bool,
     /// Receiver name for method calls (e.g., "obj" in "obj.method()").
+    ///
+    /// This is a simple string representation for display and debugging.
+    /// For resolution, use `receiver_path` when available.
     pub receiver: Option<String>,
     /// Byte span of the entire call expression.
     pub span: Option<Span>,
@@ -74,6 +78,12 @@ pub struct CallSiteInfo {
     pub args: Vec<CallArgInfo>,
     /// Scope path where the call occurs.
     pub scope_path: Vec<String>,
+    /// Structured receiver path for method calls (e.g., `obj.method()` or `factory().create()`).
+    ///
+    /// This is `Some` for method calls where the receiver can be represented as steps
+    /// (names, attributes, calls). It is `None` for simple function calls without a receiver,
+    /// or for unsupported patterns like subscripts or complex expressions.
+    pub receiver_path: Option<ReceiverPath>,
 }
 
 impl CallSiteInfo {
@@ -86,11 +96,17 @@ impl CallSiteInfo {
             span: None,
             args: Vec::new(),
             scope_path,
+            receiver_path: None,
         }
     }
 
     /// Create a new method call.
-    fn method_call(receiver: String, method: String, scope_path: Vec<String>) -> Self {
+    fn method_call(
+        receiver: String,
+        method: String,
+        scope_path: Vec<String>,
+        receiver_path: Option<ReceiverPath>,
+    ) -> Self {
         Self {
             callee: method,
             is_method_call: true,
@@ -98,6 +114,7 @@ impl CallSiteInfo {
             span: None,
             args: Vec::new(),
             scope_path,
+            receiver_path,
         }
     }
 
@@ -250,7 +267,14 @@ impl<'a, 'pos> Visitor<'a> for CallSiteCollector<'pos> {
                 // Method call: obj.method()
                 let receiver = Self::get_receiver_name(attr);
                 let method = attr.attr.value.to_string();
-                CallSiteInfo::method_call(receiver, method, self.scope_path.clone())
+
+                // Extract structured receiver path from the receiver expression.
+                // For `obj.method()`, we extract from `attr.value` (which is `obj`).
+                // Note: The receiver_path does NOT include the method name itself;
+                // it represents the receiver chain that the method is called on.
+                let receiver_path = extract_receiver_path(&attr.value);
+
+                CallSiteInfo::method_call(receiver, method, self.scope_path.clone(), receiver_path)
             }
             Expression::Name(name) => {
                 // Function call: foo()

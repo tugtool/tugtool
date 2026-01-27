@@ -28,6 +28,8 @@
 //! }
 //! ```
 
+use serde::{Deserialize, Serialize};
+
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
@@ -36,6 +38,163 @@ use crate::nodes::{
     AssignTargetExpression, Attribute, AugAssign, Call, ClassDef, DelTargetExpression, Expression,
     FunctionDef, Module, Span,
 };
+
+// ============================================================================
+// ReceiverPath types for structured receiver representation
+// ============================================================================
+
+/// A single step in a receiver path.
+///
+/// Serde representation uses adjacently tagged enum format for clear JSON output:
+/// - Name: `{"type": "name", "value": "self"}`
+/// - Attr: `{"type": "attr", "value": "handler"}`
+/// - Call: `{"type": "call"}`
+///
+/// # Examples
+///
+/// ```ignore
+/// // self.handler.process()
+/// [
+///     ReceiverStep::Name { value: "self".into() },
+///     ReceiverStep::Attr { value: "handler".into() },
+///     ReceiverStep::Attr { value: "process".into() },
+///     ReceiverStep::Call,
+/// ]
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ReceiverStep {
+    /// Simple name: `self`, `obj`, `factory`
+    Name { value: String },
+    /// Attribute access: `.handler`, `.process`
+    Attr { value: String },
+    /// Function/method call: `()`
+    Call,
+}
+
+/// Structured receiver path extracted from CST.
+///
+/// This represents the chain of steps leading to an attribute access or call site.
+/// It preserves the structure of the expression, distinguishing between names,
+/// attribute accesses, and call operations.
+///
+/// # Supported Patterns
+///
+/// - `self.handler.process()` → `[Name(self), Attr(handler), Attr(process), Call]`
+/// - `get_handler().process()` → `[Name(get_handler), Call, Attr(process), Call]`
+/// - `factory().create().process()` → `[Name(factory), Call, Attr(create), Call, Attr(process), Call]`
+///
+/// # Unsupported Patterns
+///
+/// Returns `None` for expressions that cannot be represented as steps:
+/// - Subscript expressions: `data[0].method()` → `None`
+/// - Complex expressions: `(a or b).method()` → `None`
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ReceiverPath {
+    pub steps: Vec<ReceiverStep>,
+}
+
+impl ReceiverPath {
+    /// Create a new empty receiver path.
+    pub fn new() -> Self {
+        Self { steps: Vec::new() }
+    }
+
+    /// Create a receiver path with a single name step.
+    pub fn from_name(name: impl Into<String>) -> Self {
+        Self {
+            steps: vec![ReceiverStep::Name { value: name.into() }],
+        }
+    }
+
+    /// Add an attribute access step.
+    pub fn with_attr(mut self, attr: impl Into<String>) -> Self {
+        self.steps.push(ReceiverStep::Attr { value: attr.into() });
+        self
+    }
+
+    /// Add a call step.
+    pub fn with_call(mut self) -> Self {
+        self.steps.push(ReceiverStep::Call);
+        self
+    }
+
+    /// Returns true if the path is empty.
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+
+    /// Returns the number of steps in the path.
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+}
+
+/// Extract a structured receiver path from an expression.
+///
+/// This function recursively traverses the expression tree and builds a
+/// `ReceiverPath` representing the chain of names, attributes, and calls.
+///
+/// # Returns
+///
+/// - `Some(ReceiverPath)` for supported expression patterns
+/// - `None` for unsupported patterns (subscript, complex expressions)
+///
+/// # Examples
+///
+/// ```ignore
+/// // self.handler
+/// extract_receiver_path(&self_handler_expr) // [Name(self), Attr(handler)]
+///
+/// // get_obj().method
+/// extract_receiver_path(&get_obj_method_expr) // [Name(get_obj), Call, Attr(method)]
+/// ```
+pub fn extract_receiver_path(expr: &Expression<'_>) -> Option<ReceiverPath> {
+    let mut steps = Vec::new();
+    if extract_receiver_path_recursive(expr, &mut steps) {
+        Some(ReceiverPath { steps })
+    } else {
+        None
+    }
+}
+
+/// Recursive helper for extract_receiver_path.
+///
+/// Returns `true` if the expression was successfully converted to steps,
+/// `false` if an unsupported pattern was encountered.
+fn extract_receiver_path_recursive(expr: &Expression<'_>, steps: &mut Vec<ReceiverStep>) -> bool {
+    match expr {
+        Expression::Name(name) => {
+            steps.push(ReceiverStep::Name {
+                value: name.value.to_string(),
+            });
+            true
+        }
+        Expression::Attribute(attr) => {
+            // First, process the receiver (value)
+            if !extract_receiver_path_recursive(&attr.value, steps) {
+                return false;
+            }
+            // Then add the attribute access
+            steps.push(ReceiverStep::Attr {
+                value: attr.attr.value.to_string(),
+            });
+            true
+        }
+        Expression::Call(call) => {
+            // First, process the callee (func)
+            if !extract_receiver_path_recursive(&call.func, steps) {
+                return false;
+            }
+            // Then add the call step
+            steps.push(ReceiverStep::Call);
+            true
+        }
+        // Unsupported patterns return None
+        Expression::Subscript(_) => false,
+        _ => false,
+    }
+}
 
 /// The kind of attribute access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,6 +228,9 @@ impl std::fmt::Display for AttributeAccessKind {
 #[derive(Debug, Clone)]
 pub struct AttributeAccessInfo {
     /// The receiver expression as a string (e.g., "obj" in "obj.attr").
+    ///
+    /// This is a simple string representation for display and debugging.
+    /// For resolution, use `receiver_path` when available.
     pub receiver: String,
     /// The attribute name being accessed.
     pub attr_name: String,
@@ -78,6 +240,12 @@ pub struct AttributeAccessInfo {
     pub attr_span: Option<Span>,
     /// Scope path where the access occurs.
     pub scope_path: Vec<String>,
+    /// Structured receiver path for resolution.
+    ///
+    /// This is `Some` for expressions that can be represented as steps
+    /// (names, attributes, calls). It is `None` for unsupported patterns
+    /// like subscripts or complex expressions.
+    pub receiver_path: Option<ReceiverPath>,
 }
 
 impl AttributeAccessInfo {
@@ -87,6 +255,7 @@ impl AttributeAccessInfo {
         attr_name: String,
         kind: AttributeAccessKind,
         scope_path: Vec<String>,
+        receiver_path: Option<ReceiverPath>,
     ) -> Self {
         Self {
             receiver,
@@ -94,6 +263,7 @@ impl AttributeAccessInfo {
             kind,
             attr_span: None,
             scope_path,
+            receiver_path,
         }
     }
 
@@ -219,6 +389,12 @@ impl<'pos> AttributeAccessCollector<'pos> {
         let attr_name = attr.attr.value.to_string();
         let span = self.lookup_span(attr.attr.node_id);
 
+        // Extract structured receiver path from the receiver expression.
+        // For a call like `self.handler.process()`, when we're collecting the attribute access
+        // for `process`, the `attr.value` is `self.handler`, so we extract from that.
+        // Then we add the current attribute as an additional step.
+        let receiver_path = extract_receiver_path(&attr.value);
+
         // Register Write spans so visit_attribute can skip them
         if kind == AttributeAccessKind::Write {
             if let Some(s) = span {
@@ -226,8 +402,14 @@ impl<'pos> AttributeAccessCollector<'pos> {
             }
         }
 
-        let info = AttributeAccessInfo::new(receiver, attr_name, kind, self.scope_path.clone())
-            .with_span(span);
+        let info = AttributeAccessInfo::new(
+            receiver,
+            attr_name,
+            kind,
+            self.scope_path.clone(),
+            receiver_path,
+        )
+        .with_span(span);
 
         self.accesses.push(info);
     }
@@ -682,5 +864,174 @@ class MyClass:
         assert_eq!(reads.len(), 1);
         assert_eq!(reads[0].attr_name, "attr");
         assert_eq!(reads[0].receiver, "get_obj");
+    }
+
+    // ========================================================================
+    // ReceiverPath tests - structured receiver path extraction
+    // ========================================================================
+
+    #[test]
+    fn test_receiver_path_self_handler_process() {
+        // self.handler.process() -> receiver_path should be [Name(self), Attr(handler)]
+        // (The `process` is the attr_name, not part of receiver_path)
+        let source = "self.handler.process()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have Call for `.process` and Read for `.handler`
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "process");
+
+        // Check the receiver_path
+        let path = calls[0].receiver_path.as_ref().expect("should have receiver_path");
+        assert_eq!(path.steps.len(), 2);
+        assert_eq!(path.steps[0], ReceiverStep::Name { value: "self".to_string() });
+        assert_eq!(path.steps[1], ReceiverStep::Attr { value: "handler".to_string() });
+    }
+
+    #[test]
+    fn test_receiver_path_get_handler_process() {
+        // get_handler().process() -> receiver_path should be [Name(get_handler), Call]
+        let source = "get_handler().process()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "process");
+
+        let path = calls[0].receiver_path.as_ref().expect("should have receiver_path");
+        assert_eq!(path.steps.len(), 2);
+        assert_eq!(path.steps[0], ReceiverStep::Name { value: "get_handler".to_string() });
+        assert_eq!(path.steps[1], ReceiverStep::Call);
+    }
+
+    #[test]
+    fn test_receiver_path_factory_create_process() {
+        // factory().create().process() -> receiver_path should be [Name(factory), Call, Attr(create), Call]
+        let source = "factory().create().process()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Find the final `.process()` call
+        let process_call = accesses
+            .iter()
+            .find(|a| a.attr_name == "process" && a.kind == AttributeAccessKind::Call)
+            .expect("should find process call");
+
+        let path = process_call.receiver_path.as_ref().expect("should have receiver_path");
+        assert_eq!(path.steps.len(), 4);
+        assert_eq!(path.steps[0], ReceiverStep::Name { value: "factory".to_string() });
+        assert_eq!(path.steps[1], ReceiverStep::Call);
+        assert_eq!(path.steps[2], ReceiverStep::Attr { value: "create".to_string() });
+        assert_eq!(path.steps[3], ReceiverStep::Call);
+    }
+
+    #[test]
+    fn test_receiver_path_simple_obj_method() {
+        // obj.method() -> receiver_path should be [Name(obj)] (Fixture 11C-F12)
+        let source = "obj.method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "method");
+
+        let path = calls[0].receiver_path.as_ref().expect("should have receiver_path");
+        assert_eq!(path.steps.len(), 1);
+        assert_eq!(path.steps[0], ReceiverStep::Name { value: "obj".to_string() });
+    }
+
+    #[test]
+    fn test_receiver_path_subscript_returns_none() {
+        // data[0].method() -> receiver_path should be None (subscript unsupported)
+        let source = "data[0].method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "method");
+        // Legacy receiver should still work for debugging
+        assert_eq!(calls[0].receiver, "<subscript>");
+        // But receiver_path should be None
+        assert!(calls[0].receiver_path.is_none(), "subscript should return None receiver_path");
+    }
+
+    #[test]
+    fn test_receiver_path_complex_expr_returns_none() {
+        // (a or b).method() -> receiver_path should be None (expr unsupported)
+        let source = "(a or b).method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "method");
+        // Legacy receiver shows "<expr>"
+        assert_eq!(calls[0].receiver, "<expr>");
+        // receiver_path should be None
+        assert!(calls[0].receiver_path.is_none(), "complex expr should return None receiver_path");
+    }
+
+    #[test]
+    fn test_receiver_path_read_context() {
+        // self.data = self.handler.value -> read of `.value` should have receiver_path
+        let source = "self.data = self.handler.value";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Find the Read for `.value`
+        let value_read = accesses
+            .iter()
+            .find(|a| a.attr_name == "value" && a.kind == AttributeAccessKind::Read)
+            .expect("should find value read");
+
+        let path = value_read.receiver_path.as_ref().expect("should have receiver_path");
+        assert_eq!(path.steps.len(), 2);
+        assert_eq!(path.steps[0], ReceiverStep::Name { value: "self".to_string() });
+        assert_eq!(path.steps[1], ReceiverStep::Attr { value: "handler".to_string() });
+    }
+
+    #[test]
+    fn test_receiver_path_json_serialization() {
+        // Test that ReceiverPath and ReceiverStep serialize correctly to JSON
+        let path = ReceiverPath {
+            steps: vec![
+                ReceiverStep::Name { value: "self".to_string() },
+                ReceiverStep::Attr { value: "handler".to_string() },
+                ReceiverStep::Attr { value: "process".to_string() },
+                ReceiverStep::Call,
+            ],
+        };
+
+        let json = serde_json::to_string(&path).unwrap();
+        // Verify adjacently tagged format
+        assert!(json.contains(r#""type":"name""#));
+        assert!(json.contains(r#""value":"self""#));
+        assert!(json.contains(r#""type":"attr""#));
+        assert!(json.contains(r#""value":"handler""#));
+        assert!(json.contains(r#""type":"call""#));
+
+        // Verify round-trip
+        let deserialized: ReceiverPath = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, path);
     }
 }
