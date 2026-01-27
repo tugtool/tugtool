@@ -6,7 +6,6 @@
 //! - Optimistic concurrency control (no file locks)
 //! - Snapshot storage and retention
 //! - Configuration precedence
-//! - Worker process tracking
 //!
 //! # Concurrency Model
 //!
@@ -109,7 +108,6 @@ impl SessionVersion {
     /// Includes:
     /// - session.json (metadata)
     /// - snapshots/current.json (current snapshot reference)
-    /// - workers/*.pid (worker process state)
     ///
     /// Does NOT include (immutable or derived):
     /// - Historical snapshots (`snapshots/<id>.json`)
@@ -130,27 +128,6 @@ impl SessionVersion {
         if current_json.exists() {
             hasher.update(&fs::read(&current_json)?);
             hasher.update(b"\x00");
-        }
-
-        // Hash worker state (sorted for determinism)
-        let workers_dir = session_dir.join("workers");
-        if workers_dir.exists() {
-            let mut worker_files: Vec<_> = fs::read_dir(&workers_dir)?
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .map(|ext| ext == "pid")
-                        .unwrap_or(false)
-                })
-                .collect();
-
-            worker_files.sort_by_key(|e| e.path());
-
-            for entry in worker_files {
-                hasher.update(&fs::read(entry.path())?);
-                hasher.update(b"\x00");
-            }
         }
 
         let hash = hex::encode(hasher.finalize());
@@ -285,32 +262,6 @@ pub struct SessionConfig {
     /// The `--toolchain <lang>=<path>` CLI flag always overrides the cache.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub toolchains: HashMap<String, PathBuf>,
-}
-
-// ============================================================================
-// Worker Process Tracking
-// ============================================================================
-
-/// Information about a running worker process.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkerInfo {
-    /// Process ID.
-    pub pid: u32,
-    /// Worker name (e.g., "python_verifier", "rust_analyzer").
-    pub name: String,
-    /// When the worker was started.
-    pub started_at: String,
-}
-
-impl WorkerInfo {
-    /// Create new worker info.
-    pub fn new(name: &str, pid: u32) -> Self {
-        WorkerInfo {
-            pid,
-            name: name.to_string(),
-            started_at: format_timestamp(SystemTime::now()),
-        }
-    }
 }
 
 // ============================================================================
@@ -530,7 +481,7 @@ impl Session {
         })?;
 
         // Create standard subdirectories for session data
-        let subdirs = ["python", "workers", "snapshots", "facts_cache", "logs"];
+        let subdirs = ["python", "snapshots", "facts_cache", "logs"];
         for subdir in &subdirs {
             let path = session_dir.join(subdir);
             if !path.exists() {
@@ -612,11 +563,6 @@ impl Session {
     /// Get path to python config directory.
     pub fn python_dir(&self) -> PathBuf {
         self.session_dir.join("python")
-    }
-
-    /// Get path to workers directory.
-    pub fn workers_dir(&self) -> PathBuf {
-        self.session_dir.join("workers")
     }
 
     /// Get path to snapshots directory.
@@ -776,116 +722,6 @@ impl Session {
     }
 
     // ========================================================================
-    // Worker Process Management
-    // ========================================================================
-
-    /// Register a worker process.
-    ///
-    /// Uses atomic write to avoid race conditions when multiple processes
-    /// try to register workers concurrently.
-    pub fn register_worker(&self, name: &str, pid: u32) -> SessionResult<()> {
-        let workers_dir = self.workers_dir();
-        let pid_path = workers_dir.join(format!("{}.pid", name));
-
-        let info = WorkerInfo::new(name, pid);
-        let content = serde_json::to_string(&info)?;
-        atomic_write(&pid_path, content.as_bytes())?;
-
-        Ok(())
-    }
-
-    /// Get worker info if registered.
-    pub fn get_worker(&self, name: &str) -> SessionResult<Option<WorkerInfo>> {
-        let pid_path = self.workers_dir().join(format!("{}.pid", name));
-
-        if !pid_path.exists() {
-            return Ok(None);
-        }
-
-        let content = fs::read_to_string(&pid_path)?;
-        let info: WorkerInfo = serde_json::from_str(&content)?;
-        Ok(Some(info))
-    }
-
-    /// Check if a worker process is still running.
-    pub fn is_worker_running(&self, name: &str) -> SessionResult<bool> {
-        if let Some(info) = self.get_worker(name)? {
-            Ok(is_process_running(info.pid))
-        } else {
-            Ok(false)
-        }
-    }
-
-    /// Unregister a worker (remove PID file).
-    pub fn unregister_worker(&self, name: &str) -> SessionResult<()> {
-        let pid_path = self.workers_dir().join(format!("{}.pid", name));
-        if pid_path.exists() {
-            fs::remove_file(&pid_path)?;
-        }
-        Ok(())
-    }
-
-    /// Clean up stale worker PID files (orphan detection).
-    pub fn cleanup_stale_workers(&self) -> SessionResult<Vec<String>> {
-        let workers_dir = self.workers_dir();
-        let mut cleaned = Vec::new();
-
-        for entry in fs::read_dir(&workers_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.extension() != Some(std::ffi::OsStr::new("pid")) {
-                continue;
-            }
-
-            // Try to read and parse the PID file
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(info) = serde_json::from_str::<WorkerInfo>(&content) {
-                    // Check if process is still running
-                    if !is_process_running(info.pid) {
-                        // Process is dead, clean up
-                        fs::remove_file(&path)?;
-                        cleaned.push(info.name);
-                    }
-                } else {
-                    // Invalid PID file, clean up
-                    fs::remove_file(&path)?;
-                    if let Some(stem) = path.file_stem() {
-                        cleaned.push(stem.to_string_lossy().to_string());
-                    }
-                }
-            }
-        }
-
-        Ok(cleaned)
-    }
-
-    /// List all registered workers.
-    pub fn list_workers(&self) -> SessionResult<Vec<WorkerInfo>> {
-        let workers_dir = self.workers_dir();
-        let mut workers = Vec::new();
-
-        for entry in fs::read_dir(&workers_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.extension() != Some(std::ffi::OsStr::new("pid")) {
-                continue;
-            }
-
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(info) = serde_json::from_str::<WorkerInfo>(&content) {
-                    workers.push(info);
-                }
-            }
-        }
-
-        // Sort by name for deterministic ordering
-        workers.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(workers)
-    }
-
-    // ========================================================================
     // Session Lifecycle
     // ========================================================================
 
@@ -928,30 +764,6 @@ impl Session {
         Ok(())
     }
 
-    /// Delete only workers (kill and remove PIDs).
-    pub fn clean_workers(&self) -> SessionResult<()> {
-        let workers_dir = self.workers_dir();
-
-        for entry in fs::read_dir(&workers_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.extension() == Some(std::ffi::OsStr::new("pid")) {
-                // Try to read PID and kill process
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(info) = serde_json::from_str::<WorkerInfo>(&content) {
-                        // Try to kill the process (best effort)
-                        let _ = kill_process(info.pid);
-                    }
-                }
-                // Remove PID file
-                fs::remove_file(&path)?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Delete only the facts cache.
     pub fn clean_cache(&self) -> SessionResult<()> {
         let cache_dir = self.facts_cache_dir();
@@ -975,7 +787,6 @@ impl Session {
 
     /// Get session status information.
     pub fn status(&self) -> SessionStatus {
-        let workers = self.list_workers().unwrap_or_default();
         let snapshots = self.list_snapshots().unwrap_or_default();
 
         // Calculate cache size
@@ -990,7 +801,6 @@ impl Session {
             python_resolved: self.metadata.config.python_resolved,
             rust_analyzer_available: self.metadata.config.rust_analyzer_available,
             current_snapshot_id: self.metadata.config.current_snapshot_id.clone(),
-            workers,
             snapshot_count: snapshots.len(),
             cache_size_bytes: cache_size,
         }
@@ -1020,8 +830,6 @@ pub struct SessionStatus {
     pub rust_analyzer_available: bool,
     /// Current snapshot ID.
     pub current_snapshot_id: Option<String>,
-    /// Running workers.
-    pub workers: Vec<WorkerInfo>,
     /// Number of stored snapshots.
     pub snapshot_count: usize,
     /// Total size of facts cache in bytes.
@@ -1198,77 +1006,6 @@ fn hash_path(path: &Path) -> String {
     hex::encode(&result[..8]) // Use first 8 bytes for shorter hash
 }
 
-/// Check if a process is still running.
-fn is_process_running(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        // On Unix, send signal 0 to check if process exists
-        unsafe {
-            let result = libc::kill(pid as i32, 0);
-            result == 0
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        // On Windows, try to open the process
-        use std::ptr::null_mut;
-        unsafe {
-            let handle = winapi::um::processthreadsapi::OpenProcess(
-                winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION,
-                0,
-                pid,
-            );
-            if handle.is_null() {
-                false
-            } else {
-                winapi::um::handleapi::CloseHandle(handle);
-                true
-            }
-        }
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        // Fallback: assume process is running
-        true
-    }
-}
-
-/// Try to kill a process.
-fn kill_process(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        unsafe {
-            let result = libc::kill(pid as i32, libc::SIGTERM);
-            result == 0
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        use std::ptr::null_mut;
-        unsafe {
-            let handle = winapi::um::processthreadsapi::OpenProcess(
-                winapi::um::winnt::PROCESS_TERMINATE,
-                0,
-                pid,
-            );
-            if handle.is_null() {
-                return false;
-            }
-            let result = winapi::um::processthreadsapi::TerminateProcess(handle, 1);
-            winapi::um::handleapi::CloseHandle(handle);
-            result != 0
-        }
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        false
-    }
-}
-
 /// Calculate the total size of a directory.
 fn calculate_dir_size(dir: &Path) -> io::Result<u64> {
     let mut size = 0u64;
@@ -1323,7 +1060,6 @@ mod tests {
 
         // Verify subdirectories were created
         assert!(session.python_dir().exists());
-        assert!(session.workers_dir().exists());
         assert!(session.snapshots_dir().exists());
         assert!(session.facts_cache_dir().exists());
         assert!(session.logs_dir().exists());
@@ -1445,48 +1181,6 @@ mod tests {
     }
 
     #[test]
-    fn test_worker_registration() {
-        let workspace = create_test_workspace();
-        let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
-        // Register a worker
-        session.register_worker("test_worker", 12345).unwrap();
-
-        // Verify it was registered
-        let info = session.get_worker("test_worker").unwrap();
-        assert!(info.is_some());
-        let info = info.unwrap();
-        assert_eq!(info.name, "test_worker");
-        assert_eq!(info.pid, 12345);
-
-        // Unregister
-        session.unregister_worker("test_worker").unwrap();
-
-        // Verify it's gone
-        let info = session.get_worker("test_worker").unwrap();
-        assert!(info.is_none());
-    }
-
-    #[test]
-    fn test_orphan_pid_cleanup() {
-        let workspace = create_test_workspace();
-        let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
-        // Register a worker with an invalid PID (guaranteed to not exist)
-        session.register_worker("dead_worker", 999999999).unwrap();
-
-        // Clean up stale workers
-        let cleaned = session.cleanup_stale_workers().unwrap();
-
-        // Verify it was cleaned up
-        assert!(cleaned.contains(&"dead_worker".to_string()));
-
-        // Verify file is gone
-        let info = session.get_worker("dead_worker").unwrap();
-        assert!(info.is_none());
-    }
-
-    #[test]
     fn test_config_precedence() {
         let workspace = create_test_workspace();
 
@@ -1521,7 +1215,6 @@ mod tests {
             workspace.path().canonicalize().unwrap()
         );
         assert_eq!(status.snapshot_count, 0);
-        assert!(status.workers.is_empty());
     }
 
     #[test]
@@ -1675,74 +1368,6 @@ mod tests {
         // Second save may fail (OCC) or succeed if it re-read
         // The important thing is no data corruption
         // (Can't test actual collision without multi-threading, but we verified naming above)
-    }
-
-    #[test]
-    fn test_register_worker_creates_pid_file() {
-        let workspace = create_test_workspace();
-        let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
-        // Register a worker
-        session.register_worker("test_worker", 12345).unwrap();
-
-        // Verify PID file exists
-        let pid_path = session.workers_dir().join("test_worker.pid");
-        assert!(pid_path.exists(), "PID file should exist");
-
-        // Verify content is valid JSON
-        let content = fs::read_to_string(&pid_path).unwrap();
-        let info: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(info["name"], "test_worker");
-        assert_eq!(info["pid"], 12345);
-    }
-
-    #[test]
-    fn test_register_worker_atomic_no_orphan_temp() {
-        let workspace = create_test_workspace();
-        let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
-        // Register a worker
-        session.register_worker("atomic_test", 99999).unwrap();
-
-        // Check that no temp files remain in workers dir
-        let workers_dir = session.workers_dir();
-        for entry in fs::read_dir(&workers_dir).unwrap() {
-            let entry = entry.unwrap();
-            let name = entry.file_name().to_string_lossy().to_string();
-            assert!(
-                !name.contains(".tmp"),
-                "No temp files should remain after atomic write: {}",
-                name
-            );
-        }
-    }
-
-    #[test]
-    fn test_concurrent_worker_registration() {
-        let workspace = create_test_workspace();
-
-        // Two sessions registering workers
-        let session1 = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-        let session2 = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
-        // Register workers with different names (no conflict)
-        session1.register_worker("worker_a", 111).unwrap();
-        session2.register_worker("worker_b", 222).unwrap();
-
-        // Both should exist
-        assert!(session1.get_worker("worker_a").unwrap().is_some());
-        assert!(session1.get_worker("worker_b").unwrap().is_some());
-
-        // Register same worker from different sessions (last write wins)
-        session1.register_worker("shared_worker", 333).unwrap();
-        session2.register_worker("shared_worker", 444).unwrap();
-
-        // File should exist with one of the PIDs (atomic write, no corruption)
-        let info = session1.get_worker("shared_worker").unwrap().unwrap();
-        assert!(
-            info.pid == 333 || info.pid == 444,
-            "PID should be from one of the registrations, not corrupted"
-        );
     }
 
     #[test]

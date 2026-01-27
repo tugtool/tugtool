@@ -16,7 +16,7 @@
 //! tug session status
 //!
 //! # Clean session resources
-//! tug clean --workers --cache
+//! tug clean --cache
 //! ```
 
 use std::io::{self, Write};
@@ -217,9 +217,6 @@ enum Command {
     },
     /// Clean up session resources.
     Clean {
-        /// Clean worker processes.
-        #[arg(long)]
-        workers: bool,
         /// Clean facts cache.
         #[arg(long)]
         cache: bool,
@@ -380,7 +377,7 @@ fn execute(cli: Cli) -> Result<(), TugError> {
         } => execute_rename(&cli.global, &at, &to, dry_run, verify, no_verify, format),
         Command::Session { action } => execute_session(&cli.global, action),
         Command::Verify { mode, test_command } => execute_verify(&cli.global, mode, test_command),
-        Command::Clean { workers, cache } => execute_clean(&cli.global, workers, cache),
+        Command::Clean { cache } => execute_clean(&cli.global, cache),
         Command::Fixture { action } => execute_fixture(&cli.global, action),
         Command::Doctor => execute_doctor(&cli.global),
     }
@@ -861,31 +858,19 @@ fn execute_verify(
 }
 
 /// Execute clean command.
-fn execute_clean(global: &GlobalArgs, workers: bool, cache: bool) -> Result<(), TugError> {
+fn execute_clean(global: &GlobalArgs, _cache: bool) -> Result<(), TugError> {
     let session = open_session(global)?;
 
-    // If neither flag is set, clean both
-    let clean_workers = workers || !cache;
-    let clean_cache = cache || !workers;
-
-    if clean_workers {
-        session
-            .clean_workers()
-            .map_err(|e| TugError::internal(e.to_string()))?;
-    }
-
-    if clean_cache {
-        session
-            .clean_cache()
-            .map_err(|e| TugError::internal(e.to_string()))?;
-    }
+    // Clean the cache (always, since that's the only thing to clean now)
+    session
+        .clean_cache()
+        .map_err(|e| TugError::internal(e.to_string()))?;
 
     // Output success response
     let response = serde_json::json!({
         "status": "success",
         "schema_version": SCHEMA_VERSION,
-        "workers_cleaned": clean_workers,
-        "cache_cleaned": clean_cache,
+        "cache_cleaned": true,
     });
     println!("{}", serde_json::to_string_pretty(&response).unwrap());
     Ok(())
@@ -1711,38 +1696,11 @@ mod tests {
         }
 
         #[test]
-        fn parse_clean_workers() {
-            let args = ["tug", "clean", "--workers"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Clean { workers, cache } => {
-                    assert!(workers);
-                    assert!(!cache);
-                }
-                _ => panic!("expected Clean"),
-            }
-        }
-
-        #[test]
         fn parse_clean_cache() {
             let args = ["tug", "clean", "--cache"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Clean { workers, cache } => {
-                    assert!(!workers);
-                    assert!(cache);
-                }
-                _ => panic!("expected Clean"),
-            }
-        }
-
-        #[test]
-        fn parse_clean_both() {
-            let args = ["tug", "clean", "--workers", "--cache"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Clean { workers, cache } => {
-                    assert!(workers);
+                Command::Clean { cache } => {
                     assert!(cache);
                 }
                 _ => panic!("expected Clean"),
@@ -2281,15 +2239,6 @@ mod tests {
             let err = TugError::file_not_found("missing.py");
             let code = OutputErrorCode::from(&err);
             assert_eq!(code.code(), 3);
-        }
-
-        #[test]
-        fn worker_error_maps_to_exit_code_10() {
-            let err = TugError::WorkerError {
-                message: "worker crashed".to_string(),
-            };
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 10);
         }
     }
 

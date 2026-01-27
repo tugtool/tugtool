@@ -6,6 +6,72 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 1e: Remove Dead Code for Obsolete Python Worker | COMPLETE | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 1e specification (lines 1759-1809)
+- CLAUDE.md (Architecture section describes native Rust CST parser)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove `WorkerInfo` struct from `session.rs` | Done |
+| Remove `register_worker()` method from `Session` | Done |
+| Remove `get_worker()` method from `Session` | Done |
+| Remove `is_worker_running()` method from `Session` | Done |
+| Remove `unregister_worker()` method from `Session` | Done |
+| Remove `cleanup_stale_workers()` method from `Session` | Done |
+| Remove `list_workers()` method from `Session` | Done |
+| Remove `clean_workers()` method from `Session` | Done |
+| Remove `workers_dir()` method from `Session` | Done |
+| Remove "Worker Process Tracking" section comment from `session.rs` | Done |
+| Remove `workers` field from `SessionStatus` struct | Done |
+| Remove `is_process_running()` helper function from `session.rs` | Done |
+| Remove `kill_process()` helper function from `session.rs` | Done |
+| Remove worker-related tests from `session.rs` | Done |
+| Remove worker hash computation from `SessionVersion::compute()` | Done |
+| Remove "Worker process tracking" from module docstring in `session.rs` | Done |
+| Remove "workers" from subdirs array in `ensure_session_structure()` | Done |
+| Remove `WorkerError` variant from `TugError` enum in `error.rs` | Done |
+| Remove `TugError::WorkerError` mapping in error code impl | Done |
+| Remove `--workers` flag from `Clean` command in `main.rs` | Done |
+| Update `execute_clean()` to remove worker handling logic | Done |
+| Remove `workers_cleaned` field from clean output JSON | Done |
+| Remove test `worker_error_maps_to_exit_code_10` from `main.rs` | Done |
+| Remove test `parse_clean_workers` from `main.rs` | Done |
+| Remove `WorkerInfo` from imports in `api_surface.rs` | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/session.rs`: Removed WorkerInfo struct, all worker methods, worker tests, helper functions, worker hash computation, workers subdir from structure
+- `crates/tugtool-core/src/error.rs`: Removed WorkerError variant and error code mapping
+- `crates/tugtool/src/main.rs`: Removed --workers flag, updated execute_clean(), removed worker tests
+- `crates/tugtool/src/cli.rs`: Removed workers_dir assertion from test
+- `crates/tugtool/tests/api_surface.rs`: Removed WorkerInfo from imports
+- `crates/tugtool/tests/golden/output_schema/session_status.json`: Removed workers field
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1718 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo build --workspace`: Succeeded
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS (1718 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo build --workspace`: PASS
+- `tug clean --help` no longer shows `--workers` flag: PASS
+- `tug session status` JSON output no longer includes `workers` field: PASS
+
+**Key Decisions/Notes:**
+- Removed approximately 350 lines of dead code
+- The worker infrastructure was originally designed for subprocess-based LibCST parsing via IPC
+- This was replaced by native Rust CST parsing in `tugtool-python-cst`
+- Also fixed 3 clippy warnings in Step 1d code (map_entry, collapsible_match, redundant_closure)
+
+---
+
 ## [phase-11C.md] Step 1d: Add Method Return Type Tracking | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

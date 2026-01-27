@@ -1765,43 +1765,43 @@ Regression tests (verify existing behavior not broken):
 **Context:** The old Python worker infrastructure was designed for subprocess-based LibCST parsing via IPC. This was replaced with native Rust CST parsing in `tugtool-python-cst`. The worker code was never cleaned up and is now dead code.
 
 **Tasks:**
-- [ ] Remove `WorkerInfo` struct from `session.rs` (lines ~294-314)
-- [ ] Remove `register_worker()` method from `Session`
-- [ ] Remove `get_worker()` method from `Session`
-- [ ] Remove `is_worker_running()` method from `Session`
-- [ ] Remove `unregister_worker()` method from `Session`
-- [ ] Remove `cleanup_stale_workers()` method from `Session`
-- [ ] Remove `list_workers()` method from `Session`
-- [ ] Remove `clean_workers()` method from `Session`
-- [ ] Remove `workers_dir()` method from `Session`
-- [ ] Remove "Worker Process Tracking" section comment from `session.rs`
-- [ ] Remove `workers` field from `SessionStatus` struct
-- [ ] Remove `is_process_running()` helper function from `session.rs`
-- [ ] Remove `kill_process()` helper function from `session.rs`
-- [ ] Remove worker-related tests from `session.rs` (`test_worker_registration`, `test_orphan_pid_cleanup`, `test_register_worker_creates_pid_file`, `test_register_worker_atomic_no_orphan_temp`, `test_concurrent_worker_registration`)
-- [ ] Remove worker hash computation from `SessionVersion::compute()` if present
-- [ ] Remove "Worker process tracking" from module docstring in `session.rs`
-- [ ] Remove "workers" from subdirs array in `ensure_session_structure()`
-- [ ] Remove `WorkerError` variant from `TugError` enum in `error.rs`
-- [ ] Remove `TugError::WorkerError` mapping in `From<&TugError> for OutputErrorCode`
-- [ ] Remove `--workers` flag from `Clean` command in `main.rs`
-- [ ] Update `execute_clean()` to remove worker handling logic
-- [ ] Remove `workers_cleaned` field from clean output JSON
-- [ ] Remove test `worker_error_maps_to_exit_code_10` from `main.rs`
-- [ ] Remove test `parse_clean_workers` from `main.rs`
-- [ ] Remove `WorkerInfo` from imports in `api_surface.rs`
+- [x] Remove `WorkerInfo` struct from `session.rs` (lines ~294-314)
+- [x] Remove `register_worker()` method from `Session`
+- [x] Remove `get_worker()` method from `Session`
+- [x] Remove `is_worker_running()` method from `Session`
+- [x] Remove `unregister_worker()` method from `Session`
+- [x] Remove `cleanup_stale_workers()` method from `Session`
+- [x] Remove `list_workers()` method from `Session`
+- [x] Remove `clean_workers()` method from `Session`
+- [x] Remove `workers_dir()` method from `Session`
+- [x] Remove "Worker Process Tracking" section comment from `session.rs`
+- [x] Remove `workers` field from `SessionStatus` struct
+- [x] Remove `is_process_running()` helper function from `session.rs`
+- [x] Remove `kill_process()` helper function from `session.rs`
+- [x] Remove worker-related tests from `session.rs` (`test_worker_registration`, `test_orphan_pid_cleanup`, `test_register_worker_creates_pid_file`, `test_register_worker_atomic_no_orphan_temp`, `test_concurrent_worker_registration`)
+- [x] Remove worker hash computation from `SessionVersion::compute()` if present
+- [x] Remove "Worker process tracking" from module docstring in `session.rs`
+- [x] Remove "workers" from subdirs array in `ensure_session_structure()`
+- [x] Remove `WorkerError` variant from `TugError` enum in `error.rs`
+- [x] Remove `TugError::WorkerError` mapping in `From<&TugError> for OutputErrorCode`
+- [x] Remove `--workers` flag from `Clean` command in `main.rs`
+- [x] Update `execute_clean()` to remove worker handling logic
+- [x] Remove `workers_cleaned` field from clean output JSON
+- [x] Remove test `worker_error_maps_to_exit_code_10` from `main.rs`
+- [x] Remove test `parse_clean_workers` from `main.rs`
+- [x] Remove `WorkerInfo` from imports in `api_surface.rs`
 
 **Tests to verify removal:**
-- [ ] Verify `cargo nextest run --workspace` passes (all tests compile and run)
-- [ ] Verify `cargo clippy --workspace` has no warnings about unused code
-- [ ] Verify `cargo build --workspace` succeeds
-- [ ] Verify `tug clean --help` no longer shows `--workers` flag
-- [ ] Verify `tug session status` JSON output no longer includes `workers` field
+- [x] Verify `cargo nextest run --workspace` passes (all tests compile and run)
+- [x] Verify `cargo clippy --workspace` has no warnings about unused code
+- [x] Verify `cargo build --workspace` succeeds
+- [x] Verify `tug clean --help` no longer shows `--workers` flag
+- [x] Verify `tug session status` JSON output no longer includes `workers` field
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace`
-- [ ] `cargo clippy --workspace -- -D warnings`
-- [ ] `cargo build --workspace`
+- [x] `cargo nextest run --workspace`
+- [x] `cargo clippy --workspace -- -D warnings`
+- [x] `cargo build --workspace`
 
 **Rollback:**
 - Revert commit

@@ -25,9 +25,9 @@ use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
 
 use crate::types::{AnnotationInfo, AssignmentInfo, AttributeTypeInfo};
-use tugtool_python_cst::SignatureInfo;
 use std::collections::HashMap;
 use thiserror::Error;
+use tugtool_python_cst::SignatureInfo;
 
 // ============================================================================
 // Error Types
@@ -370,9 +370,7 @@ impl TypeTracker {
             let key = (class_name, sig.name.clone());
 
             // Don't override if already present (first wins, matching other precedence patterns)
-            if !self.method_return_types.contains_key(&key) {
-                self.method_return_types.insert(key, return_type);
-            }
+            self.method_return_types.entry(key).or_insert(return_type);
         }
     }
 
@@ -613,7 +611,11 @@ impl TypeTracker {
     /// # Returns
     /// - `Some(&AttributeTypeInfo)` if the attribute type is known
     /// - `None` if the attribute type is not tracked
-    pub fn attribute_type_of(&self, class_name: &str, attr_name: &str) -> Option<&AttributeTypeInfo> {
+    pub fn attribute_type_of(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+    ) -> Option<&AttributeTypeInfo> {
         let key = (class_name.to_string(), attr_name.to_string());
         self.attribute_types.get(&key)
     }
@@ -664,11 +666,9 @@ impl TypeTracker {
     /// - Only simple named return types are reliably extracted from string annotations
     pub fn callable_return_type_of(type_info: &AttributeTypeInfo) -> Option<String> {
         // Prefer TypeNode if available (most precise)
-        if let Some(ref type_node) = type_info.type_node {
-            if let TypeNode::Callable { returns, .. } = type_node {
-                // Extract the type name from the returns TypeNode
-                return Self::extract_type_name(returns);
-            }
+        if let Some(TypeNode::Callable { returns, .. }) = &type_info.type_node {
+            // Extract the type name from the returns TypeNode
+            return Self::extract_type_name(returns);
         }
 
         // Fall back to parsing type_str for "Callable[..., ReturnType]" pattern
@@ -698,10 +698,8 @@ impl TypeTracker {
             TypeNode::Named { name, args } if args.is_empty() => Some(name.clone()),
             TypeNode::Named { name, args } => {
                 // Build full representation like "List[Item]" or "Dict[str, int]"
-                let arg_strs: Vec<String> = args
-                    .iter()
-                    .filter_map(|arg| Self::extract_type_name(arg))
-                    .collect();
+                let arg_strs: Vec<String> =
+                    args.iter().filter_map(Self::extract_type_name).collect();
                 if arg_strs.is_empty() {
                     Some(name.clone())
                 } else {
@@ -1886,11 +1884,17 @@ mod tests {
 
             // Each class should have its own attribute type
             assert_eq!(
-                tracker.attribute_type_of("Service", "handler").unwrap().type_str,
+                tracker
+                    .attribute_type_of("Service", "handler")
+                    .unwrap()
+                    .type_str,
                 "Handler"
             );
             assert_eq!(
-                tracker.attribute_type_of("Controller", "handler").unwrap().type_str,
+                tracker
+                    .attribute_type_of("Controller", "handler")
+                    .unwrap()
+                    .type_str,
                 "OtherHandler"
             );
         }
@@ -1917,11 +1921,17 @@ mod tests {
 
             // Each attribute should have its own type
             assert_eq!(
-                tracker.attribute_type_of("Service", "handler").unwrap().type_str,
+                tracker
+                    .attribute_type_of("Service", "handler")
+                    .unwrap()
+                    .type_str,
                 "Handler"
             );
             assert_eq!(
-                tracker.attribute_type_of("Service", "logger").unwrap().type_str,
+                tracker
+                    .attribute_type_of("Service", "logger")
+                    .unwrap()
+                    .type_str,
                 "Logger"
             );
 
@@ -1953,7 +1963,10 @@ mod tests {
 
             // The attribute_types map should now have the entry
             let result = tracker.attribute_type_of("C", "attr");
-            assert!(result.is_some(), "attribute_type_of should find the attribute");
+            assert!(
+                result.is_some(),
+                "attribute_type_of should find the attribute"
+            );
             assert_eq!(result.unwrap().type_str, "Handler");
         }
 
@@ -1992,7 +2005,8 @@ mod tests {
             let result = tracker.attribute_type_of("C", "attr");
             assert!(result.is_some());
             assert_eq!(
-                result.unwrap().type_str, "AnnotatedType",
+                result.unwrap().type_str,
+                "AnnotatedType",
                 "annotation should override inferred type"
             );
         }
@@ -2027,7 +2041,10 @@ mod tests {
             assert!(result.is_some());
             let attr_info = result.unwrap();
             assert_eq!(attr_info.type_str, "Handler");
-            assert!(attr_info.type_node.is_some(), "TypeNode should be preserved");
+            assert!(
+                attr_info.type_node.is_some(),
+                "TypeNode should be preserved"
+            );
             if let Some(TypeNode::Named { name, .. }) = &attr_info.type_node {
                 assert_eq!(name, "Handler");
             } else {
@@ -2108,7 +2125,10 @@ mod tests {
             tracker.process_instance_attributes(&assignments);
 
             let result = tracker.attribute_type_of("Service", "handler");
-            assert!(result.is_some(), "attribute_type_of should find the attribute");
+            assert!(
+                result.is_some(),
+                "attribute_type_of should find the attribute"
+            );
             assert_eq!(result.unwrap().type_str, "Handler");
         }
 
@@ -2146,7 +2166,8 @@ mod tests {
             let result = tracker.attribute_type_of("Service", "handler");
             assert!(result.is_some());
             assert_eq!(
-                result.unwrap().type_str, "Handler",
+                result.unwrap().type_str,
+                "Handler",
                 "annotation should take precedence over inferred type"
             );
         }
@@ -2178,17 +2199,21 @@ mod tests {
             let assignments = vec![make_self_attr_assignment(
                 "data",
                 vec!["<module>", "Service", "__init__"],
-                None,            // No direct inferred type
-                Some("source"),  // RHS is the variable 'source'
+                None,           // No direct inferred type
+                Some("source"), // RHS is the variable 'source'
             )];
 
             tracker.process_instance_attributes(&assignments);
 
             // The type should be propagated from 'source'
             let result = tracker.attribute_type_of("Service", "data");
-            assert!(result.is_some(), "attribute_type_of should find the attribute");
+            assert!(
+                result.is_some(),
+                "attribute_type_of should find the attribute"
+            );
             assert_eq!(
-                result.unwrap().type_str, "DataSource",
+                result.unwrap().type_str,
+                "DataSource",
                 "type should be propagated from source variable"
             );
         }
@@ -2203,7 +2228,7 @@ mod tests {
             let assignments = vec![make_self_attr_assignment(
                 "lazy_handler",
                 vec!["<module>", "Service", "get_handler"], // Not in __init__
-                Some("LazyHandler"), // Has inferred type from constructor
+                Some("LazyHandler"),                        // Has inferred type from constructor
                 None,
             )];
 
@@ -2211,7 +2236,10 @@ mod tests {
 
             // Should be recorded because it has an explicit inferred_type
             let result = tracker.attribute_type_of("Service", "lazy_handler");
-            assert!(result.is_some(), "non-__init__ self assignment with inferred_type should be recorded");
+            assert!(
+                result.is_some(),
+                "non-__init__ self assignment with inferred_type should be recorded"
+            );
             assert_eq!(result.unwrap().type_str, "LazyHandler");
         }
 
@@ -2224,15 +2252,18 @@ mod tests {
             let assignments = vec![make_self_attr_assignment(
                 "dynamic_data",
                 vec!["<module>", "Service", "some_method"], // Not in __init__
-                None, // No inferred type
-                Some("unknown_var"), // RHS is a variable
+                None,                                       // No inferred type
+                Some("unknown_var"),                        // RHS is a variable
             )];
 
             tracker.process_instance_attributes(&assignments);
 
             // Should NOT be recorded because we're not in __init__ and no direct inferred_type
             let result = tracker.attribute_type_of("Service", "dynamic_data");
-            assert!(result.is_none(), "non-__init__ self assignment without inferred_type should not be recorded");
+            assert!(
+                result.is_none(),
+                "non-__init__ self assignment without inferred_type should not be recorded"
+            );
         }
 
         #[test]
@@ -2258,11 +2289,17 @@ mod tests {
             tracker.process_instance_attributes(&assignments);
 
             assert_eq!(
-                tracker.attribute_type_of("Service", "handler").unwrap().type_str,
+                tracker
+                    .attribute_type_of("Service", "handler")
+                    .unwrap()
+                    .type_str,
                 "Handler"
             );
             assert_eq!(
-                tracker.attribute_type_of("Service", "logger").unwrap().type_str,
+                tracker
+                    .attribute_type_of("Service", "logger")
+                    .unwrap()
+                    .type_str,
                 "Logger"
             );
         }
@@ -2290,11 +2327,17 @@ mod tests {
             tracker.process_instance_attributes(&assignments);
 
             assert_eq!(
-                tracker.attribute_type_of("ServiceA", "handler").unwrap().type_str,
+                tracker
+                    .attribute_type_of("ServiceA", "handler")
+                    .unwrap()
+                    .type_str,
                 "HandlerA"
             );
             assert_eq!(
-                tracker.attribute_type_of("ServiceB", "handler").unwrap().type_str,
+                tracker
+                    .attribute_type_of("ServiceB", "handler")
+                    .unwrap()
+                    .type_str,
                 "HandlerB"
             );
         }
@@ -2401,9 +2444,13 @@ mod tests {
 
             // Check that class-level annotation worked
             let handler_type = tracker.attribute_type_of("Service", "handler");
-            assert!(handler_type.is_some(), "handler attribute should be tracked");
+            assert!(
+                handler_type.is_some(),
+                "handler attribute should be tracked"
+            );
             assert_eq!(
-                handler_type.unwrap().type_str, "Handler",
+                handler_type.unwrap().type_str,
+                "Handler",
                 "handler should have type Handler from annotation"
             );
 
@@ -2411,7 +2458,8 @@ mod tests {
             let logger_type = tracker.attribute_type_of("Service", "logger");
             assert!(logger_type.is_some(), "logger attribute should be tracked");
             assert_eq!(
-                logger_type.unwrap().type_str, "Logger",
+                logger_type.unwrap().type_str,
+                "Logger",
                 "logger should have type Logger propagated from parameter"
             );
         }
@@ -2599,7 +2647,9 @@ mod tests {
             // method_return_type_of for unknown class returns None
             let tracker = TypeTracker::new();
 
-            assert!(tracker.method_return_type_of("UnknownClass", "method").is_none());
+            assert!(tracker
+                .method_return_type_of("UnknownClass", "method")
+                .is_none());
         }
 
         #[test]
@@ -2617,7 +2667,9 @@ mod tests {
             tracker.process_signatures(&signatures);
 
             // Known class, unknown method
-            assert!(tracker.method_return_type_of("Handler", "unknown_method").is_none());
+            assert!(tracker
+                .method_return_type_of("Handler", "unknown_method")
+                .is_none());
         }
 
         #[test]
@@ -2635,7 +2687,9 @@ mod tests {
             tracker.process_signatures(&signatures);
 
             // Should not be stored since there's no return type
-            assert!(tracker.method_return_type_of("Handler", "process").is_none());
+            assert!(tracker
+                .method_return_type_of("Handler", "process")
+                .is_none());
         }
 
         #[test]
@@ -2654,7 +2708,9 @@ mod tests {
 
             // Should not be stored since it's not a method
             // Note: "module" would be the "class name" if we incorrectly stored it
-            assert!(tracker.method_return_type_of("<module>", "get_handler").is_none());
+            assert!(tracker
+                .method_return_type_of("<module>", "get_handler")
+                .is_none());
         }
 
         #[test]
@@ -2663,18 +2719,8 @@ mod tests {
             let mut tracker = TypeTracker::new();
 
             let signatures = vec![
-                make_signature(
-                    "process",
-                    vec!["<module>", "Handler"],
-                    true,
-                    Some("Result"),
-                ),
-                make_signature(
-                    "validate",
-                    vec!["<module>", "Handler"],
-                    true,
-                    Some("bool"),
-                ),
+                make_signature("process", vec!["<module>", "Handler"], true, Some("Result")),
+                make_signature("validate", vec!["<module>", "Handler"], true, Some("bool")),
             ];
 
             tracker.process_signatures(&signatures);
@@ -2824,8 +2870,14 @@ mod tests {
                 type_str: "Callable[[int, str], Result]".to_string(),
                 type_node: Some(TypeNode::Callable {
                     params: vec![
-                        TypeNode::Named { name: "int".to_string(), args: vec![] },
-                        TypeNode::Named { name: "str".to_string(), args: vec![] },
+                        TypeNode::Named {
+                            name: "int".to_string(),
+                            args: vec![],
+                        },
+                        TypeNode::Named {
+                            name: "str".to_string(),
+                            args: vec![],
+                        },
                     ],
                     returns: Box::new(TypeNode::Named {
                         name: "Result".to_string(),

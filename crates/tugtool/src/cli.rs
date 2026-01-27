@@ -287,7 +287,6 @@ mod tests {
             // Session::open() should have created these directories
             assert!(session.session_dir().exists());
             assert!(session.python_dir().exists());
-            assert!(session.workers_dir().exists());
         }
 
         #[test]

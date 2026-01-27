@@ -5861,7 +5861,9 @@ h.process()
 
             assert_eq!(
                 result,
-                Some(ResolvedSymbol::CrossFile("remote.RemoteHandler".to_string())),
+                Some(ResolvedSymbol::CrossFile(
+                    "remote.RemoteHandler".to_string()
+                )),
                 "Should resolve via cross-file map and return qualified name"
             );
         }
@@ -6317,7 +6319,10 @@ h.process()
 
             // Find the attribute access for "h.process"
             let process_attr = result.attributes.iter().find(|a| a.name == "process");
-            assert!(process_attr.is_some(), "Should have 'process' attribute access");
+            assert!(
+                process_attr.is_some(),
+                "Should have 'process' attribute access"
+            );
             let process_attr = process_attr.unwrap();
 
             // Local resolution: base_symbol_index should be Some, qualified_name should be None

@@ -111,10 +111,6 @@ pub enum TugError {
         exit_code: i32,
     },
 
-    /// Worker process error.
-    #[error("worker error: {message}")]
-    WorkerError { message: String },
-
     /// Internal error (bug or unexpected state).
     #[error("internal error: {message}")]
     InternalError { message: String },
@@ -138,7 +134,6 @@ impl From<&TugError> for OutputErrorCode {
             TugError::FileNotFound { .. } => OutputErrorCode::ResolutionError,
             TugError::ApplyError { .. } => OutputErrorCode::ApplyError,
             TugError::VerificationFailed { .. } => OutputErrorCode::VerificationFailed,
-            TugError::WorkerError { .. } => OutputErrorCode::InternalError,
             TugError::InternalError { .. } => OutputErrorCode::InternalError,
             TugError::SessionError { .. } => OutputErrorCode::InternalError,
         }

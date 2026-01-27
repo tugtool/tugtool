@@ -44,7 +44,7 @@ use tugtool::output::{
 // session module - session management
 use tugtool::session::{
     CliOverrides, ConfigSource, ConfigValue, ResolvedConfig, Session, SessionConfig, SessionError,
-    SessionMetadata, SessionOptions, SessionResult, SessionStatus, SessionVersion, WorkerInfo,
+    SessionMetadata, SessionOptions, SessionResult, SessionStatus, SessionVersion,
     DEFAULT_SNAPSHOT_RETENTION,
 };
 

@@ -629,10 +629,7 @@ mod tests {
         assert_eq!(assign.attribute_name, Some("handler".to_string()));
         assert_eq!(assign.type_source, TypeSource::Constructor);
         assert_eq!(assign.inferred_type, Some("Handler".to_string()));
-        assert_eq!(
-            assign.scope_path,
-            vec!["<module>", "MyClass", "__init__"]
-        );
+        assert_eq!(assign.scope_path, vec!["<module>", "MyClass", "__init__"]);
     }
 
     #[test]
@@ -686,10 +683,7 @@ mod tests {
         assert_eq!(assign.type_source, TypeSource::Constructor);
         assert_eq!(assign.inferred_type, Some("SomeData".to_string()));
         // Scope path shows it's not in __init__
-        assert_eq!(
-            assign.scope_path,
-            vec!["<module>", "MyClass", "method"]
-        );
+        assert_eq!(assign.scope_path, vec!["<module>", "MyClass", "method"]);
     }
 
     #[test]
