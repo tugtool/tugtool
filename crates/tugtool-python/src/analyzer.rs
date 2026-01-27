@@ -3678,7 +3678,8 @@ impl PythonAdapter {
                         // Store the name itself for return_type lookup in Call step
                         current_type = Some(name.to_string());
                         last_name_was_class = is_class_in_scope(scope_path, name, symbol_kinds);
-                        last_name_is_unresolved_callable = !last_name_was_class; // Function if not class
+                        last_name_is_unresolved_callable = !last_name_was_class;
+                        // Function if not class
                     }
                     // Clear pending_callable_return - Name step starts fresh
                     pending_callable_return = None;
@@ -3686,10 +3687,17 @@ impl PythonAdapter {
                 ReceiverStep::Attr { value: attr_name } => {
                     if let Some(ref class_type) = current_type {
                         // Check if current_type is cross-file BEFORE continuing
-                        if lookup_symbol_index_in_scope_chain(scope_path, class_type, scoped_symbol_map)
-                            .is_none()
-                            || lookup_symbol_kind_in_scope_chain(scope_path, class_type, symbol_kinds)
-                                == Some(SymbolKind::Import)
+                        if lookup_symbol_index_in_scope_chain(
+                            scope_path,
+                            class_type,
+                            scoped_symbol_map,
+                        )
+                        .is_none()
+                            || lookup_symbol_kind_in_scope_chain(
+                                scope_path,
+                                class_type,
+                                symbol_kinds,
+                            ) == Some(SymbolKind::Import)
                         {
                             // Not a local symbol - check cross-file
                             if let Some(map) = cross_file_map {
@@ -3705,7 +3713,8 @@ impl PythonAdapter {
                             // Attribute type found - update current_type and clear last_method_name
                             current_type = Some(attr_type.type_str.clone());
                             last_method_name = None;
-                            pending_callable_return = TypeTracker::callable_return_type_of(attr_type);
+                            pending_callable_return =
+                                TypeTracker::callable_return_type_of(attr_type);
                         } else {
                             // Attribute lookup failed - this is likely a method name
                             // Keep current_type UNCHANGED for method call resolution
@@ -3796,7 +3805,13 @@ impl PythonAdapter {
 
         // Resolve final type to symbol
         current_type.and_then(|t| {
-            self.resolve_type_to_symbol(&t, scope_path, scoped_symbol_map, symbol_kinds, cross_file_map)
+            self.resolve_type_to_symbol(
+                &t,
+                scope_path,
+                scoped_symbol_map,
+                symbol_kinds,
+                cross_file_map,
+            )
         })
     }
 
@@ -3826,7 +3841,9 @@ impl PythonAdapter {
 
         // Try local lookup with scope chain - only resolve to Class symbols (types)
         // Variables and functions are not types, so we shouldn't return them here
-        if let Some(idx) = lookup_symbol_index_in_scope_chain(scope_path, type_name, scoped_symbol_map) {
+        if let Some(idx) =
+            lookup_symbol_index_in_scope_chain(scope_path, type_name, scoped_symbol_map)
+        {
             if lookup_symbol_kind_in_scope_chain(scope_path, type_name, symbol_kinds)
                 == Some(SymbolKind::Class)
             {
@@ -3863,15 +3880,26 @@ impl PythonAdapter {
     ) -> Option<ResolvedSymbol> {
         // If we have a structured path and a tracker, use the new resolution
         if let (Some(path), Some(tracker)) = (receiver_path, tracker) {
-            if let Some(result) =
-                self.resolve_receiver_path(path, scope_path, tracker, scoped_symbol_map, symbol_kinds, cross_file_map)
-            {
+            if let Some(result) = self.resolve_receiver_path(
+                path,
+                scope_path,
+                tracker,
+                scoped_symbol_map,
+                symbol_kinds,
+                cross_file_map,
+            ) {
                 return Some(result);
             }
         }
 
         // Fall back to simple string-based resolution
-        self.resolve_receiver_to_symbol(receiver, scope_path, tracker, symbol_name_to_index, cross_file_map)
+        self.resolve_receiver_to_symbol(
+            receiver,
+            scope_path,
+            tracker,
+            symbol_name_to_index,
+            cross_file_map,
+        )
     }
 }
 
@@ -6653,10 +6681,7 @@ factory().create().run()
             // The attribute access for "run" should resolve to Widget
             // via factory() -> Product -> create() -> Widget
             let run_attr = result.attributes.iter().find(|a| a.name == "run");
-            assert!(
-                run_attr.is_some(),
-                "Should have attribute access for 'run'"
-            );
+            assert!(run_attr.is_some(), "Should have attribute access for 'run'");
 
             let attr = run_attr.unwrap();
             assert_eq!(
@@ -6906,11 +6931,7 @@ h.process()
                 .iter()
                 .filter(|a| a.name == "process")
                 .collect();
-            assert_eq!(
-                process_attrs.len(),
-                2,
-                "Should have two 'process' accesses"
-            );
+            assert_eq!(process_attrs.len(), 2, "Should have two 'process' accesses");
 
             for attr in &process_attrs {
                 assert_eq!(
@@ -11904,9 +11925,10 @@ class Outer:
             assert!(handler_idx.is_some(), "Should have Handler symbol");
 
             // Find the method call for h.process()
-            let process_call = result.calls.iter().find(|c| {
-                c.callee_symbol_index == handler_idx
-            });
+            let process_call = result
+                .calls
+                .iter()
+                .find(|c| c.callee_symbol_index == handler_idx);
 
             // The call should resolve to Handler class
             assert!(
@@ -11950,7 +11972,11 @@ class Outer:
                 "Inner scope_path should be ['<module>', 'Outer', 'Middle']"
             );
 
-            let method = result.symbols.iter().find(|s| s.name == "deep_method").unwrap();
+            let method = result
+                .symbols
+                .iter()
+                .find(|s| s.name == "deep_method")
+                .unwrap();
             assert_eq!(
                 method.scope_path,
                 vec!["<module>", "Outer", "Middle", "Inner"],
@@ -11982,7 +12008,10 @@ class Outer:
 
             // Find the process attribute access - should resolve to Handler
             let process_attr = result.attributes.iter().find(|a| a.name == "process");
-            assert!(process_attr.is_some(), "Should have process attribute access");
+            assert!(
+                process_attr.is_some(),
+                "Should have process attribute access"
+            );
 
             // The base_symbol_index should point to Handler
             assert_eq!(
@@ -12023,8 +12052,16 @@ class Container:
             );
 
             // Methods should be in their respective class scopes
-            let method_a = result.symbols.iter().find(|s| s.name == "method_a").unwrap();
-            let method_b = result.symbols.iter().find(|s| s.name == "method_b").unwrap();
+            let method_a = result
+                .symbols
+                .iter()
+                .find(|s| s.name == "method_a")
+                .unwrap();
+            let method_b = result
+                .symbols
+                .iter()
+                .find(|s| s.name == "method_b")
+                .unwrap();
 
             assert_eq!(
                 method_a.scope_path,

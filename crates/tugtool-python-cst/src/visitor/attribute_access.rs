@@ -887,10 +887,23 @@ class MyClass:
         assert_eq!(calls[0].attr_name, "process");
 
         // Check the receiver_path
-        let path = calls[0].receiver_path.as_ref().expect("should have receiver_path");
+        let path = calls[0]
+            .receiver_path
+            .as_ref()
+            .expect("should have receiver_path");
         assert_eq!(path.steps.len(), 2);
-        assert_eq!(path.steps[0], ReceiverStep::Name { value: "self".to_string() });
-        assert_eq!(path.steps[1], ReceiverStep::Attr { value: "handler".to_string() });
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "self".to_string()
+            }
+        );
+        assert_eq!(
+            path.steps[1],
+            ReceiverStep::Attr {
+                value: "handler".to_string()
+            }
+        );
     }
 
     #[test]
@@ -907,9 +920,17 @@ class MyClass:
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].attr_name, "process");
 
-        let path = calls[0].receiver_path.as_ref().expect("should have receiver_path");
+        let path = calls[0]
+            .receiver_path
+            .as_ref()
+            .expect("should have receiver_path");
         assert_eq!(path.steps.len(), 2);
-        assert_eq!(path.steps[0], ReceiverStep::Name { value: "get_handler".to_string() });
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "get_handler".to_string()
+            }
+        );
         assert_eq!(path.steps[1], ReceiverStep::Call);
     }
 
@@ -926,11 +947,24 @@ class MyClass:
             .find(|a| a.attr_name == "process" && a.kind == AttributeAccessKind::Call)
             .expect("should find process call");
 
-        let path = process_call.receiver_path.as_ref().expect("should have receiver_path");
+        let path = process_call
+            .receiver_path
+            .as_ref()
+            .expect("should have receiver_path");
         assert_eq!(path.steps.len(), 4);
-        assert_eq!(path.steps[0], ReceiverStep::Name { value: "factory".to_string() });
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "factory".to_string()
+            }
+        );
         assert_eq!(path.steps[1], ReceiverStep::Call);
-        assert_eq!(path.steps[2], ReceiverStep::Attr { value: "create".to_string() });
+        assert_eq!(
+            path.steps[2],
+            ReceiverStep::Attr {
+                value: "create".to_string()
+            }
+        );
         assert_eq!(path.steps[3], ReceiverStep::Call);
     }
 
@@ -948,9 +982,17 @@ class MyClass:
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].attr_name, "method");
 
-        let path = calls[0].receiver_path.as_ref().expect("should have receiver_path");
+        let path = calls[0]
+            .receiver_path
+            .as_ref()
+            .expect("should have receiver_path");
         assert_eq!(path.steps.len(), 1);
-        assert_eq!(path.steps[0], ReceiverStep::Name { value: "obj".to_string() });
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "obj".to_string()
+            }
+        );
     }
 
     #[test]
@@ -969,7 +1011,10 @@ class MyClass:
         // Legacy receiver should still work for debugging
         assert_eq!(calls[0].receiver, "<subscript>");
         // But receiver_path should be None
-        assert!(calls[0].receiver_path.is_none(), "subscript should return None receiver_path");
+        assert!(
+            calls[0].receiver_path.is_none(),
+            "subscript should return None receiver_path"
+        );
     }
 
     #[test]
@@ -988,7 +1033,10 @@ class MyClass:
         // Legacy receiver shows "<expr>"
         assert_eq!(calls[0].receiver, "<expr>");
         // receiver_path should be None
-        assert!(calls[0].receiver_path.is_none(), "complex expr should return None receiver_path");
+        assert!(
+            calls[0].receiver_path.is_none(),
+            "complex expr should return None receiver_path"
+        );
     }
 
     #[test]
@@ -1004,10 +1052,23 @@ class MyClass:
             .find(|a| a.attr_name == "value" && a.kind == AttributeAccessKind::Read)
             .expect("should find value read");
 
-        let path = value_read.receiver_path.as_ref().expect("should have receiver_path");
+        let path = value_read
+            .receiver_path
+            .as_ref()
+            .expect("should have receiver_path");
         assert_eq!(path.steps.len(), 2);
-        assert_eq!(path.steps[0], ReceiverStep::Name { value: "self".to_string() });
-        assert_eq!(path.steps[1], ReceiverStep::Attr { value: "handler".to_string() });
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "self".to_string()
+            }
+        );
+        assert_eq!(
+            path.steps[1],
+            ReceiverStep::Attr {
+                value: "handler".to_string()
+            }
+        );
     }
 
     #[test]
@@ -1015,9 +1076,15 @@ class MyClass:
         // Test that ReceiverPath and ReceiverStep serialize correctly to JSON
         let path = ReceiverPath {
             steps: vec![
-                ReceiverStep::Name { value: "self".to_string() },
-                ReceiverStep::Attr { value: "handler".to_string() },
-                ReceiverStep::Attr { value: "process".to_string() },
+                ReceiverStep::Name {
+                    value: "self".to_string(),
+                },
+                ReceiverStep::Attr {
+                    value: "handler".to_string(),
+                },
+                ReceiverStep::Attr {
+                    value: "process".to_string(),
+                },
                 ReceiverStep::Call,
             ],
         };

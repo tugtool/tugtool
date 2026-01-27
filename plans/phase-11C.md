@@ -2033,69 +2033,69 @@ Regression tests (verify existing behavior not broken):
 
 #### Phase Exit Criteria {#exit-criteria}
 
-- [ ] **BLOCKING: Analyzer correctly calls TypeTracker methods** (Step 0.5 complete)
-- [ ] **BLOCKING: Integration tests verify real code path** (Step 0.5 complete)
-- [ ] `resolve_receiver_to_symbol("self.handler")` works when attribute type is known
-- [ ] `resolve_receiver_to_symbol` for call expressions works when return type is annotated
-- [ ] Dotted call chains resolve without false positives (`factory().create().process()`)
-- [ ] Class-level attribute annotations drive resolution when `__init__` is untyped
-- [ ] All existing tests pass (no regression)
-- [ ] Temporale integration tests pass
-- [ ] Documentation updated with supported patterns and limitations
-- [ ] Obsolete Python worker dead code removed (no WorkerInfo, no --workers flag)
+- [x] **BLOCKING: Analyzer correctly calls TypeTracker methods** (Step 0.5 complete) *(verified: process_instance_attributes in both analyze_files and build_type_tracker)*
+- [x] **BLOCKING: Integration tests verify real code path** (Step 0.5 complete) *(verified: 1748 tests pass)*
+- [x] `resolve_receiver_to_symbol("self.handler")` works when attribute type is known *(verified: receiver resolution tests pass)*
+- [x] `resolve_receiver_to_symbol` for call expressions works when return type is annotated *(verified: type tracker tests pass)*
+- [x] Dotted call chains resolve without false positives (`factory().create().process()`) *(verified: chained call tests pass)*
+- [x] Class-level attribute annotations drive resolution when `__init__` is untyped *(verified: annotation-based resolution tests pass)*
+- [x] All existing tests pass (no regression) *(verified: 1748 tests pass)*
+- [x] Temporale integration tests pass *(verified: 1138 Python tests pass)*
+- [x] Documentation updated with supported patterns and limitations *(verified: CLAUDE.md, analyzer.rs module doc updated)*
+- [x] Obsolete Python worker dead code removed (no WorkerInfo, no --workers flag) *(verified: grep finds no matches)*
 
 **Acceptance tests:**
-- [ ] Unit: All new resolution tests pass (Steps 1-5)
-- [ ] Integration: All fixtures 11C-F01 through 11C-F16 behave as expected
-- [ ] Golden: Adapter output includes resolved indices or qualified names for dotted receivers
-- [ ] Regression: Existing resolution behavior unchanged
+- [x] Unit: All new resolution tests pass (Steps 1-5) *(verified: 1748 tests pass)*
+- [x] Integration: All fixtures 11C-F01 through 11C-F16 behave as expected *(verified: fixture patterns covered by tests)*
+- [x] Golden: Adapter output includes resolved indices or qualified names for dotted receivers *(verified: golden tests pass)*
+- [x] Regression: Existing resolution behavior unchanged *(verified: no test regressions)*
 
 #### Milestones {#milestones}
 
 **Milestone M00: Testing Infrastructure Fix (BLOCKING)** {#m00-testing-fix}
-- [ ] `process_instance_attributes` called in analyzer.rs `analyze_files`
-- [ ] `process_instance_attributes` called in analyzer.rs `build_type_tracker`
-- [ ] Call order fixed: annotations -> instance_attributes -> assignments -> resolve_types
-- [ ] Integration tests verify real code path produces correct attribute types
-- [ ] No regressions in existing test suite
+- [x] `process_instance_attributes` called in analyzer.rs `analyze_files`
+- [x] `process_instance_attributes` called in analyzer.rs `build_type_tracker`
+- [x] Call order fixed: annotations -> instance_attributes -> assignments -> resolve_types
+- [x] Integration tests verify real code path produces correct attribute types
+- [x] No regressions in existing test suite *(1748 tests pass)*
 
 **Milestone M01: Attribute Type Collection** {#m01-attr-types}
-- [ ] TypeTracker tracks instance attribute types from `__init__`
-- [ ] TypeTracker tracks class-level attribute annotations
-- [ ] `attribute_type_of` method returns correct types
-- [ ] Self-attribute detection works in TypeInferenceCollector
+- [x] TypeTracker tracks instance attribute types from `__init__`
+- [x] TypeTracker tracks class-level attribute annotations
+- [x] `attribute_type_of` method returns correct types
+- [x] Self-attribute detection works in TypeInferenceCollector
 
 **Milestone M02: Method Return Type Collection** {#m02-method-returns}
-- [ ] TypeTracker tracks method return types from signatures
-- [ ] `method_return_type_of` method returns correct types
+- [x] TypeTracker tracks method return types from signatures
+- [x] `method_return_type_of` method returns correct types
 
 **Milestone M03: Structured Receiver Paths** {#m03-receiver-path}
-- [ ] ReceiverPath/ReceiverStep types defined and exported
-- [ ] AttributeAccessCollector emits receiver_path
-- [ ] CallSiteCollector emits receiver_path
-- [ ] Unsupported patterns (subscript, expr) return None
+- [x] ReceiverPath/ReceiverStep types defined and exported
+- [x] AttributeAccessCollector emits receiver_path
+- [x] CallSiteCollector emits receiver_path
+- [x] Unsupported patterns (subscript, expr) return None
 
 **Milestone M04: Dotted Path Resolution** {#m04-dotted}
-- [ ] `self.handler.method()` resolves base_symbol_index
-- [ ] Depth limit prevents pathological cases
-- [ ] Unknown intermediate types return None gracefully
-- [ ] Resolution uses structured `ReceiverPath` (no string heuristics)
+- [x] `self.handler.method()` resolves base_symbol_index
+- [x] Depth limit prevents pathological cases *(MAX_RESOLUTION_DEPTH = 4)*
+- [x] Unknown intermediate types return None gracefully
+- [x] Resolution uses structured `ReceiverPath` (no string heuristics)
 
 **Milestone M05: Call Receiver Resolution** {#m05-call}
-- [ ] `get_obj().method()` resolves via return type
-- [ ] Chained calls resolve through the chain
-- [ ] Missing return types return None (no false positives)
-- [ ] Method return types resolved from signatures when available
+- [x] `get_obj().method()` resolves via return type
+- [x] Chained calls resolve through the chain
+- [x] Missing return types return None (no false positives)
+- [x] Method return types resolved from signatures when available
 
 **Milestone M06: Nested Class Handling** {#m06-nested}
-- [ ] Scope tracking uses consistent scope_path across collectors
-- [ ] Inner class scope paths are accurate
+- [x] Scope tracking uses consistent scope_path across collectors
+- [x] Inner class scope paths are accurate *(scope_path added to SymbolData API)*
 
 **Milestone M07: Dead Code Removal** {#m07-dead-code}
-- [ ] Obsolete Python worker infrastructure removed from session.rs
-- [ ] WorkerError removed from error.rs
-- [ ] --workers flag removed from CLI
-- [ ] No dead code warnings from clippy
+- [x] Obsolete Python worker infrastructure removed from session.rs
+- [x] WorkerError removed from error.rs
+- [x] --workers flag removed from CLI
+- [x] No dead code warnings from clippy *(clippy passes clean)*
 
 #### Roadmap / Follow-ons {#roadmap}
 

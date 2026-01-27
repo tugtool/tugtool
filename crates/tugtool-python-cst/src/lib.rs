@@ -74,8 +74,9 @@ pub use visitor::{
     AnnotationSourceKind, AssignmentInfo, AttributeAccessCollector, AttributeAccessInfo,
     AttributeAccessKind, CallArgInfo, CallSiteCollector, CallSiteInfo, ClassInheritanceInfo,
     ImportCollector, ImportInfo, ImportKind, ImportedName, InheritanceCollector,
-    MethodCallCollector, MethodCallInfo, Modifier, ParamInfo, ParamKind, ReceiverPath, ReceiverStep,
-    SignatureCollector, SignatureInfo, TypeInferenceCollector, TypeParamInfo, TypeSource,
+    MethodCallCollector, MethodCallInfo, Modifier, ParamInfo, ParamKind, ReceiverPath,
+    ReceiverStep, SignatureCollector, SignatureInfo, TypeInferenceCollector, TypeParamInfo,
+    TypeSource,
 };
 // P2 visitor exports
 pub use visitor::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};
