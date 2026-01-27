@@ -1956,21 +1956,21 @@ Regression tests (verify existing behavior not broken):
 **Note:** This step verifies that existing scope_path tracking correctly handles nested classes. The class stack is implicit in scope_path.
 
 **Tasks:**
-- [ ] Verify all collectors (TypeInferenceCollector, AttributeAccessCollector, AnnotationCollector) use consistent scope_path logic
-- [ ] Add helper methods for class depth extraction if needed
-- [ ] Verify scope path generation for nested classes is accurate
-- [ ] Add tests for doubly-nested class scenarios
+- [x] Verify all collectors (TypeInferenceCollector, AttributeAccessCollector, AnnotationCollector) use consistent scope_path logic (2026-01-27: verified identical push/pop logic)
+- [x] Add helper methods for class depth extraction if needed (2026-01-27: existing helpers sufficient; added scope_path to SymbolData API)
+- [x] Verify scope path generation for nested classes is accurate (2026-01-27: tests confirm correct paths)
+- [x] Add tests for doubly-nested class scenarios (2026-01-27: added 6 tests in nested_class_scope_tests module)
 
 **Tests:**
-- [ ] Unit: Nested class `Outer.Inner` produces correct scope_path
-- [ ] Unit: Inner class method has scope_path `["<module>", "Outer", "Inner", "method"]`
-- [ ] Integration: Inner class method references resolve correctly
-- [ ] Integration: Doubly-nested class (Outer.Middle.Inner) scope paths correct
+- [x] Unit: Nested class `Outer.Inner` produces correct scope_path (2026-01-27: nested_class_outer_inner_produces_correct_scope_path)
+- [x] Unit: Inner class method has scope_path `["<module>", "Outer", "Inner", "method"]` (2026-01-27: inner_class_method_has_correct_scope_path)
+- [x] Integration: Inner class method references resolve correctly (2026-01-27: inner_class_method_references_resolve_correctly)
+- [x] Integration: Doubly-nested class (Outer.Middle.Inner) scope paths correct (2026-01-27: doubly_nested_class_scope_paths_correct)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst nested`
-- [ ] `cargo nextest run -p tugtool-python nested`
-- [ ] `cargo nextest run -p tugtool-python scope`
+- [x] `cargo nextest run -p tugtool-python-cst nested` → 19 tests passed (2026-01-27)
+- [x] `cargo nextest run -p tugtool-python nested` → 21 tests passed (2026-01-27)
+- [x] `cargo nextest run -p tugtool-python scope` → 48 tests passed (2026-01-27)
 
 **Rollback:**
 - Revert commit

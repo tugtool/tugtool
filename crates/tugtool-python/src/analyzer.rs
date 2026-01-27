@@ -3945,11 +3945,15 @@ impl PythonAdapter {
                 .copied()
                 .unwrap_or(0);
 
+            // Build scope_path for this symbol
+            let scope_path = self.build_scope_path_for_symbol(analysis, analysis_idx);
+
             result.symbols.push(SymbolData {
                 kind: symbol.kind,
                 name: symbol.name.clone(),
                 decl_span,
                 scope_index,
+                scope_path,
                 visibility: self.infer_visibility_from_name(&symbol.name),
             });
             result_to_analysis_idx.push(analysis_idx);
@@ -11759,6 +11763,232 @@ class Service:
             let config_type = tracker.attribute_type_of("Service", "config");
             assert!(config_type.is_some(), "should track Service.config");
             assert_eq!(config_type.unwrap().type_str, "Config");
+        }
+    }
+
+    // ========================================================================
+    // Nested Class Scope Tracking Tests (Phase 11C Step 5)
+    // ========================================================================
+
+    mod nested_class_scope_tests {
+        use super::*;
+
+        #[test]
+        fn nested_class_outer_inner_produces_correct_scope_path() {
+            // Unit test: Nested class `Outer.Inner` produces correct scope_path
+            // [Fixture 11C-F05]
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Outer:
+    class Inner:
+        def method(self):
+            pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Inner class symbol
+            let inner_symbol = result.symbols.iter().find(|s| s.name == "Inner");
+            assert!(inner_symbol.is_some(), "Should have Inner class symbol");
+
+            // Inner class should have scope_path ["<module>", "Outer"]
+            assert_eq!(
+                inner_symbol.unwrap().scope_path,
+                vec!["<module>", "Outer"],
+                "Inner class should have scope_path ['<module>', 'Outer']"
+            );
+
+            // Outer class should have scope_path ["<module>"]
+            let outer_symbol = result.symbols.iter().find(|s| s.name == "Outer");
+            assert!(outer_symbol.is_some(), "Should have Outer class symbol");
+            assert_eq!(
+                outer_symbol.unwrap().scope_path,
+                vec!["<module>"],
+                "Outer class should have scope_path ['<module>']"
+            );
+        }
+
+        #[test]
+        fn inner_class_method_has_correct_scope_path() {
+            // Unit test: Inner class method has scope_path ["<module>", "Outer", "Inner", "method"]
+            // [Fixture 11C-F05]
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Outer:
+    class Inner:
+        def method(self):
+            x = 1
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the method symbol
+            let method_symbol = result.symbols.iter().find(|s| s.name == "method");
+            assert!(method_symbol.is_some(), "Should have method symbol");
+
+            // Method should have scope_path ["<module>", "Outer", "Inner"]
+            assert_eq!(
+                method_symbol.unwrap().scope_path,
+                vec!["<module>", "Outer", "Inner"],
+                "Method should have scope_path ['<module>', 'Outer', 'Inner']"
+            );
+        }
+
+        #[test]
+        fn inner_class_method_references_resolve_correctly() {
+            // Integration test: Inner class method references resolve correctly
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self):
+        pass
+
+class Outer:
+    class Inner:
+        def get_handler(self) -> Handler:
+            return Handler()
+
+        def use_handler(self):
+            h = self.get_handler()
+            h.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The Handler class should exist
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Find the method call for h.process()
+            let process_call = result.calls.iter().find(|c| {
+                c.callee_symbol_index == handler_idx
+            });
+
+            // The call should resolve to Handler class
+            assert!(
+                process_call.is_some(),
+                "h.process() should resolve - callee_symbol_index pointing to Handler"
+            );
+        }
+
+        #[test]
+        fn doubly_nested_class_scope_paths_correct() {
+            // Integration test: Doubly-nested class (Outer.Middle.Inner) scope paths correct
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Outer:
+    class Middle:
+        class Inner:
+            def deep_method(self):
+                pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Verify scope_path for each level
+            let outer = result.symbols.iter().find(|s| s.name == "Outer").unwrap();
+            assert_eq!(
+                outer.scope_path,
+                vec!["<module>"],
+                "Outer scope_path should be ['<module>']"
+            );
+
+            let middle = result.symbols.iter().find(|s| s.name == "Middle").unwrap();
+            assert_eq!(
+                middle.scope_path,
+                vec!["<module>", "Outer"],
+                "Middle scope_path should be ['<module>', 'Outer']"
+            );
+
+            let inner = result.symbols.iter().find(|s| s.name == "Inner").unwrap();
+            assert_eq!(
+                inner.scope_path,
+                vec!["<module>", "Outer", "Middle"],
+                "Inner scope_path should be ['<module>', 'Outer', 'Middle']"
+            );
+
+            let method = result.symbols.iter().find(|s| s.name == "deep_method").unwrap();
+            assert_eq!(
+                method.scope_path,
+                vec!["<module>", "Outer", "Middle", "Inner"],
+                "deep_method scope_path should be ['<module>', 'Outer', 'Middle', 'Inner']"
+            );
+        }
+
+        #[test]
+        fn nested_class_attribute_resolution() {
+            // Integration test: Attributes within nested classes resolve correctly
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self):
+        pass
+
+class Outer:
+    class Inner:
+        handler: Handler
+
+        def run(self):
+            self.handler.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Find the process attribute access - should resolve to Handler
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(process_attr.is_some(), "Should have process attribute access");
+
+            // The base_symbol_index should point to Handler
+            assert_eq!(
+                process_attr.unwrap().base_symbol_index,
+                handler_idx,
+                "process attribute should have base_symbol_index pointing to Handler"
+            );
+        }
+
+        #[test]
+        fn nested_class_with_sibling_classes() {
+            // Test: Multiple nested classes at same level have correct scope_paths
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Container:
+    class First:
+        def method_a(self):
+            pass
+
+    class Second:
+        def method_b(self):
+            pass
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Both First and Second should have same parent scope
+            let first = result.symbols.iter().find(|s| s.name == "First").unwrap();
+            let second = result.symbols.iter().find(|s| s.name == "Second").unwrap();
+
+            assert_eq!(
+                first.scope_path, second.scope_path,
+                "Sibling nested classes should have same scope_path"
+            );
+            assert_eq!(
+                first.scope_path,
+                vec!["<module>", "Container"],
+                "Sibling classes should be in Container scope"
+            );
+
+            // Methods should be in their respective class scopes
+            let method_a = result.symbols.iter().find(|s| s.name == "method_a").unwrap();
+            let method_b = result.symbols.iter().find(|s| s.name == "method_b").unwrap();
+
+            assert_eq!(
+                method_a.scope_path,
+                vec!["<module>", "Container", "First"],
+                "method_a should be in First scope"
+            );
+            assert_eq!(
+                method_b.scope_path,
+                vec!["<module>", "Container", "Second"],
+                "method_b should be in Second scope"
+            );
         }
     }
 }

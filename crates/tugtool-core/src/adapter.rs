@@ -113,6 +113,7 @@
 //!     name: "process".to_string(),
 //!     decl_span: Span::new(10, 17),
 //!     scope_index: 0,  // in module scope
+//!     scope_path: vec!["<module>".to_string()],
 //!     visibility: None,
 //! });
 //!
@@ -210,6 +211,12 @@ pub struct SymbolData {
     pub decl_span: Span,
     /// Index of containing scope in the file's scope list.
     pub scope_index: usize,
+    /// Scope path from module to containing scope.
+    ///
+    /// This is a list of scope names from the module root to the immediate
+    /// containing scope. For example, a method `foo` in class `Inner` nested
+    /// in class `Outer` would have scope_path `["<module>", "Outer", "Inner"]`.
+    pub scope_path: Vec<String>,
     /// Inferred visibility (if applicable).
     pub visibility: Option<Visibility>,
 }
@@ -771,10 +778,12 @@ mod tests {
             name: "foo".to_string(),
             decl_span: Span::new(10, 20),
             scope_index: 0,
+            scope_path: vec!["<module>".to_string()],
             visibility: Some(Visibility::Public),
         };
         assert_eq!(symbol.name, "foo");
         assert_eq!(symbol.visibility, Some(Visibility::Public));
+        assert_eq!(symbol.scope_path, vec!["<module>"]);
     }
 
     #[test]

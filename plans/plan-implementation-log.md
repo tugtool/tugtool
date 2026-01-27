@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 5: Verify Nested Class Scope Tracking | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 5 specification (lines 1950-1978)
+- [D04] Nested Class Scope Depth Tracking design decision
+- `crates/tugtool-python-cst/src/visitor/type_inference.rs` - TypeInferenceCollector scope_path logic
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - AttributeAccessCollector scope_path logic
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - AnnotationCollector scope_path logic
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Verify all collectors use consistent scope_path logic | Done |
+| Add helper methods for class depth extraction if needed | Done (added scope_path to SymbolData API instead) |
+| Verify scope path generation for nested classes is accurate | Done |
+| Add tests for doubly-nested class scenarios | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/adapter.rs` - Added `scope_path: Vec<String>` field to `SymbolData` struct for proper API exposure; updated doc example and test
+- `crates/tugtool-python/src/analyzer.rs` - Populate `scope_path` when creating `SymbolData` using existing `build_scope_path_for_symbol` helper; added 6 new tests in `nested_class_scope_tests` module
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst nested`: 19 tests passed
+- `cargo nextest run -p tugtool-python nested`: 21 tests passed
+- `cargo nextest run -p tugtool-python scope`: 48 tests passed
+
+**Checkpoints Verified:**
+- `nested_class_outer_inner_produces_correct_scope_path`: PASS - Inner class has `["<module>", "Outer"]` scope_path
+- `inner_class_method_has_correct_scope_path`: PASS - Method has `["<module>", "Outer", "Inner"]` scope_path
+- `inner_class_method_references_resolve_correctly`: PASS - h.process() in nested class resolves to Handler
+- `doubly_nested_class_scope_paths_correct`: PASS - Outer.Middle.Inner all have correct scope_paths
+- `nested_class_attribute_resolution`: PASS - Attribute types in nested classes resolve correctly
+- `nested_class_with_sibling_classes`: PASS - Sibling nested classes have same parent scope_path
+
+**Key Decisions/Notes:**
+- **API Improvement**: Instead of using workarounds to compute scope_path from scope_index in tests, added `scope_path: Vec<String>` directly to `SymbolData` in the adapter API. This is the proper solution - scope_path is essential information that should be exposed.
+- **Consistent Collectors**: Verified all three collectors (TypeInferenceCollector, AttributeAccessCollector, AnnotationCollector) use identical scope_path tracking: initialize to `["<module>"]`, push class/function names on visit, pop on leave.
+- **Existing Helpers**: The `build_scope_path_for_symbol` helper already exists and works correctly; no new helpers needed for class depth extraction.
+
+---
+
 ## [phase-11C.md] Step 4: Implement Call Expression Receiver Resolution | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27
