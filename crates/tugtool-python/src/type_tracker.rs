@@ -24,7 +24,7 @@
 use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
 
-use crate::types::{AnnotationInfo, AssignmentInfo};
+use crate::types::{AnnotationInfo, AssignmentInfo, AttributeTypeInfo};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -90,6 +90,11 @@ pub struct TypeTracker {
     /// Map from scope_path to list of assignments in that scope.
     /// Used for ordering-aware type propagation.
     assignments_by_scope: HashMap<Vec<String>, Vec<TrackedAssignment>>,
+
+    /// Map from (class_name, attribute_name) to attribute type info.
+    /// Stores both string and optional TypeNode for callable return extraction.
+    /// Populated from class-level annotations and `self.attr = ...` in __init__.
+    attribute_types: HashMap<(String, String), AttributeTypeInfo>,
 }
 
 /// An assignment tracked for type inference.
@@ -118,6 +123,7 @@ impl TypeTracker {
             annotated_types: HashMap::new(),
             return_types: HashMap::new(),
             assignments_by_scope: HashMap::new(),
+            attribute_types: HashMap::new(),
         }
     }
 
@@ -193,6 +199,24 @@ impl TypeTracker {
             let key = (ann.scope_path.clone(), ann.name.clone());
             self.annotated_types.insert(key, annotated_type);
         }
+    }
+
+    /// Process instance attribute assignments from `__init__` methods.
+    ///
+    /// This collects attribute types from `self.attr = ...` patterns in `__init__`
+    /// and populates the `attribute_types` map.
+    ///
+    /// # Arguments
+    /// - `assignments`: Assignment information from CST analysis
+    ///
+    /// Note: This is a placeholder implementation. The actual collection logic
+    /// will be implemented in Step 1c after Step 1a adds the necessary fields
+    /// to AssignmentInfo for detecting `self.attr = ...` patterns.
+    #[allow(unused_variables)]
+    pub fn process_instance_attributes(&mut self, assignments: &[AssignmentInfo]) {
+        // Empty implementation for now.
+        // Step 1a will add is_self_attribute and attribute_name fields to AssignmentInfo.
+        // Step 1c will implement the actual collection logic here.
     }
 
     /// Resolve all types through propagation.
@@ -418,6 +442,23 @@ impl TypeTracker {
         }
 
         None
+    }
+
+    /// Get the type of a class attribute.
+    ///
+    /// Looks up the type of an attribute on a class, populated from
+    /// class-level annotations and `self.attr = ...` in `__init__`.
+    ///
+    /// # Arguments
+    /// - `class_name`: The name of the class (e.g., "Service")
+    /// - `attr_name`: The name of the attribute (e.g., "handler")
+    ///
+    /// # Returns
+    /// - `Some(&AttributeTypeInfo)` if the attribute type is known
+    /// - `None` if the attribute type is not tracked
+    pub fn attribute_type_of(&self, class_name: &str, attr_name: &str) -> Option<&AttributeTypeInfo> {
+        let key = (class_name.to_string(), attr_name.to_string());
+        self.attribute_types.get(&key)
     }
 
     /// Get all tracked types as a flat list.
@@ -1520,6 +1561,104 @@ mod tests {
                 tracker.type_of(&["<module>".to_string(), "func".to_string()], "x"),
                 Some("Handler")
             );
+        }
+    }
+
+    mod attribute_type_tests {
+        use super::*;
+        use crate::types::AttributeTypeInfo;
+
+        #[test]
+        fn attribute_type_of_returns_none_for_unknown_attribute() {
+            let tracker = TypeTracker::new();
+
+            // No attributes have been added, so lookup should return None
+            assert!(tracker.attribute_type_of("Service", "handler").is_none());
+            assert!(tracker.attribute_type_of("UnknownClass", "attr").is_none());
+        }
+
+        #[test]
+        fn attribute_type_of_returns_type_when_manually_inserted() {
+            let mut tracker = TypeTracker::new();
+
+            // Manually insert an attribute type
+            let attr_info = AttributeTypeInfo {
+                type_str: "Handler".to_string(),
+                type_node: None,
+            };
+            tracker
+                .attribute_types
+                .insert(("Service".to_string(), "handler".to_string()), attr_info);
+
+            // Now lookup should succeed
+            let result = tracker.attribute_type_of("Service", "handler");
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().type_str, "Handler");
+        }
+
+        #[test]
+        fn attribute_type_of_distinguishes_different_classes() {
+            let mut tracker = TypeTracker::new();
+
+            // Insert attribute types for two different classes
+            tracker.attribute_types.insert(
+                ("Service".to_string(), "handler".to_string()),
+                AttributeTypeInfo {
+                    type_str: "Handler".to_string(),
+                    type_node: None,
+                },
+            );
+            tracker.attribute_types.insert(
+                ("Controller".to_string(), "handler".to_string()),
+                AttributeTypeInfo {
+                    type_str: "OtherHandler".to_string(),
+                    type_node: None,
+                },
+            );
+
+            // Each class should have its own attribute type
+            assert_eq!(
+                tracker.attribute_type_of("Service", "handler").unwrap().type_str,
+                "Handler"
+            );
+            assert_eq!(
+                tracker.attribute_type_of("Controller", "handler").unwrap().type_str,
+                "OtherHandler"
+            );
+        }
+
+        #[test]
+        fn attribute_type_of_distinguishes_different_attributes() {
+            let mut tracker = TypeTracker::new();
+
+            // Insert two different attributes on the same class
+            tracker.attribute_types.insert(
+                ("Service".to_string(), "handler".to_string()),
+                AttributeTypeInfo {
+                    type_str: "Handler".to_string(),
+                    type_node: None,
+                },
+            );
+            tracker.attribute_types.insert(
+                ("Service".to_string(), "logger".to_string()),
+                AttributeTypeInfo {
+                    type_str: "Logger".to_string(),
+                    type_node: None,
+                },
+            );
+
+            // Each attribute should have its own type
+            assert_eq!(
+                tracker.attribute_type_of("Service", "handler").unwrap().type_str,
+                "Handler"
+            );
+            assert_eq!(
+                tracker.attribute_type_of("Service", "logger").unwrap().type_str,
+                "Logger"
+            );
+
+            // Unknown attribute on known class returns None
+            assert!(tracker.attribute_type_of("Service", "unknown").is_none());
         }
     }
 

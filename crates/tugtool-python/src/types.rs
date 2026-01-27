@@ -267,6 +267,24 @@ pub struct AnnotationInfo {
 }
 
 // ============================================================================
+// Attribute Type Information (Phase 11C)
+// ============================================================================
+
+/// Type information for a class attribute, including both string representation
+/// and optional structured TypeNode for callable return extraction.
+///
+/// Used by TypeTracker to track instance attribute types from class-level
+/// annotations and `__init__` assignments.
+#[derive(Debug, Clone)]
+pub struct AttributeTypeInfo {
+    /// The type as a string (e.g., "Handler", "List[str]").
+    pub type_str: String,
+    /// Structured type representation, if available from CST collection.
+    /// Used for extracting callable return types.
+    pub type_node: Option<TypeNode>,
+}
+
+// ============================================================================
 // Dynamic Pattern Information
 // ============================================================================
 

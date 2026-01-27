@@ -1512,17 +1512,17 @@ class Outer:
 **References:** [D02] Attribute Type Tracking, (#inputs-outputs)
 
 **Tasks:**
-- [ ] Add `attribute_types: HashMap<(String, String), AttributeTypeInfo>` field to TypeTracker
-- [ ] Add `attribute_type_of(class: &str, attr: &str) -> Option<&AttributeTypeInfo>` method
-- [ ] Add `process_instance_attributes` method (empty implementation for now)
+- [x] Add `attribute_types: HashMap<(String, String), AttributeTypeInfo>` field to TypeTracker
+- [x] Add `attribute_type_of(class: &str, attr: &str) -> Option<&AttributeTypeInfo>` method
+- [x] Add `process_instance_attributes` method (empty implementation for now)
 
 **Tests:**
-- [ ] Unit: `attribute_type_of` returns None for unknown attribute
-- [ ] Unit: `attribute_type_of(...).type_str` returns type when manually inserted
+- [x] Unit: `attribute_type_of` returns None for unknown attribute
+- [x] Unit: `attribute_type_of(...).type_str` returns type when manually inserted
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python attribute_type`
-- [ ] `cargo clippy --workspace`
+- [x] `cargo nextest run -p tugtool-python attribute_type`
+- [x] `cargo clippy --workspace`
 
 **Rollback:**
 - Revert commit
