@@ -6,6 +6,66 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 3: Implement Dotted Path Resolution | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 3 specification (lines 1852-2050)
+- [D01] Dotted Path Resolution Algorithm design decision
+- Existing `type_tracker.rs`, `analyzer.rs`, and `annotation.rs` for current patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `return_type_of` method to TypeTracker for function return type lookup | Done |
+| Add `MAX_RESOLUTION_DEPTH` constant (4) and imports for `ReceiverPath`/`ReceiverStep` | Done |
+| Add scope-aware helper functions (`lookup_symbol_kind_in_scope_chain`, `lookup_symbol_index_in_scope_chain`, `is_class_in_scope`) | Done |
+| Add `strip_forward_ref_quotes` helper for handling `-> "Widget"` annotations | Done |
+| Add `resolve_receiver_path` method implementing D01 algorithm | Done |
+| Add `resolve_type_to_symbol` helper with Class-only filtering | Done |
+| Build `scoped_symbol_map` and `symbol_kinds` in `convert_file_analysis` | Done |
+| Add `resolve_receiver_to_symbol_with_path` delegation method | Done |
+| Implement implicit self/cls typing in `AnnotationCollector` | Done |
+| Add `AnnotationKind::Implicit` variant | Done |
+| Write unit tests for dotted path resolution (10 tests) | Done |
+| Fix symbol index mapping bug (`result_to_analysis_idx`) | Done |
+| Fix `resolve_type_to_symbol` to only return Class symbols | Done |
+| Apply `strip_forward_ref_quotes` to method/function return types | Done |
+| Rename `symbol_map` parameters for clarity (`scoped_symbol_map`, `symbol_name_to_index`) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - Added `AnnotationKind::Implicit`, `enclosing_class` field, implicit self/cls typing in `visit_param`
+- `crates/tugtool-python/src/analyzer.rs` - Added resolution infrastructure: helper functions, `resolve_receiver_path`, `resolve_type_to_symbol`, `resolve_receiver_to_symbol_with_path`, scope-aware symbol maps, unit tests
+- `crates/tugtool-python/src/type_tracker.rs` - Added `return_type_of` method for function return type lookup
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 529 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 533 tests passed
+- `cargo nextest run -p tugtool-python resolve`: 75 tests passed
+- `cargo nextest run -p tugtool-python dotted`: 2 tests passed
+
+**Checkpoints Verified:**
+- `test_dotted_path_self_handler_resolves_to_handler_type`: PASS - `self.handler.process()` resolves to Handler
+- `resolve_receiver_path_function_return_type_resolves`: PASS - `factory().create().run()` chain resolves to Widget
+- `resolve_receiver_path_constructor_call_resolves`: PASS - `Handler().process()` resolves to Handler
+- `resolve_receiver_path_unknown_intermediate_type_returns_none`: PASS - Unknown types return None
+- `resolve_receiver_path_depth_limit_exceeded_returns_none`: PASS - Paths exceeding MAX_RESOLUTION_DEPTH (4) return None
+- `resolve_receiver_path_empty_path_returns_none`: PASS - Empty paths return None
+- `resolve_receiver_path_single_element_resolves_type`: PASS - Single-element paths resolve correctly
+- `resolve_receiver_path_unknown_class_constructor_returns_none`: PASS - Unknown class `MaybeClass().method()` returns None
+- `resolve_receiver_path_cross_file_type_mid_chain`: PASS - Cross-file type mid-chain handling
+
+**Key Decisions/Notes:**
+- **Implicit self/cls typing**: Implemented in `AnnotationCollector` rather than `TypeTracker.type_of()` - emits synthetic annotations with `AnnotationKind::Implicit` for unannotated `self`/`cls` parameters in methods
+- **Class-only type resolution**: `resolve_type_to_symbol` only returns symbols with `SymbolKind::Class`, preventing incorrect resolution to variables/functions with same name
+- **Forward reference handling**: Added `strip_forward_ref_quotes` to handle `-> "Widget"` style forward references in return type annotations
+- **Naming clarity**: Renamed `symbol_map` parameters to `scoped_symbol_map` and `symbol_name_to_index` to distinguish scope-aware vs simple name-based maps
+- **Code architect audit**: Reviewed implementation with code-architect agent - found no critical issues, confirmed solid foundation for future work
+
+---
+
 ## [phase-11C.md] Step 2: Collect Structured Receiver Paths | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

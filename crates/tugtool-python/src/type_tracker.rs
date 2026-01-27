@@ -642,6 +642,41 @@ impl TypeTracker {
         self.method_return_types.get(&key).map(|s| s.as_str())
     }
 
+    /// Get the return type of a top-level function.
+    ///
+    /// Looks up the return type of a function by searching the scope chain,
+    /// starting from the given scope and walking up to outer scopes.
+    ///
+    /// # Arguments
+    /// - `scope_path`: The current scope path where the function is called
+    /// - `func_name`: The name of the function
+    ///
+    /// # Returns
+    /// - `Some(&str)` with the return type string if the function has a return type annotation
+    /// - `None` if the function has no return type or is not found
+    ///
+    /// # Note
+    /// This is for top-level functions. For methods, use `method_return_type_of`.
+    pub fn return_type_of(&self, scope_path: &[String], func_name: &str) -> Option<&str> {
+        // Try the current scope first
+        let key = (scope_path.to_vec(), func_name.to_string());
+        if let Some(return_type) = self.return_types.get(&key) {
+            return Some(return_type.type_str.as_str());
+        }
+
+        // Walk up the scope chain
+        let mut current_path = scope_path.to_vec();
+        while !current_path.is_empty() {
+            current_path.pop();
+            let key = (current_path.clone(), func_name.to_string());
+            if let Some(return_type) = self.return_types.get(&key) {
+                return Some(return_type.type_str.as_str());
+            }
+        }
+
+        None
+    }
+
     /// Extract the return type from a Callable type annotation.
     ///
     /// When an attribute is annotated as `Callable[..., T]`, this method extracts `T`

@@ -1866,42 +1866,42 @@ Regression tests (verify existing behavior not broken):
 - Updated `resolve_receiver_to_symbol` to handle dotted paths
 
 **Tasks:**
-- [ ] Add `MAX_RESOLUTION_DEPTH` constant (= 4)
-- [ ] Add `lookup_symbol_kind_in_scope_chain` helper
-- [ ] Add `lookup_symbol_index_in_scope_chain` helper
-- [ ] Add `is_class_in_scope(scope_path: &[String], name: &str, symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>) -> bool` helper
-- [ ] Build `symbol_kinds: HashMap<(Vec<String>, String), SymbolKind>` from `analysis.symbols` in `convert_file_analysis` or resolution caller
-- [ ] Build `symbol_map: HashMap<(Vec<String>, String), usize>` from `analysis.symbols` in `convert_file_analysis` or resolution caller
-- [ ] Implement `resolve_receiver_path` using `ReceiverPath` steps (see D01 algorithm)
-- [ ] Update `resolve_receiver_to_symbol` to delegate to `resolve_receiver_path` when `receiver_path` is present
-- [ ] Handle `self` as first `Name` step (extract class from scope path)
-- [ ] Add depth limit check with `None` return if exceeded
-- [ ] Add helper `resolve_type_to_symbol` for final type lookup
-- [ ] Handle cross-file types mid-chain by returning `ResolvedSymbol::CrossFile` or `None`
-- [ ] When `attribute_type_of` fails, keep current_type unchanged and set `last_method_name`
-- [ ] When Name is not a typed variable, check symbol_kinds for class vs function
-- [ ] Treat Name followed by Call as constructor when Name is class (via symbol_kinds)
-- [ ] Treat Name followed by Call as function call when Name is function (use return_type_of)
+- [x] Add `MAX_RESOLUTION_DEPTH` constant (= 4)
+- [x] Add `lookup_symbol_kind_in_scope_chain` helper
+- [x] Add `lookup_symbol_index_in_scope_chain` helper
+- [x] Add `is_class_in_scope(scope_path: &[String], name: &str, symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>) -> bool` helper
+- [x] Build `symbol_kinds: HashMap<(Vec<String>, String), SymbolKind>` from `analysis.symbols` in `convert_file_analysis` or resolution caller
+- [x] Build `symbol_map: HashMap<(Vec<String>, String), usize>` from `analysis.symbols` in `convert_file_analysis` or resolution caller
+- [x] Implement `resolve_receiver_path` using `ReceiverPath` steps (see D01 algorithm)
+- [x] Update `resolve_receiver_to_symbol` to delegate to `resolve_receiver_path` when `receiver_path` is present
+- [x] Handle `self` as first `Name` step (extract class from scope path)
+- [x] Add depth limit check with `None` return if exceeded
+- [x] Add helper `resolve_type_to_symbol` for final type lookup
+- [x] Handle cross-file types mid-chain by returning `ResolvedSymbol::CrossFile` or `None`
+- [x] When `attribute_type_of` fails, keep current_type unchanged and set `last_method_name`
+- [x] When Name is not a typed variable, check symbol_kinds for class vs function
+- [x] Treat Name followed by Call as constructor when Name is class (via symbol_kinds)
+- [x] Treat Name followed by Call as function call when Name is function (use return_type_of)
 
 **Tests:**
-- [ ] Unit: `self.handler` resolves when attribute type known (Fixture 11C-F01)
-- [ ] Unit: `self.handler.process` resolves through chain (process is method name, not attribute)
-- [ ] Unit: `obj.field.method` resolves for non-self receivers
-- [ ] Unit: Depth limit exceeded returns None (Fixture 11C-F05)
-- [ ] Unit: Unknown intermediate type returns None
-- [ ] Unit: Empty receiver path returns None
-- [ ] Integration: Service.run() -> self.handler.process() resolves to Handler
-- [ ] Unit: `Handler().process()` resolves via constructor semantics (Handler is class)
-- [ ] Unit: `factory().create()` resolves via function return type (factory is function)
-- [ ] Unit: `factory().create().run()` chains through return types correctly
-- [ ] Unit: Unknown class `MaybeClass().method()` returns None
-- [ ] Unit: Cross-file type mid-chain returns CrossFile or None
-- [ ] Unit: Single-element path `[Name("obj")]` resolves obj's type directly (Fixture 11C-F12)
-- [ ] Regression: Simple receivers still work
+- [x] Unit: `self.handler` resolves when attribute type known (Fixture 11C-F01) → `resolve_receiver_path_self_handler_resolves_to_handler_type`
+- [x] Unit: `self.handler.process` resolves through chain (process is method name, not attribute) → same test
+- [x] Unit: `obj.field.method` resolves for non-self receivers → `resolve_receiver_path_single_element_resolves_type`
+- [x] Unit: Depth limit exceeded returns None (Fixture 11C-F05) → `resolve_receiver_path_depth_limit_exceeded_returns_none`
+- [x] Unit: Unknown intermediate type returns None → `resolve_receiver_path_unknown_intermediate_type_returns_none`
+- [x] Unit: Empty receiver path returns None → `resolve_receiver_path_empty_path_returns_none`
+- [x] Integration: Service.run() -> self.handler.process() resolves to Handler → `resolve_receiver_path_self_handler_resolves_to_handler_type`
+- [x] Unit: `Handler().process()` resolves via constructor semantics (Handler is class) → `resolve_receiver_path_constructor_call_resolves`
+- [x] Unit: `factory().create()` resolves via function return type (factory is function) → `resolve_receiver_path_function_return_type_resolves`
+- [x] Unit: `factory().create().run()` chains through return types correctly → same test
+- [x] Unit: Unknown class `MaybeClass().method()` returns None → `resolve_receiver_path_unknown_class_constructor_returns_none`
+- [x] Unit: Cross-file type mid-chain returns CrossFile or None → `resolve_receiver_path_cross_file_type_mid_chain`
+- [x] Unit: Single-element path `[Name("obj")]` resolves obj's type directly (Fixture 11C-F12) → `resolve_receiver_path_single_element_resolves_type`
+- [x] Regression: Simple receivers still work → `resolve_receiver_path_simple_receivers_still_work`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python resolve`
-- [ ] `cargo nextest run -p tugtool-python dotted`
+- [x] `cargo nextest run -p tugtool-python resolve` → 75 tests passed (2026-01-27)
+- [x] `cargo nextest run -p tugtool-python dotted` → 2 tests passed (2026-01-27)
 
 **Rollback:**
 - Revert commit

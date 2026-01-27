@@ -83,6 +83,8 @@ pub enum AnnotationKind {
     String,
     /// Attribute access: `module.Type`.
     Attribute,
+    /// Implicit type inferred from context (e.g., `self`/`cls` in methods).
+    Implicit,
     /// Other complex expression.
     Other,
 }
@@ -96,6 +98,7 @@ impl AnnotationKind {
             AnnotationKind::Union => "union",
             AnnotationKind::String => "string",
             AnnotationKind::Attribute => "attribute",
+            AnnotationKind::Implicit => "implicit",
             AnnotationKind::Other => "other",
         }
     }
@@ -483,6 +486,9 @@ pub struct AnnotationCollector<'pos> {
     scope_path: Vec<String>,
     /// Whether we're currently inside a class body (for attribute vs variable distinction).
     in_class_body: bool,
+    /// The enclosing class name when inside a method (for implicit self/cls typing).
+    /// Set when entering a class, cleared when leaving.
+    enclosing_class: Option<String>,
 }
 
 impl<'pos> Default for AnnotationCollector<'pos> {
@@ -501,6 +507,7 @@ impl<'pos> AnnotationCollector<'pos> {
             annotations: Vec::new(),
             scope_path: vec!["<module>".to_string()],
             in_class_body: false,
+            enclosing_class: None,
         }
     }
 
@@ -513,6 +520,7 @@ impl<'pos> AnnotationCollector<'pos> {
             annotations: Vec::new(),
             scope_path: vec!["<module>".to_string()],
             in_class_body: false,
+            enclosing_class: None,
         }
     }
 
@@ -709,12 +717,14 @@ impl<'a, 'pos> Visitor<'a> for AnnotationCollector<'pos> {
         // Enter class scope
         self.scope_path.push(node.name.value.to_string());
         self.in_class_body = true;
+        self.enclosing_class = Some(node.name.value.to_string());
         VisitResult::Continue
     }
 
     fn leave_class_def(&mut self, _node: &ClassDef<'a>) {
         self.scope_path.pop();
         self.in_class_body = false;
+        self.enclosing_class = None;
     }
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
@@ -727,6 +737,22 @@ impl<'a, 'pos> Visitor<'a> for AnnotationCollector<'pos> {
                 AnnotationSourceKind::Parameter,
                 node.name.node_id,
             );
+        } else if let Some(class_name) = &self.enclosing_class {
+            // Emit implicit annotation for self/cls parameters in methods
+            let param_name = node.name.value;
+            if param_name == "self" || param_name == "cls" {
+                let span = self.lookup_span(node.name.node_id);
+                let info = AnnotationInfo::new(
+                    param_name.to_string(),
+                    class_name.clone(),
+                    AnnotationKind::Implicit,
+                    AnnotationSourceKind::Parameter,
+                    self.scope_path.clone(),
+                    Some(TypeNode::named(class_name)),
+                )
+                .with_span(span);
+                self.annotations.push(info);
+            }
         }
         VisitResult::Continue
     }
@@ -901,13 +927,83 @@ mod tests {
         let parsed = parse_module_with_positions(source, None).unwrap();
         let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
 
-        assert_eq!(annotations.len(), 1);
-        assert_eq!(annotations[0].name, "x");
+        // Now includes implicit self annotation plus explicit x
+        assert_eq!(annotations.len(), 2);
+        assert_eq!(annotations[1].name, "x");
         // Scope path: <module> -> MyClass -> method
+        assert_eq!(
+            annotations[1].scope_path,
+            vec!["<module>", "MyClass", "method"]
+        );
+    }
+
+    #[test]
+    fn test_annotation_implicit_self() {
+        let source = r#"class MyClass:
+    def method(self, x: int):
+        pass
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have two annotations: implicit self, and explicit x
+        assert_eq!(annotations.len(), 2);
+
+        // First annotation should be implicit self
+        assert_eq!(annotations[0].name, "self");
+        assert_eq!(annotations[0].type_str, "MyClass");
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::Implicit);
+        assert_eq!(annotations[0].source_kind, AnnotationSourceKind::Parameter);
         assert_eq!(
             annotations[0].scope_path,
             vec!["<module>", "MyClass", "method"]
         );
+
+        // Second annotation should be explicit x
+        assert_eq!(annotations[1].name, "x");
+        assert_eq!(annotations[1].type_str, "int");
+        assert_eq!(annotations[1].annotation_kind, AnnotationKind::Simple);
+    }
+
+    #[test]
+    fn test_annotation_implicit_cls() {
+        let source = r#"class MyClass:
+    @classmethod
+    def create(cls) -> "MyClass":
+        return cls()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have two annotations: return type (processed first), then implicit cls
+        assert_eq!(annotations.len(), 2);
+
+        // First annotation is return type (visit_function_def processes it first)
+        assert_eq!(annotations[0].name, "__return__");
+        assert_eq!(annotations[0].type_str, "MyClass");
+        assert_eq!(annotations[0].source_kind, AnnotationSourceKind::Return);
+
+        // Second annotation should be implicit cls
+        assert_eq!(annotations[1].name, "cls");
+        assert_eq!(annotations[1].type_str, "MyClass");
+        assert_eq!(annotations[1].annotation_kind, AnnotationKind::Implicit);
+    }
+
+    #[test]
+    fn test_annotation_explicit_self_overrides() {
+        // When self has an explicit annotation, no implicit annotation is emitted
+        let source = r#"class MyClass:
+    def method(self: "MyClass"):
+        pass
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have only one annotation: the explicit self annotation
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].name, "self");
+        assert_eq!(annotations[0].type_str, "MyClass");
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::String); // Forward reference
     }
 
     // ========================================================================

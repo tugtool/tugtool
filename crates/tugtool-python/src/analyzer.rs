@@ -33,6 +33,84 @@ use thiserror::Error;
 // Native CST bridge
 use crate::cst_bridge;
 
+// Receiver path types for dotted path resolution
+use tugtool_python_cst::{ReceiverPath, ReceiverStep};
+
+/// Maximum depth for chained attribute resolution.
+/// Deeper chains are uncommon and often involve external types.
+/// Common patterns are 1-3 segments (`obj`, `self.field`, `self.field.attr`).
+/// 4 allows for `self.manager.handler.process` patterns.
+const MAX_RESOLUTION_DEPTH: usize = 4;
+
+// ============================================================================
+// Scope-Aware Symbol Lookup Helpers
+// ============================================================================
+
+/// Look up a symbol's kind by walking outward through the scope chain.
+///
+/// Returns the SymbolKind of the closest matching symbol, or None if not found.
+/// This ensures that inner-scope definitions shadow outer-scope definitions.
+fn lookup_symbol_kind_in_scope_chain(
+    scope_path: &[String],
+    name: &str,
+    symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+) -> Option<SymbolKind> {
+    // Walk outward from innermost scope to module scope
+    for depth in (0..=scope_path.len()).rev() {
+        let key = (scope_path[..depth].to_vec(), name.to_string());
+        if let Some(kind) = symbol_kinds.get(&key) {
+            return Some(*kind);
+        }
+    }
+    None
+}
+
+/// Look up a symbol's index by walking outward through the scope chain.
+///
+/// Returns the symbol index of the closest matching symbol, or None if not found.
+/// This ensures that inner-scope definitions shadow outer-scope definitions.
+fn lookup_symbol_index_in_scope_chain(
+    scope_path: &[String],
+    name: &str,
+    scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
+) -> Option<usize> {
+    for depth in (0..=scope_path.len()).rev() {
+        let key = (scope_path[..depth].to_vec(), name.to_string());
+        if let Some(index) = scoped_symbol_map.get(&key) {
+            return Some(*index);
+        }
+    }
+    None
+}
+
+/// Check if a name refers to a class in the current scope.
+///
+/// Uses scope-aware lookup to walk outward through scopes, ensuring
+/// that inner-scope definitions shadow outer-scope definitions.
+fn is_class_in_scope(
+    scope_path: &[String],
+    name: &str,
+    symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+) -> bool {
+    lookup_symbol_kind_in_scope_chain(scope_path, name, symbol_kinds) == Some(SymbolKind::Class)
+}
+
+/// Strip quotes from a forward reference type string.
+///
+/// Python forward references can be written as strings: `-> "MyClass"`.
+/// The annotation collector preserves these quotes in `type_str`.
+/// This helper strips them for type resolution.
+fn strip_forward_ref_quotes(type_str: &str) -> &str {
+    let trimmed = type_str.trim();
+    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+    {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    }
+}
+
 /// Type alias for scope-to-symbols index: (FileId, ScopeId) -> Vec<(name, SymbolId, SymbolKind)>
 /// Uses the local ScopeId type (not CoreScopeId) as the map key.
 type ScopeSymbolsMap = HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>;
@@ -3450,7 +3528,7 @@ impl PythonAdapter {
     /// - `receiver`: The receiver expression string (e.g., "obj" from "obj.method")
     /// - `scope_path`: The scope path where the access occurs
     /// - `tracker`: Optional TypeTracker with type inference results
-    /// - `symbol_map`: Map from symbol name to adapter index (local file)
+    /// - `symbol_name_to_index`: Map from symbol name to adapter index (local file)
     /// - `cross_file_map`: Optional cross-file symbol map for fallback resolution
     ///
     /// # Returns
@@ -3462,7 +3540,7 @@ impl PythonAdapter {
         receiver: &str,
         scope_path: &[String],
         tracker: Option<&TypeTracker>,
-        symbol_map: &HashMap<&str, usize>,
+        symbol_name_to_index: &HashMap<&str, usize>,
         cross_file_map: Option<&CrossFileSymbolMap>,
     ) -> Option<ResolvedSymbol> {
         // If no tracker provided, we can't resolve
@@ -3478,7 +3556,7 @@ impl PythonAdapter {
         let receiver_type = tracker.type_of(scope_path, receiver)?;
 
         // Look up the type's symbol index in the local map first
-        if let Some(&idx) = symbol_map.get(receiver_type) {
+        if let Some(&idx) = symbol_name_to_index.get(receiver_type) {
             return Some(ResolvedSymbol::Local(idx));
         }
 
@@ -3491,6 +3569,250 @@ impl PythonAdapter {
         }
 
         None
+    }
+
+    /// Resolve a structured receiver path to a symbol via step-by-step type resolution.
+    ///
+    /// This method handles dotted paths like `self.handler.process` by resolving each
+    /// segment's type in sequence:
+    /// 1. `self` -> class type (implicit from scope)
+    /// 2. `handler` -> attribute type on class
+    /// 3. `process` -> method on attribute's type
+    ///
+    /// # Algorithm
+    /// For each step in the path:
+    /// - `Name`: Look up variable type via TypeTracker, or store name for class/function lookup
+    /// - `Attr`: Look up attribute type on current class, or mark as method name
+    /// - `Call`: Use return type (constructor, method, or function) to continue chain
+    ///
+    /// # Arguments
+    /// - `receiver_path`: Structured receiver path from CST analysis
+    /// - `scope_path`: The scope path where the access occurs
+    /// - `tracker`: TypeTracker with type inference results
+    /// - `scoped_symbol_map`: Scope-aware map from (scope_path, name) to symbol index
+    /// - `symbol_kinds`: Scope-aware map from (scope_path, name) to SymbolKind
+    /// - `cross_file_map`: Optional cross-file symbol map for fallback resolution
+    ///
+    /// # Returns
+    /// - `Some(ResolvedSymbol::Local(index))` if resolved to a local symbol
+    /// - `Some(ResolvedSymbol::CrossFile(qualified_name))` if resolved to a cross-file symbol
+    /// - `None` if resolution fails at any point
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_receiver_path(
+        &self,
+        receiver_path: &ReceiverPath,
+        scope_path: &[String],
+        tracker: &TypeTracker,
+        scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
+        symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+    ) -> Option<ResolvedSymbol> {
+        // Validate path: must be non-empty and within depth limit
+        if receiver_path.steps.is_empty() || receiver_path.steps.len() > MAX_RESOLUTION_DEPTH {
+            return None;
+        }
+
+        let mut current_type: Option<String> = None;
+        let mut last_method_name: Option<&str> = None;
+        let mut last_name_was_class: bool = false;
+        let mut last_name_is_unresolved_callable: bool = false;
+        let mut pending_callable_return: Option<String> = None;
+
+        for step in &receiver_path.steps {
+            match step {
+                ReceiverStep::Name { value: name } => {
+                    if let Some(type_str) = tracker.type_of(scope_path, name) {
+                        // Found typed variable
+                        current_type = Some(type_str.to_string());
+                        last_name_was_class = is_class_in_scope(scope_path, name, symbol_kinds);
+                        last_name_is_unresolved_callable = false;
+                    } else {
+                        // Not a typed variable - could be function or class name
+                        // Store the name itself for return_type lookup in Call step
+                        current_type = Some(name.to_string());
+                        last_name_was_class = is_class_in_scope(scope_path, name, symbol_kinds);
+                        last_name_is_unresolved_callable = !last_name_was_class; // Function if not class
+                    }
+                    // Clear pending_callable_return - Name step starts fresh
+                    pending_callable_return = None;
+                }
+                ReceiverStep::Attr { value: attr_name } => {
+                    if let Some(ref class_type) = current_type {
+                        // Check if current_type is cross-file BEFORE continuing
+                        if lookup_symbol_index_in_scope_chain(scope_path, class_type, scoped_symbol_map)
+                            .is_none()
+                            || lookup_symbol_kind_in_scope_chain(scope_path, class_type, symbol_kinds)
+                                == Some(SymbolKind::Import)
+                        {
+                            // Not a local symbol - check cross-file
+                            if let Some(ref map) = cross_file_map {
+                                if let Some(qn) = map.resolve_to_qualified_name(class_type) {
+                                    return Some(ResolvedSymbol::CrossFile(qn));
+                                }
+                            }
+                            return None; // Can't resolve - type not found locally or cross-file
+                        }
+
+                        // Look up attribute type on current class
+                        if let Some(attr_type) = tracker.attribute_type_of(class_type, attr_name) {
+                            // Attribute type found - update current_type and clear last_method_name
+                            current_type = Some(attr_type.type_str.clone());
+                            last_method_name = None;
+                            pending_callable_return = TypeTracker::callable_return_type_of(attr_type);
+                        } else {
+                            // Attribute lookup failed - this is likely a method name
+                            // Keep current_type UNCHANGED for method call resolution
+                            last_method_name = Some(attr_name);
+                            pending_callable_return = None;
+                        }
+                        last_name_was_class = false;
+                        last_name_is_unresolved_callable = false;
+                    } else {
+                        return None; // Can't resolve without known type
+                    }
+                }
+                ReceiverStep::Call => {
+                    if let Some(ref class_type) = current_type {
+                        // Check if current_type is cross-file BEFORE continuing
+                        if !last_name_was_class
+                            && (lookup_symbol_index_in_scope_chain(
+                                scope_path,
+                                class_type,
+                                scoped_symbol_map,
+                            )
+                            .is_none()
+                                || lookup_symbol_kind_in_scope_chain(
+                                    scope_path,
+                                    class_type,
+                                    symbol_kinds,
+                                ) == Some(SymbolKind::Import))
+                        {
+                            // Not a local symbol - check cross-file
+                            if let Some(ref map) = cross_file_map {
+                                if let Some(qn) = map.resolve_to_qualified_name(class_type) {
+                                    return Some(ResolvedSymbol::CrossFile(qn));
+                                }
+                            }
+                            return None; // Can't resolve - type not found locally or cross-file
+                        }
+
+                        if pending_callable_return.is_some() && last_method_name.is_none() {
+                            // Callable attribute: use callable return type
+                            // Strip forward reference quotes if present
+                            current_type = pending_callable_return
+                                .take()
+                                .map(|s| strip_forward_ref_quotes(&s).to_string());
+                        } else if let Some(method_name) = last_method_name {
+                            // Method call: lookup method return type
+                            // Strip forward reference quotes (e.g., -> "Widget")
+                            current_type = tracker
+                                .method_return_type_of(class_type, method_name)
+                                .map(|s| strip_forward_ref_quotes(s).to_string());
+                        } else if last_name_was_class {
+                            // Constructor call: ClassName() returns the class type
+                            current_type = Some(class_type.to_string());
+                        } else if last_name_is_unresolved_callable {
+                            // Function call where name wasn't a typed variable
+                            // Strip forward reference quotes if present
+                            current_type = tracker
+                                .return_type_of(scope_path, class_type)
+                                .map(|s| strip_forward_ref_quotes(s).to_string());
+                        } else {
+                            // Edge case: fall back to return_type_of
+                            current_type = tracker
+                                .return_type_of(scope_path, class_type)
+                                .map(|s| strip_forward_ref_quotes(s).to_string());
+                        }
+                        // Clear all state flags at end of Call step
+                        last_method_name = None;
+                        last_name_was_class = false;
+                        last_name_is_unresolved_callable = false;
+                        pending_callable_return = None;
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        // Resolve final type to symbol
+        current_type.and_then(|t| {
+            self.resolve_type_to_symbol(&t, scope_path, scoped_symbol_map, symbol_kinds, cross_file_map)
+        })
+    }
+
+    /// Resolve a type name to a symbol using scope-aware lookup.
+    ///
+    /// Searches for the type in the local symbol map first (using scope chain),
+    /// then falls back to cross-file resolution if available.
+    fn resolve_type_to_symbol(
+        &self,
+        type_name: &str,
+        scope_path: &[String],
+        scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
+        symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+    ) -> Option<ResolvedSymbol> {
+        // Check if it's an import (cross-file reference)
+        if lookup_symbol_kind_in_scope_chain(scope_path, type_name, symbol_kinds)
+            == Some(SymbolKind::Import)
+        {
+            if let Some(map) = cross_file_map {
+                if let Some(qn) = map.resolve_to_qualified_name(type_name) {
+                    return Some(ResolvedSymbol::CrossFile(qn));
+                }
+            }
+            return None;
+        }
+
+        // Try local lookup with scope chain - only resolve to Class symbols (types)
+        // Variables and functions are not types, so we shouldn't return them here
+        if let Some(idx) = lookup_symbol_index_in_scope_chain(scope_path, type_name, scoped_symbol_map) {
+            if lookup_symbol_kind_in_scope_chain(scope_path, type_name, symbol_kinds)
+                == Some(SymbolKind::Class)
+            {
+                return Some(ResolvedSymbol::Local(idx));
+            }
+        }
+
+        // Fall back to cross-file
+        if let Some(map) = cross_file_map {
+            if let Some(qn) = map.resolve_to_qualified_name(type_name) {
+                return Some(ResolvedSymbol::CrossFile(qn));
+            }
+        }
+
+        None
+    }
+
+    /// Resolve a receiver to a symbol, using structured path if available.
+    ///
+    /// This method delegates to `resolve_receiver_path` when a structured path
+    /// is present, falling back to `resolve_receiver_to_symbol` for simple
+    /// string-based resolution.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_receiver_to_symbol_with_path(
+        &self,
+        receiver: &str,
+        receiver_path: Option<&ReceiverPath>,
+        scope_path: &[String],
+        tracker: Option<&TypeTracker>,
+        scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
+        symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+        symbol_name_to_index: &HashMap<&str, usize>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+    ) -> Option<ResolvedSymbol> {
+        // If we have a structured path and a tracker, use the new resolution
+        if let (Some(path), Some(tracker)) = (receiver_path, tracker) {
+            if let Some(result) =
+                self.resolve_receiver_path(path, scope_path, tracker, scoped_symbol_map, symbol_kinds, cross_file_map)
+            {
+                return Some(result);
+            }
+        }
+
+        // Fall back to simple string-based resolution
+        self.resolve_receiver_to_symbol(receiver, scope_path, tracker, symbol_name_to_index, cross_file_map)
     }
 }
 
@@ -3593,7 +3915,9 @@ impl PythonAdapter {
             .collect();
 
         // Convert symbols (filter entries without spans per [D01])
-        for symbol in &analysis.symbols {
+        // Track mapping from result index to analysis index for scope path computation
+        let mut result_to_analysis_idx: Vec<usize> = Vec::new();
+        for (analysis_idx, symbol) in analysis.symbols.iter().enumerate() {
             // A symbol without a declaration span can't be an edit target - skip it
             let Some(decl_span) = symbol.span else {
                 tracing::debug!(
@@ -3616,6 +3940,7 @@ impl PythonAdapter {
                 scope_index,
                 visibility: self.infer_visibility_from_name(&symbol.name),
             });
+            result_to_analysis_idx.push(analysis_idx);
         }
 
         // Convert references (filter entries without spans per [D01])
@@ -3689,6 +4014,23 @@ impl PythonAdapter {
             .map(|(idx, s)| (s.name.as_str(), idx))
             .collect();
 
+        // Build scope-aware symbol maps for dotted path resolution.
+        // These maps key by (scope_path, name) to handle shadowing correctly.
+        // The scope_path for each symbol is computed by walking up the scope chain.
+        // We use result_to_analysis_idx to get the correct analysis index for each result symbol.
+        let mut symbol_kinds: HashMap<(Vec<String>, String), SymbolKind> = HashMap::new();
+        let mut scoped_symbol_map: HashMap<(Vec<String>, String), usize> = HashMap::new();
+
+        for (result_idx, symbol) in result.symbols.iter().enumerate() {
+            // Get the corresponding analysis index for scope path computation
+            let analysis_idx = result_to_analysis_idx[result_idx];
+            // Build the scope_path for this symbol using the analysis index
+            let scope_path = self.build_scope_path_for_symbol(analysis, analysis_idx);
+            let key = (scope_path, symbol.name.clone());
+            symbol_kinds.insert(key.clone(), symbol.kind);
+            scoped_symbol_map.insert(key, result_idx);
+        }
+
         // Convert aliases from alias graph
         // Iterate through all source names and their aliases
         for source_name in analysis.alias_graph.source_names() {
@@ -3718,15 +4060,18 @@ impl PythonAdapter {
         // Convert signatures, modifiers, qualified names, and type params
         // Build a mapping from (function name, scope_path) to symbol_index for signature resolution
         // This approach handles nested functions and methods correctly
+        // We use result_to_analysis_idx to get the correct analysis index for scope path computation
         let func_to_symbol: HashMap<(String, Vec<String>), usize> = result
             .symbols
             .iter()
             .enumerate()
             .filter(|(_, s)| s.kind == SymbolKind::Function)
-            .map(|(idx, s)| {
-                // Construct scope_path from the scope hierarchy
-                let scope_path = self.build_scope_path_for_symbol(analysis, idx);
-                ((s.name.clone(), scope_path), idx)
+            .map(|(result_idx, s)| {
+                // Get the corresponding analysis index for scope path computation
+                let analysis_idx = result_to_analysis_idx[result_idx];
+                // Construct scope_path from the scope hierarchy using the analysis index
+                let scope_path = self.build_scope_path_for_symbol(analysis, analysis_idx);
+                ((s.name.clone(), scope_path), result_idx)
             })
             .collect();
 
@@ -3816,13 +4161,16 @@ impl PythonAdapter {
 
         // Convert attribute accesses
         for attr in &analysis.attribute_accesses {
-            // Try to resolve the receiver to a symbol via type inference
-            // This enables downstream refactors to know what class a method belongs to
-            // Resolution order: local map -> cross-file qualified name -> None
-            let resolved = self.resolve_receiver_to_symbol(
+            // Try to resolve the receiver to a symbol via type inference.
+            // Uses structured receiver_path when available for dotted path resolution,
+            // falling back to simple string-based resolution otherwise.
+            let resolved = self.resolve_receiver_to_symbol_with_path(
                 &attr.receiver,
+                attr.receiver_path.as_ref(),
                 &attr.scope_path,
                 type_tracker,
+                &scoped_symbol_map,
+                &symbol_kinds,
                 &symbol_name_to_index,
                 cross_file_map,
             );
@@ -3863,13 +4211,17 @@ impl PythonAdapter {
                 let idx = symbol_name_to_index.get(call.callee.as_str()).copied();
                 (idx, None)
             } else {
-                // Method call: resolve the receiver's type to find the class symbol
-                // This enables downstream refactors to know what class a method belongs to
+                // Method call: resolve the receiver's type to find the class symbol.
+                // Uses structured receiver_path when available for dotted path resolution,
+                // falling back to simple string-based resolution otherwise.
                 let resolved = call.receiver.as_ref().and_then(|receiver| {
-                    self.resolve_receiver_to_symbol(
+                    self.resolve_receiver_to_symbol_with_path(
                         receiver,
+                        call.receiver_path.as_ref(),
                         &call.scope_path,
                         type_tracker,
+                        &scoped_symbol_map,
+                        &symbol_kinds,
                         &symbol_name_to_index,
                         cross_file_map,
                     )
@@ -6036,6 +6388,342 @@ h.process()
             assert!(
                 method_call.is_some(),
                 "Should resolve method call locally with empty cross-file store"
+            );
+        }
+
+        // ====================================================================
+        // Dotted Path Resolution Tests
+        // ====================================================================
+
+        #[test]
+        fn resolve_receiver_path_self_handler_resolves_to_handler_type() {
+            // Integration test: self.handler resolves when attribute type is known.
+            // Fixture 11C-F01 pattern: class Service with handler: Handler attribute
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+class Service:
+    handler: Handler
+
+    def run(self):
+        self.handler.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Find the attribute access for "process" on "self.handler"
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            // The base_symbol_index should point to Handler (via dotted path resolution)
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, handler_idx,
+                "base_symbol_index should point to Handler class (resolved via self.handler)"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_depth_limit_exceeded_returns_none() {
+            // Unit test: Paths exceeding MAX_RESOLUTION_DEPTH=4 return None.
+            // Fixture 11C-F05 pattern: deep chain a.b.c.d.e.method()
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class A:
+    def __init__(self):
+        self.b = B()
+
+class B:
+    def __init__(self):
+        self.c = C()
+
+class C:
+    def __init__(self):
+        self.d = D()
+
+class D:
+    def __init__(self):
+        self.e = E()
+
+class E:
+    def method(self): pass
+
+a = A()
+a.b.c.d.e.method()  # 5 levels deep - exceeds limit
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The attribute access for "method" on the deep chain should NOT resolve
+            // because it exceeds the depth limit of 4
+            let method_attr = result.attributes.iter().find(|a| a.name == "method");
+            assert!(
+                method_attr.is_some(),
+                "Should have attribute access for 'method'"
+            );
+
+            let attr = method_attr.unwrap();
+            // Due to depth limit, should return None (no resolution)
+            assert!(
+                attr.base_symbol_index.is_none(),
+                "Deep chain should NOT resolve (exceeds depth limit)"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_empty_path_returns_none() {
+            // Unit test: Empty receiver path returns None.
+            let adapter = PythonAdapter::new();
+
+            // Build minimal test structures
+            let tracker = TypeTracker::new();
+            let scoped_symbol_map: HashMap<(Vec<String>, String), usize> = HashMap::new();
+            let symbol_kinds: HashMap<(Vec<String>, String), SymbolKind> = HashMap::new();
+
+            // Empty path
+            let empty_path = ReceiverPath { steps: vec![] };
+            let result = adapter.resolve_receiver_path(
+                &empty_path,
+                &["<module>".to_string()],
+                &tracker,
+                &scoped_symbol_map,
+                &symbol_kinds,
+                None,
+            );
+            assert!(result.is_none(), "Empty receiver path should return None");
+        }
+
+        #[test]
+        fn resolve_receiver_path_unknown_intermediate_type_returns_none() {
+            // Unit test: Unknown intermediate type in chain returns None.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+def unknown_factory():  # No return type annotation
+    return Handler()
+
+obj = unknown_factory()
+obj.process()  # Should NOT resolve - no return type
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The attribute access for "process" should not resolve
+            // because unknown_factory() has no return type annotation
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            assert!(
+                attr.base_symbol_index.is_none(),
+                "Should NOT resolve when intermediate type is unknown (no return annotation)"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_constructor_call_resolves() {
+            // Unit test: Handler().process() resolves via constructor semantics.
+            // Fixture 11C-F09 pattern
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+Handler().process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // The attribute access for "process" should resolve to Handler
+            // because Handler() is a constructor call returning Handler type
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, handler_idx,
+                "Constructor call Handler().process should resolve to Handler class"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_function_return_type_resolves() {
+            // Unit test: factory().create() resolves via function return type.
+            // Fixture 11C-F08 pattern
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Product:
+    def create(self) -> "Widget":
+        return Widget()
+
+class Widget:
+    def run(self): pass
+
+def factory() -> Product:
+    return Product()
+
+factory().create().run()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Widget class symbol
+            let widget_idx = result.symbols.iter().position(|s| s.name == "Widget");
+            assert!(widget_idx.is_some(), "Should have Widget symbol");
+
+            // The attribute access for "run" should resolve to Widget
+            // via factory() -> Product -> create() -> Widget
+            let run_attr = result.attributes.iter().find(|a| a.name == "run");
+            assert!(
+                run_attr.is_some(),
+                "Should have attribute access for 'run'"
+            );
+
+            let attr = run_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, widget_idx,
+                "Chained call factory().create().run() should resolve to Widget"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_single_element_resolves_type() {
+            // Unit test: Single-element path [Name("obj")] resolves obj's type.
+            // Fixture 11C-F12 pattern
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+def use_handler():
+    obj: Handler = Handler()
+    obj.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // The attribute access for "process" on "obj" should resolve
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, handler_idx,
+                "Single-element path should resolve via type annotation"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_simple_receivers_still_work() {
+            // Regression test: Simple receivers continue to work after dotted path changes.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Handler:
+    def process(self): pass
+
+h = Handler()
+h.process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // Simple receiver "h" should still resolve
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, handler_idx,
+                "Simple receiver should continue to resolve (regression test)"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_unknown_class_constructor_returns_none() {
+            // Unit test: Unknown class MaybeClass().method() returns None.
+            // When the class name is not in symbol_kinds, resolution should fail.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+# MaybeClass is not defined in this file
+obj = MaybeClass()
+obj.method()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The attribute access for "method" should not resolve
+            // because MaybeClass is not defined (not in symbol_kinds as a Class)
+            let method_attr = result.attributes.iter().find(|a| a.name == "method");
+            assert!(
+                method_attr.is_some(),
+                "Should have attribute access for 'method'"
+            );
+
+            let attr = method_attr.unwrap();
+            assert!(
+                attr.base_symbol_index.is_none(),
+                "Unknown class constructor should NOT resolve"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_cross_file_type_mid_chain() {
+            // Unit test: Cross-file type mid-chain handling.
+            // When the type is an Import, we should return CrossFile or None.
+            let adapter = PythonAdapter::new();
+            let content = r#"
+from external_module import ExternalHandler
+
+class Service:
+    handler: ExternalHandler
+
+    def run(self):
+        self.handler.process()  # ExternalHandler is imported, not local
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The attribute access for "process" should either:
+            // 1. Not resolve (base_symbol_index = None) because ExternalHandler is cross-file
+            // 2. Have a cross-file qualified name
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            // Without a CrossFileSymbolMap, cross-file types return None
+            // (they can't be resolved to a local index)
+            assert!(
+                attr.base_symbol_index.is_none() || attr.base_symbol_qualified_name.is_some(),
+                "Cross-file type should return None for local index or have qualified name"
             );
         }
 

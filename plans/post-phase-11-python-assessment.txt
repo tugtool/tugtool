@@ -1,3 +1,17 @@
+Here's the point about tug and its aspirations: I am trying to make the *world's best ever refactoring engine*. Period. I want tug to be hands-down the best. I have all the time on my hands that is necessary. Worries about scope are moot.
+
+So, search the web. Compare our post-phase-11 state against the current leading python refactoring libraries (rope, bowler, ruff).
+
+Where and how do we stack up in terms of FactsStore capture, modeling python code, and the raw capability to apply refactorings—understanding full well that we don't have those refactorings coded up yet. I'm interested in understanding this question from the point of view of language modeling *fundamentals*.
+
+I understand that dynamic coding patterns are beyond our ken, so look from the perspective of a *static* code analysis engine.
+
+Now, I asked this question *before* we implemented the phase-11 work. See the answers below. Now, I want a similar report that's based on the *actual* code we have right now in the codebase. I want the report you produce to be a *major driving factor* in the phase 12 work we will begin to plan for now.
+
+
+-----
+
+
 Below is a **web‑informed, fundamentals‑focused comparison** of post‑Phase‑11 tug vs. rope, bowler, and ruff. I’ll keep it grounded in modeling capability (not yet the breadth of refactorings).
 
 ## What tug will have after Phase 11 (modeling fundamentals)
