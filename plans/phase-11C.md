@@ -1505,6 +1505,112 @@ class Outer:
 
 ---
 
+#### Step 0.5: Fix Testing Infrastructure and Analyzer Integration {#step-0-5}
+
+**BLOCKING:** This step MUST be completed before any other Phase 11C work proceeds. The current implementation has critical defects that make all Phase 11C tests unreliable.
+
+**Commit:** `fix(python): correct TypeTracker call order in analyzer and add integration tests`
+
+**References:** [D02] Attribute Type Tracking, (#inputs-outputs)
+
+**Problem Summary:**
+
+A complete audit revealed three critical issues that undermine all Phase 11C testing:
+
+1. **analyzer.rs does NOT call `process_instance_attributes`** - The method exists in TypeTracker but is never invoked in the real analyzer code path (`analyze_files` and `build_type_tracker`).
+
+2. **analyzer.rs has WRONG call order** - It calls `process_assignments` before `process_annotations`, but the correct order (documented in `analyze_types_from_analysis`) is:
+   - annotations (highest priority)
+   - instance_attributes
+   - assignments
+   - resolve_types
+
+3. **ALL 49 tests in type_tracker.rs bypass the real code path** - They all create `TypeTracker::new()` directly and call methods manually instead of going through `analyze_file`. This means the tests pass even though the real code path is broken.
+
+4. **ZERO integration tests verify Phase 11C features end-to-end** - No test parses actual Python code with `self.attr = Handler()` patterns and verifies that `analyze_file` produces correct attribute types in the TypeTracker.
+
+5. **The function `analyze_types_from_analysis` has correct order but is NEVER USED** - analyzer.rs duplicates the logic incorrectly instead of calling this function.
+
+**Specific Code Locations:**
+
+**Location 1: `analyzer.rs` lines ~1137-1139 in `analyze_files`:**
+```rust
+// CURRENT (WRONG - missing process_instance_attributes, wrong order):
+tracker.process_assignments(&cst_assignments);
+tracker.process_annotations(&cst_annotations);
+tracker.resolve_types();
+
+// CORRECT (matches analyze_types_from_analysis):
+tracker.process_annotations(&cst_annotations);
+tracker.process_instance_attributes(&cst_assignments);
+tracker.process_assignments(&cst_assignments);
+tracker.resolve_types();
+```
+
+**Location 2: `analyzer.rs` lines ~1504-1506 in `build_type_tracker`:**
+Same fix needed - wrong order and missing `process_instance_attributes` call.
+
+**Tasks:**
+
+Phase A: Fix the Analyzer Code
+- [x] Fix `analyze_files` method in `analyzer.rs` (~line 1137-1139):
+  - [x] Change order: call `process_annotations` BEFORE `process_assignments`
+  - [x] Add missing call: `tracker.process_instance_attributes(&cst_assignments)` between annotations and assignments
+- [x] Fix `build_type_tracker` function in `analyzer.rs` (~line 1504-1506):
+  - [x] Same fix: correct order and add `process_instance_attributes` call
+- [x] Consider refactoring: have analyzer.rs call `analyze_types_from_analysis` instead of duplicating logic (decision: keep both, document difference - they serve different purposes)
+
+Phase B: Add Integration Tests That Use Real Code Path
+- [x] Add integration test `test_analyze_file_tracks_instance_attribute_types`:
+  - [x] Parse Python code: `class Service: def __init__(self): self.handler = Handler()`
+  - [x] Call `analyze_file` (the REAL code path)
+  - [x] Extract TypeTracker from result
+  - [x] Assert `attribute_type_of("Service", "handler")` returns `Some("Handler")`
+- [x] Add integration test `test_analyze_file_class_annotation_precedence`:
+  - [x] Parse Python code with both class-level annotation and `__init__` assignment
+  - [x] Verify annotation takes precedence (not assignment)
+- [x] Add integration test `test_analyze_file_type_propagation`:
+  - [x] Parse: `def setup(h: Handler): self.handler = h`
+  - [x] Verify `self.handler` has type "Handler" via propagation
+
+Phase C: Rename/Consolidate
+- [x] Rename `analyze_types_from_analysis` to `build_type_tracker` (or keep both and document difference) - DECISION: Removed `analyze_types_from_analysis` entirely; `build_type_tracker` in analyzer.rs is the single implementation
+- [x] Document in rustdoc that analyzer.rs uses the correct processing order
+
+**Tests:**
+
+Integration tests (MUST use `analyze_file`, NOT `TypeTracker::new()`):
+- [x] `test_analyze_file_tracks_instance_attribute_types` - Parse `self.handler = Handler()`, verify `attribute_type_of` works
+- [x] `test_analyze_file_class_annotation_overrides_init` - Class annotation `handler: Handler` takes precedence over `self.handler = create()`
+- [x] `test_analyze_file_propagates_parameter_types` - `self.data = source` where `source: Logger` propagates type
+- [x] `test_analyze_file_multiple_attributes` - Multiple `self.x = ...` patterns all tracked
+
+Regression tests (verify existing behavior not broken):
+- [x] Verify all 49 existing type_tracker.rs tests still pass
+- [x] Verify analyzer unit tests still pass
+- [x] Verify Temporale fixture tests still pass (via workspace test run)
+
+**Checkpoint:**
+- [x] Fix applied to `analyze_files` in analyzer.rs
+- [x] Fix applied to `build_type_tracker` in analyzer.rs
+- [x] `cargo nextest run -p tugtool-python type_tracker` - all existing tests pass (49 tests)
+- [x] `cargo nextest run -p tugtool-python analyzer` - new integration tests pass (239 tests, +4 new)
+- [x] `cargo nextest run --workspace` - no regressions (1708 tests passed)
+- [x] Manual verification: analyze a Python file with `self.attr = Handler()` and confirm TypeTracker contains the attribute type (verified via integration test)
+
+**Acceptance Criteria:**
+- [x] The REAL code path (`analyze_file` -> `analyze_files` -> TypeTracker methods) correctly tracks instance attribute types
+- [x] At least 4 new integration tests verify the real code path (not just unit tests with `TypeTracker::new()`)
+- [x] Call order in analyzer.rs matches the documented correct order in `analyze_types_from_analysis`
+- [x] `process_instance_attributes` is called in the real code path
+
+**Rollback:**
+- Revert commit
+
+**LOC Estimate:** ~120 (fixes ~20, integration tests ~100)
+
+---
+
 #### Step 1: Add Attribute Type Infrastructure to TypeTracker {#step-1}
 
 **Commit:** `feat(python): add attribute_types map and attribute_type_of method`
@@ -1593,24 +1699,24 @@ class Outer:
 **References:** [D02] Attribute Type Tracking
 
 **Tasks:**
-- [ ] Implement `TypeTracker.process_instance_attributes(assignments: &[AssignmentInfo])`
-- [ ] Filter for assignments where `is_self_attribute: true`
-- [ ] Detect `__init__` context from scope_path (ends with `__init__`)
-- [ ] Extract class name from scope_path (element before `__init__`)
-- [ ] Apply collection rules: annotation > constructor > propagation
-- [ ] Store AttributeTypeInfo (type_str + optional TypeNode) for attribute_types entries
-- [ ] Wire into `analyze_types_from_analysis`
+- [x] Implement `TypeTracker.process_instance_attributes(assignments: &[AssignmentInfo])`
+- [x] Filter for assignments where `is_self_attribute: true`
+- [x] Detect `__init__` context from scope_path (ends with `__init__`)
+- [x] Extract class name from scope_path (element before `__init__`)
+- [x] Apply collection rules: annotation > constructor > propagation
+- [x] Store AttributeTypeInfo (type_str + optional TypeNode) for attribute_types entries
+- [x] Wire into `analyze_types_from_analysis`
 
 **Tests:**
-- [ ] Unit: `self.handler = Handler()` in `__init__` -> attribute type_str is "Handler"
-- [ ] Unit: `self.handler: Handler = create()` -> annotation takes precedence
-- [ ] Unit: `self.data = other_var` propagates type_str of `other_var`
-- [ ] Unit: Non-`__init__` self assignments with annotation still recorded
-- [ ] Integration: Full analysis produces correct attribute types
+- [x] Unit: `self.handler = Handler()` in `__init__` -> attribute type_str is "Handler"
+- [x] Unit: `self.handler: Handler = create()` -> annotation takes precedence
+- [x] Unit: `self.data = other_var` propagates type_str of `other_var`
+- [x] Unit: Non-`__init__` self assignments with annotation still recorded
+- [x] Integration: Full analysis produces correct attribute types
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python type_tracker`
-- [ ] `cargo nextest run -p tugtool-python attribute`
+- [x] `cargo nextest run -p tugtool-python type_tracker`
+- [x] `cargo nextest run -p tugtool-python attribute`
 
 **Rollback:**
 - Revert commit
@@ -1647,6 +1753,60 @@ class Outer:
 - Revert commit
 
 **LOC Estimate:** ~70
+
+---
+
+#### Step 1e: Remove Dead Code for Obsolete Python Worker {#step-1e}
+
+**Commit:** `chore: remove obsolete Python worker infrastructure`
+
+**References:** CLAUDE.md (Architecture section describes native Rust CST parser)
+
+**Context:** The old Python worker infrastructure was designed for subprocess-based LibCST parsing via IPC. This was replaced with native Rust CST parsing in `tugtool-python-cst`. The worker code was never cleaned up and is now dead code.
+
+**Tasks:**
+- [ ] Remove `WorkerInfo` struct from `session.rs` (lines ~294-314)
+- [ ] Remove `register_worker()` method from `Session`
+- [ ] Remove `get_worker()` method from `Session`
+- [ ] Remove `is_worker_running()` method from `Session`
+- [ ] Remove `unregister_worker()` method from `Session`
+- [ ] Remove `cleanup_stale_workers()` method from `Session`
+- [ ] Remove `list_workers()` method from `Session`
+- [ ] Remove `clean_workers()` method from `Session`
+- [ ] Remove `workers_dir()` method from `Session`
+- [ ] Remove "Worker Process Tracking" section comment from `session.rs`
+- [ ] Remove `workers` field from `SessionStatus` struct
+- [ ] Remove `is_process_running()` helper function from `session.rs`
+- [ ] Remove `kill_process()` helper function from `session.rs`
+- [ ] Remove worker-related tests from `session.rs` (`test_worker_registration`, `test_orphan_pid_cleanup`, `test_register_worker_creates_pid_file`, `test_register_worker_atomic_no_orphan_temp`, `test_concurrent_worker_registration`)
+- [ ] Remove worker hash computation from `SessionVersion::compute()` if present
+- [ ] Remove "Worker process tracking" from module docstring in `session.rs`
+- [ ] Remove "workers" from subdirs array in `ensure_session_structure()`
+- [ ] Remove `WorkerError` variant from `TugError` enum in `error.rs`
+- [ ] Remove `TugError::WorkerError` mapping in `From<&TugError> for OutputErrorCode`
+- [ ] Remove `--workers` flag from `Clean` command in `main.rs`
+- [ ] Update `execute_clean()` to remove worker handling logic
+- [ ] Remove `workers_cleaned` field from clean output JSON
+- [ ] Remove test `worker_error_maps_to_exit_code_10` from `main.rs`
+- [ ] Remove test `parse_clean_workers` from `main.rs`
+- [ ] Remove `WorkerInfo` from imports in `api_surface.rs`
+
+**Tests to verify removal:**
+- [ ] Verify `cargo nextest run --workspace` passes (all tests compile and run)
+- [ ] Verify `cargo clippy --workspace` has no warnings about unused code
+- [ ] Verify `cargo build --workspace` succeeds
+- [ ] Verify `tug clean --help` no longer shows `--workers` flag
+- [ ] Verify `tug session status` JSON output no longer includes `workers` field
+
+**Checkpoint:**
+- [ ] `cargo nextest run --workspace`
+- [ ] `cargo clippy --workspace -- -D warnings`
+- [ ] `cargo build --workspace`
+
+**Rollback:**
+- Revert commit
+
+**LOC Estimate:** -350 (removal)
 
 ---
 
@@ -1857,11 +2017,13 @@ class Outer:
 
 | Finding | Severity | Steps | LOC Estimate |
 |---------|----------|-------|--------------|
+| **BLOCKING: Analyzer integration broken** | **CRITICAL** | **0.5** | **~120** |
 | F3: Receiver limited to simple names | MEDIUM | 1, 1a, 1b, 1c, 1d, 2, 3, 4 | ~750 |
 | F1: Type inference for symbol resolution | MEDIUM | 1, 1a, 1b, 1c, 1d, 3, 4 (included) | included above |
 | F2: Nested class tracking verification | LOW | 5 | ~40 |
+| Dead code: Obsolete Python worker | HYGIENE | 1e | -350 |
 | Documentation | - | 6 | ~50 |
-| **Total** | | | **~840** |
+| **Total** | | | **~610** |
 
 ---
 
@@ -1871,6 +2033,8 @@ class Outer:
 
 #### Phase Exit Criteria {#exit-criteria}
 
+- [ ] **BLOCKING: Analyzer correctly calls TypeTracker methods** (Step 0.5 complete)
+- [ ] **BLOCKING: Integration tests verify real code path** (Step 0.5 complete)
 - [ ] `resolve_receiver_to_symbol("self.handler")` works when attribute type is known
 - [ ] `resolve_receiver_to_symbol` for call expressions works when return type is annotated
 - [ ] Dotted call chains resolve without false positives (`factory().create().process()`)
@@ -1878,6 +2042,7 @@ class Outer:
 - [ ] All existing tests pass (no regression)
 - [ ] Temporale integration tests pass
 - [ ] Documentation updated with supported patterns and limitations
+- [ ] Obsolete Python worker dead code removed (no WorkerInfo, no --workers flag)
 
 **Acceptance tests:**
 - [ ] Unit: All new resolution tests pass (Steps 1-5)
@@ -1886,6 +2051,13 @@ class Outer:
 - [ ] Regression: Existing resolution behavior unchanged
 
 #### Milestones {#milestones}
+
+**Milestone M00: Testing Infrastructure Fix (BLOCKING)** {#m00-testing-fix}
+- [ ] `process_instance_attributes` called in analyzer.rs `analyze_files`
+- [ ] `process_instance_attributes` called in analyzer.rs `build_type_tracker`
+- [ ] Call order fixed: annotations -> instance_attributes -> assignments -> resolve_types
+- [ ] Integration tests verify real code path produces correct attribute types
+- [ ] No regressions in existing test suite
 
 **Milestone M01: Attribute Type Collection** {#m01-attr-types}
 - [ ] TypeTracker tracks instance attribute types from `__init__`
@@ -1918,6 +2090,12 @@ class Outer:
 **Milestone M06: Nested Class Handling** {#m06-nested}
 - [ ] Scope tracking uses consistent scope_path across collectors
 - [ ] Inner class scope paths are accurate
+
+**Milestone M07: Dead Code Removal** {#m07-dead-code}
+- [ ] Obsolete Python worker infrastructure removed from session.rs
+- [ ] WorkerError removed from error.rs
+- [ ] --workers flag removed from CLI
+- [ ] No dead code warnings from clippy
 
 #### Roadmap / Follow-ons {#roadmap}
 

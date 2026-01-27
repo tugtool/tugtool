@@ -226,19 +226,104 @@ impl TypeTracker {
     /// Process instance attribute assignments from `__init__` methods.
     ///
     /// This collects attribute types from `self.attr = ...` patterns in `__init__`
-    /// and populates the `attribute_types` map.
+    /// and populates the `attribute_types` map. The collection rules are:
+    ///
+    /// 1. **Class-level annotation**: Already handled by `process_annotations`
+    /// 2. **Instance annotation**: `self.attr: Type = ...` (has annotation)
+    /// 3. **Constructor assignment**: `self.attr = TypeName()` in `__init__`
+    /// 4. **Assignment propagation**: `self.attr = other_var` in `__init__`
+    ///
+    /// Annotations have highest precedence - if an attribute already has an
+    /// annotation-based type from `process_annotations`, we do NOT override it.
     ///
     /// # Arguments
     /// - `assignments`: Assignment information from CST analysis
-    ///
-    /// Note: This is a placeholder implementation. The actual collection logic
-    /// will be implemented in Step 1c after Step 1a adds the necessary fields
-    /// to AssignmentInfo for detecting `self.attr = ...` patterns.
-    #[allow(unused_variables)]
     pub fn process_instance_attributes(&mut self, assignments: &[AssignmentInfo]) {
-        // Empty implementation for now.
-        // Step 1a will add is_self_attribute and attribute_name fields to AssignmentInfo.
-        // Step 1c will implement the actual collection logic here.
+        for assignment in assignments {
+            // Only process self-attribute assignments
+            if !assignment.is_self_attribute {
+                continue;
+            }
+
+            let attr_name = match &assignment.attribute_name {
+                Some(name) => name.clone(),
+                None => continue, // Should not happen if is_self_attribute is true
+            };
+
+            // Extract class name from scope_path.
+            // For `__init__` methods, scope_path is like ["<module>", "MyClass", "__init__"]
+            // The class name is the element before `__init__`.
+            // For methods outside `__init__`, we still want to track if there's an annotation.
+            let scope_path = &assignment.scope_path;
+            if scope_path.len() < 2 {
+                continue; // Need at least ["<module>", "ClassName"] or more
+            }
+
+            // Check if we're in __init__ context (for constructor/propagation inference)
+            let in_init = scope_path.last().map(|s| s == "__init__").unwrap_or(false);
+
+            // Get class name - it's the second-to-last element if in __init__,
+            // or we need to find it based on context
+            let class_name = if in_init && scope_path.len() >= 2 {
+                // ["<module>", "MyClass", "__init__"] -> "MyClass"
+                scope_path.get(scope_path.len() - 2).cloned()
+            } else if scope_path.len() >= 2 {
+                // For non-__init__ methods like ["<module>", "MyClass", "other_method"]
+                // The class name is still second-to-last
+                scope_path.get(scope_path.len() - 2).cloned()
+            } else {
+                None
+            };
+
+            let class_name = match class_name {
+                Some(name) => name,
+                None => continue,
+            };
+
+            let key = (class_name.clone(), attr_name);
+
+            // Check if this attribute already has a type from annotations.
+            // Annotations have highest precedence - don't override them.
+            if self.attribute_types.contains_key(&key) {
+                continue;
+            }
+
+            // Only infer types from __init__ assignments (constructor or propagation)
+            if !in_init {
+                // Outside __init__, we only record if there's an annotation (already handled above)
+                // or if this assignment has an explicit inferred_type from constructor pattern
+                if let Some(ref type_name) = assignment.inferred_type {
+                    // Constructor pattern: self.handler = Handler()
+                    let attr_info = AttributeTypeInfo {
+                        type_str: type_name.clone(),
+                        type_node: None, // No TypeNode for inferred types
+                    };
+                    self.attribute_types.insert(key, attr_info);
+                }
+                continue;
+            }
+
+            // In __init__, try to infer type from the assignment
+            let inferred_type = if let Some(ref type_name) = assignment.inferred_type {
+                // Constructor pattern: self.handler = Handler()
+                Some(type_name.clone())
+            } else if let Some(ref rhs_name) = assignment.rhs_name {
+                // Propagation pattern: self.data = other_var
+                // Look up the type of other_var in the current scope
+                self.lookup_type_in_scope_chain(&assignment.scope_path, rhs_name)
+            } else {
+                // Unknown type source - can't infer
+                None
+            };
+
+            if let Some(type_str) = inferred_type {
+                let attr_info = AttributeTypeInfo {
+                    type_str,
+                    type_node: None, // No TypeNode for inferred types
+                };
+                self.attribute_types.insert(key, attr_info);
+            }
+        }
     }
 
     /// Resolve all types through propagation.
@@ -539,25 +624,6 @@ impl Default for TypeTracker {
 }
 
 // ============================================================================
-// Integration with Analyzer
-// ============================================================================
-
-/// Analyze a file for type information using combined analysis result.
-///
-/// This is an optimized version that uses the `get_analysis` combined result
-/// to avoid multiple IPC round-trips.
-pub fn analyze_types_from_analysis(
-    assignments: &[AssignmentInfo],
-    annotations: &[AnnotationInfo],
-) -> TypeTracker {
-    let mut tracker = TypeTracker::new();
-    tracker.process_assignments(assignments);
-    tracker.process_annotations(annotations);
-    tracker.resolve_types();
-    tracker
-}
-
-// ============================================================================
 // Method Resolution
 // ============================================================================
 
@@ -833,6 +899,8 @@ mod tests {
                 span: Some(SpanInfo { start: 0, end: 1 }),
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }
         }
 
@@ -1347,6 +1415,8 @@ mod tests {
                 span: Some(SpanInfo { start: 0, end: 1 }),
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }
         }
 
@@ -1790,6 +1860,387 @@ mod tests {
         }
     }
 
+    mod instance_attribute_tests {
+        use super::*;
+        use crate::types::{AnnotationInfo, SpanInfo};
+
+        /// Helper to create a self-attribute assignment for testing.
+        fn make_self_attr_assignment(
+            attr_name: &str,
+            scope_path: Vec<&str>,
+            inferred_type: Option<&str>,
+            rhs_name: Option<&str>,
+        ) -> AssignmentInfo {
+            AssignmentInfo {
+                target: format!("self.{}", attr_name),
+                scope_path: scope_path.into_iter().map(String::from).collect(),
+                type_source: if inferred_type.is_some() {
+                    "constructor".to_string()
+                } else if rhs_name.is_some() {
+                    "variable".to_string()
+                } else {
+                    "unknown".to_string()
+                },
+                inferred_type: inferred_type.map(String::from),
+                rhs_name: rhs_name.map(String::from),
+                callee_name: None,
+                span: Some(SpanInfo { start: 0, end: 1 }),
+                line: Some(1),
+                col: Some(1),
+                is_self_attribute: true,
+                attribute_name: Some(attr_name.to_string()),
+            }
+        }
+
+        /// Helper to create a regular assignment (not self.attr).
+        fn make_assignment(
+            target: &str,
+            scope_path: Vec<&str>,
+            inferred_type: Option<&str>,
+        ) -> AssignmentInfo {
+            AssignmentInfo {
+                target: target.to_string(),
+                scope_path: scope_path.into_iter().map(String::from).collect(),
+                type_source: if inferred_type.is_some() {
+                    "constructor".to_string()
+                } else {
+                    "unknown".to_string()
+                },
+                inferred_type: inferred_type.map(String::from),
+                rhs_name: None,
+                callee_name: None,
+                span: Some(SpanInfo { start: 0, end: 1 }),
+                line: Some(1),
+                col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
+            }
+        }
+
+        #[test]
+        fn self_handler_equals_handler_in_init() {
+            // Test: self.handler = Handler() in __init__ -> attribute type_str is "Handler"
+            let mut tracker = TypeTracker::new();
+
+            let assignments = vec![make_self_attr_assignment(
+                "handler",
+                vec!["<module>", "Service", "__init__"],
+                Some("Handler"), // inferred_type from constructor
+                None,
+            )];
+
+            tracker.process_instance_attributes(&assignments);
+
+            let result = tracker.attribute_type_of("Service", "handler");
+            assert!(result.is_some(), "attribute_type_of should find the attribute");
+            assert_eq!(result.unwrap().type_str, "Handler");
+        }
+
+        #[test]
+        fn annotation_takes_precedence_over_inferred() {
+            // Test: self.handler: Handler = create() -> annotation takes precedence
+            let mut tracker = TypeTracker::new();
+
+            // First, add the class-level annotation (this would be done by process_annotations)
+            let annotations = vec![AnnotationInfo {
+                name: "handler".to_string(),
+                type_str: "Handler".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "attribute".to_string(),
+                scope_path: vec!["<module>".to_string(), "Service".to_string()],
+                span: None,
+                line: Some(2),
+                col: Some(5),
+                type_node: None,
+            }];
+            tracker.process_annotations(&annotations);
+
+            // Now process an __init__ assignment that would infer a different type
+            // (e.g., from a function call that returns "SomeOtherType")
+            let assignments = vec![make_self_attr_assignment(
+                "handler",
+                vec!["<module>", "Service", "__init__"],
+                Some("SomeOtherType"), // Different type from annotation
+                None,
+            )];
+
+            tracker.process_instance_attributes(&assignments);
+
+            // Annotation should win
+            let result = tracker.attribute_type_of("Service", "handler");
+            assert!(result.is_some());
+            assert_eq!(
+                result.unwrap().type_str, "Handler",
+                "annotation should take precedence over inferred type"
+            );
+        }
+
+        #[test]
+        fn self_data_equals_other_var_propagates_type() {
+            // Test: self.data = other_var propagates type_str of other_var
+            let mut tracker = TypeTracker::new();
+
+            // First, set up the type of other_var (would be done by process_annotations/assignments)
+            let annotations = vec![AnnotationInfo {
+                name: "source".to_string(),
+                type_str: "DataSource".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "parameter".to_string(),
+                scope_path: vec![
+                    "<module>".to_string(),
+                    "Service".to_string(),
+                    "__init__".to_string(),
+                ],
+                span: None,
+                line: Some(3),
+                col: Some(5),
+                type_node: None,
+            }];
+            tracker.process_annotations(&annotations);
+
+            // Now process the self.data = source assignment
+            let assignments = vec![make_self_attr_assignment(
+                "data",
+                vec!["<module>", "Service", "__init__"],
+                None,            // No direct inferred type
+                Some("source"),  // RHS is the variable 'source'
+            )];
+
+            tracker.process_instance_attributes(&assignments);
+
+            // The type should be propagated from 'source'
+            let result = tracker.attribute_type_of("Service", "data");
+            assert!(result.is_some(), "attribute_type_of should find the attribute");
+            assert_eq!(
+                result.unwrap().type_str, "DataSource",
+                "type should be propagated from source variable"
+            );
+        }
+
+        #[test]
+        fn non_init_self_assignment_with_inferred_type_recorded() {
+            // Test: Non-__init__ self assignments with inferred_type still recorded
+            // When we have self.attr = SomeClass() outside of __init__ but still have
+            // a direct constructor call, it should be recorded.
+            let mut tracker = TypeTracker::new();
+
+            let assignments = vec![make_self_attr_assignment(
+                "lazy_handler",
+                vec!["<module>", "Service", "get_handler"], // Not in __init__
+                Some("LazyHandler"), // Has inferred type from constructor
+                None,
+            )];
+
+            tracker.process_instance_attributes(&assignments);
+
+            // Should be recorded because it has an explicit inferred_type
+            let result = tracker.attribute_type_of("Service", "lazy_handler");
+            assert!(result.is_some(), "non-__init__ self assignment with inferred_type should be recorded");
+            assert_eq!(result.unwrap().type_str, "LazyHandler");
+        }
+
+        #[test]
+        fn non_init_self_assignment_without_type_not_recorded() {
+            // When self.attr = something() outside of __init__ and no inferred_type,
+            // the attribute should NOT be recorded (we only infer in __init__).
+            let mut tracker = TypeTracker::new();
+
+            let assignments = vec![make_self_attr_assignment(
+                "dynamic_data",
+                vec!["<module>", "Service", "some_method"], // Not in __init__
+                None, // No inferred type
+                Some("unknown_var"), // RHS is a variable
+            )];
+
+            tracker.process_instance_attributes(&assignments);
+
+            // Should NOT be recorded because we're not in __init__ and no direct inferred_type
+            let result = tracker.attribute_type_of("Service", "dynamic_data");
+            assert!(result.is_none(), "non-__init__ self assignment without inferred_type should not be recorded");
+        }
+
+        #[test]
+        fn multiple_attributes_on_same_class() {
+            // Test that we can track multiple attributes on the same class
+            let mut tracker = TypeTracker::new();
+
+            let assignments = vec![
+                make_self_attr_assignment(
+                    "handler",
+                    vec!["<module>", "Service", "__init__"],
+                    Some("Handler"),
+                    None,
+                ),
+                make_self_attr_assignment(
+                    "logger",
+                    vec!["<module>", "Service", "__init__"],
+                    Some("Logger"),
+                    None,
+                ),
+            ];
+
+            tracker.process_instance_attributes(&assignments);
+
+            assert_eq!(
+                tracker.attribute_type_of("Service", "handler").unwrap().type_str,
+                "Handler"
+            );
+            assert_eq!(
+                tracker.attribute_type_of("Service", "logger").unwrap().type_str,
+                "Logger"
+            );
+        }
+
+        #[test]
+        fn same_attribute_on_different_classes() {
+            // Test that attributes with the same name on different classes are tracked separately
+            let mut tracker = TypeTracker::new();
+
+            let assignments = vec![
+                make_self_attr_assignment(
+                    "handler",
+                    vec!["<module>", "ServiceA", "__init__"],
+                    Some("HandlerA"),
+                    None,
+                ),
+                make_self_attr_assignment(
+                    "handler",
+                    vec!["<module>", "ServiceB", "__init__"],
+                    Some("HandlerB"),
+                    None,
+                ),
+            ];
+
+            tracker.process_instance_attributes(&assignments);
+
+            assert_eq!(
+                tracker.attribute_type_of("ServiceA", "handler").unwrap().type_str,
+                "HandlerA"
+            );
+            assert_eq!(
+                tracker.attribute_type_of("ServiceB", "handler").unwrap().type_str,
+                "HandlerB"
+            );
+        }
+
+        #[test]
+        fn non_self_attribute_assignment_ignored() {
+            // Test that regular assignments (not self.attr) are ignored
+            let mut tracker = TypeTracker::new();
+
+            let assignments = vec![make_assignment(
+                "local_var",
+                vec!["<module>", "Service", "__init__"],
+                Some("SomeType"),
+            )];
+
+            tracker.process_instance_attributes(&assignments);
+
+            // No attribute should be recorded (this was not a self.attr assignment)
+            assert!(tracker.attribute_type_of("Service", "local_var").is_none());
+        }
+
+        #[test]
+        fn integration_full_analysis_produces_correct_attribute_types() {
+            // Integration test: Tests the complete pipeline with correct call order
+            // Tests: annotations + instance attributes + propagation
+            //
+            // Note: The REAL code path uses analyze_files() in analyzer.rs, which
+            // calls TypeTracker methods in this same order. This unit test verifies
+            // the TypeTracker methods work correctly when called in the right order.
+
+            // Simulate the data that would come from CST analysis for:
+            //
+            // class Handler:
+            //     def process(self): pass
+            //
+            // class Service:
+            //     handler: Handler  # Class-level annotation
+            //
+            //     def __init__(self, logger):
+            //         self.handler = Handler()  # Constructor assignment
+            //         self.logger = logger      # Propagation from parameter
+            //
+            //     def run(self):
+            //         self.handler.process()
+
+            let annotations = vec![
+                // Class-level annotation: handler: Handler
+                AnnotationInfo {
+                    name: "handler".to_string(),
+                    type_str: "Handler".to_string(),
+                    annotation_kind: "simple".to_string(),
+                    source_kind: "attribute".to_string(),
+                    scope_path: vec!["<module>".to_string(), "Service".to_string()],
+                    span: None,
+                    line: Some(5),
+                    col: Some(5),
+                    type_node: None,
+                },
+                // Parameter annotation for logger (to test propagation)
+                AnnotationInfo {
+                    name: "logger".to_string(),
+                    type_str: "Logger".to_string(),
+                    annotation_kind: "simple".to_string(),
+                    source_kind: "parameter".to_string(),
+                    scope_path: vec![
+                        "<module>".to_string(),
+                        "Service".to_string(),
+                        "__init__".to_string(),
+                    ],
+                    span: None,
+                    line: Some(7),
+                    col: Some(20),
+                    type_node: None,
+                },
+            ];
+
+            let assignments = vec![
+                // self.handler = Handler() in __init__
+                make_self_attr_assignment(
+                    "handler",
+                    vec!["<module>", "Service", "__init__"],
+                    Some("Handler"), // Inferred from constructor
+                    None,
+                ),
+                // self.logger = logger in __init__ (propagation)
+                make_self_attr_assignment(
+                    "logger",
+                    vec!["<module>", "Service", "__init__"],
+                    None,
+                    Some("logger"), // RHS is the parameter
+                ),
+            ];
+
+            // Run the full analysis pipeline in correct order:
+            // 1. Annotations (highest priority)
+            // 2. Instance attributes
+            // 3. Assignments
+            // 4. Resolve types
+            let mut tracker = TypeTracker::new();
+            tracker.process_annotations(&annotations);
+            tracker.process_instance_attributes(&assignments);
+            tracker.process_assignments(&assignments);
+            tracker.resolve_types();
+
+            // Check that class-level annotation worked
+            let handler_type = tracker.attribute_type_of("Service", "handler");
+            assert!(handler_type.is_some(), "handler attribute should be tracked");
+            assert_eq!(
+                handler_type.unwrap().type_str, "Handler",
+                "handler should have type Handler from annotation"
+            );
+
+            // Check that propagation worked for logger
+            let logger_type = tracker.attribute_type_of("Service", "logger");
+            assert!(logger_type.is_some(), "logger attribute should be tracked");
+            assert_eq!(
+                logger_type.unwrap().type_str, "Logger",
+                "logger should have type Logger propagated from parameter"
+            );
+        }
+    }
+
     mod method_call_unit_tests {
         use super::*;
         use crate::types::SpanInfo;
@@ -1825,6 +2276,8 @@ mod tests {
                 span: Some(SpanInfo { start: 0, end: 1 }),
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }
         }
 

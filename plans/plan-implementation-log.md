@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11C.md] Step 1c: Process Instance Attributes from __init__ | VERIFIED | 2026-01-26
+
+**Completed:** 2026-01-26
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Phase 11C plan, Step 1c specification
+- [D02] Attribute Type Tracking - collection rules: annotation > constructor > propagation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `TypeTracker.process_instance_attributes(assignments: &[AssignmentInfo])` | Done |
+| Filter for assignments where `is_self_attribute: true` | Done |
+| Detect `__init__` context from scope_path (ends with `__init__`) | Done |
+| Extract class name from scope_path (element before `__init__`) | Done |
+| Apply collection rules: annotation > constructor > propagation | Done |
+| Store AttributeTypeInfo (type_str + optional TypeNode) for attribute_types entries | Done |
+| Wire into real code path (`analyzer.rs:1143, 1527`) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs`: `process_instance_attributes` method (lines 241-326), 10 unit tests in `instance_attribute_tests` module, 1 integration test
+- `crates/tugtool-python/src/analyzer.rs`: Wired `process_instance_attributes` into `analyze_files` (line 1143) and `build_type_tracker` (line 1527), added 4 integration tests using real code path
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python instance_attribute`: 10 tests passed
+- `cargo nextest run -p tugtool-python analyze_file_tracks`: 2 tests passed
+- `cargo nextest run -p tugtool-python type_tracker`: 49 tests passed
+- `cargo nextest run -p tugtool-python attribute`: 27 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python type_tracker`: PASS (49 tests)
+- `cargo nextest run -p tugtool-python attribute`: PASS (27 tests)
+
+**Key Decisions/Notes:**
+- This step was verified as already complete from a previous session
+- Key implementation: `process_instance_attributes` filters for `is_self_attribute: true`, detects `__init__` context, extracts class name, and applies precedence rules
+- Integration tests use REAL code path (`analyze_files`) not just `TypeTracker::new()` direct calls
+- Precedence enforced: class-level annotations checked first (line 287), then constructor/propagation inference
+- Non-`__init__` assignments only recorded if they have explicit `inferred_type` (lines 295-303)
+
+---
+
 ## [phase-11C.md] Step 1b: Process Class-Level Annotations for Attribute Types | COMPLETE | 2026-01-26
 
 **Completed:** 2026-01-26

@@ -1535,6 +1535,8 @@ def foo():
                 span: Some(crate::types::SpanInfo { start: 0, end: 1 }),
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }];
 
             let alias_graph =
@@ -1585,6 +1587,8 @@ def foo():
                 span: Some(crate::types::SpanInfo { start: 6, end: 7 }),
                 line: Some(2),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }];
 
             let alias_graph =

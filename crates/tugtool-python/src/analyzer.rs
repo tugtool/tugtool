@@ -1108,6 +1108,8 @@ pub fn analyze_files(
                 }),
                 line: a.line,
                 col: a.col,
+                is_self_attribute: a.is_self_attribute,
+                attribute_name: a.attribute_name.clone(),
             })
             .collect();
 
@@ -1132,8 +1134,14 @@ pub fn analyze_files(
             })
             .collect();
 
-        tracker.process_assignments(&cst_assignments);
+        // Process in correct order for type precedence:
+        // 1. Annotations (highest priority - explicit type declarations)
+        // 2. Instance attributes (self.attr = ... patterns from __init__)
+        // 3. Assignments (regular variable type inference)
+        // 4. Resolve types (propagate through aliases)
         tracker.process_annotations(&cst_annotations);
+        tracker.process_instance_attributes(&cst_assignments);
+        tracker.process_assignments(&cst_assignments);
         tracker.resolve_types();
 
         type_trackers.insert(file_id, tracker);
@@ -1425,6 +1433,8 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
             }),
             line: a.line,
             col: a.col,
+            is_self_attribute: a.is_self_attribute,
+            attribute_name: a.attribute_name.clone(),
         })
         .collect();
 
@@ -1451,6 +1461,17 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
 ///
 /// This converts CST assignments and annotations to the types module format
 /// and processes them to build type inference information.
+///
+/// # Processing Order (Critical for Correct Precedence)
+///
+/// The TypeTracker methods are called in this specific order:
+/// 1. `process_annotations` - Class-level and explicit annotations (highest priority)
+/// 2. `process_instance_attributes` - `self.attr = ...` patterns from `__init__`
+/// 3. `process_assignments` - Regular variable assignments
+/// 4. `resolve_types` - Propagate types through variable aliases
+///
+/// This order ensures that explicit annotations take precedence over inferred types,
+/// and that instance attribute types are properly tracked before variable assignments.
 fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeTracker {
     let mut tracker = TypeTracker::new();
 
@@ -1471,6 +1492,8 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
             }),
             line: a.line,
             col: a.col,
+            is_self_attribute: a.is_self_attribute,
+            attribute_name: a.attribute_name.clone(),
         })
         .collect();
 
@@ -1495,8 +1518,14 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
         })
         .collect();
 
-    tracker.process_assignments(&cst_assignments);
+    // Process in correct order for type precedence:
+    // 1. Annotations (highest priority - explicit type declarations)
+    // 2. Instance attributes (self.attr = ... patterns from __init__)
+    // 3. Assignments (regular variable type inference)
+    // 4. Resolve types (propagate through aliases)
     tracker.process_annotations(&cst_annotations);
+    tracker.process_instance_attributes(&cst_assignments);
+    tracker.process_assignments(&cst_assignments);
     tracker.resolve_types();
 
     tracker
@@ -5385,6 +5414,8 @@ h.process(value)
                 span: None,
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }];
             tracker.process_assignments(&assignments);
             tracker.resolve_types();
@@ -5450,6 +5481,8 @@ h.process(value)
                 span: None,
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }];
             tracker.process_assignments(&assignments);
             tracker.resolve_types();
@@ -5779,6 +5812,8 @@ h.process()
                 span: None,
                 line: Some(1),
                 col: Some(1),
+                is_self_attribute: false,
+                attribute_name: None,
             }];
             tracker.process_assignments(&assignments);
             tracker.resolve_types();
@@ -10686,6 +10721,190 @@ class ClassB: pass
                         .unwrap_or(&"<none>".to_string())
                 );
             }
+        }
+
+        // ====================================================================
+        // Step 0.5 Integration Tests: TypeTracker via Real Code Path
+        // ====================================================================
+        // These tests verify that TypeTracker methods work correctly when
+        // going through the REAL code path (analyze_files), not just when
+        // called directly on TypeTracker::new().
+
+        #[test]
+        fn analyze_file_tracks_instance_attribute_types() {
+            // Test: Instance attributes assigned in __init__ have their types tracked
+            // via the real code path (analyze_files -> TypeTracker)
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    def process(self):
+        pass
+
+class Service:
+    def __init__(self):
+        self.handler = Handler()
+
+    def run(self):
+        self.handler.process()
+"#
+                .to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Get the TypeTracker for the file
+            let file_analysis = bundle.file_analyses.first().expect("should have file");
+            let tracker = bundle
+                .type_trackers
+                .get(&file_analysis.file_id)
+                .expect("should have type tracker");
+
+            // Verify that self.handler's type is tracked as "Handler"
+            let attr_type = tracker.attribute_type_of("Service", "handler");
+            assert!(
+                attr_type.is_some(),
+                "should track attribute type for Service.handler"
+            );
+            assert_eq!(
+                attr_type.unwrap().type_str,
+                "Handler",
+                "Service.handler should have type Handler"
+            );
+        }
+
+        #[test]
+        fn analyze_file_class_annotation_overrides_init() {
+            // Test: Class-level annotation takes precedence over __init__ assignment
+            // when the __init__ assignment has no type info
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    pass
+
+class OtherHandler:
+    pass
+
+def create_handler():
+    return OtherHandler()
+
+class Service:
+    handler: Handler  # Class-level annotation
+
+    def __init__(self):
+        self.handler = create_handler()  # No type info from RHS
+"#
+                .to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let file_analysis = bundle.file_analyses.first().expect("should have file");
+            let tracker = bundle
+                .type_trackers
+                .get(&file_analysis.file_id)
+                .expect("should have type tracker");
+
+            // Class-level annotation should win over untyped __init__ assignment
+            let attr_type = tracker.attribute_type_of("Service", "handler");
+            assert!(
+                attr_type.is_some(),
+                "should track attribute type for Service.handler"
+            );
+            assert_eq!(
+                attr_type.unwrap().type_str,
+                "Handler",
+                "Service.handler should have type Handler from annotation, not OtherHandler"
+            );
+        }
+
+        #[test]
+        fn analyze_file_propagates_parameter_types() {
+            // Test: Type is propagated when assigning from a typed parameter
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Logger:
+    def log(self, msg: str):
+        pass
+
+class Service:
+    def __init__(self, logger: Logger):
+        self.logger = logger  # Type propagated from parameter
+"#
+                .to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let file_analysis = bundle.file_analyses.first().expect("should have file");
+            let tracker = bundle
+                .type_trackers
+                .get(&file_analysis.file_id)
+                .expect("should have type tracker");
+
+            // self.logger should have type Logger propagated from parameter
+            let attr_type = tracker.attribute_type_of("Service", "logger");
+            assert!(
+                attr_type.is_some(),
+                "should track attribute type for Service.logger"
+            );
+            assert_eq!(
+                attr_type.unwrap().type_str,
+                "Logger",
+                "Service.logger should have type Logger from parameter"
+            );
+        }
+
+        #[test]
+        fn analyze_file_tracks_multiple_attributes() {
+            // Test: Multiple instance attributes are all tracked
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    pass
+
+class Logger:
+    pass
+
+class Config:
+    pass
+
+class Service:
+    def __init__(self):
+        self.handler = Handler()
+        self.logger = Logger()
+        self.config = Config()
+"#
+                .to_string(),
+            )];
+
+            let bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            let file_analysis = bundle.file_analyses.first().expect("should have file");
+            let tracker = bundle
+                .type_trackers
+                .get(&file_analysis.file_id)
+                .expect("should have type tracker");
+
+            // All three attributes should be tracked
+            let handler_type = tracker.attribute_type_of("Service", "handler");
+            assert!(handler_type.is_some(), "should track Service.handler");
+            assert_eq!(handler_type.unwrap().type_str, "Handler");
+
+            let logger_type = tracker.attribute_type_of("Service", "logger");
+            assert!(logger_type.is_some(), "should track Service.logger");
+            assert_eq!(logger_type.unwrap().type_str, "Logger");
+
+            let config_type = tracker.attribute_type_of("Service", "config");
+            assert!(config_type.is_some(), "should track Service.config");
+            assert_eq!(config_type.unwrap().type_str, "Config");
         }
     }
 }

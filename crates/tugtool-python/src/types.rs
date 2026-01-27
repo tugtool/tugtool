@@ -168,6 +168,13 @@ pub struct AssignmentInfo {
     /// Column number (1-indexed).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub col: Option<u32>,
+    /// True if this assignment targets `self.attr` or `cls.attr` (instance/class attribute).
+    /// Default: false for backward compatibility.
+    #[serde(default)]
+    pub is_self_attribute: bool,
+    /// Attribute name when is_self_attribute is true (e.g., "handler" for `self.handler = ...`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attribute_name: Option<String>,
 }
 
 // ============================================================================
@@ -499,6 +506,8 @@ mod tests {
             span: None,
             line: Some(1),
             col: Some(1),
+            is_self_attribute: false,
+            attribute_name: None,
         };
 
         let json = serde_json::to_string(&assignment).unwrap();

@@ -437,6 +437,8 @@ mod tests {
             span: Some(SpanInfo { start: 0, end: 1 }),
             line: Some(1),
             col: Some(1),
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
@@ -458,6 +460,8 @@ mod tests {
             span: Some(SpanInfo { start, end }),
             line: Some(1),
             col: Some(1),
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
@@ -473,6 +477,8 @@ mod tests {
             span: Some(SpanInfo { start: 0, end: 1 }),
             line: Some(1),
             col: Some(1),
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
@@ -488,6 +494,8 @@ mod tests {
             span: Some(SpanInfo { start: 0, end: 1 }),
             line: Some(1),
             col: Some(1),
+            is_self_attribute: false,
+            attribute_name: None,
         }
     }
 
