@@ -2129,20 +2129,20 @@ eprintln!("===================");
 - `crates/tugtool-python-cst/src/visitor/signature.rs`: Property detection
 
 **Tasks:**
-- [ ] Add `PropertyTypeInfo` struct
-- [ ] Add `property_types` HashMap to TypeTracker
-- [ ] Add `property_type_of(class, prop)` method
-- [ ] Add `process_properties` to collect from signatures with `Modifier::Property`
-- [ ] Update `attribute_type_of` to fall back to `property_type_of`
+- [x] Add `PropertyTypeInfo` struct
+- [x] Add `property_types` HashMap to TypeTracker
+- [x] Add `property_type_of(class, prop)` method
+- [x] Add `process_properties` to collect from signatures with `Modifier::Property`
+- [x] Update `attribute_type_of` to fall back to `property_type_of`
 
 **Tests:**
-- [ ] Unit test: property with return type annotation
-- [ ] Integration test: Fixture 11D-F05 (property decorator)
-- [ ] Integration test: Fixture 11D-F08 (inherited property)
+- [x] Unit test: property with return type annotation
+- [x] Integration test: Fixture 11D-F05 (property decorator)
+- [x] Integration test: Fixture 11D-F08 (inherited property)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python test_property`
-- [ ] All existing tests pass
+- [x] `cargo nextest run -p tugtool-python test_property`
+- [x] All existing tests pass
 
 **Rollback:**
 - Revert commit
@@ -2283,7 +2283,7 @@ correctly handles `.pyi` stub syntax:
 - [ ] MRO-based attribute lookup working (Step 5)
 
 **Milestone M03: Property Support** {#m03-property}
-- [ ] Property decorator detection and type tracking (Step 6)
+- [x] Property decorator detection and type tracking (Step 6)
 
 **Milestone M04: Stub Support** {#m04-stub}
 - [ ] Type stub discovery and merging (Step 7)

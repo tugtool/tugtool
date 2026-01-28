@@ -1272,6 +1272,7 @@ pub fn analyze_files(
         tracker.process_annotations(&cst_annotations);
         tracker.process_instance_attributes(&cst_assignments);
         tracker.process_signatures(&native_result.signatures);
+        tracker.process_properties(&native_result.signatures);
         tracker.process_assignments(&cst_assignments);
         tracker.resolve_types();
 
@@ -1655,11 +1656,13 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
     // 1. Annotations (highest priority - explicit type declarations)
     // 2. Instance attributes (self.attr = ... patterns from __init__)
     // 3. Signatures (method return types for call resolution)
-    // 4. Assignments (regular variable type inference)
-    // 5. Resolve types (propagate through aliases)
+    // 4. Properties (property decorator return types)
+    // 5. Assignments (regular variable type inference)
+    // 6. Resolve types (propagate through aliases)
     tracker.process_annotations(&cst_annotations);
     tracker.process_instance_attributes(&cst_assignments);
     tracker.process_signatures(&native_result.signatures);
+    tracker.process_properties(&native_result.signatures);
     tracker.process_assignments(&cst_assignments);
     tracker.resolve_types();
 
@@ -3793,13 +3796,13 @@ impl PythonAdapter {
                             return None; // Can't resolve - type not found locally or cross-file
                         }
 
-                        // Look up attribute type on current class
+                        // Look up attribute type on current class (includes property fallback)
                         if let Some(attr_type) = tracker.attribute_type_of(class_type, attr_name) {
                             // Attribute type found - update current_type and clear last_method_name
                             current_type = Some(attr_type.type_str.clone());
                             last_method_name = None;
                             pending_callable_return =
-                                TypeTracker::callable_return_type_of(attr_type);
+                                TypeTracker::callable_return_type_of(&attr_type);
                         } else {
                             // Attribute lookup failed - this is likely a method name
                             // Keep current_type UNCHANGED for method call resolution

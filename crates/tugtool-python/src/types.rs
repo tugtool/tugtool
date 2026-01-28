@@ -292,6 +292,26 @@ pub struct AttributeTypeInfo {
 }
 
 // ============================================================================
+// Property Type Information (Phase 11D)
+// ============================================================================
+
+/// Type information for a property decorated method.
+///
+/// Properties are syntactically accessed like attributes (`self.name` not `self.name()`)
+/// but are defined as methods with `@property` decorator. This struct tracks the
+/// return type of the property getter for type resolution.
+///
+/// Used by TypeTracker to track property return types from methods decorated
+/// with `@property`.
+#[derive(Debug, Clone)]
+pub struct PropertyTypeInfo {
+    /// Return type of the property getter as a string (e.g., "str", "int").
+    pub type_str: String,
+    /// Structured type representation, if available from CST collection.
+    pub type_node: Option<TypeNode>,
+}
+
+// ============================================================================
 // Dynamic Pattern Information
 // ============================================================================
 

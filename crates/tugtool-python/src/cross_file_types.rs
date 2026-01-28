@@ -220,9 +220,9 @@ impl FileTypeContext {
         cache: &mut CrossFileTypeCache,
         workspace_root: &Path,
     ) -> Option<AttributeTypeInfo> {
-        // First, try direct lookup in the local TypeTracker
+        // First, try direct lookup in the local TypeTracker (includes property fallback)
         if let Some(attr_type) = self.tracker.attribute_type_of(class_name, attr_name) {
-            return Some(attr_type.clone());
+            return Some(attr_type);
         }
 
         // Also check method return types for the local class
@@ -552,6 +552,7 @@ impl CrossFileTypeCache {
         tracker.process_assignments(&convert_assignments(&analysis.assignments));
         tracker.process_annotations(&convert_annotations(&analysis.annotations));
         tracker.process_signatures(&analysis.signatures);
+        tracker.process_properties(&analysis.signatures);
 
         // Compute workspace-relative path for context identity
         let relative_path = file_path

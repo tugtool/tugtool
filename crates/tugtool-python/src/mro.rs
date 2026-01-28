@@ -696,9 +696,9 @@ pub fn lookup_attr_in_file(
     // Get the file's context
     let ctx = cache.get_or_analyze(file_path, workspace_root).ok()?;
 
-    // Look up in the tracker - first check attribute types
+    // Look up in the tracker - check attribute types (includes property fallback)
     if let Some(attr_type) = ctx.tracker.attribute_type_of(class_name, attr_name) {
-        return Some(attr_type.clone());
+        return Some(attr_type);
     }
 
     // Also check method return types - convert to AttributeTypeInfo
@@ -743,9 +743,9 @@ pub fn lookup_attr_in_mro_class(
 
     // First try to find in local context
     if ctx.class_hierarchies.contains_key(class_name) {
-        // Class is local - use local tracker
+        // Class is local - use local tracker (includes property fallback)
         if let Some(attr_type) = ctx.tracker.attribute_type_of(class_name, attr_name) {
-            return Some(attr_type.clone());
+            return Some(attr_type);
         }
         // Also check method return types - convert to AttributeTypeInfo
         if let Some(return_type) = ctx.tracker.method_return_type_of(class_name, attr_name) {
@@ -782,12 +782,12 @@ pub fn lookup_attr_in_mro_class(
     // Get the remote context
     let remote_ctx = cache.get_or_analyze(&file_path, workspace_root).ok()?;
 
-    // Look up in remote tracker
+    // Look up in remote tracker (includes property fallback)
     if let Some(attr_type) = remote_ctx
         .tracker
         .attribute_type_of(&remote_class_name, attr_name)
     {
-        return Some(attr_type.clone());
+        return Some(attr_type);
     }
     if let Some(return_type) = remote_ctx
         .tracker
@@ -1712,6 +1712,7 @@ mod tests {
         tracker.process_annotations(&annotations);
         tracker.process_instance_attributes(&assignments);
         tracker.process_signatures(&analysis.signatures);
+        tracker.process_properties(&analysis.signatures);
         tracker.process_assignments(&assignments);
         tracker.resolve_types();
 
@@ -2145,6 +2146,126 @@ class Mid(Base):
             root_attr.unwrap().type_str,
             "str",
             "Root.root() should return str"
+        );
+    }
+
+    /// Test Fixture 11D-F05: Property Decorator.
+    ///
+    /// class Person:
+    ///     _name: str
+    ///
+    ///     @property
+    ///     def name(self) -> str:
+    ///         return self._name
+    ///
+    /// p: Person = Person()
+    /// p.name  # Should resolve to str via property return type
+    #[test]
+    fn test_property_decorator_fixture_11d_f05() {
+        let source = r#"
+class Person:
+    _name: str
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+p: Person = Person()
+"#;
+
+        let tracker = build_type_tracker_from_source(source);
+
+        // Direct property lookup
+        let prop = tracker.property_type_of("Person", "name");
+        assert!(prop.is_some(), "Person.name property should be tracked");
+        assert_eq!(
+            prop.unwrap().type_str,
+            "str",
+            "Person.name property should have type str"
+        );
+
+        // Attribute fallback should also work
+        let attr = tracker.attribute_type_of("Person", "name");
+        assert!(attr.is_some(), "attribute_type_of should fall back to property");
+        assert_eq!(
+            attr.unwrap().type_str,
+            "str",
+            "attribute_type_of fallback should return str"
+        );
+    }
+
+    /// Test Fixture 11D-F08: Inherited Property.
+    ///
+    /// class Base:
+    ///     @property
+    ///     def value(self) -> int:
+    ///         return 42
+    ///
+    /// class Derived(Base):
+    ///     pass
+    ///
+    /// d: Derived = Derived()
+    /// d.value  # Should resolve to int via inherited property
+    #[test]
+    fn test_inherited_property_fixture_11d_f08() {
+        use crate::analyzer::analyze_file;
+        use crate::cross_file_types::{build_class_hierarchies, CrossFileTypeCache};
+        use std::collections::HashSet;
+        use tugtool_core::patch::FileId;
+
+        let source = r#"
+class Base:
+    @property
+    def value(self) -> int:
+        return 42
+
+class Derived(Base):
+    pass
+
+d: Derived = Derived()
+"#;
+
+        // Analyze the file
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        // Build type tracker
+        let tracker = build_type_tracker_from_source(source);
+
+        // Create contexts for cache and test
+        let ctx_for_cache = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker: tracker.clone(),
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies.clone(),
+        };
+        let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker,
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies,
+        };
+
+        // Create cache and insert the context
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+        cache.insert_context(PathBuf::from("test.py"), ctx_for_cache);
+
+        // Look up inherited property via MRO
+        let value_attr = ctx.attribute_type_of_with_mro("Derived", "value", &mut cache, Path::new("."));
+        assert!(
+            value_attr.is_some(),
+            "Derived should have 'value' property inherited from Base"
+        );
+        assert_eq!(
+            value_attr.unwrap().type_str,
+            "int",
+            "Inherited property should return int"
         );
     }
 }

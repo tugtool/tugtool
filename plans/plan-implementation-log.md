@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 6: Property Decorator Support | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 6 specification and design decision [D05] Property Detection
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker implementation
+- `crates/tugtool-python/src/types.rs` - AttributeTypeInfo structure
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - SignatureInfo and Modifier::Property
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `PropertyTypeInfo` struct to types.rs | Done |
+| Add `property_types` HashMap to TypeTracker | Done |
+| Add `property_type_of(class, prop)` method | Done |
+| Add `process_properties` to collect from signatures with `Modifier::Property` | Done |
+| Update `attribute_type_of` to fall back to `property_type_of` | Done |
+| Unit test: property with return type annotation | Done |
+| Integration test: Fixture 11D-F05 (property decorator) | Done |
+| Integration test: Fixture 11D-F08 (inherited property) | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python/src/types.rs` - Added `PropertyTypeInfo` struct (lines 293-312)
+- `crates/tugtool-python/src/type_tracker.rs` - Added `property_types` map, `property_type_of()`, `process_properties()`, updated `attribute_type_of()` with property fallback, added 11 unit tests
+- `crates/tugtool-python/src/mro.rs` - Updated callers to handle owned `AttributeTypeInfo`, added `process_properties()` call, added 2 integration tests
+- `crates/tugtool-python/src/cross_file_types.rs` - Added `process_properties()` call, updated callers
+- `crates/tugtool-python/src/analyzer.rs` - Added `process_properties()` call, updated caller for `callable_return_type_of()`
+- `plans/phase-11D.md` - Checked off Step 6 tasks, tests, and checkpoints; marked Milestone M03 complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python test_property`: 5 tests passed
+- `cargo nextest run -p tugtool-python property`: 12 tests passed
+- `cargo nextest run -p tugtool-python`: 622 tests passed
+- `cargo nextest run --workspace`: 1832 tests passed
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python test_property`: PASS
+- All existing tests pass: PASS
+
+**Key Decisions/Notes:**
+- Changed `attribute_type_of` return type from `Option<&AttributeTypeInfo>` to `Option<AttributeTypeInfo>` (owned) to support the property fallback which converts `PropertyTypeInfo` to `AttributeTypeInfo`
+- Properties are accessed like attributes (`obj.name` not `obj.name()`), so the fallback enables unified resolution
+- Attribute types take precedence over property types (checked first)
+- Only properties with return type annotations are tracked; properties without annotations return None
+- `process_properties()` is called after `process_signatures()` in all processing locations
+
+---
+
 ## [phase-11D.md] Step 5: MRO-Based Attribute Lookup | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

@@ -24,10 +24,10 @@
 use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
 
-use crate::types::{AnnotationInfo, AssignmentInfo, AttributeTypeInfo};
+use crate::types::{AnnotationInfo, AssignmentInfo, AttributeTypeInfo, PropertyTypeInfo};
 use std::collections::HashMap;
 use thiserror::Error;
-use tugtool_python_cst::SignatureInfo;
+use tugtool_python_cst::{Modifier, SignatureInfo};
 
 // ============================================================================
 // Error Types
@@ -101,6 +101,11 @@ pub struct TypeTracker {
     /// Populated from signatures where `is_method` is true and return type is present.
     /// Used for method call resolution in dotted paths like `self.handler.process()`.
     method_return_types: HashMap<(String, String), String>,
+
+    /// Map from (class_name, property_name) to property type info.
+    /// Populated from methods decorated with @property that have return type annotations.
+    /// Used for property resolution where properties are accessed like attributes.
+    property_types: HashMap<(String, String), PropertyTypeInfo>,
 }
 
 /// An assignment tracked for type inference.
@@ -131,6 +136,7 @@ impl TypeTracker {
             assignments_by_scope: HashMap::new(),
             attribute_types: HashMap::new(),
             method_return_types: HashMap::new(),
+            property_types: HashMap::new(),
         }
     }
 
@@ -374,6 +380,56 @@ impl TypeTracker {
         }
     }
 
+    /// Process function/method signatures to extract property return types.
+    ///
+    /// This populates the `property_types` map for methods decorated with `@property`
+    /// that have return type annotations. Properties are accessed like attributes
+    /// (`obj.name` instead of `obj.name()`), so their return types should be used
+    /// for attribute-style resolution.
+    ///
+    /// # Arguments
+    /// - `signatures`: Signature information from CST analysis
+    ///
+    /// # Detection Rules (per [D05] Property Detection)
+    /// 1. Method has `@property` decorator (stored in Modifier::Property)
+    /// 2. Method has return type annotation -> use annotation type
+    /// 3. Otherwise -> no property type tracked
+    pub fn process_properties(&mut self, signatures: &[SignatureInfo]) {
+        for sig in signatures {
+            // Only process methods (functions defined inside classes)
+            if !sig.is_method {
+                continue;
+            }
+
+            // Only process if this is a property (has @property decorator)
+            if !sig.modifiers.contains(&Modifier::Property) {
+                continue;
+            }
+
+            // Only process if there's a return type annotation
+            let (return_type, return_node) = match &sig.returns {
+                Some(ret) => (ret.clone(), sig.returns_node.clone()),
+                None => continue,
+            };
+
+            // Extract class name from scope_path.
+            // For methods, scope_path is like ["<module>", "MyClass"]
+            // The property name is in sig.name, class name is the last element of scope_path.
+            let class_name = match sig.scope_path.last() {
+                Some(name) => name.clone(),
+                None => continue,
+            };
+
+            let key = (class_name, sig.name.clone());
+
+            // Don't override if already present (first wins, matching other precedence patterns)
+            self.property_types.entry(key).or_insert(PropertyTypeInfo {
+                type_str: return_type,
+                type_node: return_node,
+            });
+        }
+    }
+
     /// Resolve all types through propagation.
     ///
     /// This performs multiple passes to propagate types from variables
@@ -599,17 +655,22 @@ impl TypeTracker {
         None
     }
 
-    /// Get the type of a class attribute.
+    /// Get the type of a class attribute or property.
     ///
-    /// Looks up the type of an attribute on a class, populated from
-    /// class-level annotations and `self.attr = ...` in `__init__`.
+    /// Looks up the type of an attribute on a class, populated from:
+    /// 1. Class-level annotations (e.g., `handler: Handler`)
+    /// 2. `self.attr = ...` in `__init__`
+    /// 3. Property decorators (fallback) - returns the property's return type
+    ///
+    /// Properties are checked as a fallback because they are syntactically
+    /// accessed like attributes (`obj.name` not `obj.name()`).
     ///
     /// # Arguments
     /// - `class_name`: The name of the class (e.g., "Service")
     /// - `attr_name`: The name of the attribute (e.g., "handler")
     ///
     /// # Returns
-    /// - `Some(&AttributeTypeInfo)` if the attribute type is known
+    /// - `Some(AttributeTypeInfo)` if the attribute or property type is known
     /// - `None` if the attribute type is not tracked
     ///
     /// # Example
@@ -621,6 +682,10 @@ impl TypeTracker {
     /// //
     /// //     def __init__(self):
     /// //         self.helper = Helper()  # __init__ assignment
+    /// //
+    /// //     @property
+    /// //     def name(self) -> str:
+    /// //         return self._name
     ///
     /// // After processing with TypeTracker:
     /// let attr_info = tracker.attribute_type_of("Service", "handler");
@@ -628,14 +693,32 @@ impl TypeTracker {
     ///
     /// let attr_info = tracker.attribute_type_of("Service", "helper");
     /// assert_eq!(attr_info.unwrap().type_str, "Helper");
+    ///
+    /// // Properties are also resolved via attribute_type_of:
+    /// let prop_info = tracker.attribute_type_of("Service", "name");
+    /// assert_eq!(prop_info.unwrap().type_str, "str");
     /// ```
     pub fn attribute_type_of(
         &self,
         class_name: &str,
         attr_name: &str,
-    ) -> Option<&AttributeTypeInfo> {
+    ) -> Option<AttributeTypeInfo> {
         let key = (class_name.to_string(), attr_name.to_string());
-        self.attribute_types.get(&key)
+
+        // First check attribute_types (class-level annotations and __init__ assignments)
+        if let Some(attr_info) = self.attribute_types.get(&key) {
+            return Some(attr_info.clone());
+        }
+
+        // Fall back to property_types (properties accessed like attributes)
+        if let Some(prop_info) = self.property_types.get(&key) {
+            return Some(AttributeTypeInfo {
+                type_str: prop_info.type_str.clone(),
+                type_node: prop_info.type_node.clone(),
+            });
+        }
+
+        None
     }
 
     /// Get the return type of a method on a class.
@@ -671,6 +754,42 @@ impl TypeTracker {
     pub fn method_return_type_of(&self, class_name: &str, method_name: &str) -> Option<&str> {
         let key = (class_name.to_string(), method_name.to_string());
         self.method_return_types.get(&key).map(|s| s.as_str())
+    }
+
+    /// Get the type of a property on a class.
+    ///
+    /// Looks up the return type of a property decorated method on a class.
+    /// Properties are syntactically accessed like attributes (`self.name` not `self.name()`)
+    /// but are defined as methods with `@property` decorator.
+    ///
+    /// # Arguments
+    /// - `class_name`: The name of the class (e.g., "Person")
+    /// - `property_name`: The name of the property (e.g., "name")
+    ///
+    /// # Returns
+    /// - `Some(&PropertyTypeInfo)` if the property type is known
+    /// - `None` if the property type is not tracked
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // For Python code:
+    /// // class Person:
+    /// //     @property
+    /// //     def name(self) -> str:
+    /// //         return self._name
+    ///
+    /// // After processing with TypeTracker:
+    /// let prop_info = tracker.property_type_of("Person", "name");
+    /// assert_eq!(prop_info.unwrap().type_str, "str");
+    /// ```
+    pub fn property_type_of(
+        &self,
+        class_name: &str,
+        property_name: &str,
+    ) -> Option<&PropertyTypeInfo> {
+        let key = (class_name.to_string(), property_name.to_string());
+        self.property_types.get(&key)
     }
 
     /// Get the return type of a top-level function.
@@ -3038,6 +3157,273 @@ mod tests {
 
             let result = TypeTracker::callable_return_type_of(&attr_info);
             assert!(result.is_none());
+        }
+    }
+
+    /// Tests for property decorator type tracking (Phase 11D).
+    ///
+    /// Per [D05] Property Detection:
+    /// - Detect `@property` decorator and track property return types
+    /// - Properties are accessed like attributes (`obj.name` not `obj.name()`)
+    /// - `attribute_type_of` falls back to `property_type_of`
+    mod property_type_tests {
+        use super::*;
+        use tugtool_core::facts::TypeNode;
+        use tugtool_python_cst::SignatureInfo;
+
+        /// Helper to create a property SignatureInfo.
+        fn make_property(
+            name: &str,
+            scope_path: Vec<&str>,
+            return_type: Option<&str>,
+            return_node: Option<TypeNode>,
+        ) -> SignatureInfo {
+            SignatureInfo {
+                name: name.to_string(),
+                params: vec![],
+                returns: return_type.map(|s| s.to_string()),
+                returns_node: return_node,
+                modifiers: vec![Modifier::Property],
+                type_params: vec![],
+                scope_path: scope_path.iter().map(|s| s.to_string()).collect(),
+                span: None,
+                is_method: true,
+            }
+        }
+
+        /// Helper to create a regular method SignatureInfo (not a property).
+        fn make_method(
+            name: &str,
+            scope_path: Vec<&str>,
+            return_type: Option<&str>,
+        ) -> SignatureInfo {
+            SignatureInfo {
+                name: name.to_string(),
+                params: vec![],
+                returns: return_type.map(|s| s.to_string()),
+                returns_node: None,
+                modifiers: vec![],
+                type_params: vec![],
+                scope_path: scope_path.iter().map(|s| s.to_string()).collect(),
+                span: None,
+                is_method: true,
+            }
+        }
+
+        #[test]
+        fn test_property_type_of_returns_none_for_unknown() {
+            let tracker = TypeTracker::new();
+            assert!(tracker.property_type_of("Person", "name").is_none());
+            assert!(tracker.property_type_of("Unknown", "unknown").is_none());
+        }
+
+        #[test]
+        fn test_property_with_return_type_annotation() {
+            // Test: property with return type annotation
+            //
+            // class Person:
+            //     @property
+            //     def name(self) -> str:
+            //         return self._name
+            //
+            // -> property_type_of("Person", "name") should return "str"
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_property(
+                "name",
+                vec!["<module>", "Person"],
+                Some("str"),
+                Some(TypeNode::Named {
+                    name: "str".to_string(),
+                    args: vec![],
+                }),
+            )];
+
+            tracker.process_properties(&signatures);
+
+            let result = tracker.property_type_of("Person", "name");
+            assert!(result.is_some(), "property_type_of should find the property");
+            let prop_info = result.unwrap();
+            assert_eq!(prop_info.type_str, "str");
+            assert!(prop_info.type_node.is_some());
+        }
+
+        #[test]
+        fn test_property_without_return_type_not_tracked() {
+            // Properties without return type annotation are not tracked
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_property("name", vec!["<module>", "Person"], None, None)];
+
+            tracker.process_properties(&signatures);
+
+            assert!(
+                tracker.property_type_of("Person", "name").is_none(),
+                "property without return type should not be tracked"
+            );
+        }
+
+        #[test]
+        fn test_regular_method_not_tracked_as_property() {
+            // Regular methods (without @property) should not be tracked in property_types
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_method("process", vec!["<module>", "Service"], Some("str"))];
+
+            tracker.process_properties(&signatures);
+
+            assert!(
+                tracker.property_type_of("Service", "process").is_none(),
+                "regular method should not be tracked as property"
+            );
+        }
+
+        #[test]
+        fn test_attribute_type_of_falls_back_to_property() {
+            // Test: attribute_type_of should fall back to property_type_of
+            //
+            // class Person:
+            //     @property
+            //     def name(self) -> str:
+            //         return self._name
+            //
+            // p.name  # Should resolve to str via property return type
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_property(
+                "name",
+                vec!["<module>", "Person"],
+                Some("str"),
+                Some(TypeNode::Named {
+                    name: "str".to_string(),
+                    args: vec![],
+                }),
+            )];
+
+            tracker.process_properties(&signatures);
+
+            // attribute_type_of should find the property
+            let result = tracker.attribute_type_of("Person", "name");
+            assert!(result.is_some(), "attribute_type_of should fall back to property");
+            assert_eq!(result.unwrap().type_str, "str");
+        }
+
+        #[test]
+        fn test_attribute_types_take_precedence_over_properties() {
+            // If both attribute_types and property_types have an entry,
+            // attribute_types should win (it's checked first)
+            let mut tracker = TypeTracker::new();
+
+            // Add as property
+            let signatures = vec![make_property(
+                "handler",
+                vec!["<module>", "Service"],
+                Some("PropertyHandler"),
+                None,
+            )];
+            tracker.process_properties(&signatures);
+
+            // Add as attribute (higher precedence)
+            tracker.attribute_types.insert(
+                ("Service".to_string(), "handler".to_string()),
+                crate::types::AttributeTypeInfo {
+                    type_str: "AttributeHandler".to_string(),
+                    type_node: None,
+                },
+            );
+
+            // attribute_type_of should return the attribute, not the property
+            let result = tracker.attribute_type_of("Service", "handler");
+            assert!(result.is_some());
+            assert_eq!(
+                result.unwrap().type_str,
+                "AttributeHandler",
+                "attribute_types should take precedence over property_types"
+            );
+        }
+
+        #[test]
+        fn test_property_with_complex_return_type() {
+            // Test property with complex return type like List[str]
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![make_property(
+                "items",
+                vec!["<module>", "Container"],
+                Some("List[str]"),
+                Some(TypeNode::Named {
+                    name: "List".to_string(),
+                    args: vec![TypeNode::Named {
+                        name: "str".to_string(),
+                        args: vec![],
+                    }],
+                }),
+            )];
+
+            tracker.process_properties(&signatures);
+
+            let result = tracker.property_type_of("Container", "items");
+            assert!(result.is_some());
+            let prop_info = result.unwrap();
+            assert_eq!(prop_info.type_str, "List[str]");
+            assert!(prop_info.type_node.is_some());
+        }
+
+        #[test]
+        fn test_multiple_properties_on_same_class() {
+            // Test multiple properties on the same class
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![
+                make_property(
+                    "name",
+                    vec!["<module>", "Person"],
+                    Some("str"),
+                    None,
+                ),
+                make_property(
+                    "age",
+                    vec!["<module>", "Person"],
+                    Some("int"),
+                    None,
+                ),
+            ];
+
+            tracker.process_properties(&signatures);
+
+            assert_eq!(
+                tracker.property_type_of("Person", "name").unwrap().type_str,
+                "str"
+            );
+            assert_eq!(
+                tracker.property_type_of("Person", "age").unwrap().type_str,
+                "int"
+            );
+        }
+
+        #[test]
+        fn test_properties_on_different_classes() {
+            // Test properties with same name on different classes
+            let mut tracker = TypeTracker::new();
+
+            let signatures = vec![
+                make_property("name", vec!["<module>", "Person"], Some("str"), None),
+                make_property("name", vec!["<module>", "Company"], Some("CompanyName"), None),
+            ];
+
+            tracker.process_properties(&signatures);
+
+            assert_eq!(
+                tracker.property_type_of("Person", "name").unwrap().type_str,
+                "str"
+            );
+            assert_eq!(
+                tracker
+                    .property_type_of("Company", "name")
+                    .unwrap()
+                    .type_str,
+                "CompanyName"
+            );
         }
     }
 }
