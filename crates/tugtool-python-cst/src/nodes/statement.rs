@@ -1075,6 +1075,10 @@ pub struct If<'a> {
 
     pub(crate) if_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    /// Used for looking up branch_span in the PositionTable.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for If<'a> {
@@ -1099,6 +1103,26 @@ impl<'a> Codegen<'a> for If<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedIf<'r, 'a> {
     type Inflated = If<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this If node
+        let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating body (tokens are stripped during inflation).
+        // The branch span covers from after the colon to the end of the body suite.
+        let branch_start = self.colon_tok.end_pos.byte_idx();
+        let branch_end = match &self.body {
+            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
+            DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
+        };
+
+        // Record branch span (if position tracking is enabled)
+        ctx.record_branch_span(
+            node_id,
+            Span {
+                start: branch_start,
+                end: branch_end,
+            },
+        );
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.if_tok.whitespace_before.borrow_mut(),
@@ -1120,6 +1144,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedIf<'r, 'a> {
             whitespace_before_test,
             whitespace_after_test,
             is_elif: self.is_elif,
+            node_id: Some(node_id),
         })
     }
 }

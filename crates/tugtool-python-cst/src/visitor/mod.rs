@@ -73,6 +73,7 @@ mod attribute_access;
 mod call_site;
 mod import;
 mod inheritance;
+mod isinstance;
 mod method_call;
 mod signature;
 mod type_inference;
@@ -107,6 +108,7 @@ pub use signature::{
     Modifier, ParamInfo, ParamKind, SignatureCollector, SignatureInfo, TypeParamInfo,
 };
 pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};
+pub use isinstance::{IsInstanceCheck, IsInstanceCollector};
 
 // P2 exports
 pub use dynamic::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};

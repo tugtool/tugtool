@@ -937,6 +937,8 @@ resolve_subscript_type(container_type, type_node)
 
 | File | Changes |
 |------|---------|
+| `crates/tugtool-python-cst/src/inflate_ctx.rs` | Add `branch_span` to NodePosition, add `record_branch_span` method |
+| `crates/tugtool-python-cst/src/nodes/statement.rs` | Add `node_id` to If struct, update DeflatedIf::inflate() to record branch_span |
 | `crates/tugtool-python-cst/src/visitor/import.rs` | Add scope_path to ImportInfo, scope tracking to ImportCollector |
 | `crates/tugtool-python-cst/src/visitor/mod.rs` | Export isinstance module |
 | `crates/tugtool-python-cst/src/lib.rs` | Re-export isinstance types |
@@ -952,19 +954,22 @@ resolve_subscript_type(container_type, type_node)
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
+| `NodePosition.branch_span` | field | `tugtool-python-cst/src/inflate_ctx.rs` | Branch body span for type narrowing |
+| `InflateCtx::record_branch_span` | method | `tugtool-python-cst/src/inflate_ctx.rs` | Record branch span during inflation |
+| `If.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity for span lookup |
 | `ImportInfo.scope_path` | field | `tugtool-python-cst/.../import.rs` | New field for scope tracking |
 | `ImportCollector.scope_path` | field | `tugtool-python-cst/.../import.rs` | Internal scope stack |
 | `LocalImport.scope_path` | field | `tugtool-python/src/analyzer.rs` | Persist CST scope_path for import resolution |
 | `NarrowingContext` | struct | `tugtool-python/src/type_narrowing.rs` | New type for narrowing overlay |
-| `IsInstanceCheck` | struct | `tugtool-python/src/type_narrowing.rs` | New type for isinstance info |
+| `IsInstanceCheck` | struct | `tugtool-python-cst/.../isinstance.rs` | isinstance check info with branch_span |
 | `IsInstanceCollector` | struct | `tugtool-python-cst/.../isinstance.rs` | New visitor |
+| `IsInstanceCollector::get_branch_span_from_if` | method | `tugtool-python-cst/.../isinstance.rs` | Lookup branch_span via node_id |
 | `TypeTracker::extract_element_type` | method | `tugtool-python/src/type_tracker.rs` | New method |
 | `TypeTracker::extract_element_type_from_node` | method | `tugtool-python/src/type_tracker.rs` | New method |
 | `TypeTracker::type_of_node` | method | `tugtool-python/src/type_tracker.rs` | Optional TypeNode lookup for D10 |
 | `type_of_with_narrowing` | fn | `tugtool-python/src/type_narrowing.rs` | New function |
 | `ReceiverStep::Subscript` | enum variant | `tugtool-python-cst/.../attribute_access.rs` | New receiver step for subscripts |
 | `ReceiverPath::with_subscript` | method | `tugtool-python-cst/.../attribute_access.rs` | Builder method for subscript steps |
-| `IsInstanceCheck.branch_span` | field | `tugtool-python/src/type_narrowing.rs` | Span of if-branch for scope binding (D09) |
 
 ---
 
@@ -1298,69 +1303,308 @@ grep -n "extract_second_type_arg" crates/tugtool-python/src/
 
 ---
 
-#### Step 5: Create IsInstanceCollector Visitor {#step-5}
+#### Step 5: Create IsInstanceCollector Visitor with Proper Branch Span Capture {#step-5}
 
-**Commit:** `feat(python-cst): add IsInstanceCollector for isinstance pattern detection`
+**Commit:** `feat(python-cst): add IsInstanceCollector with branch span capture during inflation`
 
 **References:** [D03] isinstance Type Narrowing Architecture (#d03-isinstance-narrowing), [D04] Supported isinstance Patterns (#d04-isinstance-patterns), [D09] Narrowing Context Scope Binding (#d09-narrowing-scope-binding)
 
 **Artifacts:**
-- New `isinstance.rs` visitor module
-- `IsInstanceCollector` struct and visitor implementation
-- `IsInstanceCheck` info struct with branch_span
+- Modified `inflate_ctx.rs` - add `branch_span` to `NodePosition`, add `record_branch_span` method
+- Modified `statement.rs` - add `node_id` to `If` struct, update `DeflatedIf::inflate()`
+- New/Modified `isinstance.rs` visitor module - use `node_id` lookup for branch spans
 
-**Tasks:**
-- [ ] Create `crates/tugtool-python-cst/src/visitor/isinstance.rs`
-- [ ] Define `IsInstanceCheck` struct with variable, scope_path, checked_types, check_span, branch_span
-- [ ] Implement `IsInstanceCollector` with scope tracking
-- [ ] Implement `visit_if` to detect isinstance in condition and capture branch span
-- [ ] Implement `extract_isinstance_check` helper for pattern matching
-- [ ] Handle single type: `isinstance(x, Type)`
-- [ ] Handle tuple of types: `isinstance(x, (A, B))`
-- [ ] Export from visitor/mod.rs and lib.rs
+##### Architecture: Capture Branch Spans During Inflation (DECIDED) {#step-5-architecture}
 
-**Implementation Note - branch_span computation:**
+**Problem:** Token fields like `colon_tok` and `dedent_tok` are `pub(crate)` on the DEFLATED CST nodes only. The `#[cst_node]` macro filters out `TokenRef` fields from inflated structs (see `cstnode.rs` lines 284-289). Therefore, the `IsInstanceCollector` visitor cannot access token positions directly on inflated `If` nodes.
 
-The `branch_span` field captures the byte range where narrowing applies. It is computed from the `If` node's body.
+**Solution:** Capture branch spans during inflation, following the established pattern from `FunctionDef` and `ClassDef`:
 
-**Important:** `If.body` is a `Suite<'a>`, not a `Vec<Statement>`. You must unwrap the Suite to access the statements:
+1. **Add `node_id` to `If` struct** - Enables span lookup by identity
+2. **Add `branch_span` to `NodePosition`** - New span type for conditional bodies
+3. **Compute span during `DeflatedIf::inflate()`** - Before body inflation, when tokens are available
+4. **Look up span in `IsInstanceCollector`** - Via `node_id` and `PositionTable`
 
+**Pattern Reference (from FunctionDef, lines 886-899):**
 ```rust
-// In visit_if(), after detecting isinstance check:
-
-// First, extract statements from Suite
-let statements: &[Statement] = match &node.body {
-    Suite::IndentedBlock(block) => &block.body,
-    Suite::SimpleStatementSuite(suite) => {
-        // Simple suite has a single statement line
-        // e.g., `if x: return` on one line
-        &suite.body  // This is a SmallStatement, handle accordingly
-    }
+// Compute scope end directly from our body suite (see [D10])
+let scope_end = match &self.body {
+    DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
+    DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
 };
 
-// Then compute span from first to last statement
-let branch_span = if let (Some(first), Some(last)) = (statements.first(), statements.last()) {
-    Span::new(
-        first.span().map(|s| s.start).unwrap_or(0),
-        last.span().map(|s| s.end).unwrap_or(0),
-    )
-} else {
-    // Empty body - use the if-statement's own span as fallback
-    node.span().unwrap_or_default()
-};
+// Record spans (if position tracking is enabled)
+ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
 ```
 
-This ensures narrowing only applies to code lexically inside the if-branch body.
+---
+
+**Tasks:**
+
+**Part A: Infrastructure Changes**
+- [x] Add `branch_span: Option<Span>` field to `NodePosition` struct in `inflate_ctx.rs`
+- [x] Add `record_branch_span(&mut self, id: NodeId, span: Span)` method to `InflateCtx`
+- [x] Add `node_id: Option<NodeId>` field to `If` struct in `statement.rs`
+- [x] Update `DeflatedIf::inflate()` to:
+  - Generate `node_id` via `ctx.next_id()`
+  - Compute branch span from `colon_tok.end_pos` and body's terminating token
+  - Call `ctx.record_branch_span(node_id, span)`
+  - Include `node_id: Some(node_id)` in returned struct
+
+**Part B: IsInstanceCollector Visitor**
+- [x] Create `crates/tugtool-python-cst/src/visitor/isinstance.rs`
+- [x] Define `IsInstanceCheck` struct with variable, scope_path, checked_types, check_span, branch_span
+- [x] Implement `IsInstanceCollector` with scope tracking
+- [x] Implement `get_branch_span_from_if()` using node_id lookup from PositionTable
+- [x] Implement `extract_isinstance_check` helper for pattern matching
+- [x] Handle single type: `isinstance(x, Type)`
+- [x] Handle tuple of types: `isinstance(x, (A, B))`
+- [x] Export from visitor/mod.rs and lib.rs
+
+---
+
+**Implementation Details:**
+
+**Change 1: `inflate_ctx.rs` - Add branch_span support**
+
+```rust
+// Add to NodePosition struct (around line 48)
+#[derive(Debug, Clone, Default)]
+pub struct NodePosition {
+    pub ident_span: Option<Span>,
+    pub lexical_span: Option<Span>,
+    pub def_span: Option<Span>,
+
+    /// Branch span: the body of a conditional branch (for type narrowing).
+    ///
+    /// For If nodes, this spans from after the colon to the end of the body Suite.
+    /// isinstance-based type narrowing only applies within this span.
+    pub branch_span: Option<Span>,
+}
+
+// Add to InflateCtx impl (around line 230)
+/// Record a branch span for a node (if position tracking enabled).
+///
+/// The branch span covers the body of a conditional, from after the colon
+/// to the end of the suite. Used for isinstance-based type narrowing.
+pub fn record_branch_span(&mut self, id: NodeId, span: Span) {
+    if let Some(ref mut positions) = self.positions {
+        positions
+            .get_or_insert(id, NodePosition::default())
+            .branch_span = Some(span);
+    }
+}
+```
+
+**Change 2: `statement.rs` - Add node_id to If struct**
+
+```rust
+// Around line 1053, add node_id field
+#[cst_node]
+pub struct If<'a> {
+    pub test: Expression<'a>,
+    pub body: Suite<'a>,
+    pub orelse: Option<Box<OrElse<'a>>>,
+    pub leading_lines: Vec<EmptyLine<'a>>,
+    pub whitespace_before_test: SimpleWhitespace<'a>,
+    pub whitespace_after_test: SimpleWhitespace<'a>,
+    pub is_elif: bool,
+
+    pub(crate) if_tok: TokenRef<'a>,
+    pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
+}
+```
+
+**Change 3: `statement.rs` - Update DeflatedIf::inflate()**
+
+```rust
+impl<'r, 'a> Inflate<'a> for DeflatedIf<'r, 'a> {
+    type Inflated = If<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this If node
+        let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating body (tokens available here)
+        let branch_start = self.colon_tok.end_pos.byte_idx();
+        let branch_end = match &self.body {
+            DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
+            DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
+        };
+
+        // Record branch span in PositionTable
+        ctx.record_branch_span(
+            node_id,
+            Span { start: branch_start, end: branch_end },
+        );
+
+        // Now inflate children (this consumes tokens)
+        let leading_lines = parse_empty_lines(
+            &ctx.ws,
+            &mut self.if_tok.whitespace_before.borrow_mut(),
+            None,
+        )?;
+        let whitespace_before_test =
+            parse_simple_whitespace(&ctx.ws, &mut self.if_tok.whitespace_after.borrow_mut())?;
+        let test = self.test.inflate(ctx)?;
+        let whitespace_after_test =
+            parse_simple_whitespace(&ctx.ws, &mut self.colon_tok.whitespace_before.borrow_mut())?;
+        let body = self.body.inflate(ctx)?;
+        let orelse = self.orelse.inflate(ctx)?;
+
+        Ok(Self::Inflated {
+            test,
+            body,
+            orelse,
+            leading_lines,
+            whitespace_before_test,
+            whitespace_after_test,
+            is_elif: self.is_elif,
+            node_id: Some(node_id),
+        })
+    }
+}
+```
+
+**Change 4: `isinstance.rs` - Use node_id lookup**
+
+```rust
+impl<'pos> IsInstanceCollector<'pos> {
+    /// Get the branch span from the If node's position in the PositionTable.
+    fn get_branch_span_from_if(&self, if_node: &If<'_>) -> Span {
+        if let Some(positions) = self.positions {
+            if let Some(node_id) = if_node.node_id {
+                if let Some(pos) = positions.get(&node_id) {
+                    if let Some(span) = pos.branch_span {
+                        return span;
+                    }
+                }
+            }
+        }
+        // Fallback: empty span (narrowing won't apply)
+        Span::new(0, 0)
+    }
+
+    fn extract_isinstance_check(
+        &self,
+        test: &Expression<'_>,
+        if_node: &If<'_>,
+    ) -> Option<IsInstanceCheck> {
+        // ... existing Call/isinstance pattern matching ...
+
+        // Get branch span via node_id lookup
+        let branch_span = self.get_branch_span_from_if(if_node);
+
+        Some(IsInstanceCheck::new(
+            variable,
+            self.scope_path.clone(),
+            checked_types,
+            check_span,
+            branch_span,
+        ))
+    }
+}
+```
+
+---
 
 **Tests:**
-- [ ] Unit: Single type isinstance detected correctly
-- [ ] Unit: Tuple isinstance detected with all types
-- [ ] Unit: Nested isinstance (in elif) detected
-- [ ] Unit: Non-isinstance conditions ignored
-- [ ] Unit: isinstance with complex expressions returns None
+- [x] Unit: Single type isinstance detected correctly
+- [x] Unit: Tuple isinstance detected with all types
+- [x] Unit: Nested isinstance (in elif) detected
+- [x] Unit: Non-isinstance conditions ignored
+- [x] Unit: isinstance with complex expressions returns None
+- [x] Unit: branch_span for multi-line if covers only the indented body
+- [x] Unit: branch_span for single-line if covers only after colon to newline
+- [x] Unit: branch_span with elif chains - each isinstance has own correct branch span
+- [x] Unit: branch_span does NOT include the condition expression
+- [x] Unit: branch_span does NOT include code after the if statement
+
+**Branch Span Verification Tests:**
+
+```rust
+#[test]
+fn test_isinstance_branch_span_multiline() {
+    let source = r#"def process(x):
+    if isinstance(x, Handler):
+        x.process()
+        x.finish()
+    other()
+"#;
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let checks = IsInstanceCollector::collect(&parsed.module, &parsed.positions);
+
+    assert_eq!(checks.len(), 1);
+    let check = &checks[0];
+
+    // Branch span should cover the indented body, not the whole file
+    let branch_text = &source[check.branch_span.start..check.branch_span.end];
+
+    // Should contain the body statements
+    assert!(branch_text.contains("x.process()"));
+    assert!(branch_text.contains("x.finish()"));
+
+    // Should NOT contain code outside the branch
+    assert!(!branch_text.contains("other()"));
+    assert!(!branch_text.contains("def process"));
+}
+
+#[test]
+fn test_isinstance_branch_span_single_line() {
+    let source = "if isinstance(x, A): x.process()\n";
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let checks = IsInstanceCollector::collect(&parsed.module, &parsed.positions);
+
+    assert_eq!(checks.len(), 1);
+    let check = &checks[0];
+
+    let branch_text = &source[check.branch_span.start..check.branch_span.end];
+
+    // Should contain just the single-line body
+    assert!(branch_text.contains("x.process()"));
+
+    // Should NOT contain the condition
+    assert!(!branch_text.contains("isinstance"));
+}
+
+#[test]
+fn test_isinstance_branch_span_with_elif() {
+    let source = r#"def process(x):
+    if isinstance(x, A):
+        x.a_method()
+    elif isinstance(x, B):
+        x.b_method()
+    else:
+        x.default()
+"#;
+    let parsed = parse_module_with_positions(source, None).unwrap();
+    let checks = IsInstanceCollector::collect(&parsed.module, &parsed.positions);
+
+    // Should have two isinstance checks
+    assert_eq!(checks.len(), 2);
+
+    // First check's branch should only cover A's body
+    let check_a = checks.iter().find(|c| c.checked_types == vec!["A"]).unwrap();
+    let branch_a = &source[check_a.branch_span.start..check_a.branch_span.end];
+    assert!(branch_a.contains("a_method"));
+    assert!(!branch_a.contains("b_method"));
+    assert!(!branch_a.contains("default"));
+
+    // Second check's branch should only cover B's body
+    let check_b = checks.iter().find(|c| c.checked_types == vec!["B"]).unwrap();
+    let branch_b = &source[check_b.branch_span.start..check_b.branch_span.end];
+    assert!(branch_b.contains("b_method"));
+    assert!(!branch_b.contains("a_method"));
+    assert!(!branch_b.contains("default"));
+}
+```
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst isinstance`
+- [x] `cargo build -p tugtool-python-cst` (verify compilation with new node_id field)
+- [x] `cargo nextest run -p tugtool-python-cst isinstance`
+- [x] `cargo nextest run -p tugtool-python-cst` (full crate - no regressions)
 
 **Rollback:** Revert commit
 

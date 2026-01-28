@@ -45,6 +45,7 @@ use tugtool_core::patch::Span;
 /// Not all fields will be populated for every node - only the relevant spans are recorded:
 /// - `Name` nodes: `ident_span` (the identifier text)
 /// - `FunctionDef`/`ClassDef`: `lexical_span` and `def_span` (scope boundaries)
+/// - `If` nodes: `branch_span` (the body where type narrowing applies)
 #[derive(Debug, Clone, Default)]
 pub struct NodePosition {
     /// Identifier span: just the name text (for rename operations).
@@ -64,6 +65,12 @@ pub struct NodePosition {
     /// This is the byte range for the complete definition, including decorators.
     /// For decorated functions, starts at the first `@` token.
     pub def_span: Option<Span>,
+
+    /// Branch span: the body of a conditional branch (for type narrowing).
+    ///
+    /// For `If` nodes, this spans from after the colon to the end of the body Suite.
+    /// isinstance-based type narrowing only applies within this span.
+    pub branch_span: Option<Span>,
 }
 
 /// Maps NodeId to position information using Vec indexing for O(1) access.
@@ -236,6 +243,18 @@ impl<'a> InflateCtx<'a> {
             positions
                 .get_or_insert(id, NodePosition::default())
                 .def_span = Some(span);
+        }
+    }
+
+    /// Record a branch span for a node (if position tracking enabled).
+    ///
+    /// The branch span covers the body of a conditional, from after the colon
+    /// to the end of the suite. Used for isinstance-based type narrowing.
+    pub fn record_branch_span(&mut self, id: NodeId, span: Span) {
+        if let Some(ref mut positions) = self.positions {
+            positions
+                .get_or_insert(id, NodePosition::default())
+                .branch_span = Some(span);
         }
     }
 }

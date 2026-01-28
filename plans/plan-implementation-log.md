@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 5: Create IsInstanceCollector Visitor with Proper Branch Span Capture | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 5 specification (lines 1306-1609), [D03], [D04], [D09] design decisions
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - NodePosition, PositionTable, InflateCtx
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - If struct, DeflatedIf::inflate(), FunctionDef pattern (lines 862-906)
+- `crates/tugtool-python-cst/src/visitor/isinstance.rs` - Prior implementation (heuristic approach)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `branch_span: Option<Span>` to `NodePosition` in inflate_ctx.rs | Done |
+| Add `record_branch_span()` method to `InflateCtx` | Done |
+| Add `node_id: Option<NodeId>` to `If` struct in statement.rs | Done |
+| Update `DeflatedIf::inflate()` to compute and record branch_span | Done |
+| Rewrite isinstance.rs to use node_id lookup | Done |
+| Remove heuristic BodySpanCollector and walk_*_for_spans methods | Done |
+| Export from visitor/mod.rs and lib.rs (already present) | Verified |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - Added `branch_span` field to NodePosition, added `record_branch_span()` method to InflateCtx
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added `node_id: Option<NodeId>` to If struct, updated DeflatedIf::inflate() to compute branch_span from tokens and record it
+- `crates/tugtool-python-cst/src/visitor/isinstance.rs` - Complete rewrite: replaced ~400 lines of heuristic walking code with proper node_id lookup via `get_branch_span_from_if()`
+
+**Test Results:**
+- `cargo build -p tugtool-python-cst`: Build succeeded
+- `cargo nextest run -p tugtool-python-cst isinstance`: 10 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 553 tests passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst isinstance`: PASS (10 tests)
+- `cargo nextest run -p tugtool-python-cst`: PASS (553 tests, no regressions)
+
+**Key Decisions/Notes:**
+- Followed established FunctionDef/ClassDef pattern: capture spans during inflation when tokens are available
+- Token fields like `colon_tok` and `dedent_tok` are `pub(crate)` on deflated nodes only - the `#[cst_node]` macro filters them from inflated structs
+- Branch span computed from `colon_tok.end_pos` to body's terminating token (dedent_tok for indented blocks, newline_tok for single-line)
+- Removed flawed heuristic approach that walked Name spans - replaced with proper architecture
+- All branch_span verification tests pass (multiline, single-line, elif chains, condition exclusion)
+
+---
+
 ## [phase-11E.md] Step 4: Integrate Subscript Resolution into Receiver Path | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
