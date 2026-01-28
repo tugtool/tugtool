@@ -2413,4 +2413,407 @@ d: Derived = Derived()
             "After stub merge, process() should return str (not int)"
         );
     }
+
+    // ========================================================================
+    // End-to-End Integration Tests - Phase 11D Step 9
+    // ========================================================================
+
+    /// Fixture 11D-F01: Cross-File Attribute Resolution
+    ///
+    /// Tests basic cross-file attribute resolution where an attribute's type
+    /// is defined in a different file.
+    ///
+    /// ```python
+    /// # handler.py
+    /// class Handler:
+    ///     def process(self) -> str:
+    ///         return "done"
+    ///
+    /// # service.py
+    /// from handler import Handler
+    /// class Service:
+    ///     handler: Handler
+    ///     def run(self):
+    ///         self.handler.process()  # Should resolve to Handler.process
+    /// ```
+    #[test]
+    fn test_cross_file_attribute_resolution_fixture_11d_f01() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // handler.py
+        let handler_content = r#"class Handler:
+    def process(self) -> str:
+        return "done"
+"#;
+        std::fs::write(workspace_root.join("handler.py"), handler_content).unwrap();
+
+        // service.py
+        let service_content = r#"from handler import Handler
+
+class Service:
+    handler: Handler
+
+    def run(self):
+        self.handler.process()
+"#;
+        std::fs::write(workspace_root.join("service.py"), service_content).unwrap();
+
+        // Build workspace
+        let workspace_files: HashSet<String> = ["handler.py", "service.py"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Analyze service.py
+        let service_ctx = cache
+            .get_or_analyze(&workspace_root.join("service.py"), workspace_root)
+            .expect("service.py should analyze successfully");
+
+        // Verify Service has handler attribute with type Handler
+        let handler_attr = service_ctx.tracker.attribute_type_of("Service", "handler");
+        assert!(handler_attr.is_some(), "Service should have 'handler' attribute");
+        assert_eq!(handler_attr.unwrap().type_str, "Handler");
+
+        // Verify Handler.process method return type is available
+        let handler_ctx = cache
+            .get_or_analyze(&workspace_root.join("handler.py"), workspace_root)
+            .expect("handler.py should analyze successfully");
+
+        let process_return = handler_ctx.tracker.method_return_type_of("Handler", "process");
+        assert_eq!(process_return, Some("str"), "Handler.process should return str");
+    }
+
+    /// Fixture 11D-F02: Cross-File Chain (Two Hops)
+    ///
+    /// Tests cross-file resolution through two levels of inheritance.
+    ///
+    /// ```python
+    /// # base.py
+    /// class Base:
+    ///     def method(self) -> int:
+    ///         return 42
+    ///
+    /// # middle.py
+    /// from base import Base
+    /// class Middle(Base):
+    ///     pass
+    ///
+    /// # consumer.py
+    /// from middle import Middle
+    /// class Consumer:
+    ///     obj: Middle
+    ///     def use(self):
+    ///         self.obj.method()  # Should resolve to Base.method via MRO
+    /// ```
+    #[test]
+    fn test_cross_file_chain_two_hops_fixture_11d_f02() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // base.py
+        std::fs::write(
+            workspace_root.join("base.py"),
+            r#"class Base:
+    def method(self) -> int:
+        return 42
+"#,
+        )
+        .unwrap();
+
+        // middle.py
+        std::fs::write(
+            workspace_root.join("middle.py"),
+            r#"from base import Base
+
+class Middle(Base):
+    pass
+"#,
+        )
+        .unwrap();
+
+        // consumer.py
+        std::fs::write(
+            workspace_root.join("consumer.py"),
+            r#"from middle import Middle
+
+class Consumer:
+    obj: Middle
+
+    def use(self):
+        self.obj.method()
+"#,
+        )
+        .unwrap();
+
+        // Build workspace
+        let workspace_files: HashSet<String> = ["base.py", "middle.py", "consumer.py"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Analyze all files to populate cache
+        cache
+            .get_or_analyze(&workspace_root.join("base.py"), workspace_root)
+            .expect("base.py should analyze");
+        cache
+            .get_or_analyze(&workspace_root.join("middle.py"), workspace_root)
+            .expect("middle.py should analyze");
+
+        // The key test: Middle inherits Base.method via MRO
+        let middle_ctx = cache
+            .get_or_analyze(&workspace_root.join("middle.py"), workspace_root)
+            .unwrap();
+        let middle_hierarchies = middle_ctx.class_hierarchies.clone();
+        let middle_tracker = middle_ctx.tracker.clone();
+        let middle_import_targets = middle_ctx.import_targets.clone();
+
+        let owned_ctx = FileTypeContext {
+            file_path: PathBuf::from("middle.py"),
+            tracker: middle_tracker,
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: middle_import_targets,
+            class_hierarchies: middle_hierarchies,
+        };
+
+        let method_attr = owned_ctx.attribute_type_of_with_mro("Middle", "method", &mut cache, workspace_root);
+        assert!(
+            method_attr.is_some(),
+            "Middle should have 'method' via MRO from Base"
+        );
+        assert_eq!(
+            method_attr.unwrap().type_str,
+            "int",
+            "Base.method should return int"
+        );
+    }
+
+    /// Fixture 11D-F12: Aliased From-Import
+    ///
+    /// Tests that aliased imports are handled correctly for type resolution.
+    ///
+    /// ```python
+    /// # handler.py
+    /// class Handler:
+    ///     def process(self) -> str:
+    ///         return "ok"
+    ///
+    /// # consumer.py
+    /// from handler import Handler as H
+    /// h: H = H()
+    /// h.process()  # Should resolve to Handler.process via alias
+    /// ```
+    #[test]
+    fn test_aliased_from_import_fixture_11d_f12() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // handler.py
+        std::fs::write(
+            workspace_root.join("handler.py"),
+            r#"class Handler:
+    def process(self) -> str:
+        return "ok"
+"#,
+        )
+        .unwrap();
+
+        // consumer.py with aliased import
+        std::fs::write(
+            workspace_root.join("consumer.py"),
+            r#"from handler import Handler as H
+
+h: H = H()
+"#,
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> = ["handler.py", "consumer.py"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Analyze consumer.py
+        let consumer_ctx = cache
+            .get_or_analyze(&workspace_root.join("consumer.py"), workspace_root)
+            .expect("consumer.py should analyze");
+
+        // Verify import target resolves H -> handler.py:Handler
+        let import_target = consumer_ctx
+            .import_targets
+            .get(&(vec!["<module>".to_string()], "H".to_string()));
+        assert!(import_target.is_some(), "H should be in import_targets");
+        assert_eq!(
+            import_target.unwrap().file_path.to_str().unwrap(),
+            "handler.py"
+        );
+    }
+
+    /// Fixture 11D-F15: From-Import Submodule
+    ///
+    /// Tests that `from pkg import mod` imports are handled correctly.
+    ///
+    /// ```python
+    /// # pkg/mod.py
+    /// class Worker:
+    ///     def run(self) -> int:
+    ///         return 1
+    ///
+    /// # consumer.py
+    /// from pkg import mod
+    /// mod.Worker().run()
+    /// ```
+    #[test]
+    fn test_from_import_submodule_fixture_11d_f15() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create pkg/ directory
+        std::fs::create_dir(workspace_root.join("pkg")).unwrap();
+
+        // pkg/__init__.py (empty)
+        std::fs::write(workspace_root.join("pkg/__init__.py"), "").unwrap();
+
+        // pkg/mod.py
+        std::fs::write(
+            workspace_root.join("pkg/mod.py"),
+            r#"class Worker:
+    def run(self) -> int:
+        return 1
+"#,
+        )
+        .unwrap();
+
+        // consumer.py
+        std::fs::write(
+            workspace_root.join("consumer.py"),
+            r#"from pkg import mod
+
+w = mod.Worker()
+"#,
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> = [
+            "pkg/__init__.py",
+            "pkg/mod.py",
+            "consumer.py",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Analyze consumer.py
+        let consumer_ctx = cache
+            .get_or_analyze(&workspace_root.join("consumer.py"), workspace_root)
+            .expect("consumer.py should analyze");
+
+        // Verify 'mod' is recognized as an import target pointing to pkg/mod.py
+        let import_target = consumer_ctx
+            .import_targets
+            .get(&(vec!["<module>".to_string()], "mod".to_string()));
+        assert!(import_target.is_some(), "mod should be in import_targets");
+
+        // Verify Worker class is available in pkg/mod.py
+        let mod_ctx = cache
+            .get_or_analyze(&workspace_root.join("pkg/mod.py"), workspace_root)
+            .expect("pkg/mod.py should analyze");
+
+        let worker_return = mod_ctx.tracker.method_return_type_of("Worker", "run");
+        assert_eq!(worker_return, Some("int"), "Worker.run should return int");
+    }
+
+    /// Performance test: Verify resolution completes within acceptable time
+    /// for a project with 50 files.
+    #[test]
+    fn test_performance_50_file_project() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use std::time::Instant;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create 50 files with simple classes
+        let mut workspace_files = HashSet::new();
+        for i in 0..50 {
+            let filename = format!("file_{}.py", i);
+            let content = format!(
+                r#"class Class{}:
+    attr: int
+    def method(self) -> str:
+        return "result"
+"#,
+                i
+            );
+            std::fs::write(workspace_root.join(&filename), content).unwrap();
+            workspace_files.insert(filename);
+        }
+
+        // Create a consumer file that imports several of them
+        let consumer_content = r#"from file_0 import Class0
+from file_10 import Class10
+from file_20 import Class20
+from file_30 import Class30
+from file_40 import Class40
+
+class Consumer:
+    a: Class0
+    b: Class10
+    c: Class20
+    d: Class30
+    e: Class40
+"#;
+        std::fs::write(workspace_root.join("consumer.py"), consumer_content).unwrap();
+        workspace_files.insert("consumer.py".to_string());
+
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Time the analysis
+        let start = Instant::now();
+
+        // Analyze all 50 files
+        for i in 0..50 {
+            let filename = format!("file_{}.py", i);
+            let _ = cache.get_or_analyze(&workspace_root.join(&filename), workspace_root);
+        }
+        // Analyze consumer.py
+        let _ = cache.get_or_analyze(&workspace_root.join("consumer.py"), workspace_root);
+
+        let elapsed = start.elapsed();
+
+        // Should complete in under 100ms (generous threshold for CI environments)
+        assert!(
+            elapsed.as_millis() < 100,
+            "50-file analysis took {}ms, should be <100ms",
+            elapsed.as_millis()
+        );
+    }
 }

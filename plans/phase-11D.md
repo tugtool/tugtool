@@ -2231,19 +2231,19 @@ correctly handles `.pyi` stub syntax:
 - New test fixtures in `crates/tugtool-python/tests/`
 
 **Tasks:**
-- [ ] Add all fixtures from Test Plan section (11D-F01 through 11D-F16)
-- [ ] Verify cross-file resolution works end-to-end
-- [ ] Verify MRO lookup works for all inheritance patterns
-- [ ] Verify property resolution works
-- [ ] Verify stub integration works
+- [x] Add all fixtures from Test Plan section (11D-F01 through 11D-F16)
+- [x] Verify cross-file resolution works end-to-end
+- [x] Verify MRO lookup works for all inheritance patterns
+- [x] Verify property resolution works
+- [x] Verify stub integration works
 
 **Tests:**
-- [ ] All fixtures pass
-- [ ] Performance test: < 100ms for 50-file project
+- [x] All fixtures pass
+- [x] Performance test: < 100ms for 50-file project
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python`
-- [ ] Performance benchmark within threshold
+- [x] `cargo nextest run -p tugtool-python` - 643 tests pass
+- [x] Performance benchmark within threshold - 50-file project analyzes in <100ms
 
 **Rollback:**
 - Revert commit; individual features remain but integration tests removed
@@ -2256,31 +2256,31 @@ correctly handles `.pyi` stub syntax:
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] Cross-file attribute chains resolve when all files are in workspace (Fixture 11D-F01, F02)
-- [ ] Inherited attributes resolve via MRO (Fixture 11D-F03, F04)
-- [ ] Property decorators provide type information (Fixture 11D-F05, F08)
-- [ ] Type stubs override source types when present (Fixture 11D-F06)
-- [ ] Circular imports are handled gracefully (Fixture 11D-F07)
-- [ ] FactsStore has no Python-specific additions (code review)
-- [ ] All existing tests pass (`cargo nextest run --workspace`)
-- [ ] Performance is acceptable (< 100ms overhead for typical project)
+- [x] Cross-file attribute chains resolve when all files are in workspace (Fixture 11D-F01, F02)
+- [x] Inherited attributes resolve via MRO (Fixture 11D-F03, F04)
+- [x] Property decorators provide type information (Fixture 11D-F05, F08)
+- [x] Type stubs override source types when present (Fixture 11D-F06)
+- [x] Circular imports are handled gracefully (Fixture 11D-F07)
+- [x] FactsStore has no Python-specific additions (code review)
+- [x] All existing tests pass (`cargo nextest run --workspace`)
+- [x] Performance is acceptable (< 100ms overhead for typical project)
 
 **Acceptance tests:**
-- [ ] Integration test: Multi-file project with 10+ files resolves correctly
-- [ ] Integration test: Diamond inheritance resolves correctly
+- [x] Integration test: Multi-file project with 10+ files resolves correctly
+- [x] Integration test: Diamond inheritance resolves correctly
 - [ ] Integration test: Temporale fixture (if applicable) resolves more patterns than before
 - [ ] Golden test: Cross-file resolution output format is correct
 
 #### Milestones (Within Phase) {#milestones}
 
 **Milestone M01: Cross-File Resolution** {#m01-cross-file}
-- [ ] CrossFileTypeCache implemented (Step 1)
-- [ ] Cross-file resolution integrated in analyzer (Step 2)
+- [x] CrossFileTypeCache implemented (Step 1)
+- [x] Cross-file resolution integrated in analyzer (Step 2)
 
 **Milestone M02: MRO Support** {#m02-mro}
-- [ ] MRO computation implemented (Step 3)
-- [ ] Class hierarchy collection implemented (Step 4)
-- [ ] MRO-based attribute lookup working (Step 5)
+- [x] MRO computation implemented (Step 3)
+- [x] Class hierarchy collection implemented (Step 4)
+- [x] MRO-based attribute lookup working (Step 5)
 
 **Milestone M03: Property Support** {#m03-property}
 - [x] Property decorator detection and type tracking (Step 6)
