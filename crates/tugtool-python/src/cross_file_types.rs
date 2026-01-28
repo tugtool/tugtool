@@ -722,9 +722,10 @@ fn build_scope_path_with_index(
         if let Some(scope) = scope_map.get(&id) {
             let name = match scope.kind {
                 ScopeKind::Module => "<module>".to_string(),
-                ScopeKind::Class | ScopeKind::Function => {
-                    scope.name.clone().unwrap_or_else(|| "<anonymous>".to_string())
-                }
+                ScopeKind::Class | ScopeKind::Function => scope
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "<anonymous>".to_string()),
                 ScopeKind::Comprehension | ScopeKind::Lambda => {
                     // Skip anonymous scopes in path
                     current_id = scope.parent_id;
@@ -807,10 +808,14 @@ pub fn build_import_targets(
         } else {
             // import mod.sub [as Alias]
             let file_path = PathBuf::from(&resolved_file);
-            let local_name = import
-                .alias
-                .clone()
-                .unwrap_or_else(|| import.module_path.split('.').next().unwrap_or("").to_string());
+            let local_name = import.alias.clone().unwrap_or_else(|| {
+                import
+                    .module_path
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            });
 
             let key = (module_scope.clone(), local_name);
             let target = ImportTarget {
@@ -828,9 +833,7 @@ pub fn build_import_targets(
 ///
 /// Note: This requires FileAnalysis to include class_hierarchies field,
 /// which is wired in Step 4. For now, this returns an empty map.
-pub fn build_class_hierarchies(
-    _analysis: &FileAnalysis,
-) -> HashMap<String, ClassHierarchyInfo> {
+pub fn build_class_hierarchies(_analysis: &FileAnalysis) -> HashMap<String, ClassHierarchyInfo> {
     // TODO: Wire class_hierarchies from FileAnalysis in Step 4
     // For now, return empty map as FileAnalysis doesn't have class_hierarchies yet
     HashMap::new()
@@ -873,8 +876,7 @@ mod tests {
     #[test]
     fn test_cache_with_custom_size() {
         let (workspace_files, namespace_packages) = create_test_workspace();
-        let cache =
-            CrossFileTypeCache::with_max_size(workspace_files, namespace_packages, 10);
+        let cache = CrossFileTypeCache::with_max_size(workspace_files, namespace_packages, 10);
 
         assert_eq!(cache.max_size, 10);
     }
@@ -890,7 +892,10 @@ mod tests {
 
         // Attempting to analyze the same file should error
         let result = cache.get_or_analyze(&test_path, Path::new("."));
-        assert!(matches!(result, Err(TypeResolutionError::CircularImport(_))));
+        assert!(matches!(
+            result,
+            Err(TypeResolutionError::CircularImport(_))
+        ));
     }
 
     #[test]
@@ -1034,7 +1039,10 @@ mod tests {
 
         let result = lookup_import_target(&["<module>".to_string()], "mod", &import_targets);
         assert!(result.is_some());
-        assert!(matches!(result.unwrap().kind, ImportTargetKind::ModuleImport));
+        assert!(matches!(
+            result.unwrap().kind,
+            ImportTargetKind::ModuleImport
+        ));
     }
 
     #[test]

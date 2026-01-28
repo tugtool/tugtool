@@ -1514,27 +1514,27 @@ m.Worker().run()  # Should resolve to Worker.run via aliased submodule import
 - `crates/tugtool-python/src/lib.rs`: Re-export mro module
 
 **Tasks:**
-- [ ] Implement `compute_mro` function using C3 linearization (single-file)
-- [ ] Implement `compute_mro_cross_file` function for cross-file base classes (takes FileTypeContext)
-- [ ] Add `MROError` enum for invalid hierarchies
-- [ ] Add helper `merge` function for linearization
-- [ ] Add helper `lookup_attr_in_mro_class` for attribute lookup through MRO chain
-- [ ] Add helper `resolve_base_class` for dotted/aliased base names
-- [ ] Honor `imported_module` when resolving dotted base names
-- [ ] Write comprehensive unit tests for MRO edge cases
+- [x] Implement `compute_mro` function using C3 linearization (single-file)
+- [x] Implement `compute_mro_cross_file` function for cross-file base classes (takes FileTypeContext)
+- [x] Add `MROError` enum for invalid hierarchies
+- [x] Add helper `merge` function for linearization
+- [x] Add helper `lookup_attr_in_mro_class` for attribute lookup through MRO chain
+- [x] Add helper `resolve_base_class` for dotted/aliased base names
+- [x] Honor `imported_module` when resolving dotted base names
+- [x] Write comprehensive unit tests for MRO edge cases
 
 **Tests:**
-- [ ] Unit test: single inheritance (A -> B)
-- [ ] Unit test: multiple inheritance (A(B, C))
-- [ ] Unit test: diamond pattern (D(B, C) where B(A), C(A))
-- [ ] Unit test: inconsistent hierarchy returns error
-- [ ] Unit test: deep inheritance (5+ levels)
-- [ ] Unit test: cross-file base class resolution
-- [ ] Unit test: dotted base name (`mod.Base`) resolves via import_targets
+- [x] Unit test: single inheritance (A -> B)
+- [x] Unit test: multiple inheritance (A(B, C))
+- [x] Unit test: diamond pattern (D(B, C) where B(A), C(A))
+- [x] Unit test: inconsistent hierarchy returns error
+- [x] Unit test: deep inheritance (5+ levels)
+- [x] Unit test: cross-file base class resolution
+- [x] Unit test: dotted base name (`mod.Base`) resolves via import_targets
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python mro`
-- [ ] `cargo clippy -p tugtool-python`
+- [x] `cargo nextest run -p tugtool-python mro`
+- [x] `cargo clippy -p tugtool-python`
 
 **Rollback:**
 - Revert commit; delete new file

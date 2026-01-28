@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 3: MRO Computation Module | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 3 specification, design decision D03 (MRO Algorithm)
+- `crates/tugtool-python/src/cross_file_types.rs` - CrossFileTypeCache, FileTypeContext, ImportTargetKind
+- `crates/tugtool-python-cst/src/visitor/inheritance.rs` - ClassInheritanceInfo structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `compute_mro` function using C3 linearization (single-file) | Done |
+| Implement `compute_mro_cross_file` function for cross-file base classes | Done |
+| Add `MROError` enum for invalid hierarchies | Done |
+| Add helper `merge` function for linearization | Done |
+| Add helper `lookup_attr_in_mro_class` for attribute lookup through MRO chain | Done |
+| Add helper `resolve_base_class` for dotted/aliased base names | Done |
+| Honor `imported_module` when resolving dotted base names | Done |
+| Write comprehensive unit tests for MRO edge cases | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/mro.rs`: New module with MRO computation using C3 linearization, including `compute_mro()`, `compute_mro_cross_file()`, `merge()`, `resolve_base_class()`, `lookup_attr_in_mro()`, `lookup_attr_in_mro_class()`, `MROError` enum, and 42 comprehensive tests.
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs`: Added re-export for `mro` module.
+- `plans/phase-11D.md`: Marked Step 3 tasks and checkpoints as complete.
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python mro`: 42 tests passed
+- `cargo nextest run -p tugtool-python`: 595 tests passed (all tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python mro`: PASS (42 tests)
+- `cargo clippy -p tugtool-python`: PASS (no warnings)
+
+**Key Decisions/Notes:**
+- Initial implementation had a bug where MRO errors from known bases were being swallowed. Fixed by checking `hierarchy.contains_key(base_name)` before computing MRO and propagating errors for known bases while skipping unknown (external) bases.
+- Functions extract and clone necessary data from FileTypeContext before recursive calls to avoid holding borrows across cache operations (same pattern as Step 2).
+- Added 19 additional stress tests after initial bug was found to ensure robustness: cycle detection tests (self, mutual, three-way), complex diamond patterns, wide/deep inheritance, inconsistent hierarchy variants, real-world patterns (Django-like, mixins), and merge algorithm edge cases.
+- `resolve_base_class` returns `Option<(class_name, file_path)>` - returns `None` for local classes (caller should use current context) or unknown names.
+- Generic type parameters (e.g., `Base[T]`) are stripped before resolution using `strip_generic_params()`.
+
+---
+
 ## [phase-11D.md] Step 2: Integrate Cross-File Resolution into Analyzer | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27

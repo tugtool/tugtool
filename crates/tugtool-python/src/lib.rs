@@ -44,6 +44,7 @@ pub mod dynamic;
 mod error_bridges;
 pub mod files;
 pub mod lookup;
+pub mod mro;
 pub mod ops;
 pub mod type_tracker;
 pub mod types;

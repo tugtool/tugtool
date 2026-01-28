@@ -3665,9 +3665,9 @@ impl PythonAdapter {
             symbol_kinds,
             &HashMap::new(), // No import targets in legacy mode
             cross_file_map,
-            None,            // No cross-file cache
-            None,            // No workspace root
-            0,               // Initial depth
+            None, // No cross-file cache
+            None, // No workspace root
+            0,    // Initial depth
         )
     }
 
@@ -3745,11 +3745,9 @@ impl PythonAdapter {
                 ReceiverStep::Attr { value: attr_name } => {
                     if let Some(ref class_type) = current_type {
                         // Check if current_type is cross-file BEFORE continuing
-                        let is_import = lookup_symbol_kind_in_scope_chain(
-                            scope_path,
-                            class_type,
-                            symbol_kinds,
-                        ) == Some(SymbolKind::Import);
+                        let is_import =
+                            lookup_symbol_kind_in_scope_chain(scope_path, class_type, symbol_kinds)
+                                == Some(SymbolKind::Import);
 
                         let is_local = lookup_symbol_index_in_scope_chain(
                             scope_path,
@@ -3761,8 +3759,7 @@ impl PythonAdapter {
 
                         if !is_local {
                             // Attempt cross-file resolution if cache is available
-                            if let (Some(cache), Some(ws_root)) =
-                                (cross_file_cache, workspace_root)
+                            if let (Some(cache), Some(ws_root)) = (cross_file_cache, workspace_root)
                             {
                                 if let Some(result) = self.resolve_cross_file_attr(
                                     class_type,
@@ -3833,11 +3830,9 @@ impl PythonAdapter {
                         }
 
                         // Check if current_type is cross-file BEFORE continuing
-                        let is_import = lookup_symbol_kind_in_scope_chain(
-                            scope_path,
-                            class_type,
-                            symbol_kinds,
-                        ) == Some(SymbolKind::Import);
+                        let is_import =
+                            lookup_symbol_kind_in_scope_chain(scope_path, class_type, symbol_kinds)
+                                == Some(SymbolKind::Import);
 
                         let is_local = last_name_was_class
                             || (lookup_symbol_index_in_scope_chain(
@@ -4014,15 +4009,17 @@ impl PythonAdapter {
         let remote_ctx = cache.get_or_analyze(file_path, workspace_root).ok()?;
 
         // Check if the class_name is itself an import in the remote file (re-export)
-        let is_reexport = remote_ctx.symbol_kinds.get(&(
-            vec!["<module>".to_string()],
-            class_name.to_string(),
-        )) == Some(&SymbolKind::Import);
+        let is_reexport = remote_ctx
+            .symbol_kinds
+            .get(&(vec!["<module>".to_string()], class_name.to_string()))
+            == Some(&SymbolKind::Import);
 
         if is_reexport {
             // Need to look up the re-export target before dropping the borrow
             let module_scope = vec!["<module>".to_string()];
-            if let Some(target) = lookup_import_target(&module_scope, class_name, &remote_ctx.import_targets) {
+            if let Some(target) =
+                lookup_import_target(&module_scope, class_name, &remote_ctx.import_targets)
+            {
                 let target_path = target.file_path.clone();
                 let target_kind = target.kind.clone();
 
@@ -4051,9 +4048,13 @@ impl PythonAdapter {
         }
 
         // Extract what we need from the context before potential recursive calls
-        let attr_type_info = remote_ctx.tracker.attribute_type_of(class_name, attr_name)
+        let attr_type_info = remote_ctx
+            .tracker
+            .attribute_type_of(class_name, attr_name)
             .map(|at| at.type_str.clone());
-        let method_return = remote_ctx.tracker.method_return_type_of(class_name, attr_name)
+        let method_return = remote_ctx
+            .tracker
+            .method_return_type_of(class_name, attr_name)
             .map(|s| s.to_string());
         let symbol_map_clone = remote_ctx.symbol_map.clone();
         let symbol_kinds_clone = remote_ctx.symbol_kinds.clone();
@@ -4133,10 +4134,9 @@ impl PythonAdapter {
         // If the class itself is what we're looking for (final step was attr on a class)
         if remaining_steps.is_empty() {
             // Return the class as a cross-file reference
-            if symbol_map_clone.contains_key(&(
-                vec!["<module>".to_string()],
-                class_name.to_string(),
-            )) {
+            if symbol_map_clone
+                .contains_key(&(vec!["<module>".to_string()], class_name.to_string()))
+            {
                 // Return as cross-file since it's in a different file
                 if let Some(map) = cross_file_map {
                     if let Some(qn) = map.resolve_to_qualified_name(class_name) {
@@ -4181,7 +4181,9 @@ impl PythonAdapter {
             .get(&(module_scope.clone(), attr_name.to_string()))
             .copied();
 
-        let return_type = remote_ctx.tracker.return_type_of(&module_scope, attr_name)
+        let return_type = remote_ctx
+            .tracker
+            .return_type_of(&module_scope, attr_name)
             .map(|s| s.to_string());
 
         // Clone context data we might need for recursive calls
@@ -4247,9 +4249,7 @@ impl PythonAdapter {
                         }
 
                         // Continue resolution with return type
-                        let mut new_steps = vec![ReceiverStep::Name {
-                            value: ret_type,
-                        }];
+                        let mut new_steps = vec![ReceiverStep::Name { value: ret_type }];
                         new_steps.extend_from_slice(remaining);
                         let new_path = ReceiverPath { steps: new_steps };
 
@@ -4319,8 +4319,8 @@ impl PythonAdapter {
         let module_scope = vec!["<module>".to_string()];
 
         // Check if type is a class in the context
-        if let Some(SymbolKind::Class) = symbol_kinds
-            .get(&(module_scope.clone(), type_name.to_string()))
+        if let Some(SymbolKind::Class) =
+            symbol_kinds.get(&(module_scope.clone(), type_name.to_string()))
         {
             // Return as cross-file reference
             if let Some(map) = cross_file_map {
@@ -4407,7 +4407,9 @@ impl PythonAdapter {
         symbol_name_to_index: &HashMap<&str, usize>,
         cross_file_map: Option<&CrossFileSymbolMap>,
         // Cross-file resolution parameters (optional)
-        import_targets: Option<&HashMap<(Vec<String>, String), crate::cross_file_types::ImportTarget>>,
+        import_targets: Option<
+            &HashMap<(Vec<String>, String), crate::cross_file_types::ImportTarget>,
+        >,
         cross_file_cache: Option<&mut CrossFileTypeCache>,
         workspace_root: Option<&Path>,
     ) -> Option<ResolvedSymbol> {
@@ -12752,9 +12754,7 @@ class Service:
         #[test]
         fn cross_file_lookup_import_target_scope_chain() {
             // Test that lookup_import_target walks the scope chain correctly
-            use crate::cross_file_types::{
-                lookup_import_target, ImportTarget, ImportTargetKind,
-            };
+            use crate::cross_file_types::{lookup_import_target, ImportTarget, ImportTargetKind};
             use std::collections::HashMap;
             use std::path::PathBuf;
 
@@ -12773,11 +12773,8 @@ class Service:
             );
 
             // Lookup from module scope
-            let result = lookup_import_target(
-                &["<module>".to_string()],
-                "Handler",
-                &import_targets,
-            );
+            let result =
+                lookup_import_target(&["<module>".to_string()], "Handler", &import_targets);
             assert!(result.is_some(), "Should find Handler at module scope");
 
             // Lookup from nested scope (should find via scope chain)
@@ -12796,11 +12793,8 @@ class Service:
             );
 
             // Lookup non-existent import
-            let result = lookup_import_target(
-                &["<module>".to_string()],
-                "Missing",
-                &import_targets,
-            );
+            let result =
+                lookup_import_target(&["<module>".to_string()], "Missing", &import_targets);
             assert!(result.is_none(), "Should not find non-existent import");
         }
 
