@@ -369,6 +369,8 @@ pub struct FileAnalysis {
     pub attribute_accesses: Vec<tugtool_python_cst::AttributeAccessInfo>,
     /// Call sites with argument information.
     pub call_sites: Vec<tugtool_python_cst::CallSiteInfo>,
+    /// Class inheritance information (class name -> base class names).
+    pub class_hierarchies: Vec<tugtool_python_cst::ClassInheritanceInfo>,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -1583,6 +1585,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         signatures: native_result.signatures,
         attribute_accesses: native_result.attribute_accesses,
         call_sites: native_result.call_sites,
+        class_hierarchies: native_result.class_inheritance,
     })
 }
 

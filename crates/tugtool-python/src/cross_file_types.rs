@@ -831,12 +831,49 @@ pub fn build_import_targets(
 
 /// Build class hierarchies map from a FileAnalysis.
 ///
-/// Note: This requires FileAnalysis to include class_hierarchies field,
-/// which is wired in Step 4. For now, this returns an empty map.
-pub fn build_class_hierarchies(_analysis: &FileAnalysis) -> HashMap<String, ClassHierarchyInfo> {
-    // TODO: Wire class_hierarchies from FileAnalysis in Step 4
-    // For now, return empty map as FileAnalysis doesn't have class_hierarchies yet
-    HashMap::new()
+/// Maps `ClassInheritanceInfo` from the CST layer to `ClassHierarchyInfo` for cross-file
+/// type resolution. The key is the fully-qualified class name (scope_path + name).
+///
+/// # Base Class Name Handling
+///
+/// Base class names are preserved exactly as they appear in the source:
+/// - Simple names: `Parent` -> `"Parent"`
+/// - Dotted names: `module.Parent` -> `"module.Parent"`
+/// - Generic subscripts: `Generic[T]` -> `"Generic"` (subscripts stripped by CST layer)
+///
+/// # Unresolvable Base Classes
+///
+/// This function does not perform resolution - it simply captures the base class names.
+/// Resolution happens later during MRO computation when cross-file context is available.
+pub fn build_class_hierarchies(analysis: &FileAnalysis) -> HashMap<String, ClassHierarchyInfo> {
+    let mut hierarchies = HashMap::new();
+
+    for class_info in &analysis.class_hierarchies {
+        // Build fully-qualified name: scope_path + class_name
+        // Skip the leading "<module>" element if present
+        let scope_prefix: Vec<&str> = class_info
+            .scope_path
+            .iter()
+            .filter(|s| *s != "<module>")
+            .map(|s| s.as_str())
+            .collect();
+
+        let fq_name = if scope_prefix.is_empty() {
+            class_info.name.clone()
+        } else {
+            format!("{}.{}", scope_prefix.join("."), class_info.name)
+        };
+
+        let hierarchy = ClassHierarchyInfo {
+            name: class_info.name.clone(),
+            bases: class_info.bases.clone(),
+            mro: None, // MRO computed lazily during resolution
+        };
+
+        hierarchies.insert(fq_name, hierarchy);
+    }
+
+    hierarchies
 }
 
 // ============================================================================
@@ -1095,5 +1132,120 @@ mod tests {
 
         assert!(cache.is_empty());
         assert!(cache.access_order.is_empty());
+    }
+
+    // ========================================================================
+    // build_class_hierarchies tests
+    // ========================================================================
+
+    #[test]
+    fn test_hierarchy_single_base_class() {
+        use crate::analyzer::analyze_file;
+        use tugtool_core::patch::FileId;
+
+        let source = "class Child(Parent):\n    pass";
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        assert_eq!(hierarchies.len(), 1);
+        let child = hierarchies.get("Child").unwrap();
+        assert_eq!(child.name, "Child");
+        assert_eq!(child.bases, vec!["Parent"]);
+        assert!(child.mro.is_none()); // MRO computed lazily
+    }
+
+    #[test]
+    fn test_hierarchy_multiple_base_classes() {
+        use crate::analyzer::analyze_file;
+        use tugtool_core::patch::FileId;
+
+        let source = "class Child(Parent1, Parent2, Parent3):\n    pass";
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        assert_eq!(hierarchies.len(), 1);
+        let child = hierarchies.get("Child").unwrap();
+        assert_eq!(child.bases, vec!["Parent1", "Parent2", "Parent3"]);
+    }
+
+    #[test]
+    fn test_hierarchy_dotted_base_name_preserved() {
+        use crate::analyzer::analyze_file;
+        use tugtool_core::patch::FileId;
+
+        let source = "class Handler(module.BaseHandler):\n    pass";
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        let handler = hierarchies.get("Handler").unwrap();
+        assert_eq!(handler.bases, vec!["module.BaseHandler"]);
+    }
+
+    #[test]
+    fn test_hierarchy_available_in_file_type_context() {
+        use crate::analyzer::analyze_file;
+        use tugtool_core::patch::FileId;
+
+        let source = r#"class Parent:
+    pass
+
+class Child(Parent):
+    pass
+"#;
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+        // Build hierarchies (as would happen during FileTypeContext construction)
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        assert_eq!(hierarchies.len(), 2);
+        assert!(hierarchies.contains_key("Parent"));
+        assert!(hierarchies.contains_key("Child"));
+
+        let parent = hierarchies.get("Parent").unwrap();
+        assert!(parent.bases.is_empty());
+
+        let child = hierarchies.get("Child").unwrap();
+        assert_eq!(child.bases, vec!["Parent"]);
+    }
+
+    #[test]
+    fn test_hierarchy_nested_class_fully_qualified_name() {
+        use crate::analyzer::analyze_file;
+        use tugtool_core::patch::FileId;
+
+        let source = r#"class Outer:
+    class Inner(Base):
+        pass
+"#;
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        // Outer is at module level
+        assert!(hierarchies.contains_key("Outer"));
+
+        // Inner should be keyed with fully-qualified name: Outer.Inner
+        assert!(hierarchies.contains_key("Outer.Inner"));
+        let inner = hierarchies.get("Outer.Inner").unwrap();
+        assert_eq!(inner.name, "Inner");
+        assert_eq!(inner.bases, vec!["Base"]);
+    }
+
+    #[test]
+    fn test_hierarchy_generic_subscript_stripped() {
+        use crate::analyzer::analyze_file;
+        use tugtool_core::patch::FileId;
+
+        let source = "class MyList(Generic[T]):\n    pass";
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        let mylist = hierarchies.get("MyList").unwrap();
+        // Generic subscripts are stripped at CST layer, so "Generic[T]" -> "Generic"
+        assert_eq!(mylist.bases, vec!["Generic"]);
     }
 }

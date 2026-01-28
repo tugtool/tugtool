@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 4: Wire InheritanceCollector into FileAnalysis | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 4 specification
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Already exports ClassInheritanceInfo (line 104)
+- `crates/tugtool-python-cst/src/visitor/inheritance.rs` - ClassInheritanceInfo struct definition
+- `crates/tugtool-python/src/cst_bridge.rs` - InheritanceCollector::collect() already called at line 290
+- `crates/tugtool-python/src/analyzer.rs` - FileAnalysis struct and analyze_file function
+- `crates/tugtool-python/src/cross_file_types.rs` - ClassHierarchyInfo and build_class_hierarchies
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `class_hierarchies: Vec<ClassInheritanceInfo>` field to `FileAnalysis` struct | Done |
+| Propagate `NativeAnalysisResult.class_inheritance` to `FileAnalysis.class_hierarchies` | Done |
+| Map `ClassInheritanceInfo` to `ClassHierarchyInfo` in `build_class_hierarchies` | Done |
+| Ensure base class names are captured (single/multiple/dotted/generic bases) | Done |
+| Handle unresolvable base classes gracefully | Done |
+| Unit test: single base class collected in FileAnalysis | Done |
+| Unit test: multiple base classes collected | Done |
+| Unit test: dotted base class names preserved | Done |
+| Integration test: class_hierarchies available in FileTypeContext | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`: Added `class_hierarchies: Vec<tugtool_python_cst::ClassInheritanceInfo>` field to `FileAnalysis` struct (line 372) and propagated `native_result.class_inheritance` in `analyze_file` (line 1588).
+- `crates/tugtool-python/src/cross_file_types.rs`: Implemented `build_class_hierarchies` function (lines 832-877) to map `ClassInheritanceInfo` to `ClassHierarchyInfo` with fully-qualified names for nested classes.
+- `crates/tugtool-python/src/ops/rename.rs`: Added `class_hierarchies: vec![]` to two test `FileAnalysis` structs.
+- `plans/phase-11D.md`: Marked Step 4 tasks and checkpoints as complete.
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python hierarchy`: 11 tests passed
+- `cargo nextest run -p tugtool-python-cst inheritance`: 17 tests passed
+- `cargo nextest run --workspace`: 1811 tests passed (all tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python hierarchy`: PASS (11 tests)
+- `cargo nextest run -p tugtool-python-cst inheritance`: PASS (17 tests)
+
+**Key Decisions/Notes:**
+- `ClassInheritanceInfo` was already exported from `tugtool-python-cst/src/visitor/mod.rs` (line 104), so no changes needed there.
+- `InheritanceCollector::collect()` was already being called in `cst_bridge.rs:290` and results stored in `NativeAnalysisResult.class_inheritance`. This step only needed to wire the data through to `FileAnalysis`.
+- `build_class_hierarchies` creates fully-qualified names for nested classes (e.g., `Outer.Inner`) by joining scope_path elements (excluding `<module>`).
+- Base class names are preserved exactly as collected by the CST layer - resolution happens later during MRO computation.
+- MRO field is set to `None` in `ClassHierarchyInfo` - computed lazily during cross-file resolution.
+
+---
+
 ## [phase-11D.md] Step 3: MRO Computation Module | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27

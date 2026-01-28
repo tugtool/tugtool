@@ -1562,21 +1562,21 @@ The output is stored in `NativeAnalysisResult.class_inheritance`. The actual wor
 - `crates/tugtool-python/src/analyzer.rs`: Add class_hierarchies field to FileAnalysis
 
 **Tasks:**
-- [ ] Add `class_hierarchies: Vec<ClassInheritanceInfo>` field to `FileAnalysis` struct
-- [ ] Propagate `NativeAnalysisResult.class_inheritance` to `FileAnalysis.class_hierarchies`
-- [ ] Map `ClassInheritanceInfo` to `ClassHierarchyInfo` in `build_class_hierarchies`
-- [ ] Ensure base class names are captured (single/multiple/dotted/generic bases)
-- [ ] Handle unresolvable base classes gracefully (log warning, skip)
+- [x] Add `class_hierarchies: Vec<ClassInheritanceInfo>` field to `FileAnalysis` struct
+- [x] Propagate `NativeAnalysisResult.class_inheritance` to `FileAnalysis.class_hierarchies`
+- [x] Map `ClassInheritanceInfo` to `ClassHierarchyInfo` in `build_class_hierarchies`
+- [x] Ensure base class names are captured (single/multiple/dotted/generic bases)
+- [x] Handle unresolvable base classes gracefully (log warning, skip)
 
 **Tests:**
-- [ ] Unit test: single base class collected in FileAnalysis
-- [ ] Unit test: multiple base classes collected
-- [ ] Unit test: dotted base class names preserved (e.g., `mod.Base`)
-- [ ] Integration test: class_hierarchies available in FileTypeContext
+- [x] Unit test: single base class collected in FileAnalysis
+- [x] Unit test: multiple base classes collected
+- [x] Unit test: dotted base class names preserved (e.g., `mod.Base`)
+- [x] Integration test: class_hierarchies available in FileTypeContext
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python hierarchy`
-- [ ] `cargo nextest run -p tugtool-python-cst inheritance`
+- [x] `cargo nextest run -p tugtool-python hierarchy`
+- [x] `cargo nextest run -p tugtool-python-cst inheritance`
 
 **Note:** Existing `InheritanceCollector` tests in tugtool-python-cst confirm collection
 works. This step focuses on wiring, not reimplementing collection.
