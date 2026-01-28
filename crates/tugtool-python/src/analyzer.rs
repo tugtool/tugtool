@@ -443,6 +443,10 @@ pub struct LocalImport {
     pub resolved_file: Option<String>,
     /// Relative import level (0 = absolute, 1 = from ., 2 = from .., etc.)
     pub relative_level: u32,
+    /// Scope path where this import is defined.
+    /// For module-level imports: `["<module>"]`
+    /// For function-level: `["<module>", "MyClass", "my_method"]`
+    pub scope_path: Vec<String>,
 }
 
 /// An imported name.
@@ -3137,6 +3141,7 @@ fn convert_imports(
             line: import.line,
             resolved_file,
             relative_level,
+            scope_path: import.scope_path.clone(),
         });
     }
 
@@ -5524,6 +5529,7 @@ mod tests {
                 line: None,
                 resolved_file: None,
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Module);
@@ -5545,6 +5551,7 @@ mod tests {
                 line: None,
                 resolved_file: None,
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Named);
@@ -5566,6 +5573,7 @@ mod tests {
                 line: None,
                 resolved_file: None,
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Alias);
@@ -5584,6 +5592,7 @@ mod tests {
                 line: None,
                 resolved_file: None,
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Glob);
@@ -8485,6 +8494,7 @@ obj.method_d()
                 line: Some(1),
                 resolved_file: None,
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             };
 
             assert_eq!(imp.module_path, "os.path");
@@ -9942,6 +9952,7 @@ obj.method_d()
                 line: None,
                 resolved_file: resolved_file.map(String::from),
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             }
         }
 
@@ -9960,6 +9971,7 @@ obj.method_d()
                 line: None,
                 resolved_file: resolved_file.map(String::from),
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             }
         }
 
@@ -9974,6 +9986,7 @@ obj.method_d()
                 line: None,
                 resolved_file: resolved_file.map(String::from),
                 relative_level: 0,
+                scope_path: vec!["<module>".to_string()],
             }
         }
 
@@ -10226,6 +10239,7 @@ obj.method_d()
                 line: Some(1),
                 resolved_file: None,
                 relative_level: 1, // from .utils
+                scope_path: vec!["<module>".to_string()],
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();
@@ -10277,6 +10291,7 @@ obj.method_d()
                 line: Some(1),
                 resolved_file: None,
                 relative_level: 1,
+                scope_path: vec!["<module>".to_string()],
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();
@@ -10313,6 +10328,7 @@ obj.method_d()
                 line: Some(1),
                 resolved_file: None,
                 relative_level: 1,
+                scope_path: vec!["<module>".to_string()],
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();
@@ -10354,6 +10370,7 @@ obj.method_d()
                 line: Some(1),
                 resolved_file: None,
                 relative_level: 1,
+                scope_path: vec!["<module>".to_string()],
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();

@@ -1124,24 +1124,24 @@ def process():
 - Modified `build_import_targets_from_cst` to pass through scope_path
 
 **Tasks:**
-- [ ] Add `scope_path: Vec<String>` field to `LocalImport` struct (analyzer.rs:427)
-- [ ] Update `build_import_targets` in `cross_file_types.rs` to use `import.scope_path` instead of hardcoded module_scope
-- [ ] Update `build_import_targets_from_cst` similarly
-- [ ] Ensure `lookup_import_target` correctly walks scope chain for function-level imports
-- [ ] Update LocalImport conversion in `convert_imports()` to propagate scope_path from ImportInfo
-- [ ] Define star-import behavior: expand via __all__ when available; otherwise mark scope ambiguous
+- [x] Add `scope_path: Vec<String>` field to `LocalImport` struct (analyzer.rs:427)
+- [x] Update `build_import_targets` in `cross_file_types.rs` to use `import.scope_path` instead of hardcoded module_scope
+- [x] Update `build_import_targets_from_cst` similarly
+- [x] Ensure `lookup_import_target` correctly walks scope chain for function-level imports
+- [x] Update LocalImport conversion in `convert_imports()` to propagate scope_path from ImportInfo
+- [x] Define star-import behavior: expand via __all__ when available; otherwise mark scope ambiguous
 
 **Note on star import expansion:** Star import expansion requires looking up the target module's exports. This may require passing `FileAnalysisBundle` (or an exports lookup function) to `build_import_targets`. If the target module's `FileAnalysis.exports` is available, expand the star import into explicit `ImportTarget` entries; otherwise treat as ambiguous.
 
 **Tests:**
-- [ ] Integration: Function-level import populates import_targets with correct scope key
-- [ ] Integration: lookup_import_target finds function-level import from within function
-- [ ] Integration: lookup_import_target does NOT find function-level import from outside function
-- [ ] Regression: Module-level import resolution unchanged
+- [x] Integration: Function-level import populates import_targets with correct scope key
+- [x] Integration: lookup_import_target finds function-level import from within function
+- [x] Integration: lookup_import_target does NOT find function-level import from outside function
+- [x] Regression: Module-level import resolution unchanged
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python cross_file`
-- [ ] `cargo nextest run -p tugtool-python import`
+- [x] `cargo nextest run -p tugtool-python cross_file`
+- [x] `cargo nextest run -p tugtool-python import`
 
 **Rollback:** Revert commit
 

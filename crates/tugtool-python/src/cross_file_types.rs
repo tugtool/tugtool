@@ -780,7 +780,6 @@ fn build_import_targets_from_cst(
     importing_file_path: &str,
 ) -> HashMap<(Vec<String>, String), ImportTarget> {
     let mut import_targets = HashMap::new();
-    let module_scope = vec!["<module>".to_string()];
 
     for import in &analysis.imports {
         // Only process resolved imports (those in workspace)
@@ -788,6 +787,9 @@ fn build_import_targets_from_cst(
             Some(path) => path,
             None => continue,
         };
+
+        // Use the import's actual scope_path instead of hardcoded module scope
+        let scope_path = import.scope_path.clone();
 
         match import.kind {
             tugtool_python_cst::ImportKind::From => {
@@ -818,7 +820,7 @@ fn build_import_targets_from_cst(
                             .unwrap_or(&imported_name.name)
                             .clone();
 
-                        let key = (module_scope.clone(), local_name);
+                        let key = (scope_path.clone(), local_name);
                         let target = ImportTarget {
                             file_path,
                             kind: ImportTargetKind::FromImport {
@@ -838,7 +840,7 @@ fn build_import_targets_from_cst(
                     .clone()
                     .unwrap_or_else(|| import.module.split('.').next().unwrap_or("").to_string());
 
-                let key = (module_scope.clone(), local_name);
+                let key = (scope_path.clone(), local_name);
                 let target = ImportTarget {
                     file_path,
                     kind: ImportTargetKind::ModuleImport,
@@ -1080,7 +1082,6 @@ pub fn build_import_targets(
     importing_file_path: &str,
 ) -> HashMap<(Vec<String>, String), ImportTarget> {
     let mut import_targets = HashMap::new();
-    let module_scope = vec!["<module>".to_string()];
 
     for import in &analysis.imports {
         // Only process resolved imports
@@ -1088,6 +1089,9 @@ pub fn build_import_targets(
             Some(path) => path.clone(),
             None => continue,
         };
+
+        // Use the import's actual scope_path instead of hardcoded module scope
+        let scope_path = import.scope_path.clone();
 
         if import.kind == "from" {
             // from mod import Name [as Alias], ...
@@ -1114,7 +1118,7 @@ pub fn build_import_targets(
                     .unwrap_or(&imported_name.name)
                     .clone();
 
-                let key = (module_scope.clone(), local_name);
+                let key = (scope_path.clone(), local_name);
                 let target = ImportTarget {
                     file_path,
                     kind: ImportTargetKind::FromImport {
@@ -1136,7 +1140,7 @@ pub fn build_import_targets(
                     .to_string()
             });
 
-            let key = (module_scope.clone(), local_name);
+            let key = (scope_path.clone(), local_name);
             let target = ImportTarget {
                 file_path,
                 kind: ImportTargetKind::ModuleImport,
@@ -1987,6 +1991,265 @@ class Child(Parent):
         assert_eq!(
             cached_stub.unwrap().to_str().unwrap(),
             "stubs/pkg/subpkg/service.pyi"
+        );
+    }
+
+    // =========================================================================
+    // Function-Level Import Scope Tests (Phase 11E Step 2)
+    // =========================================================================
+
+    /// Helper to create a minimal FileAnalysis with just imports for testing
+    fn make_test_file_analysis(
+        imports: Vec<crate::analyzer::LocalImport>,
+    ) -> crate::analyzer::FileAnalysis {
+        use crate::alias::AliasGraph;
+        use crate::analyzer::FileAnalysis;
+        use tugtool_core::patch::FileId;
+
+        FileAnalysis {
+            file_id: FileId::new(0),
+            path: "test.py".to_string(),
+            cst_id: String::new(),
+            scopes: vec![],
+            symbols: vec![],
+            references: vec![],
+            imports,
+            exports: vec![],
+            alias_graph: AliasGraph::new(),
+            signatures: vec![],
+            attribute_accesses: vec![],
+            call_sites: vec![],
+            class_hierarchies: vec![],
+        }
+    }
+
+    #[test]
+    fn test_function_level_import_populates_correct_scope_key() {
+        // Test that function-level imports are keyed with their scope_path
+        use crate::analyzer::{ImportedName, LocalImport};
+
+        let workspace_files: HashSet<String> = ["handler.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+
+        // Create a function-level import
+        let imports = vec![LocalImport {
+            kind: "from".to_string(),
+            module_path: "handler".to_string(),
+            names: vec![ImportedName {
+                name: "Handler".to_string(),
+                alias: None,
+            }],
+            alias: None,
+            is_star: false,
+            span: None,
+            line: Some(5),
+            resolved_file: Some("handler.py".to_string()),
+            relative_level: 0,
+            // Function-level import in process() method
+            scope_path: vec![
+                "<module>".to_string(),
+                "MyClass".to_string(),
+                "process".to_string(),
+            ],
+        }];
+
+        let analysis = make_test_file_analysis(imports);
+        let targets = build_import_targets(
+            &analysis,
+            &workspace_files,
+            &namespace_packages,
+            "consumer.py",
+        );
+
+        // The import should be keyed with the function's scope_path
+        let function_scope = vec![
+            "<module>".to_string(),
+            "MyClass".to_string(),
+            "process".to_string(),
+        ];
+        let key = (function_scope, "Handler".to_string());
+
+        assert!(
+            targets.contains_key(&key),
+            "Import should be keyed with function scope_path, not module scope"
+        );
+
+        // Module-level key should NOT exist
+        let module_key = (vec!["<module>".to_string()], "Handler".to_string());
+        assert!(
+            !targets.contains_key(&module_key),
+            "Import should NOT be at module scope"
+        );
+    }
+
+    #[test]
+    fn test_lookup_import_target_finds_function_level_import_from_within_function() {
+        // Test that lookup_import_target finds function-level imports when searching from within the function
+        use crate::analyzer::{ImportedName, LocalImport};
+
+        let workspace_files: HashSet<String> = ["handler.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+
+        let imports = vec![LocalImport {
+            kind: "from".to_string(),
+            module_path: "handler".to_string(),
+            names: vec![ImportedName {
+                name: "Handler".to_string(),
+                alias: None,
+            }],
+            alias: None,
+            is_star: false,
+            span: None,
+            line: Some(5),
+            resolved_file: Some("handler.py".to_string()),
+            relative_level: 0,
+            scope_path: vec![
+                "<module>".to_string(),
+                "MyClass".to_string(),
+                "process".to_string(),
+            ],
+        }];
+
+        let analysis = make_test_file_analysis(imports);
+        let targets = build_import_targets(
+            &analysis,
+            &workspace_files,
+            &namespace_packages,
+            "consumer.py",
+        );
+
+        // Search from within the function scope - should find the import
+        let function_scope = vec![
+            "<module>".to_string(),
+            "MyClass".to_string(),
+            "process".to_string(),
+        ];
+        let result = lookup_import_target(&function_scope, "Handler", &targets);
+        assert!(
+            result.is_some(),
+            "Should find Handler import from within process() function"
+        );
+    }
+
+    #[test]
+    fn test_lookup_import_target_does_not_find_function_level_import_from_outside_function() {
+        // Test that lookup_import_target does NOT find function-level imports when searching from outside
+        use crate::analyzer::{ImportedName, LocalImport};
+
+        let workspace_files: HashSet<String> = ["handler.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+
+        let imports = vec![LocalImport {
+            kind: "from".to_string(),
+            module_path: "handler".to_string(),
+            names: vec![ImportedName {
+                name: "Handler".to_string(),
+                alias: None,
+            }],
+            alias: None,
+            is_star: false,
+            span: None,
+            line: Some(5),
+            resolved_file: Some("handler.py".to_string()),
+            relative_level: 0,
+            scope_path: vec![
+                "<module>".to_string(),
+                "MyClass".to_string(),
+                "process".to_string(),
+            ],
+        }];
+
+        let analysis = make_test_file_analysis(imports);
+        let targets = build_import_targets(
+            &analysis,
+            &workspace_files,
+            &namespace_packages,
+            "consumer.py",
+        );
+
+        // Search from module level - should NOT find the function-level import
+        let module_scope = vec!["<module>".to_string()];
+        let result = lookup_import_target(&module_scope, "Handler", &targets);
+        assert!(
+            result.is_none(),
+            "Should NOT find Handler import from module scope"
+        );
+
+        // Search from a different function - should NOT find it
+        let other_function_scope = vec![
+            "<module>".to_string(),
+            "OtherClass".to_string(),
+            "other_method".to_string(),
+        ];
+        let result = lookup_import_target(&other_function_scope, "Handler", &targets);
+        assert!(
+            result.is_none(),
+            "Should NOT find Handler import from a different function"
+        );
+
+        // Search from within the same class but different method - should NOT find it
+        let sibling_method_scope = vec![
+            "<module>".to_string(),
+            "MyClass".to_string(),
+            "other_method".to_string(),
+        ];
+        let result = lookup_import_target(&sibling_method_scope, "Handler", &targets);
+        assert!(
+            result.is_none(),
+            "Should NOT find Handler import from sibling method"
+        );
+    }
+
+    #[test]
+    fn test_module_level_import_resolution_unchanged() {
+        // Regression test: module-level imports still work correctly
+        use crate::analyzer::{ImportedName, LocalImport};
+
+        let workspace_files: HashSet<String> = ["handler.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+
+        let imports = vec![LocalImport {
+            kind: "from".to_string(),
+            module_path: "handler".to_string(),
+            names: vec![ImportedName {
+                name: "Handler".to_string(),
+                alias: None,
+            }],
+            alias: None,
+            is_star: false,
+            span: None,
+            line: Some(1),
+            resolved_file: Some("handler.py".to_string()),
+            relative_level: 0,
+            scope_path: vec!["<module>".to_string()],
+        }];
+
+        let analysis = make_test_file_analysis(imports);
+        let targets = build_import_targets(
+            &analysis,
+            &workspace_files,
+            &namespace_packages,
+            "consumer.py",
+        );
+
+        // Module-level import should be found from module scope
+        let module_scope = vec!["<module>".to_string()];
+        let result = lookup_import_target(&module_scope, "Handler", &targets);
+        assert!(
+            result.is_some(),
+            "Module-level import should be found from module scope"
+        );
+
+        // Module-level import should also be found from function scope (LEGB lookup)
+        let function_scope = vec![
+            "<module>".to_string(),
+            "MyClass".to_string(),
+            "process".to_string(),
+        ];
+        let result = lookup_import_target(&function_scope, "Handler", &targets);
+        assert!(
+            result.is_some(),
+            "Module-level import should be found from function scope via LEGB lookup"
         );
     }
 }

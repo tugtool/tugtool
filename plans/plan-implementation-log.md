@@ -6,6 +6,51 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 2: Wire Scoped Imports Through build_import_targets | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Phase 11E plan with D01, D05, D08 design decisions
+- `crates/tugtool-python/src/analyzer.rs` - LocalImport struct at line 427, convert_imports() at line 3089
+- `crates/tugtool-python/src/cross_file_types.rs` - build_import_targets functions, lookup_import_target
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `scope_path: Vec<String>` field to `LocalImport` struct | Done |
+| Update `build_import_targets` to use `import.scope_path` instead of hardcoded module_scope | Done |
+| Update `build_import_targets_from_cst` similarly | Done |
+| Ensure `lookup_import_target` correctly walks scope chain | Done (already implemented) |
+| Update `convert_imports()` to propagate scope_path from ImportInfo | Done |
+| Define star-import behavior (ambiguous unless __all__ available) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added scope_path field to LocalImport, updated convert_imports(), updated test fixtures
+- `crates/tugtool-python/src/cross_file_types.rs` - Modified build_import_targets and build_import_targets_from_cst to use actual scope_path, added 4 integration tests
+- `plans/phase-11E.md` - Checked off completed tasks in Step 2
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python cross_file`: 63 tests passed
+- `cargo nextest run -p tugtool-python import`: 114 tests passed
+- `cargo nextest run -p tugtool-python`: 647 tests passed
+- `cargo nextest run --workspace`: 1865 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all --check`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python cross_file`: PASS
+- `cargo nextest run -p tugtool-python import`: PASS
+
+**Key Decisions/Notes:**
+- `lookup_import_target` already correctly walks scope chain from most specific to least specific - no changes needed
+- Star imports don't create entries in `import_targets`, implementing D08 decision to treat as ambiguous
+- LEGB lookup pattern preserved - module-level imports still found from within functions
+- Updated 12 test fixtures in analyzer.rs that create LocalImport directly
+
+---
+
 ## [phase-11E.md] Step 1: Add Scope Tracking to ImportCollector | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
