@@ -2186,7 +2186,10 @@ p: Person = Person()
 
         // Attribute fallback should also work
         let attr = tracker.attribute_type_of("Person", "name");
-        assert!(attr.is_some(), "attribute_type_of should fall back to property");
+        assert!(
+            attr.is_some(),
+            "attribute_type_of should fall back to property"
+        );
         assert_eq!(
             attr.unwrap().type_str,
             "str",
@@ -2257,7 +2260,8 @@ d: Derived = Derived()
         cache.insert_context(PathBuf::from("test.py"), ctx_for_cache);
 
         // Look up inherited property via MRO
-        let value_attr = ctx.attribute_type_of_with_mro("Derived", "value", &mut cache, Path::new("."));
+        let value_attr =
+            ctx.attribute_type_of_with_mro("Derived", "value", &mut cache, Path::new("."));
         assert!(
             value_attr.is_some(),
             "Derived should have 'value' property inherited from Base"
@@ -2392,15 +2396,15 @@ d: Derived = Derived()
 
         // Load stub from stubs/ directory
         let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
-        assert!(stub_tracker.is_some(), "Stub should be found in stubs/ directory");
+        assert!(
+            stub_tracker.is_some(),
+            "Stub should be found in stubs/ directory"
+        );
 
         // Verify stub path is from stubs/
         let cached_stub = cache.get_stub_path(Path::new("service.py"));
         assert!(cached_stub.is_some());
-        assert_eq!(
-            cached_stub.unwrap().to_str().unwrap(),
-            "stubs/service.pyi"
-        );
+        assert_eq!(cached_stub.unwrap().to_str().unwrap(), "stubs/service.pyi");
 
         // Merge stub
         source_tracker.merge_from_stub(stub_tracker.unwrap());
@@ -2478,7 +2482,10 @@ class Service:
 
         // Verify Service has handler attribute with type Handler
         let handler_attr = service_ctx.tracker.attribute_type_of("Service", "handler");
-        assert!(handler_attr.is_some(), "Service should have 'handler' attribute");
+        assert!(
+            handler_attr.is_some(),
+            "Service should have 'handler' attribute"
+        );
         assert_eq!(handler_attr.unwrap().type_str, "Handler");
 
         // Verify Handler.process method return type is available
@@ -2486,8 +2493,14 @@ class Service:
             .get_or_analyze(&workspace_root.join("handler.py"), workspace_root)
             .expect("handler.py should analyze successfully");
 
-        let process_return = handler_ctx.tracker.method_return_type_of("Handler", "process");
-        assert_eq!(process_return, Some("str"), "Handler.process should return str");
+        let process_return = handler_ctx
+            .tracker
+            .method_return_type_of("Handler", "process");
+        assert_eq!(
+            process_return,
+            Some("str"),
+            "Handler.process should return str"
+        );
     }
 
     /// Fixture 11D-F02: Cross-File Chain (Two Hops)
@@ -2589,7 +2602,8 @@ class Consumer:
             class_hierarchies: middle_hierarchies,
         };
 
-        let method_attr = owned_ctx.attribute_type_of_with_mro("Middle", "method", &mut cache, workspace_root);
+        let method_attr =
+            owned_ctx.attribute_type_of_with_mro("Middle", "method", &mut cache, workspace_root);
         assert!(
             method_attr.is_some(),
             "Middle should have 'method' via MRO from Base"
@@ -2717,14 +2731,10 @@ w = mod.Worker()
         )
         .unwrap();
 
-        let workspace_files: HashSet<String> = [
-            "pkg/__init__.py",
-            "pkg/mod.py",
-            "consumer.py",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+        let workspace_files: HashSet<String> = ["pkg/__init__.py", "pkg/mod.py", "consumer.py"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let namespace_packages = HashSet::new();
         let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
 

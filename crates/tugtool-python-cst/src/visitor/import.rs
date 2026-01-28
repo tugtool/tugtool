@@ -31,7 +31,10 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
-use crate::nodes::{Expression, Import, ImportFrom, ImportNames, Module, NameOrAttribute, Span};
+use crate::nodes::{
+    ClassDef, Expression, FunctionDef, Import, ImportFrom, ImportNames, Module, NameOrAttribute,
+    Span,
+};
 
 /// The kind of import statement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -86,11 +89,15 @@ pub struct ImportInfo {
     pub span: Option<Span>,
     /// Line number (1-indexed).
     pub line: Option<u32>,
+    /// Scope path where this import is defined.
+    /// For module-level imports: `["<module>"]`
+    /// For function-level: `["<module>", "MyClass", "my_method"]`
+    pub scope_path: Vec<String>,
 }
 
 impl ImportInfo {
     /// Create a new ImportInfo for a regular import.
-    fn new_import(module: String, alias: Option<String>) -> Self {
+    fn new_import(module: String, alias: Option<String>, scope_path: Vec<String>) -> Self {
         Self {
             kind: ImportKind::Import,
             module,
@@ -100,11 +107,17 @@ impl ImportInfo {
             relative_level: 0,
             span: None,
             line: None,
+            scope_path,
         }
     }
 
     /// Create a new ImportInfo for a from import.
-    fn new_from(module: String, names: Vec<ImportedName>, relative_level: usize) -> Self {
+    fn new_from(
+        module: String,
+        names: Vec<ImportedName>,
+        relative_level: usize,
+        scope_path: Vec<String>,
+    ) -> Self {
         Self {
             kind: ImportKind::From,
             module,
@@ -114,11 +127,12 @@ impl ImportInfo {
             relative_level,
             span: None,
             line: None,
+            scope_path,
         }
     }
 
     /// Create a new ImportInfo for a star import.
-    fn new_star(module: String, relative_level: usize) -> Self {
+    fn new_star(module: String, relative_level: usize, scope_path: Vec<String>) -> Self {
         Self {
             kind: ImportKind::From,
             module,
@@ -128,6 +142,7 @@ impl ImportInfo {
             relative_level,
             span: None,
             line: None,
+            scope_path,
         }
     }
 
@@ -147,14 +162,25 @@ impl ImportInfo {
 /// - `from x import *`
 /// - `from . import x`, `from ..x import y`
 ///
+/// # Scope Tracking
+///
+/// The collector tracks the scope path (class/function nesting) where each import
+/// is defined. This enables proper scope-chain lookup for function-level imports.
+///
 /// # Example
 ///
 /// ```ignore
 /// let imports = ImportCollector::collect(&module);
+/// for import in &imports {
+///     println!("{}: {:?} at {:?}", import.module, import.kind, import.scope_path);
+/// }
 /// ```
 pub struct ImportCollector {
     /// Collected imports.
     imports: Vec<ImportInfo>,
+    /// Current scope path (class/function nesting).
+    /// Initialized with `["<module>"]` for module-level imports.
+    scope_path: Vec<String>,
 }
 
 impl Default for ImportCollector {
@@ -165,9 +191,12 @@ impl Default for ImportCollector {
 
 impl ImportCollector {
     /// Create a new ImportCollector.
+    ///
+    /// Initializes the scope path with `["<module>"]` to represent the module-level scope.
     pub fn new() -> Self {
         Self {
             imports: Vec::new(),
+            scope_path: vec!["<module>".to_string()],
         }
     }
 
@@ -215,6 +244,28 @@ impl ImportCollector {
 }
 
 impl<'a> Visitor<'a> for ImportCollector {
+    // Scope tracking: push class name on entry, pop on exit
+    fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
+        self.scope_path.push(node.name.value.to_string());
+        // Continue to let the walker descend into children
+        VisitResult::Continue
+    }
+
+    fn leave_class_def(&mut self, _node: &ClassDef<'a>) {
+        self.scope_path.pop();
+    }
+
+    // Scope tracking: push function name on entry, pop on exit
+    fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
+        self.scope_path.push(node.name.value.to_string());
+        // Continue to let the walker descend into children
+        VisitResult::Continue
+    }
+
+    fn leave_function_def(&mut self, _node: &FunctionDef<'a>) {
+        self.scope_path.pop();
+    }
+
     fn visit_import_stmt(&mut self, node: &Import<'a>) -> VisitResult {
         // Note: Import statement spans are not currently tracked via PositionTable.
         // The import_tok field is internal to the CST. For rename operations,
@@ -230,7 +281,8 @@ impl<'a> Visitor<'a> for ImportCollector {
                 _ => None,
             });
 
-            let import = ImportInfo::new_import(module, import_alias).with_span(span);
+            let import = ImportInfo::new_import(module, import_alias, self.scope_path.clone())
+                .with_span(span);
             self.imports.push(import);
         }
 
@@ -254,7 +306,8 @@ impl<'a> Visitor<'a> for ImportCollector {
 
         match &node.names {
             ImportNames::Star(_) => {
-                let import = ImportInfo::new_star(module, relative_level).with_span(span);
+                let import = ImportInfo::new_star(module, relative_level, self.scope_path.clone())
+                    .with_span(span);
                 self.imports.push(import);
             }
             ImportNames::Aliases(aliases) => {
@@ -276,7 +329,9 @@ impl<'a> Visitor<'a> for ImportCollector {
                     })
                     .collect();
 
-                let import = ImportInfo::new_from(module, names, relative_level).with_span(span);
+                let import =
+                    ImportInfo::new_from(module, names, relative_level, self.scope_path.clone())
+                        .with_span(span);
                 self.imports.push(import);
             }
         }
@@ -438,5 +493,157 @@ mod tests {
         let imports = ImportCollector::collect(&module);
 
         assert!(imports[0].span.is_none());
+    }
+
+    // =========================================================================
+    // Scope Path Tracking Tests (Phase 11E)
+    // =========================================================================
+
+    #[test]
+    fn test_module_level_import_scope_path() {
+        // Module-level imports should have scope_path ["<module>"]
+        let source = "import os";
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].scope_path, vec!["<module>"]);
+    }
+
+    #[test]
+    fn test_function_level_import_scope_path() {
+        // Import inside a function should include the function name in scope_path
+        let source = r#"
+def process():
+    from handler import Handler
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].scope_path, vec!["<module>", "process"]);
+        assert_eq!(imports[0].module, "handler");
+    }
+
+    #[test]
+    fn test_nested_function_import_scope_path() {
+        // Import inside a nested function should have full scope chain
+        let source = r#"
+def outer():
+    def inner():
+        import json
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].scope_path, vec!["<module>", "outer", "inner"]);
+    }
+
+    #[test]
+    fn test_class_method_import_scope_path() {
+        // Import inside a class method should include class and method names
+        let source = r#"
+class MyClass:
+    def method(self):
+        from utils import helper
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].scope_path, vec!["<module>", "MyClass", "method"]);
+    }
+
+    #[test]
+    fn test_class_level_import_scope_path() {
+        // Import at class level (unusual but valid Python)
+        let source = r#"
+class MyClass:
+    from typing import List
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].scope_path, vec!["<module>", "MyClass"]);
+    }
+
+    #[test]
+    fn test_mixed_scope_imports() {
+        // Multiple imports at different scope levels
+        let source = r#"
+import os
+
+class Handler:
+    from typing import Optional
+
+    def process(self):
+        from json import loads
+
+def standalone():
+    import sys
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 4);
+
+        // Module-level: import os
+        assert_eq!(imports[0].module, "os");
+        assert_eq!(imports[0].scope_path, vec!["<module>"]);
+
+        // Class-level: from typing import Optional
+        assert_eq!(imports[1].module, "typing");
+        assert_eq!(imports[1].scope_path, vec!["<module>", "Handler"]);
+
+        // Method-level: from json import loads
+        assert_eq!(imports[2].module, "json");
+        assert_eq!(
+            imports[2].scope_path,
+            vec!["<module>", "Handler", "process"]
+        );
+
+        // Function-level: import sys
+        assert_eq!(imports[3].module, "sys");
+        assert_eq!(imports[3].scope_path, vec!["<module>", "standalone"]);
+    }
+
+    #[test]
+    fn test_deeply_nested_import_scope_path() {
+        // Import deep inside nested classes and functions
+        let source = r#"
+class Outer:
+    class Inner:
+        def method(self):
+            def nested():
+                from deep import module
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(
+            imports[0].scope_path,
+            vec!["<module>", "Outer", "Inner", "method", "nested"]
+        );
+    }
+
+    #[test]
+    fn test_sibling_functions_import_scope_isolation() {
+        // Imports in sibling functions should have independent scope paths
+        let source = r#"
+def func_a():
+    import module_a
+
+def func_b():
+    import module_b
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 2);
+        assert_eq!(imports[0].scope_path, vec!["<module>", "func_a"]);
+        assert_eq!(imports[1].scope_path, vec!["<module>", "func_b"]);
     }
 }

@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 1: Add Scope Tracking to ImportCollector | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Phase 11E plan with D01 design decision
+- `crates/tugtool-python-cst/src/visitor/import.rs` - ImportInfo and ImportCollector definitions
+- `crates/tugtool-python-cst/src/visitor/traits.rs` - Visitor trait definition
+- `crates/tugtool-python-cst/src/visitor/dispatch.rs` - Walk functions for class_def/function_def
+- `crates/tugtool-python/src/cst_bridge.rs` - CST bridge integration
+- `crates/tugtool-python/src/analyzer.rs` - Test fixtures using ImportInfo
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `scope_path: Vec<String>` field to `ImportInfo` | Done |
+| Add `scope_path: Vec<String>` field to `ImportCollector` | Done |
+| Implement `visit_class_def` to push/pop class names | Done |
+| Implement `visit_function_def` to push/pop function names | Done |
+| Update `visit_import` and `visit_import_from` to include scope_path | Done |
+| Initialize scope_path with `["<module>"]` in `ImportCollector::new` | Done |
+| Propagate `ImportInfo.scope_path` into CST bridge output | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/import.rs` - Added scope_path to ImportInfo/ImportCollector, implemented scope tracking via visit/leave methods
+- `crates/tugtool-python/src/analyzer.rs` - Updated test fixtures to include scope_path field
+- `plans/phase-11E.md` - Checked off completed tasks in Step 1
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst import`: 36 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 541 tests passed
+- `cargo nextest run -p tugtool-python`: 643 tests passed
+- `cargo nextest run --workspace`: 1861 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all --check`: Clean
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst import`: PASS
+- Manual verification (test_mixed_scope_imports): PASS
+
+**Key Decisions/Notes:**
+- Used `VisitResult::Continue` in visit methods (not walk_* functions) to avoid infinite recursion/stack overflow
+- Scope path uses same naming convention as TypeTracker: `["<module>", "ClassName", "function_name"]`
+- CST bridge automatically propagates scope_path since ImportInfo is passed through directly
+
+---
+
 ## [phase-11E.md] Plan Creation and Review | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

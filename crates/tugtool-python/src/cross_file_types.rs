@@ -1755,15 +1755,15 @@ class Child(Parent):
 
         // Load stub for source file
         let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
-        assert!(stub_tracker.is_some(), "should find stub in stubs/ directory");
+        assert!(
+            stub_tracker.is_some(),
+            "should find stub in stubs/ directory"
+        );
 
         // Verify stub path is cached
         let cached_stub = cache.get_stub_path(Path::new("service.py"));
         assert!(cached_stub.is_some());
-        assert_eq!(
-            cached_stub.unwrap().to_str().unwrap(),
-            "stubs/service.pyi"
-        );
+        assert_eq!(cached_stub.unwrap().to_str().unwrap(), "stubs/service.pyi");
 
         // Verify type was extracted from stub
         let tracker = stub_tracker.unwrap();
@@ -1834,7 +1834,10 @@ class Child(Parent):
 
         // Load stub - should return None
         let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
-        assert!(stub_tracker.is_none(), "should return None when no stub exists");
+        assert!(
+            stub_tracker.is_none(),
+            "should return None when no stub exists"
+        );
 
         // Verify nothing cached
         assert!(cache.get_stub_path(Path::new("service.py")).is_none());
@@ -1879,10 +1882,8 @@ class Child(Parent):
         source_tracker.merge_from_stub(stub_tracker);
 
         // Stub type should override source type
-        let result = source_tracker.type_of(
-            &["<module>".to_string(), "Config".to_string()],
-            "data",
-        );
+        let result =
+            source_tracker.type_of(&["<module>".to_string(), "Config".to_string()], "data");
         assert_eq!(result, Some("str"));
     }
 
@@ -1976,7 +1977,10 @@ class Child(Parent):
         // Load stub for nested package
         let stub_tracker =
             cache.load_stub_if_exists(Path::new("pkg/subpkg/service.py"), workspace_root);
-        assert!(stub_tracker.is_some(), "should find stub for nested package");
+        assert!(
+            stub_tracker.is_some(),
+            "should find stub for nested package"
+        );
 
         // Verify correct path
         let cached_stub = cache.get_stub_path(Path::new("pkg/subpkg/service.py"));

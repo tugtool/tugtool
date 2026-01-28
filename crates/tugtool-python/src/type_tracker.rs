@@ -3314,7 +3314,10 @@ mod tests {
             tracker.process_properties(&signatures);
 
             let result = tracker.property_type_of("Person", "name");
-            assert!(result.is_some(), "property_type_of should find the property");
+            assert!(
+                result.is_some(),
+                "property_type_of should find the property"
+            );
             let prop_info = result.unwrap();
             assert_eq!(prop_info.type_str, "str");
             assert!(prop_info.type_node.is_some());
@@ -3325,7 +3328,12 @@ mod tests {
             // Properties without return type annotation are not tracked
             let mut tracker = TypeTracker::new();
 
-            let signatures = vec![make_property("name", vec!["<module>", "Person"], None, None)];
+            let signatures = vec![make_property(
+                "name",
+                vec!["<module>", "Person"],
+                None,
+                None,
+            )];
 
             tracker.process_properties(&signatures);
 
@@ -3340,7 +3348,11 @@ mod tests {
             // Regular methods (without @property) should not be tracked in property_types
             let mut tracker = TypeTracker::new();
 
-            let signatures = vec![make_method("process", vec!["<module>", "Service"], Some("str"))];
+            let signatures = vec![make_method(
+                "process",
+                vec!["<module>", "Service"],
+                Some("str"),
+            )];
 
             tracker.process_properties(&signatures);
 
@@ -3376,7 +3388,10 @@ mod tests {
 
             // attribute_type_of should find the property
             let result = tracker.attribute_type_of("Person", "name");
-            assert!(result.is_some(), "attribute_type_of should fall back to property");
+            assert!(
+                result.is_some(),
+                "attribute_type_of should fall back to property"
+            );
             assert_eq!(result.unwrap().type_str, "str");
         }
 
@@ -3447,18 +3462,8 @@ mod tests {
             let mut tracker = TypeTracker::new();
 
             let signatures = vec![
-                make_property(
-                    "name",
-                    vec!["<module>", "Person"],
-                    Some("str"),
-                    None,
-                ),
-                make_property(
-                    "age",
-                    vec!["<module>", "Person"],
-                    Some("int"),
-                    None,
-                ),
+                make_property("name", vec!["<module>", "Person"], Some("str"), None),
+                make_property("age", vec!["<module>", "Person"], Some("int"), None),
             ];
 
             tracker.process_properties(&signatures);
@@ -3480,7 +3485,12 @@ mod tests {
 
             let signatures = vec![
                 make_property("name", vec!["<module>", "Person"], Some("str"), None),
-                make_property("name", vec!["<module>", "Company"], Some("CompanyName"), None),
+                make_property(
+                    "name",
+                    vec!["<module>", "Company"],
+                    Some("CompanyName"),
+                    None,
+                ),
             ];
 
             tracker.process_properties(&signatures);

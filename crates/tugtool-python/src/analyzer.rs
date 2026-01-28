@@ -9682,6 +9682,7 @@ obj.method_d()
                     span: None,
                     line: Some(1),
                     relative_level: 0,
+                    scope_path: vec!["<module>".to_string()],
                 },
                 // Single-level relative: from .utils import foo
                 ImportInfo {
@@ -9696,6 +9697,7 @@ obj.method_d()
                     span: None,
                     line: Some(2),
                     relative_level: 1,
+                    scope_path: vec!["<module>".to_string()],
                 },
                 // Double-level relative: from ..parent import bar
                 ImportInfo {
@@ -9710,6 +9712,7 @@ obj.method_d()
                     span: None,
                     line: Some(3),
                     relative_level: 2,
+                    scope_path: vec!["<module>".to_string()],
                 },
             ];
 
@@ -9760,6 +9763,7 @@ obj.method_d()
                 span: None,
                 line: Some(1),
                 relative_level: 1, // from .utils import *
+                scope_path: vec!["<module>".to_string()],
             }];
 
             // Pass a dummy file path for relative import context

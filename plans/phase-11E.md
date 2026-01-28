@@ -1091,23 +1091,23 @@ def process():
 - Modified `ImportCollector` with scope tracking methods
 
 **Tasks:**
-- [ ] Add `scope_path: Vec<String>` field to `ImportInfo`
-- [ ] Add `scope_path: Vec<String>` field to `ImportCollector`
-- [ ] Implement `visit_class_def` to push/pop class names
-- [ ] Implement `visit_function_def` to push/pop function names
-- [ ] Update `visit_import` and `visit_import_from` to include scope_path
-- [ ] Initialize scope_path with `["<module>"]` in `ImportCollector::new`
-- [ ] Propagate `ImportInfo.scope_path` into CST bridge output
+- [x] Add `scope_path: Vec<String>` field to `ImportInfo`
+- [x] Add `scope_path: Vec<String>` field to `ImportCollector`
+- [x] Implement `visit_class_def` to push/pop class names
+- [x] Implement `visit_function_def` to push/pop function names
+- [x] Update `visit_import` and `visit_import_from` to include scope_path
+- [x] Initialize scope_path with `["<module>"]` in `ImportCollector::new`
+- [x] Propagate `ImportInfo.scope_path` into CST bridge output
 
 **Tests:**
-- [ ] Unit: Import at module level has scope_path `["<module>"]`
-- [ ] Unit: Import inside function has correct scope_path
-- [ ] Unit: Import inside nested class/function has full scope_path
-- [ ] Unit: Existing import tests still pass
+- [x] Unit: Import at module level has scope_path `["<module>"]`
+- [x] Unit: Import inside function has correct scope_path
+- [x] Unit: Import inside nested class/function has full scope_path
+- [x] Unit: Existing import tests still pass
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst import`
-- [ ] Manual verification: parse file with function-level import, check scope_path
+- [x] `cargo nextest run -p tugtool-python-cst import`
+- [x] Manual verification: parse file with function-level import, check scope_path
 
 **Rollback:** Revert commit
 
