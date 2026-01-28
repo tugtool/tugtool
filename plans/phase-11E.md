@@ -938,8 +938,10 @@ resolve_subscript_type(container_type, type_node)
 | File | Changes |
 |------|---------|
 | `crates/tugtool-python-cst/src/inflate_ctx.rs` | Add `branch_span` to NodePosition, add `record_branch_span` method |
-| `crates/tugtool-python-cst/src/nodes/statement.rs` | Add `node_id` to If struct, update DeflatedIf::inflate() to record branch_span |
+| `crates/tugtool-python-cst/src/nodes/statement.rs` | Add `node_id` to If, For, While, Try, TryStar, With, Match structs; update inflate() methods |
+| `crates/tugtool-python-cst/src/nodes/expression.rs` | Update DeflatedSimpleString::inflate() to record ident_span (Step 5B) |
 | `crates/tugtool-python-cst/src/visitor/import.rs` | Add scope_path to ImportInfo, scope tracking to ImportCollector |
+| `crates/tugtool-python-cst/src/visitor/exports.rs` | Remove string search, use PositionTable lookup via node_id (Step 5B) |
 | `crates/tugtool-python-cst/src/visitor/mod.rs` | Export isinstance module |
 | `crates/tugtool-python-cst/src/lib.rs` | Re-export isinstance types |
 | `crates/tugtool-python-cst/src/visitor/attribute_access.rs` | Add ReceiverStep::Subscript and emit subscript steps |
@@ -957,6 +959,14 @@ resolve_subscript_type(container_type, type_node)
 | `NodePosition.branch_span` | field | `tugtool-python-cst/src/inflate_ctx.rs` | Branch body span for type narrowing |
 | `InflateCtx::record_branch_span` | method | `tugtool-python-cst/src/inflate_ctx.rs` | Record branch span during inflation |
 | `If.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity for span lookup |
+| `For.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity (Step 5C) |
+| `While.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity (Step 5C) |
+| `Try.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity (Step 5C) |
+| `TryStar.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity (Step 5C) |
+| `With.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity (Step 5C) |
+| `Match.node_id` | field | `tugtool-python-cst/src/nodes/statement.rs` | Stable identity (Step 5C) |
+| `SimpleString` ident_span recording | inflate | `tugtool-python-cst/src/nodes/expression.rs` | Record token span (Step 5B) |
+| `ExportCollector` refactor | visitor | `tugtool-python-cst/src/visitor/exports.rs` | Remove string search, use PositionTable (Step 5B) |
 | `ImportInfo.scope_path` | field | `tugtool-python-cst/.../import.rs` | New field for scope tracking |
 | `ImportCollector.scope_path` | field | `tugtool-python-cst/.../import.rs` | Internal scope stack |
 | `LocalImport.scope_path` | field | `tugtool-python/src/analyzer.rs` | Persist CST scope_path for import resolution |
@@ -1605,6 +1615,318 @@ fn test_isinstance_branch_span_with_elif() {
 - [x] `cargo build -p tugtool-python-cst` (verify compilation with new node_id field)
 - [x] `cargo nextest run -p tugtool-python-cst isinstance`
 - [x] `cargo nextest run -p tugtool-python-cst` (full crate - no regressions)
+
+**Rollback:** Revert commit
+
+---
+
+#### Step 5B: Record SimpleString Spans During Inflation {#step-5b}
+
+**Commit:** `feat(python-cst): record ident_span for SimpleString nodes during inflation`
+
+**References:** CST infrastructure audit (2026-01-28)
+
+**Artifacts:**
+- Modified `DeflatedSimpleString::inflate()` in `expression.rs` to record spans
+- Modified `ExportCollector` in `exports.rs` to use PositionTable lookup instead of string search
+- Removed `search_from` cursor tracking from `ExportCollector`
+
+##### Problem Statement {#step-5b-problem}
+
+The `ExportCollector` currently uses a string search fallback to locate `SimpleString` literals in `__all__` assignments:
+
+```rust
+// Current workaround in parse_simple_string() (lines 281-342)
+if let Some(offset) = self.source[self.search_from..].find(value) {
+    let start = self.search_from + offset;
+    // ... compute spans from string search
+}
+```
+
+This is an anti-pattern because:
+1. `SimpleString` already has a `node_id` field (assigned during inflation)
+2. The span information is derivable from token positions during inflation
+3. String search is O(n) and can return wrong positions for duplicate strings
+
+##### Architecture {#step-5b-architecture}
+
+**Current State:**
+- `SimpleString` has `node_id: Option<NodeId>` field
+- `DeflatedSimpleString::inflate()` calls `ctx.next_id()` but does NOT record any spans
+- `ExportCollector` cannot look up spans, so it searches the source string
+
+**Target State:**
+- `DeflatedSimpleString::inflate()` records `ident_span` via `ctx.record_ident_span()`
+- `ExportCollector` looks up spans via `node_id` from `PositionTable`
+- String search code and `search_from` cursor removed
+
+##### Tasks {#step-5b-tasks}
+
+**Part A: Record Spans During Inflation**
+- [ ] In `expression.rs`, update `DeflatedSimpleString::inflate()` to compute and record `ident_span`
+- [ ] The span should be the full token span: `(tok.start_pos.byte_idx(), tok.end_pos.byte_idx())`
+- [ ] Call `ctx.record_ident_span(node_id, Span { start, end })`
+
+**Part B: Update ExportCollector to Use PositionTable**
+- [ ] Add `PositionTable` reference to `ExportCollector` (already present but unused for this)
+- [ ] Update `extract_string_literal()` to look up `SimpleString.node_id` in PositionTable
+- [ ] Compute content_span by subtracting quote prefix/suffix lengths from ident_span
+- [ ] Remove `search_from` field from `ExportCollector`
+- [ ] Remove string search code from `parse_simple_string()`
+- [ ] Rename or refactor `parse_simple_string()` to reflect new purpose (span computation only)
+
+**Part C: Update ExportCollector Assignment Visitors**
+- [ ] Remove `__all__` position search logic from `visit_assign()`
+- [ ] Remove `__all__` position search logic from `visit_ann_assign()`
+- [ ] Remove `__all__` position search logic from `visit_aug_assign()`
+
+##### Implementation Details {#step-5b-implementation}
+
+**Change 1: `expression.rs` - Record span during SimpleString inflation**
+
+```rust
+impl<'r, 'a> Inflate<'a> for DeflatedSimpleString<'r, 'a> {
+    type Inflated = SimpleString<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this SimpleString node
+        let node_id = ctx.next_id();
+
+        // Record the token span (full string including quotes)
+        ctx.record_ident_span(
+            node_id,
+            Span {
+                start: self.tok.start_pos.byte_idx(),
+                end: self.tok.end_pos.byte_idx(),
+            },
+        );
+
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated {
+            value: self.tok.string,
+            lpar,
+            rpar,
+            node_id: Some(node_id),
+        })
+    }
+}
+```
+
+**Change 2: `exports.rs` - Remove string search, use PositionTable**
+
+```rust
+impl<'a, 'pos> ExportCollector<'a, 'pos> {
+    /// Get the span of a SimpleString from the PositionTable.
+    fn get_string_span(&self, s: &SimpleString<'_>) -> Option<Span> {
+        let positions = self.positions?;
+        let node_id = s.node_id?;
+        let pos = positions.get(&node_id)?;
+        pos.ident_span
+    }
+
+    /// Compute content span by stripping quotes from the full span.
+    fn compute_content_span(&self, value: &str, full_span: Option<Span>) -> Option<(String, Span)> {
+        // Determine quote prefix/suffix lengths
+        let (prefix_len, suffix_len) = Self::quote_lengths(value)?;
+
+        // Extract content
+        if value.len() < prefix_len + suffix_len {
+            return None;
+        }
+        let content = &value[prefix_len..value.len() - suffix_len];
+
+        // Compute content span from full span
+        let span = full_span?;
+        let content_span = Span {
+            start: span.start + prefix_len,
+            end: span.end - suffix_len,
+        };
+
+        Some((content.to_string(), content_span))
+    }
+}
+```
+
+##### Tests {#step-5b-tests}
+
+**Existing tests must continue to pass:**
+- [ ] `test_export_simple_all_list`
+- [ ] `test_export_annotated_all`
+- [ ] `test_export_augmented_all`
+- [ ] `test_export_span_content`
+- [ ] All other export tests
+
+**New tests to add:**
+- [ ] `test_simplestring_has_ident_span` - Verify SimpleString nodes have ident_span in PositionTable
+- [ ] `test_export_duplicate_strings` - Ensure duplicate string literals get correct distinct spans
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` (compilation succeeds)
+- [ ] `cargo nextest run -p tugtool-python-cst export` (all export tests pass)
+- [ ] `cargo nextest run -p tugtool-python-cst` (full crate - no regressions)
+- [ ] Verify: `search_from` is removed from ExportCollector (grep returns empty)
+- [ ] Verify: String search code is removed (no `.find(value)` pattern in exports.rs)
+
+**Verification:**
+```bash
+grep -n "search_from" crates/tugtool-python-cst/src/visitor/exports.rs
+# Should return empty
+
+grep -n "\.find(value)" crates/tugtool-python-cst/src/visitor/exports.rs
+# Should return empty
+```
+
+**Rollback:** Revert commit
+
+---
+
+#### Step 5C: Add node_id to Remaining Compound Statements {#step-5c}
+
+**Commit:** `feat(python-cst): add node_id to For, While, Try, TryStar, With, Match compound statements`
+
+**References:** CST infrastructure audit (2026-01-28)
+
+**Artifacts:**
+- Modified `For`, `While`, `Try`, `TryStar`, `With`, `Match` structs with `node_id` field
+- Modified corresponding `Deflated*::inflate()` implementations to call `ctx.next_id()`
+
+##### Problem Statement {#step-5c-problem}
+
+The `If` struct has a `node_id` field (added in Step 5) which enables span lookup for isinstance-based type narrowing. Other compound statements lack this capability:
+
+| Statement | Has `node_id`? | Potential Future Use |
+|-----------|----------------|---------------------|
+| `If` | Yes (Step 5) | isinstance narrowing branch spans |
+| `For` | **No** | Iterator variable type tracking |
+| `While` | **No** | Loop invariant tracking |
+| `Try` | **No** | Exception handler type narrowing |
+| `TryStar` | **No** | Exception group handling |
+| `With` | **No** | Context manager `as` binding types |
+| `Match` | **No** | Pattern matching type narrowing |
+
+Adding `node_id` now creates infrastructure parity and enables future enhancements without additional struct changes.
+
+##### Strategy {#step-5c-strategy}
+
+For Phase 11E, we ONLY add the `node_id` field and generate IDs during inflation. We do NOT record any spans yet (no `ctx.record_*` calls) - those can be added in future phases when specific use cases arise.
+
+This is the minimal change to establish infrastructure parity:
+1. Add `node_id: Option<NodeId>` field to each struct
+2. Call `ctx.next_id()` at the start of `inflate()`
+3. Include `node_id: Some(node_id)` in the returned struct
+
+##### Tasks {#step-5c-tasks}
+
+**Part A: Add node_id to For**
+- [ ] Add `pub node_id: Option<NodeId>` field to `For` struct
+- [ ] Update `DeflatedFor::inflate()` to call `let node_id = ctx.next_id();` at start
+- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+
+**Part B: Add node_id to While**
+- [ ] Add `pub node_id: Option<NodeId>` field to `While` struct
+- [ ] Update `DeflatedWhile::inflate()` to call `let node_id = ctx.next_id();` at start
+- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+
+**Part C: Add node_id to Try**
+- [ ] Add `pub node_id: Option<NodeId>` field to `Try` struct
+- [ ] Update `DeflatedTry::inflate()` to call `let node_id = ctx.next_id();` at start
+- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+
+**Part D: Add node_id to TryStar**
+- [ ] Add `pub node_id: Option<NodeId>` field to `TryStar` struct
+- [ ] Update `DeflatedTryStar::inflate()` to call `let node_id = ctx.next_id();` at start
+- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+
+**Part E: Add node_id to With**
+- [ ] Add `pub node_id: Option<NodeId>` field to `With` struct
+- [ ] Update `DeflatedWith::inflate()` to call `let node_id = ctx.next_id();` at start
+- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+
+**Part F: Add node_id to Match**
+- [ ] Add `pub node_id: Option<NodeId>` field to `Match` struct
+- [ ] Update `DeflatedMatch::inflate()` to call `let node_id = ctx.next_id();` at start
+- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+
+##### Implementation Details {#step-5c-implementation}
+
+**Pattern (same for all 6 statements):**
+
+```rust
+// 1. Add field to struct (e.g., For)
+#[cst_node]
+pub struct For<'a> {
+    pub target: AssignTargetExpression<'a>,
+    pub iter: Expression<'a>,
+    pub body: Suite<'a>,
+    // ... existing fields ...
+
+    pub(crate) async_tok: Option<TokenRef<'a>>,
+    pub(crate) for_tok: TokenRef<'a>,
+    pub(crate) in_tok: TokenRef<'a>,
+    pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,  // NEW
+}
+
+// 2. Update inflate implementation
+impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
+    type Inflated = For<'a>;
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this For node
+        let node_id = ctx.next_id();  // NEW: at start of function
+
+        // ... existing inflation code unchanged ...
+
+        Ok(Self::Inflated {
+            target,
+            iter,
+            body,
+            orelse,
+            asynchronous,
+            leading_lines,
+            whitespace_after_for,
+            whitespace_before_in,
+            whitespace_after_in,
+            whitespace_before_colon,
+            node_id: Some(node_id),  // NEW
+        })
+    }
+}
+```
+
+##### Tests {#step-5c-tests}
+
+**Verification tests (ensure node_id is assigned):**
+- [ ] `test_for_has_node_id` - For statement has node_id after parsing
+- [ ] `test_while_has_node_id` - While statement has node_id after parsing
+- [ ] `test_try_has_node_id` - Try statement has node_id after parsing
+- [ ] `test_try_star_has_node_id` - TryStar statement has node_id after parsing
+- [ ] `test_with_has_node_id` - With statement has node_id after parsing
+- [ ] `test_match_has_node_id` - Match statement has node_id after parsing
+
+**Regression tests:**
+- [ ] All existing parsing tests continue to pass
+- [ ] All existing codegen tests continue to pass
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` (compilation succeeds)
+- [ ] `cargo nextest run -p tugtool-python-cst` (all tests pass)
+- [ ] `cargo nextest run --workspace` (no regressions in dependent crates)
+
+**Verification (ensure all compound statements have node_id):**
+
+```bash
+# Should show node_id field in each struct
+grep -A 20 "pub struct For<" crates/tugtool-python-cst/src/nodes/statement.rs | grep node_id
+grep -A 15 "pub struct While<" crates/tugtool-python-cst/src/nodes/statement.rs | grep node_id
+grep -A 15 "pub struct Try<" crates/tugtool-python-cst/src/nodes/statement.rs | grep node_id
+grep -A 15 "pub struct TryStar<" crates/tugtool-python-cst/src/nodes/statement.rs | grep node_id
+grep -A 20 "pub struct With<" crates/tugtool-python-cst/src/nodes/statement.rs | grep node_id
+grep -A 20 "pub struct Match<" crates/tugtool-python-cst/src/nodes/statement.rs | grep node_id
+
+# All should return lines containing "node_id: Option<NodeId>"
+```
 
 **Rollback:** Revert commit
 

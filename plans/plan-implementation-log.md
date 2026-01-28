@@ -6,6 +6,47 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 5B and 5C: CST Infrastructure Audit and Planning | PLANNED | 2026-01-28
+
+**Completed:** 2026-01-28 (planning only - implementation pending)
+
+**References Reviewed:**
+- CST infrastructure audit using code-architect agent
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - ExportCollector string search anti-pattern
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - SimpleString inflation (no span recording)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Compound statements missing node_id
+
+**Audit Findings:**
+
+| Issue | Priority | Status |
+|-------|----------|--------|
+| ExportCollector uses string search instead of PositionTable lookup | MEDIUM | Step 5B planned |
+| SimpleString.inflate() doesn't record ident_span | MEDIUM | Step 5B planned |
+| For, While, Try, TryStar, With, Match missing node_id | LOW | Step 5C planned |
+
+**Files Modified:**
+- `plans/phase-11E.md` - Added Step 5B and Step 5C specifications, updated Symbol Inventory
+
+**Planning Summary:**
+
+**Step 5B: Record SimpleString Spans During Inflation**
+- Update `DeflatedSimpleString::inflate()` to record `ident_span`
+- Rewrite `ExportCollector` to use `PositionTable` lookup via `node_id`
+- Remove string search code and `search_from` cursor tracking
+
+**Step 5C: Add node_id to Remaining Compound Statements**
+- Add `node_id: Option<NodeId>` to For, While, Try, TryStar, With, Match
+- Minimal change: assign IDs only, no span recording yet
+- Establishes infrastructure parity for future enhancements
+
+**Key Decisions/Notes:**
+- Audit confirmed codebase is generally clean after Step 5 improvements
+- Only one confirmed anti-pattern found (ExportCollector string search)
+- Compound statement node_id is proactive infrastructure - no current use case
+- Both steps follow established pattern from FunctionDef/ClassDef/If
+
+---
+
 ## [phase-11E.md] Step 5: Create IsInstanceCollector Visitor with Proper Branch Span Capture | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
