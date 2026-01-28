@@ -38,6 +38,7 @@
 
 pub mod alias;
 pub mod analyzer;
+pub mod cross_file_types;
 pub mod cst_bridge;
 pub mod dynamic;
 mod error_bridges;

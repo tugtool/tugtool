@@ -1425,36 +1425,36 @@ m.Worker().run()  # Should resolve to Worker.run via aliased submodule import
 - `crates/tugtool-python/src/lib.rs`: Re-export cross_file_types module
 
 **Tasks:**
-- [ ] Create `CrossFileTypeCache` struct with HashMap for FileTypeContext
-- [ ] Create `FileTypeContext` struct with tracker, symbol_kinds, symbol_map, import_targets, class_hierarchies
-- [ ] Add `ImportTarget` struct and `ImportKind` enum for import resolution
-- [ ] Store `workspace_files` and `namespace_packages` in CrossFileTypeCache for submodule detection
-- [ ] Plumb `workspace_files`/`namespace_packages` from analysis bundle into cache
-- [ ] Implement `get_or_analyze` method with cycle detection
-- [ ] Implement LRU cache eviction logic
-- [ ] Add `MAX_CROSS_FILE_DEPTH` constant (default: 3)
-- [ ] Add `TypeResolutionError` enum for error handling
-- [ ] Add helper `build_symbol_kinds` - build (scope_path, name) -> SymbolKind map
-- [ ] Add helper `build_symbol_map` - build (scope_path, name) -> symbol_index map
-- [ ] Add helper `build_import_targets` - build (scope_path, local_name) -> ImportTarget map
+- [x] Create `CrossFileTypeCache` struct with HashMap for FileTypeContext
+- [x] Create `FileTypeContext` struct with tracker, symbol_kinds, symbol_map, import_targets, class_hierarchies
+- [x] Add `ImportTarget` struct and `ImportKind` enum for import resolution
+- [x] Store `workspace_files` and `namespace_packages` in CrossFileTypeCache for submodule detection
+- [x] Plumb `workspace_files`/`namespace_packages` from analysis bundle into cache
+- [x] Implement `get_or_analyze` method with cycle detection
+- [x] Implement LRU cache eviction logic
+- [x] Add `MAX_CROSS_FILE_DEPTH` constant (default: 3)
+- [x] Add `TypeResolutionError` enum for error handling
+- [x] Add helper `build_symbol_kinds` - build (scope_path, name) -> SymbolKind map
+- [x] Add helper `build_symbol_map` - build (scope_path, name) -> symbol_index map
+- [x] Add helper `build_import_targets` - build (scope_path, local_name) -> ImportTarget map
   (includes import kind, imported_name, and submodule detection via resolve_module_to_file)
-- [ ] Add helper `lookup_import_target` - scope-chain lookup for import targets
-- [ ] Add helper `build_class_hierarchies` - build class_name -> ClassHierarchyInfo map
-- [ ] Write unit tests for cache behavior (hit, miss, eviction, cycle detection)
+- [x] Add helper `lookup_import_target` - scope-chain lookup for import targets
+- [x] Add helper `build_class_hierarchies` - build class_name -> ClassHierarchyInfo map
+- [x] Write unit tests for cache behavior (hit, miss, eviction, cycle detection)
 
 **Tests:**
-- [ ] Unit test: cache hit returns same FileTypeContext
-- [ ] Unit test: cache miss triggers analysis
-- [ ] Unit test: LRU eviction removes oldest entry
-- [ ] Unit test: circular import detection returns error
-- [ ] Unit test: import_targets correctly maps aliased imports
-- [ ] Unit test: import_targets correctly maps module imports (`import pkg.mod as m`)
-- [ ] Unit test: import_targets lookup falls back to module scope (Phase 11D default)
-- [ ] Unit test: import_targets marks submodule from-import (`from pkg import mod`)
+- [x] Unit test: cache hit returns same FileTypeContext
+- [x] Unit test: cache miss triggers analysis
+- [x] Unit test: LRU eviction removes oldest entry
+- [x] Unit test: circular import detection returns error
+- [x] Unit test: import_targets correctly maps aliased imports
+- [x] Unit test: import_targets correctly maps module imports (`import pkg.mod as m`)
+- [x] Unit test: import_targets lookup falls back to module scope (Phase 11D default)
+- [x] Unit test: import_targets marks submodule from-import (`from pkg import mod`)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python cross_file_types`
-- [ ] `cargo clippy -p tugtool-python`
+- [x] `cargo nextest run -p tugtool-python cross_file_types`
+- [x] `cargo clippy -p tugtool-python`
 
 **Rollback:**
 - Revert commit; delete new file

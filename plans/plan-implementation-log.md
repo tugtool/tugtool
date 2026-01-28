@@ -6,6 +6,58 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 1: CrossFileTypeCache Infrastructure | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 1 specification, design decisions D01/D02/D02b/D02b1/D02c
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker structure for FileTypeContext
+- `crates/tugtool-python/src/analyzer.rs` - FileAnalysis, LocalImport, resolve_module_to_file, Scope structure
+- `crates/tugtool-python-cst/src/visitor/inheritance.rs` - ClassInheritanceInfo structure
+- `crates/tugtool-python-cst/src/visitor/import.rs` - ImportInfo, ImportKind (CST types)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `CrossFileTypeCache` struct with HashMap for FileTypeContext | Done |
+| Create `FileTypeContext` struct with tracker, symbol_kinds, symbol_map, import_targets, class_hierarchies | Done |
+| Add `ImportTarget` struct and `ImportKind` enum for import resolution | Done |
+| Store `workspace_files` and `namespace_packages` in CrossFileTypeCache | Done |
+| Implement `get_or_analyze` method with cycle detection | Done |
+| Implement cache eviction logic (changed from LRU to FIFO for O(1) performance) | Done |
+| Add `MAX_CROSS_FILE_DEPTH` constant (default: 3) | Done |
+| Add `TypeResolutionError` enum for error handling | Done |
+| Add helper `build_symbol_kinds` | Done |
+| Add helper `build_symbol_map` | Done |
+| Add helper `build_import_targets` (with submodule detection) | Done |
+| Add helper `lookup_import_target` (scope-chain lookup) | Done |
+| Add helper `build_class_hierarchies` (placeholder for Step 4) | Done |
+| Write unit tests for cache behavior | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/cross_file_types.rs` - New module with CrossFileTypeCache, FileTypeContext, ImportTarget, ImportKind, TypeResolutionError, and helper functions (~900 lines)
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added `pub mod cross_file_types;` re-export
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python cross_file_types`: 9 tests passed
+- `cargo nextest run -p tugtool-python`: 547 tests passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python cross_file_types`: PASS (9 tests)
+- `cargo clippy -p tugtool-python`: PASS (no warnings)
+
+**Key Decisions/Notes:**
+- **FIFO instead of LRU**: Changed eviction policy from LRU to FIFO for O(1) cache hit performance. LRU would require O(n) scan on every cache hit; FIFO is acceptable for type resolution cache where all files are accessed with similar frequency.
+- **Code audit findings addressed**: Used code-architect agent to audit all changes. Fixed O(n²) scope path building (scope_map now built once per function, not per symbol). Other minor issues (PathBuf cloning, module_scope allocation) deferred as acceptable for typical workloads.
+- **Placeholder for class_hierarchies**: `build_class_hierarchies(FileAnalysis)` returns empty map pending Step 4 wiring (documented with TODO).
+- **Submodule detection**: `ImportKind::FromImport` includes `imported_module: bool` flag to distinguish `from pkg import mod` (submodule) from `from pkg import Class` (class import).
+
+---
+
 ## [phase-11D.md] Plan Creation and Review | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27
