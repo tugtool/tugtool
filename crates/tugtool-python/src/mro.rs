@@ -2268,4 +2268,149 @@ d: Derived = Derived()
             "Inherited property should return int"
         );
     }
+
+    // ========================================================================
+    // Type Stub Integration Tests - Phase 11D Step 7
+    // ========================================================================
+
+    /// Fixture 11D-F06: Type Stub Override
+    ///
+    /// Tests that stub types override source types when a .pyi file exists.
+    ///
+    /// Source file has:
+    /// ```python
+    /// # service.py
+    /// class Service:
+    ///     def process(self):
+    ///         return "result"
+    /// ```
+    ///
+    /// Stub file has:
+    /// ```python
+    /// # service.pyi (stub)
+    /// class Service:
+    ///     def process(self) -> str: ...
+    /// ```
+    ///
+    /// Consumer expects `result = s.process()` to resolve to type `str`.
+    #[test]
+    fn test_stub_override_fixture_11d_f06() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create service.py (source file - no return type annotation)
+        let source_content = r#"class Service:
+    def process(self):
+        return "result"
+"#;
+        std::fs::write(workspace_root.join("service.py"), source_content).unwrap();
+
+        // Create service.pyi (stub file - with return type annotation)
+        let stub_content = r#"class Service:
+    def process(self) -> str: ...
+"#;
+        std::fs::write(workspace_root.join("service.pyi"), stub_content).unwrap();
+
+        let workspace_files: HashSet<String> = ["service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Analyze source file
+        let source = std::fs::read_to_string(workspace_root.join("service.py")).unwrap();
+        let mut source_tracker = build_type_tracker_from_source(&source);
+
+        // Source tracker should NOT have return type (no annotation in source)
+        let source_return = source_tracker.method_return_type_of("Service", "process");
+        assert!(
+            source_return.is_none(),
+            "Source should not have return type annotation"
+        );
+
+        // Load stub and merge
+        let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
+        assert!(stub_tracker.is_some(), "Stub should be found");
+        source_tracker.merge_from_stub(stub_tracker.unwrap());
+
+        // After merge, return type should come from stub
+        let merged_return = source_tracker.method_return_type_of("Service", "process");
+        assert_eq!(
+            merged_return,
+            Some("str"),
+            "After stub merge, process() should return str"
+        );
+    }
+
+    /// Fixture 11D-F11: Project-Level Stubs Directory
+    ///
+    /// Tests that stubs in the workspace `stubs/` directory are discovered
+    /// and used when no inline stub exists.
+    ///
+    /// ```python
+    /// # stubs/service.pyi
+    /// class Service:
+    ///     def process(self) -> str: ...
+    ///
+    /// # service.py
+    /// class Service:
+    ///     def process(self):
+    ///         return 123  # runtime type differs
+    /// ```
+    #[test]
+    fn test_stubs_directory_fixture_11d_f11() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create service.py (source file - runtime returns int, but stub says str)
+        let source_content = r#"class Service:
+    def process(self):
+        return 123  # runtime type differs from stub
+"#;
+        std::fs::write(workspace_root.join("service.py"), source_content).unwrap();
+
+        // Create stubs/ directory with service.pyi
+        std::fs::create_dir(workspace_root.join("stubs")).unwrap();
+        let stub_content = r#"class Service:
+    def process(self) -> str: ...
+"#;
+        std::fs::write(workspace_root.join("stubs/service.pyi"), stub_content).unwrap();
+
+        let workspace_files: HashSet<String> = ["service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Analyze source file
+        let source = std::fs::read_to_string(workspace_root.join("service.py")).unwrap();
+        let mut source_tracker = build_type_tracker_from_source(&source);
+
+        // Load stub from stubs/ directory
+        let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
+        assert!(stub_tracker.is_some(), "Stub should be found in stubs/ directory");
+
+        // Verify stub path is from stubs/
+        let cached_stub = cache.get_stub_path(Path::new("service.py"));
+        assert!(cached_stub.is_some());
+        assert_eq!(
+            cached_stub.unwrap().to_str().unwrap(),
+            "stubs/service.pyi"
+        );
+
+        // Merge stub
+        source_tracker.merge_from_stub(stub_tracker.unwrap());
+
+        // Return type should be str from stub (not int from runtime)
+        let merged_return = source_tracker.method_return_type_of("Service", "process");
+        assert_eq!(
+            merged_return,
+            Some("str"),
+            "After stub merge, process() should return str (not int)"
+        );
+    }
 }

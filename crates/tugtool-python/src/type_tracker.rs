@@ -976,6 +976,69 @@ fn find_top_level_comma(s: &str) -> Option<usize> {
     last_comma
 }
 
+// ============================================================================
+// Stub Merging
+// ============================================================================
+
+impl TypeTracker {
+    /// Merge types from a stub file's TypeTracker into this tracker.
+    ///
+    /// Stub types take precedence over source types per D06 rules:
+    /// - Stub attribute types override source attribute types
+    /// - Stub method return types override source method return types
+    /// - Stub property types override source property types
+    /// - Stub annotated types override source annotated types
+    /// - Source symbols not present in stub are preserved (partial stubs)
+    ///
+    /// # Arguments
+    /// - `stub`: TypeTracker built from a stub file (.pyi)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // source.py has:
+    /// // class Service:
+    /// //     def process(self): return "result"
+    ///
+    /// // source.pyi has:
+    /// // class Service:
+    /// //     def process(self) -> str: ...
+    ///
+    /// // After merging:
+    /// source_tracker.merge_from_stub(stub_tracker);
+    /// assert_eq!(source_tracker.method_return_type_of("Service", "process"), Some("str"));
+    /// ```
+    pub fn merge_from_stub(&mut self, stub: TypeTracker) {
+        // Stub attribute types override source attribute types
+        for (key, value) in stub.attribute_types {
+            self.attribute_types.insert(key, value);
+        }
+
+        // Stub method return types override source method return types
+        for (key, value) in stub.method_return_types {
+            self.method_return_types.insert(key, value);
+        }
+
+        // Stub property types override source property types
+        for (key, value) in stub.property_types {
+            self.property_types.insert(key, value);
+        }
+
+        // Stub annotated types override source annotated types
+        for (key, value) in stub.annotated_types {
+            self.annotated_types.insert(key, value);
+        }
+
+        // Stub return types override source return types
+        for (key, value) in stub.return_types {
+            self.return_types.insert(key, value);
+        }
+
+        // Note: We don't merge inferred_types from stub since stubs
+        // should have explicit annotations, not inferred types
+    }
+}
+
 impl Default for TypeTracker {
     fn default() -> Self {
         Self::new()

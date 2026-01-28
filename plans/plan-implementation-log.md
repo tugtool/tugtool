@@ -6,6 +6,66 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 7: Type Stub Integration | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 7 specification and design decision [D06] Stub Integration
+- `crates/tugtool-python/src/cross_file_types.rs` - CrossFileTypeCache implementation
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker implementation
+- `crates/tugtool-python/src/cst_bridge.rs` - CST parsing and analysis
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Verify CST parses .pyi files correctly (write test with ellipsis body) | Done |
+| Add `stub_paths` map to CrossFileTypeCache | Done |
+| Implement `load_stub_if_exists` method (inline .pyi adjacent to .py) | Done |
+| Implement `resolve_stubs_path` for project-level `stubs/` directory | Done |
+| Merge stub TypeTracker with source TypeTracker (stub wins) | Done |
+| Document supported vs unsupported stub syntax per D06 | Done |
+| Unit test: CST parses stub with ellipsis body | Done |
+| Unit test: CST parses stub with `pass` body | Done |
+| Unit test: stub discovered adjacent to source | Done |
+| Unit test: stub discovered in project-level `stubs/` | Done |
+| Unit test: stub types override source types | Done |
+| Unit test: partial stub (some methods missing) merges correctly | Done |
+| Integration test: Fixture 11D-F06 (stub override) | Done |
+| Integration test: Fixture 11D-F11 (stubs/ directory) | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python/src/cst_bridge.rs` - Added 7 stub parsing tests (ellipsis body, pass body, class signatures, attribute annotations, Optional/Union, Callable, signatures with types)
+- `crates/tugtool-python/src/cross_file_types.rs` - Added `stub_paths` HashMap, `load_stub_if_exists()`, `resolve_stubs_path()`, `parse_stub_file()`, `get_stub_path()` methods; updated module documentation with stub syntax support; added 7 stub discovery tests
+- `crates/tugtool-python/src/type_tracker.rs` - Added `merge_from_stub()` method for merging stub types where stub wins
+- `crates/tugtool-python/src/mro.rs` - Added 2 integration tests (F06: stub override, F11: stubs/ directory)
+- `plans/phase-11D.md` - Checked off Step 7 tasks, tests, and checkpoints; marked Milestone M04 complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python test_stub`: 16 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 533 tests passed
+- `cargo nextest run -p tugtool-python`: 638 tests passed
+- `cargo nextest run --workspace`: 1848 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python test_stub`: PASS (16 tests)
+- `cargo nextest run -p tugtool-python-cst`: PASS (533 tests, verifies stub parsing)
+- All existing tests pass: PASS (638 tugtool-python tests)
+
+**Key Decisions/Notes:**
+- Inline stubs (`.pyi` adjacent to `.py`) take precedence over project-level `stubs/` directory
+- Stub discovery is cached in `stub_paths` to avoid repeated filesystem lookups
+- `merge_from_stub()` applies stub types over source types; source types not in stub are preserved (partial stubs)
+- Documented supported stub syntax: ellipsis bodies, pass bodies, Optional/Union/Callable simple named types
+- Documented unsupported stub syntax: @overload, TypeVar, Protocol, ParamSpec, TypeAlias
+- The CST parser already handled .pyi syntax correctly (it's valid Python); tests verify this
+
+---
+
 ## [phase-11D.md] Step 6: Property Decorator Support | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

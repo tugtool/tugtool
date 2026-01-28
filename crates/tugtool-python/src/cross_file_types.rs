@@ -26,11 +26,56 @@
 //! let attr_type = ctx.tracker.attribute_type_of("Handler", "process");
 //! ```
 //!
+//! # Type Stub Support
+//!
+//! Type stub files (`.pyi`) provide type information that overrides source types.
+//! The cache implements stub discovery and merging per design decision D06.
+//!
+//! ## Discovery Rules
+//!
+//! For a source file `foo.py`, stubs are discovered in this order:
+//!
+//! 1. **Inline stub**: `foo.pyi` adjacent to `foo.py` (same directory)
+//! 2. **Project stubs**: `stubs/foo.pyi` at workspace root using module path
+//!
+//! ## Supported Stub Syntax
+//!
+//! The following stub patterns are fully supported:
+//!
+//! - Class and function signatures with type annotations
+//! - Simple `->` return annotations
+//! - Ellipsis bodies (`...`) and `pass` statement bodies
+//! - `Optional[T]`, `Union[A, B]` type annotations
+//! - `Callable[..., T]` simple named return types
+//! - Class attribute annotations
+//! - Property decorators with return types
+//!
+//! ## Unsupported Stub Syntax (returns None)
+//!
+//! The following patterns are recognized but not fully resolved:
+//!
+//! - `@overload` decorated function overloads
+//! - `TypeVar` and generic type parameters
+//! - `Protocol` and structural subtyping
+//! - `ParamSpec` and callable parameter specification
+//! - `TypeAlias` explicit type aliases
+//! - Complex `Union`/`Callable` return shapes without simple names
+//!
+//! ## Merge Rules
+//!
+//! When a stub is found, stub types take precedence:
+//!
+//! - Stub attribute types override source attribute types
+//! - Stub method return types override source method return types
+//! - Stub property types override source property types
+//! - Source symbols not present in stub are preserved (partial stubs)
+//!
 //! # Limitations
 //!
 //! - Maximum cross-file chain depth is bounded by [`MAX_CROSS_FILE_DEPTH`]
 //! - Function-level imports are not tracked (only module-level)
 //! - External packages (outside workspace) are not resolved
+//! - Third-party package stubs (typeshed) are not supported
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
@@ -283,6 +328,13 @@ pub struct CrossFileTypeCache {
 
     /// Namespace packages detected in the workspace (PEP 420).
     namespace_packages: HashSet<String>,
+
+    /// Map from source file path to its stub file path (if exists).
+    ///
+    /// This cache stores discovered stub paths to avoid repeated filesystem lookups.
+    /// Keys are workspace-relative paths to source files (e.g., `"service.py"`).
+    /// Values are workspace-relative paths to stub files (e.g., `"service.pyi"`).
+    stub_paths: HashMap<PathBuf, PathBuf>,
 }
 
 impl CrossFileTypeCache {
@@ -300,6 +352,7 @@ impl CrossFileTypeCache {
             access_order: VecDeque::new(),
             workspace_files,
             namespace_packages,
+            stub_paths: HashMap::new(),
         }
     }
 
@@ -316,6 +369,7 @@ impl CrossFileTypeCache {
             access_order: VecDeque::new(),
             workspace_files,
             namespace_packages,
+            stub_paths: HashMap::new(),
         }
     }
 
@@ -415,6 +469,7 @@ impl CrossFileTypeCache {
         self.contexts.clear();
         self.access_order.clear();
         self.in_progress.clear();
+        self.stub_paths.clear();
     }
 
     /// Get a reference to the workspace files set.
@@ -481,6 +536,109 @@ impl CrossFileTypeCache {
             .get(class_name)?
             .mro
             .as_ref()
+    }
+
+    // ========================================================================
+    // Stub File Support
+    // ========================================================================
+
+    /// Check for and load a stub file (.pyi) for the given source file.
+    ///
+    /// Stub files provide type information that overrides the source file's types.
+    /// This method implements the discovery rules from D06:
+    ///
+    /// 1. Check for `foo.pyi` adjacent to `foo.py` (inline stub)
+    /// 2. If not found, check `stubs/` at workspace root using module path
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Workspace-relative path to the source file (e.g., `"pkg/service.py"`)
+    /// * `workspace_root` - Absolute path to the workspace root
+    ///
+    /// # Returns
+    ///
+    /// * `Some(TypeTracker)` - Type information from the stub file
+    /// * `None` - If no stub file exists or stub parsing fails
+    pub fn load_stub_if_exists(
+        &mut self,
+        source_path: &Path,
+        workspace_root: &Path,
+    ) -> Option<TypeTracker> {
+        // Check if we've already discovered this stub
+        if let Some(stub_path) = self.stub_paths.get(source_path) {
+            return self.parse_stub_file(&workspace_root.join(stub_path));
+        }
+
+        // Try inline stub (same directory as source)
+        let inline_stub = source_path.with_extension("pyi");
+        let absolute_inline = workspace_root.join(&inline_stub);
+
+        if absolute_inline.exists() {
+            // Cache the discovery
+            self.stub_paths
+                .insert(source_path.to_path_buf(), inline_stub.clone());
+            return self.parse_stub_file(&absolute_inline);
+        }
+
+        // Try project-level stubs/ directory
+        if let Some(stubs_stub) = self.resolve_stubs_path(source_path, workspace_root) {
+            let absolute_stubs = workspace_root.join(&stubs_stub);
+            if absolute_stubs.exists() {
+                // Cache the discovery
+                self.stub_paths
+                    .insert(source_path.to_path_buf(), stubs_stub);
+                return self.parse_stub_file(&absolute_stubs);
+            }
+        }
+
+        None
+    }
+
+    /// Resolve a stub file path in the project-level `stubs/` directory.
+    ///
+    /// Converts a source path like `"pkg/service.py"` to `"stubs/pkg/service.pyi"`.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Workspace-relative path to the source file
+    /// * `workspace_root` - Absolute path to the workspace root
+    ///
+    /// # Returns
+    ///
+    /// Workspace-relative path to the stub file in `stubs/`, or `None` if invalid.
+    fn resolve_stubs_path(&self, source_path: &Path, workspace_root: &Path) -> Option<PathBuf> {
+        // Convert pkg/service.py -> stubs/pkg/service.pyi
+        let stubs_path = PathBuf::from("stubs").join(source_path.with_extension("pyi"));
+
+        // Only return if the stubs/ directory exists
+        if workspace_root.join("stubs").is_dir() {
+            Some(stubs_path)
+        } else {
+            None
+        }
+    }
+
+    /// Parse a stub file and build a TypeTracker from it.
+    ///
+    /// This is a helper method that handles the actual parsing of stub files.
+    fn parse_stub_file(&self, stub_path: &Path) -> Option<TypeTracker> {
+        let source = std::fs::read_to_string(stub_path).ok()?;
+        let analysis = cst_bridge::parse_and_analyze(&source).ok()?;
+
+        let mut tracker = TypeTracker::new();
+        tracker.process_assignments(&convert_assignments(&analysis.assignments));
+        tracker.process_annotations(&convert_annotations(&analysis.annotations));
+        tracker.process_signatures(&analysis.signatures);
+        tracker.process_properties(&analysis.signatures);
+
+        Some(tracker)
+    }
+
+    /// Get the cached stub path for a source file, if discovered.
+    ///
+    /// This is useful for debugging and testing stub discovery.
+    pub fn get_stub_path(&self, source_path: &Path) -> Option<&PathBuf> {
+        self.stub_paths.get(source_path)
     }
 
     // ========================================================================
@@ -1523,5 +1681,308 @@ class Child(Parent):
         let mylist = hierarchies.get("MyList").unwrap();
         // Generic subscripts are stripped at CST layer, so "Generic[T]" -> "Generic"
         assert_eq!(mylist.bases, vec!["Generic"]);
+    }
+
+    // ========================================================================
+    // Stub File Tests - Phase 11D Step 7
+    // ========================================================================
+
+    #[test]
+    fn test_stub_discovered_adjacent_to_source() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create source file
+        std::fs::write(
+            workspace_root.join("service.py"),
+            "class Service:\n    def process(self): return 123",
+        )
+        .unwrap();
+
+        // Create adjacent stub file
+        std::fs::write(
+            workspace_root.join("service.pyi"),
+            "class Service:\n    def process(self) -> str: ...",
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> = ["service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Load stub for source file
+        let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
+        assert!(stub_tracker.is_some(), "should find adjacent stub");
+
+        // Verify stub path is cached
+        let cached_stub = cache.get_stub_path(Path::new("service.py"));
+        assert!(cached_stub.is_some());
+        assert_eq!(cached_stub.unwrap().to_str().unwrap(), "service.pyi");
+
+        // Verify type was extracted from stub
+        let tracker = stub_tracker.unwrap();
+        let return_type = tracker.method_return_type_of("Service", "process");
+        assert_eq!(return_type, Some("str"));
+    }
+
+    #[test]
+    fn test_stub_discovered_in_stubs_directory() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create source file
+        std::fs::write(
+            workspace_root.join("service.py"),
+            "class Service:\n    def process(self): return 123",
+        )
+        .unwrap();
+
+        // Create stubs/ directory and stub file
+        std::fs::create_dir(workspace_root.join("stubs")).unwrap();
+        std::fs::write(
+            workspace_root.join("stubs/service.pyi"),
+            "class Service:\n    def process(self) -> int: ...",
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> = ["service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Load stub for source file
+        let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
+        assert!(stub_tracker.is_some(), "should find stub in stubs/ directory");
+
+        // Verify stub path is cached
+        let cached_stub = cache.get_stub_path(Path::new("service.py"));
+        assert!(cached_stub.is_some());
+        assert_eq!(
+            cached_stub.unwrap().to_str().unwrap(),
+            "stubs/service.pyi"
+        );
+
+        // Verify type was extracted from stub
+        let tracker = stub_tracker.unwrap();
+        let return_type = tracker.method_return_type_of("Service", "process");
+        assert_eq!(return_type, Some("int"));
+    }
+
+    #[test]
+    fn test_stub_inline_takes_precedence_over_stubs_directory() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create source file
+        std::fs::write(
+            workspace_root.join("service.py"),
+            "class Service:\n    def process(self): return 123",
+        )
+        .unwrap();
+
+        // Create inline stub (should be used)
+        std::fs::write(
+            workspace_root.join("service.pyi"),
+            "class Service:\n    def process(self) -> str: ...",
+        )
+        .unwrap();
+
+        // Create stubs/ directory stub (should NOT be used)
+        std::fs::create_dir(workspace_root.join("stubs")).unwrap();
+        std::fs::write(
+            workspace_root.join("stubs/service.pyi"),
+            "class Service:\n    def process(self) -> int: ...",
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> = ["service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Load stub - should prefer inline
+        let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
+        assert!(stub_tracker.is_some());
+
+        // Verify inline stub was used (returns str, not int)
+        let tracker = stub_tracker.unwrap();
+        let return_type = tracker.method_return_type_of("Service", "process");
+        assert_eq!(return_type, Some("str"));
+    }
+
+    #[test]
+    fn test_stub_no_stub_exists() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create only source file, no stub
+        std::fs::write(
+            workspace_root.join("service.py"),
+            "class Service:\n    def process(self): return 123",
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> = ["service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Load stub - should return None
+        let stub_tracker = cache.load_stub_if_exists(Path::new("service.py"), workspace_root);
+        assert!(stub_tracker.is_none(), "should return None when no stub exists");
+
+        // Verify nothing cached
+        assert!(cache.get_stub_path(Path::new("service.py")).is_none());
+    }
+
+    #[test]
+    fn test_stub_types_override_source_types() {
+        use crate::type_tracker::TypeTracker;
+        use crate::types::AnnotationInfo;
+
+        // Build source tracker
+        let mut source_tracker = TypeTracker::new();
+        let source_annotations = vec![AnnotationInfo {
+            name: "data".to_string(),
+            type_str: "int".to_string(),
+            annotation_kind: "simple".to_string(),
+            source_kind: "attribute".to_string(),
+            scope_path: vec!["<module>".to_string(), "Config".to_string()],
+            span: None,
+            line: None,
+            col: None,
+            type_node: None,
+        }];
+        source_tracker.process_annotations(&source_annotations);
+
+        // Build stub tracker with different type
+        let mut stub_tracker = TypeTracker::new();
+        let stub_annotations = vec![AnnotationInfo {
+            name: "data".to_string(),
+            type_str: "str".to_string(), // Different from source!
+            annotation_kind: "simple".to_string(),
+            source_kind: "attribute".to_string(),
+            scope_path: vec!["<module>".to_string(), "Config".to_string()],
+            span: None,
+            line: None,
+            col: None,
+            type_node: None,
+        }];
+        stub_tracker.process_annotations(&stub_annotations);
+
+        // Merge stub into source
+        source_tracker.merge_from_stub(stub_tracker);
+
+        // Stub type should override source type
+        let result = source_tracker.type_of(
+            &["<module>".to_string(), "Config".to_string()],
+            "data",
+        );
+        assert_eq!(result, Some("str"));
+    }
+
+    #[test]
+    fn test_stub_partial_stub_preserves_source() {
+        use crate::type_tracker::TypeTracker;
+        use crate::types::AnnotationInfo;
+
+        // Build source tracker with two attributes
+        let mut source_tracker = TypeTracker::new();
+        let source_annotations = vec![
+            AnnotationInfo {
+                name: "attr1".to_string(),
+                type_str: "int".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "attribute".to_string(),
+                scope_path: vec!["<module>".to_string(), "Config".to_string()],
+                span: None,
+                line: None,
+                col: None,
+                type_node: None,
+            },
+            AnnotationInfo {
+                name: "attr2".to_string(),
+                type_str: "float".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "attribute".to_string(),
+                scope_path: vec!["<module>".to_string(), "Config".to_string()],
+                span: None,
+                line: None,
+                col: None,
+                type_node: None,
+            },
+        ];
+        source_tracker.process_annotations(&source_annotations);
+
+        // Build stub tracker with only ONE attribute (partial stub)
+        let mut stub_tracker = TypeTracker::new();
+        let stub_annotations = vec![AnnotationInfo {
+            name: "attr1".to_string(),
+            type_str: "str".to_string(), // Override attr1
+            annotation_kind: "simple".to_string(),
+            source_kind: "attribute".to_string(),
+            scope_path: vec!["<module>".to_string(), "Config".to_string()],
+            span: None,
+            line: None,
+            col: None,
+            type_node: None,
+        }];
+        stub_tracker.process_annotations(&stub_annotations);
+
+        // Merge stub into source
+        source_tracker.merge_from_stub(stub_tracker);
+
+        // attr1 should be overridden by stub
+        let scope = &["<module>".to_string(), "Config".to_string()];
+        assert_eq!(source_tracker.type_of(scope, "attr1"), Some("str"));
+
+        // attr2 should be preserved from source
+        assert_eq!(source_tracker.type_of(scope, "attr2"), Some("float"));
+    }
+
+    #[test]
+    fn test_stub_nested_package_path() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+
+        // Create nested package structure
+        std::fs::create_dir_all(workspace_root.join("pkg/subpkg")).unwrap();
+        std::fs::write(
+            workspace_root.join("pkg/subpkg/service.py"),
+            "class Service:\n    def process(self): return 123",
+        )
+        .unwrap();
+
+        // Create stub in stubs/ with matching path
+        std::fs::create_dir_all(workspace_root.join("stubs/pkg/subpkg")).unwrap();
+        std::fs::write(
+            workspace_root.join("stubs/pkg/subpkg/service.pyi"),
+            "class Service:\n    def process(self) -> str: ...",
+        )
+        .unwrap();
+
+        let workspace_files: HashSet<String> =
+            ["pkg/subpkg/service.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Load stub for nested package
+        let stub_tracker =
+            cache.load_stub_if_exists(Path::new("pkg/subpkg/service.py"), workspace_root);
+        assert!(stub_tracker.is_some(), "should find stub for nested package");
+
+        // Verify correct path
+        let cached_stub = cache.get_stub_path(Path::new("pkg/subpkg/service.py"));
+        assert_eq!(
+            cached_stub.unwrap().to_str().unwrap(),
+            "stubs/pkg/subpkg/service.pyi"
+        );
     }
 }

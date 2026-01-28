@@ -2165,27 +2165,27 @@ correctly handles `.pyi` stub syntax:
 - `crates/tugtool-python/src/cross_file_types.rs`: Stub discovery and merging
 
 **Tasks:**
-- [ ] **Verify CST parses .pyi files correctly** (write test with ellipsis body, confirm no parse errors)
-- [ ] Add `stub_paths` map to CrossFileTypeCache
-- [ ] Implement `load_stub_if_exists` method (inline .pyi adjacent to .py)
-- [ ] Implement `resolve_stubs_path` for project-level `stubs/` directory
-- [ ] Merge stub TypeTracker with source TypeTracker (stub wins)
-- [ ] Document supported vs unsupported stub syntax per D06
+- [x] **Verify CST parses .pyi files correctly** (write test with ellipsis body, confirm no parse errors)
+- [x] Add `stub_paths` map to CrossFileTypeCache
+- [x] Implement `load_stub_if_exists` method (inline .pyi adjacent to .py)
+- [x] Implement `resolve_stubs_path` for project-level `stubs/` directory
+- [x] Merge stub TypeTracker with source TypeTracker (stub wins)
+- [x] Document supported vs unsupported stub syntax per D06
 
 **Tests:**
-- [ ] Unit test: CST parses stub with ellipsis body
-- [ ] Unit test: CST parses stub with `pass` body
-- [ ] Unit test: stub discovered adjacent to source
-- [ ] Unit test: stub discovered in project-level `stubs/`
-- [ ] Unit test: stub types override source types
-- [ ] Unit test: partial stub (some methods missing) merges correctly
-- [ ] Integration test: Fixture 11D-F06 (stub override)
-- [ ] Integration test: Fixture 11D-F11 (stubs/ directory)
+- [x] Unit test: CST parses stub with ellipsis body
+- [x] Unit test: CST parses stub with `pass` body
+- [x] Unit test: stub discovered adjacent to source
+- [x] Unit test: stub discovered in project-level `stubs/`
+- [x] Unit test: stub types override source types
+- [x] Unit test: partial stub (some methods missing) merges correctly
+- [x] Integration test: Fixture 11D-F06 (stub override)
+- [x] Integration test: Fixture 11D-F11 (stubs/ directory)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python test_stub`
-- [ ] `cargo nextest run -p tugtool-python-cst` (verify stub parsing)
-- [ ] All existing tests pass
+- [x] `cargo nextest run -p tugtool-python test_stub` - 16 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst` - 533 tests pass (verify stub parsing)
+- [x] All existing tests pass - 638 tugtool-python tests pass
 
 **Rollback:**
 - Revert commit; stub support not available
@@ -2286,7 +2286,7 @@ correctly handles `.pyi` stub syntax:
 - [x] Property decorator detection and type tracking (Step 6)
 
 **Milestone M04: Stub Support** {#m04-stub}
-- [ ] Type stub discovery and merging (Step 7)
+- [x] Type stub discovery and merging (Step 7)
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

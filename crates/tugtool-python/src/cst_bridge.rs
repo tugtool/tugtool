@@ -807,4 +807,140 @@ def dynamic_operations():
             "should have at least 6 dynamic patterns"
         );
     }
+
+    // ========================================================================
+    // Stub (.pyi) Syntax Tests - Phase 11D Step 7
+    // ========================================================================
+
+    #[test]
+    fn test_stub_parses_ellipsis_body() {
+        // Stub syntax: function with ellipsis body
+        let source = "def process(data: str) -> int: ...";
+        let result = parse_and_analyze(source).expect("stub with ellipsis body should parse");
+
+        // Should have a function binding
+        let func = result.bindings.iter().find(|b| b.name == "process");
+        assert!(func.is_some(), "should have process function");
+        assert_eq!(func.unwrap().kind, "function");
+
+        // Should have return type in signature
+        let sig = result.signatures.iter().find(|s| s.name == "process");
+        assert!(sig.is_some(), "should have process signature");
+        assert_eq!(sig.unwrap().returns.as_deref(), Some("int"));
+    }
+
+    #[test]
+    fn test_stub_parses_pass_body() {
+        // Stub syntax: function with pass body (alternative to ellipsis)
+        let source = "def process(data: str) -> int:\n    pass";
+        let result = parse_and_analyze(source).expect("stub with pass body should parse");
+
+        let func = result.bindings.iter().find(|b| b.name == "process");
+        assert!(func.is_some(), "should have process function");
+    }
+
+    #[test]
+    fn test_stub_parses_class_with_signatures() {
+        // Stub syntax: class with method signatures only
+        let source = r#"class Service:
+    def process(self, data: str) -> str: ...
+    def validate(self, item: Any) -> bool: ...
+"#;
+        let result = parse_and_analyze(source).expect("stub class should parse");
+
+        // Should have class binding
+        let class = result.bindings.iter().find(|b| b.name == "Service");
+        assert!(class.is_some(), "should have Service class");
+        assert_eq!(class.unwrap().kind, "class");
+
+        // Should have method bindings
+        let process = result.bindings.iter().find(|b| b.name == "process");
+        assert!(process.is_some(), "should have process method");
+
+        let validate = result.bindings.iter().find(|b| b.name == "validate");
+        assert!(validate.is_some(), "should have validate method");
+
+        // Should capture return types in signatures
+        let process_sig = result.signatures.iter().find(|s| s.name == "process");
+        assert!(process_sig.is_some(), "should have process signature");
+        assert_eq!(process_sig.unwrap().returns.as_deref(), Some("str"));
+    }
+
+    #[test]
+    fn test_stub_parses_class_attribute_annotation() {
+        // Stub syntax: class with attribute annotations
+        let source = r#"class Config:
+    timeout: int
+    host: str
+"#;
+        let result = parse_and_analyze(source).expect("stub with attributes should parse");
+
+        // Should have class
+        let class = result.bindings.iter().find(|b| b.name == "Config");
+        assert!(class.is_some(), "should have Config class");
+
+        // Should have attribute annotations
+        let timeout = result
+            .annotations
+            .iter()
+            .find(|a| a.name == "timeout" && a.type_str == "int");
+        assert!(timeout.is_some(), "should have timeout: int annotation");
+
+        let host = result
+            .annotations
+            .iter()
+            .find(|a| a.name == "host" && a.type_str == "str");
+        assert!(host.is_some(), "should have host: str annotation");
+    }
+
+    #[test]
+    fn test_stub_parses_optional_union_types() {
+        // Stub syntax: complex type annotations (simple named types per D06)
+        let source = r#"def process(data: Optional[str]) -> Union[str, int]: ..."#;
+        let result = parse_and_analyze(source).expect("stub with complex types should parse");
+
+        // Parameter annotation
+        let param = result.annotations.iter().find(|a| a.name == "data");
+        assert!(param.is_some(), "should have data parameter annotation");
+        assert_eq!(param.unwrap().type_str, "Optional[str]");
+
+        // Return type in signature
+        let sig = result.signatures.iter().find(|s| s.name == "process");
+        assert!(sig.is_some(), "should have process signature");
+        assert_eq!(sig.unwrap().returns.as_deref(), Some("Union[str, int]"));
+    }
+
+    #[test]
+    fn test_stub_parses_callable_annotation() {
+        // Stub syntax: Callable annotation
+        // Note: Complex Callable parameters are simplified to <complex> by the parser,
+        // but the Callable structure is preserved
+        let source = r#"callback: Callable[[str, int], bool]"#;
+        let result = parse_and_analyze(source).expect("stub with Callable should parse");
+
+        let callback = result.annotations.iter().find(|a| a.name == "callback");
+        assert!(callback.is_some(), "should have callback annotation");
+        // The type_str contains the Callable type (parameters are simplified)
+        assert!(
+            callback.unwrap().type_str.starts_with("Callable["),
+            "should have Callable type annotation"
+        );
+    }
+
+    #[test]
+    fn test_stub_parses_signatures_with_types() {
+        // Verify signatures are collected for stub methods
+        let source = r#"class Handler:
+    def process(self, data: str) -> bool: ...
+"#;
+        let result = parse_and_analyze(source).expect("stub should parse");
+
+        // Should have signature info
+        let sig = result
+            .signatures
+            .iter()
+            .find(|s| s.name == "process" && s.scope_path.contains(&"Handler".to_string()));
+        assert!(sig.is_some(), "should have process signature");
+        assert_eq!(sig.unwrap().returns.as_deref(), Some("bool"));
+    }
 }
