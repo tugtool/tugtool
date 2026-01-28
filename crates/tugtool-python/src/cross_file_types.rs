@@ -104,15 +104,15 @@ pub struct ImportTarget {
     /// Path to the file containing the imported symbol.
     pub file_path: PathBuf,
     /// Kind of import (from-import vs module-import).
-    pub kind: ImportKind,
+    pub kind: ImportTargetKind,
 }
 
-/// The kind of import and associated metadata.
+/// The kind of import target and associated metadata.
 ///
 /// Distinguishes between `from mod import Name` and `import mod.sub` patterns,
 /// which require different resolution strategies.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImportKind {
+pub enum ImportTargetKind {
     /// `from mod import Name [as Alias]` - imports a specific name from a module.
     FromImport {
         /// The original name being imported (e.g., "Handler" in `from mod import Handler as H`).
@@ -502,7 +502,7 @@ fn build_import_targets_from_cst(
                         let key = (module_scope.clone(), local_name);
                         let target = ImportTarget {
                             file_path,
-                            kind: ImportKind::FromImport {
+                            kind: ImportTargetKind::FromImport {
                                 imported_name: imported_name.name.clone(),
                                 imported_module,
                             },
@@ -522,7 +522,7 @@ fn build_import_targets_from_cst(
                 let key = (module_scope.clone(), local_name);
                 let target = ImportTarget {
                     file_path,
-                    kind: ImportKind::ModuleImport,
+                    kind: ImportTargetKind::ModuleImport,
                 };
                 import_targets.insert(key, target);
             }
@@ -797,7 +797,7 @@ pub fn build_import_targets(
                 let key = (module_scope.clone(), local_name);
                 let target = ImportTarget {
                     file_path,
-                    kind: ImportKind::FromImport {
+                    kind: ImportTargetKind::FromImport {
                         imported_name: imported_name.name.clone(),
                         imported_module,
                     },
@@ -815,7 +815,7 @@ pub fn build_import_targets(
             let key = (module_scope.clone(), local_name);
             let target = ImportTarget {
                 file_path,
-                kind: ImportKind::ModuleImport,
+                kind: ImportTargetKind::ModuleImport,
             };
             import_targets.insert(key, target);
         }
@@ -951,7 +951,7 @@ mod tests {
 
         let target = ImportTarget {
             file_path: PathBuf::from("handler.py"),
-            kind: ImportKind::FromImport {
+            kind: ImportTargetKind::FromImport {
                 imported_name: "Handler".to_string(),
                 imported_module: false,
             },
@@ -986,7 +986,7 @@ mod tests {
         // Module-level import
         let module_target = ImportTarget {
             file_path: PathBuf::from("module_handler.py"),
-            kind: ImportKind::FromImport {
+            kind: ImportTargetKind::FromImport {
                 imported_name: "Handler".to_string(),
                 imported_module: false,
             },
@@ -1028,13 +1028,13 @@ mod tests {
 
         let target = ImportTarget {
             file_path: PathBuf::from("pkg/mod.py"),
-            kind: ImportKind::ModuleImport,
+            kind: ImportTargetKind::ModuleImport,
         };
         import_targets.insert((vec!["<module>".to_string()], "mod".to_string()), target);
 
         let result = lookup_import_target(&["<module>".to_string()], "mod", &import_targets);
         assert!(result.is_some());
-        assert!(matches!(result.unwrap().kind, ImportKind::ModuleImport));
+        assert!(matches!(result.unwrap().kind, ImportTargetKind::ModuleImport));
     }
 
     #[test]
@@ -1043,7 +1043,7 @@ mod tests {
 
         let target = ImportTarget {
             file_path: PathBuf::from("pkg/mod.py"),
-            kind: ImportKind::FromImport {
+            kind: ImportTargetKind::FromImport {
                 imported_name: "mod".to_string(),
                 imported_module: true, // This is a submodule import
             },
@@ -1054,7 +1054,7 @@ mod tests {
         assert!(result.is_some());
 
         match &result.unwrap().kind {
-            ImportKind::FromImport {
+            ImportTargetKind::FromImport {
                 imported_name,
                 imported_module,
             } => {

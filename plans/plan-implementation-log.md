@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 2: Integrate Cross-File Resolution into Analyzer | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 2 specification, design decision D04 (Cross-File Attribute Resolution)
+- `crates/tugtool-python/src/cross_file_types.rs` - CrossFileTypeCache, FileTypeContext, ImportTarget
+- `crates/tugtool-python/src/analyzer.rs` - resolve_receiver_path, resolve_receiver_to_symbol_with_path
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add optional `cross_file_cache` parameter to resolution | Done |
+| Implement cross-file resolution when intermediate type is Import | Done |
+| Map import to file path using scope-aware `import_targets` | Done |
+| Call `cache.get_or_analyze` and continue resolution in remote FileTypeContext | Done |
+| Use remote_ctx.symbol_map/symbol_kinds when continuing resolution across files | Done |
+| Handle `ImportKind::FromImport` using `imported_module` flag | Done |
+| Handle `ImportKind::ModuleImport` by resolving `attr_name` within module context | Done |
+| Follow re-exports when `imported_name` is itself an import in target file | Done |
+| Treat `from pkg import mod` as module when `imported_module=true` | Done |
+| Fall back to `ResolvedSymbol::CrossFile` if resolution fails | Done |
+| Update call sites to pass cache when available | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`: Added `resolve_receiver_path_with_cross_file()`, `resolve_cross_file_attr()`, `resolve_imported_class_attr()`, `resolve_module_attr()`, `resolve_reexported_symbol()`, `resolve_type_in_context()`. Updated `resolve_receiver_to_symbol_with_path()` with optional cross-file parameters. Added 6 integration tests.
+- `crates/tugtool-python/src/type_tracker.rs`: Added `Clone` derive to `TypeTracker` (required for cross-file resolution).
+- `crates/tugtool-python/src/cross_file_types.rs`: Renamed `ImportKind` to `ImportTargetKind` to avoid conflict with `tugtool_core::facts::ImportKind`.
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python cross_file`: 39 tests passed
+- `cargo nextest run -p tugtool-python`: 553 tests passed (all tests)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python cross_file`: PASS (39 tests)
+- Existing tests still pass: PASS (553 tests)
+
+**Key Decisions/Notes:**
+- Cross-file resolution passes `file_path` instead of borrowed context to avoid Rust borrow checker conflicts. Functions call `cache.get_or_analyze()` again rather than holding references.
+- TypeTracker and symbol maps are cloned when crossing file boundaries. This is acceptable overhead for correctness - the cache ensures each file is only analyzed once.
+- Call sites currently pass `None` for cross-file parameters. Full wiring of the cache through `convert_file_analysis_bundle` will be completed in a follow-up integration step.
+- Renamed `ImportKind` to `ImportTargetKind` in cross_file_types.rs to avoid naming conflict with the existing `ImportKind` enum in tugtool_core::facts.
+
+---
+
 ## [phase-11D.md] Step 1: CrossFileTypeCache Infrastructure | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27

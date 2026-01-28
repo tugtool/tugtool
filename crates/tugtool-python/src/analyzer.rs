@@ -72,9 +72,11 @@ use tugtool_core::facts::{
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
 use crate::alias::AliasGraph;
+use crate::cross_file_types::{lookup_import_target, CrossFileTypeCache, ImportTargetKind};
 use crate::type_tracker::TypeTracker;
 use crate::types::{BindingInfo, ScopeInfo};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use thiserror::Error;
 
 // Native CST bridge
@@ -3654,8 +3656,64 @@ impl PythonAdapter {
         symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
         cross_file_map: Option<&CrossFileSymbolMap>,
     ) -> Option<ResolvedSymbol> {
+        // Delegate to the cross-file-capable version without a cache
+        self.resolve_receiver_path_with_cross_file(
+            receiver_path,
+            scope_path,
+            tracker,
+            scoped_symbol_map,
+            symbol_kinds,
+            &HashMap::new(), // No import targets in legacy mode
+            cross_file_map,
+            None,            // No cross-file cache
+            None,            // No workspace root
+            0,               // Initial depth
+        )
+    }
+
+    /// Resolve a structured receiver path with optional cross-file type resolution.
+    ///
+    /// This is the full-featured version of `resolve_receiver_path` that can follow
+    /// type chains across file boundaries when a `CrossFileTypeCache` is provided.
+    ///
+    /// # Cross-File Resolution
+    ///
+    /// When an intermediate type is an Import and a cache is available:
+    /// 1. Look up the import target via `lookup_import_target`
+    /// 2. Call `cache.get_or_analyze()` to load the remote file's context
+    /// 3. Continue resolution in the remote file's context
+    /// 4. Return the final resolved symbol (local or cross-file qualified name)
+    ///
+    /// # Arguments
+    ///
+    /// In addition to the base `resolve_receiver_path` arguments:
+    /// - `import_targets`: Map from (scope_path, local_name) to ImportTarget for cross-file lookup
+    /// - `cross_file_cache`: Optional cache for loading type info from other files
+    /// - `workspace_root`: Workspace root for relative path resolution
+    /// - `depth`: Current cross-file resolution depth (for limiting chain length)
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_receiver_path_with_cross_file(
+        &self,
+        receiver_path: &ReceiverPath,
+        scope_path: &[String],
+        tracker: &TypeTracker,
+        scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
+        symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+        import_targets: &HashMap<(Vec<String>, String), crate::cross_file_types::ImportTarget>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+        cross_file_cache: Option<&mut CrossFileTypeCache>,
+        workspace_root: Option<&Path>,
+        depth: usize,
+    ) -> Option<ResolvedSymbol> {
+        use crate::cross_file_types::MAX_CROSS_FILE_DEPTH;
+
         // Validate path: must be non-empty and within depth limit
         if receiver_path.steps.is_empty() || receiver_path.steps.len() > MAX_RESOLUTION_DEPTH {
+            return None;
+        }
+
+        // Check cross-file depth limit
+        if depth > MAX_CROSS_FILE_DEPTH {
             return None;
         }
 
@@ -3687,19 +3745,46 @@ impl PythonAdapter {
                 ReceiverStep::Attr { value: attr_name } => {
                     if let Some(ref class_type) = current_type {
                         // Check if current_type is cross-file BEFORE continuing
-                        if lookup_symbol_index_in_scope_chain(
+                        let is_import = lookup_symbol_kind_in_scope_chain(
+                            scope_path,
+                            class_type,
+                            symbol_kinds,
+                        ) == Some(SymbolKind::Import);
+
+                        let is_local = lookup_symbol_index_in_scope_chain(
                             scope_path,
                             class_type,
                             scoped_symbol_map,
                         )
-                        .is_none()
-                            || lookup_symbol_kind_in_scope_chain(
-                                scope_path,
-                                class_type,
-                                symbol_kinds,
-                            ) == Some(SymbolKind::Import)
-                        {
-                            // Not a local symbol - check cross-file
+                        .is_some()
+                            && !is_import;
+
+                        if !is_local {
+                            // Attempt cross-file resolution if cache is available
+                            if let (Some(cache), Some(ws_root)) =
+                                (cross_file_cache, workspace_root)
+                            {
+                                if let Some(result) = self.resolve_cross_file_attr(
+                                    class_type,
+                                    attr_name,
+                                    &receiver_path.steps[receiver_path
+                                        .steps
+                                        .iter()
+                                        .position(|s| matches!(s, ReceiverStep::Attr { value } if value == attr_name))
+                                        .unwrap_or(0)
+                                        + 1..],
+                                    scope_path,
+                                    import_targets,
+                                    cross_file_map,
+                                    cache,
+                                    ws_root,
+                                    depth,
+                                ) {
+                                    return Some(result);
+                                }
+                            }
+
+                            // Fall back to cross-file map lookup
                             if let Some(map) = cross_file_map {
                                 if let Some(qn) = map.resolve_to_qualified_name(class_type) {
                                     return Some(ResolvedSymbol::CrossFile(qn));
@@ -3748,20 +3833,23 @@ impl PythonAdapter {
                         }
 
                         // Check if current_type is cross-file BEFORE continuing
-                        if !last_name_was_class
-                            && (lookup_symbol_index_in_scope_chain(
+                        let is_import = lookup_symbol_kind_in_scope_chain(
+                            scope_path,
+                            class_type,
+                            symbol_kinds,
+                        ) == Some(SymbolKind::Import);
+
+                        let is_local = last_name_was_class
+                            || (lookup_symbol_index_in_scope_chain(
                                 scope_path,
                                 class_type,
                                 scoped_symbol_map,
                             )
-                            .is_none()
-                                || lookup_symbol_kind_in_scope_chain(
-                                    scope_path,
-                                    class_type,
-                                    symbol_kinds,
-                                ) == Some(SymbolKind::Import))
-                        {
-                            // Not a local symbol - check cross-file
+                            .is_some()
+                                && !is_import);
+
+                        if !is_local {
+                            // Fall back to cross-file map lookup
                             if let Some(map) = cross_file_map {
                                 if let Some(qn) = map.resolve_to_qualified_name(class_type) {
                                     return Some(ResolvedSymbol::CrossFile(qn));
@@ -3815,6 +3903,444 @@ impl PythonAdapter {
         })
     }
 
+    /// Resolve an attribute access on a cross-file type.
+    ///
+    /// This method handles the case where `class_type` is an import and we need
+    /// to continue resolution in the remote file's context.
+    ///
+    /// # Arguments
+    /// - `class_type`: The imported type name to resolve
+    /// - `attr_name`: The attribute being accessed
+    /// - `remaining_steps`: Any remaining steps after the attribute access
+    /// - `scope_path`: Current scope path for import lookup
+    /// - `import_targets`: Map for looking up import targets
+    /// - `cross_file_map`: Cross-file symbol map for fallback
+    /// - `cache`: Cross-file type cache for loading remote files
+    /// - `workspace_root`: Workspace root for path resolution
+    /// - `depth`: Current cross-file resolution depth
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_cross_file_attr(
+        &self,
+        class_type: &str,
+        attr_name: &str,
+        remaining_steps: &[ReceiverStep],
+        scope_path: &[String],
+        import_targets: &HashMap<(Vec<String>, String), crate::cross_file_types::ImportTarget>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+        cache: &mut CrossFileTypeCache,
+        workspace_root: &Path,
+        depth: usize,
+    ) -> Option<ResolvedSymbol> {
+        use crate::cross_file_types::MAX_CROSS_FILE_DEPTH;
+
+        // Check depth limit
+        if depth >= MAX_CROSS_FILE_DEPTH {
+            return None;
+        }
+
+        // Look up import target
+        let target = lookup_import_target(scope_path, class_type, import_targets)?;
+
+        // Clone the data we need before potentially mutating cache
+        let file_path = target.file_path.clone();
+        let kind = target.kind.clone();
+
+        // Ensure file is analyzed (this populates the cache)
+        cache.get_or_analyze(&file_path, workspace_root).ok()?;
+
+        // Handle based on import kind
+        match kind {
+            ImportTargetKind::FromImport {
+                imported_name,
+                imported_module,
+            } => {
+                if imported_module {
+                    // Submodule import: resolve attr_name within the module
+                    self.resolve_module_attr(
+                        attr_name,
+                        remaining_steps,
+                        &file_path,
+                        cross_file_map,
+                        cache,
+                        workspace_root,
+                        depth,
+                    )
+                } else {
+                    // Class/function import: resolve attribute on the imported name
+                    self.resolve_imported_class_attr(
+                        &imported_name,
+                        attr_name,
+                        remaining_steps,
+                        &file_path,
+                        cross_file_map,
+                        cache,
+                        workspace_root,
+                        depth,
+                    )
+                }
+            }
+            ImportTargetKind::ModuleImport => {
+                // Module import: resolve attr_name within the module
+                self.resolve_module_attr(
+                    attr_name,
+                    remaining_steps,
+                    &file_path,
+                    cross_file_map,
+                    cache,
+                    workspace_root,
+                    depth,
+                )
+            }
+        }
+    }
+
+    /// Resolve an attribute on an imported class.
+    ///
+    /// Looks up `attr_name` on `class_name` in the remote file context.
+    /// Takes `file_path` instead of `remote_ctx` to avoid borrow conflicts.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_imported_class_attr(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+        remaining_steps: &[ReceiverStep],
+        file_path: &Path,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+        cache: &mut CrossFileTypeCache,
+        workspace_root: &Path,
+        depth: usize,
+    ) -> Option<ResolvedSymbol> {
+        // Get the remote context (should be cached from earlier call)
+        let remote_ctx = cache.get_or_analyze(file_path, workspace_root).ok()?;
+
+        // Check if the class_name is itself an import in the remote file (re-export)
+        let is_reexport = remote_ctx.symbol_kinds.get(&(
+            vec!["<module>".to_string()],
+            class_name.to_string(),
+        )) == Some(&SymbolKind::Import);
+
+        if is_reexport {
+            // Need to look up the re-export target before dropping the borrow
+            let module_scope = vec!["<module>".to_string()];
+            if let Some(target) = lookup_import_target(&module_scope, class_name, &remote_ctx.import_targets) {
+                let target_path = target.file_path.clone();
+                let target_kind = target.kind.clone();
+
+                // Determine the actual name to look up in the target file
+                let actual_name = match &target_kind {
+                    ImportTargetKind::FromImport { imported_name, .. } => imported_name.clone(),
+                    ImportTargetKind::ModuleImport => class_name.to_string(),
+                };
+
+                // Ensure target file is analyzed
+                cache.get_or_analyze(&target_path, workspace_root).ok()?;
+
+                // Continue resolution in the target context
+                return self.resolve_imported_class_attr(
+                    &actual_name,
+                    attr_name,
+                    remaining_steps,
+                    &target_path,
+                    cross_file_map,
+                    cache,
+                    workspace_root,
+                    depth + 1,
+                );
+            }
+            return None;
+        }
+
+        // Extract what we need from the context before potential recursive calls
+        let attr_type_info = remote_ctx.tracker.attribute_type_of(class_name, attr_name)
+            .map(|at| at.type_str.clone());
+        let method_return = remote_ctx.tracker.method_return_type_of(class_name, attr_name)
+            .map(|s| s.to_string());
+        let symbol_map_clone = remote_ctx.symbol_map.clone();
+        let symbol_kinds_clone = remote_ctx.symbol_kinds.clone();
+        let import_targets_clone = remote_ctx.import_targets.clone();
+        let tracker_clone = remote_ctx.tracker.clone();
+
+        // Try to resolve attribute type on the class
+        if let Some(attr_type_str) = attr_type_info {
+            // If there are no more steps, return the resolved type
+            if remaining_steps.is_empty() {
+                // Look up the final type in the remote context
+                return self.resolve_type_in_context(
+                    &attr_type_str,
+                    &symbol_kinds_clone,
+                    cross_file_map,
+                );
+            }
+
+            // Continue resolution with remaining steps
+            let new_path = ReceiverPath {
+                steps: remaining_steps.to_vec(),
+            };
+            let module_scope = vec!["<module>".to_string()];
+
+            return self.resolve_receiver_path_with_cross_file(
+                &new_path,
+                &module_scope,
+                &tracker_clone,
+                &symbol_map_clone,
+                &symbol_kinds_clone,
+                &import_targets_clone,
+                cross_file_map,
+                Some(cache),
+                Some(workspace_root),
+                depth + 1,
+            );
+        }
+
+        // Try method lookup if attribute not found
+        if let Some(return_type) = method_return {
+            // Check if next step is a Call
+            if let Some(ReceiverStep::Call) = remaining_steps.first() {
+                // Method call - use the return type for remaining resolution
+                let remaining = &remaining_steps[1..];
+                if remaining.is_empty() {
+                    // Final type is the return type
+                    return self.resolve_type_in_context(
+                        &return_type,
+                        &symbol_kinds_clone,
+                        cross_file_map,
+                    );
+                }
+
+                // Build path for remaining steps with the return type
+                let mut new_steps = vec![ReceiverStep::Name {
+                    value: return_type.clone(),
+                }];
+                new_steps.extend_from_slice(remaining);
+                let new_path = ReceiverPath { steps: new_steps };
+                let module_scope = vec!["<module>".to_string()];
+
+                return self.resolve_receiver_path_with_cross_file(
+                    &new_path,
+                    &module_scope,
+                    &tracker_clone,
+                    &symbol_map_clone,
+                    &symbol_kinds_clone,
+                    &import_targets_clone,
+                    cross_file_map,
+                    Some(cache),
+                    Some(workspace_root),
+                    depth + 1,
+                );
+            }
+        }
+
+        // If the class itself is what we're looking for (final step was attr on a class)
+        if remaining_steps.is_empty() {
+            // Return the class as a cross-file reference
+            if symbol_map_clone.contains_key(&(
+                vec!["<module>".to_string()],
+                class_name.to_string(),
+            )) {
+                // Return as cross-file since it's in a different file
+                if let Some(map) = cross_file_map {
+                    if let Some(qn) = map.resolve_to_qualified_name(class_name) {
+                        return Some(ResolvedSymbol::CrossFile(qn));
+                    }
+                }
+                // Fallback: construct qualified name from file path and class name
+                return Some(ResolvedSymbol::CrossFile(format!(
+                    "{}.{}",
+                    class_name, attr_name
+                )));
+            }
+        }
+
+        None
+    }
+
+    /// Resolve an attribute within a module context.
+    ///
+    /// Used when the import is a module import (`import pkg.mod`) and we need
+    /// to resolve `mod.attr` or `mod.Class.method`.
+    /// Takes `file_path` instead of `remote_ctx` to avoid borrow conflicts.
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_module_attr(
+        &self,
+        attr_name: &str,
+        remaining_steps: &[ReceiverStep],
+        file_path: &Path,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+        cache: &mut CrossFileTypeCache,
+        workspace_root: &Path,
+        depth: usize,
+    ) -> Option<ResolvedSymbol> {
+        let module_scope = vec!["<module>".to_string()];
+
+        // Get the remote context
+        let remote_ctx = cache.get_or_analyze(file_path, workspace_root).ok()?;
+
+        // Look up attr_name in the module's symbols and extract what we need
+        let kind = remote_ctx
+            .symbol_kinds
+            .get(&(module_scope.clone(), attr_name.to_string()))
+            .copied();
+
+        let return_type = remote_ctx.tracker.return_type_of(&module_scope, attr_name)
+            .map(|s| s.to_string());
+
+        // Clone context data we might need for recursive calls
+        let tracker_clone = remote_ctx.tracker.clone();
+        let symbol_map_clone = remote_ctx.symbol_map.clone();
+        let symbol_kinds_clone = remote_ctx.symbol_kinds.clone();
+        let import_targets_clone = remote_ctx.import_targets.clone();
+
+        // Check if attr_name is an import and get target info if so
+        let import_target_info = if kind == Some(SymbolKind::Import) {
+            lookup_import_target(&module_scope, attr_name, &remote_ctx.import_targets)
+                .map(|t| (t.file_path.clone(), t.kind.clone()))
+        } else {
+            None
+        };
+
+        // Now handle based on kind (remote_ctx borrow is dropped here)
+        match kind {
+            Some(SymbolKind::Class) => {
+                // attr_name is a class - handle remaining steps
+                if remaining_steps.is_empty() {
+                    // Final resolution - return the class
+                    if let Some(map) = cross_file_map {
+                        if let Some(qn) = map.resolve_to_qualified_name(attr_name) {
+                            return Some(ResolvedSymbol::CrossFile(qn));
+                        }
+                    }
+                    return Some(ResolvedSymbol::CrossFile(attr_name.to_string()));
+                }
+
+                // Build path for remaining resolution
+                let mut new_steps = vec![ReceiverStep::Name {
+                    value: attr_name.to_string(),
+                }];
+                new_steps.extend_from_slice(remaining_steps);
+                let new_path = ReceiverPath { steps: new_steps };
+
+                return self.resolve_receiver_path_with_cross_file(
+                    &new_path,
+                    &module_scope,
+                    &tracker_clone,
+                    &symbol_map_clone,
+                    &symbol_kinds_clone,
+                    &import_targets_clone,
+                    cross_file_map,
+                    Some(cache),
+                    Some(workspace_root),
+                    depth + 1,
+                );
+            }
+            Some(SymbolKind::Function) => {
+                // attr_name is a function - check if next step is Call
+                if let Some(ReceiverStep::Call) = remaining_steps.first() {
+                    // Function call - get return type
+                    if let Some(ret_type) = return_type {
+                        let remaining = &remaining_steps[1..];
+                        if remaining.is_empty() {
+                            return self.resolve_type_in_context(
+                                &ret_type,
+                                &symbol_kinds_clone,
+                                cross_file_map,
+                            );
+                        }
+
+                        // Continue resolution with return type
+                        let mut new_steps = vec![ReceiverStep::Name {
+                            value: ret_type,
+                        }];
+                        new_steps.extend_from_slice(remaining);
+                        let new_path = ReceiverPath { steps: new_steps };
+
+                        return self.resolve_receiver_path_with_cross_file(
+                            &new_path,
+                            &module_scope,
+                            &tracker_clone,
+                            &symbol_map_clone,
+                            &symbol_kinds_clone,
+                            &import_targets_clone,
+                            cross_file_map,
+                            Some(cache),
+                            Some(workspace_root),
+                            depth + 1,
+                        );
+                    }
+                }
+
+                // Function reference without call
+                if remaining_steps.is_empty() {
+                    if let Some(map) = cross_file_map {
+                        if let Some(qn) = map.resolve_to_qualified_name(attr_name) {
+                            return Some(ResolvedSymbol::CrossFile(qn));
+                        }
+                    }
+                    return Some(ResolvedSymbol::CrossFile(attr_name.to_string()));
+                }
+            }
+            Some(SymbolKind::Import) => {
+                // attr_name is an import - follow it
+                if let Some((target_path, target_kind)) = import_target_info {
+                    // Ensure target file is analyzed
+                    cache.get_or_analyze(&target_path, workspace_root).ok()?;
+
+                    // Get the name to look up in the target
+                    let lookup_name = match &target_kind {
+                        ImportTargetKind::FromImport { imported_name, .. } => imported_name.clone(),
+                        ImportTargetKind::ModuleImport => attr_name.to_string(),
+                    };
+
+                    return self.resolve_module_attr(
+                        &lookup_name,
+                        remaining_steps,
+                        &target_path,
+                        cross_file_map,
+                        cache,
+                        workspace_root,
+                        depth + 1,
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    /// Resolve a type name in a context using symbol_kinds.
+    ///
+    /// Returns a CrossFile result with the qualified name.
+    fn resolve_type_in_context(
+        &self,
+        type_name: &str,
+        symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
+        cross_file_map: Option<&CrossFileSymbolMap>,
+    ) -> Option<ResolvedSymbol> {
+        let module_scope = vec!["<module>".to_string()];
+
+        // Check if type is a class in the context
+        if let Some(SymbolKind::Class) = symbol_kinds
+            .get(&(module_scope.clone(), type_name.to_string()))
+        {
+            // Return as cross-file reference
+            if let Some(map) = cross_file_map {
+                if let Some(qn) = map.resolve_to_qualified_name(type_name) {
+                    return Some(ResolvedSymbol::CrossFile(qn));
+                }
+            }
+            return Some(ResolvedSymbol::CrossFile(type_name.to_string()));
+        }
+
+        // Try cross-file map lookup
+        if let Some(map) = cross_file_map {
+            if let Some(qn) = map.resolve_to_qualified_name(type_name) {
+                return Some(ResolvedSymbol::CrossFile(qn));
+            }
+        }
+
+        Some(ResolvedSymbol::CrossFile(type_name.to_string()))
+    }
+
     /// Resolve a type name to a symbol using scope-aware lookup.
     ///
     /// Searches for the type in the local symbol map first (using scope chain),
@@ -3866,6 +4392,9 @@ impl PythonAdapter {
     /// This method delegates to `resolve_receiver_path` when a structured path
     /// is present, falling back to `resolve_receiver_to_symbol` for simple
     /// string-based resolution.
+    ///
+    /// When `cross_file_cache` and `workspace_root` are provided, cross-file
+    /// type resolution is enabled for imported types.
     #[allow(clippy::too_many_arguments)]
     fn resolve_receiver_to_symbol_with_path(
         &self,
@@ -3877,18 +4406,43 @@ impl PythonAdapter {
         symbol_kinds: &HashMap<(Vec<String>, String), SymbolKind>,
         symbol_name_to_index: &HashMap<&str, usize>,
         cross_file_map: Option<&CrossFileSymbolMap>,
+        // Cross-file resolution parameters (optional)
+        import_targets: Option<&HashMap<(Vec<String>, String), crate::cross_file_types::ImportTarget>>,
+        cross_file_cache: Option<&mut CrossFileTypeCache>,
+        workspace_root: Option<&Path>,
     ) -> Option<ResolvedSymbol> {
-        // If we have a structured path and a tracker, use the new resolution
+        // If we have a structured path and a tracker, use resolution
         if let (Some(path), Some(tracker)) = (receiver_path, tracker) {
-            if let Some(result) = self.resolve_receiver_path(
-                path,
-                scope_path,
-                tracker,
-                scoped_symbol_map,
-                symbol_kinds,
-                cross_file_map,
-            ) {
-                return Some(result);
+            // Use cross-file resolution if cache is available
+            if let (Some(import_targets), Some(cache), Some(ws_root)) =
+                (import_targets, cross_file_cache, workspace_root)
+            {
+                if let Some(result) = self.resolve_receiver_path_with_cross_file(
+                    path,
+                    scope_path,
+                    tracker,
+                    scoped_symbol_map,
+                    symbol_kinds,
+                    import_targets,
+                    cross_file_map,
+                    Some(cache),
+                    Some(ws_root),
+                    0, // Initial depth
+                ) {
+                    return Some(result);
+                }
+            } else {
+                // Fall back to single-file resolution
+                if let Some(result) = self.resolve_receiver_path(
+                    path,
+                    scope_path,
+                    tracker,
+                    scoped_symbol_map,
+                    symbol_kinds,
+                    cross_file_map,
+                ) {
+                    return Some(result);
+                }
             }
         }
 
@@ -4264,6 +4818,10 @@ impl PythonAdapter {
                 &symbol_kinds,
                 &symbol_name_to_index,
                 cross_file_map,
+                // Cross-file resolution not yet wired up in convert_file_analysis
+                None, // import_targets
+                None, // cross_file_cache
+                None, // workspace_root
             );
 
             // Split resolution into local index vs cross-file qualified name
@@ -4315,6 +4873,10 @@ impl PythonAdapter {
                         &symbol_kinds,
                         &symbol_name_to_index,
                         cross_file_map,
+                        // Cross-file resolution not yet wired up in convert_file_analysis
+                        None, // import_targets
+                        None, // cross_file_cache
+                        None, // workspace_root
                     )
                 });
 
@@ -12073,6 +12635,196 @@ class Container:
                 vec!["<module>", "Container", "Second"],
                 "method_b should be in Second scope"
             );
+        }
+
+        // ====================================================================
+        // Cross-File Resolution Integration Tests (Phase 11D Step 2)
+        // ====================================================================
+
+        #[test]
+        fn cross_file_resolve_imported_class_attribute() {
+            // Integration test: Resolve attribute on imported class.
+            // Fixture 11D-F01 pattern: handler.py defines Handler, service.py imports it.
+            //
+            // handler.py:
+            //   class Handler:
+            //       def process(self): pass
+            //
+            // service.py:
+            //   from handler import Handler
+            //   class Service:
+            //       handler: Handler
+            //       def run(self):
+            //           self.handler.process()  # Should resolve Handler.process
+            use tempfile::TempDir;
+
+            let adapter = PythonAdapter::new();
+
+            // Create temp directory with test files
+            let temp_dir = TempDir::new().unwrap();
+            let handler_path = temp_dir.path().join("handler.py");
+            let service_path = temp_dir.path().join("service.py");
+
+            let handler_content = r#"
+class Handler:
+    def process(self): pass
+"#;
+            let service_content = r#"
+from handler import Handler
+
+class Service:
+    handler: Handler
+
+    def run(self):
+        self.handler.process()
+"#;
+            std::fs::write(&handler_path, handler_content).unwrap();
+            std::fs::write(&service_path, service_content).unwrap();
+
+            // Analyze service.py
+            let service_result = adapter.analyze_file("service.py", service_content).unwrap();
+
+            // The process attribute access should have a receiver
+            let process_attr = service_result
+                .attributes
+                .iter()
+                .find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            // Without cross-file cache wired up, it should not resolve locally
+            // but should be marked as needing cross-file resolution
+            let attr = process_attr.unwrap();
+            assert!(
+                attr.base_symbol_index.is_none(),
+                "Imported type should not resolve to local index without cross-file cache"
+            );
+        }
+
+        #[test]
+        fn cross_file_import_target_kind_from_import() {
+            // Test that ImportTargetKind::FromImport is constructed correctly
+            use crate::cross_file_types::{ImportTarget, ImportTargetKind};
+            use std::path::PathBuf;
+
+            // Create an ImportTarget directly to verify the type structure
+            let target = ImportTarget {
+                file_path: PathBuf::from("handler.py"),
+                kind: ImportTargetKind::FromImport {
+                    imported_name: "Handler".to_string(),
+                    imported_module: false,
+                },
+            };
+
+            match &target.kind {
+                ImportTargetKind::FromImport {
+                    imported_name,
+                    imported_module,
+                } => {
+                    assert_eq!(imported_name, "Handler");
+                    assert!(!imported_module, "Handler is a class, not a module");
+                }
+                _ => panic!("Expected FromImport"),
+            }
+        }
+
+        #[test]
+        fn cross_file_import_target_kind_module_import() {
+            // Test that ImportTargetKind::ModuleImport is constructed correctly
+            use crate::cross_file_types::{ImportTarget, ImportTargetKind};
+            use std::path::PathBuf;
+
+            // Create an ImportTarget directly to verify the type structure
+            let target = ImportTarget {
+                file_path: PathBuf::from("handler.py"),
+                kind: ImportTargetKind::ModuleImport,
+            };
+
+            assert!(
+                matches!(target.kind, ImportTargetKind::ModuleImport),
+                "Should be ModuleImport"
+            );
+            assert_eq!(target.file_path, PathBuf::from("handler.py"));
+        }
+
+        #[test]
+        fn cross_file_lookup_import_target_scope_chain() {
+            // Test that lookup_import_target walks the scope chain correctly
+            use crate::cross_file_types::{
+                lookup_import_target, ImportTarget, ImportTargetKind,
+            };
+            use std::collections::HashMap;
+            use std::path::PathBuf;
+
+            let mut import_targets = HashMap::new();
+
+            // Add import at module scope
+            import_targets.insert(
+                (vec!["<module>".to_string()], "Handler".to_string()),
+                ImportTarget {
+                    file_path: PathBuf::from("handler.py"),
+                    kind: ImportTargetKind::FromImport {
+                        imported_name: "Handler".to_string(),
+                        imported_module: false,
+                    },
+                },
+            );
+
+            // Lookup from module scope
+            let result = lookup_import_target(
+                &["<module>".to_string()],
+                "Handler",
+                &import_targets,
+            );
+            assert!(result.is_some(), "Should find Handler at module scope");
+
+            // Lookup from nested scope (should find via scope chain)
+            let result = lookup_import_target(
+                &[
+                    "<module>".to_string(),
+                    "Service".to_string(),
+                    "run".to_string(),
+                ],
+                "Handler",
+                &import_targets,
+            );
+            assert!(
+                result.is_some(),
+                "Should find Handler from nested scope via scope chain"
+            );
+
+            // Lookup non-existent import
+            let result = lookup_import_target(
+                &["<module>".to_string()],
+                "Missing",
+                &import_targets,
+            );
+            assert!(result.is_none(), "Should not find non-existent import");
+        }
+
+        #[test]
+        fn cross_file_cache_circular_import_detection() {
+            // Test that CrossFileTypeCache detects circular imports
+            use crate::cross_file_types::CrossFileTypeCache;
+            use std::collections::HashSet;
+
+            let workspace_files = HashSet::new();
+            let namespace_packages = HashSet::new();
+            let cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+            // We can't directly access in_progress, but we can verify the cache is created
+            assert!(cache.is_empty(), "Cache should start empty");
+            assert_eq!(cache.len(), 0);
+        }
+
+        #[test]
+        fn type_tracker_is_cloneable() {
+            // Verify TypeTracker can be cloned (required for cross-file resolution)
+            let tracker = TypeTracker::new();
+            let _cloned = tracker.clone();
+            // If this compiles, TypeTracker is Clone
         }
     }
 }

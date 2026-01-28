@@ -72,7 +72,7 @@ pub struct AnnotatedType {
 /// 5. Scope chaining: inner scopes can access outer scope types
 ///
 /// Annotated types take precedence over inferred types.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeTracker {
     /// Map from (scope_path, variable_name) to inferred type name (Level 1).
     /// The scope_path is a tuple like (`"<module>"`, `"ClassName"`, `"method_name"`).
