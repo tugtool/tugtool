@@ -3734,7 +3734,7 @@ impl PythonAdapter {
         let mut last_name_is_unresolved_callable: bool = false;
         let mut pending_callable_return: Option<String> = None;
 
-        for step in &receiver_path.steps {
+        for (step_idx, step) in receiver_path.steps.iter().enumerate() {
             match step {
                 ReceiverStep::Name { value: name } => {
                     if let Some(type_str) = tracker.type_of(scope_path, name) {
@@ -3892,6 +3892,49 @@ impl PythonAdapter {
                         pending_callable_return = None;
                     } else {
                         return None;
+                    }
+                }
+                ReceiverStep::Subscript => {
+                    // Subscript resolution: extract element type from container
+                    // For `items[0]` where `items: List[Handler]`, resolve to `Handler`
+                    if current_type.is_some() {
+                        // Get TypeNode from the previous step's variable for element type extraction
+                        let element_type = if step_idx > 0 {
+                            let prev_step = &receiver_path.steps[step_idx - 1];
+                            match prev_step {
+                                ReceiverStep::Name { value: name } => {
+                                    // Try TypeNode-based extraction from the variable's annotation
+                                    tracker.type_of_node(scope_path, name).and_then(|node| {
+                                        tracker.extract_element_type_from_node(node)
+                                    })
+                                }
+                                ReceiverStep::Attr { .. } => {
+                                    // For attribute access like `self.items[0]`, we'd need to look up
+                                    // the attribute's TypeNode. This requires knowing the class type
+                                    // from even earlier - not yet supported.
+                                    None
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                        // If TypeNode extraction failed, we can't resolve
+                        // (String-based fallback was removed per Step 3-PREREQUISITE)
+                        if let Some(elem_type) = element_type {
+                            current_type = Some(elem_type);
+                        } else {
+                            return None; // Can't resolve element type
+                        }
+
+                        // Clear state flags after subscript
+                        last_method_name = None;
+                        last_name_was_class = false;
+                        last_name_is_unresolved_callable = false;
+                        pending_callable_return = None;
+                    } else {
+                        return None; // Can't resolve without container type
                     }
                 }
             }
@@ -4400,9 +4443,14 @@ impl PythonAdapter {
 
     /// Resolve a receiver to a symbol, using structured path if available.
     ///
-    /// This method delegates to `resolve_receiver_path` when a structured path
-    /// is present, falling back to `resolve_receiver_to_symbol` for simple
-    /// string-based resolution.
+    /// When a structured `receiver_path` is present (from CST parsing), this method
+    /// uses **only** TypeNode-based resolution via `resolve_receiver_path`. This is
+    /// the authoritative answer - if it returns None, resolution failed legitimately
+    /// (missing type annotation, non-container subscript, etc.).
+    ///
+    /// String-based resolution via `resolve_receiver_to_symbol` is used **only** when
+    /// `receiver_path` is None, meaning CST couldn't parse the expression into
+    /// structured steps (e.g., complex expressions like `(a or b).method()`).
     ///
     /// When `cross_file_cache` and `workspace_root` are provided, cross-file
     /// type resolution is enabled for imported types.
@@ -4424,13 +4472,19 @@ impl PythonAdapter {
         cross_file_cache: Option<&mut CrossFileTypeCache>,
         workspace_root: Option<&Path>,
     ) -> Option<ResolvedSymbol> {
-        // If we have a structured path and a tracker, use resolution
-        if let (Some(path), Some(tracker)) = (receiver_path, tracker) {
+        // If we have a structured path from CST, use ONLY TypeNode-based resolution.
+        // This is the authoritative answer - no fallback to string-based resolution.
+        if let Some(path) = receiver_path {
+            let Some(tracker) = tracker else {
+                // Have path but no tracker = can't resolve
+                return None;
+            };
+
             // Use cross-file resolution if cache is available
             if let (Some(import_targets), Some(cache), Some(ws_root)) =
                 (import_targets, cross_file_cache, workspace_root)
             {
-                if let Some(result) = self.resolve_receiver_path_with_cross_file(
+                return self.resolve_receiver_path_with_cross_file(
                     path,
                     scope_path,
                     tracker,
@@ -4441,25 +4495,22 @@ impl PythonAdapter {
                     Some(cache),
                     Some(ws_root),
                     0, // Initial depth
-                ) {
-                    return Some(result);
-                }
-            } else {
-                // Fall back to single-file resolution
-                if let Some(result) = self.resolve_receiver_path(
-                    path,
-                    scope_path,
-                    tracker,
-                    scoped_symbol_map,
-                    symbol_kinds,
-                    cross_file_map,
-                ) {
-                    return Some(result);
-                }
+                );
             }
+
+            // Single-file resolution
+            return self.resolve_receiver_path(
+                path,
+                scope_path,
+                tracker,
+                scoped_symbol_map,
+                symbol_kinds,
+                cross_file_map,
+            );
         }
 
-        // Fall back to simple string-based resolution
+        // No receiver_path means CST couldn't parse the expression into structured steps.
+        // Use string-based resolution as the only option for these patterns.
         self.resolve_receiver_to_symbol(
             receiver,
             scope_path,
@@ -7531,6 +7582,136 @@ h.process()
                 cleanup_attrs[0].base_symbol_index,
                 Some(handler_idx),
                 "cleanup() should resolve to Handler"
+            );
+        }
+
+        // ====================================================================
+        // Subscript Resolution Tests (Phase 11E Step 4)
+        // ====================================================================
+
+        #[test]
+        fn resolve_receiver_path_subscript_list_resolves() {
+            // Integration test: items[0].process() resolves when items: List[Handler]
+            let adapter = PythonAdapter::new();
+            let content = r#"
+from typing import List
+
+class Handler:
+    def process(self): pass
+
+items: List[Handler] = []
+items[0].process()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Handler class symbol
+            let handler_idx = result.symbols.iter().position(|s| s.name == "Handler");
+            assert!(handler_idx.is_some(), "Should have Handler symbol");
+
+            // The attribute access for "process" should resolve to Handler
+            // via items[0] -> element type Handler -> process
+            let process_attr = result.attributes.iter().find(|a| a.name == "process");
+            assert!(
+                process_attr.is_some(),
+                "Should have attribute access for 'process'"
+            );
+
+            let attr = process_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, handler_idx,
+                "Subscript access items[0].process() should resolve to Handler"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_subscript_dict_resolves() {
+            // Integration test: config["key"].apply() resolves when config: Dict[str, Settings]
+            let adapter = PythonAdapter::new();
+            let content = r#"
+from typing import Dict
+
+class Settings:
+    def apply(self): pass
+
+config: Dict[str, Settings] = {}
+config["key"].apply()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the Settings class symbol
+            let settings_idx = result.symbols.iter().position(|s| s.name == "Settings");
+            assert!(settings_idx.is_some(), "Should have Settings symbol");
+
+            // The attribute access for "apply" should resolve to Settings
+            // via config["key"] -> element type Settings (dict value) -> apply
+            let apply_attr = result.attributes.iter().find(|a| a.name == "apply");
+            assert!(
+                apply_attr.is_some(),
+                "Should have attribute access for 'apply'"
+            );
+
+            let attr = apply_attr.unwrap();
+            assert_eq!(
+                attr.base_symbol_index, settings_idx,
+                "Subscript access config[\"key\"].apply() should resolve to Settings"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_nested_subscript_returns_none() {
+            // Integration test: data[0][1].method() returns None (nested subscript unsupported)
+            let adapter = PythonAdapter::new();
+            let content = r#"
+from typing import List
+
+class Handler:
+    def method(self): pass
+
+data: List[List[Handler]] = []
+data[0][1].method()  # Nested subscript - should NOT resolve
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The attribute access for "method" should NOT resolve
+            // because nested subscripts are not supported
+            let method_attr = result.attributes.iter().find(|a| a.name == "method");
+            assert!(
+                method_attr.is_some(),
+                "Should have attribute access for 'method'"
+            );
+
+            let attr = method_attr.unwrap();
+            assert!(
+                attr.base_symbol_index.is_none(),
+                "Nested subscript data[0][1].method() should NOT resolve"
+            );
+        }
+
+        #[test]
+        fn resolve_receiver_path_non_container_subscript_returns_none() {
+            // Integration test: Non-container subscript returns None
+            let adapter = PythonAdapter::new();
+            let content = r#"
+class Custom:
+    def method(self): pass
+
+items: Custom = Custom()  # Not a container type
+items[0].method()  # Should NOT resolve - Custom is not a container
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // The attribute access for "method" should NOT resolve
+            // because Custom is not a recognized container type
+            let method_attr = result.attributes.iter().find(|a| a.name == "method");
+            assert!(
+                method_attr.is_some(),
+                "Should have attribute access for 'method'"
+            );
+
+            let attr = method_attr.unwrap();
+            assert!(
+                attr.base_symbol_index.is_none(),
+                "Non-container subscript should NOT resolve"
             );
         }
 

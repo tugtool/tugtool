@@ -1274,25 +1274,25 @@ grep -n "extract_second_type_arg" crates/tugtool-python/src/
 - Integration of element type extraction into resolution flow
 
 **Tasks:**
-- [ ] Add `ReceiverStep::Subscript` to receiver path model (if not present)
-- [ ] Update receiver path collector to emit Subscript steps for `container[index]`
-- [ ] Update call-site receiver path collector to emit Subscript steps
-- [ ] Update `resolve_receiver_path` to handle `ReceiverStep::Subscript`
-- [ ] When resolving `container[index]`, look up container type and extract element type
-- [ ] Continue resolution chain with element type
-- [ ] Return `None` for unsupported subscript patterns
+- [x] Add `ReceiverStep::Subscript` to receiver path model (if not present)
+- [x] Update receiver path collector to emit Subscript steps for `container[index]`
+- [x] Update call-site receiver path collector to emit Subscript steps
+- [x] Update `resolve_receiver_path` to handle `ReceiverStep::Subscript`
+- [x] When resolving `container[index]`, look up container type and extract element type
+- [x] Continue resolution chain with element type
+- [x] Return `None` for unsupported subscript patterns
 
 **Tests:**
-- [ ] Integration: `items[0].process()` resolves when `items: List[Handler]`
-- [ ] Integration: `config["key"].apply()` resolves when `config: Dict[str, Settings]`
-- [ ] Integration: Nested subscript `data[0][1]` returns `None` (unsupported)
-- [ ] Integration: Non-container subscript returns `None`
-- [ ] Unit: ReceiverPath includes `Subscript` step for `items[0].process()`
-- [ ] Unit: Call-site receiver path includes `Subscript` step for `items[0].process()`
+- [x] Integration: `items[0].process()` resolves when `items: List[Handler]`
+- [x] Integration: `config["key"].apply()` resolves when `config: Dict[str, Settings]`
+- [x] Integration: Nested subscript `data[0][1]` returns `None` (unsupported)
+- [x] Integration: Non-container subscript returns `None`
+- [x] Unit: ReceiverPath includes `Subscript` step for `items[0].process()`
+- [x] Unit: Call-site receiver path includes `Subscript` step for `items[0].process()`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python resolve`
-- [ ] `cargo nextest run -p tugtool-python subscript`
+- [x] `cargo nextest run -p tugtool-python resolve`
+- [x] `cargo nextest run -p tugtool-python subscript`
 
 **Rollback:** Revert commit
 

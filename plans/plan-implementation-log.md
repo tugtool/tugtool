@@ -6,6 +6,94 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 4: Integrate Subscript Resolution into Receiver Path | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 4 specification (lines 1266-1298)
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - ReceiverStep enum, extract_receiver_path
+- `crates/tugtool-python/src/analyzer.rs` - resolve_receiver_path_with_cross_file, resolve_receiver_to_symbol_with_path
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `ReceiverStep::Subscript` to receiver path model | Done |
+| Update receiver path collector to emit Subscript steps | Done |
+| Update call-site receiver path collector (uses shared extract_receiver_path) | Done |
+| Add `ReceiverPath::with_subscript()` builder method | Done |
+| Update `resolve_receiver_path` to handle `ReceiverStep::Subscript` | Done |
+| Extract element type via TypeNode, continue resolution chain | Done |
+| Return `None` for unsupported subscript patterns | Done |
+| **Remove string-based fallback in resolve_receiver_to_symbol_with_path** | Done (critical fix) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Added `ReceiverStep::Subscript` variant, `with_subscript()` builder, updated `extract_receiver_path_recursive` for subscript handling, updated tests
+- `crates/tugtool-python/src/analyzer.rs` - Added Subscript handling in `resolve_receiver_path_with_cross_file`, removed string-based fallback in `resolve_receiver_to_symbol_with_path`, added 4 integration tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python resolve`: 91 tests passed
+- `cargo nextest run -p tugtool-python subscript`: 5 tests passed
+- `cargo nextest run --workspace`: 1885 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all --check`: Formatted
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python resolve`: PASS (91 tests)
+- `cargo nextest run -p tugtool-python subscript`: PASS (5 tests)
+
+**Key Decisions/Notes:**
+- Discovered and removed string-based fallback in `resolve_receiver_to_symbol_with_path` - same anti-pattern as Step 3-PREREQUISITE
+- When `receiver_path` is present from CST, that's the authoritative answer - no fallback to string-based resolution
+- Nested subscripts (`data[0][1]`) return None (unsupported)
+- Non-container subscripts return None (can't extract element type)
+- Single subscript patterns (`items[0].method()`) now fully supported with TypeNode-based element type extraction
+
+---
+
+## [phase-11E.md] Step 3: Add Element Type Extraction to TypeTracker | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 3 specification (lines 1231-1262)
+- `crates/tugtool-python/src/type_tracker.rs` - Implementation (lines 1041-1169) and tests (lines 3619-3937)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `extract_element_type_from_node(&self, node: &TypeNode)` method | Previously done |
+| Add `type_of_node(&self, scope_path, name) -> Option<&TypeNode>` | Previously done |
+| Implement `is_sequence_type(name: &str) -> bool` helper | Previously done |
+| Implement `is_mapping_type(name: &str) -> bool` helper | Previously done |
+| Handle common patterns: List, Dict, Set, Optional, Tuple | Previously done |
+| Handle built-in generics: list, dict, set (Python 3.9+) | Previously done |
+| Fix outdated documentation referencing removed `extract_element_type` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs` - Fixed two outdated comments (lines 1068 and 3623) that referenced the removed string-based `extract_element_type` method
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python type_tracker`: 91 tests passed
+- `cargo nextest run -p tugtool-python extract`: 17 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all --check`: Formatted
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python type_tracker`: PASS (91 tests)
+- `cargo nextest run -p tugtool-python extract`: PASS (17 tests)
+
+**Key Decisions/Notes:**
+- Step 3 implementation was already complete from prior work
+- This session verified the implementation and fixed documentation inconsistencies
+- The string-based `extract_element_type(&self, type_str: &str)` was intentionally removed in Step 3-PREREQUISITE
+- All element type extraction now uses TypeNode exclusively via `extract_element_type_from_node`
+- Updated test module comment to reflect that string-based extraction was removed
+
+---
+
 ## [phase-11E.md] TypeNode Architecture Enhancement: method_return_types TypeNode Preservation | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

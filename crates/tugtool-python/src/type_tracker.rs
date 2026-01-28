@@ -1064,8 +1064,8 @@ impl TypeTracker {
 
     /// Extract the element type from a TypeNode, if available.
     ///
-    /// More reliable than string parsing when TypeNode is available from
-    /// CST collection. Handles the same container types as `extract_element_type`.
+    /// Uses the structured TypeNode representation from CST collection to
+    /// extract element types from container type annotations.
     ///
     /// # Arguments
     /// - `node`: The TypeNode representing the container type
@@ -3620,7 +3620,7 @@ mod tests {
     ///
     /// Per [D02] Generic Type Parameter Extraction:
     /// - Extract element types from container annotations like List[T], Dict[K, V]
-    /// - Support both TypeNode-based and string-based extraction
+    /// - Use TypeNode-based extraction exclusively (string-based removed per Step 3-PREREQUISITE)
     /// - Handle common container patterns: List, Dict, Set, Optional, Tuple
     mod element_type_extraction_tests {
         use super::*;

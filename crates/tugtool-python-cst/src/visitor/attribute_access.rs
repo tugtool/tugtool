@@ -70,24 +70,27 @@ pub enum ReceiverStep {
     Attr { value: String },
     /// Function/method call: `()`
     Call,
+    /// Subscript access: `[index]` - element type resolved from container annotation
+    Subscript,
 }
 
 /// Structured receiver path extracted from CST.
 ///
 /// This represents the chain of steps leading to an attribute access or call site.
 /// It preserves the structure of the expression, distinguishing between names,
-/// attribute accesses, and call operations.
+/// attribute accesses, call operations, and subscript accesses.
 ///
 /// # Supported Patterns
 ///
 /// - `self.handler.process()` → `[Name(self), Attr(handler), Attr(process), Call]`
 /// - `get_handler().process()` → `[Name(get_handler), Call, Attr(process), Call]`
 /// - `factory().create().process()` → `[Name(factory), Call, Attr(create), Call, Attr(process), Call]`
+/// - `items[0].process()` → `[Name(items), Subscript, Attr(process), Call]`
 ///
 /// # Unsupported Patterns
 ///
 /// Returns `None` for expressions that cannot be represented as steps:
-/// - Subscript expressions: `data[0].method()` → `None`
+/// - Nested subscripts: `data[0][1]` → `None`
 /// - Complex expressions: `(a or b).method()` → `None`
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ReceiverPath {
@@ -116,6 +119,12 @@ impl ReceiverPath {
     /// Add a call step.
     pub fn with_call(mut self) -> Self {
         self.steps.push(ReceiverStep::Call);
+        self
+    }
+
+    /// Add a subscript step.
+    pub fn with_subscript(mut self) -> Self {
+        self.steps.push(ReceiverStep::Subscript);
         self
     }
 
@@ -190,8 +199,20 @@ fn extract_receiver_path_recursive(expr: &Expression<'_>, steps: &mut Vec<Receiv
             steps.push(ReceiverStep::Call);
             true
         }
+        Expression::Subscript(subscript) => {
+            // First, process the container (value)
+            if !extract_receiver_path_recursive(&subscript.value, steps) {
+                return false;
+            }
+            // Check for nested subscript - unsupported
+            if steps.iter().any(|s| matches!(s, ReceiverStep::Subscript)) {
+                return false;
+            }
+            // Then add the subscript step
+            steps.push(ReceiverStep::Subscript);
+            true
+        }
         // Unsupported patterns return None
-        Expression::Subscript(_) => false,
         _ => false,
     }
 }
@@ -362,7 +383,7 @@ impl<'pos> AttributeAccessCollector<'pos> {
     /// For simple names, returns the name directly (e.g., "obj").
     /// For chained attributes, returns the dotted path (e.g., "obj.inner").
     /// For call expressions, extracts the callee name (e.g., "get_obj" from "get_obj()").
-    /// For subscript expressions, returns "<subscript>".
+    /// For subscript expressions, extracts the container name (e.g., "items" from "items[0]").
     /// For other expressions, returns "<expr>".
     fn get_receiver_string(expr: &Expression<'_>) -> String {
         match expr {
@@ -378,7 +399,13 @@ impl<'pos> AttributeAccessCollector<'pos> {
                 // so the recursive call handles the chaining.
                 Self::get_receiver_string(&call.func)
             }
-            Expression::Subscript(_) => "<subscript>".to_string(),
+            Expression::Subscript(subscript) => {
+                // Extract container name from subscript expression.
+                // For `items[0]`, extract "items".
+                // For nested subscripts like `data[0][1]`, the inner subscript
+                // is handled recursively, producing "data".
+                Self::get_receiver_string(&subscript.value)
+            }
             _ => "<expr>".to_string(),
         }
     }
@@ -834,7 +861,7 @@ class MyClass:
 
     #[test]
     fn test_receiver_extraction_subscript() {
-        // data[0].method -> receiver should be "<subscript>"
+        // data[0].method -> receiver should be "data" (container name extracted from subscript)
         let source = "data[0].method()";
         let parsed = parse_module_with_positions(source, None).unwrap();
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
@@ -846,7 +873,8 @@ class MyClass:
             .collect();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].attr_name, "method");
-        assert_eq!(calls[0].receiver, "<subscript>");
+        // Now that subscript is supported, receiver shows the container name
+        assert_eq!(calls[0].receiver, "data");
     }
 
     #[test]
@@ -996,8 +1024,8 @@ class MyClass:
     }
 
     #[test]
-    fn test_receiver_path_subscript_returns_none() {
-        // data[0].method() -> receiver_path should be None (subscript unsupported)
+    fn test_receiver_path_subscript_supported() {
+        // data[0].method() -> receiver_path should be [Name(data), Subscript]
         let source = "data[0].method()";
         let parsed = parse_module_with_positions(source, None).unwrap();
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
@@ -1008,12 +1036,40 @@ class MyClass:
             .collect();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].attr_name, "method");
-        // Legacy receiver should still work for debugging
-        assert_eq!(calls[0].receiver, "<subscript>");
-        // But receiver_path should be None
+        // Receiver shows the container name
+        assert_eq!(calls[0].receiver, "data");
+        // receiver_path should include Subscript step
+        let path = calls[0]
+            .receiver_path
+            .as_ref()
+            .expect("subscript should have receiver_path");
+        assert_eq!(path.steps.len(), 2);
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "data".to_string()
+            }
+        );
+        assert_eq!(path.steps[1], ReceiverStep::Subscript);
+    }
+
+    #[test]
+    fn test_receiver_path_nested_subscript_returns_none() {
+        // data[0][1].method() -> receiver_path should be None (nested subscript unsupported)
+        let source = "data[0][1].method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        let calls: Vec<_> = accesses
+            .iter()
+            .filter(|a| a.kind == AttributeAccessKind::Call)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].attr_name, "method");
+        // Nested subscript returns None receiver_path
         assert!(
             calls[0].receiver_path.is_none(),
-            "subscript should return None receiver_path"
+            "nested subscript should return None receiver_path"
         );
     }
 
@@ -1096,6 +1152,31 @@ class MyClass:
         assert!(json.contains(r#""type":"attr""#));
         assert!(json.contains(r#""value":"handler""#));
         assert!(json.contains(r#""type":"call""#));
+
+        // Verify round-trip
+        let deserialized: ReceiverPath = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, path);
+    }
+
+    #[test]
+    fn test_receiver_path_subscript_json_serialization() {
+        // Test that Subscript step serializes correctly to JSON
+        let path = ReceiverPath {
+            steps: vec![
+                ReceiverStep::Name {
+                    value: "items".to_string(),
+                },
+                ReceiverStep::Subscript,
+                ReceiverStep::Attr {
+                    value: "process".to_string(),
+                },
+                ReceiverStep::Call,
+            ],
+        };
+
+        let json = serde_json::to_string(&path).unwrap();
+        // Verify subscript is serialized
+        assert!(json.contains(r#""type":"subscript""#));
 
         // Verify round-trip
         let deserialized: ReceiverPath = serde_json::from_str(&json).unwrap();
