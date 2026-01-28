@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 5: MRO-Based Attribute Lookup | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 5 specification with MRO origin tracking design decisions [D07]-[D14]
+- `crates/tugtool-python/src/mro.rs` - MRO computation module
+- `crates/tugtool-python/src/cross_file_types.rs` - CrossFileTypeCache and FileTypeContext
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Step 5.1: Fix path normalization in get_or_analyze | Done (previously) |
+| Add `MROEntry` struct with class_name and file_path | Done |
+| Implement `PartialEq`/`Eq` comparing both fields for identity | Done |
+| Add `MROEntry::new()` with debug assertion for relative paths | Done |
+| Add `MROWithOrigin` type alias | Done |
+| Add `file_path: PathBuf` field to `FileTypeContext` | Done |
+| Update `analyze_file()` to set file_path | Done |
+| Update test helpers constructing FileTypeContext manually | Done |
+| Add `merge_entries()` function for origin-aware MRO merging | Done |
+| Import `MROEntry` in cross_file_types and update ClassHierarchyInfo.mro | Done |
+| Add `mro_names()` helper method to ClassHierarchyInfo | Done |
+| Update `cache_mro()` to accept `Vec<MROEntry>` | Done |
+| Update `get_cached_mro()` to return `Option<&Vec<MROEntry>>` | Done |
+| Add `compute_mro_cross_file_with_origins()` function | Done |
+| Add `compute_mro_in_file_with_origins()` internal function | Done |
+| Update `compute_mro_cross_file()` as wrapper | Done |
+| Add `lookup_attr_in_file()` helper | Done |
+| Update `lookup_attr_in_mro()` to use origins | Done |
+| Step 5.3: Remove debug eprintln! statements from tests | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python/src/mro.rs`: Added `MROEntry` struct with origin tracking (lines 57-118), `merge_entries()` function (lines 309-353), `compute_mro_cross_file_with_origins()` and `compute_mro_in_file_with_origins()` (lines 367-504), `lookup_attr_in_file()` helper (lines 668-691), and updated `lookup_attr_in_mro()` to use origin tracking. Updated all test FileTypeContext constructions to include `file_path` field.
+- `crates/tugtool-python/src/cross_file_types.rs`: Added `file_path: PathBuf` field to `FileTypeContext` struct (line 162), imported `MROEntry` from mro module, changed `ClassHierarchyInfo.mro` from `Option<Vec<String>>` to `Option<Vec<MROEntry>>`, added `mro_names()` helper method, updated `cache_mro()` and `get_cached_mro()` signatures for `MROEntry`.
+- `plans/phase-11D.md`: Marked all Step 5.2 and Step 5.3 tasks and checkpoints as complete.
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python mro::tests`: 48 tests passed
+- `cargo nextest run -p tugtool-python`: 611 tests passed
+- `cargo clippy -p tugtool-python`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python test_mro_attr_multi_hop`: PASS
+- `cargo nextest run -p tugtool-python mro::tests`: PASS (48 tests)
+- `cargo nextest run -p tugtool-python cross_file_types::tests`: PASS
+- `cargo nextest run -p tugtool-python`: PASS (611 tests)
+
+**Key Decisions/Notes:**
+- **MRO Origin Tracking**: Each class in the MRO now carries its defining file path (`MROEntry`), enabling correct attribute lookup across file boundaries without relying on the current file's import targets.
+- **Identity in C3 Merge**: `MROEntry` equality compares both `class_name` and `file_path`, correctly handling cases where different modules define classes with the same name.
+- **FileTypeContext.file_path**: Added to let contexts know their own identity, used by `compute_mro_cross_file_with_origins()` without signature changes.
+- **Wrapper Pattern**: `compute_mro_cross_file()` kept as public wrapper that extracts names from origin-aware version for API compatibility.
+- **Test Pattern**: Single-file MRO tests needed to insert their context into cache before calling `attribute_type_of_with_mro`, since lookup now uses `cache.get_or_analyze()`.
+- **Multi-hop Resolution**: `test_mro_attr_multi_hop_cross_file` now correctly resolves `Mid.root()` through `Mid → Base → Root` via origin tracking.
+
+---
+
 ## [phase-11D.md] Step 4: Wire InheritanceCollector into FileAnalysis | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27

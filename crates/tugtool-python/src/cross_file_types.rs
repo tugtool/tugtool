@@ -41,7 +41,9 @@ use tugtool_core::facts::SymbolKind;
 
 use crate::analyzer::{resolve_module_to_file, FileAnalysis, ResolvedModule};
 use crate::cst_bridge;
+use crate::mro::MROEntry;
 use crate::type_tracker::TypeTracker;
+use crate::types::AttributeTypeInfo;
 
 // Re-export ClassInheritanceInfo from CST for use in FileTypeContext
 pub use tugtool_python_cst::ClassInheritanceInfo;
@@ -139,8 +141,23 @@ pub struct ClassHierarchyInfo {
     pub name: String,
     /// Base class names (may be qualified or simple).
     pub bases: Vec<String>,
-    /// Computed MRO (if already calculated).
-    pub mro: Option<Vec<String>>,
+    /// Computed MRO with origin tracking (if already calculated).
+    ///
+    /// Each entry contains the class name and its defining file path,
+    /// enabling correct attribute lookup across file boundaries.
+    pub mro: Option<Vec<MROEntry>>,
+}
+
+impl ClassHierarchyInfo {
+    /// Extract class names from the origin-aware MRO.
+    ///
+    /// This is a convenience method for cases where only the class names
+    /// are needed (e.g., debugging, logging, or backward compatibility).
+    pub fn mro_names(&self) -> Option<Vec<String>> {
+        self.mro
+            .as_ref()
+            .map(|entries| entries.iter().map(|e| e.class_name.clone()).collect())
+    }
 }
 
 // ============================================================================
@@ -153,6 +170,11 @@ pub struct ClassHierarchyInfo {
 /// that is needed when resolving types across file boundaries.
 #[derive(Debug)]
 pub struct FileTypeContext {
+    /// Path to the source file (workspace-relative, e.g., "base.py").
+    ///
+    /// This enables the context to know its own identity, which is needed
+    /// for MRO origin tracking and cross-file attribute lookup.
+    pub file_path: PathBuf,
     /// Type information for this file.
     pub tracker: TypeTracker,
     /// Symbol kind lookup by (scope_path, name).
@@ -163,6 +185,57 @@ pub struct FileTypeContext {
     pub import_targets: HashMap<(Vec<String>, String), ImportTarget>,
     /// Class hierarchy info for MRO computation.
     pub class_hierarchies: HashMap<String, ClassHierarchyInfo>,
+}
+
+impl FileTypeContext {
+    /// Look up an attribute type on a class, walking the MRO if not found locally.
+    ///
+    /// This method first checks the local `TypeTracker` for a direct attribute.
+    /// If not found and the class has a known hierarchy, it computes the MRO
+    /// and walks through parent classes to find the attribute.
+    ///
+    /// # Arguments
+    ///
+    /// * `class_name` - The name of the class
+    /// * `attr_name` - The attribute to look up
+    /// * `cache` - Cross-file type cache for resolving remote classes
+    /// * `workspace_root` - Workspace root for path resolution
+    ///
+    /// # Returns
+    ///
+    /// * `Some(AttributeTypeInfo)` - If the attribute is found (locally or via MRO)
+    /// * `None` - If the attribute is not found
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // For class Dog(Animal) where Animal has 'name: str':
+    /// let attr = ctx.attribute_type_of_with_mro("Dog", "name", &mut cache, workspace_root);
+    /// assert_eq!(attr.unwrap().type_str, "str");
+    /// ```
+    pub fn attribute_type_of_with_mro(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+        cache: &mut CrossFileTypeCache,
+        workspace_root: &Path,
+    ) -> Option<AttributeTypeInfo> {
+        // First, try direct lookup in the local TypeTracker
+        if let Some(attr_type) = self.tracker.attribute_type_of(class_name, attr_name) {
+            return Some(attr_type.clone());
+        }
+
+        // Also check method return types for the local class
+        if let Some(return_type) = self.tracker.method_return_type_of(class_name, attr_name) {
+            return Some(AttributeTypeInfo {
+                type_str: return_type.to_string(),
+                type_node: None,
+            });
+        }
+
+        // If not found locally, use MRO lookup
+        crate::mro::lookup_attr_in_mro(class_name, attr_name, self, cache, workspace_root)
+    }
 }
 
 // ============================================================================
@@ -255,9 +328,16 @@ impl CrossFileTypeCache {
     /// For a type resolution cache, FIFO is acceptable since all cached
     /// files are likely to be accessed with similar frequency.
     ///
+    /// # Path Normalization
+    ///
+    /// This method normalizes paths to workspace-relative form at entry point.
+    /// Both absolute paths (e.g., `/workspace/base.py`) and relative paths
+    /// (e.g., `base.py`) are normalized to the same cache key. This ensures
+    /// consistent cache behavior regardless of how the path is provided.
+    ///
     /// # Arguments
     ///
-    /// * `file_path` - Path to the Python file to analyze
+    /// * `file_path` - Path to the Python file to analyze (absolute or relative)
     /// * `workspace_root` - Root directory of the workspace (for relative path resolution)
     ///
     /// # Errors
@@ -271,27 +351,33 @@ impl CrossFileTypeCache {
         file_path: &Path,
         workspace_root: &Path,
     ) -> TypeResolutionResult<&FileTypeContext> {
-        let path_key = file_path.to_path_buf();
+        // Normalize path to relative form for consistent cache key
+        // This handles both absolute paths and already-relative paths
+        let relative_path = file_path
+            .strip_prefix(workspace_root)
+            .unwrap_or(file_path)
+            .to_path_buf();
 
-        // Fast path: check if already cached
-        if self.contexts.contains_key(&path_key) {
+        // Fast path: check if already cached using RELATIVE key
+        if self.contexts.contains_key(&relative_path) {
             // FIFO eviction: don't update access_order on hit (O(1))
-            return Ok(self.contexts.get(&path_key).unwrap());
+            return Ok(self.contexts.get(&relative_path).unwrap());
         }
 
-        // Check for cycles
-        if self.in_progress.contains(&path_key) {
-            return Err(TypeResolutionError::CircularImport(path_key));
+        // Check for cycles using RELATIVE key
+        if self.in_progress.contains(&relative_path) {
+            return Err(TypeResolutionError::CircularImport(relative_path));
         }
 
-        // Mark as in progress
-        self.in_progress.insert(path_key.clone());
+        // Mark as in progress using RELATIVE key
+        self.in_progress.insert(relative_path.clone());
 
-        // Analyze the file
-        let result = self.analyze_file(&path_key, workspace_root);
+        // Analyze the file using ABSOLUTE path for I/O
+        let absolute_path = workspace_root.join(&relative_path);
+        let result = self.analyze_file(&absolute_path, workspace_root);
 
         // Always remove from in_progress, even on error
-        self.in_progress.remove(&path_key);
+        self.in_progress.remove(&relative_path);
 
         // Handle analysis result
         let ctx = result?;
@@ -301,12 +387,12 @@ impl CrossFileTypeCache {
             self.evict_oldest();
         }
 
-        // Store in cache
-        self.access_order.push_back(path_key.clone());
-        self.contexts.insert(path_key.clone(), ctx);
+        // Store in cache using RELATIVE key
+        self.access_order.push_back(relative_path.clone());
+        self.contexts.insert(relative_path.clone(), ctx);
 
         // Safe: we just inserted, so the key exists
-        Ok(self.contexts.get(&path_key).unwrap())
+        Ok(self.contexts.get(&relative_path).unwrap())
     }
 
     /// Check if a file is currently cached.
@@ -339,6 +425,73 @@ impl CrossFileTypeCache {
     /// Get a reference to the namespace packages set.
     pub fn namespace_packages(&self) -> &HashSet<String> {
         &self.namespace_packages
+    }
+
+    /// Cache a computed MRO for a class in a file context.
+    ///
+    /// This method stores the computed MRO in the ClassHierarchyInfo for the
+    /// specified class, avoiding re-computation on subsequent lookups.
+    ///
+    /// # Path Contract
+    ///
+    /// The `file_path` should be a **workspace-relative path** (e.g., `"base.py"`),
+    /// matching the key format used by the cache. This is the same format as
+    /// `ImportTarget.file_path` and `workspace_files` entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - The file containing the class (workspace-relative)
+    /// * `class_name` - The class name to cache the MRO for
+    /// * `mro` - The computed MRO with origin tracking to cache
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the MRO was cached successfully
+    /// * `false` if the file or class is not in the cache
+    pub fn cache_mro(&mut self, file_path: &Path, class_name: &str, mro: Vec<MROEntry>) -> bool {
+        if let Some(ctx) = self.contexts.get_mut(file_path) {
+            if let Some(hierarchy) = ctx.class_hierarchies.get_mut(class_name) {
+                hierarchy.mro = Some(mro);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Get a cached MRO for a class in a file context, if available.
+    ///
+    /// # Path Contract
+    ///
+    /// The `file_path` should be a **workspace-relative path** (e.g., `"base.py"`),
+    /// matching the key format used by the cache.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - The file containing the class (workspace-relative)
+    /// * `class_name` - The class name
+    ///
+    /// # Returns
+    ///
+    /// * `Some(&Vec<MROEntry>)` if the MRO with origins is cached
+    /// * `None` if the file, class, or MRO is not found
+    pub fn get_cached_mro(&self, file_path: &Path, class_name: &str) -> Option<&Vec<MROEntry>> {
+        self.contexts
+            .get(file_path)?
+            .class_hierarchies
+            .get(class_name)?
+            .mro
+            .as_ref()
+    }
+
+    // ========================================================================
+    // Test Helpers
+    // ========================================================================
+
+    /// Insert a pre-built FileTypeContext into the cache (for testing).
+    #[cfg(test)]
+    pub fn insert_context(&mut self, file_path: PathBuf, ctx: FileTypeContext) {
+        self.access_order.push_back(file_path.clone());
+        self.contexts.insert(file_path, ctx);
     }
 
     // ========================================================================
@@ -400,7 +553,14 @@ impl CrossFileTypeCache {
         tracker.process_annotations(&convert_annotations(&analysis.annotations));
         tracker.process_signatures(&analysis.signatures);
 
+        // Compute workspace-relative path for context identity
+        let relative_path = file_path
+            .strip_prefix(workspace_root)
+            .unwrap_or(file_path)
+            .to_path_buf();
+
         Ok(FileTypeContext {
+            file_path: relative_path,
             tracker,
             symbol_kinds,
             symbol_map,
@@ -940,8 +1100,13 @@ mod tests {
         let (workspace_files, namespace_packages) = create_test_workspace();
         let mut cache = CrossFileTypeCache::with_max_size(workspace_files, namespace_packages, 2);
 
+        let path1 = PathBuf::from("file1.py");
+        let path2 = PathBuf::from("file2.py");
+        let path3 = PathBuf::from("file3.py");
+
         // Manually insert contexts to test FIFO eviction
         let ctx1 = FileTypeContext {
+            file_path: path1.clone(),
             tracker: TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -949,6 +1114,7 @@ mod tests {
             class_hierarchies: HashMap::new(),
         };
         let ctx2 = FileTypeContext {
+            file_path: path2.clone(),
             tracker: TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -956,16 +1122,13 @@ mod tests {
             class_hierarchies: HashMap::new(),
         };
         let ctx3 = FileTypeContext {
+            file_path: path3.clone(),
             tracker: TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
             import_targets: HashMap::new(),
             class_hierarchies: HashMap::new(),
         };
-
-        let path1 = PathBuf::from("file1.py");
-        let path2 = PathBuf::from("file2.py");
-        let path3 = PathBuf::from("file3.py");
 
         cache.contexts.insert(path1.clone(), ctx1);
         cache.access_order.push_back(path1.clone());
@@ -1117,6 +1280,7 @@ mod tests {
 
         // Add some contexts
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -1132,6 +1296,117 @@ mod tests {
 
         assert!(cache.is_empty());
         assert!(cache.access_order.is_empty());
+    }
+
+    // ========================================================================
+    // Path Normalization Tests (Step 5.1)
+    // ========================================================================
+
+    #[test]
+    fn test_get_or_analyze_normalizes_absolute_path() {
+        use tempfile::TempDir;
+
+        // Create temp directory with a Python file
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+        let test_py = workspace_root.join("test.py");
+        std::fs::write(&test_py, "class Foo: pass").unwrap();
+
+        // Workspace files use relative paths
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Call with ABSOLUTE path
+        let result = cache.get_or_analyze(&test_py, workspace_root);
+        assert!(result.is_ok(), "Should analyze file with absolute path");
+
+        // Verify cache uses RELATIVE key
+        assert!(
+            cache.is_cached(Path::new("test.py")),
+            "Cache should use relative path as key"
+        );
+
+        // The absolute path should NOT be in the cache directly
+        // (it gets normalized to relative form)
+        // Note: is_cached checks for exact path match, so an absolute path
+        // that was normalized won't be found under its original form
+    }
+
+    #[test]
+    fn test_get_or_analyze_handles_relative_path() {
+        use tempfile::TempDir;
+
+        // Create temp directory with a Python file
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+        std::fs::write(workspace_root.join("test.py"), "class Foo: pass").unwrap();
+
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Call with RELATIVE path
+        let result = cache.get_or_analyze(Path::new("test.py"), workspace_root);
+        assert!(result.is_ok(), "Should analyze file with relative path");
+
+        // Verify cache uses relative key
+        assert!(
+            cache.is_cached(Path::new("test.py")),
+            "Cache should have relative path key"
+        );
+    }
+
+    #[test]
+    fn test_cache_hit_after_normalization() {
+        use tempfile::TempDir;
+
+        // Create temp directory with a Python file
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+        let test_py = workspace_root.join("test.py");
+        std::fs::write(&test_py, "class Foo: pass").unwrap();
+
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // First call with relative path
+        cache
+            .get_or_analyze(Path::new("test.py"), workspace_root)
+            .unwrap();
+        assert_eq!(cache.len(), 1);
+
+        // Second call with absolute path should hit cache (same relative key)
+        cache.get_or_analyze(&test_py, workspace_root).unwrap();
+        assert_eq!(cache.len(), 1, "Should hit cache, not add new entry");
+    }
+
+    #[test]
+    fn test_nested_directory_path_normalization() {
+        use tempfile::TempDir;
+
+        // Create temp directory with nested Python file
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path();
+        let pkg_dir = workspace_root.join("pkg").join("subpkg");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let module_path = pkg_dir.join("module.py");
+        std::fs::write(&module_path, "class Handler: pass").unwrap();
+
+        let workspace_files: HashSet<String> =
+            ["pkg/subpkg/module.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Call with absolute path
+        cache.get_or_analyze(&module_path, workspace_root).unwrap();
+
+        // Verify relative cache key
+        assert!(
+            cache.is_cached(Path::new("pkg/subpkg/module.py")),
+            "Nested paths should also be normalized to relative"
+        );
     }
 
     // ========================================================================

@@ -40,7 +40,7 @@
 //! - Maximum cross-file depth is bounded by `MAX_CROSS_FILE_DEPTH`
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
@@ -49,6 +49,72 @@ use crate::cross_file_types::{
     TypeResolutionError, MAX_CROSS_FILE_DEPTH,
 };
 use crate::types::AttributeTypeInfo;
+
+// ============================================================================
+// MRO Entry (Origin Tracking)
+// ============================================================================
+
+/// An entry in the Method Resolution Order with its origin file.
+///
+/// Each class in the MRO carries its origin file path, enabling correct
+/// attribute lookup across file boundaries. Two classes with the same name
+/// from different files are considered distinct in the MRO.
+///
+/// # Path Contract
+///
+/// The `file_path` must be a **workspace-relative path** (e.g., `"base.py"`),
+/// not an absolute path. This matches the cache key format used by
+/// `CrossFileTypeCache` and `ImportTarget.file_path`.
+#[derive(Debug, Clone)]
+pub struct MROEntry {
+    /// The class name (simple name, not qualified).
+    pub class_name: String,
+    /// The file where this class is defined (workspace-relative path).
+    pub file_path: PathBuf,
+}
+
+impl MROEntry {
+    /// Create a new MRO entry with the given class name and file path.
+    ///
+    /// # Panics (debug builds only)
+    ///
+    /// Panics if `file_path` is an absolute path. This is a programming error
+    /// indicating the caller failed to normalize the path to workspace-relative form.
+    pub fn new(class_name: impl Into<String>, file_path: impl Into<PathBuf>) -> Self {
+        let file_path = file_path.into();
+        debug_assert!(
+            !file_path.is_absolute(),
+            "MROEntry file_path must be workspace-relative, got: {:?}",
+            file_path
+        );
+        Self {
+            class_name: class_name.into(),
+            file_path,
+        }
+    }
+}
+
+impl PartialEq for MROEntry {
+    /// Two MRO entries are equal if they have the same class name AND file path.
+    ///
+    /// This ensures that classes with the same name from different files are
+    /// treated as distinct, which is correct Python semantics.
+    fn eq(&self, other: &Self) -> bool {
+        self.class_name == other.class_name && self.file_path == other.file_path
+    }
+}
+
+impl Eq for MROEntry {}
+
+impl std::hash::Hash for MROEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.class_name.hash(state);
+        self.file_path.hash(state);
+    }
+}
+
+/// The MRO with origin tracking - each class carries its defining file.
+pub type MROWithOrigin = Vec<MROEntry>;
 
 // ============================================================================
 // Error Types
@@ -237,157 +303,90 @@ fn strip_generic_params(name: &str) -> &str {
 }
 
 // ============================================================================
-// Cross-File MRO Computation
+// Origin-Aware MRO Computation
 // ============================================================================
 
-/// Compute MRO with cross-file base class resolution.
+/// Merge MRO sequences with origin tracking using C3 linearization.
 ///
-/// When a base class is not in the local hierarchy, this function attempts
-/// to resolve it via the [`CrossFileTypeCache`].
+/// This is the origin-aware version of `merge()` that operates on `MROEntry`
+/// sequences, preserving the file path where each class is defined.
 ///
-/// # Arguments
+/// # Identity
 ///
-/// * `class_name` - The class to compute MRO for
-/// * `ctx` - The current file's type context
-/// * `cache` - Cross-file type cache for on-demand analysis
-/// * `workspace_root` - Root directory of the workspace
-///
-/// # Returns
-///
-/// * `Ok(mro)` - The MRO as a list of class names
-/// * `Err(MROError)` - If MRO cannot be computed
-pub fn compute_mro_cross_file(
-    class_name: &str,
-    ctx: &FileTypeContext,
-    cache: &mut CrossFileTypeCache,
-    workspace_root: &Path,
-) -> MROResult<Vec<String>> {
-    compute_mro_cross_file_with_depth(class_name, ctx, cache, workspace_root, 0)
-}
+/// Two MRO entries are considered equal if they have the same class name AND
+/// file path. This correctly handles the case where different modules define
+/// classes with the same name.
+fn merge_entries(seqs: &mut Vec<Vec<MROEntry>>) -> Option<Vec<MROEntry>> {
+    let mut result = Vec::new();
 
-/// Internal cross-file MRO computation with depth tracking.
-fn compute_mro_cross_file_with_depth(
-    class_name: &str,
-    ctx: &FileTypeContext,
-    cache: &mut CrossFileTypeCache,
-    workspace_root: &Path,
-    depth: usize,
-) -> MROResult<Vec<String>> {
-    // Check depth limit
-    if depth > MAX_CROSS_FILE_DEPTH {
-        return Err(MROError::DepthExceeded {
-            class_name: class_name.to_string(),
-            depth,
-        });
-    }
+    loop {
+        // Remove empty sequences
+        seqs.retain(|seq| !seq.is_empty());
 
-    // Get local class info
-    let class_info = match ctx.class_hierarchies.get(class_name) {
-        Some(info) => info,
-        None => {
-            // Class not found in this file's hierarchies
-            return Ok(vec![class_name.to_string()]);
+        if seqs.is_empty() {
+            return Some(result);
         }
-    };
 
-    // No bases means MRO is just the class itself
-    if class_info.bases.is_empty() {
-        return Ok(vec![class_name.to_string()]);
-    }
-
-    // Compute MRO for each base class
-    let mut seqs: Vec<Vec<String>> = Vec::new();
-
-    for base_name in &class_info.bases {
-        // Strip generic parameters
-        let stripped_base = strip_generic_params(base_name);
-
-        // Try to resolve the base class
-        if let Some(base_mro) =
-            resolve_base_and_compute_mro(stripped_base, ctx, cache, workspace_root, depth + 1)?
-        {
-            seqs.push(base_mro);
+        // Find a candidate that doesn't appear in the tail of any sequence
+        let mut candidate = None;
+        for seq in seqs.iter() {
+            let head = &seq[0];
+            // Use MROEntry equality (both class_name and file_path)
+            let in_tail = seqs.iter().any(|s| s.len() > 1 && s[1..].contains(head));
+            if !in_tail {
+                candidate = Some(head.clone());
+                break;
+            }
         }
-        // If base not found, skip it (conservative approach)
-    }
 
-    // Add the list of direct bases (stripped of generics)
-    let stripped_bases: Vec<String> = class_info
-        .bases
-        .iter()
-        .map(|b| strip_generic_params(b).to_string())
-        .collect();
-    seqs.push(stripped_bases);
+        // If no candidate found, hierarchy is inconsistent
+        let cand = candidate?;
 
-    // Merge and prepend the class itself
-    let mut mro = vec![class_name.to_string()];
-
-    match merge(&mut seqs) {
-        Some(merged) => mro.extend(merged),
-        None => {
-            return Err(MROError::InconsistentHierarchy {
-                class_name: class_name.to_string(),
-            });
-        }
-    }
-
-    Ok(mro)
-}
-
-/// Resolve a base class and compute its MRO.
-///
-/// Returns `Ok(Some(mro))` if resolution and MRO computation succeed,
-/// `Ok(None)` if the base cannot be found (external package, etc.),
-/// or `Err` for fatal errors.
-fn resolve_base_and_compute_mro(
-    base_name: &str,
-    ctx: &FileTypeContext,
-    cache: &mut CrossFileTypeCache,
-    workspace_root: &Path,
-    depth: usize,
-) -> MROResult<Option<Vec<String>>> {
-    // Check depth limit
-    if depth > MAX_CROSS_FILE_DEPTH {
-        return Ok(None); // Gracefully return None when depth exceeded
-    }
-
-    // Try to resolve the base class - get resolved info without borrowing cache
-    let resolution = resolve_base_class(base_name, ctx);
-
-    match resolution {
-        Some((resolved_name, resolved_file)) => {
-            // Compute MRO by going through the resolved file
-            // We pass the file path and let the function call get_or_analyze itself
-            compute_mro_in_file(&resolved_name, &resolved_file, cache, workspace_root, depth)
-                .map(Some)
-        }
-        None => {
-            // Base class not found - might be external or local without hierarchies
-            // Check if it's a local class
-            if ctx.class_hierarchies.contains_key(base_name) {
-                // It's local, compute MRO locally
-                compute_mro_cross_file_with_depth(base_name, ctx, cache, workspace_root, depth)
-                    .map(Some)
-            } else {
-                // Unknown base - return None (conservative)
-                Ok(None)
+        // Add candidate to result and remove from heads
+        result.push(cand.clone());
+        for seq in seqs.iter_mut() {
+            if seq.first() == Some(&cand) {
+                seq.remove(0);
             }
         }
     }
 }
 
-/// Compute MRO for a class in a specific file.
+/// Compute MRO with origin tracking for cross-file base class resolution.
 ///
-/// This helper avoids borrow checker issues by taking a file path
-/// and calling get_or_analyze internally. It extracts the class hierarchies
-/// data needed for MRO computation before making recursive calls.
-fn compute_mro_in_file(
+/// This is the primary MRO computation function that returns full origin
+/// information for each class in the MRO. Each entry includes both the class
+/// name and the file path where it's defined, enabling correct attribute
+/// lookup across file boundaries.
+///
+/// # Arguments
+///
+/// * `class_name` - The class to compute MRO for
+/// * `ctx` - The current file's type context (includes `file_path`)
+/// * `cache` - Cross-file type cache for on-demand analysis
+/// * `workspace_root` - Root directory of the workspace
+///
+/// # Returns
+///
+/// * `Ok(mro)` - The MRO as a list of (class_name, file_path) entries
+/// * `Err(MROError)` - If MRO cannot be computed
+pub fn compute_mro_cross_file_with_origins(
+    class_name: &str,
+    ctx: &FileTypeContext,
+    cache: &mut CrossFileTypeCache,
+    workspace_root: &Path,
+) -> MROResult<Vec<MROEntry>> {
+    compute_mro_in_file_with_origins(class_name, &ctx.file_path, cache, workspace_root, 0)
+}
+
+/// Internal: Compute MRO with origins for a class in a specific file.
+fn compute_mro_in_file_with_origins(
     class_name: &str,
     file_path: &Path,
     cache: &mut CrossFileTypeCache,
     workspace_root: &Path,
     depth: usize,
-) -> MROResult<Vec<String>> {
+) -> MROResult<Vec<MROEntry>> {
     // Check depth limit
     if depth > MAX_CROSS_FILE_DEPTH {
         return Err(MROError::DepthExceeded {
@@ -396,8 +395,12 @@ fn compute_mro_in_file(
         });
     }
 
+    // Check for cached MRO first
+    if let Some(cached_mro) = cache.get_cached_mro(file_path, class_name) {
+        return Ok(cached_mro.clone());
+    }
+
     // Get the context and extract the class info we need
-    // We extract and clone the data to avoid holding the borrow across recursive calls
     let (class_bases, has_class) = {
         let remote_ctx = cache
             .get_or_analyze(file_path, workspace_root)
@@ -409,24 +412,25 @@ fn compute_mro_in_file(
         }
     };
 
-    // If class not found, return just the class name
+    // If class not found, return just the class itself with its file
     if !has_class {
-        return Ok(vec![class_name.to_string()]);
+        return Ok(vec![MROEntry::new(class_name, file_path)]);
     }
 
     // No bases means MRO is just the class itself
     if class_bases.is_empty() {
-        return Ok(vec![class_name.to_string()]);
+        return Ok(vec![MROEntry::new(class_name, file_path)]);
     }
 
     // Compute MRO for each base class
-    let mut seqs: Vec<Vec<String>> = Vec::new();
+    let mut seqs: Vec<Vec<MROEntry>> = Vec::new();
+    let mut base_entries: Vec<MROEntry> = Vec::new();
 
     for base_name in &class_bases {
         // Strip generic parameters
         let stripped_base = strip_generic_params(base_name);
 
-        // Try to resolve the base class - need to re-borrow ctx for each base
+        // Try to resolve the base class
         let resolution = {
             let remote_ctx = cache
                 .get_or_analyze(file_path, workspace_root)
@@ -436,8 +440,11 @@ fn compute_mro_in_file(
 
         match resolution {
             Some((resolved_name, resolved_file)) => {
+                // Record the base entry with its origin
+                base_entries.push(MROEntry::new(&resolved_name, &resolved_file));
+
                 // Recursively compute MRO in the resolved file
-                if let Ok(base_mro) = compute_mro_in_file(
+                if let Ok(base_mro) = compute_mro_in_file_with_origins(
                     &resolved_name,
                     &resolved_file,
                     cache,
@@ -457,7 +464,10 @@ fn compute_mro_in_file(
                 };
 
                 if is_local {
-                    if let Ok(base_mro) = compute_mro_in_file(
+                    // Local base - record with current file path
+                    base_entries.push(MROEntry::new(stripped_base, file_path));
+
+                    if let Ok(base_mro) = compute_mro_in_file_with_origins(
                         stripped_base,
                         file_path,
                         cache,
@@ -472,17 +482,13 @@ fn compute_mro_in_file(
         }
     }
 
-    // Add the list of direct bases (stripped of generics)
-    let stripped_bases: Vec<String> = class_bases
-        .iter()
-        .map(|b| strip_generic_params(b).to_string())
-        .collect();
-    seqs.push(stripped_bases);
+    // Add the list of direct bases (with origins)
+    seqs.push(base_entries);
 
     // Merge and prepend the class itself
-    let mut mro = vec![class_name.to_string()];
+    let mut mro = vec![MROEntry::new(class_name, file_path)];
 
-    match merge(&mut seqs) {
+    match merge_entries(&mut seqs) {
         Some(merged) => mro.extend(merged),
         None => {
             return Err(MROError::InconsistentHierarchy {
@@ -491,7 +497,43 @@ fn compute_mro_in_file(
         }
     }
 
+    // Cache the computed MRO for future lookups
+    cache.cache_mro(file_path, class_name, mro.clone());
+
     Ok(mro)
+}
+
+// ============================================================================
+// Cross-File MRO Computation (Name-Only Wrappers)
+// ============================================================================
+
+/// Compute MRO with cross-file base class resolution (name-only version).
+///
+/// This is a convenience wrapper around [`compute_mro_cross_file_with_origins`]
+/// that strips the origin file paths from the result, returning just class names.
+///
+/// For attribute lookup across file boundaries, use the origin-aware version
+/// [`compute_mro_cross_file_with_origins`] instead.
+///
+/// # Arguments
+///
+/// * `class_name` - The class to compute MRO for
+/// * `ctx` - The current file's type context
+/// * `cache` - Cross-file type cache for on-demand analysis
+/// * `workspace_root` - Root directory of the workspace
+///
+/// # Returns
+///
+/// * `Ok(mro)` - The MRO as a list of class names
+/// * `Err(MROError)` - If MRO cannot be computed
+pub fn compute_mro_cross_file(
+    class_name: &str,
+    ctx: &FileTypeContext,
+    cache: &mut CrossFileTypeCache,
+    workspace_root: &Path,
+) -> MROResult<Vec<String>> {
+    compute_mro_cross_file_with_origins(class_name, ctx, cache, workspace_root)
+        .map(|mro| mro.into_iter().map(|entry| entry.class_name).collect())
 }
 
 /// Resolve a base class name to (class_name, file_path).
@@ -577,16 +619,18 @@ pub fn resolve_base_class(
 // Attribute Lookup Through MRO
 // ============================================================================
 
-/// Look up an attribute through the MRO chain.
+/// Look up an attribute through the MRO chain with origin tracking.
 ///
 /// This function searches for an attribute starting with the class itself
-/// and walking through its MRO until the attribute is found.
+/// and walking through its MRO until the attribute is found. It uses the
+/// origin-aware MRO computation to correctly look up attributes in files
+/// that may be transitively imported through the inheritance chain.
 ///
 /// # Arguments
 ///
 /// * `class_name` - The class to start the search from
 /// * `attr_name` - The attribute to look up
-/// * `ctx` - Current file's type context
+/// * `ctx` - Current file's type context (includes `file_path`)
 /// * `cache` - Cross-file type cache
 /// * `workspace_root` - Workspace root for path resolution
 ///
@@ -601,17 +645,22 @@ pub fn lookup_attr_in_mro(
     cache: &mut CrossFileTypeCache,
     workspace_root: &Path,
 ) -> Option<AttributeTypeInfo> {
-    // First, compute the MRO
-    let mro = match compute_mro_cross_file(class_name, ctx, cache, workspace_root) {
+    // First, compute the MRO with origin tracking
+    let mro = match compute_mro_cross_file_with_origins(class_name, ctx, cache, workspace_root) {
         Ok(mro) => mro,
         Err(_) => return None,
     };
 
     // Walk through MRO looking for the attribute
-    for mro_class in &mro {
-        if let Some(attr_type) =
-            lookup_attr_in_mro_class(mro_class, attr_name, ctx, cache, workspace_root)
-        {
+    // Each MRO entry carries its origin file, so we can look up directly
+    for entry in &mro {
+        if let Some(attr_type) = lookup_attr_in_file(
+            &entry.class_name,
+            attr_name,
+            &entry.file_path,
+            cache,
+            workspace_root,
+        ) {
             return Some(attr_type);
         }
     }
@@ -619,10 +668,57 @@ pub fn lookup_attr_in_mro(
     None
 }
 
-/// Look up an attribute in a specific MRO class.
+/// Look up an attribute in a specific class in a specific file.
+///
+/// This is the core lookup helper that looks up an attribute directly
+/// in the specified file's context. It doesn't use import resolution -
+/// it expects the caller to know which file the class is in.
+///
+/// # Arguments
+///
+/// * `class_name` - The class to look up the attribute in
+/// * `attr_name` - The attribute name
+/// * `file_path` - The file containing the class (workspace-relative)
+/// * `cache` - Cross-file type cache
+/// * `workspace_root` - Workspace root
+///
+/// # Returns
+///
+/// * `Some(AttributeTypeInfo)` - If found
+/// * `None` - If not found
+pub fn lookup_attr_in_file(
+    class_name: &str,
+    attr_name: &str,
+    file_path: &Path,
+    cache: &mut CrossFileTypeCache,
+    workspace_root: &Path,
+) -> Option<AttributeTypeInfo> {
+    // Get the file's context
+    let ctx = cache.get_or_analyze(file_path, workspace_root).ok()?;
+
+    // Look up in the tracker - first check attribute types
+    if let Some(attr_type) = ctx.tracker.attribute_type_of(class_name, attr_name) {
+        return Some(attr_type.clone());
+    }
+
+    // Also check method return types - convert to AttributeTypeInfo
+    if let Some(return_type) = ctx.tracker.method_return_type_of(class_name, attr_name) {
+        return Some(AttributeTypeInfo {
+            type_str: return_type.to_string(),
+            type_node: None,
+        });
+    }
+
+    None
+}
+
+/// Look up an attribute in a specific MRO class (legacy API).
 ///
 /// This is a helper that looks up an attribute in a single class,
-/// potentially crossing file boundaries.
+/// potentially crossing file boundaries using import resolution.
+///
+/// **Note**: For MRO-based lookups, prefer using [`lookup_attr_in_mro`]
+/// which uses origin tracking for correct cross-file resolution.
 ///
 /// # Arguments
 ///
@@ -922,6 +1018,7 @@ mod tests {
         );
 
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -951,6 +1048,7 @@ mod tests {
         );
 
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -980,6 +1078,7 @@ mod tests {
         );
 
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -1013,6 +1112,7 @@ mod tests {
         );
 
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -1046,6 +1146,7 @@ mod tests {
         );
 
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -1076,6 +1177,7 @@ mod tests {
         );
 
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -1090,7 +1192,10 @@ mod tests {
 
     #[test]
     fn test_resolve_base_class_unknown() {
+        use std::path::PathBuf;
+
         let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
             tracker: crate::type_tracker::TypeTracker::new(),
             symbol_kinds: HashMap::new(),
             symbol_map: HashMap::new(),
@@ -1549,6 +1654,497 @@ mod tests {
                 "PermissionsMixin",
                 "Model"
             ]
+        );
+    }
+
+    // ========================================================================
+    // MRO-Based Attribute Lookup Tests (Step 5)
+    // ========================================================================
+
+    /// Helper function to build a TypeTracker from source code.
+    fn build_type_tracker_from_source(source: &str) -> crate::type_tracker::TypeTracker {
+        let analysis = crate::cst_bridge::parse_and_analyze(source).unwrap();
+
+        let mut tracker = crate::type_tracker::TypeTracker::new();
+
+        // Convert CST assignments to types::AssignmentInfo
+        let assignments: Vec<crate::types::AssignmentInfo> = analysis
+            .assignments
+            .iter()
+            .map(|a| crate::types::AssignmentInfo {
+                target: a.target.clone(),
+                scope_path: a.scope_path.clone(),
+                type_source: a.type_source.as_str().to_string(),
+                inferred_type: a.inferred_type.clone(),
+                rhs_name: a.rhs_name.clone(),
+                callee_name: a.callee_name.clone(),
+                span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                    start: s.start,
+                    end: s.end,
+                }),
+                line: a.line,
+                col: a.col,
+                is_self_attribute: a.is_self_attribute,
+                attribute_name: a.attribute_name.clone(),
+            })
+            .collect();
+
+        // Convert CST annotations to types::AnnotationInfo
+        let annotations: Vec<crate::types::AnnotationInfo> = analysis
+            .annotations
+            .iter()
+            .map(|a| crate::types::AnnotationInfo {
+                name: a.name.clone(),
+                annotation_kind: a.annotation_kind.as_str().to_string(),
+                source_kind: a.source_kind.as_str().to_string(),
+                type_str: a.type_str.clone(),
+                scope_path: a.scope_path.clone(),
+                span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                    start: s.start,
+                    end: s.end,
+                }),
+                line: a.line,
+                col: a.col,
+                type_node: a.type_node.clone(),
+            })
+            .collect();
+
+        tracker.process_annotations(&annotations);
+        tracker.process_instance_attributes(&assignments);
+        tracker.process_signatures(&analysis.signatures);
+        tracker.process_assignments(&assignments);
+        tracker.resolve_types();
+
+        tracker
+    }
+
+    /// Test Fixture 11D-F03: Single inheritance MRO attribute lookup.
+    ///
+    /// class Animal:
+    ///     name: str
+    ///
+    /// class Dog(Animal):
+    ///     def bark(self): pass
+    ///
+    /// d: Dog = Dog()
+    /// d.name  # Should resolve to Animal.name via MRO
+    #[test]
+    fn test_mro_attr_single_inheritance() {
+        use crate::analyzer::analyze_file;
+        use crate::cross_file_types::{build_class_hierarchies, CrossFileTypeCache};
+        use std::collections::HashSet;
+        use tugtool_core::patch::FileId;
+
+        let source = r#"class Animal:
+    name: str
+
+class Dog(Animal):
+    def bark(self): pass
+
+d: Dog = Dog()
+"#;
+
+        // Analyze the file
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        // Build type tracker
+        let tracker = build_type_tracker_from_source(source);
+
+        // Create FileTypeContext - we need one for the cache and one for the test call
+        let ctx_for_cache = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker: tracker.clone(),
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies.clone(),
+        };
+        let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker,
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies,
+        };
+
+        // Create cache and insert the context
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+        cache.insert_context(PathBuf::from("test.py"), ctx_for_cache);
+
+        // Test: Dog has "bark" as its own method
+        let bark_attr = ctx.attribute_type_of_with_mro("Dog", "bark", &mut cache, Path::new("."));
+        assert!(bark_attr.is_none()); // bark is a method, not an attribute with type annotation
+
+        // Test: Dog inherits "name" from Animal via MRO
+        let name_attr = ctx.attribute_type_of_with_mro("Dog", "name", &mut cache, Path::new("."));
+        assert!(
+            name_attr.is_some(),
+            "Dog should have 'name' from Animal via MRO"
+        );
+        assert_eq!(name_attr.unwrap().type_str, "str");
+    }
+
+    /// Test Fixture 11D-F04: Diamond inheritance MRO attribute lookup.
+    ///
+    /// class A:
+    ///     attr: int
+    ///
+    /// class B(A):
+    ///     pass
+    ///
+    /// class C(A):
+    ///     attr: str  # Override
+    ///
+    /// class D(B, C):
+    ///     pass
+    ///
+    /// d: D = D()
+    /// d.attr  # Should resolve to C.attr (C3 linearization: D, B, C, A)
+    #[test]
+    fn test_mro_attr_diamond_inheritance() {
+        use crate::analyzer::analyze_file;
+        use crate::cross_file_types::{build_class_hierarchies, CrossFileTypeCache};
+        use std::collections::HashSet;
+        use tugtool_core::patch::FileId;
+
+        let source = r#"class A:
+    attr: int
+
+class B(A):
+    pass
+
+class C(A):
+    attr: str
+
+class D(B, C):
+    pass
+"#;
+
+        // Analyze the file
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        // Build type tracker
+        let tracker = build_type_tracker_from_source(source);
+
+        // Create FileTypeContext - we need one for the cache and one for the test call
+        let ctx_for_cache = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker: tracker.clone(),
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies.clone(),
+        };
+        let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker,
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies,
+        };
+
+        // Create cache and insert the context
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+        cache.insert_context(PathBuf::from("test.py"), ctx_for_cache);
+
+        // Test: D's attr should be C.attr (str) per C3 linearization
+        // MRO: D, B, C, A - C comes before A, so C's override is found first
+        let attr = ctx.attribute_type_of_with_mro("D", "attr", &mut cache, Path::new("."));
+        assert!(attr.is_some(), "D should have 'attr' via MRO");
+        assert_eq!(
+            attr.unwrap().type_str,
+            "str",
+            "D.attr should be str from C, not int from A"
+        );
+    }
+
+    /// Test: Verify MRO computation for diamond inheritance is correct.
+    #[test]
+    fn test_mro_attr_diamond_mro_order() {
+        use crate::cross_file_types::ClassHierarchyInfo;
+
+        // Build hierarchy for diamond pattern
+        let mut hierarchies = HashMap::new();
+        hierarchies.insert(
+            "A".to_string(),
+            ClassHierarchyInfo {
+                name: "A".to_string(),
+                bases: vec![],
+                mro: None,
+            },
+        );
+        hierarchies.insert(
+            "B".to_string(),
+            ClassHierarchyInfo {
+                name: "B".to_string(),
+                bases: vec!["A".to_string()],
+                mro: None,
+            },
+        );
+        hierarchies.insert(
+            "C".to_string(),
+            ClassHierarchyInfo {
+                name: "C".to_string(),
+                bases: vec!["A".to_string()],
+                mro: None,
+            },
+        );
+        hierarchies.insert(
+            "D".to_string(),
+            ClassHierarchyInfo {
+                name: "D".to_string(),
+                bases: vec!["B".to_string(), "C".to_string()],
+                mro: None,
+            },
+        );
+
+        // Build flat hierarchy for compute_mro
+        let mut flat_hierarchy = HashMap::new();
+        flat_hierarchy.insert("A".to_string(), vec![]);
+        flat_hierarchy.insert("B".to_string(), vec!["A".to_string()]);
+        flat_hierarchy.insert("C".to_string(), vec!["A".to_string()]);
+        flat_hierarchy.insert("D".to_string(), vec!["B".to_string(), "C".to_string()]);
+
+        let mro = compute_mro("D", &flat_hierarchy).unwrap();
+        assert_eq!(mro, vec!["D", "B", "C", "A"]);
+    }
+
+    /// Test: Method return type lookup via MRO.
+    #[test]
+    fn test_mro_attr_method_return_type() {
+        use crate::analyzer::analyze_file;
+        use crate::cross_file_types::{build_class_hierarchies, CrossFileTypeCache};
+        use std::collections::HashSet;
+        use tugtool_core::patch::FileId;
+
+        let source = r#"class Base:
+    def process(self) -> str:
+        return "result"
+
+class Derived(Base):
+    pass
+"#;
+
+        // Analyze the file
+        let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+        let hierarchies = build_class_hierarchies(&analysis);
+
+        // Build type tracker
+        let tracker = build_type_tracker_from_source(source);
+
+        // Create FileTypeContext - we need one for the cache and one for the test call
+        let ctx_for_cache = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker: tracker.clone(),
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies.clone(),
+        };
+        let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker,
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies,
+        };
+
+        // Create cache and insert the context
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+        cache.insert_context(PathBuf::from("test.py"), ctx_for_cache);
+
+        // Test: Derived inherits "process" from Base
+        let process_attr =
+            ctx.attribute_type_of_with_mro("Derived", "process", &mut cache, Path::new("."));
+        assert!(
+            process_attr.is_some(),
+            "Derived should have 'process' from Base via MRO"
+        );
+        assert_eq!(process_attr.unwrap().type_str, "str");
+    }
+
+    /// Test: MRO cache is populated after computation.
+    #[test]
+    fn test_mro_attr_cache_populated() {
+        use crate::cross_file_types::ClassHierarchyInfo;
+        use crate::cross_file_types::{CrossFileTypeCache, FileTypeContext};
+        use crate::type_tracker::TypeTracker;
+        use std::collections::HashSet;
+        use std::path::PathBuf;
+
+        // Create a simple hierarchy
+        let mut hierarchies = HashMap::new();
+        hierarchies.insert(
+            "Base".to_string(),
+            ClassHierarchyInfo {
+                name: "Base".to_string(),
+                bases: vec![],
+                mro: None,
+            },
+        );
+        hierarchies.insert(
+            "Child".to_string(),
+            ClassHierarchyInfo {
+                name: "Child".to_string(),
+                bases: vec!["Base".to_string()],
+                mro: None,
+            },
+        );
+
+        let ctx = FileTypeContext {
+            file_path: PathBuf::from("test.py"),
+            tracker: TypeTracker::new(),
+            symbol_kinds: HashMap::new(),
+            symbol_map: HashMap::new(),
+            import_targets: HashMap::new(),
+            class_hierarchies: hierarchies,
+        };
+
+        // Create cache and insert context
+        let workspace_files: HashSet<String> = ["test.py".to_string()].into_iter().collect();
+        let namespace_packages = HashSet::new();
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // Insert context into cache using test helper
+        cache.insert_context(PathBuf::from("test.py"), ctx);
+
+        // Cache MRO using MROEntry format
+        let mro_entries = vec![
+            MROEntry::new("Child", PathBuf::from("test.py")),
+            MROEntry::new("Base", PathBuf::from("test.py")),
+        ];
+        cache.cache_mro(Path::new("test.py"), "Child", mro_entries);
+
+        // Verify cache
+        let cached_mro = cache.get_cached_mro(Path::new("test.py"), "Child");
+        assert!(cached_mro.is_some());
+        let mro = cached_mro.unwrap();
+        assert_eq!(mro.len(), 2);
+        assert_eq!(mro[0].class_name, "Child");
+        assert_eq!(mro[1].class_name, "Base");
+    }
+
+    /// Test Fixture 11D-F14: Multi-hop cross-file inheritance.
+    ///
+    /// Tests MRO-based attribute lookup through multiple file boundaries:
+    /// - root.py: class Root with method `root() -> str`
+    /// - base.py: class Base(Root) imports from root
+    /// - mid.py: class Mid(Base) imports from base
+    ///
+    /// Expected: Mid().root() should resolve to Root.root via cross-file MRO
+    #[test]
+    fn test_mro_attr_multi_hop_cross_file() {
+        use crate::cross_file_types::CrossFileTypeCache;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        // Create temp directory with test files
+        let temp_dir = TempDir::new().unwrap();
+        let root_path = temp_dir.path().join("root.py");
+        let base_path = temp_dir.path().join("base.py");
+        let mid_path = temp_dir.path().join("mid.py");
+
+        // root.py - defines Root class with `root()` method
+        let root_content = r#"class Root:
+    def root(self) -> str:
+        return "ok"
+"#;
+
+        // base.py - Base inherits from Root
+        let base_content = r#"from root import Root
+
+class Base(Root):
+    pass
+"#;
+
+        // mid.py - Mid inherits from Base
+        let mid_content = r#"from base import Base
+
+class Mid(Base):
+    pass
+"#;
+
+        // Write all files
+        std::fs::write(&root_path, root_content).unwrap();
+        std::fs::write(&base_path, base_content).unwrap();
+        std::fs::write(&mid_path, mid_content).unwrap();
+
+        // Build workspace files set (relative paths from temp_dir)
+        let workspace_files: HashSet<String> = [
+            "root.py".to_string(),
+            "base.py".to_string(),
+            "mid.py".to_string(),
+        ]
+        .into_iter()
+        .collect();
+        let namespace_packages = HashSet::new();
+
+        // Create cache
+        let mut cache = CrossFileTypeCache::new(workspace_files, namespace_packages);
+
+        // First, analyze mid.py and verify its hierarchy
+        {
+            let mid_ctx = cache.get_or_analyze(&mid_path, temp_dir.path()).unwrap();
+
+            // Get the class hierarchies - Mid should have Base as its base
+            assert!(mid_ctx.class_hierarchies.contains_key("Mid"));
+            let mid_hierarchy = mid_ctx.class_hierarchies.get("Mid").unwrap();
+            assert_eq!(mid_hierarchy.bases, vec!["Base"]);
+        }
+        // Reference dropped here, cache is no longer borrowed
+
+        // Now test MRO-based attribute lookup on Mid for "root" method
+        // We need to re-acquire the context reference within a fresh scope
+        // to call attribute_type_of_with_mro which needs &mut cache
+        //
+        // The lookup should:
+        // 1. Not find "root" in Mid (it has no methods)
+        // 2. Follow MRO through Base -> Root and find Root.root
+        //
+        // Since attribute_type_of_with_mro takes &self (FileTypeContext) and &mut cache,
+        // we need to avoid holding a reference to cache while calling it.
+        // The solution is to use lookup_attr_in_mro directly which is designed for this case.
+        let root_attr = {
+            let mid_ctx = cache.get_or_analyze(&mid_path, temp_dir.path()).unwrap();
+            // Clone the hierarchies we need
+            let mid_hierarchies = mid_ctx.class_hierarchies.clone();
+            let mid_tracker = mid_ctx.tracker.clone();
+            let mid_import_targets = mid_ctx.import_targets.clone();
+
+            // Build a new context to pass to lookup (we own this data now)
+            let owned_ctx = FileTypeContext {
+                file_path: PathBuf::from("mid.py"),
+                tracker: mid_tracker,
+                symbol_kinds: HashMap::new(),
+                symbol_map: HashMap::new(),
+                import_targets: mid_import_targets,
+                class_hierarchies: mid_hierarchies,
+            };
+
+            // Now we can call with &mut cache since we don't hold a reference to cache
+            owned_ctx.attribute_type_of_with_mro("Mid", "root", &mut cache, temp_dir.path())
+        };
+
+        // The "root" method should be found via MRO with return type "str"
+        assert!(
+            root_attr.is_some(),
+            "Mid should have 'root' method via MRO chain: Mid -> Base -> Root"
+        );
+        assert_eq!(
+            root_attr.unwrap().type_str,
+            "str",
+            "Root.root() should return str"
         );
     }
 }
