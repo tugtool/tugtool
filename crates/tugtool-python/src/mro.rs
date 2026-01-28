@@ -702,10 +702,11 @@ pub fn lookup_attr_in_file(
     }
 
     // Also check method return types - convert to AttributeTypeInfo
-    if let Some(return_type) = ctx.tracker.method_return_type_of(class_name, attr_name) {
+    // Now includes TypeNode from CST, so callable_return_type_of will work
+    if let Some(return_info) = ctx.tracker.method_return_type_of(class_name, attr_name) {
         return Some(AttributeTypeInfo {
-            type_str: return_type.to_string(),
-            type_node: None,
+            type_str: return_info.type_str.clone(),
+            type_node: return_info.type_node.clone(),
         });
     }
 
@@ -748,10 +749,11 @@ pub fn lookup_attr_in_mro_class(
             return Some(attr_type);
         }
         // Also check method return types - convert to AttributeTypeInfo
-        if let Some(return_type) = ctx.tracker.method_return_type_of(class_name, attr_name) {
+        // Now includes TypeNode from CST, so callable_return_type_of will work
+        if let Some(return_info) = ctx.tracker.method_return_type_of(class_name, attr_name) {
             return Some(AttributeTypeInfo {
-                type_str: return_type.to_string(),
-                type_node: None,
+                type_str: return_info.type_str.clone(),
+                type_node: return_info.type_node.clone(),
             });
         }
         return None;
@@ -789,13 +791,14 @@ pub fn lookup_attr_in_mro_class(
     {
         return Some(attr_type);
     }
-    if let Some(return_type) = remote_ctx
+    // Check method return types - now includes TypeNode from CST
+    if let Some(return_info) = remote_ctx
         .tracker
         .method_return_type_of(&remote_class_name, attr_name)
     {
         return Some(AttributeTypeInfo {
-            type_str: return_type.to_string(),
-            type_node: None,
+            type_str: return_info.type_str.clone(),
+            type_node: return_info.type_node.clone(),
         });
     }
 
@@ -2342,7 +2345,7 @@ d: Derived = Derived()
         // After merge, return type should come from stub
         let merged_return = source_tracker.method_return_type_of("Service", "process");
         assert_eq!(
-            merged_return,
+            merged_return.map(|t| t.type_str.as_str()),
             Some("str"),
             "After stub merge, process() should return str"
         );
@@ -2412,7 +2415,7 @@ d: Derived = Derived()
         // Return type should be str from stub (not int from runtime)
         let merged_return = source_tracker.method_return_type_of("Service", "process");
         assert_eq!(
-            merged_return,
+            merged_return.map(|t| t.type_str.as_str()),
             Some("str"),
             "After stub merge, process() should return str (not int)"
         );
@@ -2497,7 +2500,7 @@ class Service:
             .tracker
             .method_return_type_of("Handler", "process");
         assert_eq!(
-            process_return,
+            process_return.map(|t| t.type_str.as_str()),
             Some("str"),
             "Handler.process should return str"
         );
@@ -2755,7 +2758,11 @@ w = mod.Worker()
             .expect("pkg/mod.py should analyze");
 
         let worker_return = mod_ctx.tracker.method_return_type_of("Worker", "run");
-        assert_eq!(worker_return, Some("int"), "Worker.run should return int");
+        assert_eq!(
+            worker_return.map(|t| t.type_str.as_str()),
+            Some("int"),
+            "Worker.run should return int"
+        );
     }
 
     /// Performance test: Verify resolution completes within acceptable time

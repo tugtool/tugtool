@@ -3869,7 +3869,7 @@ impl PythonAdapter {
                             // Strip forward reference quotes (e.g., -> "Widget")
                             current_type = tracker
                                 .method_return_type_of(class_type, method_name)
-                                .map(|s| strip_forward_ref_quotes(s).to_string());
+                                .map(|t| strip_forward_ref_quotes(&t.type_str).to_string());
                         } else if last_name_was_class {
                             // Constructor call: ClassName() returns the class type
                             current_type = Some(class_type.to_string());
@@ -4066,7 +4066,7 @@ impl PythonAdapter {
         let method_return = remote_ctx
             .tracker
             .method_return_type_of(class_name, attr_name)
-            .map(|s| s.to_string());
+            .map(|t| t.type_str.clone());
         let symbol_map_clone = remote_ctx.symbol_map.clone();
         let symbol_kinds_clone = remote_ctx.symbol_kinds.clone();
         let import_targets_clone = remote_ctx.import_targets.clone();

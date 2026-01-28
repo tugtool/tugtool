@@ -6,6 +6,149 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] TypeNode Architecture Enhancement: method_return_types TypeNode Preservation | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- Code-architect analysis of TypeNode architecture and construction sites
+- `crates/tugtool-python/src/type_tracker.rs` - method_return_types storage
+- `crates/tugtool-python/src/types.rs` - AttributeTypeInfo and PropertyTypeInfo structs
+- `crates/tugtool-python/src/analyzer.rs` - method_return_type_of call sites
+- `crates/tugtool-python/src/cross_file_types.rs` - method return fallback construction
+- `crates/tugtool-python/src/mro.rs` - MRO method return fallback construction
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Analyze method_return_types structure and usage | Done |
+| Update method_return_types HashMap to use AnnotatedType | Done |
+| Update process_signatures to store TypeNode with method returns | Done |
+| Update method_return_type_of return type to Option<&AnnotatedType> | Done |
+| Update stub merge for method_return_types | Done |
+| Update all call sites (analyzer.rs, cross_file_types.rs, mro.rs) | Done |
+| Propagate TypeNode in method return fallback paths (4 sites) | Done |
+| Update 15+ tests for new return type | Done |
+| Document AttributeTypeInfo and PropertyTypeInfo semantics | Done |
+| Add debug assertion in callable_return_type_of for CST gaps | Done |
+| Replace defensive test with legitimate non-Callable test | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs` - Changed method_return_types from `HashMap<..., String>` to `HashMap<..., AnnotatedType>`, updated process_signatures, method_return_type_of, added debug assertion, updated 10 tests
+- `crates/tugtool-python/src/types.rs` - Enhanced documentation for AttributeTypeInfo and PropertyTypeInfo explaining when type_node is Some vs None
+- `crates/tugtool-python/src/analyzer.rs` - Updated 2 call sites to use `.type_str`
+- `crates/tugtool-python/src/cross_file_types.rs` - Updated 1 method return fallback to propagate TypeNode, updated 3 tests
+- `crates/tugtool-python/src/mro.rs` - Updated 3 method return fallbacks to propagate TypeNode, updated 4 tests
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1879 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all --check`: Formatted
+
+**Key Decisions/Notes:**
+- Used code-architect agent to analyze architecture before making changes
+- Discovered three legitimate cases where type_node is None: inferred types, method return type fallbacks (now fixed), unsupported CST patterns
+- The method_return_types gap was the primary issue - TypeNode was being lost when method return types were converted to AttributeTypeInfo
+- Added debug assertion to catch cases where type_str looks like "Callable[..." but TypeNode is missing (potential CST bugs)
+- Documented that type_node: None is legitimate for inferred types (no annotation to parse)
+
+---
+
+## [phase-11E.md] Step 3-PREREQUISITE: Make Complete Use of CST Type Annotations & TypeNode Structures | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 3-PREREQUISITE specification
+- `crates/tugtool-python/src/type_tracker.rs` - Contains string-based parsing functions to remove
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove string fallback from `callable_return_type_of` | Done |
+| Remove `extract_element_type` method (string-based) | Done |
+| Remove `extract_first_type_arg` helper | Done |
+| Remove `extract_second_type_arg` helper | Done |
+| Remove `find_top_level_comma` function | Done |
+| Remove string-based tests that test fallback behavior | Done |
+| Keep `is_sequence_type` and `is_mapping_type` | Done |
+| Keep `extract_element_type_from_node` and its tests | Done |
+| Add `callable_return_type_of_returns_none_without_typenode` test | Done |
+
+**Tests Removed:**
+- `callable_return_type_of_fallback_to_type_str`
+- `callable_return_type_of_fallback_empty_params`
+- `callable_return_type_of_fallback_nested`
+- `callable_return_type_of_non_callable_string`
+- 16 `extract_element_type_*` tests that used string input
+
+**Files Modified:**
+- `crates/tugtool-python/src/type_tracker.rs` - Removed ~95 lines of string-based parsing code: `callable_return_type_of` string fallback, `find_top_level_comma`, `extract_first_type_arg`, `extract_second_type_arg`, `extract_element_type` (string-based method); removed 20 fallback tests; added 1 new test
+- `plans/phase-11E.md` - Checked off all task and checkpoint items for Step 3-PREREQUISITE
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 661 tests passed
+- `cargo nextest run --workspace`: 1879 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+- `cargo fmt --all --check`: No formatting issues
+
+**Checkpoints Verified:**
+- All grep searches return empty (no string parsing remains): PASS
+- `cargo nextest run -p tugtool-python` passes: PASS
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- `cargo fmt --all --check` passes: PASS
+
+**Key Decisions/Notes:**
+- `callable_return_type_of` now requires TypeNode for type extraction; returns None if unavailable
+- String-based parsing was redundant since TypeNode is already collected at CST time
+- This cleanup removes the fragility of character-by-character string parsing
+- Estimated ~320 lines planned for removal; actual removal ~95 lines (remainder was tests)
+
+---
+
+## [phase-11E.md] Step 3-PREREQUISITE: Make Complete Use of CST Type Annotations & TypeNode Structures | PLAN CREATED | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `crates/tugtool-python/src/type_tracker.rs` - Contains string-based parsing functions
+- `crates/tugtool-python/src/analyzer.rs` - Production call site for callable_return_type_of
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - TypeNode infrastructure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Audit `find_top_level_comma` and all callers | Done |
+| Identify all string-based type parsing code | Done |
+| Analyze production vs test usage | Done |
+| Create comprehensive removal plan | Done |
+| Insert plan into phase-11E.md | Done |
+
+**Files Modified:**
+- `plans/phase-11E.md` - Inserted Step 3-PREREQUISITE section with detailed removal plan
+
+**Key Findings:**
+- `find_top_level_comma` - character-by-character comma finding (redundant)
+- `extract_first_type_arg` - string-based generic arg extraction (redundant)
+- `extract_second_type_arg` - string-based generic arg extraction (redundant)
+- `extract_element_type` (string version) - redundant string parsing
+- Only 1 production call site exists (`analyzer.rs:3810`) where TypeNode is already available
+- String fallback is effectively dead code masking TypeNode collection gaps
+
+**Design Decisions Documented:**
+1. TypeNode is single source of truth - no string parsing fallbacks
+2. Return `None` when TypeNode unavailable (graceful degradation)
+3. Remove string-based API entirely, keep only `extract_element_type_from_node`
+
+**Estimated Removal:** ~320 lines of code (including string-based tests)
+
+**Status:** Plan created and ready for implementation. Awaiting user review before executing removal.
+
+---
+
 ## [phase-11E.md] Step 2: Wire Scoped Imports Through build_import_targets | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

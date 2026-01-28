@@ -271,10 +271,11 @@ impl FileTypeContext {
         }
 
         // Also check method return types for the local class
-        if let Some(return_type) = self.tracker.method_return_type_of(class_name, attr_name) {
+        // Now includes TypeNode from CST, so callable_return_type_of will work
+        if let Some(return_info) = self.tracker.method_return_type_of(class_name, attr_name) {
             return Some(AttributeTypeInfo {
-                type_str: return_type.to_string(),
-                type_node: None,
+                type_str: return_info.type_str.clone(),
+                type_node: return_info.type_node.clone(),
             });
         }
 
@@ -1728,7 +1729,7 @@ class Child(Parent):
         // Verify type was extracted from stub
         let tracker = stub_tracker.unwrap();
         let return_type = tracker.method_return_type_of("Service", "process");
-        assert_eq!(return_type, Some("str"));
+        assert_eq!(return_type.map(|t| t.type_str.as_str()), Some("str"));
     }
 
     #[test]
@@ -1772,7 +1773,7 @@ class Child(Parent):
         // Verify type was extracted from stub
         let tracker = stub_tracker.unwrap();
         let return_type = tracker.method_return_type_of("Service", "process");
-        assert_eq!(return_type, Some("int"));
+        assert_eq!(return_type.map(|t| t.type_str.as_str()), Some("int"));
     }
 
     #[test]
@@ -1815,7 +1816,7 @@ class Child(Parent):
         // Verify inline stub was used (returns str, not int)
         let tracker = stub_tracker.unwrap();
         let return_type = tracker.method_return_type_of("Service", "process");
-        assert_eq!(return_type, Some("str"));
+        assert_eq!(return_type.map(|t| t.type_str.as_str()), Some("str"));
     }
 
     #[test]

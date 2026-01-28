@@ -282,12 +282,29 @@ pub struct AnnotationInfo {
 ///
 /// Used by TypeTracker to track instance attribute types from class-level
 /// annotations and `__init__` assignments.
+///
+/// # TypeNode Availability
+///
+/// `type_node` is `Some(...)` when:
+/// - The type comes from an explicit CST-parsed annotation (class attribute or method return)
+/// - The annotation uses a pattern that CST can represent as TypeNode
+///
+/// `type_node` is `None` when:
+/// - The type was **inferred** from code (e.g., `self.handler = Handler()` constructor pattern)
+/// - The annotation uses an **unsupported pattern** (forward refs as strings, `TypeVar`, `Literal`, etc.)
+///
+/// # Design Note
+///
+/// Functions like `callable_return_type_of` require TypeNode for extraction and return
+/// `None` when TypeNode is unavailable. This is intentional - string-based type parsing
+/// was removed for correctness. If TypeNode is missing for a CST-sourced annotation,
+/// that indicates a collection bug in the CST layer.
 #[derive(Debug, Clone)]
 pub struct AttributeTypeInfo {
     /// The type as a string (e.g., "Handler", "List[str]").
     pub type_str: String,
     /// Structured type representation, if available from CST collection.
-    /// Used for extracting callable return types.
+    /// See struct documentation for when this is `Some` vs `None`.
     pub type_node: Option<TypeNode>,
 }
 
@@ -303,11 +320,25 @@ pub struct AttributeTypeInfo {
 ///
 /// Used by TypeTracker to track property return types from methods decorated
 /// with `@property`.
+///
+/// # TypeNode Availability
+///
+/// `type_node` is `Some(...)` when:
+/// - The property has an explicit return type annotation that CST can parse
+///
+/// `type_node` is `None` when:
+/// - The property has no return type annotation
+/// - The annotation uses an unsupported pattern (forward refs, TypeVar, etc.)
+///
+/// Since properties always come from explicit `@property` decorated methods with
+/// return type annotations, `type_node` should generally be present unless the
+/// annotation uses an unsupported pattern.
 #[derive(Debug, Clone)]
 pub struct PropertyTypeInfo {
     /// Return type of the property getter as a string (e.g., "str", "int").
     pub type_str: String,
-    /// Structured type representation, if available from CST collection.
+    /// Structured type representation from CST collection.
+    /// See struct documentation for when this is `Some` vs `None`.
     pub type_node: Option<TypeNode>,
 }
 

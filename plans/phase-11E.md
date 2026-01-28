@@ -1147,6 +1147,87 @@ def process():
 
 ---
 
+#### Step 3-PREREQUISITE: Make Complete Use of CST Type Annotations & TypeNode Structures {#step-3-prereq}
+
+**Purpose:** Eliminate redundant string-based type parsing code that duplicates TypeNode functionality. The CST already provides structured `TypeNode` representations at collection time - manually re-parsing type strings character-by-character is wasteful, error-prone, and a design flaw.
+
+**Commit:** `refactor(python): remove string-based type parsing, use TypeNode exclusively`
+
+**References:** Phase 11E code review feedback; CST TypeNode infrastructure (Phase 11D)
+
+**Problem Statement:**
+
+The type_tracker.rs file accumulated string-based type parsing functions that manually parse type annotation strings character-by-character (finding brackets, commas, extracting type arguments). This approach is:
+
+1. **Redundant**: TypeNode already encodes the structure (generics, params, return types)
+2. **Error-prone**: String parsing is fragile and can break on edge cases
+3. **Wasteful**: Parsing work is done twice (once at CST collection, again at use sites)
+
+**Functions to Remove:**
+
+| Function | Lines | Description |
+|----------|-------|-------------|
+| `find_top_level_comma` | 972-986 | Character-by-character comma finding |
+| `extract_first_type_arg` | 1252-1272 | Extracts first generic arg from string |
+| `extract_second_type_arg` | 1277-1290 | Extracts second generic arg from string |
+| `extract_element_type` (string version) | 1117-1140 | String-based container extraction |
+
+**Functions to Modify:**
+
+| Function | Current | New |
+|----------|---------|-----|
+| `callable_return_type_of` | TypeNode first, string fallback | TypeNode only, return None if unavailable |
+
+**Design Decisions:**
+
+1. **TypeNode is the single source of truth** for type structure - no string parsing fallbacks
+2. **Graceful degradation**: Return `None` when TypeNode unavailable (don't mask issues with fallback code)
+3. **Remove string-based API entirely**: Keep only `extract_element_type_from_node`
+
+**Tasks:**
+
+- [x] Remove string fallback from `callable_return_type_of` (keep only TypeNode extraction)
+- [x] Remove `extract_element_type` method (string-based)
+- [x] Remove `extract_first_type_arg` helper
+- [x] Remove `extract_second_type_arg` helper
+- [x] Remove `find_top_level_comma` function
+- [x] Remove string-based tests that test fallback behavior
+- [x] Keep `is_sequence_type` and `is_mapping_type` (used by TypeNode extraction)
+- [x] Keep `extract_element_type_from_node` and its tests
+
+**Tests to Remove:**
+
+- [x] `callable_return_type_of_fallback_to_type_str`
+- [x] `callable_return_type_of_fallback_empty_params`
+- [x] `callable_return_type_of_fallback_nested`
+- [x] `callable_return_type_of_non_callable_string`
+- [x] All `extract_element_type_*` tests that use string input (keep TypeNode-based tests)
+
+**Tests to Add:**
+
+- [x] `callable_return_type_of_returns_none_without_typenode`
+
+**Verification Searches (must all return empty):**
+
+```bash
+grep -n "find_top_level_comma" crates/tugtool-python/src/
+grep -n "extract_first_type_arg" crates/tugtool-python/src/
+grep -n "extract_second_type_arg" crates/tugtool-python/src/
+```
+
+**Checkpoint:**
+
+- [x] All grep searches return empty (no string parsing remains)
+- [x] `cargo nextest run -p tugtool-python` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] `cargo fmt --all --check` passes
+
+**Estimated Removal:** ~320 lines of code (including tests for string-based parsing)
+
+**Rollback:** Revert commit
+
+---
+
 #### Step 3: Add Element Type Extraction to TypeTracker {#step-3}
 
 **Commit:** `feat(python): add generic type parameter extraction to TypeTracker`
@@ -1158,25 +1239,25 @@ def process():
 - Helper functions for container type detection
 
 **Tasks:**
-- [ ] Add `extract_element_type(&self, type_str: &str) -> Option<String>` method
-- [ ] Add `extract_element_type_from_node(&self, node: &TypeNode) -> Option<String>` method
-- [ ] Add `type_of_node(&self, scope_path: &[String], name: &str) -> Option<&TypeNode>` (per D10)
-- [ ] Implement `is_sequence_type(name: &str) -> bool` helper
-- [ ] Implement `is_mapping_type(name: &str) -> bool` helper
-- [ ] Handle common patterns: List, Dict, Set, Optional, Tuple
-- [ ] Handle built-in generics: list, dict, set (Python 3.9+)
+- [x] Add `extract_element_type(&self, type_str: &str) -> Option<String>` method
+- [x] Add `extract_element_type_from_node(&self, node: &TypeNode) -> Option<String>` method
+- [x] Add `type_of_node(&self, scope_path: &[String], name: &str) -> Option<&TypeNode>` (per D10)
+- [x] Implement `is_sequence_type(name: &str) -> bool` helper
+- [x] Implement `is_mapping_type(name: &str) -> bool` helper
+- [x] Handle common patterns: List, Dict, Set, Optional, Tuple
+- [x] Handle built-in generics: list, dict, set (Python 3.9+)
 
 **Tests:**
-- [ ] Unit: `extract_element_type("List[Handler]")` returns `Some("Handler")`
-- [ ] Unit: `extract_element_type("Dict[str, Handler]")` returns `Some("Handler")`
-- [ ] Unit: `extract_element_type("Optional[Handler]")` returns `Some("Handler")`
-- [ ] Unit: `extract_element_type("str")` returns `None`
-- [ ] Unit: `extract_element_type_from_node` with TypeNode::Subscript
-- [ ] Unit: Built-in generics `list[Handler]` work
+- [x] Unit: `extract_element_type("List[Handler]")` returns `Some("Handler")`
+- [x] Unit: `extract_element_type("Dict[str, Handler]")` returns `Some("Handler")`
+- [x] Unit: `extract_element_type("Optional[Handler]")` returns `Some("Handler")`
+- [x] Unit: `extract_element_type("str")` returns `None`
+- [x] Unit: `extract_element_type_from_node` with TypeNode::Subscript
+- [x] Unit: Built-in generics `list[Handler]` work
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python type_tracker`
-- [ ] `cargo nextest run -p tugtool-python extract`
+- [x] `cargo nextest run -p tugtool-python type_tracker`
+- [x] `cargo nextest run -p tugtool-python extract`
 
 **Rollback:** Revert commit
 

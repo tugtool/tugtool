@@ -106,10 +106,11 @@ pub struct TypeTracker {
     /// Populated from class-level annotations and `self.attr = ...` in __init__.
     attribute_types: HashMap<(String, String), AttributeTypeInfo>,
 
-    /// Map from (class_name, method_name) to return type string.
+    /// Map from (class_name, method_name) to return type info.
     /// Populated from signatures where `is_method` is true and return type is present.
     /// Used for method call resolution in dotted paths like `self.handler.process()`.
-    method_return_types: HashMap<(String, String), String>,
+    /// Stores both string and TypeNode (when available from CST) for callable return extraction.
+    method_return_types: HashMap<(String, String), AnnotatedType>,
 
     /// Map from (class_name, property_name) to property type info.
     /// Populated from methods decorated with @property that have return type annotations.
@@ -352,7 +353,7 @@ impl TypeTracker {
     ///
     /// This populates the `method_return_types` map for methods with return type
     /// annotations. The map is keyed by `(class_name, method_name)` and stores
-    /// the return type string.
+    /// both the return type string and TypeNode (when available from CST).
     ///
     /// # Arguments
     /// - `signatures`: Signature information from CST analysis
@@ -384,8 +385,14 @@ impl TypeTracker {
 
             let key = (class_name, sig.name.clone());
 
+            // Create AnnotatedType with both string and TypeNode from CST
+            let annotated = AnnotatedType {
+                type_str: return_type,
+                type_node: sig.returns_node.clone(),
+            };
+
             // Don't override if already present (first wins, matching other precedence patterns)
-            self.method_return_types.entry(key).or_insert(return_type);
+            self.method_return_types.entry(key).or_insert(annotated);
         }
     }
 
@@ -740,7 +747,7 @@ impl TypeTracker {
     /// - `method_name`: The name of the method (e.g., "process")
     ///
     /// # Returns
-    /// - `Some(&str)` with the return type string if the method has a return type annotation
+    /// - `Some(&AnnotatedType)` with the return type info if the method has a return type annotation
     /// - `None` if the method has no return type or is not tracked
     ///
     /// # Note
@@ -758,11 +765,15 @@ impl TypeTracker {
     ///
     /// // After processing with TypeTracker:
     /// let ret_type = tracker.method_return_type_of("Handler", "process");
-    /// assert_eq!(ret_type, Some("Result"));
+    /// assert_eq!(ret_type.map(|t| t.type_str.as_str()), Some("Result"));
     /// ```
-    pub fn method_return_type_of(&self, class_name: &str, method_name: &str) -> Option<&str> {
+    pub fn method_return_type_of(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<&AnnotatedType> {
         let key = (class_name.to_string(), method_name.to_string());
-        self.method_return_types.get(&key).map(|s| s.as_str())
+        self.method_return_types.get(&key)
     }
 
     /// Get the type of a property on a class.
@@ -846,41 +857,39 @@ impl TypeTracker {
     /// - `type_info`: The attribute type information containing the Callable annotation
     ///
     /// # Returns
-    /// - `Some(return_type)` if the type is `Callable[..., T]` and T can be extracted
-    /// - `None` if the type is not Callable or the return type cannot be extracted
+    /// - `Some(return_type)` if the type is `Callable[..., T]` and T can be extracted from TypeNode
+    /// - `None` if the type is not Callable, no TypeNode is available, or the return type cannot be extracted
     ///
     /// # Supported Patterns
     /// - `Callable[[], Handler]` → `Some("Handler")`
     /// - `Callable[[int, str], Handler]` → `Some("Handler")`
     /// - `Callable[..., Handler]` → `Some("Handler")`
     ///
-    /// # Limitations
-    /// - Complex return types like `Union[A, B]` or `List[T]` return `None` when
-    ///   extracted from string parsing (TypeNode may provide better support)
-    /// - Only simple named return types are reliably extracted from string annotations
+    /// # Design Note
+    /// This method requires a TypeNode for type extraction. String-based parsing was
+    /// removed per Phase 11E Step 3-PREREQUISITE to eliminate redundant parsing code.
+    /// TypeNode is already available from CST collection and provides structured type
+    /// information without the fragility of character-by-character string parsing.
     pub fn callable_return_type_of(type_info: &AttributeTypeInfo) -> Option<String> {
-        // Prefer TypeNode if available (most precise)
+        // Require TypeNode - no string fallback per Phase 11E design
         if let Some(TypeNode::Callable { returns, .. }) = &type_info.type_node {
             // Extract the type name from the returns TypeNode
             return Self::extract_type_name(returns);
         }
 
-        // Fall back to parsing type_str for "Callable[..., ReturnType]" pattern
-        // This is a conservative parse - return None if uncertain
-        let type_str = &type_info.type_str;
-        if type_str.starts_with("Callable[") && type_str.ends_with(']') {
-            // Find the last comma that separates params from return type
-            // Handle nested brackets: Callable[[int, str], Handler]
-            let inner = &type_str[9..type_str.len() - 1]; // Strip "Callable[" and "]"
-            if let Some(last_comma) = find_top_level_comma(inner) {
-                let return_part = inner[last_comma + 1..].trim();
-                if !return_part.is_empty() && return_part != "None" {
-                    return Some(return_part.to_string());
-                }
-            }
-        }
+        // Debug assertion: if type_str looks like Callable but TypeNode is missing,
+        // this may indicate a CST collection gap. Valid cases where this can happen:
+        // - Inferred types (no annotation to parse)
+        // - Unsupported CST patterns (rare for Callable)
+        // This assertion helps catch potential CST bugs during development.
+        debug_assert!(
+            !type_info.type_str.starts_with("Callable["),
+            "type_str is Callable[...] but type_node is not TypeNode::Callable. \
+             This may indicate a CST collection gap. type_str: {}",
+            type_info.type_str
+        );
 
-        None // Conservative: return None if we can't extract return type
+        None // No TypeNode available - cannot extract return type
     }
 
     /// Extract a type name string from a TypeNode.
@@ -953,38 +962,6 @@ impl TypeTracker {
     }
 }
 
-/// Find the last comma at the top level (not inside brackets) in a string.
-///
-/// Used for parsing `Callable[..., ReturnType]` annotations where we need to
-/// find the comma separating the parameter types from the return type.
-///
-/// # Arguments
-/// - `s`: The string to search (should be the inner part of `Callable[...]`)
-///
-/// # Returns
-/// - `Some(index)` of the last top-level comma
-/// - `None` if no top-level comma is found
-///
-/// # Examples
-/// - `"[], Handler"` → `Some(2)` (the comma after `[]`)
-/// - `"[int, str], Handler"` → `Some(11)` (the comma after `]`)
-/// - `"Handler"` → `None` (no comma)
-fn find_top_level_comma(s: &str) -> Option<usize> {
-    let mut depth: usize = 0;
-    let mut last_comma = None;
-
-    for (i, c) in s.char_indices() {
-        match c {
-            '[' | '(' | '{' => depth += 1,
-            ']' | ')' | '}' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => last_comma = Some(i),
-            _ => {}
-        }
-    }
-
-    last_comma
-}
-
 // ============================================================================
 // Stub Merging
 // ============================================================================
@@ -1015,7 +992,7 @@ impl TypeTracker {
     ///
     /// // After merging:
     /// source_tracker.merge_from_stub(stub_tracker);
-    /// assert_eq!(source_tracker.method_return_type_of("Service", "process"), Some("str"));
+    /// assert_eq!(source_tracker.method_return_type_of("Service", "process").map(|t| t.type_str.as_str()), Some("str"));
     /// ```
     pub fn merge_from_stub(&mut self, stub: TypeTracker) {
         // Stub attribute types override source attribute types
@@ -1046,6 +1023,149 @@ impl TypeTracker {
         // Note: We don't merge inferred_types from stub since stubs
         // should have explicit annotations, not inferred types
     }
+
+    /// Get the TypeNode for a variable in a specific scope, if available.
+    ///
+    /// Returns the TypeNode from the annotated type if the variable has an
+    /// explicit type annotation with a structured TypeNode. This is used for
+    /// subscript resolution where the TypeNode provides more precise type
+    /// information than string parsing.
+    ///
+    /// # Arguments
+    /// - `scope_path`: The scope where to look for the variable
+    /// - `name`: The variable name
+    ///
+    /// # Returns
+    /// - `Some(&TypeNode)` if the variable has an annotated type with a TypeNode
+    /// - `None` if no annotation or no TypeNode available
+    pub fn type_of_node(&self, scope_path: &[String], name: &str) -> Option<&TypeNode> {
+        // First try exact scope
+        let key = (scope_path.to_vec(), name.to_string());
+        if let Some(annotated) = self.annotated_types.get(&key) {
+            if annotated.type_node.is_some() {
+                return annotated.type_node.as_ref();
+            }
+        }
+
+        // Walk up scope chain
+        let mut current_path = scope_path.to_vec();
+        while !current_path.is_empty() {
+            current_path.pop();
+            let key = (current_path.clone(), name.to_string());
+            if let Some(annotated) = self.annotated_types.get(&key) {
+                if annotated.type_node.is_some() {
+                    return annotated.type_node.as_ref();
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract the element type from a TypeNode, if available.
+    ///
+    /// More reliable than string parsing when TypeNode is available from
+    /// CST collection. Handles the same container types as `extract_element_type`.
+    ///
+    /// # Arguments
+    /// - `node`: The TypeNode representing the container type
+    ///
+    /// # Returns
+    /// - `Some(element_type)` for recognized container types
+    /// - `None` for non-container types or unrecognized patterns
+    ///
+    /// # Supported Patterns
+    /// - `TypeNode::Named { name: "List", args: [T] }` → T
+    /// - `TypeNode::Named { name: "Dict", args: [K, V] }` → V
+    /// - `TypeNode::Optional { inner }` → inner
+    /// - `TypeNode::Tuple { elements: [T], is_homogeneous: true }` → T
+    pub fn extract_element_type_from_node(&self, node: &TypeNode) -> Option<String> {
+        match node {
+            // Named container types like List[T], Dict[K, V]
+            TypeNode::Named { name, args } => {
+                // Check if it's Optional spelled as Named (Optional[T])
+                if name == "Optional" && args.len() == 1 {
+                    return Self::extract_type_name(&args[0]);
+                }
+
+                // Check if it's a sequence type
+                if is_sequence_type(name) && !args.is_empty() {
+                    return Self::extract_type_name(&args[0]);
+                }
+
+                // Check if it's a mapping type (Dict, Mapping, etc.)
+                if is_mapping_type(name) && args.len() >= 2 {
+                    // Value type is the second argument
+                    return Self::extract_type_name(&args[1]);
+                }
+
+                None
+            }
+
+            // Optional[T] as a dedicated variant
+            TypeNode::Optional { inner } => Self::extract_type_name(inner),
+
+            // Tuple - only extract if we can identify it as homogeneous
+            // (This is a simplification - full Tuple[A, B, C] support would need more logic)
+            TypeNode::Tuple { elements } => {
+                // Single element tuple or homogeneous (all same type)
+                if elements.len() == 1 {
+                    return Self::extract_type_name(&elements[0]);
+                }
+                // For multi-element tuples, we'd need to check if all are the same
+                // For now, return None for heterogeneous tuples
+                None
+            }
+
+            _ => None,
+        }
+    }
+}
+
+// ============================================================================
+// Container Type Detection Helpers
+// ============================================================================
+
+/// Check if a type name is a sequence-like container.
+///
+/// Sequence types have a single element type that is returned for subscript access.
+fn is_sequence_type(name: &str) -> bool {
+    matches!(
+        name,
+        "List"
+            | "list"
+            | "Sequence"
+            | "Iterable"
+            | "Iterator"
+            | "Set"
+            | "set"
+            | "FrozenSet"
+            | "frozenset"
+            | "Tuple"
+            | "tuple"
+            | "Collection"
+            | "AbstractSet"
+            | "MutableSet"
+            | "Deque"
+            | "deque"
+    )
+}
+
+/// Check if a type name is a mapping-like container.
+///
+/// Mapping types have key and value types; subscript access returns the value type.
+fn is_mapping_type(name: &str) -> bool {
+    matches!(
+        name,
+        "Dict"
+            | "dict"
+            | "Mapping"
+            | "MutableMapping"
+            | "OrderedDict"
+            | "DefaultDict"
+            | "Counter"
+            | "ChainMap"
+    )
 }
 
 impl Default for TypeTracker {
@@ -2894,7 +3014,9 @@ mod tests {
             tracker.process_signatures(&signatures);
 
             assert_eq!(
-                tracker.method_return_type_of("Handler", "process"),
+                tracker
+                    .method_return_type_of("Handler", "process")
+                    .map(|t| t.type_str.as_str()),
                 Some("Result")
             );
         }
@@ -2983,11 +3105,15 @@ mod tests {
             tracker.process_signatures(&signatures);
 
             assert_eq!(
-                tracker.method_return_type_of("Handler", "process"),
+                tracker
+                    .method_return_type_of("Handler", "process")
+                    .map(|t| t.type_str.as_str()),
                 Some("Result")
             );
             assert_eq!(
-                tracker.method_return_type_of("Handler", "validate"),
+                tracker
+                    .method_return_type_of("Handler", "validate")
+                    .map(|t| t.type_str.as_str()),
                 Some("bool")
             );
         }
@@ -3015,11 +3141,15 @@ mod tests {
             tracker.process_signatures(&signatures);
 
             assert_eq!(
-                tracker.method_return_type_of("HandlerA", "process"),
+                tracker
+                    .method_return_type_of("HandlerA", "process")
+                    .map(|t| t.type_str.as_str()),
                 Some("ResultA")
             );
             assert_eq!(
-                tracker.method_return_type_of("HandlerB", "process"),
+                tracker
+                    .method_return_type_of("HandlerB", "process")
+                    .map(|t| t.type_str.as_str()),
                 Some("ResultB")
             );
         }
@@ -3048,7 +3178,9 @@ mod tests {
 
             // First one wins
             assert_eq!(
-                tracker.method_return_type_of("Handler", "process"),
+                tracker
+                    .method_return_type_of("Handler", "process")
+                    .map(|t| t.type_str.as_str()),
                 Some("FirstResult")
             );
         }
@@ -3069,7 +3201,9 @@ mod tests {
 
             // The class name is the last element of scope_path (Inner)
             assert_eq!(
-                tracker.method_return_type_of("Inner", "method"),
+                tracker
+                    .method_return_type_of("Inner", "method")
+                    .map(|t| t.type_str.as_str()),
                 Some("InnerResult")
             );
             // Outer doesn't have this method
@@ -3091,7 +3225,9 @@ mod tests {
             tracker.process_signatures(&signatures);
 
             assert_eq!(
-                tracker.method_return_type_of("Container", "items"),
+                tracker
+                    .method_return_type_of("Container", "items")
+                    .map(|t| t.type_str.as_str()),
                 Some("List[Item]")
             );
         }
@@ -3184,51 +3320,22 @@ mod tests {
         }
 
         #[test]
-        fn callable_return_type_of_fallback_to_type_str() {
-            // No TypeNode, fallback to parsing type_str
+        fn callable_return_type_of_returns_none_for_non_callable_typenode() {
+            // Non-Callable TypeNode returns None (e.g., List, Dict, str)
+            // This tests that only TypeNode::Callable variants extract return types.
             let attr_info = AttributeTypeInfo {
-                type_str: "Callable[[int], Handler]".to_string(),
-                type_node: None,
+                type_str: "List[Handler]".to_string(),
+                type_node: Some(TypeNode::Named {
+                    name: "List".to_string(),
+                    args: vec![TypeNode::Named {
+                        name: "Handler".to_string(),
+                        args: vec![],
+                    }],
+                }),
             };
 
             let result = TypeTracker::callable_return_type_of(&attr_info);
-            assert_eq!(result, Some("Handler".to_string()));
-        }
-
-        #[test]
-        fn callable_return_type_of_fallback_empty_params() {
-            // No TypeNode, fallback to parsing type_str with empty params
-            let attr_info = AttributeTypeInfo {
-                type_str: "Callable[[], Result]".to_string(),
-                type_node: None,
-            };
-
-            let result = TypeTracker::callable_return_type_of(&attr_info);
-            assert_eq!(result, Some("Result".to_string()));
-        }
-
-        #[test]
-        fn callable_return_type_of_fallback_nested() {
-            // No TypeNode, fallback parsing with nested brackets
-            let attr_info = AttributeTypeInfo {
-                type_str: "Callable[[List[int]], Dict[str, int]]".to_string(),
-                type_node: None,
-            };
-
-            let result = TypeTracker::callable_return_type_of(&attr_info);
-            assert_eq!(result, Some("Dict[str, int]".to_string()));
-        }
-
-        #[test]
-        fn callable_return_type_of_non_callable_string() {
-            // Non-Callable type_str, no TypeNode
-            let attr_info = AttributeTypeInfo {
-                type_str: "Handler".to_string(),
-                type_node: None,
-            };
-
-            let result = TypeTracker::callable_return_type_of(&attr_info);
-            assert!(result.is_none());
+            assert!(result.is_none(), "Non-Callable TypeNode should return None");
         }
     }
 
@@ -3506,6 +3613,326 @@ mod tests {
                     .type_str,
                 "CompanyName"
             );
+        }
+    }
+
+    /// Tests for generic type parameter extraction (Phase 11E Step 3).
+    ///
+    /// Per [D02] Generic Type Parameter Extraction:
+    /// - Extract element types from container annotations like List[T], Dict[K, V]
+    /// - Support both TypeNode-based and string-based extraction
+    /// - Handle common container patterns: List, Dict, Set, Optional, Tuple
+    mod element_type_extraction_tests {
+        use super::*;
+        use crate::types::AnnotationInfo;
+        use tugtool_core::facts::TypeNode;
+
+        // =====================================================================
+        // TypeNode-based extraction: extract_element_type_from_node
+        // =====================================================================
+        //
+        // Per Phase 11E Step 3-PREREQUISITE: String-based extract_element_type
+        // method was removed. All element type extraction now uses TypeNode.
+        // =====================================================================
+
+        #[test]
+        fn extract_element_type_from_node_list() {
+            // TypeNode: Named { name: "List", args: [Named("Handler")] } -> Some("Handler")
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Named {
+                name: "List".to_string(),
+                args: vec![TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }],
+            };
+            assert_eq!(
+                tracker.extract_element_type_from_node(&node),
+                Some("Handler".to_string())
+            );
+        }
+
+        #[test]
+        fn extract_element_type_from_node_dict() {
+            // TypeNode: Named { name: "Dict", args: [str, Handler] } -> Some("Handler")
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Named {
+                name: "Dict".to_string(),
+                args: vec![
+                    TypeNode::Named {
+                        name: "str".to_string(),
+                        args: vec![],
+                    },
+                    TypeNode::Named {
+                        name: "Handler".to_string(),
+                        args: vec![],
+                    },
+                ],
+            };
+            assert_eq!(
+                tracker.extract_element_type_from_node(&node),
+                Some("Handler".to_string())
+            );
+        }
+
+        #[test]
+        fn extract_element_type_from_node_optional() {
+            // TypeNode: Optional { inner: Handler } -> Some("Handler")
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Optional {
+                inner: Box::new(TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }),
+            };
+            assert_eq!(
+                tracker.extract_element_type_from_node(&node),
+                Some("Handler".to_string())
+            );
+        }
+
+        #[test]
+        fn extract_element_type_from_node_optional_as_named() {
+            // TypeNode: Named { name: "Optional", args: [Handler] } -> Some("Handler")
+            // (Optional spelled as Named type)
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Named {
+                name: "Optional".to_string(),
+                args: vec![TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }],
+            };
+            assert_eq!(
+                tracker.extract_element_type_from_node(&node),
+                Some("Handler".to_string())
+            );
+        }
+
+        #[test]
+        fn extract_element_type_from_node_tuple_single() {
+            // TypeNode: Tuple { elements: [Handler] } -> Some("Handler")
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Tuple {
+                elements: vec![TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }],
+            };
+            assert_eq!(
+                tracker.extract_element_type_from_node(&node),
+                Some("Handler".to_string())
+            );
+        }
+
+        #[test]
+        fn extract_element_type_from_node_tuple_multiple_returns_none() {
+            // TypeNode: Tuple { elements: [int, str] } -> None
+            // (heterogeneous tuple - can't determine single element type)
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Tuple {
+                elements: vec![
+                    TypeNode::Named {
+                        name: "int".to_string(),
+                        args: vec![],
+                    },
+                    TypeNode::Named {
+                        name: "str".to_string(),
+                        args: vec![],
+                    },
+                ],
+            };
+            assert_eq!(tracker.extract_element_type_from_node(&node), None);
+        }
+
+        #[test]
+        fn extract_element_type_from_node_non_container() {
+            // TypeNode: Named { name: "Handler", args: [] } -> None
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Named {
+                name: "Handler".to_string(),
+                args: vec![],
+            };
+            assert_eq!(tracker.extract_element_type_from_node(&node), None);
+        }
+
+        #[test]
+        fn extract_element_type_from_node_callable() {
+            // TypeNode: Callable { ... } -> None (not a container)
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Callable {
+                params: vec![],
+                returns: Box::new(TypeNode::Named {
+                    name: "Handler".to_string(),
+                    args: vec![],
+                }),
+            };
+            assert_eq!(tracker.extract_element_type_from_node(&node), None);
+        }
+
+        #[test]
+        fn extract_element_type_from_node_union() {
+            // TypeNode: Union { members: [...] } -> None (not a container)
+            let tracker = TypeTracker::new();
+            let node = TypeNode::Union {
+                members: vec![
+                    TypeNode::Named {
+                        name: "Handler".to_string(),
+                        args: vec![],
+                    },
+                    TypeNode::Named {
+                        name: "str".to_string(),
+                        args: vec![],
+                    },
+                ],
+            };
+            assert_eq!(tracker.extract_element_type_from_node(&node), None);
+        }
+
+        // =====================================================================
+        // type_of_node: TypeNode lookup
+        // =====================================================================
+
+        #[test]
+        fn type_of_node_returns_type_node_when_available() {
+            let mut tracker = TypeTracker::new();
+
+            // Add annotation with TypeNode
+            let annotations = vec![AnnotationInfo {
+                name: "items".to_string(),
+                type_str: "List[Handler]".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "variable".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                span: None,
+                line: Some(1),
+                col: Some(1),
+                type_node: Some(TypeNode::Named {
+                    name: "List".to_string(),
+                    args: vec![TypeNode::Named {
+                        name: "Handler".to_string(),
+                        args: vec![],
+                    }],
+                }),
+            }];
+            tracker.process_annotations(&annotations);
+
+            let node = tracker.type_of_node(&["<module>".to_string()], "items");
+            assert!(node.is_some());
+            if let Some(TypeNode::Named { name, args }) = node {
+                assert_eq!(name, "List");
+                assert_eq!(args.len(), 1);
+            } else {
+                panic!("Expected TypeNode::Named");
+            }
+        }
+
+        #[test]
+        fn type_of_node_returns_none_when_no_type_node() {
+            let mut tracker = TypeTracker::new();
+
+            // Add annotation without TypeNode
+            let annotations = vec![AnnotationInfo {
+                name: "items".to_string(),
+                type_str: "List[Handler]".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "variable".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                span: None,
+                line: Some(1),
+                col: Some(1),
+                type_node: None, // No TypeNode
+            }];
+            tracker.process_annotations(&annotations);
+
+            let node = tracker.type_of_node(&["<module>".to_string()], "items");
+            assert!(node.is_none());
+        }
+
+        #[test]
+        fn type_of_node_walks_scope_chain() {
+            let mut tracker = TypeTracker::new();
+
+            // Add annotation at module level
+            let annotations = vec![AnnotationInfo {
+                name: "handlers".to_string(),
+                type_str: "List[Handler]".to_string(),
+                annotation_kind: "simple".to_string(),
+                source_kind: "variable".to_string(),
+                scope_path: vec!["<module>".to_string()],
+                span: None,
+                line: Some(1),
+                col: Some(1),
+                type_node: Some(TypeNode::Named {
+                    name: "List".to_string(),
+                    args: vec![TypeNode::Named {
+                        name: "Handler".to_string(),
+                        args: vec![],
+                    }],
+                }),
+            }];
+            tracker.process_annotations(&annotations);
+
+            // Should find it from inner scope
+            let node =
+                tracker.type_of_node(&["<module>".to_string(), "func".to_string()], "handlers");
+            assert!(node.is_some());
+        }
+
+        #[test]
+        fn type_of_node_returns_none_for_unknown() {
+            let tracker = TypeTracker::new();
+            let node = tracker.type_of_node(&["<module>".to_string()], "unknown");
+            assert!(node.is_none());
+        }
+
+        // =====================================================================
+        // Helper function tests
+        // =====================================================================
+
+        #[test]
+        fn is_sequence_type_recognizes_all_sequence_types() {
+            assert!(is_sequence_type("List"));
+            assert!(is_sequence_type("list"));
+            assert!(is_sequence_type("Sequence"));
+            assert!(is_sequence_type("Iterable"));
+            assert!(is_sequence_type("Iterator"));
+            assert!(is_sequence_type("Set"));
+            assert!(is_sequence_type("set"));
+            assert!(is_sequence_type("FrozenSet"));
+            assert!(is_sequence_type("frozenset"));
+            assert!(is_sequence_type("Tuple"));
+            assert!(is_sequence_type("tuple"));
+            assert!(is_sequence_type("Collection"));
+            assert!(is_sequence_type("Deque"));
+            assert!(is_sequence_type("deque"));
+        }
+
+        #[test]
+        fn is_sequence_type_rejects_non_sequences() {
+            assert!(!is_sequence_type("Dict"));
+            assert!(!is_sequence_type("Handler"));
+            assert!(!is_sequence_type("str"));
+            assert!(!is_sequence_type("Optional"));
+        }
+
+        #[test]
+        fn is_mapping_type_recognizes_all_mapping_types() {
+            assert!(is_mapping_type("Dict"));
+            assert!(is_mapping_type("dict"));
+            assert!(is_mapping_type("Mapping"));
+            assert!(is_mapping_type("MutableMapping"));
+            assert!(is_mapping_type("OrderedDict"));
+            assert!(is_mapping_type("DefaultDict"));
+            assert!(is_mapping_type("Counter"));
+            assert!(is_mapping_type("ChainMap"));
+        }
+
+        #[test]
+        fn is_mapping_type_rejects_non_mappings() {
+            assert!(!is_mapping_type("List"));
+            assert!(!is_mapping_type("Handler"));
+            assert!(!is_mapping_type("Set"));
         }
     }
 }
