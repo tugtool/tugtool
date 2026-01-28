@@ -6,6 +6,84 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Plan Creation and Review | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11.md` - Original Phase 11 architecture
+- `plans/phase-11B.md` - Phase 11B enhancements
+- `plans/phase-11D.md` - Phase 11D cross-file resolution (prior phase)
+- `crates/tugtool-python/src/analyzer.rs` - LocalImport struct at line 427, convert_imports() at line 3089
+- `crates/tugtool-python/src/cross_file_types.rs` - build_import_targets functions
+- `crates/tugtool-python-cst/src/visitor/import.rs` - ImportInfo struct at line 72
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - ReceiverStep enum at line 66
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create initial Phase 11E plan addressing 3 gaps | Done |
+| Resolve Q01 (import shadowing) - Option A: match Python LEGB | Done |
+| Resolve Q02 (Union representation) - Option A: full Union[A, B] | Done |
+| Resolve Q03 (early-return narrowing) - Option B: defer to follow-on | Done |
+| Add D01-D04 design decisions | Done |
+| Add D05 (scope path wiring) with explicit code locations | Done |
+| Add D06 (ReceiverStep::Subscript) with variant definition | Done |
+| Add D07 (narrowing integration point) | Done |
+| Add D08 (star import resolution rule) | Done |
+| Add D09 (narrowing context scope binding) with span-based approach | Done |
+| Add D10 (TypeNode source) with attribute lookup routing | Done |
+| Add D11 (Union parsing rules) for both spellings | Done |
+| Add wiring diagram for scope_path flow | Done |
+| Add wiring diagram for TypeNode retrieval | Done |
+| Add example flow for self.items[0].process() | Done |
+| Separate Type Resolution Order from Import Scope Resolution | Done |
+| Add Suite unwrapping detail for branch_span | Done |
+| Add attribute type lookup routing detail for D10 | Done |
+| Code-architect review: 9.5/10 GO verdict | Done |
+
+**Files Created:**
+- `plans/phase-11E.md` - New plan file (1387 lines)
+
+**Files Modified:**
+- None (planning phase only)
+
+**Test Results:**
+- N/A (planning phase - no code changes)
+
+**Checkpoints Verified:**
+- Code-architect final assessment: GO (9.5/10)
+- All design decisions (D01-D11) complete and verified
+- All execution steps (1-7) properly reference design decisions
+- Semantics section verified correct
+- Example flow verified correct
+- File/symbol references verified against codebase
+
+**Key Decisions/Notes:**
+
+Phase 11E addresses three gaps identified in Phase 11 review:
+1. **Function-level imports not tracked** - Adds scope_path to ImportInfo/LocalImport
+2. **Generic type parameter resolution missing** - Adds element type extraction to TypeTracker
+3. **isinstance narrowing not implemented** - Adds NarrowingContext overlay with span-based scope binding
+
+Key design decisions:
+- Q01: Function-level imports shadow module-level (matches Python LEGB)
+- Q02: isinstance(x, (A, B)) narrows to Union[A, B] (semantically correct)
+- Q03: Early-return narrowing deferred (focus on if-branch body)
+- D04: Rope-level isinstance patterns only (simple variables, no attributes)
+- D06: ReceiverStep::Subscript is simple marker (like Call)
+- D09: Span-based narrowing scope binding using branch_span
+- D10: type_of_node must support both names AND attribute types
+
+Implementation details captured to prevent loss:
+- Suite unwrapping for branch_span computation (If.body is Suite<'a>)
+- Attribute type lookup routing through attribute_type_of()
+
+Plan is 10/10 ready for implementation.
+
+---
+
 ## [phase-11D.md] Step 9: End-to-End Integration Tests | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
