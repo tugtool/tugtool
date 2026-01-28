@@ -10,8 +10,14 @@ build:
 test:
     cargo nextest run --workspace
 
-test-all:
+test-full:
     cargo nextest run --workspace --features full
+
+test-python:
+    .tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v
+
+# Run ALL tests (Rust + Python)
+test-all: test-python test-full
 
 # Quality
 fmt:
