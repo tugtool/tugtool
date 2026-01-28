@@ -310,9 +310,9 @@ let adapter = PythonAdapter::with_options(opts);
 
 ### Receiver Resolution
 
-The analyzer supports resolving receivers in attribute accesses and method calls:
+The analyzer supports resolving receivers in attribute accesses and method calls.
 
-**Supported Patterns:**
+**Single-File Patterns (Level 1-3 inference):**
 - Simple names: `obj.method()` (resolves `obj` to its type)
 - Dotted paths: `self.handler.process()` (follows attribute chain)
 - Call expressions: `get_handler().process()` (uses return type)
@@ -324,15 +324,130 @@ The analyzer supports resolving receivers in attribute accesses and method calls
 - Complex expressions: `(a or b).method()`
 - Generic type parameters: `List[T]` → `T` resolution
 - Duck typing / protocol-based inference
-- Property decorators
-- Inheritance-based method resolution (MRO)
 
 **Depth Limit:** Resolution is limited to 4 steps (`MAX_RESOLUTION_DEPTH`). Deeper chains like `a.b.c.d.e.method()` return None.
 
 **TypeTracker Methods:**
-- `attribute_type_of(class_name, attr_name)` - Get type of class attribute
+- `attribute_type_of(class_name, attr_name)` - Get type of class attribute (with property fallback)
 - `method_return_type_of(class_name, method_name)` - Get return type of method
+- `property_type_of(class_name, property_name)` - Get return type of @property
 - `type_of(scope_path, name)` - Get type of variable in scope
+
+### Cross-File Type Resolution
+
+The analyzer supports resolving types across file boundaries when all files are in the workspace.
+
+**Capabilities:**
+- Resolve imported types: `from handler import Handler; h = Handler(); h.process()`
+- Follow attribute chains through imports: `self.handler.process()` where `Handler` is imported
+- Resolve re-exported symbols through import chains
+- Support for submodule imports: `from pkg import mod; mod.Handler()`
+
+**Cross-File Resolution Depth:** Limited to 3 files (`MAX_CROSS_FILE_DEPTH`) to prevent performance issues.
+
+**Limitations:**
+- Only workspace files are resolved (no external packages)
+- Function-level imports are not tracked (only module-level)
+- Circular imports are detected and gracefully handled (resolution returns None)
+
+**Key Types:**
+- `CrossFileTypeCache` - Caches type information across files
+- `FileTypeContext` - Bundle of per-file context (tracker, symbol maps, import targets)
+- `ImportTarget` - Resolved import with file path and import kind
+
+### MRO-Based Attribute Lookup
+
+When an attribute is not found directly on a class, the analyzer walks the Method Resolution Order (MRO) to find inherited attributes.
+
+**Supported Patterns:**
+- Single inheritance: `class Child(Parent)` → `Child` inherits `Parent` attributes
+- Multiple inheritance: `class C(A, B)` → Uses C3 linearization
+- Diamond inheritance: Correctly resolves ambiguous attributes via C3
+- Cross-file inheritance: Base classes from imported modules are resolved
+
+**Example:**
+```python
+# base.py
+class Base:
+    def process(self) -> str: ...
+
+# handler.py
+from base import Base
+class Handler(Base):
+    pass
+
+# consumer.py
+from handler import Handler
+h = Handler()
+h.process()  # Resolves to Base.process() via MRO
+```
+
+**MRO Computation:**
+- Uses C3 linearization algorithm (same as Python runtime)
+- Caches computed MROs per class
+- Detects and reports MRO conflicts (inconsistent linearization)
+
+### Property Decorator Support
+
+Properties decorated with `@property` are resolved like attributes.
+
+**Supported:**
+- `@property` with return type annotation → provides type for attribute access
+- Inherited properties resolved via MRO
+
+**Example:**
+```python
+class Person:
+    @property
+    def name(self) -> str:
+        return self._name
+
+p = Person()
+p.name  # Resolves to type 'str'
+```
+
+**Note:** Properties without return type annotations return None.
+
+### Type Stub Support
+
+Type stub files (`.pyi`) provide type information that overrides source types.
+
+**Discovery Rules:**
+1. For `foo.py`, check for `foo.pyi` in the same directory (inline stub)
+2. If not found, check `stubs/foo.pyi` at workspace root using module path
+
+**Supported Stub Syntax:**
+- Class and function signatures with type annotations
+- Ellipsis bodies (`...`) and `pass` statement bodies
+- `Optional[T]`, `Union[A, B]` type annotations
+- `Callable[..., T]` simple named return types
+- Class attribute annotations
+
+**Unsupported Stub Syntax (returns None):**
+- `@overload` decorated function overloads
+- `TypeVar` and generic type parameters
+- `Protocol` and structural subtyping
+- `ParamSpec` and callable parameter specification
+- `TypeAlias` explicit type aliases
+
+**Merge Rules:**
+- Stub types override source types
+- Source symbols not in stub are preserved (partial stubs supported)
+
+**Example:**
+```python
+# service.py
+class Service:
+    def process(self): return 123  # No return type
+
+# service.pyi
+class Service:
+    def process(self) -> str: ...  # Stub provides type
+
+# consumer.py
+s = Service()
+s.process()  # Resolves to 'str' from stub
+```
 
 ## Fixture Commands
 

@@ -6,6 +6,48 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Step 8: Documentation and CLAUDE.md Updates | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11D.md` - Step 8 specification and documentation plan (#documentation-plan)
+- `CLAUDE.md` - Current Receiver Resolution section
+- `crates/tugtool-python/src/mro.rs` - MRO module documentation
+- `crates/tugtool-python/src/cross_file_types.rs` - Cross-file types module documentation
+- `crates/tugtool-python/src/type_tracker.rs` - Type tracker module documentation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Document cross-file resolution capabilities and limits | Done |
+| Document MRO-based attribute lookup | Done |
+| Document property decorator support | Done |
+| Document type stub support | Done |
+| Add examples to rustdoc | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `CLAUDE.md` - Updated Receiver Resolution section; added 4 new sections: Cross-File Type Resolution, MRO-Based Attribute Lookup, Property Decorator Support, Type Stub Support
+- `crates/tugtool-python/src/type_tracker.rs` - Added Property Support and Stub Merging sections to module docs; fixed `[D05]` rustdoc link by escaping brackets
+- `plans/phase-11D.md` - Checked off Step 8 tasks, documentation plan items (#documentation-plan), and checkpoints
+
+**Test Results:**
+- N/A (documentation only step)
+
+**Checkpoints Verified:**
+- `cargo doc --workspace --no-deps` succeeds: PASS
+- Review CLAUDE.md changes: PASS
+
+**Key Decisions/Notes:**
+- The `[D05]` reference in type_tracker.rs rustdoc caused a broken link error; fixed by escaping brackets as `\[D05\]`
+- Documentation plan section (#documentation-plan) in phase-11D.md was also marked complete since all items were addressed
+
+---
+
 ## [phase-11D.md] Step 7: Type Stub Integration | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

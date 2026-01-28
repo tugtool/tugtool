@@ -1135,12 +1135,12 @@ impl CrossFileTypeCache {
 
 ### 11D.3 Documentation Plan {#documentation-plan}
 
-- [ ] Update CLAUDE.md with cross-file resolution capabilities and limitations
-- [ ] Add rustdoc for `CrossFileTypeCache` with usage examples
-- [ ] Document MRO computation algorithm in `mro.rs`
-- [ ] Add section on property decorator support to CLAUDE.md
-- [ ] Document type stub support and discovery rules
-- [ ] Update "Receiver Resolution" section in CLAUDE.md to include cross-file patterns
+- [x] Update CLAUDE.md with cross-file resolution capabilities and limitations
+- [x] Add rustdoc for `CrossFileTypeCache` with usage examples
+- [x] Document MRO computation algorithm in `mro.rs`
+- [x] Add section on property decorator support to CLAUDE.md
+- [x] Document type stub support and discovery rules
+- [x] Update "Receiver Resolution" section in CLAUDE.md to include cross-file patterns
 
 ---
 
@@ -2203,18 +2203,18 @@ correctly handles `.pyi` stub syntax:
 - Module-level rustdoc in new files
 
 **Tasks:**
-- [ ] Document cross-file resolution capabilities and limits
-- [ ] Document MRO-based attribute lookup
-- [ ] Document property decorator support
-- [ ] Document type stub support
-- [ ] Add examples to rustdoc
+- [x] Document cross-file resolution capabilities and limits
+- [x] Document MRO-based attribute lookup
+- [x] Document property decorator support
+- [x] Document type stub support
+- [x] Add examples to rustdoc
 
 **Tests:**
 - N/A (documentation only)
 
 **Checkpoint:**
-- [ ] `cargo doc --workspace --no-deps` succeeds
-- [ ] Review CLAUDE.md changes
+- [x] `cargo doc --workspace --no-deps` succeeds
+- [x] Review CLAUDE.md changes
 
 **Rollback:**
 - Revert commit

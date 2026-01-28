@@ -15,11 +15,20 @@
 //! - Class attributes: `class Foo: x: int`
 //! - Implicit self/cls: methods get self/cls typed to their class
 //!
+//! Property Support:
+//! - `@property` decorated methods provide types via `property_type_of()`
+//! - Properties are resolved like attributes via `attribute_type_of()` fallback
+//!
 //! Annotated types take precedence over inferred types. Types are scoped to
 //! their defining scope, and nested scopes inherit from outer scopes.
 //!
 //! The type tracker integrates with the analyzer to populate TypeInfo in the
 //! FactsStore, enabling method resolution on typed variables.
+//!
+//! # Stub Merging
+//!
+//! Type stub files (`.pyi`) can provide types that override source-inferred types.
+//! Use [`TypeTracker::merge_from_stub`] to merge stub types, where stub types win.
 
 use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
@@ -390,7 +399,7 @@ impl TypeTracker {
     /// # Arguments
     /// - `signatures`: Signature information from CST analysis
     ///
-    /// # Detection Rules (per [D05] Property Detection)
+    /// # Detection Rules (per \[D05\] Property Detection)
     /// 1. Method has `@property` decorator (stored in Modifier::Property)
     /// 2. Method has return type annotation -> use annotation type
     /// 3. Otherwise -> no property type tracked
