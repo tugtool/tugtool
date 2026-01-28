@@ -27,8 +27,9 @@
 //! - **Full span**: Includes quotes (e.g., `"Date"`) - for context
 //! - **Content span**: Just the text (e.g., `Date`) - for replacement
 //!
-//! Since `SimpleString.value` includes quotes (e.g., `"Date"` or `'Date'`),
-//! the content span is computed by stripping the quote characters.
+//! Spans are obtained from the PositionTable via `SimpleString.node_id`, which
+//! records the full token span during CST inflation. Content spans are computed
+//! by stripping the quote prefix/suffix lengths.
 //!
 //! # Usage
 //!
@@ -38,7 +39,7 @@
 //! let source = "__all__ = [\"foo\", \"bar\"]";
 //! let parsed = parse_module_with_positions(source, None)?;
 //!
-//! let exports = ExportCollector::collect(&parsed.module, &parsed.positions);
+//! let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
 //! for export in &exports {
 //!     println!("{}: {:?}", export.name, export.span);
 //! }
@@ -48,7 +49,8 @@ use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
-    AnnAssign, Assign, AssignTargetExpression, AugAssign, Element, Expression, Module, Span,
+    AnnAssign, Assign, AssignTargetExpression, AugAssign, Element, Expression, Module,
+    SimpleString, Span,
 };
 
 /// The kind of export in Python.
@@ -125,45 +127,39 @@ impl ExportInfo {
 ///
 /// ```ignore
 /// let parsed = parse_module_with_positions(source, None)?;
-/// let exports = ExportCollector::collect(&parsed.module, &parsed.positions);
+/// let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
 /// let date_exports = exports.iter().filter(|e| e.name == "Date");
 /// ```
 pub struct ExportCollector<'a, 'pos> {
-    /// Reference to source code for content extraction.
-    source: &'a str,
-    /// Reference to position table for span lookups (currently unused but kept for consistency).
+    /// Reference to source code for content extraction (used for debugging/verification).
     #[allow(dead_code)]
+    source: &'a str,
+    /// Reference to position table for span lookups.
     positions: Option<&'pos PositionTable>,
     /// Collected exports.
     exports: Vec<ExportInfo>,
-    /// Search position for finding string literals in source.
-    /// This is updated as we traverse `__all__` assignments to ensure
-    /// we find the correct occurrence of duplicate strings.
-    search_from: usize,
 }
 
 impl<'a, 'pos> ExportCollector<'a, 'pos> {
     /// Create a new ExportCollector without position tracking.
     ///
-    /// Exports will be collected but spans may be derived from string values.
+    /// Exports will be collected but spans will not be available.
     pub fn new(source: &'a str) -> Self {
         Self {
             source,
             positions: None,
             exports: Vec::new(),
-            search_from: 0,
         }
     }
 
     /// Create a new ExportCollector with position tracking.
     ///
-    /// Exports will include spans from the source and PositionTable.
+    /// Exports will include spans from the PositionTable.
     pub fn with_positions(source: &'a str, positions: &'pos PositionTable) -> Self {
         Self {
             source,
             positions: Some(positions),
             exports: Vec::new(),
-            search_from: 0,
         }
     }
 
@@ -253,11 +249,13 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
     fn extract_string_literal(&mut self, expr: &Expression<'_>) {
         match expr {
             Expression::SimpleString(s) => {
-                // SimpleString.value includes quotes, e.g., '"foo"' or "'foo'"
-                // We need to extract just the content
-                if let Some((name, full_span, content_span)) = self.parse_simple_string(s.value) {
+                // Look up the span from PositionTable via node_id
+                let full_span = self.get_string_span(s);
+
+                // Compute content and spans
+                if let Some((name, content_span)) = self.compute_content_span(s.value, full_span) {
                     let export = ExportInfo::new(name, ExportKind::AllList)
-                        .with_span(Some(full_span))
+                        .with_span(full_span)
                         .with_content_span(Some(content_span));
                     self.exports.push(export);
                 }
@@ -274,37 +272,20 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
         }
     }
 
-    /// Parse a simple string value and compute spans.
-    ///
-    /// SimpleString.value includes quotes, e.g., `"foo"` or `'foo'` or `"""foo"""`.
-    /// Returns (content, full_span, content_span) if valid.
-    fn parse_simple_string(&mut self, value: &str) -> Option<(String, Span, Span)> {
-        // Find the string in the source to get accurate positions
-        // This is a fallback - ideally we'd use position table, but SimpleString
-        // doesn't record its span in the position table currently.
+    /// Get the span of a SimpleString from the PositionTable.
+    fn get_string_span(&self, s: &SimpleString<'_>) -> Option<Span> {
+        let positions = self.positions?;
+        let node_id = s.node_id?;
+        let pos = positions.get(&node_id)?;
+        pos.ident_span
+    }
 
-        // Handle different quote styles
-        let (prefix_len, suffix_len) = if value.starts_with("\"\"\"") || value.starts_with("'''") {
-            (3, 3) // Triple-quoted
-        } else if value.starts_with('"') || value.starts_with('\'') {
-            (1, 1) // Single-quoted
-        } else if value.starts_with("r\"")
-            || value.starts_with("r'")
-            || value.starts_with("b\"")
-            || value.starts_with("b'")
-            || value.starts_with("f\"")
-            || value.starts_with("f'")
-        {
-            (2, 1) // Prefix + quote
-        } else if value.starts_with("r\"\"\"")
-            || value.starts_with("r'''")
-            || value.starts_with("b\"\"\"")
-            || value.starts_with("b'''")
-        {
-            (4, 3) // Prefix + triple quote
-        } else {
-            return None; // Unknown format
-        };
+    /// Compute content span by stripping quotes from the full span.
+    ///
+    /// Returns (content_string, content_span) if valid.
+    fn compute_content_span(&self, value: &str, full_span: Option<Span>) -> Option<(String, Span)> {
+        // Determine quote prefix/suffix lengths
+        let (prefix_len, suffix_len) = Self::quote_lengths(value)?;
 
         // Extract the content between quotes
         if value.len() < prefix_len + suffix_len {
@@ -312,32 +293,44 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
         }
         let content = &value[prefix_len..value.len() - suffix_len];
 
-        // Find this exact string in the source to get byte positions
-        // We search for the full string value (including quotes)
-        // Search from search_from position to find the correct occurrence
-        // This is important when the same string literal appears multiple times
-        // (e.g., in docstrings before __all__)
-        if let Some(offset) = self.source[self.search_from..].find(value) {
-            let start = self.search_from + offset;
-            let full_span = Span {
-                start,
-                end: start + value.len(),
-            };
+        // If we have a full span, compute content span by adjusting for quotes
+        if let Some(span) = full_span {
             let content_span = Span {
-                start: start + prefix_len,
-                end: start + value.len() - suffix_len,
+                start: span.start + prefix_len,
+                end: span.end - suffix_len,
             };
-            // Update search_from for next string in this list
-            self.search_from = start + 1;
-            Some((content.to_string(), full_span, content_span))
+            Some((content.to_string(), content_span))
         } else {
-            // String not found in source (shouldn't happen for valid AST)
-            // Return spans as 0,0 - they won't be usable but we still capture the name
-            Some((
-                content.to_string(),
-                Span { start: 0, end: 0 },
-                Span { start: 0, end: 0 },
-            ))
+            // No span available, return content with zero span
+            Some((content.to_string(), Span { start: 0, end: 0 }))
+        }
+    }
+
+    /// Compute the prefix and suffix lengths for quote characters.
+    ///
+    /// Returns (prefix_len, suffix_len) for different quote styles.
+    fn quote_lengths(value: &str) -> Option<(usize, usize)> {
+        // Handle different quote styles
+        if value.starts_with("\"\"\"") || value.starts_with("'''") {
+            Some((3, 3)) // Triple-quoted
+        } else if value.starts_with('"') || value.starts_with('\'') {
+            Some((1, 1)) // Single-quoted
+        } else if value.starts_with("r\"")
+            || value.starts_with("r'")
+            || value.starts_with("b\"")
+            || value.starts_with("b'")
+            || value.starts_with("f\"")
+            || value.starts_with("f'")
+        {
+            Some((2, 1)) // Prefix + quote
+        } else if value.starts_with("r\"\"\"")
+            || value.starts_with("r'''")
+            || value.starts_with("b\"\"\"")
+            || value.starts_with("b'''")
+        {
+            Some((4, 3)) // Prefix + triple quote
+        } else {
+            None // Unknown format
         }
     }
 }
@@ -347,11 +340,6 @@ impl<'a, 'b, 'pos> Visitor<'b> for ExportCollector<'a, 'pos> {
         // Check if any target is `__all__`
         for target in &node.targets {
             if Self::is_all_target(&target.target) {
-                // Find the position of this `__all__` in the source, starting from search_from
-                // This ensures we find the correct occurrence when there are multiple
-                if let Some(all_pos) = self.source[self.search_from..].find("__all__") {
-                    self.search_from += all_pos;
-                }
                 self.extract_strings_from_value(&node.value);
                 break;
             }
@@ -363,10 +351,6 @@ impl<'a, 'b, 'pos> Visitor<'b> for ExportCollector<'a, 'pos> {
     fn visit_ann_assign(&mut self, node: &AnnAssign<'b>) -> VisitResult {
         // Check if target is `__all__`
         if Self::is_all_target(&node.target) {
-            // Find the position of this `__all__` in the source
-            if let Some(all_pos) = self.source[self.search_from..].find("__all__") {
-                self.search_from += all_pos;
-            }
             if let Some(ref value) = node.value {
                 self.extract_strings_from_value(value);
             }
@@ -378,10 +362,6 @@ impl<'a, 'b, 'pos> Visitor<'b> for ExportCollector<'a, 'pos> {
     fn visit_aug_assign(&mut self, node: &AugAssign<'b>) -> VisitResult {
         // Check if target is `__all__` (for __all__ += [...])
         if Self::is_all_target(&node.target) {
-            // Find the position of this `__all__` in the source
-            if let Some(all_pos) = self.source[self.search_from..].find("__all__") {
-                self.search_from += all_pos;
-            }
             self.extract_strings_from_value(&node.value);
         }
         // Don't descend into children
@@ -595,5 +575,50 @@ class Time:
     fn test_export_kind_display() {
         assert_eq!(ExportKind::AllList.as_str(), "all_list");
         assert_eq!(format!("{}", ExportKind::AllList), "all_list");
+    }
+
+    #[test]
+    fn test_simplestring_has_ident_span() {
+        // Verify SimpleString nodes have ident_span in PositionTable
+        let source = r#"__all__ = ["hello"]"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(exports.len(), 1);
+        let span = exports[0].span.expect("Should have span from PositionTable");
+        let span_text = &source[span.start..span.end];
+        assert_eq!(span_text, "\"hello\"");
+    }
+
+    #[test]
+    fn test_export_duplicate_strings() {
+        // This test ensures that duplicate string values get correct distinct spans
+        let source = r#"x = "Date"
+__all__ = ["Date", "Date"]
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
+
+        assert_eq!(exports.len(), 2);
+
+        // Both exports should have distinct spans (not pointing to the first "Date")
+        let span1 = exports[0].span.expect("Should have span");
+        let span2 = exports[1].span.expect("Should have span");
+
+        assert_ne!(
+            span1.start, span2.start,
+            "Duplicate strings should have distinct spans"
+        );
+
+        // Both should point to correct locations within __all__
+        let text1 = &source[span1.start..span1.end];
+        let text2 = &source[span2.start..span2.end];
+        assert_eq!(text1, "\"Date\"");
+        assert_eq!(text2, "\"Date\"");
+
+        // Verify they are in the __all__ assignment, not the x = "Date" line
+        // The __all__ line starts at index 11 (after "x = \"Date\"\n")
+        assert!(span1.start > 10, "First span should be after x = \"Date\"");
+        assert!(span2.start > span1.end, "Second span should be after first");
     }
 }

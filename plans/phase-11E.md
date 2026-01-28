@@ -1663,22 +1663,22 @@ This is an anti-pattern because:
 ##### Tasks {#step-5b-tasks}
 
 **Part A: Record Spans During Inflation**
-- [ ] In `expression.rs`, update `DeflatedSimpleString::inflate()` to compute and record `ident_span`
-- [ ] The span should be the full token span: `(tok.start_pos.byte_idx(), tok.end_pos.byte_idx())`
-- [ ] Call `ctx.record_ident_span(node_id, Span { start, end })`
+- [x] In `expression.rs`, update `DeflatedSimpleString::inflate()` to compute and record `ident_span`
+- [x] The span should be the full token span: `(tok.start_pos.byte_idx(), tok.end_pos.byte_idx())`
+- [x] Call `ctx.record_ident_span(node_id, Span { start, end })`
 
 **Part B: Update ExportCollector to Use PositionTable**
-- [ ] Add `PositionTable` reference to `ExportCollector` (already present but unused for this)
-- [ ] Update `extract_string_literal()` to look up `SimpleString.node_id` in PositionTable
-- [ ] Compute content_span by subtracting quote prefix/suffix lengths from ident_span
-- [ ] Remove `search_from` field from `ExportCollector`
-- [ ] Remove string search code from `parse_simple_string()`
-- [ ] Rename or refactor `parse_simple_string()` to reflect new purpose (span computation only)
+- [x] Add `PositionTable` reference to `ExportCollector` (already present but unused for this)
+- [x] Update `extract_string_literal()` to look up `SimpleString.node_id` in PositionTable
+- [x] Compute content_span by subtracting quote prefix/suffix lengths from ident_span
+- [x] Remove `search_from` field from `ExportCollector`
+- [x] Remove string search code from `parse_simple_string()`
+- [x] Rename or refactor `parse_simple_string()` to reflect new purpose (span computation only)
 
 **Part C: Update ExportCollector Assignment Visitors**
-- [ ] Remove `__all__` position search logic from `visit_assign()`
-- [ ] Remove `__all__` position search logic from `visit_ann_assign()`
-- [ ] Remove `__all__` position search logic from `visit_aug_assign()`
+- [x] Remove `__all__` position search logic from `visit_assign()`
+- [x] Remove `__all__` position search logic from `visit_ann_assign()`
+- [x] Remove `__all__` position search logic from `visit_aug_assign()`
 
 ##### Implementation Details {#step-5b-implementation}
 
@@ -1750,22 +1750,22 @@ impl<'a, 'pos> ExportCollector<'a, 'pos> {
 ##### Tests {#step-5b-tests}
 
 **Existing tests must continue to pass:**
-- [ ] `test_export_simple_all_list`
-- [ ] `test_export_annotated_all`
-- [ ] `test_export_augmented_all`
-- [ ] `test_export_span_content`
-- [ ] All other export tests
+- [x] `test_export_simple_all_list`
+- [x] `test_export_annotated_all`
+- [x] `test_export_augmented_all`
+- [x] `test_export_span_content`
+- [x] All other export tests
 
 **New tests to add:**
-- [ ] `test_simplestring_has_ident_span` - Verify SimpleString nodes have ident_span in PositionTable
-- [ ] `test_export_duplicate_strings` - Ensure duplicate string literals get correct distinct spans
+- [x] `test_simplestring_has_ident_span` - Verify SimpleString nodes have ident_span in PositionTable
+- [x] `test_export_duplicate_strings` - Ensure duplicate string literals get correct distinct spans
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` (compilation succeeds)
-- [ ] `cargo nextest run -p tugtool-python-cst export` (all export tests pass)
-- [ ] `cargo nextest run -p tugtool-python-cst` (full crate - no regressions)
-- [ ] Verify: `search_from` is removed from ExportCollector (grep returns empty)
-- [ ] Verify: String search code is removed (no `.find(value)` pattern in exports.rs)
+- [x] `cargo build -p tugtool-python-cst` (compilation succeeds)
+- [x] `cargo nextest run -p tugtool-python-cst export` (all export tests pass)
+- [x] `cargo nextest run -p tugtool-python-cst` (full crate - no regressions)
+- [x] Verify: `search_from` is removed from ExportCollector (grep returns empty)
+- [x] Verify: String search code is removed (no `.find(value)` pattern in exports.rs)
 
 **Verification:**
 ```bash

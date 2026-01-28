@@ -2789,6 +2789,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedSimpleString<'r, 'a> {
         // Assign identity for this SimpleString node
         let node_id = ctx.next_id();
 
+        // Record the token span (full string including quotes).
+        // This enables ExportCollector to look up spans via PositionTable
+        // instead of using string search.
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {

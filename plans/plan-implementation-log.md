@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 5B: Record SimpleString Spans During Inflation | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 5B specification
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - SimpleString struct, DeflatedSimpleString::inflate()
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - ExportCollector implementation with string search anti-pattern
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `DeflatedSimpleString::inflate()` to record ident_span | Done |
+| Add `get_string_span()` method for PositionTable lookup | Done |
+| Add `compute_content_span()` method for quote stripping | Done |
+| Add `quote_lengths()` static method | Done |
+| Remove `search_from` field from ExportCollector | Done |
+| Remove string search code from `parse_simple_string()` | Done |
+| Remove `__all__` position search from `visit_assign()` | Done |
+| Remove `__all__` position search from `visit_ann_assign()` | Done |
+| Remove `__all__` position search from `visit_aug_assign()` | Done |
+| Add `test_simplestring_has_ident_span` test | Done |
+| Add `test_export_duplicate_strings` test | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording in `DeflatedSimpleString::inflate()`
+- `crates/tugtool-python-cst/src/visitor/exports.rs` - Complete rewrite: removed string search anti-pattern, added PositionTable lookup via node_id, added 2 new tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst export`: 17 tests passed
+- `cargo nextest run -p tugtool-python-cst`: 555 tests passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst export`: PASS (17 tests)
+- `cargo nextest run -p tugtool-python-cst`: PASS (555 tests)
+- Verify `search_from` removed (grep returns empty): PASS
+- Verify `.find(value)` removed (grep returns empty): PASS
+
+**Key Decisions/Notes:**
+- SimpleString already had `node_id` field but wasn't recording spans during inflation
+- The string search anti-pattern was O(n) and could return wrong positions for duplicate strings
+- Now uses proper CST infrastructure: spans recorded during inflation, looked up via PositionTable
+- `quote_lengths()` handles all Python string prefix/quote combinations (r", f", b", """, ''', etc.)
+
+---
+
 ## [phase-11E.md] Step 5B and 5C: CST Infrastructure Audit and Planning | PLANNED | 2026-01-28
 
 **Completed:** 2026-01-28 (planning only - implementation pending)
