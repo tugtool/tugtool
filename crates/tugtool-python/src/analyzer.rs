@@ -145,21 +145,6 @@ fn is_class_in_scope(
 }
 
 /// Strip quotes from a forward reference type string.
-///
-/// Python forward references can be written as strings: `-> "MyClass"`.
-/// The annotation collector preserves these quotes in `type_str`.
-/// This helper strips them for type resolution.
-fn strip_forward_ref_quotes(type_str: &str) -> &str {
-    let trimmed = type_str.trim();
-    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
-        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
-    {
-        &trimmed[1..trimmed.len() - 1]
-    } else {
-        trimmed
-    }
-}
-
 /// Type alias for scope-to-symbols index: (FileId, ScopeId) -> Vec<(name, SymbolId, SymbolKind)>
 /// Uses the local ScopeId type (not CoreScopeId) as the map key.
 type ScopeSymbolsMap = HashMap<(FileId, ScopeId), Vec<(String, SymbolId, SymbolKind)>>;
@@ -3828,10 +3813,8 @@ impl PythonAdapter {
                         // need to look up the current_type (which is the Callable type string).
                         if pending_callable_return.is_some() && last_method_name.is_none() {
                             // Callable attribute: use callable return type
-                            // Strip forward reference quotes if present
-                            current_type = pending_callable_return
-                                .take()
-                                .map(|s| strip_forward_ref_quotes(&s).to_string());
+                            // Note: CST's AnnotationCollector already strips forward ref quotes
+                            current_type = pending_callable_return.take();
                             // Clear all state flags and continue to next step
                             last_method_name = None;
                             last_name_was_class = false;
@@ -3866,24 +3849,24 @@ impl PythonAdapter {
 
                         if let Some(method_name) = last_method_name {
                             // Method call: lookup method return type
-                            // Strip forward reference quotes (e.g., -> "Widget")
+                            // Note: CST's AnnotationCollector already strips forward ref quotes
                             current_type = tracker
                                 .method_return_type_of(class_type, method_name)
-                                .map(|t| strip_forward_ref_quotes(&t.type_str).to_string());
+                                .map(|t| t.type_str.clone());
                         } else if last_name_was_class {
                             // Constructor call: ClassName() returns the class type
                             current_type = Some(class_type.to_string());
                         } else if last_name_is_unresolved_callable {
                             // Function call where name wasn't a typed variable
-                            // Strip forward reference quotes if present
+                            // Note: CST's AnnotationCollector already strips forward ref quotes
                             current_type = tracker
                                 .return_type_of(scope_path, class_type)
-                                .map(|s| strip_forward_ref_quotes(s).to_string());
+                                .map(|s| s.to_string());
                         } else {
                             // Edge case: fall back to return_type_of
                             current_type = tracker
                                 .return_type_of(scope_path, class_type)
-                                .map(|s| strip_forward_ref_quotes(s).to_string());
+                                .map(|s| s.to_string());
                         }
                         // Clear all state flags at end of Call step
                         last_method_name = None;

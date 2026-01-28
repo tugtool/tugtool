@@ -554,7 +554,15 @@ fn expression_to_string(expr: &Expression<'_>) -> String {
                 .collect();
             elements.join(", ")
         }
-        Expression::SimpleString(s) => s.value.to_string(),
+        Expression::SimpleString(s) => {
+            // Strip quotes from forward references (e.g., "Widget" -> Widget)
+            let value = s.value;
+            if value.starts_with('"') || value.starts_with('\'') {
+                value[1..value.len() - 1].to_string()
+            } else {
+                value.to_string()
+            }
+        }
         Expression::ConcatenatedString(cs) => {
             // Just return the left part for simplicity
             string_to_string(&cs.left)

@@ -35,7 +35,7 @@
 //!
 //! # Limitations
 //!
-//! - Generic type parameters (e.g., `Generic[T]`) are stripped from base names
+//! - Generic type parameters are expected to be pre-stripped by CST's InheritanceCollector
 //! - External packages (outside workspace) are not resolved
 //! - Maximum cross-file depth is bounded by `MAX_CROSS_FILE_DEPTH`
 
@@ -213,26 +213,22 @@ fn compute_mro_internal(
     }
 
     // Compute MRO for each base class
+    // Note: CST's InheritanceCollector already strips generic parameters
+    // (e.g., "Generic[T]" -> "Generic") so bases are already clean.
     let mut seqs: Vec<Vec<String>> = Vec::new();
     for base in bases {
-        // Strip generic parameters (e.g., "Base[T]" -> "Base")
-        let base_name = strip_generic_params(base);
-
         // Check if base exists in hierarchy before computing MRO
-        if hierarchy.contains_key(base_name) {
+        if hierarchy.contains_key(base) {
             // Base exists - propagate errors from MRO computation
-            let base_mro = compute_mro_internal(base_name, hierarchy, visited)?;
+            let base_mro = compute_mro_internal(base, hierarchy, visited)?;
             seqs.push(base_mro);
         }
         // Base not in hierarchy - skip it (external base we can't resolve)
     }
 
-    // Add the list of direct bases (stripped of generics)
-    let stripped_bases: Vec<String> = bases
-        .iter()
-        .map(|b| strip_generic_params(b).to_string())
-        .collect();
-    seqs.push(stripped_bases);
+    // Add the list of direct bases
+    let direct_bases: Vec<String> = bases.to_vec();
+    seqs.push(direct_bases);
 
     // Merge and prepend the class itself
     let mut mro = vec![class_name.to_string()];
@@ -291,17 +287,6 @@ fn merge(seqs: &mut Vec<Vec<String>>) -> Option<Vec<String>> {
         }
     }
 }
-
-/// Strip generic parameters from a base class name.
-///
-/// Examples:
-/// - "Base[T]" -> "Base"
-/// - "Generic[T, U]" -> "Generic"
-/// - "Base" -> "Base"
-fn strip_generic_params(name: &str) -> &str {
-    name.split('[').next().unwrap_or(name)
-}
-
 // ============================================================================
 // Origin-Aware MRO Computation
 // ============================================================================
@@ -427,15 +412,14 @@ fn compute_mro_in_file_with_origins(
     let mut base_entries: Vec<MROEntry> = Vec::new();
 
     for base_name in &class_bases {
-        // Strip generic parameters
-        let stripped_base = strip_generic_params(base_name);
+        // Note: CST's InheritanceCollector already strips generic parameters
 
         // Try to resolve the base class
         let resolution = {
             let remote_ctx = cache
                 .get_or_analyze(file_path, workspace_root)
                 .map_err(MROError::from)?;
-            resolve_base_class(stripped_base, remote_ctx)
+            resolve_base_class(base_name, remote_ctx)
         };
 
         match resolution {
@@ -460,15 +444,15 @@ fn compute_mro_in_file_with_origins(
                     let remote_ctx = cache
                         .get_or_analyze(file_path, workspace_root)
                         .map_err(MROError::from)?;
-                    remote_ctx.class_hierarchies.contains_key(stripped_base)
+                    remote_ctx.class_hierarchies.contains_key(base_name)
                 };
 
                 if is_local {
                     // Local base - record with current file path
-                    base_entries.push(MROEntry::new(stripped_base, file_path));
+                    base_entries.push(MROEntry::new(base_name, file_path));
 
                     if let Ok(base_mro) = compute_mro_in_file_with_origins(
-                        stripped_base,
+                        base_name,
                         file_path,
                         cache,
                         workspace_root,
@@ -556,11 +540,9 @@ pub fn resolve_base_class(
     ctx: &FileTypeContext,
 ) -> Option<(String, std::path::PathBuf)> {
     let scope_path = vec!["<module>".to_string()];
+    // Note: CST's InheritanceCollector already strips generic parameters
 
-    // Step 1: Strip generic parameters (already done by caller, but be defensive)
-    let base_name = strip_generic_params(base_name);
-
-    // Step 2: Check if dotted (e.g., "mod.Base")
+    // Check if dotted (e.g., "mod.Base")
     if let Some((module_alias, class_name)) = base_name.rsplit_once('.') {
         // Look up module alias via scope-chain walk
         let target = lookup_import_target(&scope_path, module_alias, &ctx.import_targets)?;
@@ -927,9 +909,11 @@ mod tests {
     }
 
     #[test]
-    fn test_mro_generic_base_stripped() {
+    fn test_mro_generic_base() {
+        // CST's InheritanceCollector strips generic params, so bases are already clean
+        // e.g., "class MyList(Generic[T])" -> bases: ["Generic"]
         let mut hierarchy = HashMap::new();
-        hierarchy.insert("MyList".to_string(), vec!["Generic[T]".to_string()]);
+        hierarchy.insert("MyList".to_string(), vec!["Generic".to_string()]);
         hierarchy.insert("Generic".to_string(), vec![]);
 
         let mro = compute_mro("MyList", &hierarchy).unwrap();
@@ -937,9 +921,11 @@ mod tests {
     }
 
     #[test]
-    fn test_mro_multiple_generic_params() {
+    fn test_mro_generic_mapping() {
+        // CST's InheritanceCollector strips generic params
+        // e.g., "class Dict(Mapping[K, V])" -> bases: ["Mapping"]
         let mut hierarchy = HashMap::new();
-        hierarchy.insert("Dict".to_string(), vec!["Mapping[K, V]".to_string()]);
+        hierarchy.insert("Dict".to_string(), vec!["Mapping".to_string()]);
         hierarchy.insert("Mapping".to_string(), vec![]);
 
         let mro = compute_mro("Dict", &hierarchy).unwrap();
@@ -949,14 +935,6 @@ mod tests {
     // ========================================================================
     // Helper Function Tests
     // ========================================================================
-
-    #[test]
-    fn test_strip_generic_params() {
-        assert_eq!(strip_generic_params("Base"), "Base");
-        assert_eq!(strip_generic_params("Base[T]"), "Base");
-        assert_eq!(strip_generic_params("Generic[T, U]"), "Generic");
-        assert_eq!(strip_generic_params("Callable[[int], str]"), "Callable");
-    }
 
     #[test]
     fn test_merge_simple() {
@@ -1510,14 +1488,16 @@ mod tests {
 
     #[test]
     fn test_mro_with_multiple_generic_bases() {
-        // Multiple bases with generic parameters
+        // Multiple bases - CST's InheritanceCollector strips generic params
+        // e.g., "class MyClass(List[T], Dict[K, V], Generic[T, K, V])"
+        // produces bases: ["List", "Dict", "Generic"]
         let mut hierarchy = HashMap::new();
         hierarchy.insert(
             "MyClass".to_string(),
             vec![
-                "List[T]".to_string(),
-                "Dict[K, V]".to_string(),
-                "Generic[T, K, V]".to_string(),
+                "List".to_string(),
+                "Dict".to_string(),
+                "Generic".to_string(),
             ],
         );
         hierarchy.insert("List".to_string(), vec![]);
@@ -1525,7 +1505,6 @@ mod tests {
         hierarchy.insert("Generic".to_string(), vec![]);
 
         let mro = compute_mro("MyClass", &hierarchy).unwrap();
-        // Generic parameters should be stripped
         assert_eq!(mro, vec!["MyClass", "List", "Dict", "Generic"]);
     }
 
