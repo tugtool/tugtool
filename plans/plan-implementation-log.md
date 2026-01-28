@@ -6,6 +6,55 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11D.md] Plan Creation and Review | COMPLETE | 2026-01-27
+
+**Completed:** 2026-01-27
+
+**References Reviewed:**
+- `plans/phase-11C.md` - Section 11C.7 Roadmap / Follow-ons (lines 2100-2107) for gap analysis
+- `crates/tugtool-python/src/analyzer.rs` - LocalImport structure, resolve_module_to_file()
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker structure for extension points
+- `crates/tugtool-python-cst/src/visitor/inheritance.rs` - InheritanceCollector verification
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create initial Phase 11D plan from roadmap items | Done |
+| Prioritize features by impact (cross-file > MRO > property > stub) | Done |
+| Design CrossFileTypeCache with FileTypeContext | Done |
+| Design scope-aware ImportTarget with ImportKind enum | Done |
+| Add imported_module flag for submodule detection | Done |
+| Design cross-file MRO with FileTypeContext propagation | Done |
+| Design resolve_base_class with dotted/aliased handling | Done |
+| Specify cycle detection for resolve_reexported_symbol | Done |
+| Add performance note for submodule detection | Done |
+| Review and address code-architect findings (3 iterations) | Done |
+
+**Files Created:**
+- `plans/phase-11D.md` - Complete plan for cross-file type resolution, MRO support, property decorators, and type stub integration
+
+**Plan Highlights:**
+- **9 execution steps** covering infrastructure, integration, MRO, properties, stubs, docs, and E2E tests
+- **16 test fixtures** (F01-F16) covering cross-file chains, inheritance, properties, stubs, and edge cases
+- **Design decisions D01-D06** with full algorithm pseudocode
+- **3 open questions resolved** (cross-file depth: 3, stub discovery: inline + stubs/, MRO location: hybrid)
+
+**Key Design Decisions:**
+- `ImportKind::FromImport { imported_name, imported_module }` distinguishes class vs submodule imports
+- `FileTypeContext` bundles tracker + symbol_kinds + symbol_map + import_targets + class_hierarchies
+- `compute_mro_cross_file` takes FileTypeContext so each recursion hop uses correct import_targets
+- `resolve_base_class` honors imported_module flag for dotted base names
+- Module-scope-only imports (function-level imports documented as limitation)
+- Cycle detection via HashSet<(PathBuf, String)> for re-export chains
+
+**Verification Notes:**
+- Plan reviewed by code-architect agent 3 times with iterative improvements
+- Final assessment: "Almost Ready" - no blocking concerns
+- All non-blocking concerns addressed with explicit notes in plan
+
+---
+
 ## [phase-11C.md] Sections 11C.7, 11C.9, 11C.10: Final Verification | COMPLETE | 2026-01-27
 
 **Completed:** 2026-01-27
