@@ -318,11 +318,12 @@ The analyzer supports resolving receivers in attribute accesses and method calls
 - Call expressions: `get_handler().process()` (uses return type)
 - Callable attributes: `self.handler_factory().process()` where handler_factory has type `Callable[[], Handler]`
 - Chained calls: `factory().create().process()` (follows call chain up to depth limit)
+- Subscript expressions: `items[0].method()` where `items: List[Handler]` (extracts element type)
+- isinstance narrowing: `if isinstance(x, Handler): x.process()` (narrows type within branch)
 
 **Unsupported Patterns (returns None):**
-- Subscript expressions: `data[0].method()`
 - Complex expressions: `(a or b).method()`
-- Generic type parameters: `List[T]` → `T` resolution
+- Nested generic extraction: `List[Dict[str, Handler]]` → `Handler`
 - Duck typing / protocol-based inference
 
 **Depth Limit:** Resolution is limited to 4 steps (`MAX_RESOLUTION_DEPTH`). Deeper chains like `a.b.c.d.e.method()` return None.
@@ -347,8 +348,72 @@ The analyzer supports resolving types across file boundaries when all files are 
 
 **Limitations:**
 - Only workspace files are resolved (no external packages)
-- Function-level imports are not tracked (only module-level)
 - Circular imports are detected and gracefully handled (resolution returns None)
+
+### Function-Level Import Resolution
+
+Imports inside functions are tracked and resolved within their defining scope.
+
+**Supported:**
+- `from module import Name` inside a function → resolves within that function
+- Function-level imports shadow module-level imports (Python's LEGB scoping)
+- Nested function/class imports track full scope path
+
+**Example:**
+```python
+from external import Handler as Handler  # Module-level
+
+def process():
+    from internal import Handler  # Function-level, shadows module-level
+    h = Handler()
+    h.process()  # Resolves to internal.Handler.process
+```
+
+**Limitations:**
+- Star imports (`from module import *`) without `__all__` expansion are ambiguous (resolution returns None)
+
+### Container Type Element Extraction
+
+Generic container types are resolved for subscript access.
+
+**Supported Containers:**
+- Sequence types: `List[T]`, `Sequence[T]`, `Iterable[T]`, `Set[T]`, `Tuple[T, ...]`
+- Mapping types: `Dict[K, V]`, `Mapping[K, V]` (extracts value type `V`)
+- Optional: `Optional[T]` (extracts `T`)
+- Built-in generics: `list[T]`, `dict[K, V]`, `set[T]` (Python 3.9+ syntax)
+
+**Example:**
+```python
+handlers: List[Handler] = []
+first = handlers[0]
+first.process()  # Resolves to Handler.process
+```
+
+**Limitations:**
+- Nested generics: `List[Dict[str, Handler]]` → cannot extract `Handler`
+- TypeVar resolution: `T` → concrete type not resolved
+
+### isinstance Type Narrowing
+
+Type narrowing within conditional branches after isinstance checks.
+
+**Supported Patterns:**
+- Single type: `isinstance(x, Handler)` narrows `x` to `Handler` in the if-branch
+- Tuple of types: `isinstance(x, (A, B))` narrows to `Union[A, B]`
+
+**Example:**
+```python
+def handle(x: Base) -> None:
+    if isinstance(x, Handler):
+        x.process()  # Resolves to Handler.process (narrowed from Base)
+    # x is still Base type here
+```
+
+**Limitations:**
+- Attribute narrowing: `isinstance(self.attr, Type)` not supported
+- Early-return patterns: narrowing after `if not isinstance(...): return` not supported
+- Negated checks: `if not isinstance(x, A)` does not narrow in else branch
+- Comprehension scope: `[h for h in items if isinstance(h, Handler)]` not supported
 
 **Key Types:**
 - `CrossFileTypeCache` - Caches type information across files

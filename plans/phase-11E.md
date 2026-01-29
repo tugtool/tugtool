@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | in-progress |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | N/A |
 | Last updated | 2026-01-28 |
@@ -2649,11 +2649,11 @@ After completing Steps 1-7D, you will have:
   - No stale comments or misleading documentation
 
 **Final Checkpoint (after Step 7D):**
-- [ ] `cargo nextest run --workspace` - all tests pass
-- [ ] `cargo clippy --workspace -- -D warnings` - no warnings
-- [ ] All Step 7C verification grep commands pass
-- [ ] All Step 7D verification grep commands pass
-- [ ] Documentation updated in CLAUDE.md
+- [x] `cargo nextest run --workspace` - all tests pass (1921 tests)
+- [x] `cargo clippy --workspace -- -D warnings` - no warnings
+- [x] All Step 7C verification grep commands pass
+- [x] All Step 7D verification grep commands pass
+- [x] Documentation updated in CLAUDE.md
 
 ---
 
@@ -2667,25 +2667,25 @@ After completing Steps 1-7D, you will have:
 - [x] `List[Handler]` subscript access resolves element type to `Handler`
 - [x] `isinstance(x, Handler)` narrows `x` to `Handler` within the if-branch
 - [x] All existing Phase 11D tests continue to pass
-- [ ] **Step 7C complete**: No technical debt remaining
-  - [ ] Single unified method resolution path (no MethodCallIndex)
-  - [ ] No file re-parsing in Pass 4
-  - [ ] No unused infrastructure (no suppressed warnings)
-  - [ ] DRY helper functions (no duplicated conversion code)
-- [ ] **Step 7D complete**: All method_calls infrastructure removed
-  - [ ] Stale comment at analyzer.rs line 1544 fixed
-  - [ ] `method_calls` field removed from `NativeAnalysisResult`
-  - [ ] `method_calls` field removed from `P1Analysis`
-  - [ ] `MethodCallInfo` type removed from types.rs
-  - [ ] `find_typed_method_references()` function removed from type_tracker.rs
-  - [ ] `MethodCallCollector::collect()` no longer called in cst_bridge
-  - [ ] All related tests removed or updated
-- [ ] CLAUDE.md updated with Phase 11E features and limitations
+- [x] **Step 7C complete**: No technical debt remaining
+  - [x] Single unified method resolution path (no MethodCallIndex)
+  - [x] No file re-parsing in Pass 4
+  - [x] No unused infrastructure (no suppressed warnings)
+  - [x] DRY helper functions (no duplicated conversion code)
+- [x] **Step 7D complete**: All method_calls infrastructure removed
+  - [x] Stale comment at analyzer.rs line 1544 fixed
+  - [x] `method_calls` field removed from `NativeAnalysisResult`
+  - [x] `method_calls` field removed from `AnalysisResult`
+  - [x] `MethodCallInfo` type removed from types.rs
+  - [x] `find_typed_method_references()` function removed from type_tracker.rs
+  - [x] `MethodCallCollector::collect()` no longer called in cst_bridge
+  - [x] All related tests removed or updated
+- [x] CLAUDE.md updated with Phase 11E features and limitations
 
 **Acceptance Tests:**
-- [ ] Integration: Function-level import enables type resolution
-- [ ] Integration: Container subscript enables method resolution
-- [ ] Integration: isinstance enables method resolution in branch
+- [x] Integration: Function-level import enables type resolution
+- [x] Integration: Container subscript enables method resolution
+- [x] Integration: isinstance enables method resolution in branch
 
 #### Roadmap / Follow-ons {#roadmap}
 

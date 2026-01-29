@@ -6,6 +6,51 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Section 11E.5: Deliverables and Checkpoints | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 7 Summary and Section 11E.5 Deliverables and Checkpoints
+- `CLAUDE.md` - Existing documentation structure for Python Language Support
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Run Final Checkpoint tests (workspace tests) | Done |
+| Run clippy checks | Done |
+| Run Step 7C verification grep commands | Done |
+| Run Step 7D verification grep commands | Done |
+| Update CLAUDE.md with Phase 11E features | Done |
+| Check off all Exit Criteria in plan file | Done |
+| Update plan Status to "complete" | Done |
+
+**Files Modified:**
+- `CLAUDE.md` - Added documentation for: subscript expression resolution, isinstance type narrowing, function-level import resolution, container type element extraction. Updated Receiver Resolution section (moved subscript from unsupported to supported). Removed outdated "function-level imports not tracked" limitation.
+- `plans/phase-11E.md` - Checked off all Final Checkpoint items, Exit Criteria items, and Acceptance Tests. Changed Status from "in-progress" to "complete".
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1921 tests passed
+- `cargo nextest run -p tugtool-python import`: 120 tests passed
+- `cargo nextest run -p tugtool-python extract`: 17 tests passed
+- `cargo nextest run -p tugtool-python narrowing`: 18 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS (1921 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS (no warnings)
+- Step 7C verification grep commands: PASS (all technical debt removed)
+- Step 7D verification grep commands: PASS (all method_calls infrastructure removed)
+- Documentation updated in CLAUDE.md: PASS
+
+**Key Decisions/Notes:**
+- Phase 11E is now COMPLETE
+- All three gaps plugged: function-level imports, generic type parameter extraction, isinstance narrowing
+- No technical debt remaining from Step 7C/7D cleanup
+- CLAUDE.md now accurately reflects current analyzer capabilities
+
+---
+
 ## [phase-11E.md] Step 7D: Remove Remaining method_calls Infrastructure | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
