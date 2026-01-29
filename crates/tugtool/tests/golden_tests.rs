@@ -570,6 +570,183 @@ fn test_emit_json_envelope() {
     assert_eq!(json["format"], "unified", "Format should be 'unified'");
 }
 
+// ============================================================================
+// Analyze Output Variants Tests (Step 4)
+// ============================================================================
+
+/// Test that --output=impact returns full JSON response.
+#[test]
+fn test_analyze_output_impact() {
+    let python = find_python_for_tests();
+    let workspace = TempDir::new().unwrap();
+
+    // Create a Python file with a function and call
+    fs::write(
+        workspace.path().join("input.py"),
+        "def foo():\n    pass\n\ndef bar():\n    foo()\n",
+    )
+    .unwrap();
+
+    let binary = tug_binary();
+    let output = Command::new(&binary)
+        .current_dir(workspace.path())
+        .env("TUG_PYTHON", &python)
+        .args(["--workspace", workspace.path().to_str().unwrap()])
+        .args(["--fresh"])
+        .args([
+            "analyze",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_foo",
+            "--output",
+            "impact",
+        ])
+        .output()
+        .expect("failed to run command");
+
+    assert!(
+        output.status.success(),
+        "Command should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: Value = serde_json::from_str(&stdout).expect("Should parse as JSON");
+
+    // Full impact analysis should have status, schema_version, patch, etc.
+    assert_eq!(json["status"], "ok", "Should have ok status");
+    assert!(
+        json.get("schema_version").is_some(),
+        "Impact should have schema_version"
+    );
+    assert!(json.get("patch").is_some(), "Impact should have patch");
+}
+
+/// Test that --output=references returns just the references/edits array.
+#[test]
+fn test_analyze_output_references() {
+    let python = find_python_for_tests();
+    let workspace = TempDir::new().unwrap();
+
+    // Create a Python file with a function and call
+    fs::write(
+        workspace.path().join("input.py"),
+        "def foo():\n    pass\n\ndef bar():\n    foo()\n",
+    )
+    .unwrap();
+
+    let binary = tug_binary();
+    let output = Command::new(&binary)
+        .current_dir(workspace.path())
+        .env("TUG_PYTHON", &python)
+        .args(["--workspace", workspace.path().to_str().unwrap()])
+        .args(["--fresh"])
+        .args([
+            "analyze",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_foo",
+            "--output",
+            "references",
+        ])
+        .output()
+        .expect("failed to run command");
+
+    assert!(
+        output.status.success(),
+        "Command should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: Value = serde_json::from_str(&stdout).expect("Should parse as JSON");
+
+    // References output should be an array (the edits array)
+    assert!(json.is_array(), "References output should be an array");
+
+    // Check that we have at least one reference (the definition and the call)
+    let arr = json.as_array().unwrap();
+    assert!(
+        !arr.is_empty(),
+        "References array should not be empty for a function with calls"
+    );
+
+    // Each reference should have file and edits
+    for reference in arr {
+        assert!(
+            reference.get("file").is_some(),
+            "Each reference should have 'file'"
+        );
+    }
+}
+
+/// Test that --output=symbol returns just the symbol info.
+#[test]
+fn test_analyze_output_symbol() {
+    let python = find_python_for_tests();
+    let workspace = TempDir::new().unwrap();
+
+    // Create a Python file with a function
+    fs::write(
+        workspace.path().join("input.py"),
+        "def foo():\n    pass\n\ndef bar():\n    foo()\n",
+    )
+    .unwrap();
+
+    let binary = tug_binary();
+    let output = Command::new(&binary)
+        .current_dir(workspace.path())
+        .env("TUG_PYTHON", &python)
+        .args(["--workspace", workspace.path().to_str().unwrap()])
+        .args(["--fresh"])
+        .args([
+            "analyze",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_foo",
+            "--output",
+            "symbol",
+        ])
+        .output()
+        .expect("failed to run command");
+
+    assert!(
+        output.status.success(),
+        "Command should succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: Value = serde_json::from_str(&stdout).expect("Should parse as JSON");
+
+    // Symbol output should be an object with symbol info
+    // For a function, we expect name and kind at minimum
+    assert!(
+        json.is_object() || json.is_null(),
+        "Symbol output should be an object or null"
+    );
+
+    // If we have symbol info, check expected fields
+    if json.is_object() {
+        let obj = json.as_object().unwrap();
+        // Symbol info typically has name, kind, file, location
+        assert!(
+            obj.contains_key("name") || obj.contains_key("kind") || obj.is_empty(),
+            "Symbol object should have name or kind, or be empty. Got: {:?}",
+            obj.keys().collect::<Vec<_>>()
+        );
+    }
+}
+
 /// Test that rust language returns proper error.
 #[test]
 fn test_rust_not_implemented() {

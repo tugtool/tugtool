@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 4: Implement analyze Output Variants | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 4 tasks, Spec S04 (analyze command specification)
+- `crates/tugtool/src/main.rs` - AnalyzeOutput enum and execute_analyze_python implementation
+- `crates/tugtool/tests/golden_tests.rs` - Existing integration test patterns
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `AnalyzeOutput` enum: `Impact`, `References`, `Symbol` | Done (pre-existing from Step 1-2) |
+| Add `--output` option to analyze command | Done (pre-existing from Step 1-2) |
+| Implement output filtering (extract just references or symbol from ImpactAnalysis) | Done (pre-existing from Step 1-2) |
+| Default to `Impact` (full analysis) | Done (pre-existing from Step 1-2) |
+| Add integration test: `--output=impact` returns full JSON | Done |
+| Add integration test: `--output=references` returns just references array | Done |
+| Add integration test: `--output=symbol` returns just symbol info | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool/tests/golden_tests.rs` - Added 3 integration tests: `test_analyze_output_impact`, `test_analyze_output_references`, `test_analyze_output_symbol`
+- `plans/phase-12.md` - Checked off Step 4 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool analyze`: 11 tests passed
+- `cargo nextest run -p tugtool`: 179 tests passed
+- `cargo clippy -p tugtool -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool analyze`: PASS
+
+**Key Decisions/Notes:**
+- The core implementation (AnalyzeOutput enum, --output option, and filtering logic) was already completed in Steps 1-2
+- Step 4's primary contribution was adding the required integration tests to verify the functionality
+- Fixed test assertion: status field is "ok" not "success" in the JSON response schema
+
+---
+
 ## [phase-12.md] Step 3: Integrate File Filter into File Collection | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

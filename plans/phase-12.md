@@ -921,18 +921,18 @@ enum AnalyzeOutput {
 - Modified: `crates/tugtool/src/main.rs`
 
 **Tasks:**
-- [ ] Add `AnalyzeOutput` enum: `Impact`, `References`, `Symbol`
-- [ ] Add `--output` option to analyze command
-- [ ] Implement output filtering (extract just references or symbol from ImpactAnalysis)
-- [ ] Default to `Impact` (full analysis)
+- [x] Add `AnalyzeOutput` enum: `Impact`, `References`, `Symbol`
+- [x] Add `--output` option to analyze command
+- [x] Implement output filtering (extract just references or symbol from ImpactAnalysis)
+- [x] Default to `Impact` (full analysis)
 
 **Tests:**
-- [ ] integration: `--output=impact` returns full JSON
-- [ ] integration: `--output=references` returns just references array
-- [ ] integration: `--output=symbol` returns just symbol info
+- [x] integration: `--output=impact` returns full JSON
+- [x] integration: `--output=references` returns just references array
+- [x] integration: `--output=symbol` returns just symbol info
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool analyze`
+- [x] `cargo nextest run -p tugtool analyze`
 
 **Rollback:** Revert main.rs changes
 
