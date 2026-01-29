@@ -975,18 +975,18 @@ enum AnalyzeOutput {
 - Modified: `README.md` (if exists)
 
 **Tasks:**
-- [ ] Update CLAUDE.md with new command examples
-- [ ] Update quick reference section
-- [ ] Document file filter spec syntax
-- [ ] Remove references to old commands
-- [ ] Update any inline help text
+- [x] Update CLAUDE.md with new command examples
+- [x] Update quick reference section
+- [x] Document file filter spec syntax
+- [x] Remove references to old commands
+- [x] Update any inline help text
 
 **Tests:**
-- [ ] Documentation examples work when copy-pasted
+- [x] Documentation examples work when copy-pasted
 
 **Checkpoint:**
-- [ ] Manual review of documentation
-- [ ] Examples in docs execute correctly
+- [x] Manual review of documentation
+- [x] Examples in docs execute correctly
 
 **Rollback:** Revert documentation changes
 

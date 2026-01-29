@@ -23,10 +23,13 @@ cargo install tugtool
 
 ```bash
 # Preview a rename (shows unified diff)
-tug analyze rename --at src/utils.py:42:5 --to transform_data
+tug emit python rename --at src/utils.py:42:5 --to transform_data
+
+# Analyze operation metadata (JSON)
+tug analyze python rename --at src/utils.py:42:5 --to transform_data
 
 # Execute the rename (applies with syntax verification)
-tug rename --at src/utils.py:42:5 --to transform_data
+tug apply python rename --at src/utils.py:42:5 --to transform_data
 ```
 
 ## For AI Agents
@@ -50,15 +53,17 @@ Tugtool is designed for AI coding agents. It provides:
 
 ## Commands
 
+Commands follow the pattern: `tug <action> <language> <command> [options] [-- <filter>]`
+
 | Command | Description |
 |---------|-------------|
-| `snapshot` | Create workspace snapshot |
-| `analyze rename` | Preview rename changes (unified diff) |
-| `rename` | Execute rename operation |
-| `verify` | Run verification on workspace |
+| `apply python rename` | Execute rename operation (modifies files) |
+| `emit python rename` | Output unified diff without modifying files |
+| `analyze python rename` | Output JSON metadata (symbol info, references) |
 | `session status` | Show session status |
 | `clean` | Clean session resources |
 | `fixture` | Manage test fixtures |
+| `doctor` | Run environment diagnostics |
 
 ## License
 

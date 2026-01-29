@@ -259,17 +259,78 @@ Look for these patterns in user requests:
 # Preview only (no changes)
 /tug-analyze-rename
 
-# CLI equivalent
-tug analyze rename --at <file:line:col> --to <new_name>            # Preview (unified diff)
-tug analyze rename --at <file:line:col> --to <new_name> --format summary  # Brief summary
-tug rename --at <file:line:col> --to <new_name>                    # Apply changes
-tug rename --at <file:line:col> --to <new_name> --dry-run          # Preview without apply
+# CLI commands follow: tug <action> <language> <command> [options] [-- <filter>]
+
+# Apply a rename (modifies files)
+tug apply python rename --at <file:line:col> --to <new_name>
+
+# Emit a diff without modifying files
+tug emit python rename --at <file:line:col> --to <new_name>
+
+# Emit as JSON envelope (includes files_affected, metadata)
+tug emit python rename --at <file:line:col> --to <new_name> --json
+
+# Analyze operation metadata (full impact analysis)
+tug analyze python rename --at <file:line:col> --to <new_name>
+
+# Analyze - just references
+tug analyze python rename --at <file:line:col> --to <new_name> --output references
+
+# Analyze - just symbol info
+tug analyze python rename --at <file:line:col> --to <new_name> --output symbol
+
+# With file filter (restrict scope)
+tug apply python rename --at <file:line:col> --to <new_name> -- 'src/**/*.py'
+
+# With exclusion filter
+tug apply python rename --at <file:line:col> --to <new_name> -- '!tests/**'
+
+# Combined inclusion and exclusion
+tug apply python rename --at <file:line:col> --to <new_name> -- 'src/**/*.py' '!**/test_*.py'
+
+# Verification modes for apply (default: syntax)
+tug apply python rename --at <file:line:col> --to <new_name> --verify=none
+tug apply python rename --at <file:line:col> --to <new_name> --verify=syntax
+tug apply python rename --at <file:line:col> --to <new_name> --no-verify  # shorthand for --verify=none
+```
+
+### File Filter Specification
+
+File filters restrict which files are included in the operation scope. They use gitignore-style patterns.
+
+**Syntax:** Patterns appear after `--` at the end of the command.
+
+**Pattern Rules:**
+- Patterns without `!` prefix are **inclusions**
+- Patterns with `!` prefix are **exclusions**
+- Standard glob syntax: `*`, `**`, `?`, `[abc]`
+
+**Behavior:**
+1. **No filter specified**: All language-appropriate files (`**/*.py` for Python)
+2. **Only exclusions**: Start with all files, then apply exclusions
+3. **Inclusions specified**: Start with matching files, then apply exclusions
+
+**Default exclusions** (always applied): `.git`, `__pycache__`, `venv`, `.venv`, `node_modules`, `target`
+
+**Examples:**
+```bash
+# Only files in src/
+tug apply python rename ... -- 'src/**/*.py'
+
+# All Python files except tests
+tug apply python rename ... -- '!tests/**'
+
+# Files in src/, excluding test files
+tug apply python rename ... -- 'src/**/*.py' '!**/test_*.py'
+
+# All Python files except tests and conftest
+tug apply python rename ... -- '!tests/**' '!**/conftest.py'
 ```
 
 ### Agent Rules
 
-1. **Always analyze first**: Run `tug analyze rename` before applying
-2. **Review before apply**: Show preview to user before running `tug rename`
+1. **Always analyze first**: Run `tug analyze python rename` or `tug emit python rename` before applying
+2. **Review before apply**: Show preview to user before running `tug apply python rename`
 3. **Get explicit approval**: Never apply without user confirmation
 4. **Handle errors by exit code**: See Error Codes section
 5. **No mutation during workflow**: Don't manually edit files between analyze and apply

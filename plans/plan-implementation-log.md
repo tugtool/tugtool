@@ -6,6 +6,48 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 6: Update Documentation | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 6 tasks, design decisions D01-D07, command reference table T06
+- `CLAUDE.md` - Existing documentation structure and quick reference section
+- `README.md` - Project overview and command reference
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update CLAUDE.md with new command examples | Done |
+| Update quick reference section | Done |
+| Document file filter spec syntax | Done |
+| Remove references to old commands | Done |
+| Update any inline help text | Done (already current from previous steps) |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `CLAUDE.md` - Rewrote Quick Reference with new `tug <action> <language> <command>` syntax; added File Filter Specification section; updated Agent Rules section
+- `README.md` - Updated Quick Start examples and Commands table with new command structure; removed old commands (snapshot, verify, analyze rename, rename); added doctor command
+- `plans/phase-12.md` - Checked off Step 6 tasks and checkpoints
+
+**Test Results:**
+- Manual verification of documentation examples: all work correctly
+- `cargo nextest run --workspace`: 1888 tests passed
+
+**Checkpoints Verified:**
+- Manual review of documentation: PASS
+- Examples in docs execute correctly: PASS
+
+**Key Decisions/Notes:**
+- Exclusion patterns with `!` require double quotes in zsh to avoid history expansion (documented as `"!tests/**"` rather than `'!tests/**'`)
+- Added comprehensive File Filter Specification section to CLAUDE.md explaining gitignore-style patterns
+- Inline help text in main.rs was already updated in earlier steps
+
+---
+
 ## [phase-12.md] Step 5: Remove Old Commands | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
