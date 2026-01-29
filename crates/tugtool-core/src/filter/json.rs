@@ -109,8 +109,7 @@ impl JsonFilter {
                     message: "empty 'all' array".to_string(),
                 });
             }
-            let exprs: Result<Vec<_>, _> =
-                filters.iter().map(|f| f.to_filter_expr()).collect();
+            let exprs: Result<Vec<_>, _> = filters.iter().map(|f| f.to_filter_expr()).collect();
             return Ok(FilterExpr::And(exprs?));
         }
 
@@ -120,8 +119,7 @@ impl JsonFilter {
                     message: "empty 'any' array".to_string(),
                 });
             }
-            let exprs: Result<Vec<_>, _> =
-                filters.iter().map(|f| f.to_filter_expr()).collect();
+            let exprs: Result<Vec<_>, _> = filters.iter().map(|f| f.to_filter_expr()).collect();
             return Ok(FilterExpr::Or(exprs?));
         }
 

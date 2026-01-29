@@ -36,8 +36,7 @@ pub use glob::{FileFilterSpec, FilterError, DEFAULT_EXCLUSIONS};
 
 // Re-export public API from predicate module
 pub use predicate::{
-    parse_size, FilterPredicate, GitFileStatus, GitState, PredicateError, PredicateKey,
-    PredicateOp,
+    parse_size, FilterPredicate, GitFileStatus, GitState, PredicateError, PredicateKey, PredicateOp,
 };
 
 // Re-export public API from expression module

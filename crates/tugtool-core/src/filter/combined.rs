@@ -455,10 +455,16 @@ mod tests {
 
         // Default exclusions should always be applied
         assert!(!filter.matches(Path::new(".git/config")).unwrap());
-        assert!(!filter.matches(Path::new("src/__pycache__/module.pyc")).unwrap());
-        assert!(!filter.matches(Path::new("venv/lib/python3.11/site.py")).unwrap());
+        assert!(!filter
+            .matches(Path::new("src/__pycache__/module.pyc"))
+            .unwrap());
+        assert!(!filter
+            .matches(Path::new("venv/lib/python3.11/site.py"))
+            .unwrap());
         assert!(!filter.matches(Path::new(".venv/bin/python")).unwrap());
-        assert!(!filter.matches(Path::new("node_modules/lodash/index.js")).unwrap());
+        assert!(!filter
+            .matches(Path::new("node_modules/lodash/index.js"))
+            .unwrap());
         assert!(!filter.matches(Path::new("target/debug/main")).unwrap());
     }
 }

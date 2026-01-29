@@ -1745,27 +1745,27 @@ Spec S10, (#file-filtering-spec)
 
 #### Phase Exit Criteria ("Done means...") {#file-filtering-exit}
 
-- [ ] `--filter "path:src/** and ext:py"` works on all refactoring commands
-- [ ] `--filter-json '{"all":[...]}'` works on all refactoring commands
-- [ ] `--filter` + `-- patterns` both apply (AND combination)
-- [ ] `contains`/`regex` predicates error without `--filter-content`
-- [ ] `contains`/`regex` predicates work with `--filter-content`
-- [ ] `--filter "git_tracked:true"` restricts to tracked files
-- [ ] Git predicates return false gracefully when no `.git` present
-- [ ] `--filter-list` outputs matched files JSON and exits 0
-- [ ] All existing glob-only tests pass unchanged
-- [ ] Documentation updated in CLAUDE.md and AGENT_API.md
-- [ ] No clippy warnings: `cargo clippy --workspace -- -D warnings`
+- [x] `--filter "path:src/** and ext:py"` works on all refactoring commands
+- [x] `--filter-json '{"all":[...]}'` works on all refactoring commands
+- [x] `--filter` + `-- patterns` both apply (AND combination)
+- [x] `contains`/`regex` predicates error without `--filter-content`
+- [x] `contains`/`regex` predicates work with `--filter-content`
+- [x] `--filter "git_tracked:true"` restricts to tracked files
+- [x] Git predicates return false gracefully when no `.git` present
+- [x] `--filter-list` outputs matched files JSON and exits 0
+- [x] All existing glob-only tests pass unchanged
+- [x] Documentation updated in CLAUDE.md and AGENT_API.md
+- [x] No clippy warnings: `cargo clippy --workspace -- -D warnings`
 
 #### Acceptance Tests {#file-filtering-acceptance}
 
-- [ ] integration: Expression filter restricts rename scope
-- [ ] integration: JSON filter restricts rename scope
-- [ ] integration: Filter parity (same predicate in expr vs JSON yields same files)
-- [ ] integration: Content filter requires `--filter-content` flag
-- [ ] integration: Git predicate restricts to tracked/modified files
-- [ ] integration: Git predicate graceful when no `.git` present
-- [ ] integration: `--filter-list` returns correct file count
+- [x] integration: Expression filter restricts rename scope
+- [x] integration: JSON filter restricts rename scope
+- [x] integration: Filter parity (same predicate in expr vs JSON yields same files)
+- [x] integration: Content filter requires `--filter-content` flag
+- [x] integration: Git predicate restricts to tracked/modified files
+- [x] integration: Git predicate graceful when no `.git` present
+- [x] integration: `--filter-list` returns correct file count
 
 | Checkpoint | Verification |
 |------------|--------------|

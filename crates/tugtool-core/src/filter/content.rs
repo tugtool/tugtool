@@ -128,10 +128,11 @@ impl ContentMatcher {
                 self.read_count.set(self.read_count.get() + 1);
             }
 
-            let content = fs::read_to_string(path).map_err(|err| ContentError::ContentReadError {
-                path: path.to_path_buf(),
-                message: err.to_string(),
-            })?;
+            let content =
+                fs::read_to_string(path).map_err(|err| ContentError::ContentReadError {
+                    path: path.to_path_buf(),
+                    message: err.to_string(),
+                })?;
 
             e.insert(content);
         }
@@ -186,9 +187,7 @@ mod tests {
         let file = create_temp_file("Hello, world! TODO: fix this");
         let mut matcher = ContentMatcher::new();
 
-        assert!(matcher
-            .matches_contains(file.path(), "TODO")
-            .unwrap());
+        assert!(matcher.matches_contains(file.path(), "TODO").unwrap());
     }
 
     #[test]
@@ -196,9 +195,7 @@ mod tests {
         let file = create_temp_file("Hello, world! All good here.");
         let mut matcher = ContentMatcher::new();
 
-        assert!(!matcher
-            .matches_contains(file.path(), "TODO")
-            .unwrap());
+        assert!(!matcher.matches_contains(file.path(), "TODO").unwrap());
     }
 
     #[test]
@@ -213,15 +210,9 @@ def main():
         let file = create_temp_file(content);
         let mut matcher = ContentMatcher::new();
 
-        assert!(matcher
-            .matches_contains(file.path(), "TODO:")
-            .unwrap());
-        assert!(matcher
-            .matches_contains(file.path(), "def main()")
-            .unwrap());
-        assert!(!matcher
-            .matches_contains(file.path(), "FIXME")
-            .unwrap());
+        assert!(matcher.matches_contains(file.path(), "TODO:").unwrap());
+        assert!(matcher.matches_contains(file.path(), "def main()").unwrap());
+        assert!(!matcher.matches_contains(file.path(), "FIXME").unwrap());
     }
 
     // =========================================================================
@@ -263,9 +254,7 @@ class Handler:
         let mut matcher = ContentMatcher::new();
 
         // Match @deprecated
-        assert!(matcher
-            .matches_regex(file.path(), r"@deprecated")
-            .unwrap());
+        assert!(matcher.matches_regex(file.path(), r"@deprecated").unwrap());
 
         // Match method definition pattern
         assert!(matcher
@@ -273,9 +262,7 @@ class Handler:
             .unwrap());
 
         // No match for async methods
-        assert!(!matcher
-            .matches_regex(file.path(), r"async def")
-            .unwrap());
+        assert!(!matcher.matches_regex(file.path(), r"async def").unwrap());
     }
 
     #[test]
@@ -321,21 +308,15 @@ class Handler:
         let mut matcher = ContentMatcher::new();
 
         // First read
-        assert!(matcher
-            .matches_contains(file.path(), "TODO")
-            .unwrap());
+        assert!(matcher.matches_contains(file.path(), "TODO").unwrap());
         assert_eq!(matcher.read_count(), 1);
 
         // Second query - should use cache
-        assert!(matcher
-            .matches_contains(file.path(), "world")
-            .unwrap());
+        assert!(matcher.matches_contains(file.path(), "world").unwrap());
         assert_eq!(matcher.read_count(), 1); // Still 1, used cache
 
         // Third query with regex - should use cache
-        assert!(matcher
-            .matches_regex(file.path(), r"TODO")
-            .unwrap());
+        assert!(matcher.matches_regex(file.path(), r"TODO").unwrap());
         assert_eq!(matcher.read_count(), 1); // Still 1, used cache
     }
 }

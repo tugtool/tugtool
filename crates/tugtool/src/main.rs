@@ -801,13 +801,8 @@ fn execute_analyze_python(
                 build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
 
             // Run impact analysis (read-only) with combined filter
-            let json_result = analyze_rename(
-                &session,
-                Some(python_path),
-                &at,
-                &to,
-                &mut combined_filter,
-            )?;
+            let json_result =
+                analyze_rename(&session, Some(python_path), &at, &to, &mut combined_filter)?;
 
             // Parse result
             let result: serde_json::Value = serde_json::from_str(&json_result)
@@ -1265,7 +1260,11 @@ fn find_python_in_path() -> Option<String> {
 /// Reads the file at the given path and validates it exists.
 fn parse_filter_file(path: &Path) -> Result<String, TugError> {
     std::fs::read_to_string(path).map_err(|e| {
-        TugError::invalid_args(format!("failed to read filter file '{}': {}", path.display(), e))
+        TugError::invalid_args(format!(
+            "failed to read filter file '{}': {}",
+            path.display(),
+            e
+        ))
     })
 }
 
@@ -1366,7 +1365,9 @@ fn build_combined_filter(
         }
     }
 
-    builder.build().map_err(|e| TugError::invalid_args(e.to_string()))
+    builder
+        .build()
+        .map_err(|e| TugError::invalid_args(e.to_string()))
 }
 
 /// Handle --filter-list mode if enabled.
@@ -1410,7 +1411,9 @@ fn handle_filter_list(
             .map_err(|e| TugError::invalid_args(e.to_string()))?;
     }
 
-    let mut combined_filter = builder.build().map_err(|e| TugError::invalid_args(e.to_string()))?;
+    let mut combined_filter = builder
+        .build()
+        .map_err(|e| TugError::invalid_args(e.to_string()))?;
 
     // Collect matching Python files
     let mut matched_files = Vec::new();
@@ -1457,7 +1460,11 @@ fn collect_python_files_for_filter_list(
         files: &mut Vec<String>,
     ) -> Result<(), TugError> {
         let entries = fs::read_dir(dir).map_err(|e| {
-            TugError::internal(format!("failed to read directory '{}': {}", dir.display(), e))
+            TugError::internal(format!(
+                "failed to read directory '{}': {}",
+                dir.display(),
+                e
+            ))
         })?;
 
         for entry in entries.flatten() {
@@ -1866,15 +1873,7 @@ mod tests {
         #[test]
         fn test_filter_expr_single() {
             let args = [
-                "tug",
-                "apply",
-                "python",
-                "rename",
-                "--at",
-                "x:1:1",
-                "--to",
-                "y",
-                "--filter",
+                "tug", "apply", "python", "rename", "--at", "x:1:1", "--to", "y", "--filter",
                 "ext:py",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
@@ -1974,10 +1973,7 @@ mod tests {
                             command: AnalyzePythonCommand::Rename { filter_opts, .. },
                         },
                 } => {
-                    assert_eq!(
-                        filter_opts.filter_file,
-                        Some(PathBuf::from("filters.json"))
-                    );
+                    assert_eq!(filter_opts.filter_file, Some(PathBuf::from("filters.json")));
                     assert_eq!(filter_opts.filter_file_format, Some("json".to_string()));
                 }
                 _ => panic!("expected Analyze Python Rename"),
@@ -2162,11 +2158,7 @@ mod tests {
         #[test]
         fn test_filter_list_count_matches_files() {
             let filter_summary = FilterSummary::new(vec![], vec![], None, false);
-            let files = vec![
-                "a.py".to_string(),
-                "b.py".to_string(),
-                "c.py".to_string(),
-            ];
+            let files = vec!["a.py".to_string(), "b.py".to_string(), "c.py".to_string()];
             let response = FilterListResponse::new(files, filter_summary);
 
             assert_eq!(response.count, 3);
@@ -2178,12 +2170,8 @@ mod tests {
             let json_filter = serde_json::json!({
                 "predicates": [{"key": "ext", "op": "eq", "value": "py"}]
             });
-            let filter_summary = FilterSummary::new(
-                vec![],
-                vec![],
-                Some(json_filter.clone()),
-                true,
-            );
+            let filter_summary =
+                FilterSummary::new(vec![], vec![], Some(json_filter.clone()), true);
 
             let json = serde_json::to_string(&filter_summary).unwrap();
             let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

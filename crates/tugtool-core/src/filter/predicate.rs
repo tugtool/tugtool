@@ -271,7 +271,11 @@ impl FilterPredicate {
         Ok(apply_op_str(self.op, lang, &self.value.to_lowercase()))
     }
 
-    fn evaluate_kind(&self, _path: &Path, metadata: Option<&Metadata>) -> Result<bool, PredicateError> {
+    fn evaluate_kind(
+        &self,
+        _path: &Path,
+        metadata: Option<&Metadata>,
+    ) -> Result<bool, PredicateError> {
         let is_dir = metadata.is_some_and(|m| m.is_dir());
         let expected_dir = self.value.to_lowercase() == "dir";
         let matches = is_dir == expected_dir;
@@ -597,10 +601,8 @@ impl GitState {
             };
 
             if !path.is_empty() {
-                self.status.insert(
-                    path.to_string(),
-                    GitFileStatus { index, worktree },
-                );
+                self.status
+                    .insert(path.to_string(), GitFileStatus { index, worktree });
             }
         }
     }

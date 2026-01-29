@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Section 12.7.6: Deliverables and Checkpoints | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Section 12.7.6 (lines 1742-1786)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Verify `--filter "path:src/** and ext:py"` works on all refactoring commands | Done |
+| Verify `--filter-json '{"all":[...]}'` works on all refactoring commands | Done |
+| Verify `--filter` + `-- patterns` both apply (AND combination) | Done |
+| Verify `contains`/`regex` predicates error without `--filter-content` | Done |
+| Verify `contains`/`regex` predicates work with `--filter-content` | Done |
+| Verify `--filter "git_tracked:true"` restricts to tracked files | Done |
+| Verify git predicates return false gracefully when no `.git` present | Done |
+| Verify `--filter-list` outputs matched files JSON and exits 0 | Done |
+| Verify all existing glob-only tests pass unchanged | Done |
+| Verify documentation updated in CLAUDE.md and AGENT_API.md | Done |
+| Verify no clippy warnings | Done |
+
+**Files Created:**
+- None (verification phase only)
+
+**Files Modified:**
+- `plans/phase-12.md` - Checked off all exit criteria and acceptance tests
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1964 tests passed
+- `cargo nextest run -p tugtool-core expr json`: 34 tests passed
+- `cargo nextest run -p tugtool-core predicate content`: 52 tests passed
+- `cargo clippy --workspace -- -D warnings`: Clean (no warnings)
+
+**Checkpoints Verified:**
+- Parser tests (`cargo nextest run -p tugtool-core expr json`): PASS
+- Predicate tests (`cargo nextest run -p tugtool-core predicate content`): PASS
+- CLI options (`tug apply python rename --help` shows filter options): PASS
+- Filter list (`tug apply python rename --at x:1:1 --to y --filter-list`): PASS
+- Integration (`cargo nextest run --workspace`): PASS
+
+**Key Decisions/Notes:**
+- All 11 exit criteria verified and passing
+- All 7 acceptance tests verified and passing
+- All 5 checkpoints verified and passing
+- Phase 12.7 File Filtering is now complete
+
+---
+
 ## [phase-12.md] Step 9: Documentation | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
