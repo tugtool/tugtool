@@ -1003,16 +1003,16 @@ enum AnalyzeOutput {
 - Possibly new golden test cases
 
 **Tasks:**
-- [ ] Update any golden tests that use old command syntax
-- [ ] Add golden tests for new command structure
-- [ ] Verify all golden tests pass
+- [x] Update any golden tests that use old command syntax
+- [x] Add golden tests for new command structure
+- [x] Verify all golden tests pass
 
 **Tests:**
-- [ ] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if needed)
-- [ ] `cargo nextest run -p tugtool golden`
+- [x] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if needed)
+- [x] `cargo nextest run -p tugtool golden`
 
 **Checkpoint:**
-- [ ] All golden tests pass
+- [x] All golden tests pass
 
 **Rollback:** Revert golden test changes
 
@@ -1024,24 +1024,24 @@ enum AnalyzeOutput {
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
-- [ ] `tug apply python rename --at ... --to ...` works (files modified, all Python files)
-- [ ] `tug apply python rename --at ... --to ... -- 'src/**'` works (filter restricts scope)
-- [ ] `tug emit python rename --at ... --to ...` works (diff output)
-- [ ] `tug emit python rename --at ... --to ... --json` works (JSON envelope, Spec S07)
-- [ ] `tug analyze python rename --at ... --to ...` works (JSON output)
-- [ ] `tug analyze python rename --at ... --to ... --output references` works
-- [ ] File filter exclusions work: `-- '!tests/**'` excludes tests
-- [ ] Utility commands unchanged (`doctor`, `session`, `fixture`)
-- [ ] All tests pass: `cargo nextest run --workspace`
-- [ ] Documentation updated
-- [ ] No clippy warnings: `cargo clippy --workspace -- -D warnings`
+- [x] `tug apply python rename --at ... --to ...` works (files modified, all Python files)
+- [x] `tug apply python rename --at ... --to ... -- 'src/**'` works (filter restricts scope)
+- [x] `tug emit python rename --at ... --to ...` works (diff output)
+- [x] `tug emit python rename --at ... --to ... --json` works (JSON envelope, Spec S07)
+- [x] `tug analyze python rename --at ... --to ...` works (JSON output)
+- [x] `tug analyze python rename --at ... --to ... --output references` works
+- [x] File filter exclusions work: `-- '!tests/**'` excludes tests
+- [x] Utility commands unchanged (`doctor`, `session`, `fixture`)
+- [x] All tests pass: `cargo nextest run --workspace`
+- [x] Documentation updated
+- [x] No clippy warnings: `cargo clippy --workspace -- -D warnings`
 
 #### Acceptance Tests {#acceptance-tests}
 
-- [ ] integration: Full rename workflow with new syntax (no filter = all files)
-- [ ] integration: Filter inclusion restricts scope
-- [ ] integration: Filter exclusion removes files from scope
-- [ ] integration: Error handling returns proper JSON and exit codes
+- [x] integration: Full rename workflow with new syntax (no filter = all files)
+- [x] integration: Filter inclusion restricts scope
+- [x] integration: Filter exclusion removes files from scope
+- [x] integration: Error handling returns proper JSON and exit codes
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

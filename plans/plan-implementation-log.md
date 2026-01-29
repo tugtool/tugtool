@@ -6,6 +6,93 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Section 12.6: Deliverables and Checkpoints | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Section 12.6 exit criteria, acceptance tests, checkpoint table
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `tug apply python rename` works (all files) | Done |
+| `tug apply python rename` with filter restricts scope | Done |
+| `tug emit python rename` works (diff output) | Done |
+| `tug emit python rename --json` works (JSON envelope) | Done |
+| `tug analyze python rename` works (JSON output) | Done |
+| `tug analyze --output references` works | Done |
+| File filter exclusions work (`!tests/**`) | Done |
+| Utility commands unchanged (`doctor`, `session`, `fixture`) | Done |
+| All tests pass | Done |
+| Documentation updated | Done |
+| No clippy warnings | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `plans/phase-12.md` - Checked off all exit criteria and acceptance tests
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1888 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- CLI structure shows new `tug <action> <language> <command>` pattern: PASS
+- Python rename (no filter): PASS
+- Python rename (with filter): PASS
+- emit --json returns JSON envelope: PASS
+- All tests pass: PASS
+
+**Key Decisions/Notes:**
+- **Phase 12 is COMPLETE** - All exit criteria met
+- Verified all 11 exit criteria and 4 acceptance tests
+- Error handling verified: returns proper JSON with exit code 3 for resolution errors
+
+---
+
+## [phase-12.md] Step 7: Golden Test Updates | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 7 tasks
+- `crates/tugtool/tests/golden_tests.rs` - Existing golden test implementations
+- `crates/tugtool/tests/golden/output_schema/` - Golden output files
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update any golden tests that use old command syntax | Done (already current) |
+| Add golden tests for new command structure | Done (already exist) |
+| Verify all golden tests pass | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `plans/phase-12.md` - Checked off Step 7 tasks and checkpoints
+
+**Files Deleted:**
+- `crates/tugtool/tests/golden/output_schema/run_success_dry.json` - Orphaned file from old CLI
+- `crates/tugtool/tests/golden/output_schema/snapshot_success.json` - Orphaned file for removed snapshot command
+
+**Test Results:**
+- `cargo nextest run -p tugtool golden`: 8 tests passed
+- `cargo nextest run --workspace`: 1888 tests passed
+
+**Checkpoints Verified:**
+- All golden tests pass: PASS
+
+**Key Decisions/Notes:**
+- Golden tests were already using new CLI syntax from earlier steps
+- Removed two orphaned golden output files that were no longer referenced by any tests
+
+---
+
 ## [phase-12.md] Step 6: Update Documentation | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
