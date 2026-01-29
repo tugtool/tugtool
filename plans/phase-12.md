@@ -829,21 +829,21 @@ enum AnalyzeOutput {
 **Tasks:**
 - [ ] Define `Action` enum: `Apply`, `Emit`, `Analyze`
 - [ ] Define `Language` enum: `Python`, `Rust`
-- [ ] Define `PythonCommand` enum with `Rename` variant
-- [ ] Define `RustCommand` enum (placeholder)
-- [ ] Update `Cli` struct to use new subcommand structure
-- [ ] Keep utility commands (`doctor`, `session`, `fixture`, `clean`) at top level
-- [ ] Add trailing positional `file_filter: Vec<String>` to capture filter patterns
+- [x] Define `PythonCommand` enum with `Rename` variant
+- [x] Define `RustCommand` enum (placeholder)
+- [x] Update `Cli` struct to use new subcommand structure
+- [x] Keep utility commands (`doctor`, `session`, `fixture`, `clean`) at top level
+- [x] Add trailing positional `file_filter: Vec<String>` to capture filter patterns
 
 **Tests:**
-- [ ] unit: CLI parses `apply python rename --at x:1:1 --to y` (no filter)
-- [ ] unit: CLI parses `apply python rename --at x:1:1 --to y -- src/**` (with filter)
-- [ ] unit: CLI parses `emit python rename --at x:1:1 --to y --json`
-- [ ] unit: CLI parses `analyze python rename --at x:1:1 --to y --output references`
+- [x] unit: CLI parses `apply python rename --at x:1:1 --to y` (no filter)
+- [x] unit: CLI parses `apply python rename --at x:1:1 --to y -- src/**` (with filter)
+- [x] unit: CLI parses `emit python rename --at x:1:1 --to y --json`
+- [x] unit: CLI parses `analyze python rename --at x:1:1 --to y --output references`
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool`
-- [ ] `cargo run -p tugtool -- --help` shows new structure
+- [x] `cargo build -p tugtool`
+- [x] `cargo run -p tugtool -- --help` shows new structure
 
 **Rollback:** Revert main.rs changes
 
@@ -859,23 +859,23 @@ enum AnalyzeOutput {
 - Modified: `crates/tugtool/src/main.rs` (new execute functions)
 
 **Tasks:**
-- [ ] Implement `execute_action(action, language, global)` dispatcher
-- [ ] Implement `execute_python_command(action, command, global)`
-- [ ] Route `apply` to existing rename logic with `apply=true`
-- [ ] Route `emit` to existing rename logic with `apply=false`, output diff only
-- [ ] Support `emit --json` by wrapping diff in JSON envelope
-- [ ] Route `analyze` to existing analyze logic
-- [ ] Implement `execute_rust_command` that returns "not yet implemented" error
-- [ ] Remove old `Command::Rename` and `Command::Analyze` variants
+- [x] Implement `execute_action(action, language, global)` dispatcher
+- [x] Implement `execute_python_command(action, command, global)`
+- [x] Route `apply` to existing rename logic with `apply=true`
+- [x] Route `emit` to existing rename logic with `apply=false`, output diff only
+- [x] Support `emit --json` by wrapping diff in JSON envelope
+- [x] Route `analyze` to existing analyze logic
+- [x] Implement `execute_rust_command` that returns "not yet implemented" error
+- [x] Remove old `Command::Rename` and `Command::Analyze` variants
 
 **Tests:**
-- [ ] integration: `tug apply python rename --at ... --to ...` modifies all Python files
-- [ ] integration: `tug emit python rename --at ... --to ...` outputs diff
-- [ ] integration: `tug emit python rename --at ... --to ... --json` outputs JSON envelope (Spec S07)
-- [ ] integration: `tug analyze python rename --at ... --to ...` outputs JSON
+- [x] integration: `tug apply python rename --at ... --to ...` modifies all Python files
+- [x] integration: `tug emit python rename --at ... --to ...` outputs diff
+- [x] integration: `tug emit python rename --at ... --to ... --json` outputs JSON envelope (Spec S07)
+- [x] integration: `tug analyze python rename --at ... --to ...` outputs JSON
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool`
+- [x] `cargo nextest run -p tugtool`
 
 **Rollback:** Revert main.rs changes
 

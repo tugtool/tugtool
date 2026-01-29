@@ -1,16 +1,19 @@
 //! Binary entry point for the tug CLI.
 //!
 //! This module provides the command-line interface for tug operations.
-//! It is the "front door" for LLM coding agents (per \[D03\] One kernel, multiple front doors).
+//! It is the "front door" for LLM coding agents.
 //!
 //! ## Usage
 //!
 //! ```bash
-//! # Rename a symbol (applies changes by default)
-//! tug rename --at src/lib.py:10:5 --to new_name
+//! # Apply a rename (modifies files)
+//! tug apply python rename --at src/lib.py:10:5 --to new_name
 //!
-//! # Preview rename without applying (outputs unified diff)
-//! tug analyze rename --at src/lib.py:10:5 --to new_name
+//! # Emit a diff without modifying files
+//! tug emit python rename --at src/lib.py:10:5 --to new_name
+//!
+//! # Analyze operation metadata
+//! tug analyze python rename --at src/lib.py:10:5 --to new_name
 //!
 //! # Check session status
 //! tug session status
@@ -22,15 +25,12 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
-#[cfg(feature = "python")]
-use std::process::{Command as ProcessCommand, Stdio};
 
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 
 // Core imports (always available)
 use tugtool_core::error::{OutputErrorCode, TugError};
-#[cfg(feature = "python")]
-use tugtool_core::output::VerifyResponse;
 use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::output::{
     emit_response, CheckResult, DoctorResponse, ErrorInfo, ErrorResponse, FixtureFetchResponse,
@@ -46,10 +46,6 @@ use tugtool::cli::do_rename;
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
-// Test command resolution (used by Python verification)
-#[cfg(feature = "python")]
-use tugtool::testcmd::{resolve_test_command, TemplateVars};
-
 // ============================================================================
 // CLI Structure
 // ============================================================================
@@ -64,7 +60,7 @@ struct Cli {
     #[command(flatten)]
     global: GlobalArgs,
     #[command(subcommand)]
-    command: Command,
+    command: TopLevelCommand,
 }
 
 /// Global arguments shared by all subcommands.
@@ -137,83 +133,33 @@ impl LogLevel {
     }
 }
 
-/// Output format for rename command.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
-enum RenameFormat {
-    /// Human-readable text summary (default).
-    #[default]
-    Text,
-    /// Full JSON response.
-    Json,
-}
-
-/// Output format for analyze command.
-///
-/// Per Phase 10 D11: Unified diff is the default output format.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
-enum AnalyzeFormat {
-    /// Unified diff format (default, compatible with `git apply`).
-    #[default]
-    Diff,
-    /// Full JSON response.
-    Json,
-    /// Brief text summary.
-    Summary,
-}
-
-/// CLI subcommands.
+/// Top-level CLI commands.
 #[derive(Subcommand, Debug)]
-enum Command {
-    /// Create a workspace snapshot for analysis.
-    Snapshot,
-    /// Analyze a refactoring operation without applying changes.
-    ///
-    /// Per Phase 10 D10: Preview what changes would be made.
-    /// Default output is unified diff format.
+enum TopLevelCommand {
+    /// Apply a refactoring operation (modifies files).
+    Apply {
+        #[command(subcommand)]
+        language: ApplyLanguage,
+    },
+    /// Emit a diff without modifying files.
+    Emit {
+        #[command(subcommand)]
+        language: EmitLanguage,
+    },
+    /// Analyze operation metadata.
     Analyze {
         #[command(subcommand)]
-        op: AnalyzeOp,
-    },
-    /// Rename a symbol (apply-by-default).
-    ///
-    /// Per Phase 10 D09: Primary command applies changes by default.
-    /// Use --dry-run to preview changes without modifying files.
-    Rename {
-        /// Location of the symbol to rename (file:line:col).
-        #[arg(long)]
-        at: String,
-        /// New name for the symbol.
-        #[arg(long)]
-        to: String,
-        /// Preview changes without applying (default: apply changes).
-        #[arg(long)]
-        dry_run: bool,
-        /// Verification mode after applying changes.
-        #[arg(long, value_enum, default_value = "syntax")]
-        verify: VerifyMode,
-        /// Skip verification entirely.
-        #[arg(long, conflicts_with = "verify")]
-        no_verify: bool,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "text")]
-        format: RenameFormat,
+        language: AnalyzeLanguage,
     },
     /// Session management commands.
     Session {
         #[command(subcommand)]
         action: SessionAction,
     },
-    /// Run verification on current workspace state.
-    Verify {
-        /// Verification mode to run.
-        #[arg(value_enum)]
-        mode: VerifyMode,
-        /// Custom test command as JSON array (e.g., '["{python}","-m","pytest","-x"]').
-        ///
-        /// Template variables: {python} = resolved Python path, {workspace} = workspace root.
-        /// If not provided, auto-detects from pyproject.toml, pytest.ini, or setup.cfg.
-        #[arg(long)]
-        test_command: Option<String>,
+    /// Fixture management commands.
+    Fixture {
+        #[command(subcommand)]
+        action: FixtureAction,
     },
     /// Clean up session resources.
     Clean {
@@ -221,23 +167,151 @@ enum Command {
         #[arg(long)]
         cache: bool,
     },
-    /// Fixture management commands.
-    Fixture {
-        #[command(subcommand)]
-        action: FixtureAction,
-    },
     /// Run environment diagnostics.
     Doctor,
 }
 
-/// Analyze operations (used by the `analyze` command).
-///
-/// Per Phase 10 D10: Preview what changes a refactoring operation would make.
-#[derive(Subcommand, Clone, Debug)]
-enum AnalyzeOp {
-    /// Analyze a symbol rename operation.
-    ///
-    /// Shows what edits would be made without applying them.
+// ============================================================================
+// Apply Action
+// ============================================================================
+
+/// Language selection for apply action.
+#[derive(Subcommand, Debug)]
+enum ApplyLanguage {
+    /// Python language operations.
+    Python {
+        #[command(subcommand)]
+        command: ApplyPythonCommand,
+    },
+    /// Rust language operations (not yet implemented).
+    Rust {
+        #[command(subcommand)]
+        command: ApplyRustCommand,
+    },
+}
+
+/// Python commands for apply action.
+#[derive(Subcommand, Debug)]
+enum ApplyPythonCommand {
+    /// Rename a symbol.
+    Rename {
+        /// Location of the symbol to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// Verification mode after applying changes.
+        #[arg(long, value_enum, default_value = "syntax")]
+        verify: VerifyMode,
+        /// Skip verification entirely.
+        #[arg(long)]
+        no_verify: bool,
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+}
+
+/// Rust commands for apply action (placeholder).
+#[derive(Subcommand, Debug)]
+enum ApplyRustCommand {
+    /// Rename a symbol (not yet implemented).
+    Rename {
+        /// Location of the symbol to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+}
+
+// ============================================================================
+// Emit Action
+// ============================================================================
+
+/// Language selection for emit action.
+#[derive(Subcommand, Debug)]
+enum EmitLanguage {
+    /// Python language operations.
+    Python {
+        #[command(subcommand)]
+        command: EmitPythonCommand,
+    },
+    /// Rust language operations (not yet implemented).
+    Rust {
+        #[command(subcommand)]
+        command: EmitRustCommand,
+    },
+}
+
+/// Python commands for emit action.
+#[derive(Subcommand, Debug)]
+enum EmitPythonCommand {
+    /// Emit diff for a rename operation.
+    Rename {
+        /// Location of the symbol to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// Output JSON envelope instead of plain diff.
+        #[arg(long)]
+        json: bool,
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+}
+
+/// Rust commands for emit action (placeholder).
+#[derive(Subcommand, Debug)]
+enum EmitRustCommand {
+    /// Emit diff for a rename operation (not yet implemented).
+    Rename {
+        /// Location of the symbol to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// Output JSON envelope instead of plain diff.
+        #[arg(long)]
+        json: bool,
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+}
+
+// ============================================================================
+// Analyze Action
+// ============================================================================
+
+/// Language selection for analyze action.
+#[derive(Subcommand, Debug)]
+enum AnalyzeLanguage {
+    /// Python language operations.
+    Python {
+        #[command(subcommand)]
+        command: AnalyzePythonCommand,
+    },
+    /// Rust language operations (not yet implemented).
+    Rust {
+        #[command(subcommand)]
+        command: AnalyzeRustCommand,
+    },
+}
+
+/// Python commands for analyze action.
+#[derive(Subcommand, Debug)]
+enum AnalyzePythonCommand {
+    /// Analyze a rename operation.
     Rename {
         /// Location of the symbol to rename (file:line:col).
         #[arg(long)]
@@ -246,12 +320,37 @@ enum AnalyzeOp {
         #[arg(long)]
         to: String,
         /// Output format.
-        ///
-        /// Per Phase 10 D11: Default is unified diff.
-        #[arg(long, value_enum, default_value = "diff")]
-        format: AnalyzeFormat,
+        #[arg(long, value_enum, default_value = "impact")]
+        output: AnalyzeOutput,
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
     },
 }
+
+/// Rust commands for analyze action (placeholder).
+#[derive(Subcommand, Debug)]
+enum AnalyzeRustCommand {
+    /// Analyze a rename operation (not yet implemented).
+    Rename {
+        /// Location of the symbol to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value = "impact")]
+        output: AnalyzeOutput,
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+}
+
+// ============================================================================
+// Shared Types
+// ============================================================================
 
 /// Verification modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -276,6 +375,18 @@ impl From<VerifyMode> for VerificationMode {
             VerifyMode::Typecheck => VerificationMode::TypeCheck,
         }
     }
+}
+
+/// Output format for analyze command.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+enum AnalyzeOutput {
+    /// Full impact analysis (default).
+    #[default]
+    Impact,
+    /// Just the references array.
+    References,
+    /// Just the symbol info.
+    Symbol,
 }
 
 /// Session management actions.
@@ -311,6 +422,19 @@ enum FixtureAction {
         /// Specific fixture to check (checks all if omitted).
         name: Option<String>,
     },
+}
+
+// ============================================================================
+// Emit JSON Envelope (Spec S07)
+// ============================================================================
+
+/// JSON envelope for emit --json output.
+#[derive(Debug, Serialize)]
+struct EmitJsonEnvelope {
+    format: String,
+    diff: String,
+    files_affected: Vec<String>,
+    metadata: serde_json::Value,
 }
 
 // ============================================================================
@@ -365,76 +489,110 @@ fn init_tracing(level: LogLevel) {
 /// Execute the CLI command.
 fn execute(cli: Cli) -> Result<(), TugError> {
     match cli.command {
-        Command::Snapshot => execute_snapshot(&cli.global),
-        Command::Analyze { op } => execute_analyze(&cli.global, op),
-        Command::Rename {
-            at,
-            to,
-            dry_run,
-            verify,
-            no_verify,
-            format,
-        } => execute_rename(&cli.global, &at, &to, dry_run, verify, no_verify, format),
-        Command::Session { action } => execute_session(&cli.global, action),
-        Command::Verify { mode, test_command } => execute_verify(&cli.global, mode, test_command),
-        Command::Clean { cache } => execute_clean(&cli.global, cache),
-        Command::Fixture { action } => execute_fixture(&cli.global, action),
-        Command::Doctor => execute_doctor(&cli.global),
+        TopLevelCommand::Apply { language } => execute_apply(&cli.global, language),
+        TopLevelCommand::Emit { language } => execute_emit(&cli.global, language),
+        TopLevelCommand::Analyze { language } => execute_analyze(&cli.global, language),
+        TopLevelCommand::Session { action } => execute_session(&cli.global, action),
+        TopLevelCommand::Fixture { action } => execute_fixture(&cli.global, action),
+        TopLevelCommand::Clean { cache } => execute_clean(&cli.global, cache),
+        TopLevelCommand::Doctor => execute_doctor(&cli.global),
     }
 }
 
 // ============================================================================
-// Command Executors
+// Action Dispatchers
 // ============================================================================
 
-/// Execute snapshot command.
-///
-/// Creates a workspace snapshot using Python language config, saves it to the session,
-/// and returns SnapshotResponse JSON.
-fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
-    let mut session = open_session(global)?;
-
-    // Create workspace snapshot using Python language config
-    let config = SnapshotConfig::for_language(Language::Python);
-    let snapshot = WorkspaceSnapshot::create(session.workspace_root(), &config)
-        .map_err(|e| TugError::internal(format!("Failed to create snapshot: {}", e)))?;
-
-    // Save snapshot to session
-    session
-        .save_snapshot(&snapshot)
-        .map_err(|e| TugError::internal(format!("Failed to save snapshot: {}", e)))?;
-
-    // Create response
-    let response = SnapshotResponse::new(
-        snapshot.snapshot_id.0.clone(),
-        snapshot.file_count as u32,
-        snapshot.total_bytes,
-    );
-
-    // Output response JSON
-    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
-    let _ = io::stdout().flush();
-
-    Ok(())
+/// Execute apply action.
+fn execute_apply(global: &GlobalArgs, language: ApplyLanguage) -> Result<(), TugError> {
+    match language {
+        ApplyLanguage::Python { command } => execute_apply_python(global, command),
+        ApplyLanguage::Rust { command } => execute_apply_rust(global, command),
+    }
 }
 
-/// Execute analyze command.
-///
-/// Per Phase 10 D10: Preview what changes a refactoring operation would make.
-/// Per Phase 10 D11: Default output is unified diff.
-///
-/// This runs the rename operation in dry-run mode (no changes applied) and outputs
-/// the results in the requested format.
+/// Execute emit action.
+fn execute_emit(global: &GlobalArgs, language: EmitLanguage) -> Result<(), TugError> {
+    match language {
+        EmitLanguage::Python { command } => execute_emit_python(global, command),
+        EmitLanguage::Rust { command } => execute_emit_rust(global, command),
+    }
+}
+
+/// Execute analyze action.
+fn execute_analyze(global: &GlobalArgs, language: AnalyzeLanguage) -> Result<(), TugError> {
+    match language {
+        AnalyzeLanguage::Python { command } => execute_analyze_python(global, command),
+        AnalyzeLanguage::Rust { command } => execute_analyze_rust(global, command),
+    }
+}
+
+// ============================================================================
+// Python Command Executors
+// ============================================================================
+
+/// Execute apply python command.
 #[cfg(feature = "python")]
-fn execute_analyze(global: &GlobalArgs, op: AnalyzeOp) -> Result<(), TugError> {
-    match op {
-        AnalyzeOp::Rename { at, to, format } => {
+fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Result<(), TugError> {
+    match command {
+        ApplyPythonCommand::Rename {
+            at,
+            to,
+            verify,
+            no_verify,
+            filter: _filter, // TODO: Step 3 will integrate filter
+        } => {
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Run rename in dry-run mode with no verification
-            // The analyze command is purely for previewing changes
-            let json = do_rename(
+            // Determine effective verification mode
+            // --no-verify takes precedence
+            let effective_verify = if no_verify {
+                VerificationMode::None
+            } else {
+                verify.into()
+            };
+
+            // Run the rename operation (apply=true)
+            let json = do_rename(&session, Some(python_path), &at, &to, effective_verify, true)?;
+
+            // Output JSON result
+            println!("{}", json);
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(feature = "python"))]
+fn execute_apply_python(
+    _global: &GlobalArgs,
+    _command: ApplyPythonCommand,
+) -> Result<(), TugError> {
+    Err(tugtool::cli::python_not_available())
+}
+
+/// Execute apply rust command (placeholder).
+fn execute_apply_rust(_global: &GlobalArgs, _command: ApplyRustCommand) -> Result<(), TugError> {
+    Err(TugError::invalid_args(
+        "rust language support not yet implemented".to_string(),
+    ))
+}
+
+/// Execute emit python command.
+#[cfg(feature = "python")]
+fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Result<(), TugError> {
+    match command {
+        EmitPythonCommand::Rename {
+            at,
+            to,
+            json: emit_json,
+            filter: _filter, // TODO: Step 3 will integrate filter
+        } => {
+            let mut session = open_session(global)?;
+            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Run rename in dry-run mode (apply=false) with no verification
+            let json_result = do_rename(
                 &session,
                 Some(python_path),
                 &at,
@@ -443,36 +601,47 @@ fn execute_analyze(global: &GlobalArgs, op: AnalyzeOp) -> Result<(), TugError> {
                 false, // Never apply changes
             )?;
 
-            // Output based on format
-            match format {
-                AnalyzeFormat::Json => {
-                    // Full JSON response
-                    println!("{}", json);
-                }
-                AnalyzeFormat::Diff => {
-                    // Extract unified diff from the JSON response
-                    let result: serde_json::Value = serde_json::from_str(&json)
-                        .map_err(|e| TugError::internal(e.to_string()))?;
+            // Parse result to extract diff
+            let result: serde_json::Value = serde_json::from_str(&json_result)
+                .map_err(|e| TugError::internal(e.to_string()))?;
 
-                    let diff = result
-                        .get("patch")
-                        .and_then(|p| p.get("unified_diff"))
-                        .and_then(|d| d.as_str())
-                        .unwrap_or("");
+            let diff = result
+                .get("patch")
+                .and_then(|p| p.get("unified_diff"))
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
 
-                    // Output diff as-is (empty diff = empty output for machine consumption)
-                    // This is git-apply compatible: empty input = no-op
-                    if !diff.is_empty() {
-                        print!("{}", diff);
-                    }
-                    // If diff is empty, output nothing (not even a newline)
-                }
-                AnalyzeFormat::Summary => {
-                    // Brief text summary
-                    let result: serde_json::Value = serde_json::from_str(&json)
-                        .map_err(|e| TugError::internal(e.to_string()))?;
+            // Extract files affected
+            let files_affected: Vec<String> = result
+                .get("patch")
+                .and_then(|p| p.get("edits"))
+                .and_then(|e| e.as_array())
+                .map(|edits| {
+                    let mut files: Vec<String> = edits
+                        .iter()
+                        .filter_map(|e| e.get("file").and_then(|f| f.as_str()).map(String::from))
+                        .collect();
+                    files.sort();
+                    files.dedup();
+                    files
+                })
+                .unwrap_or_default();
 
-                    output_analyze_summary(&result)?;
+            if emit_json {
+                // Output JSON envelope per Spec S07
+                let envelope = EmitJsonEnvelope {
+                    format: "unified".to_string(),
+                    diff: diff.to_string(),
+                    files_affected,
+                    metadata: serde_json::json!({}),
+                };
+                let json_output = serde_json::to_string_pretty(&envelope)
+                    .map_err(|e| TugError::internal(e.to_string()))?;
+                println!("{}", json_output);
+            } else {
+                // Output plain diff (empty diff = empty output for machine consumption)
+                if !diff.is_empty() {
+                    print!("{}", diff);
                 }
             }
 
@@ -481,240 +650,103 @@ fn execute_analyze(global: &GlobalArgs, op: AnalyzeOp) -> Result<(), TugError> {
     }
 }
 
-/// Execute analyze command (Python not available).
 #[cfg(not(feature = "python"))]
-fn execute_analyze(_global: &GlobalArgs, _op: AnalyzeOp) -> Result<(), TugError> {
+fn execute_emit_python(_global: &GlobalArgs, _command: EmitPythonCommand) -> Result<(), TugError> {
     Err(tugtool::cli::python_not_available())
 }
 
-/// Output a brief text summary of analyze results.
-///
-/// Per Phase 10 Spec S07: --format summary produces brief text.
-#[cfg(feature = "python")]
-fn output_analyze_summary(result: &serde_json::Value) -> Result<(), TugError> {
-    // Get symbol info
-    let symbol_name = result
-        .get("patch")
-        .and_then(|p| p.get("edits"))
-        .and_then(|e| e.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|e| e.get("old_text"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-
-    // Get counts from summary
-    let files_changed = result
-        .get("summary")
-        .and_then(|s| s.get("files_changed"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let edits_count = result
-        .get("summary")
-        .and_then(|s| s.get("edits_count"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-
-    if edits_count == 0 {
-        println!("No changes needed for '{}'.", symbol_name);
-    } else {
-        println!(
-            "Would rename '{}': {} file(s), {} edit(s)",
-            symbol_name, files_changed, edits_count
-        );
-
-        // List affected files
-        if let Some(edits) = result
-            .get("patch")
-            .and_then(|p| p.get("edits"))
-            .and_then(|e| e.as_array())
-        {
-            let mut files: Vec<&str> = edits
-                .iter()
-                .filter_map(|e| e.get("file").and_then(|f| f.as_str()))
-                .collect();
-            files.sort();
-            files.dedup();
-
-            for file in files {
-                println!("  {}", file);
-            }
-        }
-    }
-
-    Ok(())
+/// Execute emit rust command (placeholder).
+fn execute_emit_rust(_global: &GlobalArgs, _command: EmitRustCommand) -> Result<(), TugError> {
+    Err(TugError::invalid_args(
+        "rust language support not yet implemented".to_string(),
+    ))
 }
 
-/// Execute rename command.
-///
-/// Per Phase 10 D09: Apply-by-default. The `--dry-run` flag prevents file modification.
-/// Per Phase 10 D12: Default verification mode is `syntax`.
-///
-/// # Arguments
-///
-/// * `global` - Global CLI arguments
-/// * `at` - Location string in "file:line:col" format
-/// * `to` - New name for the symbol
-/// * `dry_run` - If true, preview changes without applying
-/// * `verify` - Verification mode (default: syntax)
-/// * `no_verify` - If true, skip verification entirely
-/// * `format` - Output format (text or json)
+/// Execute analyze python command.
 #[cfg(feature = "python")]
-fn execute_rename(
+fn execute_analyze_python(
     global: &GlobalArgs,
-    at: &str,
-    to: &str,
-    dry_run: bool,
-    verify: VerifyMode,
-    no_verify: bool,
-    format: RenameFormat,
+    command: AnalyzePythonCommand,
 ) -> Result<(), TugError> {
-    let mut session = open_session(global)?;
-    let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+    match command {
+        AnalyzePythonCommand::Rename {
+            at,
+            to,
+            output,
+            filter: _filter, // TODO: Step 3 will integrate filter
+        } => {
+            let mut session = open_session(global)?;
+            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-    // Determine effective verification mode
-    // --no-verify takes precedence (conflicts_with is already enforced by clap)
-    let effective_verify = if no_verify {
-        VerificationMode::None
-    } else {
-        verify.into()
-    };
+            // Run rename in dry-run mode with no verification
+            let json_result = do_rename(
+                &session,
+                Some(python_path),
+                &at,
+                &to,
+                VerificationMode::None,
+                false, // Never apply changes
+            )?;
 
-    // Apply changes unless --dry-run is specified
-    let apply = !dry_run;
+            // Parse result
+            let result: serde_json::Value = serde_json::from_str(&json_result)
+                .map_err(|e| TugError::internal(e.to_string()))?;
 
-    // Run the rename operation
-    let json = do_rename(&session, Some(python_path), at, to, effective_verify, apply)?;
-
-    // Output based on format
-    match format {
-        RenameFormat::Json => {
-            println!("{}", json);
-        }
-        RenameFormat::Text => {
-            // Parse the JSON and produce human-readable summary
-            let result: serde_json::Value =
-                serde_json::from_str(&json).map_err(|e| TugError::internal(e.to_string()))?;
-
-            output_rename_summary(&result, dry_run)?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Execute rename command (Python not available).
-#[cfg(not(feature = "python"))]
-fn execute_rename(
-    _global: &GlobalArgs,
-    _at: &str,
-    _to: &str,
-    _dry_run: bool,
-    _verify: VerifyMode,
-    _no_verify: bool,
-    _format: RenameFormat,
-) -> Result<(), TugError> {
-    Err(tugtool::cli::python_not_available())
-}
-
-/// Output a human-readable summary of rename results.
-///
-/// Per Phase 10 Spec S08: Default output is human-readable summary.
-#[cfg(feature = "python")]
-fn output_rename_summary(result: &serde_json::Value, dry_run: bool) -> Result<(), TugError> {
-    let status = result
-        .get("status")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-
-    // Check if this was a dry run
-    let applied = result
-        .get("applied")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    // Get symbol info
-    let symbol_name = result
-        .get("symbol")
-        .and_then(|s| s.get("name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    let symbol_kind = result
-        .get("symbol")
-        .and_then(|s| s.get("kind"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("symbol");
-
-    // Get counts
-    let files_affected = result
-        .get("files_written")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
-    let edits_count = result
-        .get("edits_count")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-
-    // Format output
-    if dry_run || !applied {
-        println!("Dry run: would rename {} '{}'", symbol_kind, symbol_name);
-        println!(
-            "  {} file(s) would be affected, {} edit(s)",
-            files_affected, edits_count
-        );
-    } else {
-        println!("Renamed {} '{}' successfully", symbol_kind, symbol_name);
-        println!(
-            "  {} file(s) modified, {} edit(s) applied",
-            files_affected, edits_count
-        );
-    }
-
-    // Show verification status if present
-    if let Some(verification) = result.get("verification") {
-        let verify_mode = verification
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("none");
-        let verify_passed = verification
-            .get("passed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        if verify_mode != "none" {
-            if verify_passed {
-                println!("  Verification ({}): passed", verify_mode);
-            } else {
-                println!("  Verification ({}): FAILED", verify_mode);
-            }
-        }
-    }
-
-    // Show warnings if present
-    if let Some(warnings) = result.get("warnings").and_then(|v| v.as_array()) {
-        if !warnings.is_empty() {
-            println!("  Warnings:");
-            for warning in warnings {
-                if let Some(msg) = warning.as_str() {
-                    println!("    - {}", msg);
+            // Output based on format
+            match output {
+                AnalyzeOutput::Impact => {
+                    // Full JSON response
+                    println!("{}", json_result);
+                }
+                AnalyzeOutput::References => {
+                    // Extract just references
+                    let references = result
+                        .get("patch")
+                        .and_then(|p| p.get("edits"))
+                        .cloned()
+                        .unwrap_or(serde_json::json!([]));
+                    let output = serde_json::to_string_pretty(&references)
+                        .map_err(|e| TugError::internal(e.to_string()))?;
+                    println!("{}", output);
+                }
+                AnalyzeOutput::Symbol => {
+                    // Extract just symbol info
+                    let symbol = result
+                        .get("symbol")
+                        .cloned()
+                        .unwrap_or(serde_json::json!(null));
+                    let output = serde_json::to_string_pretty(&symbol)
+                        .map_err(|e| TugError::internal(e.to_string()))?;
+                    println!("{}", output);
                 }
             }
+
+            Ok(())
         }
     }
-
-    // Show status
-    if status == "error" {
-        if let Some(error) = result.get("error") {
-            let error_msg = error
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error");
-            println!("  Status: error - {}", error_msg);
-        }
-    }
-
-    Ok(())
 }
+
+#[cfg(not(feature = "python"))]
+fn execute_analyze_python(
+    _global: &GlobalArgs,
+    _command: AnalyzePythonCommand,
+) -> Result<(), TugError> {
+    Err(tugtool::cli::python_not_available())
+}
+
+/// Execute analyze rust command (placeholder).
+fn execute_analyze_rust(
+    _global: &GlobalArgs,
+    _command: AnalyzeRustCommand,
+) -> Result<(), TugError> {
+    Err(TugError::invalid_args(
+        "rust language support not yet implemented".to_string(),
+    ))
+}
+
+// ============================================================================
+// Utility Command Executors
+// ============================================================================
 
 /// Execute session command.
 fn execute_session(global: &GlobalArgs, action: SessionAction) -> Result<(), TugError> {
@@ -728,133 +760,6 @@ fn execute_session(global: &GlobalArgs, action: SessionAction) -> Result<(), Tug
             Ok(())
         }
     }
-}
-
-/// Execute verify command.
-///
-/// Runs verification on the current workspace state using the specified mode.
-#[cfg(feature = "python")]
-fn execute_verify(
-    global: &GlobalArgs,
-    mode: VerifyMode,
-    test_command: Option<String>,
-) -> Result<(), TugError> {
-    let mut session = open_session(global)?;
-
-    // Handle VerifyMode::None
-    if matches!(mode, VerifyMode::None) {
-        let response = VerifyResponse::passed("none");
-        emit_response(&response, &mut io::stdout())
-            .map_err(|e| TugError::internal(e.to_string()))?;
-        let _ = io::stdout().flush();
-        return Ok(());
-    }
-
-    // Resolve Python interpreter using cached toolchain
-    let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
-
-    // Resolve test command if mode is Tests
-    let resolved_test_cmd = if mode == VerifyMode::Tests {
-        let vars = TemplateVars::new(
-            Some(python_path.to_string_lossy().to_string()),
-            Some(session.workspace_root().to_string_lossy().to_string()),
-        );
-        resolve_test_command(test_command.as_deref(), session.workspace_root(), &vars)
-            .map_err(|e| TugError::internal(e.to_string()))?
-    } else {
-        None
-    };
-
-    // Run verification based on mode
-    let mode_str = match mode {
-        VerifyMode::None => "none",
-        VerifyMode::Syntax => "syntax",
-        VerifyMode::Tests => "tests",
-        VerifyMode::Typecheck => "typecheck",
-    };
-
-    let output = match mode {
-        VerifyMode::None => unreachable!(), // Already handled above
-        VerifyMode::Syntax | VerifyMode::Typecheck => {
-            // Run compileall for syntax verification
-            ProcessCommand::new(&python_path)
-                .args(["-m", "compileall", "-q", "."])
-                .current_dir(session.workspace_root())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .map_err(|e| TugError::internal(format!("Failed to run compileall: {}", e)))?
-        }
-        VerifyMode::Tests => {
-            // First run syntax check
-            let syntax_output = ProcessCommand::new(&python_path)
-                .args(["-m", "compileall", "-q", "."])
-                .current_dir(session.workspace_root())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .map_err(|e| TugError::internal(format!("Failed to run compileall: {}", e)))?;
-
-            if !syntax_output.status.success() {
-                syntax_output
-            } else if let Some(ref test_cmd) = resolved_test_cmd {
-                // Run the test command
-                if test_cmd.args.is_empty() {
-                    return Err(TugError::internal("Test command is empty"));
-                }
-                let (program, args) = test_cmd.args.split_first().unwrap();
-                ProcessCommand::new(program)
-                    .args(args)
-                    .current_dir(session.workspace_root())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .output()
-                    .map_err(|e| TugError::internal(format!("Failed to run test command: {}", e)))?
-            } else {
-                // No test command found, just return syntax success
-                syntax_output
-            }
-        }
-    };
-
-    let response = if output.status.success() {
-        VerifyResponse::passed(mode_str)
-    } else {
-        let combined_output = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let exit_code = output.status.code().unwrap_or(1);
-        VerifyResponse::failed(mode_str, combined_output, exit_code)
-    };
-
-    // If verification failed, emit response and return verification error
-    if !response.passed {
-        emit_response(&response, &mut io::stdout())
-            .map_err(|e| TugError::internal(e.to_string()))?;
-        let _ = io::stdout().flush();
-        return Err(TugError::VerificationFailed {
-            mode: mode_str.to_string(),
-            output: response.output.clone().unwrap_or_default(),
-            exit_code: response.exit_code.unwrap_or(1),
-        });
-    }
-
-    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
-    let _ = io::stdout().flush();
-
-    Ok(())
-}
-
-/// Execute verify command (Python not available).
-#[cfg(not(feature = "python"))]
-fn execute_verify(
-    _global: &GlobalArgs,
-    _mode: VerifyMode,
-    _test_command: Option<String>,
-) -> Result<(), TugError> {
-    Err(tugtool::cli::python_not_available())
 }
 
 /// Execute clean command.
@@ -1079,8 +984,6 @@ fn execute_fixture_status(global: &GlobalArgs, name: Option<String>) -> Result<(
 /// Runs environment diagnostics:
 /// 1. workspace_root: Verifies workspace root detection
 /// 2. python_files: Counts Python files in workspace
-///
-/// Per Phase 10 Spec S02: Doctor Response Schema.
 fn execute_doctor(global: &GlobalArgs) -> Result<(), TugError> {
     let mut checks = Vec::new();
 
@@ -1359,6 +1262,39 @@ fn fixture_error_to_tug_error(e: tugtool::fixture::FixtureError) -> TugError {
 }
 
 // ============================================================================
+// Legacy Compatibility (to be removed in Step 5)
+// ============================================================================
+
+// Unused import warnings are expected - these are used in execute_snapshot
+#[allow(dead_code)]
+fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
+    let mut session = open_session(global)?;
+
+    // Create workspace snapshot using Python language config
+    let config = SnapshotConfig::for_language(Language::Python);
+    let snapshot = WorkspaceSnapshot::create(session.workspace_root(), &config)
+        .map_err(|e| TugError::internal(format!("Failed to create snapshot: {}", e)))?;
+
+    // Save snapshot to session
+    session
+        .save_snapshot(&snapshot)
+        .map_err(|e| TugError::internal(format!("Failed to save snapshot: {}", e)))?;
+
+    // Create response
+    let response = SnapshotResponse::new(
+        snapshot.snapshot_id.0.clone(),
+        snapshot.file_count as u32,
+        snapshot.total_bytes,
+    );
+
+    // Output response JSON
+    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = io::stdout().flush();
+
+    Ok(())
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1370,15 +1306,15 @@ mod tests {
         use super::*;
 
         // ====================================================================
-        // analyze command tests (Phase 10 Step 14)
+        // New CLI structure tests (Phase 12)
         // ====================================================================
 
         #[test]
-        fn test_analyze_rename_diff_default() {
-            // AC-01: Default format is unified diff
+        fn test_apply_python_rename_no_filter() {
             let args = [
                 "tug",
-                "analyze",
+                "apply",
+                "python",
                 "rename",
                 "--at",
                 "src/main.py:10:5",
@@ -1387,288 +1323,231 @@ mod tests {
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Analyze {
-                    op: AnalyzeOp::Rename { at, to, format },
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command:
+                                ApplyPythonCommand::Rename {
+                                    at, to, filter, ..
+                                },
+                        },
                 } => {
                     assert_eq!(at, "src/main.py:10:5");
                     assert_eq!(to, "new_name");
-                    assert!(matches!(format, AnalyzeFormat::Diff));
+                    assert!(filter.is_empty());
                 }
-                _ => panic!("expected Analyze Rename"),
+                _ => panic!("expected Apply Python Rename"),
             }
         }
 
         #[test]
-        fn test_analyze_rename_format_json() {
-            // AC-02: --format json produces JSON
+        fn test_apply_python_rename_with_filter() {
             let args = [
                 "tug",
-                "analyze",
+                "apply",
+                "python",
                 "rename",
                 "--at",
                 "src/main.py:10:5",
                 "--to",
                 "new_name",
-                "--format",
-                "json",
+                "--",
+                "src/**",
+                "!tests/**",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Analyze {
-                    op: AnalyzeOp::Rename { format, .. },
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { filter, .. },
+                        },
                 } => {
-                    assert!(matches!(format, AnalyzeFormat::Json));
+                    assert_eq!(filter, vec!["src/**", "!tests/**"]);
                 }
-                _ => panic!("expected Analyze Rename"),
+                _ => panic!("expected Apply Python Rename"),
             }
         }
 
         #[test]
-        fn test_analyze_rename_format_summary() {
-            // AC-03: --format summary produces brief text
+        fn test_apply_python_rename_verify_modes() {
+            // Default is syntax
             let args = [
-                "tug",
-                "analyze",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--format",
-                "summary",
+                "tug", "apply", "python", "rename", "--at", "x:1:1", "--to", "y",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Analyze {
-                    op: AnalyzeOp::Rename { format, .. },
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { verify, .. },
+                        },
                 } => {
-                    assert!(matches!(format, AnalyzeFormat::Summary));
-                }
-                _ => panic!("expected Analyze Rename"),
-            }
-        }
-
-        // ====================================================================
-        // Old command removal tests (Phase 10 Step 14)
-        // ====================================================================
-
-        #[test]
-        fn test_analyze_impact_removed() {
-            // OR-01: `tug analyze-impact` → unknown command
-            let args = [
-                "tug",
-                "analyze-impact",
-                "rename-symbol",
-                "--at",
-                "test.py:1:1",
-                "--to",
-                "x",
-            ];
-            let result = Cli::try_parse_from(args);
-            assert!(result.is_err(), "analyze-impact should be removed");
-        }
-
-        #[test]
-        fn test_run_command_removed() {
-            // OR-02: `tug run` → unknown command
-            let args = [
-                "tug",
-                "run",
-                "--apply",
-                "rename-symbol",
-                "--at",
-                "test.py:1:1",
-                "--to",
-                "x",
-            ];
-            let result = Cli::try_parse_from(args);
-            assert!(result.is_err(), "run should be removed");
-        }
-
-        #[test]
-        fn test_no_analyze_impact_refs_in_main() {
-            // OR-03: No stale references to analyze-impact in main.rs
-            // Check production code only (before #[cfg(test)] module)
-            let main_source = include_str!("main.rs");
-            let production_code = main_source
-                .split("#[cfg(test)]")
-                .next()
-                .unwrap_or(main_source);
-
-            let lines_with_analyze_impact: Vec<_> = production_code
-                .lines()
-                .enumerate()
-                .filter(|(_, line)| {
-                    line.contains("analyze-impact") && !line.trim().starts_with("//!")
-                })
-                .collect();
-            assert!(
-                lines_with_analyze_impact.is_empty(),
-                "Found stale analyze-impact references in production code: {:?}",
-                lines_with_analyze_impact
-            );
-        }
-
-        #[test]
-        fn test_no_run_apply_refs_in_main() {
-            // OR-04: No stale references to `run --apply` in main.rs
-            // Check production code only (before #[cfg(test)] module)
-            let main_source = include_str!("main.rs");
-            let production_code = main_source
-                .split("#[cfg(test)]")
-                .next()
-                .unwrap_or(main_source);
-
-            let lines_with_run_command: Vec<_> = production_code
-                .lines()
-                .enumerate()
-                .filter(|(_, line)| line.contains("Command::Run") || line.contains("execute_run"))
-                .collect();
-            assert!(
-                lines_with_run_command.is_empty(),
-                "Found stale run command references in production code: {:?}",
-                lines_with_run_command
-            );
-        }
-
-        #[test]
-        fn test_skills_use_new_commands() {
-            // OR-05: Skills invoke tug rename/analyze, not old commands
-            let tug_rename_skill = include_str!("../../../.claude/commands/tug-rename.md");
-            let tug_analyze_rename_skill =
-                include_str!("../../../.claude/commands/tug-analyze-rename.md");
-
-            // Verify new commands are present
-            assert!(
-                tug_rename_skill.contains("tug rename"),
-                "tug-rename.md should use 'tug rename'"
-            );
-            assert!(
-                tug_rename_skill.contains("tug analyze rename"),
-                "tug-rename.md should reference 'tug analyze rename'"
-            );
-            assert!(
-                tug_analyze_rename_skill.contains("tug analyze rename"),
-                "tug-analyze-rename.md should use 'tug analyze rename'"
-            );
-
-            // Verify old commands are NOT present
-            assert!(
-                !tug_rename_skill.contains("analyze-impact"),
-                "tug-rename.md should not reference 'analyze-impact'"
-            );
-            assert!(
-                !tug_rename_skill.contains("tug run"),
-                "tug-rename.md should not reference 'tug run'"
-            );
-            assert!(
-                !tug_analyze_rename_skill.contains("analyze-impact"),
-                "tug-analyze-rename.md should not reference 'analyze-impact'"
-            );
-            assert!(
-                !tug_analyze_rename_skill.contains("tug run"),
-                "tug-analyze-rename.md should not reference 'tug run'"
-            );
-        }
-
-        // ====================================================================
-        // rename command tests (existing from Step 13)
-        // ====================================================================
-
-        #[test]
-        fn parse_rename_default_options() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "lib.py:42:8",
-                "--to",
-                "better_name",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename {
-                    at,
-                    to,
-                    dry_run,
-                    verify,
-                    no_verify,
-                    format,
-                } => {
-                    assert_eq!(at, "lib.py:42:8");
-                    assert_eq!(to, "better_name");
-                    assert!(!dry_run);
                     assert!(matches!(verify, VerifyMode::Syntax));
-                    assert!(!no_verify);
-                    assert!(matches!(format, RenameFormat::Text));
                 }
-                _ => panic!("expected Rename"),
+                _ => panic!("expected Apply Python Rename"),
             }
-        }
 
-        #[test]
-        fn parse_rename_dry_run() {
+            // --no-verify
             let args = [
                 "tug",
+                "apply",
+                "python",
                 "rename",
                 "--at",
-                "lib.py:1:1",
+                "x:1:1",
                 "--to",
-                "x",
-                "--dry-run",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { dry_run, .. } => {
-                    assert!(dry_run);
-                }
-                _ => panic!("expected Rename"),
-            }
-        }
-
-        #[test]
-        fn parse_rename_no_verify() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "lib.py:1:1",
-                "--to",
-                "x",
+                "y",
                 "--no-verify",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Rename { no_verify, .. } => {
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { no_verify, .. },
+                        },
+                } => {
                     assert!(no_verify);
                 }
-                _ => panic!("expected Rename"),
+                _ => panic!("expected Apply Python Rename"),
             }
         }
 
         #[test]
-        fn parse_rename_format_json() {
+        fn test_emit_python_rename() {
             let args = [
-                "tug",
-                "rename",
-                "--at",
-                "lib.py:1:1",
-                "--to",
-                "x",
-                "--format",
-                "json",
+                "tug", "emit", "python", "rename", "--at", "x:1:1", "--to", "y",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Rename { format, .. } => {
-                    assert!(matches!(format, RenameFormat::Json));
+                TopLevelCommand::Emit {
+                    language:
+                        EmitLanguage::Python {
+                            command: EmitPythonCommand::Rename { at, to, json, .. },
+                        },
+                } => {
+                    assert_eq!(at, "x:1:1");
+                    assert_eq!(to, "y");
+                    assert!(!json);
                 }
-                _ => panic!("expected Rename"),
+                _ => panic!("expected Emit Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_emit_python_rename_json() {
+            let args = [
+                "tug", "emit", "python", "rename", "--at", "x:1:1", "--to", "y", "--json",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Emit {
+                    language:
+                        EmitLanguage::Python {
+                            command: EmitPythonCommand::Rename { json, .. },
+                        },
+                } => {
+                    assert!(json);
+                }
+                _ => panic!("expected Emit Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_analyze_python_rename() {
+            let args = [
+                "tug", "analyze", "python", "rename", "--at", "x:1:1", "--to", "y",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Analyze {
+                    language:
+                        AnalyzeLanguage::Python {
+                            command: AnalyzePythonCommand::Rename { at, to, output, .. },
+                        },
+                } => {
+                    assert_eq!(at, "x:1:1");
+                    assert_eq!(to, "y");
+                    assert!(matches!(output, AnalyzeOutput::Impact));
+                }
+                _ => panic!("expected Analyze Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_analyze_python_rename_output_references() {
+            let args = [
+                "tug",
+                "analyze",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--output",
+                "references",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Analyze {
+                    language:
+                        AnalyzeLanguage::Python {
+                            command: AnalyzePythonCommand::Rename { output, .. },
+                        },
+                } => {
+                    assert!(matches!(output, AnalyzeOutput::References));
+                }
+                _ => panic!("expected Analyze Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_analyze_python_rename_output_symbol() {
+            let args = [
+                "tug",
+                "analyze",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--output",
+                "symbol",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Analyze {
+                    language:
+                        AnalyzeLanguage::Python {
+                            command: AnalyzePythonCommand::Rename { output, .. },
+                        },
+                } => {
+                    assert!(matches!(output, AnalyzeOutput::Symbol));
+                }
+                _ => panic!("expected Analyze Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_rust_language_parses() {
+            // Verify Rust language parses (even though it errors at execution)
+            let args = [
+                "tug", "apply", "rust", "rename", "--at", "x:1:1", "--to", "y",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Apply {
+                    language: ApplyLanguage::Rust { .. },
+                } => {}
+                _ => panic!("expected Apply Rust"),
             }
         }
 
         // ====================================================================
-        // Other command tests (unchanged)
+        // Utility command tests (unchanged from Phase 10)
         // ====================================================================
 
         #[test]
@@ -1677,22 +1556,10 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(matches!(
                 cli.command,
-                Command::Session {
+                TopLevelCommand::Session {
                     action: SessionAction::Status
                 }
             ));
-        }
-
-        #[test]
-        fn parse_verify_syntax() {
-            let args = ["tug", "verify", "syntax"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Verify { mode, .. } => {
-                    assert!(matches!(mode, VerifyMode::Syntax));
-                }
-                _ => panic!("expected Verify"),
-            }
         }
 
         #[test]
@@ -1700,7 +1567,7 @@ mod tests {
             let args = ["tug", "clean", "--cache"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Clean { cache } => {
+                TopLevelCommand::Clean { cache } => {
                     assert!(cache);
                 }
                 _ => panic!("expected Clean"),
@@ -1708,65 +1575,10 @@ mod tests {
         }
 
         #[test]
-        fn parse_snapshot() {
-            let args = ["tug", "snapshot"];
+        fn parse_doctor() {
+            let args = ["tug", "doctor"];
             let cli = Cli::try_parse_from(args).unwrap();
-            assert!(matches!(cli.command, Command::Snapshot));
-        }
-
-        #[test]
-        fn parse_verify_none() {
-            let args = ["tug", "verify", "none"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Verify { mode, .. } => {
-                    assert!(matches!(mode, VerifyMode::None));
-                }
-                _ => panic!("expected Verify"),
-            }
-        }
-
-        #[test]
-        fn parse_verify_tests() {
-            let args = ["tug", "verify", "tests"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Verify { mode, .. } => {
-                    assert!(matches!(mode, VerifyMode::Tests));
-                }
-                _ => panic!("expected Verify"),
-            }
-        }
-
-        #[test]
-        fn parse_verify_typecheck() {
-            let args = ["tug", "verify", "typecheck"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Verify { mode, .. } => {
-                    assert!(matches!(mode, VerifyMode::Typecheck));
-                }
-                _ => panic!("expected Verify"),
-            }
-        }
-
-        #[test]
-        fn parse_verify_with_test_command() {
-            let args = [
-                "tug",
-                "verify",
-                "tests",
-                "--test-command",
-                r#"["pytest", "-v"]"#,
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Verify { mode, test_command } => {
-                    assert!(matches!(mode, VerifyMode::Tests));
-                    assert_eq!(test_command, Some(r#"["pytest", "-v"]"#.to_string()));
-                }
-                _ => panic!("expected Verify"),
-            }
+            assert!(matches!(cli.command, TopLevelCommand::Doctor));
         }
 
         #[test]
@@ -1774,7 +1586,7 @@ mod tests {
             let args = ["tug", "fixture", "fetch"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Fetch { name, force },
                 } => {
                     assert!(name.is_none());
@@ -1789,7 +1601,7 @@ mod tests {
             let args = ["tug", "fixture", "fetch", "temporale"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Fetch { name, force },
                 } => {
                     assert_eq!(name, Some("temporale".to_string()));
@@ -1804,7 +1616,7 @@ mod tests {
             let args = ["tug", "fixture", "fetch", "--force"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Fetch { name, force },
                 } => {
                     assert!(name.is_none());
@@ -1819,7 +1631,7 @@ mod tests {
             let args = ["tug", "fixture", "fetch", "temporale", "--force"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Fetch { name, force },
                 } => {
                     assert_eq!(name, Some("temporale".to_string()));
@@ -1834,7 +1646,7 @@ mod tests {
             let args = ["tug", "fixture", "update", "temporale", "--ref", "v0.2.0"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Update { name, git_ref },
                 } => {
                     assert_eq!(name, "temporale");
@@ -1850,7 +1662,7 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(matches!(
                 cli.command,
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::List
                 }
             ));
@@ -1861,7 +1673,7 @@ mod tests {
             let args = ["tug", "fixture", "status"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Status { name },
                 } => {
                     assert!(name.is_none());
@@ -1875,13 +1687,51 @@ mod tests {
             let args = ["tug", "fixture", "status", "temporale"];
             let cli = Cli::try_parse_from(args).unwrap();
             match cli.command {
-                Command::Fixture {
+                TopLevelCommand::Fixture {
                     action: FixtureAction::Status { name },
                 } => {
                     assert_eq!(name, Some("temporale".to_string()));
                 }
                 _ => panic!("expected Fixture Status"),
             }
+        }
+
+        // ====================================================================
+        // Old command removal tests
+        // ====================================================================
+
+        #[test]
+        fn test_old_rename_syntax_fails() {
+            // Old syntax: tug rename --at ... --to ...
+            let args = ["tug", "rename", "--at", "x:1:1", "--to", "y"];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "old 'tug rename' syntax should fail");
+        }
+
+        #[test]
+        fn test_old_analyze_syntax_fails() {
+            // Old syntax: tug analyze rename --at ... --to ...
+            // Now analyze requires a language: tug analyze python rename ...
+            let args = ["tug", "analyze", "rename", "--at", "x:1:1", "--to", "y"];
+            let result = Cli::try_parse_from(args);
+            assert!(
+                result.is_err(),
+                "old 'tug analyze rename' syntax should fail"
+            );
+        }
+
+        #[test]
+        fn test_snapshot_command_removed() {
+            let args = ["tug", "snapshot"];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "snapshot command should be removed");
+        }
+
+        #[test]
+        fn test_verify_command_removed() {
+            let args = ["tug", "verify", "syntax"];
+            let result = Cli::try_parse_from(args);
+            assert!(result.is_err(), "verify command should be removed");
         }
     }
 
@@ -1906,16 +1756,15 @@ mod tests {
 
         #[test]
         fn parse_session_dir_flag() {
-            let args = ["tug", "--session-dir", "/tmp/session", "session", "status"];
+            let args = [
+                "tug",
+                "--session-dir",
+                "/tmp/.tug",
+                "session",
+                "status",
+            ];
             let cli = Cli::try_parse_from(args).unwrap();
-            assert_eq!(cli.global.session_dir, Some(PathBuf::from("/tmp/session")));
-        }
-
-        #[test]
-        fn parse_session_name_flag() {
-            let args = ["tug", "--session-name", "my-session", "session", "status"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert_eq!(cli.global.session_name, Some("my-session".to_string()));
+            assert_eq!(cli.global.session_dir, Some(PathBuf::from("/tmp/.tug")));
         }
 
         #[test]
@@ -1923,13 +1772,6 @@ mod tests {
             let args = ["tug", "--fresh", "session", "status"];
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(cli.global.fresh);
-        }
-
-        #[test]
-        fn parse_log_level_debug() {
-            let args = ["tug", "--log-level", "debug", "session", "status"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert!(matches!(cli.global.log_level, LogLevel::Debug));
         }
 
         #[test]
@@ -1963,901 +1805,35 @@ mod tests {
             ];
             let cli = Cli::try_parse_from(args).unwrap();
             assert_eq!(cli.global.toolchain.len(), 2);
-            assert_eq!(cli.global.toolchain[0].0, "python");
-            assert_eq!(cli.global.toolchain[1].0, "rust");
         }
 
         #[test]
-        fn parse_toolchain_invalid_format() {
-            let args = [
-                "tug",
-                "--toolchain",
-                "python-no-equals",
-                "session",
-                "status",
-            ];
-            let result = Cli::try_parse_from(args);
-            assert!(result.is_err());
-        }
-
-        #[test]
-        fn default_log_level_is_warn() {
-            let args = ["tug", "session", "status"];
+        fn parse_log_level() {
+            let args = ["tug", "--log-level", "debug", "session", "status"];
             let cli = Cli::try_parse_from(args).unwrap();
-            assert!(matches!(cli.global.log_level, LogLevel::Warn));
+            assert!(matches!(cli.global.log_level, LogLevel::Debug));
         }
     }
 
-    #[cfg(feature = "python")]
-    mod verify_mode_conversion {
+    mod emit_json_envelope {
         use super::*;
 
         #[test]
-        fn verify_mode_none_converts() {
-            let vm: VerificationMode = VerifyMode::None.into();
-            assert!(matches!(vm, VerificationMode::None));
-        }
-
-        #[test]
-        fn verify_mode_syntax_converts() {
-            let vm: VerificationMode = VerifyMode::Syntax.into();
-            assert!(matches!(vm, VerificationMode::Syntax));
-        }
-
-        #[test]
-        fn verify_mode_tests_converts() {
-            let vm: VerificationMode = VerifyMode::Tests.into();
-            assert!(matches!(vm, VerificationMode::Tests));
-        }
-
-        #[test]
-        fn verify_mode_typecheck_converts() {
-            let vm: VerificationMode = VerifyMode::Typecheck.into();
-            assert!(matches!(vm, VerificationMode::TypeCheck));
-        }
-    }
-
-    mod log_level {
-        use super::*;
-
-        #[test]
-        fn trace_converts_to_tracing_level() {
-            let level = LogLevel::Trace.to_tracing_level();
-            assert_eq!(level, tracing::Level::TRACE);
-        }
-
-        #[test]
-        fn debug_converts_to_tracing_level() {
-            let level = LogLevel::Debug.to_tracing_level();
-            assert_eq!(level, tracing::Level::DEBUG);
-        }
-
-        #[test]
-        fn info_converts_to_tracing_level() {
-            let level = LogLevel::Info.to_tracing_level();
-            assert_eq!(level, tracing::Level::INFO);
-        }
-
-        #[test]
-        fn warn_converts_to_tracing_level() {
-            let level = LogLevel::Warn.to_tracing_level();
-            assert_eq!(level, tracing::Level::WARN);
-        }
-
-        #[test]
-        fn error_converts_to_tracing_level() {
-            let level = LogLevel::Error.to_tracing_level();
-            assert_eq!(level, tracing::Level::ERROR);
-        }
-    }
-
-    mod open_session_tests {
-        use super::*;
-        use tempfile::TempDir;
-
-        fn create_test_workspace() -> TempDir {
-            let temp = TempDir::new().unwrap();
-            std::fs::write(temp.path().join("test.py"), "def foo(): pass\n").unwrap();
-            temp
-        }
-
-        #[test]
-        fn open_session_uses_default_workspace() {
-            let workspace = create_test_workspace();
-            std::env::set_current_dir(workspace.path()).unwrap();
-
-            let global = GlobalArgs {
-                workspace: None,
-                session_dir: None,
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
+        fn test_emit_json_envelope_serialization() {
+            let envelope = EmitJsonEnvelope {
+                format: "unified".to_string(),
+                diff: "--- a/foo.py\n+++ b/foo.py\n".to_string(),
+                files_affected: vec!["foo.py".to_string()],
+                metadata: serde_json::json!({}),
             };
 
-            let session = open_session(&global).unwrap();
-            // Session should be opened in the current directory (the temp workspace)
-            assert!(session.session_dir().exists());
-        }
-
-        #[test]
-        fn open_session_uses_explicit_workspace() {
-            let workspace = create_test_workspace();
-
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: None,
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let session = open_session(&global).unwrap();
-            // Session should be opened with the explicit workspace
-            assert!(session
-                .workspace_root()
-                .starts_with(workspace.path().canonicalize().unwrap()));
-        }
-
-        #[test]
-        fn open_session_uses_session_dir() {
-            let workspace = create_test_workspace();
-            let custom_session_dir = workspace.path().join("custom_session");
-
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: Some(custom_session_dir.clone()),
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let session = open_session(&global).unwrap();
-            assert_eq!(session.session_dir(), custom_session_dir);
-        }
-
-        #[test]
-        fn open_session_uses_session_name() {
-            let workspace = create_test_workspace();
-
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: None,
-                session_name: Some("my-named-session".to_string()),
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let session = open_session(&global).unwrap();
-            // Session should be in .tug/my-named-session/
-            assert!(session
-                .session_dir()
-                .to_string_lossy()
-                .contains("my-named-session"));
-        }
-
-        #[test]
-        fn open_session_with_fresh_deletes_existing() {
-            let workspace = create_test_workspace();
-
-            // First, create a session and mark something
-            {
-                let global = GlobalArgs {
-                    workspace: Some(workspace.path().to_path_buf()),
-                    session_dir: None,
-                    session_name: None,
-                    fresh: false,
-                    log_level: LogLevel::Warn,
-                    toolchain: vec![],
-                };
-                let mut session = open_session(&global).unwrap();
-                session.metadata_mut().config.python_resolved = true;
-                session.save().unwrap();
-            }
-
-            // Now open with --fresh, which should delete the existing session
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: None,
-                session_name: None,
-                fresh: true,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let session = open_session(&global).unwrap();
-            // The python_resolved flag should be false (session was reset)
-            assert!(!session.metadata().config.python_resolved);
-        }
-
-        #[test]
-        fn open_session_error_for_nonexistent_workspace() {
-            let global = GlobalArgs {
-                workspace: Some(PathBuf::from("/nonexistent/path/that/does/not/exist")),
-                session_dir: None,
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let result = open_session(&global);
-            assert!(result.is_err());
-        }
-    }
-
-    mod exit_code_mapping {
-        use tugtool_core::error::{OutputErrorCode, TugError};
-
-        #[test]
-        fn symbol_not_found_maps_to_exit_code_3() {
-            let err = TugError::symbol_not_found("test.py", 10, 5);
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 3);
-        }
-
-        #[test]
-        fn verification_failed_maps_to_exit_code_5() {
-            let err = TugError::VerificationFailed {
-                mode: "syntax".to_string(),
-                output: "SyntaxError".to_string(),
-                exit_code: 1,
-            };
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 5);
-        }
-
-        #[test]
-        fn internal_error_maps_to_exit_code_10() {
-            let err = TugError::internal("unexpected state");
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 10);
-        }
-
-        #[test]
-        fn invalid_arguments_maps_to_exit_code_2() {
-            let err = TugError::invalid_args("missing required field");
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 2);
-        }
-
-        #[test]
-        fn apply_error_maps_to_exit_code_4() {
-            let err = TugError::ApplyError {
-                message: "snapshot mismatch".to_string(),
-                file: Some("test.py".to_string()),
-            };
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 4);
-        }
-
-        #[test]
-        fn file_not_found_maps_to_exit_code_3() {
-            let err = TugError::file_not_found("missing.py");
-            let code = OutputErrorCode::from(&err);
-            assert_eq!(code.code(), 3);
-        }
-    }
-
-    #[cfg(feature = "python")]
-    mod toolchain_resolution {
-        use super::*;
-        use tempfile::TempDir;
-
-        fn create_test_workspace() -> TempDir {
-            let temp = TempDir::new().unwrap();
-            std::fs::write(temp.path().join("test.py"), "def foo(): pass\n").unwrap();
-            temp
-        }
-
-        #[test]
-        fn explicit_override_returns_path_directly() {
-            let workspace = create_test_workspace();
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: None,
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let mut session = open_session(&global).unwrap();
-            let overrides = vec![("python".to_string(), PathBuf::from("/custom/python"))];
-
-            let result = resolve_toolchain(&mut session, "python", &overrides).unwrap();
-            assert_eq!(result, PathBuf::from("/custom/python"));
-
-            // Override should NOT be cached
-            assert!(session.config().toolchains.get("python").is_none());
-        }
-
-        #[test]
-        fn cached_path_is_used_if_valid() {
-            let workspace = create_test_workspace();
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: None,
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let mut session = open_session(&global).unwrap();
-
-            // Pre-populate the cache with an existing path (use workspace path which exists)
-            let existing_path = workspace.path().join("test.py");
-            session
-                .config_mut()
-                .toolchains
-                .insert("python".to_string(), existing_path.clone());
-
-            // Resolve should return the cached path
-            let result = resolve_toolchain(&mut session, "python", &[]).unwrap();
-            assert_eq!(result, existing_path);
-        }
-
-        #[test]
-        fn toolchain_override_lookup_works() {
-            // Test the override lookup logic used in resolve_toolchain
-            let overrides = vec![
-                ("python".to_string(), PathBuf::from("/usr/bin/python3")),
-                ("rust".to_string(), PathBuf::from("/usr/bin/rust-analyzer")),
-            ];
-
-            // Helper to find override (same logic as in resolve_toolchain)
-            let find_override = |lang: &str| {
-                overrides
-                    .iter()
-                    .find(|(l, _)| l == lang)
-                    .map(|(_, p)| p.clone())
-            };
-
-            assert_eq!(
-                find_override("python"),
-                Some(PathBuf::from("/usr/bin/python3"))
-            );
-            assert_eq!(
-                find_override("rust"),
-                Some(PathBuf::from("/usr/bin/rust-analyzer"))
-            );
-            assert!(find_override("typescript").is_none());
-        }
-
-        #[test]
-        fn unknown_language_returns_error() {
-            let workspace = create_test_workspace();
-            let global = GlobalArgs {
-                workspace: Some(workspace.path().to_path_buf()),
-                session_dir: None,
-                session_name: None,
-                fresh: false,
-                log_level: LogLevel::Warn,
-                toolchain: vec![],
-            };
-
-            let mut session = open_session(&global).unwrap();
-
-            let result = resolve_toolchain(&mut session, "cobol", &[]);
-            assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("Unknown language"));
-        }
-    }
-
-    mod doctor_tests {
-        use super::*;
-        use tempfile::TempDir;
-        use tugtool_core::output::CheckStatus;
-
-        /// DR-01: Test that doctor detects git root
-        #[test]
-        fn test_doctor_git_repo() {
-            let temp = TempDir::new().unwrap();
-
-            // Create a .git directory to simulate a git repo
-            std::fs::create_dir(temp.path().join(".git")).unwrap();
-
-            // Create a Python file
-            std::fs::write(temp.path().join("test.py"), "def foo(): pass\n").unwrap();
-
-            let (root, method) = detect_workspace_root(temp.path());
-            assert_eq!(root, temp.path().canonicalize().unwrap());
-            assert_eq!(method, "git root");
-        }
-
-        /// DR-02: Test that doctor detects Cargo workspace
-        #[test]
-        fn test_doctor_cargo_workspace() {
-            let temp = TempDir::new().unwrap();
-
-            // Create a Cargo.toml with [workspace] section
-            std::fs::write(
-                temp.path().join("Cargo.toml"),
-                "[workspace]\nmembers = [\"crate1\"]\n",
-            )
-            .unwrap();
-
-            let (root, method) = detect_workspace_root(temp.path());
-            assert_eq!(root, temp.path().canonicalize().unwrap());
-            assert_eq!(method, "Cargo workspace root");
-        }
-
-        /// DR-03: Test that doctor warns when no Python files
-        #[test]
-        fn test_doctor_no_python_files() {
-            let temp = TempDir::new().unwrap();
-
-            // No Python files, just a text file
-            std::fs::write(temp.path().join("readme.txt"), "Hello\n").unwrap();
-
-            let count = count_python_files(temp.path());
-            assert_eq!(count, 0);
-
-            // Verify the check result would be a warning
-            let check = if count > 0 {
-                CheckResult::passed("python_files", format!("Found {} Python files", count))
-            } else {
-                CheckResult::warning("python_files", "Found 0 Python files".to_string())
-            };
-            assert_eq!(check.status, CheckStatus::Warning);
-        }
-
-        /// DR-04: Test that doctor passes with Python files
-        #[test]
-        fn test_doctor_with_python_files() {
-            let temp = TempDir::new().unwrap();
-
-            // Create some Python files
-            std::fs::write(temp.path().join("test1.py"), "def foo(): pass\n").unwrap();
-            std::fs::write(temp.path().join("test2.py"), "def bar(): pass\n").unwrap();
-
-            // Create a subdirectory with Python files
-            std::fs::create_dir(temp.path().join("subdir")).unwrap();
-            std::fs::write(
-                temp.path().join("subdir").join("test3.py"),
-                "def baz(): pass\n",
-            )
-            .unwrap();
-
-            let count = count_python_files(temp.path());
-            assert_eq!(count, 3);
-
-            // Verify the check result would be passed
-            let check = if count > 0 {
-                CheckResult::passed("python_files", format!("Found {} Python files", count))
-            } else {
-                CheckResult::warning("python_files", "Found 0 Python files".to_string())
-            };
-            assert_eq!(check.status, CheckStatus::Passed);
-        }
-
-        /// DR-05: Test that doctor falls back to current directory
-        #[test]
-        fn test_doctor_empty_directory() {
-            let temp = TempDir::new().unwrap();
-
-            // Empty directory - no .git, no Cargo.toml
-            let (root, method) = detect_workspace_root(temp.path());
-            assert_eq!(root, temp.path().canonicalize().unwrap());
-            assert_eq!(method, "current directory");
-        }
-
-        /// DR-06: Test doctor JSON schema (golden test style)
-        #[test]
-        fn test_doctor_json_schema() {
-            use tugtool_core::output::DoctorResponse;
-
-            let checks = vec![
-                CheckResult::passed("workspace_root", "Found git root at /repo"),
-                CheckResult::passed("python_files", "Found 42 Python files"),
-            ];
-
-            let response = DoctorResponse::new(checks);
-            let json = serde_json::to_string_pretty(&response).unwrap();
-
-            // Verify schema structure
+            let json = serde_json::to_string(&envelope).unwrap();
             let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-            assert_eq!(parsed["status"], "ok");
-            assert_eq!(parsed["schema_version"], "1");
-            assert!(parsed["checks"].is_array());
-            assert!(parsed["summary"].is_object());
-            assert_eq!(parsed["summary"]["total"], 2);
-            assert_eq!(parsed["summary"]["passed"], 2);
-            assert_eq!(parsed["summary"]["warnings"], 0);
-            assert_eq!(parsed["summary"]["failed"], 0);
-        }
 
-        /// DR-07: Test summary counts are correct
-        #[test]
-        fn test_doctor_summary_counts() {
-            use tugtool_core::output::{DoctorResponse, DoctorSummary};
-
-            // Test with mixed statuses
-            let checks = vec![
-                CheckResult::passed("check1", "passed"),
-                CheckResult::warning("check2", "warning"),
-                CheckResult::passed("check3", "passed"),
-                CheckResult::failed("check4", "failed"),
-            ];
-
-            let summary = DoctorSummary::from_checks(&checks);
-            assert_eq!(summary.total, 4);
-            assert_eq!(summary.passed, 2);
-            assert_eq!(summary.warnings, 1);
-            assert_eq!(summary.failed, 1);
-
-            // Test that status is "failed" when any check fails
-            let response = DoctorResponse::new(checks);
-            assert_eq!(response.status, "failed");
-
-            // Test with only passed/warning (no failures)
-            let checks_ok = vec![
-                CheckResult::passed("check1", "passed"),
-                CheckResult::warning("check2", "warning"),
-            ];
-            let response_ok = DoctorResponse::new(checks_ok);
-            assert_eq!(response_ok.status, "ok");
-        }
-
-        /// Test that CLI parses doctor command
-        #[test]
-        fn parse_doctor_command() {
-            let args = ["tug", "doctor"];
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert!(matches!(cli.command, Command::Doctor));
-        }
-
-        /// Test that hidden directories are skipped when counting Python files
-        #[test]
-        fn test_python_files_skips_hidden() {
-            let temp = TempDir::new().unwrap();
-
-            // Create a Python file in root
-            std::fs::write(temp.path().join("main.py"), "def main(): pass\n").unwrap();
-
-            // Create a Python file in hidden directory (should be skipped)
-            std::fs::create_dir(temp.path().join(".hidden")).unwrap();
-            std::fs::write(
-                temp.path().join(".hidden").join("hidden.py"),
-                "def hidden(): pass\n",
-            )
-            .unwrap();
-
-            // Create a Python file in __pycache__ (should be skipped)
-            std::fs::create_dir(temp.path().join("__pycache__")).unwrap();
-            std::fs::write(
-                temp.path().join("__pycache__").join("cached.py"),
-                "def cached(): pass\n",
-            )
-            .unwrap();
-
-            let count = count_python_files(temp.path());
-            assert_eq!(count, 1); // Only main.py should be counted
-        }
-    }
-
-    /// Tests for Phase 10 Step 13: rename command
-    mod rename_command_tests {
-        use super::*;
-
-        /// RC-01: Test that rename applies by default (no --dry-run)
-        #[test]
-        fn test_rename_applies_by_default() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { dry_run, .. } => {
-                    // By default, dry_run is false, meaning changes are applied
-                    assert!(!dry_run);
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// RC-02: Test that --dry-run flag prevents changes
-        #[test]
-        fn test_rename_dry_run_no_changes() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--dry-run",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { dry_run, .. } => {
-                    assert!(dry_run);
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// RC-03: Test that --verify defaults to syntax
-        #[test]
-        fn test_rename_verify_syntax_default() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::Syntax));
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// RC-04: Test that --no-verify skips verification
-        #[test]
-        fn test_rename_no_verify_skips() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--no-verify",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { no_verify, .. } => {
-                    assert!(no_verify);
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// RC-05: Test that --verify and --no-verify conflict
-        #[test]
-        fn test_rename_verify_no_verify_conflict() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--verify",
-                "syntax",
-                "--no-verify",
-            ];
-            // This should fail to parse due to conflicts_with
-            let result = Cli::try_parse_from(args);
-            assert!(result.is_err(), "expected conflict error");
-            let err = result.unwrap_err().to_string();
-            assert!(
-                err.contains("cannot be used with") || err.contains("conflict"),
-                "error should mention conflict: {}",
-                err
-            );
-        }
-
-        /// RC-06: Test that default output format is text
-        #[test]
-        fn test_rename_format_text_default() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { format, .. } => {
-                    assert!(matches!(format, RenameFormat::Text));
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// RC-07: Test that --format json produces JSON output
-        #[test]
-        fn test_rename_format_json() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--format",
-                "json",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename { format, .. } => {
-                    assert!(matches!(format, RenameFormat::Json));
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// RC-08: Test that --at is required
-        #[test]
-        fn test_rename_at_required() {
-            let args = ["tug", "rename", "--to", "new_name"];
-            let result = Cli::try_parse_from(args);
-            assert!(result.is_err(), "expected missing --at error");
-            let err = result.unwrap_err().to_string();
-            assert!(
-                err.contains("--at") || err.contains("required"),
-                "error should mention --at: {}",
-                err
-            );
-        }
-
-        /// RC-09: Test that --to is required
-        #[test]
-        fn test_rename_to_required() {
-            let args = ["tug", "rename", "--at", "src/main.py:10:5"];
-            let result = Cli::try_parse_from(args);
-            assert!(result.is_err(), "expected missing --to error");
-            let err = result.unwrap_err().to_string();
-            assert!(
-                err.contains("--to") || err.contains("required"),
-                "error should mention --to: {}",
-                err
-            );
-        }
-
-        /// RC-10: Test that invalid --at format produces error
-        /// Note: This tests the Location parsing in the execution path,
-        /// not CLI parsing, so we test the Location::parse function directly.
-        #[test]
-        fn test_rename_invalid_location() {
-            use tugtool_core::output::Location;
-
-            // Valid location
-            let valid = Location::parse("src/main.py:10:5");
-            assert!(valid.is_some(), "valid location should parse");
-
-            // Invalid locations
-            let invalid1 = Location::parse("src/main.py:10"); // missing column
-            assert!(invalid1.is_none(), "missing column should fail");
-
-            let invalid2 = Location::parse("src/main.py"); // missing line and column
-            assert!(invalid2.is_none(), "missing line should fail");
-
-            let invalid3 = Location::parse("bad"); // no colons
-            assert!(invalid3.is_none(), "no colons should fail");
-        }
-
-        /// RC-11: Test verification mode combinations
-        #[test]
-        fn test_rename_verify_modes() {
-            // Test explicit syntax
-            let args_syntax = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--verify",
-                "syntax",
-            ];
-            let cli = Cli::try_parse_from(args_syntax).unwrap();
-            match cli.command {
-                Command::Rename { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::Syntax));
-                }
-                _ => panic!("expected Rename command"),
-            }
-
-            // Test verify none
-            let args_none = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--verify",
-                "none",
-            ];
-            let cli = Cli::try_parse_from(args_none).unwrap();
-            match cli.command {
-                Command::Rename { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::None));
-                }
-                _ => panic!("expected Rename command"),
-            }
-
-            // Test verify tests
-            let args_tests = [
-                "tug",
-                "rename",
-                "--at",
-                "src/main.py:10:5",
-                "--to",
-                "new_name",
-                "--verify",
-                "tests",
-            ];
-            let cli = Cli::try_parse_from(args_tests).unwrap();
-            match cli.command {
-                Command::Rename { verify, .. } => {
-                    assert!(matches!(verify, VerifyMode::Tests));
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// Additional test: Parse complete rename command with all flags
-        #[test]
-        fn parse_rename_all_flags() {
-            let args = [
-                "tug",
-                "rename",
-                "--at",
-                "src/lib.py:25:10",
-                "--to",
-                "better_name",
-                "--dry-run",
-                "--verify",
-                "none",
-                "--format",
-                "json",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            match cli.command {
-                Command::Rename {
-                    at,
-                    to,
-                    dry_run,
-                    verify,
-                    no_verify,
-                    format,
-                } => {
-                    assert_eq!(at, "src/lib.py:25:10");
-                    assert_eq!(to, "better_name");
-                    assert!(dry_run);
-                    assert!(matches!(verify, VerifyMode::None));
-                    assert!(!no_verify);
-                    assert!(matches!(format, RenameFormat::Json));
-                }
-                _ => panic!("expected Rename command"),
-            }
-        }
-
-        /// Test global args work with rename command
-        #[test]
-        fn parse_rename_with_global_args() {
-            let args = [
-                "tug",
-                "--workspace",
-                "/my/project",
-                "rename",
-                "--at",
-                "test.py:1:1",
-                "--to",
-                "x",
-            ];
-            let cli = Cli::try_parse_from(args).unwrap();
-            assert_eq!(cli.global.workspace, Some(PathBuf::from("/my/project")));
-            assert!(matches!(cli.command, Command::Rename { .. }));
+            assert_eq!(parsed["format"], "unified");
+            assert!(parsed["diff"].as_str().unwrap().contains("foo.py"));
+            assert_eq!(parsed["files_affected"][0], "foo.py");
+            assert!(parsed["metadata"].is_object());
         }
     }
 }

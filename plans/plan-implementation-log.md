@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Steps 1-2: Define CLI Structure and Implement Dispatcher | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Phase 12 plan (Steps 1-2 specifications, D01, D02, Section 12.2.4 Clap Structure)
+- `crates/tugtool/src/main.rs` - Existing CLI structure
+- `crates/tugtool/src/cli.rs` - Existing CLI helper functions
+- `crates/tugtool/tests/golden_tests.rs` - Existing golden tests
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `ApplyLanguage/EmitLanguage/AnalyzeLanguage` enums | Done |
+| Define `ApplyPythonCommand/EmitPythonCommand/AnalyzePythonCommand` enums | Done |
+| Define `ApplyRustCommand/EmitRustCommand/AnalyzeRustCommand` placeholders | Done |
+| Update `Cli` struct with new `TopLevelCommand` subcommand structure | Done |
+| Keep utility commands at top level (doctor, session, fixture, clean) | Done |
+| Add trailing `filter: Vec<String>` to capture filter patterns | Done |
+| Implement `execute_apply/execute_emit/execute_analyze` dispatchers | Done |
+| Route `apply` to existing rename logic with `apply=true` | Done |
+| Route `emit` to existing rename logic with `apply=false`, output diff | Done |
+| Support `emit --json` with JSON envelope (Spec S07) | Done |
+| Route `analyze` to existing analyze logic | Done |
+| Implement `execute_rust_command` returning "not yet implemented" error | Done |
+| Remove old `Command::Rename` and `Command::Analyze` variants | Done |
+| Update golden tests to use new CLI structure | Done |
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs` - Complete CLI redesign with per-action/per-language enum structure
+- `crates/tugtool/tests/golden_tests.rs` - Updated all golden tests for Phase 12 syntax
+- Golden files: `analyze_success.json`, `emit_success_dry.json` (new), `run_success_applied.json`, `run_success_verified.json`, `error_invalid_arguments.json`, `error_symbol_not_found.json`, `error_invalid_name.json`
+
+**Test Results:**
+- `cargo nextest run -p tugtool`: 188 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool`: PASS
+- `cargo run -p tugtool -- --help` shows new structure: PASS
+- `cargo nextest run -p tugtool`: PASS (188 tests)
+
+**Key Decisions/Notes:**
+- CLI structure matches plan Section 12.2.4: per-action, per-language enums make invalid states unrepresentable
+- `--no-verify` takes precedence over `--verify` as specified in plan
+- Rust commands parse but return exit code 2 with "not yet implemented" message
+- `emit --json` produces envelope with `format`, `diff`, `files_affected`, `metadata` per Spec S07
+- Filter patterns captured via `#[arg(last = true)]` but not yet integrated (deferred to Step 3)
+- Removed commands: `snapshot`, `verify`, old `rename`, old `analyze rename` syntax
+- Preserved commands: `session`, `fixture`, `clean`, `doctor`
+- Added new tests: `test_emit_json_envelope`, `test_rust_not_implemented`
+
+---
+
 ## [phase-12.md] Step 0: Add File Filter Module | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

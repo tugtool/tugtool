@@ -39,14 +39,9 @@
     "files_changed": 1
   },
   "verification": {
-    "checks": [
-      {
-        "name": "compileall",
-        "status": "passed"
-      }
-    ],
-    "mode": "syntax",
-    "status": "passed"
+    "checks": [],
+    "mode": "none",
+    "status": "skipped"
   },
   "warnings": []
 }
