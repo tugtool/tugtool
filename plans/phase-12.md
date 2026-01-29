@@ -1426,29 +1426,29 @@ Spec S09, (#file-filtering-spec)
 - Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
 
 **Tasks:**
-- [ ] Define `JsonFilter` enum matching Spec S09 schema (`All`, `Any`, `Not`, `Predicates`)
-- [ ] Define `JsonPredicate` struct with `key`, `op`, `value` fields (string-typed for serde)
-- [ ] Implement `serde::Deserialize` for `JsonFilter` and `JsonPredicate`
-- [ ] Implement `parse_filter_json(input: &str) -> Result<FilterExpr, FilterError>` (converts to FilterExpr)
-- [ ] Validate schema structure (reject empty `all`/`any`, missing required fields)
-- [ ] Add `FilterError::InvalidJsonFilter { message }` variant
-- [ ] Map JSON operators (`glob`, `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `match`) to `PredicateOp`
+- [x] Define `JsonFilter` enum matching Spec S09 schema (`All`, `Any`, `Not`, `Predicates`)
+- [x] Define `JsonPredicate` struct with `key`, `op`, `value` fields (string-typed for serde)
+- [x] Implement `serde::Deserialize` for `JsonFilter` and `JsonPredicate`
+- [x] Implement `parse_filter_json(input: &str) -> Result<FilterExpr, FilterError>` (converts to FilterExpr)
+- [x] Validate schema structure (reject empty `all`/`any`, missing required fields)
+- [x] Add `FilterError::InvalidJsonFilter { message }` variant
+- [x] Map JSON operators (`glob`, `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `match`) to `PredicateOp`
 
 **Tests:**
-- [ ] unit: `test_parse_json_simple_predicate`
-- [ ] unit: `test_parse_json_all_combinator`
-- [ ] unit: `test_parse_json_any_combinator`
-- [ ] unit: `test_parse_json_not_combinator`
-- [ ] unit: `test_parse_json_nested_all_any`
-- [ ] unit: `test_parse_json_predicates_list`
-- [ ] unit: `test_parse_json_invalid_missing_key`
-- [ ] unit: `test_parse_json_invalid_unknown_operator`
-- [ ] unit: `test_parse_json_empty_all_error`
-- [ ] unit: `test_json_to_expr_parity` (same filter in JSON and expr yields same result)
+- [x] unit: `test_parse_json_simple_predicate`
+- [x] unit: `test_parse_json_all_combinator`
+- [x] unit: `test_parse_json_any_combinator`
+- [x] unit: `test_parse_json_not_combinator`
+- [x] unit: `test_parse_json_nested_all_any`
+- [x] unit: `test_parse_json_predicates_list`
+- [x] unit: `test_parse_json_invalid_missing_key`
+- [x] unit: `test_parse_json_invalid_unknown_operator`
+- [x] unit: `test_parse_json_empty_all_error`
+- [x] unit: `test_json_to_expr_parity` (same filter in JSON and expr yields same result)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core json`
-- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+- [x] `cargo nextest run -p tugtool-core json`
+- [x] `cargo clippy -p tugtool-core -- -D warnings`
 
 **Rollback:** Delete `json.rs`, revert `mod.rs`
 

@@ -6,6 +6,7 @@
 //! - Default exclusions for common directories
 //! - Predicate-based filtering (path, extension, size, git state, content)
 //! - Expression-based filtering with boolean operators
+//! - JSON-based filter schema for programmatic use
 //!
 //! ## Usage
 //!
@@ -23,6 +24,7 @@
 
 mod expr;
 mod glob;
+mod json;
 mod predicate;
 
 // Re-export public API from glob module
@@ -36,3 +38,6 @@ pub use predicate::{
 
 // Re-export public API from expression module
 pub use expr::{parse_filter_expr, ExprError, FilterExpr};
+
+// Re-export public API from JSON filter module
+pub use json::{parse_filter_json, JsonFilter, JsonFilterError, JsonPredicate};

@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 3: Implement JSON Filter Schema | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 3 specification (lines 1417-1453)
+- Spec S09: JSON Filter Schema (lines 1215-1233)
+- `crates/tugtool-core/src/filter/predicate.rs` - Predicate types for conversion
+- `crates/tugtool-core/src/filter/expr.rs` - FilterExpr output type
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `JsonFilter` struct with all, any, not, predicates fields | Done |
+| Define `JsonPredicate` struct with key, op, value fields | Done |
+| Implement `serde::Deserialize` for JsonFilter and JsonPredicate | Done |
+| Implement `parse_filter_json(input: &str) -> Result<FilterExpr, JsonFilterError>` | Done |
+| Validate schema structure (reject empty all/any) | Done |
+| Add `JsonFilterError` type with InvalidFilter variant | Done |
+| Map JSON operators (glob, eq, neq, gt, gte, lt, lte, match) to PredicateOp | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter/json.rs` - JSON filter parsing with JsonFilter, JsonPredicate, parse_filter_json
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/mod.rs` - Added json module and re-exports
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core json`: 16 tests passed (10 in json module)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core json`: PASS
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- Used `JsonFilterError` as a dedicated error type for JSON-specific errors
+- JsonFilter struct uses optional fields with serde to support the schema where only one combinator should be set
+- Single predicate is unwrapped from And to avoid unnecessary nesting
+- Operators support both symbolic (`=`, `!=`) and named (`eq`, `neq`) forms for flexibility
+
+---
+
 ## [phase-12.md] Step 2: Implement Expression Parser | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
