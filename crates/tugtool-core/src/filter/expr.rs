@@ -36,7 +36,9 @@ use winnow::prelude::*;
 use winnow::token::{take_till, take_while};
 use winnow::ModalResult;
 
-use super::predicate::{FilterPredicate, GitState, PredicateError, PredicateKey, PredicateOp};
+use super::predicate::{
+    ContentAccess, FilterPredicate, GitState, PredicateError, PredicateKey, PredicateOp,
+};
 
 /// Error type for expression parsing and evaluation.
 #[derive(Debug, Error)]
@@ -85,25 +87,56 @@ impl FilterExpr {
         git_state: Option<&GitState>,
         content: Option<&str>,
     ) -> Result<bool, ExprError> {
+        let content_access = match content {
+            Some(value) => ContentAccess::Available(value),
+            None => ContentAccess::Disabled,
+        };
+
+        let result =
+            self.evaluate_with_content_access(path, metadata, git_state, content_access)?;
+
+        Ok(result.unwrap_or(false))
+    }
+
+    /// Evaluate this expression with explicit content access semantics.
+    ///
+    /// Returns `Ok(None)` when content is unavailable and the expression depends on it.
+    pub(crate) fn evaluate_with_content_access(
+        &self,
+        path: &Path,
+        metadata: Option<&Metadata>,
+        git_state: Option<&GitState>,
+        content: ContentAccess<'_>,
+    ) -> Result<Option<bool>, ExprError> {
         match self {
             FilterExpr::And(exprs) => {
+                let mut saw_unknown = false;
                 for expr in exprs {
-                    if !expr.evaluate(path, metadata, git_state, content)? {
-                        return Ok(false);
+                    match expr.evaluate_with_content_access(path, metadata, git_state, content)? {
+                        Some(true) => {}
+                        Some(false) => return Ok(Some(false)),
+                        None => saw_unknown = true,
                     }
                 }
-                Ok(true)
+                Ok(if saw_unknown { None } else { Some(true) })
             }
             FilterExpr::Or(exprs) => {
+                let mut saw_unknown = false;
                 for expr in exprs {
-                    if expr.evaluate(path, metadata, git_state, content)? {
-                        return Ok(true);
+                    match expr.evaluate_with_content_access(path, metadata, git_state, content)? {
+                        Some(true) => return Ok(Some(true)),
+                        Some(false) => {}
+                        None => saw_unknown = true,
                     }
                 }
-                Ok(false)
+                Ok(if saw_unknown { None } else { Some(false) })
             }
-            FilterExpr::Not(expr) => Ok(!expr.evaluate(path, metadata, git_state, content)?),
-            FilterExpr::Pred(pred) => Ok(pred.evaluate(path, metadata, git_state, content)?),
+            FilterExpr::Not(expr) => Ok(expr
+                .evaluate_with_content_access(path, metadata, git_state, content)?
+                .map(|value| !value)),
+            FilterExpr::Pred(pred) => pred
+                .evaluate_with_content_access(path, metadata, git_state, content)
+                .map_err(ExprError::from),
         }
     }
 
@@ -115,6 +148,17 @@ impl FilterExpr {
             }
             FilterExpr::Not(expr) => expr.requires_content(),
             FilterExpr::Pred(pred) => pred.requires_content(),
+        }
+    }
+
+    /// Returns true if any predicate in this expression requires metadata.
+    pub fn requires_metadata(&self) -> bool {
+        match self {
+            FilterExpr::And(exprs) | FilterExpr::Or(exprs) => {
+                exprs.iter().any(|e| e.requires_metadata())
+            }
+            FilterExpr::Not(expr) => expr.requires_metadata(),
+            FilterExpr::Pred(pred) => pred.requires_metadata(),
         }
     }
 

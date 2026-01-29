@@ -22,7 +22,7 @@ use thiserror::Error;
 use super::expr::{parse_filter_expr, ExprError, FilterExpr};
 use super::glob::{FileFilterSpec, FilterError as GlobError};
 use super::json::{parse_filter_json, JsonFilterError};
-use super::predicate::GitState;
+use super::predicate::{ContentAccess, GitState};
 
 /// Error type for combined filter operations.
 #[derive(Debug, Error)]
@@ -42,6 +42,10 @@ pub enum CombinedFilterError {
     /// Content predicate used without --filter-content flag.
     #[error("content predicate requires --filter-content flag")]
     ContentPredicateWithoutFlag,
+
+    /// File metadata read error.
+    #[error("failed to read file metadata: {0}")]
+    MetadataReadError(String),
 
     /// File read error during content matching.
     #[error("failed to read file for content matching: {0}")]
@@ -71,6 +75,24 @@ pub struct CombinedFilter {
     git_state_loaded: bool,
 }
 
+/// Owned content access state for evaluation.
+#[derive(Debug)]
+enum ContentAccessOwned {
+    Disabled,
+    Unavailable,
+    Available(String),
+}
+
+impl ContentAccessOwned {
+    fn as_access(&self) -> ContentAccess<'_> {
+        match self {
+            ContentAccessOwned::Disabled => ContentAccess::Disabled,
+            ContentAccessOwned::Unavailable => ContentAccess::Unavailable,
+            ContentAccessOwned::Available(content) => ContentAccess::Available(content.as_str()),
+        }
+    }
+}
+
 impl CombinedFilter {
     /// Create a new builder for constructing a CombinedFilter.
     pub fn builder() -> CombinedFilterBuilder {
@@ -95,7 +117,16 @@ impl CombinedFilter {
     /// * `Ok(false)` - File fails at least one filter
     /// * `Err(CombinedFilterError)` - Error during evaluation
     pub fn matches(&mut self, path: &Path) -> Result<bool, CombinedFilterError> {
-        self.matches_with_metadata(path, None)
+        let full_path = self.resolve_full_path(path);
+        let metadata = if self.requires_metadata() {
+            Some(std::fs::metadata(&full_path).map_err(|e| {
+                CombinedFilterError::MetadataReadError(format!("{}: {}", full_path.display(), e))
+            })?)
+        } else {
+            None
+        };
+
+        self.matches_with_metadata(path, metadata.as_ref())
     }
 
     /// Check if a file matches with optional metadata.
@@ -104,6 +135,16 @@ impl CombinedFilter {
         path: &Path,
         metadata: Option<&Metadata>,
     ) -> Result<bool, CombinedFilterError> {
+        let full_path = self.resolve_full_path(path);
+        let metadata_owned = if metadata.is_none() && self.requires_metadata() {
+            Some(std::fs::metadata(&full_path).map_err(|e| {
+                CombinedFilterError::MetadataReadError(format!("{}: {}", full_path.display(), e))
+            })?)
+        } else {
+            None
+        };
+        let metadata_ref = metadata.or(metadata_owned.as_ref());
+
         // 1. Check glob patterns (includes default exclusions)
         if let Some(ref glob_spec) = self.glob_spec {
             if !glob_spec.matches(path) {
@@ -114,20 +155,31 @@ impl CombinedFilter {
         // Load git state lazily if needed
         self.ensure_git_state_loaded();
 
-        // Get content once if any expression needs it
-        let content = self.get_content_if_any_needs_it(path)?;
-        let content_ref = content.as_deref();
+        // Get content access state once if any expression needs it
+        let content_access = self.get_content_access(path, &full_path, metadata_ref)?;
 
         // 2. Check expression filters (all must pass)
         for expr in &self.expressions {
-            if !expr.evaluate(path, metadata, self.git_state.as_ref(), content_ref)? {
+            if expr.evaluate_with_content_access(
+                path,
+                metadata_ref,
+                self.git_state.as_ref(),
+                content_access.as_access(),
+            )? != Some(true)
+            {
                 return Ok(false);
             }
         }
 
         // 3. Check JSON filter
         if let Some(ref json_filter) = self.json_filter {
-            if !json_filter.evaluate(path, metadata, self.git_state.as_ref(), content_ref)? {
+            if json_filter.evaluate_with_content_access(
+                path,
+                metadata_ref,
+                self.git_state.as_ref(),
+                content_access.as_access(),
+            )? != Some(true)
+            {
                 return Ok(false);
             }
         }
@@ -150,6 +202,16 @@ impl CombinedFilter {
             || self.json_filter.as_ref().is_some_and(|f| f.requires_git())
     }
 
+    /// Returns true if any filter requires file metadata.
+    fn requires_metadata(&self) -> bool {
+        self.expressions.iter().any(|e| e.requires_metadata())
+            || self
+                .json_filter
+                .as_ref()
+                .is_some_and(|f| f.requires_metadata())
+            || self.content_max_bytes.is_some()
+    }
+
     /// Load git state lazily if any expression requires it.
     fn ensure_git_state_loaded(&mut self) {
         if self.git_state_loaded {
@@ -165,10 +227,12 @@ impl CombinedFilter {
     }
 
     /// Get file content if any filter requires it.
-    fn get_content_if_any_needs_it(
+    fn get_content_access(
         &mut self,
-        path: &Path,
-    ) -> Result<Option<String>, CombinedFilterError> {
+        _path: &Path,
+        full_path: &Path,
+        metadata: Option<&Metadata>,
+    ) -> Result<ContentAccessOwned, CombinedFilterError> {
         // Check if any expression or json filter requires content
         let needs_content = self.expressions.iter().any(|e| e.requires_content())
             || self
@@ -177,7 +241,7 @@ impl CombinedFilter {
                 .is_some_and(|f| f.requires_content());
 
         if !needs_content {
-            return Ok(None);
+            return Ok(ContentAccessOwned::Disabled);
         }
 
         if !self.content_enabled {
@@ -186,20 +250,40 @@ impl CombinedFilter {
 
         // Check file size limit if set
         if let Some(max_bytes) = self.content_max_bytes {
-            let metadata = std::fs::metadata(path).map_err(|e| {
-                CombinedFilterError::ContentReadError(format!("{}: {}", path.display(), e))
-            })?;
+            let metadata = if let Some(m) = metadata {
+                m
+            } else {
+                &std::fs::metadata(full_path).map_err(|e| {
+                    CombinedFilterError::MetadataReadError(format!(
+                        "{}: {}",
+                        full_path.display(),
+                        e
+                    ))
+                })?
+            };
+
             if metadata.len() > max_bytes {
-                // File too large - treat as non-matching for content predicates
-                return Ok(None);
+                // File too large - treat content predicates as unknown (no match).
+                return Ok(ContentAccessOwned::Unavailable);
             }
         }
 
-        // Read content directly (ContentMatcher caches internally)
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            CombinedFilterError::ContentReadError(format!("{}: {}", path.display(), e))
+        // Read content from workspace-rooted path
+        let content = std::fs::read_to_string(full_path).map_err(|e| {
+            CombinedFilterError::ContentReadError(format!("{}: {}", full_path.display(), e))
         })?;
-        Ok(Some(content))
+        Ok(ContentAccessOwned::Available(content))
+    }
+
+    /// Resolve the full path for content and metadata access.
+    fn resolve_full_path(&self, path: &Path) -> std::path::PathBuf {
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+        if let Some(ref root) = self.workspace_root {
+            return root.join(path);
+        }
+        path.to_path_buf()
     }
 }
 
@@ -303,7 +387,7 @@ impl CombinedFilterBuilder {
 mod tests {
     use super::*;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     fn create_temp_file(content: &str) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
@@ -429,6 +513,39 @@ mod tests {
             .unwrap();
 
         assert!(filter.matches(file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_combined_content_max_bytes_skips_large_file() {
+        let file = create_temp_file("0123456789"); // 10 bytes
+
+        let mut filter = CombinedFilter::builder()
+            .with_expression("contains:123")
+            .unwrap()
+            .with_content_enabled(true)
+            .with_content_max_bytes(Some(4))
+            .build()
+            .unwrap();
+
+        assert!(!filter.matches(file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_combined_size_predicate_with_workspace_root() {
+        let temp = TempDir::new().unwrap();
+        let src_dir = temp.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let file_path = src_dir.join("main.py");
+        std::fs::write(&file_path, "hello").unwrap();
+
+        let mut filter = CombinedFilter::builder()
+            .with_expression("size>1")
+            .unwrap()
+            .with_workspace_root(temp.path())
+            .build()
+            .unwrap();
+
+        assert!(filter.matches(Path::new("src/main.py")).unwrap());
     }
 
     // =========================================================================

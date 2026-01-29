@@ -1390,30 +1390,8 @@ fn handle_filter_list(
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    // Build CombinedFilter from all filter sources
-    let mut builder = CombinedFilter::builder()
-        .with_glob_patterns(glob_patterns)
-        .map_err(|e| TugError::invalid_args(e.to_string()))?
-        .with_content_enabled(filter_opts.filter_content)
-        .with_workspace_root(&workspace);
-
-    // Add expression filters
-    for expr in &filter_opts.filter_expr {
-        builder = builder
-            .with_expression(expr)
-            .map_err(|e| TugError::invalid_args(e.to_string()))?;
-    }
-
-    // Add JSON filter if present
-    if let Some(ref json) = filter_opts.filter_json {
-        builder = builder
-            .with_json(json)
-            .map_err(|e| TugError::invalid_args(e.to_string()))?;
-    }
-
-    let mut combined_filter = builder
-        .build()
-        .map_err(|e| TugError::invalid_args(e.to_string()))?;
+    // Build CombinedFilter from all filter sources (same as apply/emit/analyze)
+    let mut combined_filter = build_combined_filter(filter_opts, glob_patterns, &workspace)?;
 
     // Collect matching Python files
     let mut matched_files = Vec::new();
@@ -1471,8 +1449,8 @@ fn collect_python_files_for_filter_list(
             let path = entry.path();
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-            // Skip hidden directories and common non-source directories
-            if file_name.starts_with('.')
+            // Skip common non-source directories (default exclusions)
+            if file_name == ".git"
                 || file_name == "__pycache__"
                 || file_name == "node_modules"
                 || file_name == "target"

@@ -114,6 +114,11 @@ impl PredicateKey {
                 | PredicateKey::GitStage
         )
     }
+
+    /// Returns true if this predicate requires file metadata.
+    pub fn requires_metadata(&self) -> bool {
+        matches!(self, PredicateKey::Kind | PredicateKey::Size)
+    }
 }
 
 /// Predicate comparison operator.
@@ -165,6 +170,17 @@ pub struct FilterPredicate {
     pub value: String,
 }
 
+/// Content availability for predicate evaluation.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ContentAccess<'a> {
+    /// Content access is disabled (no --filter-content flag).
+    Disabled,
+    /// Content is unavailable (e.g., exceeds max bytes).
+    Unavailable,
+    /// Content is available.
+    Available(&'a str),
+}
+
 impl FilterPredicate {
     /// Create a new predicate.
     pub fn new(key: PredicateKey, op: PredicateOp, value: impl Into<String>) -> Self {
@@ -183,6 +199,40 @@ impl FilterPredicate {
     /// Returns true if this predicate requires git state.
     pub fn requires_git(&self) -> bool {
         self.key.requires_git()
+    }
+
+    /// Returns true if this predicate requires file metadata.
+    pub fn requires_metadata(&self) -> bool {
+        self.key.requires_metadata()
+    }
+
+    /// Evaluate this predicate with explicit content access semantics.
+    ///
+    /// Returns `Ok(None)` when content is unavailable and the predicate requires content.
+    pub(crate) fn evaluate_with_content_access(
+        &self,
+        path: &Path,
+        metadata: Option<&Metadata>,
+        git_state: Option<&GitState>,
+        content: ContentAccess<'_>,
+    ) -> Result<Option<bool>, PredicateError> {
+        match self.key {
+            PredicateKey::Contains => match content {
+                ContentAccess::Available(value) => self.evaluate_contains(Some(value)).map(Some),
+                ContentAccess::Unavailable => Ok(None),
+                ContentAccess::Disabled => Err(PredicateError::ContentPredicateWithoutFlag {
+                    predicate: "contains".to_string(),
+                }),
+            },
+            PredicateKey::Regex => match content {
+                ContentAccess::Available(value) => self.evaluate_regex(Some(value)).map(Some),
+                ContentAccess::Unavailable => Ok(None),
+                ContentAccess::Disabled => Err(PredicateError::ContentPredicateWithoutFlag {
+                    predicate: "regex".to_string(),
+                }),
+            },
+            _ => self.evaluate(path, metadata, git_state, None).map(Some),
+        }
     }
 
     /// Evaluate this predicate against a file.
