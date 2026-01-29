@@ -1818,34 +1818,34 @@ This is the minimal change to establish infrastructure parity:
 ##### Tasks {#step-5c-tasks}
 
 **Part A: Add node_id to For**
-- [ ] Add `pub node_id: Option<NodeId>` field to `For` struct
-- [ ] Update `DeflatedFor::inflate()` to call `let node_id = ctx.next_id();` at start
-- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+- [x] Add `pub node_id: Option<NodeId>` field to `For` struct
+- [x] Update `DeflatedFor::inflate()` to call `let node_id = ctx.next_id();` at start
+- [x] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
 
 **Part B: Add node_id to While**
-- [ ] Add `pub node_id: Option<NodeId>` field to `While` struct
-- [ ] Update `DeflatedWhile::inflate()` to call `let node_id = ctx.next_id();` at start
-- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+- [x] Add `pub node_id: Option<NodeId>` field to `While` struct
+- [x] Update `DeflatedWhile::inflate()` to call `let node_id = ctx.next_id();` at start
+- [x] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
 
 **Part C: Add node_id to Try**
-- [ ] Add `pub node_id: Option<NodeId>` field to `Try` struct
-- [ ] Update `DeflatedTry::inflate()` to call `let node_id = ctx.next_id();` at start
-- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+- [x] Add `pub node_id: Option<NodeId>` field to `Try` struct
+- [x] Update `DeflatedTry::inflate()` to call `let node_id = ctx.next_id();` at start
+- [x] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
 
 **Part D: Add node_id to TryStar**
-- [ ] Add `pub node_id: Option<NodeId>` field to `TryStar` struct
-- [ ] Update `DeflatedTryStar::inflate()` to call `let node_id = ctx.next_id();` at start
-- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+- [x] Add `pub node_id: Option<NodeId>` field to `TryStar` struct
+- [x] Update `DeflatedTryStar::inflate()` to call `let node_id = ctx.next_id();` at start
+- [x] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
 
 **Part E: Add node_id to With**
-- [ ] Add `pub node_id: Option<NodeId>` field to `With` struct
-- [ ] Update `DeflatedWith::inflate()` to call `let node_id = ctx.next_id();` at start
-- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+- [x] Add `pub node_id: Option<NodeId>` field to `With` struct
+- [x] Update `DeflatedWith::inflate()` to call `let node_id = ctx.next_id();` at start
+- [x] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
 
 **Part F: Add node_id to Match**
-- [ ] Add `pub node_id: Option<NodeId>` field to `Match` struct
-- [ ] Update `DeflatedMatch::inflate()` to call `let node_id = ctx.next_id();` at start
-- [ ] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
+- [x] Add `pub node_id: Option<NodeId>` field to `Match` struct
+- [x] Update `DeflatedMatch::inflate()` to call `let node_id = ctx.next_id();` at start
+- [x] Add `node_id: Some(node_id)` to the `Ok(Self::Inflated { ... })` return
 
 ##### Implementation Details {#step-5c-implementation}
 
@@ -1898,21 +1898,21 @@ impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
 ##### Tests {#step-5c-tests}
 
 **Verification tests (ensure node_id is assigned):**
-- [ ] `test_for_has_node_id` - For statement has node_id after parsing
-- [ ] `test_while_has_node_id` - While statement has node_id after parsing
-- [ ] `test_try_has_node_id` - Try statement has node_id after parsing
-- [ ] `test_try_star_has_node_id` - TryStar statement has node_id after parsing
-- [ ] `test_with_has_node_id` - With statement has node_id after parsing
-- [ ] `test_match_has_node_id` - Match statement has node_id after parsing
+- [x] `test_for_has_node_id` - For statement has node_id after parsing
+- [x] `test_while_has_node_id` - While statement has node_id after parsing
+- [x] `test_try_has_node_id` - Try statement has node_id after parsing
+- [x] `test_try_star_has_node_id` - TryStar statement has node_id after parsing
+- [x] `test_with_has_node_id` - With statement has node_id after parsing
+- [x] `test_match_has_node_id` - Match statement has node_id after parsing
 
 **Regression tests:**
-- [ ] All existing parsing tests continue to pass
-- [ ] All existing codegen tests continue to pass
+- [x] All existing parsing tests continue to pass
+- [x] All existing codegen tests continue to pass
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` (compilation succeeds)
-- [ ] `cargo nextest run -p tugtool-python-cst` (all tests pass)
-- [ ] `cargo nextest run --workspace` (no regressions in dependent crates)
+- [x] `cargo build -p tugtool-python-cst` (compilation succeeds)
+- [x] `cargo nextest run -p tugtool-python-cst` (all tests pass)
+- [x] `cargo nextest run --workspace` (no regressions in dependent crates)
 
 **Verification (ensure all compound statements have node_id):**
 

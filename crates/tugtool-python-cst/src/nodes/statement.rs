@@ -1613,6 +1613,9 @@ pub struct For<'a> {
     pub(crate) for_tok: TokenRef<'a>,
     pub(crate) in_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for For<'a> {
@@ -1644,6 +1647,9 @@ impl<'a> Codegen<'a> for For<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
     type Inflated = For<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this For node
+        let node_id = ctx.next_id();
+
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
                 parse_parenthesizable_whitespace(&ctx.ws, &mut asy.whitespace_after.borrow_mut())?;
@@ -1692,6 +1698,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
             whitespace_before_in,
             whitespace_after_in,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1707,6 +1714,9 @@ pub struct While<'a> {
 
     pub(crate) while_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for While<'a> {
@@ -1731,6 +1741,9 @@ impl<'a> Codegen<'a> for While<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedWhile<'r, 'a> {
     type Inflated = While<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this While node
+        let node_id = ctx.next_id();
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.while_tok.whitespace_before.borrow_mut(),
@@ -1751,6 +1764,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedWhile<'r, 'a> {
             leading_lines,
             whitespace_after_while,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2128,6 +2142,9 @@ pub struct Try<'a> {
 
     pub(crate) try_tok: TokenRef<'a>,
     // colon_tok unnecessary
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Try<'a> {
@@ -2155,6 +2172,9 @@ impl<'a> Codegen<'a> for Try<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedTry<'r, 'a> {
     type Inflated = Try<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Try node
+        let node_id = ctx.next_id();
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.try_tok.whitespace_before.borrow_mut(),
@@ -2173,6 +2193,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedTry<'r, 'a> {
             finalbody,
             leading_lines,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2188,6 +2209,9 @@ pub struct TryStar<'a> {
 
     pub(crate) try_tok: TokenRef<'a>,
     // colon_tok unnecessary
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for TryStar<'a> {
@@ -2215,6 +2239,9 @@ impl<'a> Codegen<'a> for TryStar<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedTryStar<'r, 'a> {
     type Inflated = TryStar<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this TryStar node
+        let node_id = ctx.next_id();
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.try_tok.whitespace_before.borrow_mut(),
@@ -2233,6 +2260,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedTryStar<'r, 'a> {
             finalbody,
             leading_lines,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2338,6 +2366,9 @@ pub struct With<'a> {
     pub(crate) async_tok: Option<TokenRef<'a>>,
     pub(crate) with_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for With<'a> {
@@ -2387,6 +2418,9 @@ impl<'a> Codegen<'a> for With<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedWith<'r, 'a> {
     type Inflated = With<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this With node
+        let node_id = ctx.next_id();
+
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
                 parse_parenthesizable_whitespace(&ctx.ws, &mut asy.whitespace_after.borrow_mut())?;
@@ -2441,6 +2475,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedWith<'r, 'a> {
             rpar,
             whitespace_after_with,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2533,6 +2568,9 @@ pub struct Match<'a> {
     pub(crate) colon_tok: TokenRef<'a>,
     pub(crate) indent_tok: TokenRef<'a>,
     pub(crate) dedent_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Match<'a> {
@@ -2566,6 +2604,9 @@ impl<'a> Codegen<'a> for Match<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedMatch<'r, 'a> {
     type Inflated = Match<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // Assign identity for this Match node
+        let node_id = ctx.next_id();
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.match_tok.whitespace_before.borrow_mut(),
@@ -2598,6 +2639,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedMatch<'r, 'a> {
             whitespace_after_colon,
             indent,
             footer,
+            node_id: Some(node_id),
         })
     }
 }

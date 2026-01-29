@@ -1427,4 +1427,106 @@ mod test {
             }
         }
     }
+
+    // ========================================================================
+    // Step 5C Tests: Compound Statement node_id
+    // ========================================================================
+
+    #[test]
+    fn test_for_has_node_id() {
+        // Test that For statement has node_id after parsing
+        let source = "for x in items:\n    pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::For(for_stmt)) = &module.body[0] {
+            assert!(
+                for_stmt.node_id.is_some(),
+                "Parsed For statement should have Some(NodeId), got None"
+            );
+        } else {
+            panic!("Expected For compound statement");
+        }
+    }
+
+    #[test]
+    fn test_while_has_node_id() {
+        // Test that While statement has node_id after parsing
+        let source = "while True:\n    pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::While(while_stmt)) = &module.body[0] {
+            assert!(
+                while_stmt.node_id.is_some(),
+                "Parsed While statement should have Some(NodeId), got None"
+            );
+        } else {
+            panic!("Expected While compound statement");
+        }
+    }
+
+    #[test]
+    fn test_try_has_node_id() {
+        // Test that Try statement has node_id after parsing
+        let source = "try:\n    pass\nexcept:\n    pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::Try(try_stmt)) = &module.body[0] {
+            assert!(
+                try_stmt.node_id.is_some(),
+                "Parsed Try statement should have Some(NodeId), got None"
+            );
+        } else {
+            panic!("Expected Try compound statement");
+        }
+    }
+
+    #[test]
+    fn test_try_star_has_node_id() {
+        // Test that TryStar statement has node_id after parsing
+        // TryStar uses except* syntax (Python 3.11+)
+        let source = "try:\n    pass\nexcept* Exception:\n    pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::TryStar(try_star_stmt)) = &module.body[0] {
+            assert!(
+                try_star_stmt.node_id.is_some(),
+                "Parsed TryStar statement should have Some(NodeId), got None"
+            );
+        } else {
+            panic!("Expected TryStar compound statement");
+        }
+    }
+
+    #[test]
+    fn test_with_has_node_id() {
+        // Test that With statement has node_id after parsing
+        let source = "with open('file') as f:\n    pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::With(with_stmt)) = &module.body[0] {
+            assert!(
+                with_stmt.node_id.is_some(),
+                "Parsed With statement should have Some(NodeId), got None"
+            );
+        } else {
+            panic!("Expected With compound statement");
+        }
+    }
+
+    #[test]
+    fn test_match_has_node_id() {
+        // Test that Match statement has node_id after parsing
+        // Match statement (Python 3.10+)
+        let source = "match x:\n    case 1:\n        pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::Match(match_stmt)) = &module.body[0] {
+            assert!(
+                match_stmt.node_id.is_some(),
+                "Parsed Match statement should have Some(NodeId), got None"
+            );
+        } else {
+            panic!("Expected Match compound statement");
+        }
+    }
 }

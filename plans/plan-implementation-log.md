@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 5C: Add node_id to Remaining Compound Statements | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 5C specification (lines 1783-1931)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - For, While, Try, TryStar, With, Match structs and inflate implementations
+- CST infrastructure audit recommendations (2026-01-28)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `node_id: Option<NodeId>` to `For` struct | Done |
+| Update `DeflatedFor::inflate()` to call `ctx.next_id()` | Done |
+| Add `node_id: Option<NodeId>` to `While` struct | Done |
+| Update `DeflatedWhile::inflate()` to call `ctx.next_id()` | Done |
+| Add `node_id: Option<NodeId>` to `Try` struct | Done |
+| Update `DeflatedTry::inflate()` to call `ctx.next_id()` | Done |
+| Add `node_id: Option<NodeId>` to `TryStar` struct | Done |
+| Update `DeflatedTryStar::inflate()` to call `ctx.next_id()` | Done |
+| Add `node_id: Option<NodeId>` to `With` struct | Done |
+| Update `DeflatedWith::inflate()` to call `ctx.next_id()` | Done |
+| Add `node_id: Option<NodeId>` to `Match` struct | Done |
+| Update `DeflatedMatch::inflate()` to call `ctx.next_id()` | Done |
+| Add `test_for_has_node_id` verification test | Done |
+| Add `test_while_has_node_id` verification test | Done |
+| Add `test_try_has_node_id` verification test | Done |
+| Add `test_try_star_has_node_id` verification test | Done |
+| Add `test_with_has_node_id` verification test | Done |
+| Add `test_match_has_node_id` verification test | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added `node_id: Option<NodeId>` field and inflate logic to 6 compound statements
+- `crates/tugtool-python-cst/src/lib.rs` - Added 6 verification tests (test_for_has_node_id, test_while_has_node_id, test_try_has_node_id, test_try_star_has_node_id, test_with_has_node_id, test_match_has_node_id)
+- `plans/phase-11E.md` - Checked off all completed tasks for Step 5C
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 561 tests passed
+- `cargo nextest run --workspace`: 1902 tests passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst`: PASS (561 tests)
+- `cargo nextest run --workspace`: PASS (1902 tests)
+- All 6 compound statements have `node_id: Option<NodeId>` (grep verification): PASS
+
+**Key Decisions/Notes:**
+- This step establishes infrastructure parity with `If`, `FunctionDef`, and `ClassDef` which already have `node_id`
+- Only added `node_id` field and ID generation during inflate - no span recording yet (per plan strategy)
+- Enables future enhancements (iterator type tracking, exception handler narrowing, context manager binding types, pattern matching narrowing) without additional struct changes
+- Test count increased from 555 to 561 (6 new verification tests added)
+
+---
+
 ## [phase-11E.md] Step 5B: Record SimpleString Spans During Inflation | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
