@@ -91,6 +91,13 @@ pub fn collect_python_files_filtered(
     filter: Option<&FileFilterSpec>,
 ) -> FileResult<Vec<(String, String)>> {
     let mut files = Vec::new();
+    let default_spec = if filter.is_none() {
+        Some(FileFilterSpec::default_all().map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidInput, format!("filter error: {}", e))
+        })?)
+    } else {
+        None
+    };
 
     for entry in WalkDir::new(workspace_root)
         .follow_links(false)
@@ -117,24 +124,9 @@ pub fn collect_python_files_filtered(
             if !spec.matches(rel_path) {
                 continue;
             }
-        } else {
-            // No filter - apply default exclusions manually
-            // Skip hidden directories
-            if rel_path
-                .components()
-                .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-            {
-                continue;
-            }
-            // Skip common exclusions
-            if rel_path.components().any(|c| {
-                let name = c.as_os_str().to_string_lossy();
-                name == "__pycache__"
-                    || name == "node_modules"
-                    || name == "venv"
-                    || name == ".venv"
-                    || name == "target"
-            }) {
+        } else if let Some(spec) = &default_spec {
+            // No user filter - apply default exclusions only
+            if !spec.matches(rel_path) {
                 continue;
             }
         }
@@ -728,12 +720,10 @@ mod tests {
         let workspace = create_test_workspace_with_tests();
 
         // Include src/**/*.py but exclude test_*.py
-        let filter = FileFilterSpec::parse(&[
-            "src/**/*.py".to_string(),
-            "!**/test_*.py".to_string(),
-        ])
-        .unwrap()
-        .unwrap();
+        let filter =
+            FileFilterSpec::parse(&["src/**/*.py".to_string(), "!**/test_*.py".to_string()])
+                .unwrap()
+                .unwrap();
         let files = collect_python_files_filtered(workspace.path(), Some(&filter)).unwrap();
         let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
 

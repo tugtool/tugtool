@@ -17,7 +17,8 @@
 //!
 //! ## Design Principles (List L18)
 //!
-//! 1. **Always JSON:** All CLI output is valid JSON (no mixed text/JSON)
+//! 1. **Structured JSON:** All structured CLI output is valid JSON; `emit` may output plain
+//!    unified diff by default (with optional JSON envelope)
 //! 2. **Status first:** Every response has `status` as first field
 //! 3. **Deterministic:** Same input -> same output (field order, array ordering)
 //! 4. **Nullable vs absent:** Explicit `null` for "no value"; absent field means "not applicable"

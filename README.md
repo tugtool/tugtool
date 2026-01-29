@@ -11,7 +11,7 @@ Tug aims to do better with language modules that understand code and how to chan
 - **Semantic refactoring** - Understands code structure, not just text
 - **Verification pipeline** - Catches syntax errors before changes are applied
 - **Sandbox-first** - Changes are verified in isolation before touching your files
-- **JSON output** - All output is structured JSON for easy parsing by AI agents
+- **JSON output** - Structured JSON for apply/analyze; `emit` outputs unified diff by default (with optional JSON envelope)
 
 ## Installation
 

@@ -41,7 +41,7 @@ use tugtool_core::session::{Session, SessionOptions};
 
 // Python feature-gated imports
 #[cfg(feature = "python")]
-use tugtool::cli::do_rename;
+use tugtool::cli::{analyze_rename, do_rename};
 #[cfg(feature = "python")]
 use tugtool_core::filter::FileFilterSpec;
 #[cfg(feature = "python")]
@@ -54,7 +54,8 @@ use tugtool_python::verification::VerificationMode;
 /// Safe code refactoring for AI agents.
 ///
 /// Tug provides verified, deterministic, minimal-diff refactors across
-/// Python codebases. All output is JSON for easy parsing by LLM agents.
+/// Python codebases. Output is JSON for apply/analyze and unified diff for emit
+/// (with optional JSON envelope via `emit --json`).
 #[derive(Parser, Debug)]
 #[command(name = "tug", version, about = "Safe code refactoring for AI agents")]
 struct Cli {
@@ -461,9 +462,9 @@ fn main() -> ExitCode {
                 error: ErrorInfo::from_error(&err),
             };
 
-            // Write to stdout (errors go to stdout as JSON per agent contract)
-            let _ = emit_response(&response, &mut io::stdout());
-            let _ = io::stdout().flush();
+            // Write to stderr (errors go to stderr as JSON per agent contract)
+            let _ = emit_response(&response, &mut io::stderr());
+            let _ = io::stderr().flush();
 
             // Return appropriate exit code
             ExitCode::from(error_code.code())
@@ -700,16 +701,9 @@ fn execute_analyze_python(
             let filter_spec = FileFilterSpec::parse(&filter)
                 .map_err(|e| TugError::invalid_args(e.to_string()))?;
 
-            // Run rename in dry-run mode with no verification
-            let json_result = do_rename(
-                &session,
-                Some(python_path),
-                &at,
-                &to,
-                VerificationMode::None,
-                false, // Never apply changes
-                filter_spec.as_ref(),
-            )?;
+            // Run impact analysis (read-only)
+            let json_result =
+                analyze_rename(&session, Some(python_path), &at, &to, filter_spec.as_ref())?;
 
             // Parse result
             let result: serde_json::Value = serde_json::from_str(&json_result)
@@ -724,8 +718,7 @@ fn execute_analyze_python(
                 AnalyzeOutput::References => {
                     // Extract just references
                     let references = result
-                        .get("patch")
-                        .and_then(|p| p.get("edits"))
+                        .get("references")
                         .cloned()
                         .unwrap_or(serde_json::json!([]));
                     let output = serde_json::to_string_pretty(&references)
@@ -1316,10 +1309,7 @@ mod tests {
                 TopLevelCommand::Apply {
                     language:
                         ApplyLanguage::Python {
-                            command:
-                                ApplyPythonCommand::Rename {
-                                    at, to, filter, ..
-                                },
+                            command: ApplyPythonCommand::Rename { at, to, filter, .. },
                         },
                 } => {
                     assert_eq!(at, "src/main.py:10:5");
@@ -1496,15 +1486,7 @@ mod tests {
         #[test]
         fn test_analyze_python_rename_output_symbol() {
             let args = [
-                "tug",
-                "analyze",
-                "python",
-                "rename",
-                "--at",
-                "x:1:1",
-                "--to",
-                "y",
-                "--output",
+                "tug", "analyze", "python", "rename", "--at", "x:1:1", "--to", "y", "--output",
                 "symbol",
             ];
             let cli = Cli::try_parse_from(args).unwrap();
@@ -1746,13 +1728,7 @@ mod tests {
 
         #[test]
         fn parse_session_dir_flag() {
-            let args = [
-                "tug",
-                "--session-dir",
-                "/tmp/.tug",
-                "session",
-                "status",
-            ];
+            let args = ["tug", "--session-dir", "/tmp/.tug", "session", "status"];
             let cli = Cli::try_parse_from(args).unwrap();
             assert_eq!(cli.global.session_dir, Some(PathBuf::from("/tmp/.tug")));
         }

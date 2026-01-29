@@ -48,7 +48,7 @@ fn workspace_root() -> PathBuf {
 /// Test that `tug fixture fetch nonexistent` returns exit code 2.
 #[test]
 fn fetch_nonexistent_returns_exit_2() {
-    let (stdout, _stderr, exit_code) = run_tug(&["fixture", "fetch", "nonexistent-fixture-xyz"]);
+    let (_stdout, stderr, exit_code) = run_tug(&["fixture", "fetch", "nonexistent-fixture-xyz"]);
 
     assert_eq!(
         exit_code, 2,
@@ -57,7 +57,7 @@ fn fetch_nonexistent_returns_exit_2() {
     );
 
     // Verify JSON output
-    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+    let json: Value = serde_json::from_str(&stderr).expect("stderr should be valid JSON");
     assert_eq!(json["status"], "error", "expected error status in JSON");
 }
 
@@ -107,7 +107,7 @@ fn fetch_valid_returns_exit_0_and_valid_json() {
 /// This tests the case where the fixture exists but the ref cannot be resolved.
 #[test]
 fn update_bad_ref_returns_exit_3() {
-    let (stdout, _stderr, exit_code) = run_tug(&[
+    let (_stdout, stderr, exit_code) = run_tug(&[
         "fixture",
         "update",
         "temporale",
@@ -122,7 +122,7 @@ fn update_bad_ref_returns_exit_3() {
     );
 
     // Verify JSON output
-    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+    let json: Value = serde_json::from_str(&stderr).expect("stderr should be valid JSON");
     assert_eq!(json["status"], "error", "expected error status in JSON");
 }
 
@@ -131,7 +131,7 @@ fn update_bad_ref_returns_exit_3() {
 /// This tests the case where the fixture name doesn't exist.
 #[test]
 fn update_nonexistent_fixture_returns_exit_2() {
-    let (stdout, _stderr, exit_code) = run_tug(&[
+    let (_stdout, stderr, exit_code) = run_tug(&[
         "fixture",
         "update",
         "nonexistent-fixture-xyz",
@@ -146,7 +146,7 @@ fn update_nonexistent_fixture_returns_exit_2() {
     );
 
     // Verify JSON output
-    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+    let json: Value = serde_json::from_str(&stderr).expect("stderr should be valid JSON");
     assert_eq!(json["status"], "error", "expected error status in JSON");
 }
 
@@ -222,7 +222,7 @@ fn status_returns_exit_0_and_valid_json() {
 /// Test that `tug fixture status nonexistent` returns exit code 2.
 #[test]
 fn status_nonexistent_returns_exit_2() {
-    let (stdout, _stderr, exit_code) = run_tug(&["fixture", "status", "nonexistent-fixture-xyz"]);
+    let (_stdout, stderr, exit_code) = run_tug(&["fixture", "status", "nonexistent-fixture-xyz"]);
 
     assert_eq!(
         exit_code, 2,
@@ -231,6 +231,6 @@ fn status_nonexistent_returns_exit_2() {
     );
 
     // Verify JSON output
-    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+    let json: Value = serde_json::from_str(&stderr).expect("stderr should be valid JSON");
     assert_eq!(json["status"], "error", "expected error status in JSON");
 }

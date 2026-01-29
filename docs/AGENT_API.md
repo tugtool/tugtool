@@ -6,7 +6,7 @@ This document describes the tug CLI interface for AI coding agents.
 
 Tug is a refactoring tool for AI coding agents. It provides verified, deterministic, minimal-diff refactors. Unlike simple find-and-replace, tug understands code semantics: it parses your code, builds a symbol graph, and ensures that all references to a symbol are updated correctly.
 
-All output is structured JSON for easy parsing by LLM agents. Every operation goes through a verification pipeline that catches syntax errors before changes are applied, ensuring that the codebase remains valid after refactoring. The tool uses a sandbox-first approach: changes are generated and verified in an isolated copy before being applied to the actual workspace.
+Structured output is JSON for easy parsing by LLM agents, with one exception: `emit` defaults to a unified diff (and can optionally wrap the diff in JSON). Every operation goes through a verification pipeline that catches syntax errors before changes are applied, ensuring that the codebase remains valid after refactoring. The tool uses a sandbox-first approach: changes are generated and verified in an isolated copy before being applied to the actual workspace.
 
 The key design principle is "analyze, review, apply": agents first analyze the impact of a change, review the proposed edits, and only then apply them. This workflow prevents accidental breakage and gives agents full visibility into what will change before any files are modified.
 
@@ -88,7 +88,7 @@ tug run [--apply] [--verify <mode>] rename-symbol --at <file:line:col> --to <new
 
 All CLI output follows the JSON output schema. Key principles:
 
-1. **Always JSON** - All output is valid JSON (no mixed text/JSON)
+1. **Structured JSON** - All structured output is valid JSON; `emit` may output plain unified diff by default
 2. **Status first** - Every response has `status` as the first field
 3. **Deterministic** - Same input produces same output
 4. **Versioned** - `schema_version` enables forward compatibility

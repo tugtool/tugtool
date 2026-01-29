@@ -1,43 +1,45 @@
 {
-  "patch": {
-    "edits": [
-      {
+  "aliases": [],
+  "impact": {
+    "edits_estimated": 2,
+    "files_affected": 1,
+    "references_count": 2
+  },
+  "references": [
+    {
+      "kind": "definition",
+      "location": {
+        "byte_end": 16,
+        "byte_start": 4,
         "col": 5,
         "file": "input.py",
-        "line": 1,
-        "new_text": "transform_data",
-        "old_text": "process_data",
-        "span": {
-          "end": 16,
-          "start": 4
-        }
-      },
-      {
+        "line": 1
+      }
+    },
+    {
+      "kind": "call",
+      "location": {
+        "byte_end": 237,
+        "byte_start": 225,
         "col": 14,
         "file": "input.py",
-        "line": 11,
-        "new_text": "transform_data",
-        "old_text": "process_data",
-        "span": {
-          "end": 237,
-          "start": 225
-        }
+        "line": 11
       }
-    ],
-    "unified_diff": "--- a/input.py\n+++ b/input.py\n@@ -1,1 +1,1 @@\n-process_data\n+transform_data\n@@ -11,1 +11,1 @@\n-process_data\n+transform_data\n"
-  },
+    }
+  ],
   "schema_version": "1",
   "status": "ok",
-  "summary": {
-    "bytes_added": 28,
-    "bytes_removed": 24,
-    "edits_count": 2,
-    "files_changed": 1
-  },
-  "verification": {
-    "checks": [],
-    "mode": "none",
-    "status": "skipped"
+  "symbol": {
+    "id": "sym_0",
+    "kind": "function",
+    "location": {
+      "byte_end": 16,
+      "byte_start": 4,
+      "col": 5,
+      "file": "input.py",
+      "line": 1
+    },
+    "name": "process_data"
   },
   "warnings": []
 }

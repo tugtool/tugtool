@@ -115,14 +115,24 @@ impl FileFilterSpec {
         let exclusions = build_glob_set(&exclusion_patterns)?;
 
         // Build default exclusions glob set
-        let default_exclusions =
-            build_glob_set(&DEFAULT_EXCLUSIONS.iter().map(|s| s.to_string()).collect::<Vec<_>>())?;
+        let default_exclusions = build_default_exclusions()?;
 
         Ok(Some(FileFilterSpec {
             inclusions,
             exclusions,
             default_exclusions,
         }))
+    }
+
+    /// Build a default filter spec that includes all files (subject to default exclusions).
+    pub fn default_all() -> Result<Self, FilterError> {
+        let exclusions = build_glob_set(&[])?;
+        let default_exclusions = build_default_exclusions()?;
+        Ok(FileFilterSpec {
+            inclusions: None,
+            exclusions,
+            default_exclusions,
+        })
     }
 
     /// Check if a path matches the filter specification.
@@ -184,6 +194,16 @@ fn build_glob_set(patterns: &[String]) -> Result<GlobSet, FilterError> {
         pattern: "<combined>".to_string(),
         message: e.to_string(),
     })
+}
+
+/// Build a GlobSet containing the default exclusions.
+fn build_default_exclusions() -> Result<GlobSet, FilterError> {
+    build_glob_set(
+        &DEFAULT_EXCLUSIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
+    )
 }
 
 #[cfg(test)]
@@ -284,12 +304,9 @@ mod tests {
 
     #[test]
     fn test_filter_matches_combined() {
-        let spec = FileFilterSpec::parse(&[
-            "src/**/*.py".to_string(),
-            "!**/test_*.py".to_string(),
-        ])
-        .unwrap()
-        .unwrap();
+        let spec = FileFilterSpec::parse(&["src/**/*.py".to_string(), "!**/test_*.py".to_string()])
+            .unwrap()
+            .unwrap();
 
         // Should match (in src, not test file)
         assert!(spec.matches(Path::new("src/main.py")));
@@ -341,12 +358,9 @@ mod tests {
 
     #[test]
     fn test_filter_multiple_inclusions() {
-        let spec = FileFilterSpec::parse(&[
-            "src/**/*.py".to_string(),
-            "lib/**/*.py".to_string(),
-        ])
-        .unwrap()
-        .unwrap();
+        let spec = FileFilterSpec::parse(&["src/**/*.py".to_string(), "lib/**/*.py".to_string()])
+            .unwrap()
+            .unwrap();
 
         // Should match (in either src or lib)
         assert!(spec.matches(Path::new("src/main.py")));
@@ -359,12 +373,9 @@ mod tests {
 
     #[test]
     fn test_filter_multiple_exclusions() {
-        let spec = FileFilterSpec::parse(&[
-            "!tests/**".to_string(),
-            "!**/conftest.py".to_string(),
-        ])
-        .unwrap()
-        .unwrap();
+        let spec = FileFilterSpec::parse(&["!tests/**".to_string(), "!**/conftest.py".to_string()])
+            .unwrap()
+            .unwrap();
 
         // Should match
         assert!(spec.matches(Path::new("src/main.py")));

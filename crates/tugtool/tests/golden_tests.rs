@@ -198,10 +198,22 @@ fn run_golden_test(
         .map_err(|e| format!("Failed to run command: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let output_json = if output.status.success() {
+        stdout.as_ref()
+    } else if !stderr.trim().is_empty() {
+        stderr.as_ref()
+    } else {
+        stdout.as_ref()
+    };
 
     // Parse actual output as JSON
-    let actual: Value = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse output as JSON: {}\nOutput: {}", e, stdout))?;
+    let actual: Value = serde_json::from_str(output_json).map_err(|e| {
+        format!(
+            "Failed to parse output as JSON: {}\nOutput: {}",
+            e, output_json
+        )
+    })?;
 
     // Load or update golden file
     let golden_path = golden_output_dir().join(golden_file);
@@ -616,13 +628,20 @@ fn test_analyze_output_impact() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json: Value = serde_json::from_str(&stdout).expect("Should parse as JSON");
 
-    // Full impact analysis should have status, schema_version, patch, etc.
+    // Full impact analysis should have status, schema_version, references, impact, etc.
     assert_eq!(json["status"], "ok", "Should have ok status");
     assert!(
         json.get("schema_version").is_some(),
         "Impact should have schema_version"
     );
-    assert!(json.get("patch").is_some(), "Impact should have patch");
+    assert!(
+        json.get("references").is_some(),
+        "Impact should have references"
+    );
+    assert!(
+        json.get("impact").is_some(),
+        "Impact should have impact summary"
+    );
 }
 
 /// Test that --output=references returns just the references/edits array.
@@ -667,7 +686,7 @@ fn test_analyze_output_references() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json: Value = serde_json::from_str(&stdout).expect("Should parse as JSON");
 
-    // References output should be an array (the edits array)
+    // References output should be an array (ReferenceInfo list)
     assert!(json.is_array(), "References output should be an array");
 
     // Check that we have at least one reference (the definition and the call)
@@ -677,11 +696,15 @@ fn test_analyze_output_references() {
         "References array should not be empty for a function with calls"
     );
 
-    // Each reference should have file and edits
+    // Each reference should have location and kind
     for reference in arr {
         assert!(
-            reference.get("file").is_some(),
-            "Each reference should have 'file'"
+            reference.get("location").is_some(),
+            "Each reference should have 'location'"
+        );
+        assert!(
+            reference.get("kind").is_some(),
+            "Each reference should have 'kind'"
         );
     }
 }
@@ -775,7 +798,13 @@ fn test_rust_not_implemented() {
     assert!(!output.status.success(), "Rust should fail");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: Value = serde_json::from_str(&stdout).expect("Should parse error as JSON");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let error_output = if !stderr.trim().is_empty() {
+        stderr.as_ref()
+    } else {
+        stdout.as_ref()
+    };
+    let json: Value = serde_json::from_str(error_output).expect("Should parse error as JSON");
 
     assert_eq!(json["status"], "error", "Should be error status");
     let message = json["error"]["message"].as_str().unwrap_or("");

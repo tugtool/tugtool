@@ -1,8 +1,9 @@
 //! CLI front door for agent integration.
 //!
-//! Provides the command-line interface for tug operations:
-//! - `analyze rename` - Analyze rename impact (outputs unified diff)
-//! - `rename` - Execute rename with verification
+//! Provides the command-line interface helpers for tug operations:
+//! - `apply python rename` - Execute rename with verification
+//! - `emit python rename` - Emit unified diff (or JSON envelope with `--json`)
+//! - `analyze python rename` - Analyze rename impact (JSON metadata)
 //!
 //! ## Session Integration
 //!
