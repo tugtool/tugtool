@@ -6,6 +6,45 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 5: Remove Old Commands | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 5 tasks, D06 (Snapshot and Verify Commands Removed)
+- `crates/tugtool/src/main.rs` - Legacy `execute_snapshot` function and imports
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Remove `Command::Verify` variant and `execute_verify` function | Done (already removed in Steps 1-2) |
+| Remove `Command::Snapshot` variant and `execute_snapshot` function | Done |
+| Update help text to remove references to old commands | Done (no references existed) |
+| Remove any tests specific to old commands | Done (tests verifying removal kept as intended) |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs` - Removed legacy `execute_snapshot` function and "Legacy Compatibility" section; removed unused imports (`SnapshotResponse`, `Language`, `SnapshotConfig`, `WorkspaceSnapshot`)
+- `plans/phase-12.md` - Checked off Step 5 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool test_snapshot_command_removed test_verify_command_removed`: 2 tests passed (confirming old commands fail)
+- `cargo nextest run --workspace`: 1888 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS
+
+**Key Decisions/Notes:**
+- The `Command::Verify` and `Command::Snapshot` enum variants were already removed in Steps 1-2 when the CLI was restructured
+- The legacy `execute_snapshot` function remained marked for removal in Step 5, now deleted
+- Tests `test_snapshot_command_removed` and `test_verify_command_removed` are intentionally kept as they verify the old commands properly return errors
+
+---
+
 ## [phase-12.md] Step 4: Implement analyze Output Variants | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

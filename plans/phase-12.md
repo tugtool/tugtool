@@ -948,17 +948,17 @@ enum AnalyzeOutput {
 - Modified: `crates/tugtool/src/main.rs`
 
 **Tasks:**
-- [ ] Remove `Command::Verify` variant and `execute_verify` function
-- [ ] Remove `Command::Snapshot` variant and `execute_snapshot` function
-- [ ] Update help text to remove references to old commands
-- [ ] Remove any tests specific to old commands
+- [x] Remove `Command::Verify` variant and `execute_verify` function
+- [x] Remove `Command::Snapshot` variant and `execute_snapshot` function
+- [x] Update help text to remove references to old commands
+- [x] Remove any tests specific to old commands
 
 **Tests:**
-- [ ] integration: Old command syntax returns appropriate error
-- [ ] All remaining tests pass
+- [x] integration: Old command syntax returns appropriate error
+- [x] All remaining tests pass
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace`
+- [x] `cargo nextest run --workspace`
 
 **Rollback:** Revert main.rs changes
 

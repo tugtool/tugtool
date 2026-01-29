@@ -35,10 +35,9 @@ use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::output::{
     emit_response, CheckResult, DoctorResponse, ErrorInfo, ErrorResponse, FixtureFetchResponse,
     FixtureFetchResult, FixtureListItem, FixtureListResponse, FixtureStatusItem,
-    FixtureStatusResponse, FixtureUpdateResponse, FixtureUpdateResult, SnapshotResponse,
+    FixtureStatusResponse, FixtureUpdateResponse, FixtureUpdateResult,
 };
 use tugtool_core::session::{Session, SessionOptions};
-use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
 // Python feature-gated imports
 #[cfg(feature = "python")]
@@ -1283,39 +1282,6 @@ fn fixture_error_to_tug_error(e: tugtool::fixture::FixtureError) -> TugError {
         FixtureErrorKind::RefNotFound => TugError::file_not_found(e.to_string()),
         FixtureErrorKind::Internal => TugError::internal(e.to_string()),
     }
-}
-
-// ============================================================================
-// Legacy Compatibility (to be removed in Step 5)
-// ============================================================================
-
-// Unused import warnings are expected - these are used in execute_snapshot
-#[allow(dead_code)]
-fn execute_snapshot(global: &GlobalArgs) -> Result<(), TugError> {
-    let mut session = open_session(global)?;
-
-    // Create workspace snapshot using Python language config
-    let config = SnapshotConfig::for_language(Language::Python);
-    let snapshot = WorkspaceSnapshot::create(session.workspace_root(), &config)
-        .map_err(|e| TugError::internal(format!("Failed to create snapshot: {}", e)))?;
-
-    // Save snapshot to session
-    session
-        .save_snapshot(&snapshot)
-        .map_err(|e| TugError::internal(format!("Failed to save snapshot: {}", e)))?;
-
-    // Create response
-    let response = SnapshotResponse::new(
-        snapshot.snapshot_id.0.clone(),
-        snapshot.file_count as u32,
-        snapshot.total_bytes,
-    );
-
-    // Output response JSON
-    emit_response(&response, &mut io::stdout()).map_err(|e| TugError::internal(e.to_string()))?;
-    let _ = io::stdout().flush();
-
-    Ok(())
 }
 
 // ============================================================================
