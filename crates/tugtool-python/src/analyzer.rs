@@ -19,17 +19,19 @@
 //! - Dotted paths: `self.handler.process()`
 //! - Call expressions: `get_handler().process()`
 //! - Callable attributes: `self.factory()` where factory has type `Callable[[], T]`
+//! - Chained calls: `factory().create().process()` (follows call chain up to depth limit)
+//! - Subscript expressions: `items[0].method()` where `items: List[Handler]` (extracts element type)
+//! - isinstance narrowing: `if isinstance(x, Handler): x.process()` (narrows type within branch)
+//! - MRO-based attribute lookup when attribute is not found directly on the class
+//! - Property decorators: `@property` methods resolved via `property_type_of()`
 //!
 //! ## Unsupported Patterns
 //!
 //! The following patterns return `None` during resolution:
 //!
-//! - **Subscript expressions**: `data[0].method()` - index access is not tracked
 //! - **Complex expressions**: `(a or b).method()` - boolean/conditional expressions
-//! - **Generic type parameters**: `List[T]` → `T` resolution is not performed
+//! - **Nested generic extraction**: `List[Dict[str, Handler]]` → `Handler` resolution is not performed
 //! - **Duck typing**: Protocol-based type inference is not supported
-//! - **Property decorators**: `@property` methods are not resolved as types
-//! - **Inheritance (MRO)**: Method resolution order is not followed
 //!
 //! ## Resolution Depth Limit
 //!

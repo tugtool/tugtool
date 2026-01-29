@@ -44,7 +44,7 @@ Tugtool is designed for AI coding agents. It provides:
 
 ## Supported Languages
 
-- **Python** - Full support via LibCST
+- **Python** - Full support via native Rust CST parser
 - **Rust** - Planned (via rust-analyzer)
 - **TypeScript** - Planned
 
