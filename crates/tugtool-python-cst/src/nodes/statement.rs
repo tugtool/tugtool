@@ -2142,7 +2142,6 @@ pub struct Try<'a> {
 
     pub(crate) try_tok: TokenRef<'a>,
     // colon_tok unnecessary
-
     /// Stable identity assigned during inflation.
     pub node_id: Option<NodeId>,
 }
@@ -2209,7 +2208,6 @@ pub struct TryStar<'a> {
 
     pub(crate) try_tok: TokenRef<'a>,
     // colon_tok unnecessary
-
     /// Stable identity assigned during inflation.
     pub node_id: Option<NodeId>,
 }

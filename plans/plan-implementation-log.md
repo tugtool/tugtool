@@ -6,6 +6,187 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 7D: Remove Remaining method_calls Infrastructure | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 7D specification
+- `crates/tugtool-python/src/analyzer.rs` - Stale comment at line 1544
+- `crates/tugtool-python/src/cst_bridge.rs` - NativeAnalysisResult, MethodCallCollector usage
+- `crates/tugtool-python/src/types.rs` - MethodCallInfo struct, AnalysisResult
+- `crates/tugtool-python/src/type_tracker.rs` - find_typed_method_references function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Part A: Fix stale comment in analyzer.rs | Done |
+| Part B: Remove MethodCallCollector import from cst_bridge.rs | Done |
+| Part B: Remove method_calls field from NativeAnalysisResult | Done |
+| Part B: Remove MethodCallCollector::collect() call | Done |
+| Part B: Remove test_p1_method_calls_collected test | Done |
+| Part B: Update test_p1_comprehensive_analysis test | Done |
+| Part C: Remove MethodCallInfo struct from types.rs | Done |
+| Part C: Remove method_calls field from AnalysisResult | Done |
+| Part C: Remove test_method_call_info_serialization test | Done |
+| Part C: Update test_analysis_result_serialization test | Done |
+| Part D: Remove find_typed_method_references function | Done |
+| Part D: Remove method_call_unit_tests module | Done |
+| Part E: Check lib.rs exports (none to remove) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Fixed stale comment (removed `method_calls` reference)
+- `crates/tugtool-python/src/cst_bridge.rs` - Removed MethodCallCollector import, method_calls field, collector call, and 2 tests
+- `crates/tugtool-python/src/types.rs` - Removed MethodCallInfo struct, method_calls field from AnalysisResult, and test
+- `crates/tugtool-python/src/type_tracker.rs` - Removed find_typed_method_references function (~40 lines) and method_call_unit_tests module (~130 lines)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 683 tests passed (8 fewer due to removed tests)
+- `cargo nextest run --workspace`: 1921 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python`: PASS
+- `cargo nextest run -p tugtool-python`: PASS (683 tests)
+- `cargo nextest run --workspace`: PASS (1921 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo fmt --all --check`: PASS
+- All verification grep commands: PASS (all removed code confirmed gone)
+
+**Key Decisions/Notes:**
+- Removed ~212 lines of dead code while maintaining identical functionality
+- MethodCallCollector remains in tugtool-python-cst (public API for benchmarks/golden tests)
+- This completes the technical debt cleanup started in Step 7C
+
+---
+
+## [phase-11E.md] Step 7C: Retire Phase 11E Technical Debt | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 7C specification
+- `crates/tugtool-python/src/analyzer.rs` - Pass 4 method resolution, FileAnalysis struct
+- `crates/tugtool-python/src/cross_file_types.rs` - Helper functions for type resolution
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Part A: Extract conversion helper functions (TD4) | Done |
+| Part B: Store P1 data in Pass 1 (TD2) | Done |
+| Part C: Consolidate Pass 4d and Pass 4e (TD1) | Done |
+| Part D: Remove unused infrastructure (TD3) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added cst_assignments/cst_annotations fields to FileAnalysis, added convert_cst_*_slice helpers, added build_type_tracker_from_analysis, removed MethodCallIndex/IndexedMethodCall, consolidated Pass 4d/4e, removed unused variable constructions
+- `crates/tugtool-python/src/cross_file_types.rs` - Removed build_symbol_kinds, build_symbol_map, build_scope_map_index, build_scope_path_with_index functions (~90 lines)
+- `crates/tugtool-python/src/ops/rename.rs` - Updated test FileAnalysis constructions
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 691 tests passed (removed 6 MethodCallIndex tests)
+- `cargo nextest run --workspace`: 1929 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS (1929 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo fmt --all --check`: PASS
+- TD1 verification (MethodCallIndex removed): PASS
+- TD2 verification (no re-parsing in Pass 4): PASS
+- TD3 verification (suppression statements gone): PASS
+- TD4 verification (conversion code DRY): PASS
+
+**Key Decisions/Notes:**
+- Eliminated ~220 lines of technical debt while maintaining identical functionality
+- Key insight: call_sites is a superset of method_calls, enabling consolidation
+- P1 data (cst_assignments, cst_annotations) now stored during Pass 1, eliminating file re-parsing
+- Code-architect agent used to audit quality before proceeding
+
+---
+
+## [phase-11E.md] Step 7B: End-to-End Integration Tests | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 7B specification
+- All Phase 11E design decisions (D01-D11)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create test fixtures for function-level imports | Done |
+| Create test fixture for function-level star import ambiguity | Done |
+| Create test fixtures for generic container subscripts | Done |
+| Create test fixtures for isinstance narrowing | Done |
+| Add integration tests that verify full resolution chains | Done |
+| Add regression tests for existing behavior | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Added acceptance_criteria test module with comprehensive Phase 11E integration tests
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1935 tests passed
+- Integration tests for function-level imports: PASS
+- Integration tests for subscript resolution: PASS
+- Integration tests for isinstance narrowing: PASS
+
+**Checkpoints Verified:**
+- `cargo nextest run --workspace`: PASS (1935 tests)
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `cargo fmt --all --check`: PASS
+
+**Key Decisions/Notes:**
+- Tests organized by feature area: function-level imports, subscript resolution, isinstance narrowing
+- Tests verify full resolution chains from call_sites through resolve_receiver_path_with_cross_file
+- Regression tests ensure Phase 11D behavior unchanged
+
+---
+
+## [phase-11E.md] Step 7A: Wire Phase 11E Features into Pass 4 Reference Creation | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 7A specification and architecture fix
+- `crates/tugtool-python/src/analyzer.rs` - Pass 4 method resolution implementation
+- Code-architect analysis (2026-01-28)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Part A: Build NarrowingContext in Pass 4 | Done |
+| Part A: Store narrowing contexts alongside type_trackers | Done |
+| Part B: Replace MethodCallIndex loop with call_sites iteration | Done |
+| Part B: Call resolve_receiver_path_with_cross_file with narrowing and site_span | Done |
+| Part B: Ensure subscript patterns resolved via element type extraction | Done |
+| Part B: Ensure isinstance narrowing applied via site_span check | Done |
+| Part C: Ensure scope-aware lookup_import_target used | Done |
+| Part C: Verify function-level imports shadow module-level correctly | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs` - Rewrote Pass 4 to use call_sites with full resolution chain instead of MethodCallIndex, added narrowing context building, added site_span passing
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: All tests passed
+- Call site with subscript receiver resolves: PASS
+- Call site after isinstance check resolves with narrowing: PASS
+- Call site with function-level imported type resolves: PASS
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python`: PASS
+- `cargo clippy --workspace -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- Unified all method call resolution through call_sites instead of dual method_calls/call_sites paths
+- NarrowingContext built per-file from isinstance_checks
+- site_span passed to resolution for isinstance narrowing scope checking
+- This was the critical wiring step that connected all Phase 11E features together
+
+---
+
 ## [phase-11E.md] Step 6: Implement NarrowingContext and Integration | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28

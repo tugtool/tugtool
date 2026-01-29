@@ -585,7 +585,9 @@ class Time:
         let exports = ExportCollector::collect(&parsed.module, &parsed.positions, source);
 
         assert_eq!(exports.len(), 1);
-        let span = exports[0].span.expect("Should have span from PositionTable");
+        let span = exports[0]
+            .span
+            .expect("Should have span from PositionTable");
         let span_text = &source[span.start..span.end];
         assert_eq!(span_text, "\"hello\"");
     }

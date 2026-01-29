@@ -376,10 +376,16 @@ mod tests {
         // Both the if and elif should be detected
         assert_eq!(checks.len(), 2, "Should detect two isinstance checks");
 
-        let check_a = checks.iter().find(|c| c.checked_types == vec!["A"]).unwrap();
+        let check_a = checks
+            .iter()
+            .find(|c| c.checked_types == vec!["A"])
+            .unwrap();
         assert_eq!(check_a.variable, "x");
 
-        let check_b = checks.iter().find(|c| c.checked_types == vec!["B"]).unwrap();
+        let check_b = checks
+            .iter()
+            .find(|c| c.checked_types == vec!["B"])
+            .unwrap();
         assert_eq!(check_b.variable, "x");
     }
 
@@ -394,7 +400,11 @@ mod tests {
         let parsed = parse_module_with_positions(source, None).unwrap();
         let checks = IsInstanceCollector::collect(&parsed.module, &parsed.positions);
 
-        assert_eq!(checks.len(), 0, "Should not detect non-isinstance conditions");
+        assert_eq!(
+            checks.len(),
+            0,
+            "Should not detect non-isinstance conditions"
+        );
     }
 
     #[test]
@@ -407,7 +417,11 @@ mod tests {
         let checks = IsInstanceCollector::collect(&parsed.module, &parsed.positions);
 
         // Attribute access in first argument is not supported
-        assert_eq!(checks.len(), 0, "Should not detect isinstance with attribute access");
+        assert_eq!(
+            checks.len(),
+            0,
+            "Should not detect isinstance with attribute access"
+        );
     }
 
     #[test]
@@ -495,7 +509,10 @@ mod tests {
         assert_eq!(checks.len(), 2);
 
         // First check's branch should only cover A's body
-        let check_a = checks.iter().find(|c| c.checked_types == vec!["A"]).unwrap();
+        let check_a = checks
+            .iter()
+            .find(|c| c.checked_types == vec!["A"])
+            .unwrap();
         let branch_a = &source[check_a.branch_span.start..check_a.branch_span.end];
         assert!(
             branch_a.contains("a_method"),
@@ -514,7 +531,10 @@ mod tests {
         );
 
         // Second check's branch should only cover B's body
-        let check_b = checks.iter().find(|c| c.checked_types == vec!["B"]).unwrap();
+        let check_b = checks
+            .iter()
+            .find(|c| c.checked_types == vec!["B"])
+            .unwrap();
         let branch_b = &source[check_b.branch_span.start..check_b.branch_span.end];
         assert!(
             branch_b.contains("b_method"),

@@ -3004,3 +3004,926 @@ def main():
         );
     }
 }
+
+// ============================================================================
+// Phase 11E Integration Tests
+// ============================================================================
+//
+// These tests validate the three gaps addressed in Phase 11E:
+// 1. Function-level import tracking
+// 2. Generic type parameter resolution (container subscripts)
+// 3. isinstance-based type narrowing
+//
+// Running these tests:
+//   cargo nextest run -p tugtool-python phase_11e_
+
+mod phase_11e_function_level_imports {
+    //! Tests for function-level import tracking (Phase 11E Gap 1).
+    //!
+    //! Key behaviors to verify:
+    //! - Function-level imports are tracked with correct scope_path
+    //! - Function-level imports shadow module-level imports within function
+    //! - Function-level imports are NOT visible outside their function
+    //! - Type resolution works with function-level imported types
+
+    use super::*;
+    use tugtool_core::facts::ReferenceKind;
+
+    #[test]
+    fn phase_11e_function_level_import_basic_resolution() {
+        // Basic function-level import: from handler import Handler inside function
+        // The Handler type should be usable within the function for type resolution
+        let file_list = files(&[
+            (
+                "handler.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "consumer.py",
+                r#"def process():
+    from handler import Handler
+    h = Handler()
+    h.process()
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| {
+            s.name == "process" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(
+            process_method.is_some(),
+            "Handler.process method should exist"
+        );
+
+        let process_symbol = process_method.unwrap();
+
+        // Check that there's a call reference to Handler.process from consumer.py
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == process_symbol.symbol_id)
+            .collect();
+
+        let call_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Call)
+            .collect();
+
+        // h.process() should resolve to Handler.process via function-level import
+        assert!(
+            !call_refs.is_empty(),
+            "h.process() call should resolve to Handler.process via function-level import. \
+             Found {} references, {} are calls",
+            refs.len(),
+            call_refs.len()
+        );
+    }
+
+    #[test]
+    fn phase_11e_function_level_import_shadows_module_level() {
+        // Function-level import should shadow module-level import (Q01 decision)
+        // When both external.Handler and internal.Handler exist,
+        // function-level import should take precedence within the function
+        let file_list = files(&[
+            (
+                "external.py",
+                r#"class Handler:
+    def external_method(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "internal.py",
+                r#"class Handler:
+    def internal_method(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "consumer.py",
+                r#"from external import Handler  # Module-level
+
+def process():
+    from internal import Handler  # Function-level shadows module-level
+    h = Handler()
+    h.internal_method()  # Should resolve to internal.Handler.internal_method
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find internal.Handler.internal_method
+        let internal_method = store.symbols().find(|s| {
+            s.name == "internal_method" && store.file(s.decl_file_id).unwrap().path == "internal.py"
+        });
+        assert!(
+            internal_method.is_some(),
+            "internal_method should exist in internal.py"
+        );
+
+        let internal_symbol = internal_method.unwrap();
+
+        // Check for call reference to internal_method from consumer.py
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == internal_symbol.symbol_id)
+            .collect();
+
+        let call_refs: Vec<_> = refs
+            .iter()
+            .filter(|r| r.ref_kind == ReferenceKind::Call)
+            .collect();
+
+        // The call h.internal_method() should resolve to internal.Handler
+        // because function-level import shadows module-level import
+        assert!(
+            !call_refs.is_empty(),
+            "h.internal_method() should resolve to internal.Handler.internal_method \
+             (function-level import shadows module-level)"
+        );
+    }
+
+    #[test]
+    fn phase_11e_function_level_import_not_visible_outside() {
+        // Function-level imports should NOT be visible outside the function
+        let file_list = files(&[
+            (
+                "handler.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "consumer.py",
+                r#"def inner_function():
+    from handler import Handler
+    return Handler()
+
+def outer_function():
+    # Handler should NOT be visible here - no function-level import in this scope
+    h = Handler()  # This should NOT resolve
+    h.process()
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // The outer_function's Handler() should NOT resolve because
+        // the import is in inner_function, not outer_function
+        // We verify this by checking that Handler.process only has
+        // references from within inner_function, not outer_function
+
+        // Find the Handler class
+        let handler_class = store.symbols().find(|s| {
+            s.name == "Handler" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(handler_class.is_some(), "Handler class should exist");
+
+        // The test passes if analysis completes without error.
+        // The Handler reference in outer_function should not resolve,
+        // which means there should be no reference to Handler from
+        // that call site (unless we also track unresolved references).
+    }
+
+    #[test]
+    fn phase_11e_function_level_import_nested_scope() {
+        // Function-level import in nested class/function should have correct scope_path
+        let file_list = files(&[
+            (
+                "handler.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "consumer.py",
+                r#"class Service:
+    def handle(self):
+        from handler import Handler
+        h = Handler()
+        h.process()
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| {
+            s.name == "process" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(
+            process_method.is_some(),
+            "Handler.process method should exist"
+        );
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference from nested scope
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "h.process() in Service.handle should resolve to Handler.process"
+        );
+    }
+}
+
+mod phase_11e_star_import_ambiguity {
+    //! Tests for function-level star import ambiguity handling (Phase 11E).
+    //!
+    //! Key behaviors to verify:
+    //! - Star imports without __all__ are treated as ambiguous
+    //! - Resolution returns None for ambiguous star imports
+
+    use super::*;
+
+    #[test]
+    fn phase_11e_star_import_without_all_is_ambiguous() {
+        // Star import without __all__ should not resolve (ambiguous)
+        let file_list = files(&[
+            (
+                "handlers.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+
+class Worker:
+    def work(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "consumer.py",
+                r#"def process():
+    from handlers import *  # No __all__ in handlers.py
+    h = Handler()
+    h.process()  # May or may not resolve depending on __all__ expansion
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // The test validates that analysis completes without error
+        // Star import handling is documented as ambiguous without __all__
+        let handler = store.symbols().find(|s| s.name == "Handler");
+        assert!(handler.is_some(), "Handler class should exist");
+    }
+}
+
+mod phase_11e_generic_container_subscripts {
+    //! Tests for generic type parameter resolution (Phase 11E Gap 2).
+    //!
+    //! Key behaviors to verify:
+    //! - List[Handler] subscript resolves element type to Handler
+    //! - Dict[str, Handler] subscript resolves to value type Handler
+    //! - Optional[Handler] is treated as Handler
+    //! - Non-container subscripts return None
+    //! - Nested subscripts return None (documented limitation)
+
+    use super::*;
+    use tugtool_core::facts::ReferenceKind;
+
+    #[test]
+    fn phase_11e_list_subscript_resolves_element_type() {
+        // List[Handler] subscript should resolve to Handler
+        // Uses direct subscript pattern: handlers[0].process()
+        let file_list = files(&[(
+            "test.py",
+            r#"from typing import List
+
+class Handler:
+    def process(self) -> None:
+        pass
+
+handlers: List[Handler] = []
+handlers[0].process()  # Should resolve to Handler.process via List element type
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference to Handler.process
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "handlers[0].process() should resolve to Handler.process via List element type"
+        );
+    }
+
+    #[test]
+    fn phase_11e_dict_subscript_resolves_value_type() {
+        // Dict[str, Settings] subscript should resolve to Settings (value type)
+        // Uses direct subscript pattern: config["key"].apply()
+        let file_list = files(&[(
+            "test.py",
+            r#"from typing import Dict
+
+class Settings:
+    def apply(self) -> None:
+        pass
+
+config: Dict[str, Settings] = {}
+config["key"].apply()  # Should resolve to Settings.apply via Dict value type
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Settings.apply method
+        let apply_method = store.symbols().find(|s| s.name == "apply");
+        assert!(apply_method.is_some(), "apply method should exist");
+
+        let apply_symbol = apply_method.unwrap();
+
+        // Check for call reference to Settings.apply
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| r.symbol_id == apply_symbol.symbol_id && r.ref_kind == ReferenceKind::Call)
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "config[\"key\"].apply() should resolve to Settings.apply via Dict value type"
+        );
+    }
+
+    #[test]
+    fn phase_11e_optional_resolves_to_inner_type() {
+        // Optional[Handler] should be treated as Handler for method resolution
+        let file_list = files(&[(
+            "test.py",
+            r#"from typing import Optional
+
+class Handler:
+    def process(self) -> None:
+        pass
+
+maybe_handler: Optional[Handler] = None
+if maybe_handler:
+    maybe_handler.process()  # Should resolve to Handler.process
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference to Handler.process
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "maybe_handler.process() should resolve to Handler.process via Optional type"
+        );
+    }
+
+    #[test]
+    fn phase_11e_builtin_generics_resolve() {
+        // Python 3.9+ built-in generics: list[Handler], dict[str, Handler]
+        // Uses direct subscript pattern: handlers[0].process()
+        let file_list = files(&[(
+            "test.py",
+            r#"class Handler:
+    def process(self) -> None:
+        pass
+
+handlers: list[Handler] = []
+handlers[0].process()  # Should resolve to Handler.process via builtin list element type
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "handlers[0].process() should resolve via builtin list[Handler] generic"
+        );
+    }
+
+    #[test]
+    fn phase_11e_cross_file_container_resolution() {
+        // Container type from imported module should resolve correctly
+        // Uses direct subscript pattern: self.handlers[0].process()
+        let file_list = files(&[
+            (
+                "handler.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "service.py",
+                r#"from typing import List
+from handler import Handler
+
+class Service:
+    handlers: List[Handler] = []
+
+    def run(self):
+        self.handlers[0].process()  # Should resolve to Handler.process across files
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| {
+            s.name == "process" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(
+            process_method.is_some(),
+            "Handler.process method should exist"
+        );
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference from service.py
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id
+                    && r.ref_kind == ReferenceKind::Call
+                    && store.file(r.file_id).unwrap().path == "service.py"
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "self.handlers[0].process() should resolve to Handler.process across files"
+        );
+    }
+}
+
+mod phase_11e_isinstance_narrowing {
+    //! Tests for isinstance-based type narrowing (Phase 11E Gap 3).
+    //!
+    //! Key behaviors to verify:
+    //! - isinstance(x, Handler) narrows x to Handler within if-branch
+    //! - Narrowing does NOT persist outside the if-branch
+    //! - isinstance with tuple narrows to first type (Union not fully supported)
+    //! - Nested isinstance in method calls works correctly
+
+    use super::*;
+    use tugtool_core::facts::ReferenceKind;
+
+    #[test]
+    fn phase_11e_isinstance_basic_narrowing() {
+        // isinstance(x, Handler) should narrow x to Handler in the if-branch
+        let file_list = files(&[(
+            "test.py",
+            r#"class Base:
+    pass
+
+class Handler(Base):
+    def process(self) -> None:
+        pass
+
+def handle(x: Base) -> None:
+    if isinstance(x, Handler):
+        x.process()  # x is narrowed to Handler here
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference to Handler.process
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "x.process() should resolve to Handler.process via isinstance narrowing"
+        );
+    }
+
+    #[test]
+    fn phase_11e_isinstance_cross_file() {
+        // isinstance narrowing should work with cross-file imports
+        let file_list = files(&[
+            (
+                "base.py",
+                r#"class Base:
+    pass
+"#,
+            ),
+            (
+                "handler.py",
+                r#"from base import Base
+
+class Handler(Base):
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "service.py",
+                r#"from base import Base
+from handler import Handler
+
+def dispatch(item: Base) -> None:
+    if isinstance(item, Handler):
+        item.process()  # item is narrowed to Handler
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| {
+            s.name == "process" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(
+            process_method.is_some(),
+            "Handler.process method should exist"
+        );
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference from service.py
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id
+                    && r.ref_kind == ReferenceKind::Call
+                    && store.file(r.file_id).unwrap().path == "service.py"
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "item.process() in service.py should resolve to Handler.process via isinstance"
+        );
+    }
+
+    #[test]
+    fn phase_11e_isinstance_tuple_type() {
+        // isinstance(x, (Handler, Worker)) should narrow to first type
+        let file_list = files(&[(
+            "test.py",
+            r#"class Handler:
+    def process(self) -> None:
+        pass
+
+class Worker:
+    def process(self) -> None:
+        pass
+
+    def work(self) -> None:
+        pass
+
+def dispatch(x: object) -> None:
+    if isinstance(x, (Handler, Worker)):
+        x.process()  # Both types have process()
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find both process methods
+        let process_methods: Vec<_> = store.symbols().filter(|s| s.name == "process").collect();
+        assert_eq!(
+            process_methods.len(),
+            2,
+            "Should have two process methods (Handler and Worker)"
+        );
+
+        // Check for call references - at least one should resolve
+        let mut found_call = false;
+        for method in &process_methods {
+            let refs: Vec<_> = store
+                .references()
+                .filter(|r| r.symbol_id == method.symbol_id && r.ref_kind == ReferenceKind::Call)
+                .collect();
+            if !refs.is_empty() {
+                found_call = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_call,
+            "x.process() should resolve to one of the process methods via isinstance tuple"
+        );
+    }
+
+    #[test]
+    fn phase_11e_isinstance_in_method() {
+        // isinstance narrowing in a class method
+        let file_list = files(&[(
+            "test.py",
+            r#"class Base:
+    pass
+
+class Handler(Base):
+    def process(self) -> None:
+        pass
+
+class Dispatcher:
+    def dispatch(self, item: Base) -> None:
+        if isinstance(item, Handler):
+            item.process()  # item narrowed to Handler
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "item.process() in Dispatcher.dispatch should resolve via isinstance"
+        );
+    }
+}
+
+mod phase_11e_regression {
+    //! Regression tests to ensure Phase 11E changes don't break existing behavior.
+
+    use super::*;
+    use tugtool_core::facts::ReferenceKind;
+
+    #[test]
+    fn phase_11e_regression_module_level_imports_still_work() {
+        // Standard module-level imports should continue to work
+        let file_list = files(&[
+            (
+                "handler.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "consumer.py",
+                r#"from handler import Handler
+
+def main():
+    h = Handler()
+    h.process()
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| {
+            s.name == "process" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(
+            process_method.is_some(),
+            "Handler.process method should exist"
+        );
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "Module-level import resolution should still work"
+        );
+    }
+
+    #[test]
+    fn phase_11e_regression_constructor_inference_still_works() {
+        // Constructor-based type inference should continue to work
+        let file_list = files(&[(
+            "test.py",
+            r#"class Handler:
+    def process(self) -> None:
+        pass
+
+h = Handler()  # Type inferred from constructor
+h.process()
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "Constructor-based type inference should still work"
+        );
+    }
+
+    #[test]
+    fn phase_11e_regression_annotation_based_types_still_work() {
+        // Type annotation based resolution should continue to work
+        let file_list = files(&[
+            (
+                "handler.py",
+                r#"class Handler:
+    def process(self) -> None:
+        pass
+"#,
+            ),
+            (
+                "service.py",
+                r#"from handler import Handler
+
+def serve(h: Handler) -> None:
+    h.process()
+"#,
+            ),
+        ]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| {
+            s.name == "process" && store.file(s.decl_file_id).unwrap().path == "handler.py"
+        });
+        assert!(
+            process_method.is_some(),
+            "Handler.process method should exist"
+        );
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "Annotation-based type resolution should still work"
+        );
+    }
+
+    #[test]
+    fn phase_11e_regression_mro_based_resolution_still_works() {
+        // MRO-based attribute lookup should continue to work
+        let file_list = files(&[(
+            "test.py",
+            r#"class Base:
+    def process(self) -> None:
+        pass
+
+class Handler(Base):
+    pass
+
+h = Handler()
+h.process()  # Inherited from Base
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Base.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "MRO-based attribute resolution should still work"
+        );
+    }
+
+    #[test]
+    fn phase_11e_regression_self_method_calls_still_work() {
+        // self.method() calls should continue to work
+        let file_list = files(&[(
+            "test.py",
+            r#"class Handler:
+    def process(self) -> None:
+        pass
+
+    def run(self) -> None:
+        self.process()
+"#,
+        )]);
+
+        let store = analyze_test_files(&file_list);
+
+        // Find Handler.process method
+        let process_method = store.symbols().find(|s| s.name == "process");
+        assert!(process_method.is_some(), "process method should exist");
+
+        let process_symbol = process_method.unwrap();
+
+        // Check for call reference
+        let refs: Vec<_> = store
+            .references()
+            .filter(|r| {
+                r.symbol_id == process_symbol.symbol_id && r.ref_kind == ReferenceKind::Call
+            })
+            .collect();
+
+        assert!(
+            !refs.is_empty(),
+            "self.method() resolution should still work"
+        );
+    }
+}

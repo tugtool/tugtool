@@ -178,32 +178,6 @@ pub struct AssignmentInfo {
 }
 
 // ============================================================================
-// Method Call Information
-// ============================================================================
-
-/// Method call information for type-based resolution.
-///
-/// Represents `obj.method()` patterns for type-aware method rename.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MethodCallInfo {
-    /// The receiver variable name (e.g., "handler" in "handler.process()").
-    pub receiver: String,
-    /// The method name being called (e.g., "process").
-    pub method: String,
-    /// Scope path where the call occurs.
-    pub scope_path: Vec<String>,
-    /// Byte span of the method name (for renaming).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub method_span: Option<SpanInfo>,
-    /// Line number (1-indexed).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub line: Option<u32>,
-    /// Column number (1-indexed).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub col: Option<u32>,
-}
-
-// ============================================================================
 // Class Inheritance Information
 // ============================================================================
 
@@ -405,9 +379,6 @@ pub struct AnalysisResult {
     /// Assignment type information (Level 1).
     #[serde(default)]
     pub assignments: Vec<AssignmentInfo>,
-    /// Method call patterns.
-    #[serde(default)]
-    pub method_calls: Vec<MethodCallInfo>,
     /// Type annotations (Level 2).
     #[serde(default)]
     pub annotations: Vec<AnnotationInfo>,
@@ -512,7 +483,6 @@ mod tests {
             imports: vec![],
             scopes: vec![],
             assignments: vec![],
-            method_calls: vec![],
             annotations: vec![],
             dynamic_patterns: vec![],
             class_inheritance: vec![],
@@ -565,23 +535,6 @@ mod tests {
         let deserialized: AssignmentInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.target, "x");
         assert_eq!(deserialized.inferred_type, Some("MyClass".to_string()));
-    }
-
-    #[test]
-    fn test_method_call_info_serialization() {
-        let call = MethodCallInfo {
-            receiver: "handler".to_string(),
-            method: "process".to_string(),
-            scope_path: vec!["<module>".to_string(), "use_handler".to_string()],
-            method_span: Some(SpanInfo { start: 50, end: 57 }),
-            line: Some(5),
-            col: Some(10),
-        };
-
-        let json = serde_json::to_string(&call).unwrap();
-        let deserialized: MethodCallInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.receiver, "handler");
-        assert_eq!(deserialized.method, "process");
     }
 
     #[test]

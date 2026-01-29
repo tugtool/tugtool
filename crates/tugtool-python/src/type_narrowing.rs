@@ -279,9 +279,17 @@ mod tests {
     fn test_narrowing_context_narrow_stores_narrowing() {
         let mut ctx = NarrowingContext::new();
         let scope = vec!["<module>".to_string(), "process".to_string()];
-        let branch_span = Span { start: 100, end: 200 };
+        let branch_span = Span {
+            start: 100,
+            end: 200,
+        };
 
-        ctx.narrow(scope.clone(), "x".to_string(), "Handler".to_string(), branch_span);
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch_span,
+        );
 
         assert!(!ctx.is_empty());
         assert_eq!(ctx.len(), 1);
@@ -291,12 +299,23 @@ mod tests {
     fn test_narrowing_context_get_narrowed_type_within_span() {
         let mut ctx = NarrowingContext::new();
         let scope = vec!["<module>".to_string(), "process".to_string()];
-        let branch_span = Span { start: 100, end: 200 };
+        let branch_span = Span {
+            start: 100,
+            end: 200,
+        };
 
-        ctx.narrow(scope.clone(), "x".to_string(), "Handler".to_string(), branch_span);
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch_span,
+        );
 
         // Site within branch span
-        let site = Span { start: 150, end: 151 };
+        let site = Span {
+            start: 150,
+            end: 151,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site), Some("Handler"));
     }
 
@@ -304,16 +323,27 @@ mod tests {
     fn test_narrowing_context_get_narrowed_type_outside_span() {
         let mut ctx = NarrowingContext::new();
         let scope = vec!["<module>".to_string(), "process".to_string()];
-        let branch_span = Span { start: 100, end: 200 };
+        let branch_span = Span {
+            start: 100,
+            end: 200,
+        };
 
-        ctx.narrow(scope.clone(), "x".to_string(), "Handler".to_string(), branch_span);
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch_span,
+        );
 
         // Site outside branch span (before)
         let site_before = Span { start: 50, end: 51 };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site_before), None);
 
         // Site outside branch span (after)
-        let site_after = Span { start: 250, end: 251 };
+        let site_after = Span {
+            start: 250,
+            end: 251,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site_after), None);
     }
 
@@ -322,12 +352,23 @@ mod tests {
         let mut ctx = NarrowingContext::new();
         let scope1 = vec!["<module>".to_string(), "func1".to_string()];
         let scope2 = vec!["<module>".to_string(), "func2".to_string()];
-        let branch_span = Span { start: 100, end: 200 };
+        let branch_span = Span {
+            start: 100,
+            end: 200,
+        };
 
-        ctx.narrow(scope1.clone(), "x".to_string(), "Handler".to_string(), branch_span);
+        ctx.narrow(
+            scope1.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch_span,
+        );
 
         // Same variable name, different scope - should not find narrowing
-        let site = Span { start: 150, end: 151 };
+        let site = Span {
+            start: 150,
+            end: 151,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope2, "x", site), None);
     }
 
@@ -337,18 +378,40 @@ mod tests {
         let scope = vec!["<module>".to_string(), "process".to_string()];
 
         // Two different branches with different narrowings
-        let branch1 = Span { start: 100, end: 200 };
-        let branch2 = Span { start: 300, end: 400 };
+        let branch1 = Span {
+            start: 100,
+            end: 200,
+        };
+        let branch2 = Span {
+            start: 300,
+            end: 400,
+        };
 
-        ctx.narrow(scope.clone(), "x".to_string(), "Handler".to_string(), branch1);
-        ctx.narrow(scope.clone(), "x".to_string(), "Worker".to_string(), branch2);
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch1,
+        );
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Worker".to_string(),
+            branch2,
+        );
 
         // Site in first branch
-        let site1 = Span { start: 150, end: 151 };
+        let site1 = Span {
+            start: 150,
+            end: 151,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site1), Some("Handler"));
 
         // Site in second branch
-        let site2 = Span { start: 350, end: 351 };
+        let site2 = Span {
+            start: 350,
+            end: 351,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site2), Some("Worker"));
     }
 
@@ -356,15 +419,26 @@ mod tests {
     fn test_type_of_with_narrowing_returns_narrowed() {
         let mut ctx = NarrowingContext::new();
         let scope = vec!["<module>".to_string()];
-        let branch_span = Span { start: 100, end: 200 };
+        let branch_span = Span {
+            start: 100,
+            end: 200,
+        };
 
-        ctx.narrow(scope.clone(), "x".to_string(), "Handler".to_string(), branch_span);
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch_span,
+        );
 
         // Create empty type tracker
         let tracker = TypeTracker::new();
 
         // Site within branch - should return narrowed type
-        let site = Span { start: 150, end: 151 };
+        let site = Span {
+            start: 150,
+            end: 151,
+        };
         let result = type_of_with_narrowing(&scope, "x", site, &ctx, &tracker);
         assert_eq!(result, Some("Handler"));
     }
@@ -405,9 +479,17 @@ mod tests {
 
         let mut ctx = NarrowingContext::new();
         let scope = vec!["<module>".to_string()];
-        let branch_span = Span { start: 100, end: 200 };
+        let branch_span = Span {
+            start: 100,
+            end: 200,
+        };
 
-        ctx.narrow(scope.clone(), "x".to_string(), "Handler".to_string(), branch_span);
+        ctx.narrow(
+            scope.clone(),
+            "x".to_string(),
+            "Handler".to_string(),
+            branch_span,
+        );
 
         // Create type tracker with a base type for "x"
         let mut tracker = TypeTracker::new();
@@ -427,35 +509,77 @@ mod tests {
         tracker.process_assignments(&assignments);
 
         // Site within branch - should prefer narrowed type
-        let site = Span { start: 150, end: 151 };
+        let site = Span {
+            start: 150,
+            end: 151,
+        };
         let result = type_of_with_narrowing(&scope, "x", site, &ctx, &tracker);
         assert_eq!(result, Some("Handler"));
     }
 
     #[test]
     fn test_span_contains_basic() {
-        let outer = Span { start: 100, end: 200 };
+        let outer = Span {
+            start: 100,
+            end: 200,
+        };
 
         // Inner completely inside
-        assert!(span_contains(&outer, &Span { start: 150, end: 160 }));
+        assert!(span_contains(
+            &outer,
+            &Span {
+                start: 150,
+                end: 160
+            }
+        ));
 
         // Inner at start boundary
-        assert!(span_contains(&outer, &Span { start: 100, end: 110 }));
+        assert!(span_contains(
+            &outer,
+            &Span {
+                start: 100,
+                end: 110
+            }
+        ));
 
         // Inner at end boundary
-        assert!(span_contains(&outer, &Span { start: 190, end: 200 }));
+        assert!(span_contains(
+            &outer,
+            &Span {
+                start: 190,
+                end: 200
+            }
+        ));
 
         // Inner before outer
         assert!(!span_contains(&outer, &Span { start: 50, end: 60 }));
 
         // Inner after outer
-        assert!(!span_contains(&outer, &Span { start: 250, end: 260 }));
+        assert!(!span_contains(
+            &outer,
+            &Span {
+                start: 250,
+                end: 260
+            }
+        ));
 
         // Inner overlaps start
-        assert!(!span_contains(&outer, &Span { start: 50, end: 150 }));
+        assert!(!span_contains(
+            &outer,
+            &Span {
+                start: 50,
+                end: 150
+            }
+        ));
 
         // Inner overlaps end
-        assert!(!span_contains(&outer, &Span { start: 150, end: 250 }));
+        assert!(!span_contains(
+            &outer,
+            &Span {
+                start: 150,
+                end: 250
+            }
+        ));
     }
 
     // ========================================================================
@@ -470,7 +594,10 @@ mod tests {
             scope_path: vec!["<module>".to_string(), "process".to_string()],
             checked_types: vec!["Handler".to_string()],
             check_span: Some(Span { start: 50, end: 70 }),
-            branch_span: Span { start: 80, end: 150 },
+            branch_span: Span {
+                start: 80,
+                end: 150,
+            },
         }];
 
         let ctx = build_narrowing_context(&checks);
@@ -481,7 +608,10 @@ mod tests {
 
         // Verify narrowing can be retrieved within branch
         let scope = vec!["<module>".to_string(), "process".to_string()];
-        let site = Span { start: 100, end: 101 };
+        let site = Span {
+            start: 100,
+            end: 101,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site), Some("Handler"));
     }
 
@@ -496,7 +626,10 @@ mod tests {
             scope_path: vec!["<module>".to_string(), "func".to_string()],
             checked_types: vec!["Handler".to_string()],
             check_span: Some(Span { start: 30, end: 55 }),
-            branch_span: Span { start: 60, end: 100 },
+            branch_span: Span {
+                start: 60,
+                end: 100,
+            },
         }];
 
         let ctx = build_narrowing_context(&checks);
@@ -522,7 +655,11 @@ mod tests {
         // Within branch: x should be narrowed to Handler
         let site_in_branch = Span { start: 70, end: 71 };
         let result = type_of_with_narrowing(&scope, "x", site_in_branch, &ctx, &tracker);
-        assert_eq!(result, Some("Handler"), "x should be narrowed to Handler inside branch");
+        assert_eq!(
+            result,
+            Some("Handler"),
+            "x should be narrowed to Handler inside branch"
+        );
     }
 
     #[test]
@@ -535,7 +672,10 @@ mod tests {
             scope_path: vec!["<module>".to_string(), "func".to_string()],
             checked_types: vec!["Handler".to_string()],
             check_span: Some(Span { start: 30, end: 55 }),
-            branch_span: Span { start: 60, end: 100 },
+            branch_span: Span {
+                start: 60,
+                end: 100,
+            },
         }];
 
         let ctx = build_narrowing_context(&checks);
@@ -561,12 +701,23 @@ mod tests {
         // Before branch: x should have base type
         let site_before = Span { start: 20, end: 21 };
         let result_before = type_of_with_narrowing(&scope, "x", site_before, &ctx, &tracker);
-        assert_eq!(result_before, Some("object"), "x should have base type before branch");
+        assert_eq!(
+            result_before,
+            Some("object"),
+            "x should have base type before branch"
+        );
 
         // After branch: x should have base type
-        let site_after = Span { start: 150, end: 151 };
+        let site_after = Span {
+            start: 150,
+            end: 151,
+        };
         let result_after = type_of_with_narrowing(&scope, "x", site_after, &ctx, &tracker);
-        assert_eq!(result_after, Some("object"), "x should have base type after branch");
+        assert_eq!(
+            result_after,
+            Some("object"),
+            "x should have base type after branch"
+        );
     }
 
     #[test]
@@ -577,14 +728,20 @@ mod tests {
             scope_path: vec!["<module>".to_string()],
             checked_types: vec!["Handler".to_string(), "Worker".to_string()],
             check_span: Some(Span { start: 30, end: 65 }),
-            branch_span: Span { start: 70, end: 150 },
+            branch_span: Span {
+                start: 70,
+                end: 150,
+            },
         }];
 
         let ctx = build_narrowing_context(&checks);
 
         // Should use first type for now
         let scope = vec!["<module>".to_string()];
-        let site = Span { start: 100, end: 101 };
+        let site = Span {
+            start: 100,
+            end: 101,
+        };
         assert_eq!(ctx.get_narrowed_type(&scope, "x", site), Some("Handler"));
     }
 

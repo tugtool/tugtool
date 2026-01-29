@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | in-progress |
 | Target branch | main |
 | Tracking issue/PR | N/A |
 | Last updated | 2026-01-28 |
@@ -58,13 +58,13 @@ These gaps represent the most impactful remaining limitations for supporting rea
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- [ ] `from handler import Handler` inside a function enables resolution of `Handler` usage within that function
-- [ ] `items: List[Handler]` allows `items[0].process()` to resolve to `Handler.process`
-- [ ] `isinstance(x, Handler)` followed by `x.process()` resolves to `Handler.process` within the if-branch
-- [ ] Function-level imports are scoped correctly (not visible outside the function)
-- [ ] Container type extraction handles common patterns: `List[T]`, `Dict[K, V]`, `Set[T]`, `Optional[T]`, `Tuple[T, ...]`
-- [ ] isinstance narrowing handles tuple syntax: `isinstance(x, (A, B))` narrows to `Union[A, B]`
-- [ ] All existing tests continue to pass (no regression)
+- [x] `from handler import Handler` inside a function enables resolution of `Handler` usage within that function
+- [x] `items: List[Handler]` allows `items[0].process()` to resolve to `Handler.process`
+- [x] `isinstance(x, Handler)` followed by `x.process()` resolves to `Handler.process` within the if-branch
+- [x] Function-level imports are scoped correctly (not visible outside the function)
+- [x] Container type extraction handles common patterns: `List[T]`, `Dict[K, V]`, `Set[T]`, `Optional[T]`, `Tuple[T, ...]`
+- [x] isinstance narrowing handles tuple syntax: `isinstance(x, (A, B))` narrows to `Union[A, B]`
+- [x] All existing tests continue to pass (no regression)
 
 #### Scope {#scope}
 
@@ -1972,7 +1972,117 @@ grep -A 20 "pub struct Match<" crates/tugtool-python-cst/src/nodes/statement.rs 
 
 ---
 
-#### Step 7: End-to-End Integration Tests {#step-7}
+#### Step 7A: Wire Phase 11E Features into Pass 4 Reference Creation {#step-7a}
+
+**Commit:** `feat(python): wire subscript/narrowing/scoped-imports into Pass 4 reference creation`
+
+**References:** Code-architect analysis (2026-01-28)
+
+##### Problem Statement {#step-7a-problem}
+
+The Phase 11E features (subscript resolution, isinstance narrowing, function-level imports) are implemented in the resolution infrastructure but are NOT wired into Pass 4's method call reference creation. The gap:
+
+1. **MethodCallCollector only captures simple name receivers**: `handlers[0].process()` has a `Subscript` receiver, so it's never collected into `method_calls`. The `call_sites` collection HAS this data.
+
+2. **Pass 4 uses simple `type_of()`**: It doesn't use `NarrowingContext` or the full `resolve_receiver_path_with_cross_file()` resolution chain.
+
+3. **Pass 4 doesn't leverage `call_sites`**: The `CallSiteCollector` captures `receiver_path` (including `Subscript` steps) but Pass 4 only uses `MethodCallIndex` from `method_calls`.
+
+##### Architecture Fix {#step-7a-architecture}
+
+**Current Pass 4 flow** (lines 1403-1427 in analyzer.rs):
+```
+method_calls → MethodCallIndex → match receiver_type to class → insert Reference
+```
+
+**Required Pass 4 flow**:
+```
+call_sites → resolve_receiver_path_with_cross_file(receiver_path, narrowing, site_span)
+           → get resolved symbol → insert Reference
+```
+
+##### Tasks {#step-7a-tasks}
+
+**Part A: Build NarrowingContext in Pass 4**
+- [x] In `analyze_files()` Pass 4, build `NarrowingContext` from each file's `isinstance_checks`
+- [x] Store narrowing contexts alongside type_trackers (keyed by file_id)
+
+**Part B: Update Pass 4 to use call_sites with full resolution**
+- [x] Replace or augment the `MethodCallIndex` loop with iteration over `call_sites`
+- [x] For each call site with a `receiver_path`:
+  - [x] Call `resolve_receiver_path_with_cross_file()` with narrowing context and site_span
+  - [x] If resolved, insert Reference with `ReferenceKind::Call`
+- [x] Ensure subscript patterns (`ReceiverStep::Subscript`) are resolved via element type extraction
+- [x] Ensure isinstance narrowing is applied via site_span check
+
+**Part C: Wire function-level import resolution**
+- [x] Ensure the resolution chain uses scope-aware `lookup_import_target`
+- [x] Verify function-level imports shadow module-level imports correctly
+
+##### Implementation Details {#step-7a-implementation}
+
+**Key Change: Replace method_calls loop with call_sites resolution**
+
+```rust
+// In Pass 4 (around line 1403)
+
+// Build narrowing contexts for all files
+let narrowing_contexts: HashMap<FileId, NarrowingContext> = file_analyses
+    .iter()
+    .map(|(file_id, analysis)| {
+        let ctx = build_narrowing_context(&analysis.isinstance_checks);
+        (*file_id, ctx)
+    })
+    .collect();
+
+// Resolve call sites using full resolution chain
+for (file_id, analysis) in &file_analyses {
+    let narrowing = narrowing_contexts.get(file_id);
+    let tracker = type_trackers.get(file_id);
+
+    for call_site in &analysis.call_sites {
+        if let Some(receiver_path) = &call_site.receiver_path {
+            // Use full resolution with narrowing and site_span
+            let resolved = resolve_receiver_path_with_cross_file(
+                receiver_path,
+                &call_site.scope_path,
+                tracker,
+                narrowing,
+                Some(call_site.span),
+                // ... other params
+            );
+
+            if let Some(symbol) = resolved {
+                // Insert reference to resolved method
+                store.add_reference(Reference {
+                    symbol_id: symbol.symbol_id,
+                    file_id: *file_id,
+                    span: call_site.span,
+                    ref_kind: ReferenceKind::Call,
+                    // ...
+                });
+            }
+        }
+    }
+}
+```
+
+##### Tests {#step-7a-tests}
+
+- [x] Unit: Call site with subscript receiver resolves via Pass 4
+- [x] Unit: Call site after isinstance check resolves via Pass 4 with narrowing
+- [x] Unit: Call site with function-level imported type resolves via Pass 4
+
+##### Checkpoint {#step-7a-checkpoint}
+
+- [x] `cargo nextest run -p tugtool-python` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
+
+**Rollback:** Revert commit
+
+---
+
+#### Step 7B: End-to-End Integration Tests {#step-7b}
 
 **Commit:** `test(python): add Phase 11E integration tests`
 
@@ -1983,32 +2093,547 @@ grep -A 20 "pub struct Match<" crates/tugtool-python-cst/src/nodes/statement.rs 
 - Tests covering all three gaps
 
 **Tasks:**
-- [ ] Create test fixtures for function-level imports
-- [ ] Create test fixture for function-level star import ambiguity
-- [ ] Create test fixtures for generic container subscripts
-- [ ] Create test fixtures for isinstance narrowing
-- [ ] Add integration tests that verify full resolution chains
-- [ ] Add regression tests for existing behavior
+- [x] Create test fixtures for function-level imports
+- [x] Create test fixture for function-level star import ambiguity
+- [x] Create test fixtures for generic container subscripts
+- [x] Create test fixtures for isinstance narrowing
+- [x] Add integration tests that verify full resolution chains
+- [x] Add regression tests for existing behavior
 - [ ] Update CLAUDE.md with Phase 11E features
 
 **Tests:**
-- [ ] Integration: Full rename operation with function-level imported type
-- [ ] Integration: Method call resolution through List subscript
-- [ ] Integration: Method call resolution after isinstance check
-- [ ] Regression: All Phase 11D tests still pass
+- [x] Integration: Full rename operation with function-level imported type
+- [x] Integration: Method call resolution through List subscript
+- [x] Integration: Method call resolution after isinstance check
+- [x] Regression: All Phase 11D tests still pass
 
 **Checkpoint:**
-- [ ] `cargo nextest run --workspace`
-- [ ] `cargo clippy --workspace -- -D warnings`
-- [ ] `cargo fmt --all --check`
+- [x] `cargo nextest run --workspace` (1935 tests pass)
+- [x] `cargo clippy --workspace -- -D warnings`
+- [x] `cargo fmt --all --check`
 
 **Rollback:** Revert commit
 
 ---
 
+#### Step 7C: Retire Phase 11E Technical Debt {#step-7c}
+
+**Commit:** `refactor(python): consolidate Pass 4 method resolution and eliminate redundant code`
+
+**References:** Code review audit (2026-01-28), Contract: "NO technical debt that we know about can persist"
+
+##### Problem Statement {#step-7c-problem}
+
+Step 7A implementation introduced technical debt that must be retired before exiting Phase 11E. Five specific issues have been identified:
+
+| Issue | Location | Impact |
+|-------|----------|--------|
+| **TD1: Two resolution paths rely on deduplication** | Pass 4d + Pass 4e | Redundant work; relies on FactsStore deduplication to avoid duplicate references |
+| **TD2: File re-parsing in Pass 4a** | Lines 1503-1631 | Wasteful; re-parses files to get data that could be stored in Pass 1 |
+| **TD3: Unused infrastructure** | Lines 1633-1644, 1849-1852 | Dead code; `all_symbol_kinds`, `all_symbol_maps`, `all_import_targets` built but suppressed |
+| **TD4: Duplicated type conversion logic** | Lines 1526-1566, 2030-2069 | 40-line block duplicated; violates DRY |
+| **TD5: `build_type_tracker` not used in main path** | Line 2026 | Helper exists but Pass 4a uses inline code |
+
+##### Architecture: Unified Method Resolution Pass {#step-7c-architecture}
+
+**Current State (Problematic):**
+```
+Pass 4a: Re-parse files -> Build TypeTracker inline -> Build MethodCallIndex
+Pass 4d: MethodCallIndex -> match receiver_type -> insert Reference (may duplicate)
+Pass 4e: call_sites -> resolve_call_site_receiver_type -> insert Reference (may duplicate)
+         FactsStore deduplication handles overlap
+```
+
+**Target State (Clean):**
+```
+Pass 1: Store NativeAnalysisResult per file (no re-parsing needed)
+Pass 4a: Build TypeTracker using build_type_tracker() helper
+Pass 4x: UNIFIED call_sites resolution -> insert Reference (no deduplication needed)
+         (Pass 4d and Pass 4e consolidated)
+```
+
+**Key Design Decisions:**
+
+1. **Store P1 data in Pass 1**: Extend `FileAnalysis` to store the `NativeAnalysisResult` fields needed by Pass 4, eliminating re-parsing.
+
+2. **Consolidate to single resolution path**: Remove `MethodCallIndex` and Pass 4d entirely. Pass 4e's `call_sites` resolution handles ALL cases including the simple cases Pass 4d handled.
+
+3. **Remove or integrate unused infrastructure**: Either use `all_symbol_kinds`/`all_symbol_maps`/`all_import_targets` in resolution, or remove them entirely. Current state is "build and suppress" which is unacceptable.
+
+4. **Extract conversion helpers**: Create `convert_cst_assignments()` and `convert_cst_annotations()` helper functions to eliminate duplication.
+
+5. **Use `build_type_tracker` consistently**: Replace inline TypeTracker construction in Pass 4a with the existing `build_type_tracker()` helper.
+
+---
+
+##### Tasks {#step-7c-tasks}
+
+**Part A: Extract Type Conversion Helpers (TD4, TD5)**
+
+- [x] Create `convert_cst_assignments(&NativeAnalysisResult) -> Vec<types::AssignmentInfo>` helper function
+- [x] Create `convert_cst_annotations(&NativeAnalysisResult) -> Vec<types::AnnotationInfo>` helper function
+- [x] Update `build_type_tracker()` to use the new helpers
+- [x] Update Pass 4a inline code to use `build_type_tracker()` instead of duplicated code
+- [x] Verify: Only one copy of conversion logic exists (grep returns single location)
+
+**Implementation Detail (Part A):**
+
+```rust
+// In analyzer.rs, add after the Phase 11E Helper Functions section
+
+/// Convert CST AssignmentInfo to types::AssignmentInfo for TypeTracker.
+fn convert_cst_assignments(
+    native_result: &cst_bridge::NativeAnalysisResult,
+) -> Vec<crate::types::AssignmentInfo> {
+    native_result
+        .assignments
+        .iter()
+        .map(|a| crate::types::AssignmentInfo {
+            target: a.target.clone(),
+            scope_path: a.scope_path.clone(),
+            type_source: a.type_source.as_str().to_string(),
+            inferred_type: a.inferred_type.clone(),
+            rhs_name: a.rhs_name.clone(),
+            callee_name: a.callee_name.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+            is_self_attribute: a.is_self_attribute,
+            attribute_name: a.attribute_name.clone(),
+        })
+        .collect()
+}
+
+/// Convert CST AnnotationInfo to types::AnnotationInfo for TypeTracker.
+fn convert_cst_annotations(
+    native_result: &cst_bridge::NativeAnalysisResult,
+) -> Vec<crate::types::AnnotationInfo> {
+    native_result
+        .annotations
+        .iter()
+        .map(|a| crate::types::AnnotationInfo {
+            name: a.name.clone(),
+            annotation_kind: a.annotation_kind.as_str().to_string(),
+            source_kind: a.source_kind.as_str().to_string(),
+            type_str: a.type_str.clone(),
+            scope_path: a.scope_path.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+            type_node: a.type_node.clone(),
+        })
+        .collect()
+}
+```
+
+---
+
+**Part B: Store P1 Data in Pass 1 (TD2)**
+
+- [x] Add P1 data fields to `FileAnalysis` struct:
+  - [x] `cst_assignments: Vec<tugtool_python_cst::AssignmentInfo>`
+  - [x] `cst_annotations: Vec<tugtool_python_cst::AnnotationInfo>`
+  - [x] `method_calls: Vec<tugtool_python_cst::MethodCallInfo>` (for MethodCallIndex, until Part C removes it)
+- [x] Update `analyze_file()` to populate these new fields from `NativeAnalysisResult`
+- [x] Update `analyze_files()` Pass 1 to store P1 data in `FileAnalysis` (done via analyze_file)
+- [x] Remove file re-parsing loop in Pass 4a (was lines 1588-1659)
+- [x] Update Pass 4a to read P1 data from `FileAnalysis` instead of re-parsing
+- [x] Add `build_type_tracker_from_analysis()` helper that uses `FileAnalysis` stored data
+- [x] Add `convert_cst_assignments_slice()` and `convert_cst_annotations_slice()` helpers
+
+**Implementation Detail (Part B):**
+
+```rust
+// Extend FileAnalysis struct
+pub struct FileAnalysis {
+    // ... existing fields ...
+
+    /// Assignments collected during Pass 1 (for TypeTracker in Pass 4).
+    pub cst_assignments: Vec<cst_bridge::AssignmentInfo>,
+
+    /// Annotations collected during Pass 1 (for TypeTracker in Pass 4).
+    pub cst_annotations: Vec<cst_bridge::AnnotationInfo>,
+}
+```
+
+---
+
+**Part C: Consolidate Pass 4d and Pass 4e into Single Resolution Path (TD1)**
+
+- [x] Analyze what Pass 4d does that Pass 4e doesn't:
+  - Pass 4d: Uses `MethodCallIndex` built from `method_calls`
+  - Pass 4e: Uses `call_sites` with `receiver_path` for full resolution
+  - Key insight: `call_sites` is a superset - it captures ALL method calls including those in `method_calls`
+- [x] Verify `call_sites` captures all cases `method_calls` captures:
+  - Simple `obj.method()` calls: YES (receiver_path = [Name(obj), Attr(method), Call])
+  - `self.method()` calls: YES (receiver_path handles self correctly)
+- [x] Remove `MethodCallIndex` struct and `IndexedMethodCall` struct
+- [x] Remove `method_call_index` variable and its construction
+- [x] Remove Pass 4d loop entirely
+- [x] Rename Pass 4e to "Pass 4d: Unified Method Call Resolution"
+- [x] Update comments to reflect consolidated architecture
+- [x] Remove `method_call_index_tests` test module (6 tests removed)
+- [x] Mark `method_calls` field in FileAnalysis as `#[allow(dead_code)]` (will be removed in Part D)
+
+**Implementation Detail (Part C):**
+
+The key insight is that `CallSiteInfo` from `call_sites` contains:
+- `receiver: Option<String>` - the receiver name (same as `MethodCallInfo.receiver`)
+- `callee: String` - the method name (equivalent to `MethodCallInfo.method`)
+- `receiver_path: Option<ReceiverPath>` - ADDITIONAL: full path including subscripts
+- `scope_path: Vec<String>` - same as `MethodCallInfo.scope_path`
+- `span: Option<Span>` - the call span
+- `is_method_call: bool` - distinguishes method calls from function calls
+
+The `call_sites` collection captures ALL method calls. Pass 4d is redundant and can be removed.
+
+---
+
+**Part D: Remove Unused Infrastructure (TD3)**
+
+- [x] Remove `all_symbol_kinds` construction and variable
+- [x] Remove `all_symbol_maps` construction and variable
+- [x] Remove `all_import_targets` construction and variable
+- [x] Remove suppression statements (`let _ = &all_symbol_kinds;` etc.)
+- [x] Remove helper functions if they become unused: `build_symbol_kinds`, `build_symbol_map`
+- [x] Remove `method_calls` field from `FileAnalysis` (orphaned after Part C)
+- [x] Remove `build_scope_map_index` and `build_scope_path_with_index` helpers (only used by removed functions)
+- [x] Update imports in analyzer.rs (remove `build_import_targets`, `build_symbol_kinds`, `build_symbol_map`, `ImportTarget`)
+
+**Rationale:** Analysis shows these are NOT used in resolution. The resolution works through TypeTracker lookups and direct class method index matching. If cross-file import resolution is needed in the future, it can be re-added with clear purpose.
+
+---
+
+##### Implementation Sequence {#step-7c-sequence}
+
+Execute these parts IN ORDER (later parts depend on earlier ones):
+
+1. **Part A first**: Extract helpers (no functional change, just refactoring)
+2. **Part B second**: Store P1 data in Pass 1 (eliminates re-parsing)
+3. **Part C third**: Consolidate Pass 4d/4e (depends on B for clean data access)
+4. **Part D fourth**: Remove unused infrastructure (cleanup after consolidation)
+
+---
+
+##### Tests {#step-7c-tests}
+
+**Regression Tests (must continue to pass):**
+
+- [x] `cargo nextest run -p tugtool-python` - All existing tests pass (691 tests)
+- [x] `cargo nextest run --workspace` - No regressions in dependent crates (1929 tests)
+
+**Verification Tests (ensure refactoring is correct):**
+
+- [x] Integration: Simple method call `obj.method()` still resolves correctly (typed_method_calls tests pass)
+- [x] Integration: Subscript method call `items[0].process()` still resolves correctly (10 subscript tests pass)
+- [x] Integration: isinstance-narrowed method call still resolves correctly (7 isinstance tests pass)
+- [x] Integration: Cross-file method call resolution unchanged (65 cross_file tests pass)
+
+---
+
+##### Code Removal Verification {#step-7c-removal-verification}
+
+After completing Step 7C, verify these patterns are GONE:
+
+```bash
+# TD1: MethodCallIndex should be removed
+grep -n "MethodCallIndex" crates/tugtool-python/src/analyzer.rs
+# Should return: empty or only test code
+
+# TD1: IndexedMethodCall should be removed
+grep -n "IndexedMethodCall" crates/tugtool-python/src/analyzer.rs
+# Should return: empty or only test code
+
+# TD2: Re-parsing loop should be gone
+grep -n "cst_bridge::parse_and_analyze" crates/tugtool-python/src/analyzer.rs
+# Should return: only in analyze_file() for single-file analysis, NOT in Pass 4
+
+# TD3: Suppression statements should be gone
+grep -n "let _ = &all_symbol_kinds" crates/tugtool-python/src/analyzer.rs
+# Should return: empty
+
+# TD4: Duplicate conversion code should be gone
+grep -c "crate::types::AssignmentInfo {" crates/tugtool-python/src/analyzer.rs
+# Should return: 1 (only in the helper function)
+```
+
+---
+
+##### Checkpoint {#step-7c-checkpoint}
+
+- [x] `cargo nextest run --workspace` - all tests pass (1929 tests)
+- [x] `cargo clippy --workspace -- -D warnings` - no warnings
+- [x] `cargo fmt --all --check` - formatting correct
+- [x] All verification grep commands return expected results:
+  - TD1: MethodCallIndex - GONE (only in comment)
+  - TD1: IndexedMethodCall - GONE
+  - TD2: Re-parsing - Only in analyze_file(), not in Pass 4
+  - TD3: Suppression statements - GONE
+  - TD4: Duplicate conversion - Only in helper + tests (production code clean)
+- [x] Code review: No `#[allow(dead_code)]` or suppression of unused warnings added
+
+---
+
+##### Rollback {#step-7c-rollback}
+
+If Step 7C introduces regressions:
+1. Revert the commit
+2. File issue documenting which specific part caused the regression
+3. Re-attempt with smaller incremental changes
+
+---
+
+##### Estimated Scope {#step-7c-scope}
+
+| Part | Lines Removed | Lines Added | Net Change |
+|------|---------------|-------------|------------|
+| Part A | ~80 (duplication) | ~50 (helpers) | -30 |
+| Part B | ~130 (re-parse loop) | ~30 (struct fields) | -100 |
+| Part C | ~80 (Pass 4d, MethodCallIndex) | ~10 (comments) | -70 |
+| Part D | ~20 (unused infra) | 0 | -20 |
+| **Total** | ~310 | ~90 | **-220** |
+
+This refactoring removes approximately 220 lines of code while maintaining identical functionality.
+
+---
+
+#### Step 7D: Remove Remaining method_calls Infrastructure {#step-7d}
+
+**Commit:** `refactor(python): remove all remaining method_calls infrastructure`
+
+**References:** Step 7C completion audit (2026-01-28), Contract: "NO technical debt that we know about can persist"
+
+##### Problem Statement {#step-7d-problem}
+
+Step 7C consolidated Pass 4 method resolution to use `call_sites` exclusively, making `method_calls` infrastructure obsolete. However, several remnants were left behind:
+
+| Issue | Location | Impact |
+|-------|----------|--------|
+| **TD6: Stale comment** | `analyzer.rs` line 1544 | Comment mentions `method_calls` which was removed; misleading documentation |
+| **TD7: Dead field in types.rs** | `P1Analysis.method_calls` | Field is unused after Step 7C; dead code |
+| **TD8: Dead field in cst_bridge.rs** | `NativeAnalysisResult.method_calls` | Field is still populated but never used; wasted work |
+| **TD9: Wasted CST work** | `cst_bridge.rs` line 300 | `MethodCallCollector::collect()` called but results unused |
+| **TD10: Dead test** | `cst_bridge.rs` test module | `test_p1_method_calls_collected` tests removed infrastructure |
+| **TD11: Dead type and function** | `types.rs`, `type_tracker.rs` | `MethodCallInfo` struct and `find_typed_method_references()` function are orphaned |
+
+##### Goal {#step-7d-goal}
+
+Remove ALL traces of the `method_calls` infrastructure that is no longer used:
+- Stop calling `MethodCallCollector::collect()` in cst_bridge
+- Remove `method_calls` field from `NativeAnalysisResult`
+- Remove `method_calls` field from `P1Analysis` (types.rs)
+- Remove `MethodCallInfo` struct from types.rs
+- Remove `find_typed_method_references()` function and its tests from type_tracker.rs
+- Fix the stale comment in analyzer.rs
+- Remove or update tests that depend on removed infrastructure
+
+##### Tasks {#step-7d-tasks}
+
+**Part A: Fix Stale Comment (TD6)**
+
+- [x] Update comment at analyzer.rs line 1544 from:
+  ```rust
+  // class_inheritance, method_calls). This is necessary because the
+  ```
+  to:
+  ```rust
+  // class_inheritance). This is necessary because the
+  ```
+
+---
+
+**Part B: Remove from cst_bridge.rs (TD8, TD9, TD10)**
+
+- [x] Remove import of `MethodCallCollector` from the `use tugtool_python_cst` block (line 50)
+- [x] Remove import alias `MethodCallInfo as CstMethodCallInfo` (line 51)
+- [x] Remove `method_calls` field from `NativeAnalysisResult` struct (line 123):
+  ```rust
+  // DELETE THIS LINE:
+  pub method_calls: Vec<CstMethodCallInfo>,
+  ```
+- [x] Remove the `MethodCallCollector::collect()` call (lines 299-300):
+  ```rust
+  // DELETE THESE LINES:
+  // P1: Collect method call patterns
+  let method_calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
+  ```
+- [x] Remove `method_calls` from the `NativeAnalysisResult` construction (line 328):
+  ```rust
+  // DELETE THIS LINE:
+  method_calls,
+  ```
+- [x] Remove or update `test_p1_method_calls_collected` test (lines 668-677)
+- [x] Update `test_p1_comprehensive_analysis` to remove `method_calls` assertion (line 715)
+
+---
+
+**Part C: Remove from types.rs (TD7, TD11 partial)**
+
+- [x] Remove `MethodCallInfo` struct definition (lines 184-204):
+  ```rust
+  // DELETE THIS ENTIRE BLOCK:
+  // ============================================================================
+  // Method Call Information
+  // ============================================================================
+
+  /// Method call information for type-based resolution.
+  ///
+  /// Represents `obj.method()` patterns for type-aware method rename.
+  #[derive(Debug, Clone, Serialize, Deserialize)]
+  pub struct MethodCallInfo {
+      // ... all fields ...
+  }
+  ```
+- [x] Remove `method_calls` field from `AnalysisResult` struct (lines 408-410):
+  ```rust
+  // DELETE THESE LINES:
+  /// Method call patterns.
+  #[serde(default)]
+  pub method_calls: Vec<MethodCallInfo>,
+  ```
+- [x] Update `AnalysisResult::default()` - uses derive(Default), no manual implementation needed
+- [x] Remove `test_method_call_info_serialization` test (lines 570-585)
+- [x] Update `test_analysis_result_serialization` test to remove `method_calls: vec![]` (line 515)
+
+---
+
+**Part D: Remove from type_tracker.rs (TD11)**
+
+- [x] Remove `use crate::types::MethodCallInfo;` import (line 1252)
+- [x] Remove `find_typed_method_references()` function (lines 1267-1307):
+  ```rust
+  // DELETE THIS ENTIRE FUNCTION:
+  /// Find method references that should be renamed when a class method is renamed.
+  pub fn find_typed_method_references(
+      class_name: &str,
+      method_name: &str,
+      tracker: &TypeTracker,
+      method_calls: &[MethodCallInfo],
+  ) -> Vec<ResolvedMethodReference> {
+      // ... implementation ...
+  }
+  ```
+- [x] Remove `mod method_call_unit_tests` test module (lines 2845-2976):
+  ```rust
+  // DELETE THIS ENTIRE MODULE:
+  mod method_call_unit_tests {
+      // ... all tests ...
+  }
+  ```
+
+---
+
+**Part E: Update lib.rs exports (if applicable)**
+
+- [x] Check if `MethodCallInfo` is exported from lib.rs; if so, remove the export (not exported)
+- [x] Check if `find_typed_method_references` is exported from lib.rs; if so, remove the export (not exported)
+
+---
+
+##### Implementation Sequence {#step-7d-sequence}
+
+Execute these parts IN ORDER (later parts may have dependencies):
+
+1. **Part A first**: Fix comment (trivial change, no dependencies)
+2. **Part B second**: Remove from cst_bridge (stops the wasted work)
+3. **Part C third**: Remove from types.rs (removes dead types)
+4. **Part D fourth**: Remove from type_tracker.rs (removes dead function and tests)
+5. **Part E fifth**: Update lib.rs exports (cleanup public API)
+
+---
+
+##### Tests {#step-7d-tests}
+
+**Regression Tests (must continue to pass):**
+
+- [x] `cargo nextest run -p tugtool-python` - All remaining tests pass (683 tests)
+- [x] `cargo nextest run --workspace` - No regressions in dependent crates (1921 tests)
+
+**Verification (removed code is gone):**
+
+```bash
+# TD6: Stale comment should be fixed
+grep -n "method_calls)" crates/tugtool-python/src/analyzer.rs
+# Should return: empty (no mention of method_calls in that context)
+
+# TD7/TD11: MethodCallInfo should be gone from types.rs
+grep -n "MethodCallInfo" crates/tugtool-python/src/types.rs
+# Should return: empty
+
+# TD8: method_calls field should be gone from NativeAnalysisResult
+grep -n "method_calls" crates/tugtool-python/src/cst_bridge.rs
+# Should return: empty
+
+# TD9: MethodCallCollector should not be called
+grep -n "MethodCallCollector" crates/tugtool-python/src/cst_bridge.rs
+# Should return: empty
+
+# TD11: find_typed_method_references should be gone
+grep -n "find_typed_method_references" crates/tugtool-python/src/type_tracker.rs
+# Should return: empty
+
+# Verify MethodCallCollector is still available in tugtool-python-cst (not removed there)
+grep -n "MethodCallCollector" crates/tugtool-python-cst/src/lib.rs
+# Should return: export line (it's still part of the CST crate's public API)
+```
+
+---
+
+##### Checkpoint {#step-7d-checkpoint}
+
+- [x] `cargo build -p tugtool-python` - compilation succeeds
+- [x] `cargo nextest run -p tugtool-python` - all tests pass (683 tests, 8 fewer than before)
+- [x] `cargo nextest run --workspace` - all workspace tests pass (1921 tests)
+- [x] `cargo clippy --workspace -- -D warnings` - no warnings
+- [x] `cargo fmt --all --check` - formatting correct
+- [x] All verification grep commands return expected results
+
+---
+
+##### Estimated Scope {#step-7d-scope}
+
+| Part | Lines Removed | Lines Added | Net Change |
+|------|---------------|-------------|------------|
+| Part A | 1 | 1 | 0 |
+| Part B | ~25 | 0 | -25 |
+| Part C | ~35 | 0 | -35 |
+| Part D | ~150 | 0 | -150 |
+| Part E | ~2 | 0 | -2 |
+| **Total** | ~213 | 1 | **-212** |
+
+This cleanup removes approximately 212 lines of dead code while maintaining identical functionality.
+
+---
+
+##### Note on tugtool-python-cst {#step-7d-cst-note}
+
+**Important:** This step does NOT remove `MethodCallCollector` from the `tugtool-python-cst` crate. The collector remains part of that crate's public API and may be used by:
+- External consumers of tugtool-python-cst
+- Benchmarks (`crates/tugtool-python-cst/benches/parser_bench.rs`)
+- Golden tests (`crates/tugtool-python-cst/tests/golden.rs`)
+
+The `tugtool-python-cst` crate is a general-purpose Python CST parser, and `MethodCallCollector` is a valid, useful collector even if `tugtool-python` no longer uses it. Removing it from tugtool-python-cst would be a breaking API change and is out of scope for this cleanup.
+
+---
+
+##### Rollback {#step-7d-rollback}
+
+If Step 7D introduces regressions:
+1. Revert the commit
+2. File issue documenting which specific part caused the regression
+3. Re-attempt with smaller incremental changes
+
+---
+
 #### Step 7 Summary {#step-7-summary}
 
-After completing Steps 1-7, you will have:
+After completing Steps 1-7D, you will have:
 - Function-level imports tracked with proper scope paths
 - Scope-chain lookup for imports respecting Python's scoping rules
 - Generic type parameter extraction for common container types
@@ -2016,10 +2641,18 @@ After completing Steps 1-7, you will have:
 - isinstance detection and collection from conditional expressions
 - Type narrowing within if-branches after isinstance checks
 - Comprehensive test coverage for all three gaps
+- **Clean architecture with no technical debt:**
+  - Single unified method resolution path (no deduplication dependency)
+  - No file re-parsing (P1 data stored in Pass 1)
+  - No dead code or unused infrastructure (method_calls fully removed)
+  - DRY code with extracted helper functions
+  - No stale comments or misleading documentation
 
-**Final Checkpoint:**
+**Final Checkpoint (after Step 7D):**
 - [ ] `cargo nextest run --workspace` - all tests pass
 - [ ] `cargo clippy --workspace -- -D warnings` - no warnings
+- [ ] All Step 7C verification grep commands pass
+- [ ] All Step 7D verification grep commands pass
 - [ ] Documentation updated in CLAUDE.md
 
 ---
@@ -2030,10 +2663,23 @@ After completing Steps 1-7, you will have:
 
 #### Phase Exit Criteria {#exit-criteria}
 
-- [ ] Function-level imports are tracked and resolvable within their defining scope
-- [ ] `List[Handler]` subscript access resolves element type to `Handler`
-- [ ] `isinstance(x, Handler)` narrows `x` to `Handler` within the if-branch
-- [ ] All existing Phase 11D tests continue to pass
+- [x] Function-level imports are tracked and resolvable within their defining scope
+- [x] `List[Handler]` subscript access resolves element type to `Handler`
+- [x] `isinstance(x, Handler)` narrows `x` to `Handler` within the if-branch
+- [x] All existing Phase 11D tests continue to pass
+- [ ] **Step 7C complete**: No technical debt remaining
+  - [ ] Single unified method resolution path (no MethodCallIndex)
+  - [ ] No file re-parsing in Pass 4
+  - [ ] No unused infrastructure (no suppressed warnings)
+  - [ ] DRY helper functions (no duplicated conversion code)
+- [ ] **Step 7D complete**: All method_calls infrastructure removed
+  - [ ] Stale comment at analyzer.rs line 1544 fixed
+  - [ ] `method_calls` field removed from `NativeAnalysisResult`
+  - [ ] `method_calls` field removed from `P1Analysis`
+  - [ ] `MethodCallInfo` type removed from types.rs
+  - [ ] `find_typed_method_references()` function removed from type_tracker.rs
+  - [ ] `MethodCallCollector::collect()` no longer called in cst_bridge
+  - [ ] All related tests removed or updated
 - [ ] CLAUDE.md updated with Phase 11E features and limitations
 
 **Acceptance Tests:**

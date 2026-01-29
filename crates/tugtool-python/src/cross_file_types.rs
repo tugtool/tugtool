@@ -989,90 +989,6 @@ pub fn lookup_import_target<'a>(
 // Public Helper Functions
 // ============================================================================
 
-/// Build symbol kinds map from a FileAnalysis.
-///
-/// This is used when integrating with the analyzer's FileAnalysis structure.
-pub fn build_symbol_kinds(analysis: &FileAnalysis) -> HashMap<(Vec<String>, String), SymbolKind> {
-    // Build scope_map once for O(1) lookups (not per-symbol!)
-    let scope_map = build_scope_map_index(&analysis.scopes);
-    let mut map = HashMap::new();
-
-    for symbol in &analysis.symbols {
-        let scope_path = build_scope_path_with_index(symbol.scope_id, &scope_map);
-        let key = (scope_path, symbol.name.clone());
-        map.insert(key, symbol.kind);
-    }
-
-    map
-}
-
-/// Build symbol index map from a FileAnalysis.
-pub fn build_symbol_map(analysis: &FileAnalysis) -> HashMap<(Vec<String>, String), usize> {
-    // Build scope_map once for O(1) lookups (not per-symbol!)
-    let scope_map = build_scope_map_index(&analysis.scopes);
-    let mut map = HashMap::new();
-
-    for (index, symbol) in analysis.symbols.iter().enumerate() {
-        let scope_path = build_scope_path_with_index(symbol.scope_id, &scope_map);
-        let key = (scope_path, symbol.name.clone());
-        map.insert(key, index);
-    }
-
-    map
-}
-
-/// Build a scope ID -> Scope lookup map (O(n) once, not per-symbol).
-fn build_scope_map_index(
-    scopes: &[crate::analyzer::Scope],
-) -> HashMap<crate::analyzer::ScopeId, &crate::analyzer::Scope> {
-    scopes.iter().map(|s| (s.id, s)).collect()
-}
-
-/// Build scope path using a pre-built scope map (O(depth) per call).
-///
-/// Returns a Vec like `["<module>", "ClassName", "method_name"]`.
-fn build_scope_path_with_index(
-    scope_id: crate::analyzer::ScopeId,
-    scope_map: &HashMap<crate::analyzer::ScopeId, &crate::analyzer::Scope>,
-) -> Vec<String> {
-    use tugtool_core::facts::ScopeKind;
-
-    let mut path = Vec::new();
-    let mut current_id = Some(scope_id);
-
-    while let Some(id) = current_id {
-        if let Some(scope) = scope_map.get(&id) {
-            let name = match scope.kind {
-                ScopeKind::Module => "<module>".to_string(),
-                ScopeKind::Class | ScopeKind::Function => scope
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| "<anonymous>".to_string()),
-                ScopeKind::Comprehension | ScopeKind::Lambda => {
-                    // Skip anonymous scopes in path
-                    current_id = scope.parent_id;
-                    continue;
-                }
-                _ => {
-                    // Handle any other scope kinds by skipping
-                    current_id = scope.parent_id;
-                    continue;
-                }
-            };
-            path.push(name);
-            current_id = scope.parent_id;
-        } else {
-            break;
-        }
-    }
-
-    path.reverse();
-    if path.is_empty() {
-        path.push("<module>".to_string());
-    }
-    path
-}
-
 /// Build import targets map from a FileAnalysis.
 ///
 /// This creates the scope-aware import targets map used for cross-file resolution.
@@ -2022,6 +1938,8 @@ class Child(Parent):
             call_sites: vec![],
             class_hierarchies: vec![],
             isinstance_checks: vec![],
+            cst_assignments: vec![],
+            cst_annotations: vec![],
         }
     }
 

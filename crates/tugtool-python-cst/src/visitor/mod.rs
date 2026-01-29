@@ -103,12 +103,12 @@ pub use attribute_access::{
 pub use call_site::{CallArgInfo, CallSiteCollector, CallSiteInfo};
 pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
 pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
+pub use isinstance::{IsInstanceCheck, IsInstanceCollector};
 pub use method_call::{MethodCallCollector, MethodCallInfo};
 pub use signature::{
     Modifier, ParamInfo, ParamKind, SignatureCollector, SignatureInfo, TypeParamInfo,
 };
 pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};
-pub use isinstance::{IsInstanceCheck, IsInstanceCollector};
 
 // P2 exports
 pub use dynamic::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};

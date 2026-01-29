@@ -56,4 +56,4 @@ pub mod verification;
 pub use analyzer::{PythonAdapter, PythonAnalyzerOptions};
 
 // Re-export type narrowing for easy access
-pub use type_narrowing::{build_narrowing_context, NarrowingContext, type_of_with_narrowing};
+pub use type_narrowing::{build_narrowing_context, type_of_with_narrowing, NarrowingContext};

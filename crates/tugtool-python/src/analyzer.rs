@@ -73,7 +73,7 @@ use tugtool_core::patch::{ContentHash, FileId, Span};
 
 use crate::alias::AliasGraph;
 use crate::cross_file_types::{lookup_import_target, CrossFileTypeCache, ImportTargetKind};
-use crate::type_narrowing::{type_of_with_narrowing, NarrowingContext};
+use crate::type_narrowing::{build_narrowing_context, type_of_with_narrowing, NarrowingContext};
 use crate::type_tracker::TypeTracker;
 use crate::types::{BindingInfo, ScopeInfo};
 use std::collections::{HashMap, HashSet};
@@ -84,7 +84,7 @@ use thiserror::Error;
 use crate::cst_bridge;
 
 // Receiver path types for dotted path resolution
-use tugtool_python_cst::{ReceiverPath, ReceiverStep};
+use tugtool_python_cst::{CallSiteInfo, ReceiverPath, ReceiverStep};
 
 /// Maximum depth for chained attribute resolution.
 /// Deeper chains are uncommon and often involve external types.
@@ -359,6 +359,12 @@ pub struct FileAnalysis {
     pub class_hierarchies: Vec<tugtool_python_cst::ClassInheritanceInfo>,
     /// isinstance checks for type narrowing.
     pub isinstance_checks: Vec<tugtool_python_cst::IsInstanceCheck>,
+    /// Assignments collected during Pass 1 (for TypeTracker in Pass 4).
+    /// Stored here to avoid re-parsing files in Pass 4a.
+    pub cst_assignments: Vec<tugtool_python_cst::AssignmentInfo>,
+    /// Annotations collected during Pass 1 (for TypeTracker in Pass 4).
+    /// Stored here to avoid re-parsing files in Pass 4a.
+    pub cst_annotations: Vec<tugtool_python_cst::AnnotationInfo>,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -575,6 +581,378 @@ pub type ImportersIndex = HashMap<(String, String), Vec<(FileId, String)>>;
 /// assigned by the FactsStore.
 pub type ScopeIdMap = HashMap<(FileId, ScopeId), CoreScopeId>;
 
+// ============================================================================
+// Phase 11E Helper Functions for Pass 4e
+// ============================================================================
+
+/// Convert CST AssignmentInfo to types::AssignmentInfo for TypeTracker and AliasGraph.
+///
+/// This is the single source of truth for assignment conversion - all code paths
+/// that need types::AssignmentInfo should use this function to avoid duplication.
+fn convert_cst_assignments(
+    native_result: &cst_bridge::NativeAnalysisResult,
+) -> Vec<crate::types::AssignmentInfo> {
+    convert_cst_assignments_slice(&native_result.assignments)
+}
+
+/// Convert a slice of CST AssignmentInfo to types::AssignmentInfo.
+///
+/// This is the core conversion function used by both `convert_cst_assignments`
+/// and `build_type_tracker_from_analysis`.
+fn convert_cst_assignments_slice(
+    assignments: &[tugtool_python_cst::AssignmentInfo],
+) -> Vec<crate::types::AssignmentInfo> {
+    assignments
+        .iter()
+        .map(|a| crate::types::AssignmentInfo {
+            target: a.target.clone(),
+            scope_path: a.scope_path.clone(),
+            type_source: a.type_source.as_str().to_string(),
+            inferred_type: a.inferred_type.clone(),
+            rhs_name: a.rhs_name.clone(),
+            callee_name: a.callee_name.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+            is_self_attribute: a.is_self_attribute,
+            attribute_name: a.attribute_name.clone(),
+        })
+        .collect()
+}
+
+/// Convert CST AnnotationInfo to types::AnnotationInfo for TypeTracker.
+///
+/// This is the single source of truth for annotation conversion - all code paths
+/// that need types::AnnotationInfo should use this function to avoid duplication.
+fn convert_cst_annotations(
+    native_result: &cst_bridge::NativeAnalysisResult,
+) -> Vec<crate::types::AnnotationInfo> {
+    convert_cst_annotations_slice(&native_result.annotations)
+}
+
+/// Convert a slice of CST AnnotationInfo to types::AnnotationInfo.
+///
+/// This is the core conversion function used by both `convert_cst_annotations`
+/// and `build_type_tracker_from_analysis`.
+fn convert_cst_annotations_slice(
+    annotations: &[tugtool_python_cst::AnnotationInfo],
+) -> Vec<crate::types::AnnotationInfo> {
+    annotations
+        .iter()
+        .map(|a| crate::types::AnnotationInfo {
+            name: a.name.clone(),
+            annotation_kind: a.annotation_kind.as_str().to_string(),
+            source_kind: a.source_kind.as_str().to_string(),
+            type_str: a.type_str.clone(),
+            scope_path: a.scope_path.clone(),
+            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
+            line: a.line,
+            col: a.col,
+            // Pass through the structured TypeNode built at CST collection time
+            type_node: a.type_node.clone(),
+        })
+        .collect()
+}
+
+/// Build an index from method name to [(class_name, symbol_id)].
+///
+/// This enables O(1) lookup of all methods with a given name across all classes.
+/// Returns: method_name -> [(class_name, class_symbol_id, method_symbol_id)]
+fn build_class_method_index(
+    store: &FactsStore,
+) -> HashMap<String, Vec<(String, SymbolId, SymbolId)>> {
+    let mut map: HashMap<String, Vec<(String, SymbolId, SymbolId)>> = HashMap::new();
+
+    for symbol in store.symbols() {
+        // A method is a function/method with a container
+        let is_method = (symbol.kind == SymbolKind::Function || symbol.kind == SymbolKind::Method)
+            && symbol.container_symbol_id.is_some();
+
+        if is_method {
+            if let Some(container_id) = symbol.container_symbol_id {
+                if let Some(container) = store.symbol(container_id) {
+                    map.entry(symbol.name.clone()).or_default().push((
+                        container.name.clone(),
+                        container_id,
+                        symbol.symbol_id,
+                    ));
+                }
+            }
+        }
+    }
+
+    map
+}
+
+/// Extract the inner type from Optional[T] if the type is Optional.
+///
+/// For method calls, the receiver must be non-None, so we can safely extract
+/// the inner type. This handles both TypeNode-based and string-based Optional patterns.
+fn extract_inner_type_if_optional(
+    type_str: &str,
+    tracker: &TypeTracker,
+    receiver_name: &str,
+    scope_path: &[String],
+) -> String {
+    // Try TypeNode-based extraction first (more reliable)
+    if let Some(type_node) = tracker.type_of_node(scope_path, receiver_name) {
+        if let Some(inner_type) = tracker.extract_element_type_from_node(type_node) {
+            return inner_type;
+        }
+    }
+
+    // Fall back to string-based extraction for Optional[T]
+    if type_str.starts_with("Optional[") && type_str.ends_with(']') {
+        let inner = &type_str[9..type_str.len() - 1];
+        return inner.to_string();
+    }
+
+    // Return original type if not Optional
+    type_str.to_string()
+}
+
+/// Resolve the receiver type for a call site using Phase 11E infrastructure.
+///
+/// This function handles:
+/// - Full receiver paths (including Subscript steps via TypeTracker)
+/// - isinstance narrowing (via NarrowingContext)
+/// - Function-level imports (via scope-aware import_targets)
+#[allow(clippy::too_many_arguments)]
+fn resolve_call_site_receiver_type(
+    call_site: &CallSiteInfo,
+    tracker: &TypeTracker,
+    narrowing: Option<&NarrowingContext>,
+    site_span: Option<Span>,
+) -> Option<String> {
+    // Get the receiver name
+    let receiver_name = call_site.receiver.as_deref()?;
+
+    // IMPORTANT: Check narrowing first! isinstance narrowing takes precedence
+    // over static type annotations. This is necessary because resolve_receiver_path_via_tracker
+    // would return the base type (from annotations) instead of the narrowed type.
+    //
+    // NOTE: type_of_with_narrowing may return the base type from tracker as fallback.
+    // We still need to extract inner type from Optional[T] since method calls require non-None.
+    if let (Some(ctx), Some(span)) = (narrowing, site_span) {
+        if let Some(narrowed) =
+            type_of_with_narrowing(&call_site.scope_path, receiver_name, span, ctx, tracker)
+        {
+            // Extract inner type from Optional[T] - this is a no-op for non-Optional types
+            // like isinstance-narrowed types (e.g., "Handler" stays "Handler")
+            let extracted = extract_inner_type_if_optional(
+                narrowed,
+                tracker,
+                receiver_name,
+                &call_site.scope_path,
+            );
+            return Some(extracted);
+        }
+    }
+
+    // Try receiver path resolution for complex patterns (subscript, attr chains, etc.)
+    if let Some(receiver_path) = &call_site.receiver_path {
+        // Handle common patterns via TypeTracker
+        if let Some(resolved_type) =
+            resolve_receiver_path_via_tracker(receiver_path, &call_site.scope_path, tracker)
+        {
+            // Extract inner type from Optional[T] since method calls require non-None values
+            let extracted = extract_inner_type_if_optional(
+                &resolved_type,
+                tracker,
+                receiver_name,
+                &call_site.scope_path,
+            );
+            return Some(extracted);
+        }
+    }
+
+    // Fall back to simple type lookup (no narrowing available)
+    // For Optional[T] types, extract T since method calls require non-None values
+    let base_type = tracker.type_of(&call_site.scope_path, receiver_name)?;
+    Some(extract_inner_type_if_optional(
+        base_type,
+        tracker,
+        receiver_name,
+        &call_site.scope_path,
+    ))
+}
+
+/// Resolve a receiver path using TypeTracker for type inference.
+///
+/// Handles common patterns:
+/// - Simple names: `handler` -> look up type
+/// - Subscripts: `handlers[0]` -> look up handlers TypeNode, extract element type
+/// - Attributes: `self.handler` -> look up handler attribute type on class
+fn resolve_receiver_path_via_tracker(
+    receiver_path: &ReceiverPath,
+    scope_path: &[String],
+    tracker: &TypeTracker,
+) -> Option<String> {
+    use tugtool_core::facts::TypeNode;
+
+    if receiver_path.steps.is_empty() {
+        return None;
+    }
+
+    // Track both the type string and the TypeNode through the chain.
+    // TypeNode is needed for extracting element types from containers.
+    let mut current_type: Option<String> = None;
+    let mut current_type_node: Option<TypeNode> = None;
+    let mut last_name: Option<String> = None;
+
+    for step in &receiver_path.steps {
+        match step {
+            ReceiverStep::Name { value: name } => {
+                // Look up type of the name in scope
+                current_type = tracker.type_of(scope_path, name).map(|s| s.to_string());
+                current_type_node = tracker.type_of_node(scope_path, name).cloned();
+                last_name = Some(name.clone());
+            }
+            ReceiverStep::Subscript => {
+                // Extract element type from container (e.g., List[Handler] -> Handler)
+                // Try current_type_node first (from attr chain), then fall back to last_name lookup
+                let type_node_opt = if current_type_node.is_some() {
+                    current_type_node.as_ref()
+                } else if let Some(ref var_name) = last_name {
+                    tracker.type_of_node(scope_path, var_name)
+                } else {
+                    None
+                };
+
+                if let Some(type_node) = type_node_opt {
+                    current_type = tracker.extract_element_type_from_node(type_node);
+                    // After extraction, the result is a simple type (no TypeNode unless we parse it)
+                    current_type_node = None;
+                } else {
+                    // No TypeNode available, can't extract element type
+                    return None;
+                }
+                last_name = None; // Clear after subscript
+            }
+            ReceiverStep::Attr { value: attr_name } => {
+                // Look up attribute type on current class
+                let class_type_str = current_type.take();
+                if let Some(class_type) = class_type_str {
+                    if let Some(attr_info) = tracker.attribute_type_of(&class_type, attr_name) {
+                        current_type = Some(attr_info.type_str);
+                        current_type_node = attr_info.type_node;
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+                last_name = None; // Clear after attr
+            }
+            ReceiverStep::Call => {
+                // For call, the type should be the return type of the callable
+                // This requires method return type lookup which is more complex
+                // For now, keep current_type (works for constructors)
+                last_name = None;
+                // TypeNode doesn't carry through Call unless we resolve Callable return types
+                current_type_node = None;
+            }
+        }
+    }
+
+    current_type
+}
+
+/// Check if a class inherits from another class (directly or transitively).
+///
+/// Returns true if `child_id` is the same as `parent_id` or inherits from it.
+fn class_inherits_from(
+    child_id: SymbolId,
+    parent_id: SymbolId,
+    store: &FactsStore,
+    visited: &mut HashSet<SymbolId>,
+) -> bool {
+    // Same class
+    if child_id == parent_id {
+        return true;
+    }
+
+    // Prevent infinite loops in case of circular inheritance
+    if visited.contains(&child_id) {
+        return false;
+    }
+    visited.insert(child_id);
+
+    // Check direct parents
+    for direct_parent in store.parents_of_class(child_id) {
+        if class_inherits_from(direct_parent, parent_id, store, visited) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Insert a method call reference if the receiver type matches a class method.
+/// Uses MRO-based resolution: receiver_type can be a subclass of the method's class.
+#[allow(clippy::too_many_arguments)]
+fn insert_method_call_reference(
+    call_site: &CallSiteInfo,
+    receiver_type_name: &Option<String>,
+    class_methods_by_name: &HashMap<String, Vec<(String, SymbolId, SymbolId)>>,
+    class_name_to_id: &HashMap<String, SymbolId>,
+    file_id: FileId,
+    method_span: Span,
+    store: &mut FactsStore,
+) {
+    // Check for self/cls calls within a class
+    let is_self_call = matches!(call_site.receiver.as_deref(), Some("self") | Some("cls"));
+
+    // Look up methods matching this callee name
+    let Some(methods) = class_methods_by_name.get(&call_site.callee) else {
+        return;
+    };
+
+    for (class_name, class_symbol_id, method_symbol_id) in methods {
+        // Check if receiver type matches the class (including inheritance via MRO)
+        let type_matches = if let Some(receiver_type) = receiver_type_name.as_deref() {
+            if receiver_type == class_name {
+                // Direct match
+                true
+            } else if let Some(&receiver_class_id) = class_name_to_id.get(receiver_type) {
+                // Check if receiver_type inherits from class_name
+                let mut visited = HashSet::new();
+                class_inherits_from(receiver_class_id, *class_symbol_id, store, &mut visited)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let self_in_class = is_self_call && call_site.scope_path.iter().any(|s| s == class_name);
+
+        if type_matches || self_in_class {
+            // Insert reference from call site to method symbol
+            let ref_id = store.next_reference_id();
+            let reference = Reference::new(
+                ref_id,
+                *method_symbol_id,
+                file_id,
+                method_span,
+                ReferenceKind::Call,
+            );
+            store.insert_reference(reference);
+            break; // Found a match, stop searching
+        }
+    }
+}
+
+// ============================================================================
+// Main Multi-File Analysis
+// ============================================================================
+
 /// Analyze multiple files and populate the FactsStore using native CST.
 ///
 /// This is the main entry point for multi-file Python analysis without any
@@ -602,10 +980,10 @@ pub type ScopeIdMap = HashMap<(FileId, ScopeId), CoreScopeId>;
 /// - Handle method references with span matching
 ///
 /// **Pass 4: Type-Aware Method Resolution**
-/// - Build MethodCallIndex for efficient lookup
+/// - Build TypeTrackers from stored P1 data (no re-parsing)
 /// - Resolve method calls using receiver type information
 /// - Populate TypeInfo and InheritanceInfo in FactsStore
-/// - Insert typed method call references
+/// - Insert typed method call references via unified call_sites resolution
 ///
 /// # Arguments
 ///
@@ -1149,8 +1527,9 @@ pub fn analyze_files(
     // ====================================================================
     // Pass 4: Type-Aware Method Resolution
     // ====================================================================
-    // Build TypeTrackers per file, populate TypeInfo and InheritanceInfo,
-    // build MethodCallIndex, and insert typed method call references.
+    // Build TypeTrackers per file from stored P1 data (no re-parsing),
+    // populate TypeInfo and InheritanceInfo, and insert typed method call
+    // references via unified call_sites resolution.
     //
     // Per Contract C5 (Type Inference Levels):
     // - Level 1: Constructor calls (x = MyClass()) and variable propagation
@@ -1162,147 +1541,52 @@ pub fn analyze_files(
     // - Renaming Base.method affects Child.method if it's an override
 
     // We need to re-analyze files to get P1 data (assignments, annotations,
-    // class_inheritance, method_calls). This is necessary because the
+    // class_inheritance). This is necessary because the
     // FileAnalysis struct doesn't currently include P1 data.
     //
     // Note: This could be optimized by storing P1 data in Pass 1, but for now
     // we re-analyze to keep the implementation simple and correct.
 
-    // Build MethodCallIndex for O(1) lookup by method name
-    let mut method_call_index = MethodCallIndex::new();
-
     // Store TypeTrackers per file for type resolution
     let mut type_trackers: HashMap<FileId, TypeTracker> = HashMap::new();
+
+    // Store NarrowingContexts per file for isinstance-based type narrowing (Phase 11E)
+    let mut narrowing_contexts: HashMap<FileId, NarrowingContext> = HashMap::new();
+
+    // Store call_sites per file for unified method call resolution
+    let mut all_call_sites: HashMap<FileId, Vec<tugtool_python_cst::CallSiteInfo>> = HashMap::new();
 
     // Collect all class inheritance info across files for building InheritanceInfo
     let mut all_class_inheritance: Vec<(FileId, tugtool_python_cst::ClassInheritanceInfo)> =
         Vec::new();
 
-    // Precompute O(1) lookup structures to avoid O(n) scans inside loops
-    let failed_paths: HashSet<&str> = bundle
-        .failed_files
-        .iter()
-        .map(|(p, _)| p.as_str())
-        .collect();
+    // Precompute O(1) lookup structure for FileAnalysis by FileId
     let analyses_by_file_id: HashMap<FileId, &FileAnalysis> = bundle
         .file_analyses
         .iter()
         .map(|a| (a.file_id, a))
         .collect();
 
-    // Pass 4a: Re-analyze files to get P1 data and build auxiliary structures
-    for (path, content) in files {
-        // Skip files that failed analysis in Pass 1 (O(1) lookup)
-        if failed_paths.contains(path.as_str()) {
-            continue;
-        }
+    // Pass 4a: Build auxiliary structures from stored P1 data (no re-parsing needed)
+    // Iterate over successfully analyzed files using data stored in Pass 1.
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
 
-        // Get the FileId for this path
-        let file_id = match file_path_to_id.get(path) {
-            Some(&id) => id,
-            None => continue,
-        };
-
-        // Re-parse to get P1 data
-        let native_result = match cst_bridge::parse_and_analyze(content) {
-            Ok(result) => result,
-            Err(_) => continue, // Skip if re-parse fails (shouldn't happen)
-        };
-
-        // Build TypeTracker from assignments and annotations
-        let mut tracker = TypeTracker::new();
-
-        // Convert CST AssignmentInfo to types AssignmentInfo for TypeTracker
-        let cst_assignments: Vec<crate::types::AssignmentInfo> = native_result
-            .assignments
-            .iter()
-            .map(|a| crate::types::AssignmentInfo {
-                target: a.target.clone(),
-                scope_path: a.scope_path.clone(),
-                type_source: a.type_source.as_str().to_string(),
-                inferred_type: a.inferred_type.clone(),
-                rhs_name: a.rhs_name.clone(),
-                callee_name: a.callee_name.clone(),
-                span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                    start: s.start,
-                    end: s.end,
-                }),
-                line: a.line,
-                col: a.col,
-                is_self_attribute: a.is_self_attribute,
-                attribute_name: a.attribute_name.clone(),
-            })
-            .collect();
-
-        // Convert CST AnnotationInfo to types AnnotationInfo for TypeTracker
-        let cst_annotations: Vec<crate::types::AnnotationInfo> = native_result
-            .annotations
-            .iter()
-            .map(|a| crate::types::AnnotationInfo {
-                name: a.name.clone(),
-                annotation_kind: a.annotation_kind.as_str().to_string(),
-                source_kind: a.source_kind.as_str().to_string(),
-                type_str: a.type_str.clone(),
-                scope_path: a.scope_path.clone(),
-                span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                    start: s.start,
-                    end: s.end,
-                }),
-                line: a.line,
-                col: a.col,
-                // Pass through the structured TypeNode built at CST collection time
-                type_node: a.type_node.clone(),
-            })
-            .collect();
-
-        // Process in correct order for type precedence:
-        // 1. Annotations (highest priority - explicit type declarations)
-        // 2. Instance attributes (self.attr = ... patterns from __init__)
-        // 3. Signatures (method return types for call resolution)
-        // 4. Assignments (regular variable type inference)
-        // 5. Resolve types (propagate through aliases)
-        tracker.process_annotations(&cst_annotations);
-        tracker.process_instance_attributes(&cst_assignments);
-        tracker.process_signatures(&native_result.signatures);
-        tracker.process_properties(&native_result.signatures);
-        tracker.process_assignments(&cst_assignments);
-        tracker.resolve_types();
-
+        // Build TypeTracker using the stored P1 data (no re-parsing)
+        let tracker = build_type_tracker_from_analysis(analysis);
         type_trackers.insert(file_id, tracker);
 
-        // Build MethodCallIndex from method calls
-        // First, get the FileAnalysis to access scope information (O(1) lookup)
-        let analysis = analyses_by_file_id.get(&file_id);
-
-        for mc in &native_result.method_calls {
-            // Resolve receiver type using TypeTracker
-            let receiver_type = type_trackers
-                .get(&file_id)
-                .and_then(|tracker| tracker.type_of(&mc.scope_path, &mc.receiver))
-                .map(String::from);
-
-            let indexed_call = IndexedMethodCall {
-                file_id,
-                receiver: mc.receiver.clone(),
-                receiver_type,
-                scope_path: mc.scope_path.clone(),
-                method_span: mc
-                    .method_span
-                    .as_ref()
-                    .map(|s| Span::new(s.start, s.end))
-                    .unwrap_or_else(|| Span::new(0, 0)),
-            };
-
-            method_call_index.add(mc.method.clone(), indexed_call);
+        // Collect class inheritance info from stored data
+        for ci in &analysis.class_hierarchies {
+            all_class_inheritance.push((file_id, ci.clone()));
         }
 
-        // Collect class inheritance info
-        for ci in native_result.class_inheritance {
-            all_class_inheritance.push((file_id, ci));
-        }
+        // Phase 11E: Build NarrowingContext from stored isinstance checks
+        let narrowing = build_narrowing_context(&analysis.isinstance_checks);
+        narrowing_contexts.insert(file_id, narrowing);
 
-        // Mark analysis as used to suppress warning
-        let _ = analysis;
+        // Store call_sites for unified method call resolution
+        all_call_sites.insert(file_id, analysis.call_sites.clone());
     }
 
     // Pass 4b: Populate TypeInfo in FactsStore for typed variables
@@ -1375,55 +1659,62 @@ pub fn analyze_files(
         store.insert_inheritance(inheritance);
     }
 
-    // Pass 4d: Insert typed method call references
-    // For each class method, look up matching calls in MethodCallIndex
-    // and filter by receiver type
+    // Pass 4d: Unified Method Call Resolution
+    //
+    // This pass resolves all method calls using call_sites with full receiver path resolution:
+    // - Simple patterns: handler.process() with typed receiver
+    // - Subscript patterns: handlers[0].process() where handlers: List[Handler]
+    // - isinstance narrowing: if isinstance(x, Handler): x.process()
+    // - Function-level imports: def foo(): from mod import Handler; h = Handler(); h.process()
+    // - self/cls calls: self.process() within class methods
+    //
+    // We use call_sites which have full receiver_path (including Subscript steps),
+    // combined with NarrowingContext and scope-aware import resolution.
 
-    // Collect class method symbols: (method_name, class_name, symbol_id, file_id)
-    let class_methods: Vec<(String, String, SymbolId, FileId)> = store
+    // Build class_name -> SymbolId map for MRO lookups
+    let class_name_to_id: HashMap<String, SymbolId> = store
         .symbols()
-        .filter(|s| {
-            // A method is a function with a container (the class)
-            (s.kind == SymbolKind::Function || s.kind == SymbolKind::Method)
-                && s.container_symbol_id.is_some()
-        })
-        .filter_map(|s| {
-            // Get the container class name
-            let container_id = s.container_symbol_id?;
-            let container = store.symbol(container_id)?;
-            Some((
-                s.name.clone(),
-                container.name.clone(),
-                s.symbol_id,
-                s.decl_file_id,
-            ))
-        })
+        .filter(|s| s.kind == SymbolKind::Class)
+        .map(|s| (s.name.clone(), s.symbol_id))
         .collect();
 
-    for (method_name, class_name, method_symbol_id, _method_file_id) in class_methods {
-        // Look up all calls to this method name
-        let matching_calls = method_call_index.get(&method_name);
+    // Build class method index for O(1) lookup by method name
+    let class_methods_by_name = build_class_method_index(store);
 
-        for call in matching_calls {
-            // Check if the receiver type matches the class
-            let type_matches = call.receiver_type.as_deref() == Some(&class_name);
+    // Process call_sites with full Phase 11E resolution
+    for (&file_id, call_sites) in &all_call_sites {
+        // Get per-file context
+        let Some(tracker) = type_trackers.get(&file_id) else {
+            continue;
+        };
+        let narrowing = narrowing_contexts.get(&file_id);
 
-            // Also check if receiver is "self" or "cls" and we're in a method of this class
-            let is_self_call = (call.receiver == "self" || call.receiver == "cls")
-                && call.scope_path.iter().any(|s| s == &class_name);
-
-            if type_matches || is_self_call {
-                // Insert a reference from this call site to the method
-                let ref_id = store.next_reference_id();
-                let reference = Reference::new(
-                    ref_id,
-                    method_symbol_id,
-                    call.file_id,
-                    call.method_span,
-                    ReferenceKind::Call,
-                );
-                store.insert_reference(reference);
+        for call_site in call_sites {
+            // Skip non-method calls
+            if !call_site.is_method_call {
+                continue;
             }
+
+            // Skip calls without a span
+            let Some(cst_span) = call_site.span else {
+                continue;
+            };
+            let method_span = Span::new(cst_span.start, cst_span.end);
+
+            // Resolve receiver type using Phase 11E infrastructure
+            let receiver_type_name =
+                resolve_call_site_receiver_type(call_site, tracker, narrowing, Some(method_span));
+
+            // Insert reference if we resolved the receiver type
+            insert_method_call_reference(
+                call_site,
+                &receiver_type_name,
+                &class_methods_by_name,
+                &class_name_to_id,
+                file_id,
+                method_span,
+                store,
+            );
         }
     }
 
@@ -1470,9 +1761,9 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
     // Convert bindings to local symbols
     let symbols = collect_symbols(&native_result.bindings, &scopes);
 
-    // Convert references
+    // Convert references (borrow to avoid moving native_result)
     let mut references = Vec::new();
-    for (name, native_refs) in native_result.references {
+    for (name, native_refs) in &native_result.references {
         for native_ref in native_refs {
             references.push(LocalReference {
                 name: name.clone(),
@@ -1540,27 +1831,8 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         })
         .collect();
 
-    // Convert CstAssignmentInfo to types::AssignmentInfo for AliasGraph
-    let types_assignments: Vec<crate::types::AssignmentInfo> = native_result
-        .assignments
-        .iter()
-        .map(|a| crate::types::AssignmentInfo {
-            target: a.target.clone(),
-            scope_path: a.scope_path.clone(),
-            type_source: a.type_source.as_str().to_string(),
-            inferred_type: a.inferred_type.clone(),
-            rhs_name: a.rhs_name.clone(),
-            callee_name: a.callee_name.clone(),
-            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                start: s.start,
-                end: s.end,
-            }),
-            line: a.line,
-            col: a.col,
-            is_self_attribute: a.is_self_attribute,
-            attribute_name: a.attribute_name.clone(),
-        })
-        .collect();
+    // Use the centralized conversion helper for AliasGraph
+    let types_assignments = convert_cst_assignments(&native_result);
 
     // Build AliasGraph from assignments and imports
     let alias_graph = AliasGraph::from_analysis(&types_assignments, &imported_names);
@@ -1580,6 +1852,9 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         call_sites: native_result.call_sites,
         class_hierarchies: native_result.class_inheritance,
         isinstance_checks: native_result.isinstance_checks,
+        // Store P1 data for Pass 4a (avoids re-parsing files)
+        cst_assignments: native_result.assignments,
+        cst_annotations: native_result.annotations,
     })
 }
 
@@ -1602,48 +1877,9 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
 fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeTracker {
     let mut tracker = TypeTracker::new();
 
-    // Convert CST AssignmentInfo to types::AssignmentInfo for TypeTracker
-    let cst_assignments: Vec<crate::types::AssignmentInfo> = native_result
-        .assignments
-        .iter()
-        .map(|a| crate::types::AssignmentInfo {
-            target: a.target.clone(),
-            scope_path: a.scope_path.clone(),
-            type_source: a.type_source.as_str().to_string(),
-            inferred_type: a.inferred_type.clone(),
-            rhs_name: a.rhs_name.clone(),
-            callee_name: a.callee_name.clone(),
-            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                start: s.start,
-                end: s.end,
-            }),
-            line: a.line,
-            col: a.col,
-            is_self_attribute: a.is_self_attribute,
-            attribute_name: a.attribute_name.clone(),
-        })
-        .collect();
-
-    // Convert CST AnnotationInfo to types::AnnotationInfo for TypeTracker
-    let cst_annotations: Vec<crate::types::AnnotationInfo> = native_result
-        .annotations
-        .iter()
-        .map(|a| crate::types::AnnotationInfo {
-            name: a.name.clone(),
-            annotation_kind: a.annotation_kind.as_str().to_string(),
-            source_kind: a.source_kind.as_str().to_string(),
-            type_str: a.type_str.clone(),
-            scope_path: a.scope_path.clone(),
-            span: a.span.as_ref().map(|s| crate::types::SpanInfo {
-                start: s.start,
-                end: s.end,
-            }),
-            line: a.line,
-            col: a.col,
-            // Pass through the structured TypeNode built at CST collection time
-            type_node: a.type_node.clone(),
-        })
-        .collect();
+    // Use the centralized conversion helpers
+    let cst_assignments = convert_cst_assignments(native_result);
+    let cst_annotations = convert_cst_annotations(native_result);
 
     // Process in correct order for type precedence:
     // 1. Annotations (highest priority - explicit type declarations)
@@ -1656,6 +1892,28 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
     tracker.process_instance_attributes(&cst_assignments);
     tracker.process_signatures(&native_result.signatures);
     tracker.process_properties(&native_result.signatures);
+    tracker.process_assignments(&cst_assignments);
+    tracker.resolve_types();
+
+    tracker
+}
+
+/// Build a TypeTracker from FileAnalysis (using stored P1 data).
+///
+/// This is the preferred version for Pass 4a since it avoids re-parsing.
+/// Uses the P1 data stored in FileAnalysis during Pass 1.
+fn build_type_tracker_from_analysis(analysis: &FileAnalysis) -> TypeTracker {
+    let mut tracker = TypeTracker::new();
+
+    // Use the slice conversion helpers with stored P1 data
+    let cst_assignments = convert_cst_assignments_slice(&analysis.cst_assignments);
+    let cst_annotations = convert_cst_annotations_slice(&analysis.cst_annotations);
+
+    // Process in correct order for type precedence (same order as build_type_tracker)
+    tracker.process_annotations(&cst_annotations);
+    tracker.process_instance_attributes(&cst_assignments);
+    tracker.process_signatures(&analysis.signatures);
+    tracker.process_properties(&analysis.signatures);
     tracker.process_assignments(&cst_assignments);
     tracker.resolve_types();
 
@@ -3135,68 +3393,6 @@ fn convert_imports(
     }
 
     result
-}
-
-// ============================================================================
-// Method Call Index (for O(1) lookup during type-aware pass)
-// ============================================================================
-
-/// Index of method calls by method name for efficient lookup.
-///
-/// Instead of scanning all files for each method (O(M × F × C)), this index
-/// allows direct lookup by method name (O(M × C_match) where C_match is
-/// typically much smaller than total calls).
-#[derive(Debug, Default)]
-pub struct MethodCallIndex {
-    /// Method name → list of indexed method calls.
-    calls_by_name: HashMap<String, Vec<IndexedMethodCall>>,
-}
-
-impl MethodCallIndex {
-    /// Create a new empty index.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add a method call to the index.
-    pub fn add(&mut self, method_name: String, call: IndexedMethodCall) {
-        self.calls_by_name
-            .entry(method_name)
-            .or_default()
-            .push(call);
-    }
-
-    /// Get all method calls matching a method name.
-    pub fn get(&self, method_name: &str) -> &[IndexedMethodCall] {
-        self.calls_by_name
-            .get(method_name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
-    }
-
-    /// Get the total number of indexed calls (for diagnostics).
-    #[allow(dead_code)]
-    pub fn total_calls(&self) -> usize {
-        self.calls_by_name.values().map(|v| v.len()).sum()
-    }
-}
-
-/// An indexed method call for efficient lookup.
-///
-/// Contains all information needed to determine if a method call should
-/// be linked to a given class method, without re-parsing or re-analyzing.
-#[derive(Debug, Clone)]
-pub struct IndexedMethodCall {
-    /// File where the call occurs.
-    pub file_id: FileId,
-    /// Receiver variable name (e.g., "obj" in obj.method()).
-    pub receiver: String,
-    /// Receiver's type if known (resolved from TypeTracker).
-    pub receiver_type: Option<String>,
-    /// Scope path where the call occurs.
-    pub scope_path: Vec<String>,
-    /// Byte span of the method name (for creating references).
-    pub method_span: Span,
 }
 
 // NOTE: ImportResolver has been consolidated into FileImportResolver.
@@ -9995,136 +10191,6 @@ obj.method_d()
                 local_imports[0].relative_level, 1,
                 "Should have relative_level=1"
             );
-        }
-    }
-
-    mod method_call_index_tests {
-        use super::*;
-
-        fn make_indexed_call(
-            file_id: u32,
-            receiver: &str,
-            receiver_type: Option<&str>,
-            span_start: usize,
-            span_end: usize,
-        ) -> IndexedMethodCall {
-            IndexedMethodCall {
-                file_id: FileId::new(file_id),
-                receiver: receiver.to_string(),
-                receiver_type: receiver_type.map(String::from),
-                scope_path: vec!["<module>".to_string()],
-                method_span: Span::new(span_start, span_end),
-            }
-        }
-
-        #[test]
-        fn empty_index_returns_empty_slice() {
-            let index = MethodCallIndex::new();
-            assert!(index.get("process").is_empty());
-            assert_eq!(index.total_calls(), 0);
-        }
-
-        #[test]
-        fn add_and_retrieve_single_call() {
-            let mut index = MethodCallIndex::new();
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "handler", Some("Handler"), 50, 57),
-            );
-
-            let calls = index.get("process");
-            assert_eq!(calls.len(), 1);
-            assert_eq!(calls[0].receiver, "handler");
-            assert_eq!(calls[0].receiver_type, Some("Handler".to_string()));
-            assert_eq!(calls[0].method_span, Span::new(50, 57));
-        }
-
-        #[test]
-        fn add_multiple_calls_same_method() {
-            let mut index = MethodCallIndex::new();
-
-            // Two different receivers calling the same method
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "h1", Some("Handler"), 50, 57),
-            );
-            index.add(
-                "process".to_string(),
-                make_indexed_call(1, "h2", Some("Handler"), 100, 107),
-            );
-
-            let calls = index.get("process");
-            assert_eq!(calls.len(), 2);
-            assert_eq!(index.total_calls(), 2);
-        }
-
-        #[test]
-        fn different_methods_dont_interfere() {
-            let mut index = MethodCallIndex::new();
-
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "handler", Some("Handler"), 50, 57),
-            );
-            index.add(
-                "run".to_string(),
-                make_indexed_call(0, "runner", Some("Runner"), 80, 83),
-            );
-
-            assert_eq!(index.get("process").len(), 1);
-            assert_eq!(index.get("run").len(), 1);
-            assert!(index.get("unknown").is_empty());
-            assert_eq!(index.total_calls(), 2);
-        }
-
-        #[test]
-        fn untyped_calls_have_none_receiver_type() {
-            let mut index = MethodCallIndex::new();
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "obj", None, 50, 57),
-            );
-
-            let calls = index.get("process");
-            assert_eq!(calls.len(), 1);
-            assert!(calls[0].receiver_type.is_none());
-        }
-
-        #[test]
-        fn index_filters_by_receiver_type() {
-            let mut index = MethodCallIndex::new();
-
-            // Same method name, different receiver types
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "h1", Some("Handler1"), 50, 57),
-            );
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "h2", Some("Handler2"), 100, 107),
-            );
-            index.add(
-                "process".to_string(),
-                make_indexed_call(0, "h3", None, 150, 157),
-            );
-
-            let calls = index.get("process");
-            assert_eq!(calls.len(), 3);
-
-            // Simulate what the fourth pass does: filter by receiver type
-            let handler1_calls: Vec<_> = calls
-                .iter()
-                .filter(|c| c.receiver_type.as_deref() == Some("Handler1"))
-                .collect();
-            assert_eq!(handler1_calls.len(), 1);
-            assert_eq!(handler1_calls[0].receiver, "h1");
-
-            let handler2_calls: Vec<_> = calls
-                .iter()
-                .filter(|c| c.receiver_type.as_deref() == Some("Handler2"))
-                .collect();
-            assert_eq!(handler2_calls.len(), 1);
-            assert_eq!(handler2_calls[0].receiver, "h2");
         }
     }
 

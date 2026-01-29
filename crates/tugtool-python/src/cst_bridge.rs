@@ -47,8 +47,6 @@ use tugtool_python_cst::{
     // isinstance type narrowing
     IsInstanceCheck as CstIsInstanceCheck,
     IsInstanceCollector,
-    MethodCallCollector,
-    MethodCallInfo as CstMethodCallInfo,
     ReferenceCollector,
     ReferenceInfo as CstReferenceInfo,
     ReferenceKind as CstReferenceKind,
@@ -119,8 +117,6 @@ pub struct NativeAnalysisResult {
     pub assignments: Vec<CstAssignmentInfo>,
     /// Class inheritance information.
     pub class_inheritance: Vec<CstClassInheritanceInfo>,
-    /// Method call patterns (obj.method()).
-    pub method_calls: Vec<CstMethodCallInfo>,
     /// Function/method signatures with parameters, modifiers, and type params.
     pub signatures: Vec<CstSignatureInfo>,
     /// Attribute access patterns (obj.attr with Read/Write/Call context).
@@ -296,9 +292,6 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     // P1: Collect class inheritance information
     let class_inheritance = InheritanceCollector::collect(&parsed.module, &parsed.positions);
 
-    // P1: Collect method call patterns
-    let method_calls = MethodCallCollector::collect(&parsed.module, &parsed.positions);
-
     // P1: Collect function/method signatures
     let signatures = SignatureCollector::collect(&parsed.module, &parsed.positions);
 
@@ -325,7 +318,6 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         annotations,
         assignments,
         class_inheritance,
-        method_calls,
         signatures,
         attribute_accesses,
         call_sites,
@@ -665,18 +657,6 @@ __all__ += ["bar"]
     }
 
     #[test]
-    fn test_p1_method_calls_collected() {
-        let source = "handler = Handler()\nhandler.process()\nhandler.save()";
-        let result = parse_and_analyze(source).expect("parse should succeed");
-
-        assert!(!result.method_calls.is_empty(), "should have method calls");
-        assert_eq!(result.method_calls.len(), 2, "should have 2 method calls");
-        assert_eq!(result.method_calls[0].receiver, "handler");
-        assert_eq!(result.method_calls[0].method, "process");
-        assert_eq!(result.method_calls[1].method, "save");
-    }
-
-    #[test]
     fn test_p1_comprehensive_analysis() {
         // A more comprehensive test that exercises all P1 collectors
         let source = r#"from typing import List
@@ -712,7 +692,6 @@ def use_handler():
             !result.class_inheritance.is_empty(),
             "should have class inheritance"
         );
-        assert!(!result.method_calls.is_empty(), "should have method calls");
 
         // Verify inheritance relationship
         let json_handler = result
