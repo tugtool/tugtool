@@ -1601,30 +1601,30 @@ Spec S10, (#file-filtering-spec)
 - Modified: `crates/tugtool-core/src/output.rs` (add `FilterListResponse`)
 
 **Tasks:**
-- [ ] Add `FilterListResponse` struct to `output.rs`:
+- [x] Add `FilterListResponse` struct to `output.rs`:
   - `files: Vec<String>` (sorted relative paths)
   - `count: usize`
   - `filter_summary: FilterSummary`
-- [ ] Add `FilterSummary` struct:
+- [x] Add `FilterSummary` struct:
   - `glob_patterns: Vec<String>`
   - `expressions: Vec<String>`
   - `json_filter: Option<serde_json::Value>`
   - `content_enabled: bool`
-- [ ] Implement `Serialize` for `FilterListResponse`
-- [ ] In command execution, check `--filter-list` flag first
-- [ ] If set, build `CombinedFilter`, collect matching files, output JSON, exit 0
-- [ ] Skip actual rename/analyze operation when `--filter-list` is set
+- [x] Implement `Serialize` for `FilterListResponse`
+- [x] In command execution, check `--filter-list` flag first
+- [x] If set, build `CombinedFilter`, collect matching files, output JSON, exit 0
+- [x] Skip actual rename/analyze operation when `--filter-list` is set
 
 **Tests:**
-- [ ] integration: `--filter-list` with glob patterns outputs JSON with correct files
-- [ ] integration: `--filter-list` with expression outputs JSON
-- [ ] integration: `--filter-list` count matches file list length
-- [ ] integration: `--filter-list` returns exit code 0
-- [ ] integration: `--filter-list` does not modify any files
+- [x] integration: `--filter-list` with glob patterns outputs JSON with correct files
+- [x] integration: `--filter-list` with expression outputs JSON
+- [x] integration: `--filter-list` count matches file list length
+- [x] integration: `--filter-list` returns exit code 0
+- [x] integration: `--filter-list` does not modify any files
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool filter_list`
-- [ ] Manual: `tug apply python rename --at x:1:1 --to y --filter-list` outputs JSON
+- [x] `cargo nextest run -p tugtool filter_list`
+- [x] Manual: `tug apply python rename --at x:1:1 --to y --filter-list` outputs JSON
 
 **Rollback:** Revert `main.rs` and `output.rs` changes
 

@@ -6,6 +6,51 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 7: Implement Filter List Mode | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 7 specification (lines 1593-1631)
+- [D12] Filter Introspection for Agents (line 1151)
+- Spec S11 Filter Output/Introspection (lines 1243-1255)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `FilterListResponse` struct to `output.rs` | Done |
+| Add `FilterSummary` struct | Done |
+| Implement `Serialize` for `FilterListResponse` | Done |
+| In command execution, check `--filter-list` flag first | Done |
+| Build `CombinedFilter`, collect matching files, output JSON, exit 0 | Done |
+| Skip actual rename/analyze operation when `--filter-list` is set | Done |
+
+**Files Created:**
+- None (all changes in existing files)
+
+**Files Modified:**
+- `crates/tugtool-core/src/output.rs` - Added `FilterListResponse` and `FilterSummary` structs with serialization
+- `crates/tugtool/src/main.rs` - Added `handle_filter_list()` helper, `collect_python_files_for_filter_list()` walker, integrated into all three command executors (apply, emit, analyze), added 4 unit tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool filter`: 17 tests passed
+- `cargo nextest run -p tugtool filter_list`: 3 tests passed (subset)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool filter_list`: PASS
+- Manual: `tug apply python rename --at x:1:1 --to y --filter-list` outputs JSON: PASS
+- `--filter "path:crates/tugtool/tests/**"` correctly filters: PASS
+- `-- "crates/tugtool/tests/**/*.py"` glob patterns work: PASS
+
+**Key Decisions/Notes:**
+- **Bug fix:** Initial implementation passed absolute paths to `filter.matches()`, but glob patterns expect relative paths. Fixed by using `path.strip_prefix(workspace)` before filtering.
+- `handle_filter_list()` returns `Ok(true)` when filter-list mode is active, signaling early return from command execution
+- File walker skips hidden directories and common non-source directories (`.git`, `__pycache__`, `node_modules`, `target`, `venv`, `.venv`)
+- Output includes `filter_summary` with glob_patterns, expressions, json_filter, and content_enabled for debugging
+
+---
+
 ## [phase-12.md] Step 6: Add CLI Options | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

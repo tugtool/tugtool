@@ -1206,6 +1206,75 @@ impl DoctorResponse {
 }
 
 // ============================================================================
+// Filter List Response Types (Phase 12.7)
+// ============================================================================
+
+/// Summary of active filters for introspection.
+///
+/// Per Phase 12.7 Spec S11: Filter Output / Introspection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilterSummary {
+    /// Glob patterns from `-- <patterns...>`.
+    pub glob_patterns: Vec<String>,
+    /// Expression filters from `--filter`.
+    pub expressions: Vec<String>,
+    /// JSON filter from `--filter-json` (if any).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_filter: Option<serde_json::Value>,
+    /// Whether content predicates are enabled.
+    pub content_enabled: bool,
+}
+
+impl FilterSummary {
+    /// Create a new filter summary.
+    pub fn new(
+        glob_patterns: Vec<String>,
+        expressions: Vec<String>,
+        json_filter: Option<serde_json::Value>,
+        content_enabled: bool,
+    ) -> Self {
+        FilterSummary {
+            glob_patterns,
+            expressions,
+            json_filter,
+            content_enabled,
+        }
+    }
+}
+
+/// Response for `--filter-list` introspection mode.
+///
+/// Per Phase 12.7 Spec S11: Filter Output / Introspection.
+/// Outputs matched files as JSON without performing the refactoring operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilterListResponse {
+    /// Status: "ok".
+    pub status: String,
+    /// Schema version for compatibility.
+    pub schema_version: String,
+    /// Sorted list of relative paths that match the filters.
+    pub files: Vec<String>,
+    /// Count of matched files.
+    pub count: usize,
+    /// Summary of active filters.
+    pub filter_summary: FilterSummary,
+}
+
+impl FilterListResponse {
+    /// Create a new filter list response.
+    pub fn new(files: Vec<String>, filter_summary: FilterSummary) -> Self {
+        let count = files.len();
+        FilterListResponse {
+            status: "ok".to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            files,
+            count,
+            filter_summary,
+        }
+    }
+}
+
+// ============================================================================
 // Alias Output Types (Phase 10)
 // ============================================================================
 

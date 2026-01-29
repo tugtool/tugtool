@@ -33,9 +33,9 @@ use serde::Serialize;
 use tugtool_core::error::{OutputErrorCode, TugError};
 use tugtool_core::output::SCHEMA_VERSION;
 use tugtool_core::output::{
-    emit_response, CheckResult, DoctorResponse, ErrorInfo, ErrorResponse, FixtureFetchResponse,
-    FixtureFetchResult, FixtureListItem, FixtureListResponse, FixtureStatusItem,
-    FixtureStatusResponse, FixtureUpdateResponse, FixtureUpdateResult,
+    emit_response, CheckResult, DoctorResponse, ErrorInfo, ErrorResponse, FilterListResponse,
+    FilterSummary, FixtureFetchResponse, FixtureFetchResult, FixtureListItem, FixtureListResponse,
+    FixtureStatusItem, FixtureStatusResponse, FixtureUpdateResponse, FixtureUpdateResult,
 };
 use tugtool_core::session::{Session, SessionOptions};
 
@@ -43,7 +43,7 @@ use tugtool_core::session::{Session, SessionOptions};
 #[cfg(feature = "python")]
 use tugtool::cli::{analyze_rename, do_rename};
 #[cfg(feature = "python")]
-use tugtool_core::filter::FileFilterSpec;
+use tugtool_core::filter::{CombinedFilter, FileFilterSpec};
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
@@ -620,7 +620,10 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             // Validate filter options
             validate_filter_options(&filter_opts)?;
 
-            // TODO (Step 7): Handle --filter-list mode here
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
 
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
@@ -686,7 +689,10 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
             // Validate filter options
             validate_filter_options(&filter_opts)?;
 
-            // TODO (Step 7): Handle --filter-list mode here
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
 
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
@@ -786,7 +792,10 @@ fn execute_analyze_python(
             // Validate filter options
             validate_filter_options(&filter_opts)?;
 
-            // TODO (Step 7): Handle --filter-list mode here
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
 
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
@@ -1278,6 +1287,134 @@ fn validate_filter_options(filter_opts: &FilterOptions) -> Result<(), TugError> 
     // (clap allows it, we just ignore it)
 
     Ok(())
+}
+
+/// Handle --filter-list mode if enabled.
+///
+/// If --filter-list is set, builds a CombinedFilter from all filter sources,
+/// collects matching Python files, outputs JSON, and returns Ok(true).
+/// If --filter-list is not set, returns Ok(false) to continue with normal execution.
+#[cfg(feature = "python")]
+fn handle_filter_list(
+    global: &GlobalArgs,
+    filter_opts: &FilterOptions,
+    glob_patterns: &[String],
+) -> Result<bool, TugError> {
+    if !filter_opts.filter_list {
+        return Ok(false);
+    }
+
+    let workspace = global
+        .workspace
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    // Build CombinedFilter from all filter sources
+    let mut builder = CombinedFilter::builder()
+        .with_glob_patterns(glob_patterns)
+        .map_err(|e| TugError::invalid_args(e.to_string()))?
+        .with_content_enabled(filter_opts.filter_content)
+        .with_workspace_root(&workspace);
+
+    // Add expression filters
+    for expr in &filter_opts.filter_expr {
+        builder = builder
+            .with_expression(expr)
+            .map_err(|e| TugError::invalid_args(e.to_string()))?;
+    }
+
+    // Add JSON filter if present
+    if let Some(ref json) = filter_opts.filter_json {
+        builder = builder
+            .with_json(json)
+            .map_err(|e| TugError::invalid_args(e.to_string()))?;
+    }
+
+    let mut combined_filter = builder.build().map_err(|e| TugError::invalid_args(e.to_string()))?;
+
+    // Collect matching Python files
+    let mut matched_files = Vec::new();
+    collect_python_files_for_filter_list(&workspace, &mut combined_filter, &mut matched_files)?;
+
+    // Sort files for deterministic output
+    matched_files.sort();
+
+    // Build filter summary
+    let json_filter_value = filter_opts
+        .filter_json
+        .as_ref()
+        .and_then(|s| serde_json::from_str(s).ok());
+
+    let filter_summary = FilterSummary::new(
+        glob_patterns.to_vec(),
+        filter_opts.filter_expr.clone(),
+        json_filter_value,
+        filter_opts.filter_content,
+    );
+
+    // Build and emit response
+    let response = FilterListResponse::new(matched_files, filter_summary);
+    emit_response(&response, &mut std::io::stdout())
+        .map_err(|e| TugError::internal(e.to_string()))?;
+    let _ = std::io::stdout().flush();
+
+    Ok(true)
+}
+
+/// Collect Python files matching the combined filter.
+#[cfg(feature = "python")]
+fn collect_python_files_for_filter_list(
+    workspace: &Path,
+    filter: &mut CombinedFilter,
+    files: &mut Vec<String>,
+) -> Result<(), TugError> {
+    use std::fs;
+
+    fn walk_dir(
+        dir: &Path,
+        workspace: &Path,
+        filter: &mut CombinedFilter,
+        files: &mut Vec<String>,
+    ) -> Result<(), TugError> {
+        let entries = fs::read_dir(dir).map_err(|e| {
+            TugError::internal(format!("failed to read directory '{}': {}", dir.display(), e))
+        })?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            // Skip hidden directories and common non-source directories
+            if file_name.starts_with('.')
+                || file_name == "__pycache__"
+                || file_name == "node_modules"
+                || file_name == "target"
+                || file_name == "venv"
+                || file_name == ".venv"
+            {
+                continue;
+            }
+
+            if path.is_dir() {
+                walk_dir(&path, workspace, filter, files)?;
+            } else if path.extension().is_some_and(|ext| ext == "py") {
+                // Get relative path from workspace (filters use relative paths)
+                let relative_path = path.strip_prefix(workspace).unwrap_or(&path);
+
+                // Check if file matches the filter using relative path
+                if filter
+                    .matches(relative_path)
+                    .map_err(|e| TugError::internal(e.to_string()))?
+                {
+                    files.push(relative_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    walk_dir(workspace, workspace, filter, files)
 }
 
 /// Open a session with the given global arguments.
@@ -1912,6 +2049,85 @@ mod tests {
             };
             let result = validate_filter_options(&filter_opts);
             assert!(result.is_ok());
+        }
+
+        // ====================================================================
+        // Filter list tests (Phase 12.7)
+        // ====================================================================
+
+        #[test]
+        fn test_filter_list_response_serialization() {
+            let filter_summary = FilterSummary::new(
+                vec!["src/**/*.py".to_string()],
+                vec!["ext:py".to_string()],
+                None,
+                false,
+            );
+            let response = FilterListResponse::new(
+                vec!["src/main.py".to_string(), "src/lib.py".to_string()],
+                filter_summary,
+            );
+
+            let json = serde_json::to_string(&response).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["status"], "ok");
+            assert_eq!(parsed["count"], 2);
+            assert!(parsed["files"].is_array());
+            assert_eq!(parsed["files"][0], "src/main.py");
+            assert_eq!(parsed["files"][1], "src/lib.py");
+            assert!(parsed["filter_summary"].is_object());
+        }
+
+        #[test]
+        fn test_filter_list_count_matches_files() {
+            let filter_summary = FilterSummary::new(vec![], vec![], None, false);
+            let files = vec![
+                "a.py".to_string(),
+                "b.py".to_string(),
+                "c.py".to_string(),
+            ];
+            let response = FilterListResponse::new(files, filter_summary);
+
+            assert_eq!(response.count, 3);
+            assert_eq!(response.files.len(), 3);
+        }
+
+        #[test]
+        fn test_filter_summary_with_json_filter() {
+            let json_filter = serde_json::json!({
+                "predicates": [{"key": "ext", "op": "eq", "value": "py"}]
+            });
+            let filter_summary = FilterSummary::new(
+                vec![],
+                vec![],
+                Some(json_filter.clone()),
+                true,
+            );
+
+            let json = serde_json::to_string(&filter_summary).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["content_enabled"], true);
+            assert!(parsed["json_filter"].is_object());
+        }
+
+        #[test]
+        fn test_filter_summary_without_json_filter() {
+            let filter_summary = FilterSummary::new(
+                vec!["src/**".to_string()],
+                vec!["ext:py".to_string(), "size<100k".to_string()],
+                None,
+                false,
+            );
+
+            let json = serde_json::to_string(&filter_summary).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            // json_filter should be absent (not null) when None
+            assert!(!json.contains("json_filter"));
+            assert_eq!(parsed["glob_patterns"].as_array().unwrap().len(), 1);
+            assert_eq!(parsed["expressions"].as_array().unwrap().len(), 2);
         }
 
         // ====================================================================
