@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | TBD |
-| Status | draft |
+| Status | complete |
 | Target branch | main |
 | Tracking issue/PR | TBD |
 | Last updated | 2026-01-29 |

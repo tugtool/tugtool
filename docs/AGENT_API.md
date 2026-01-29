@@ -16,13 +16,13 @@ The basic workflow for a rename operation:
 
 ```bash
 # 1. Analyze impact - see what will change (read-only)
-tug analyze-impact rename-symbol --at src/utils.py:42:5 --to transform_data
+tug analyze python rename --at src/utils.py:42:5 --to transform_data
 
 # 2. Review the output - check references and impact
 # The JSON output shows all files and locations that will be modified
 
 # 3. Execute the refactor with verification
-tug run --apply --verify syntax rename-symbol --at src/utils.py:42:5 --to transform_data
+tug apply python rename --at src/utils.py:42:5 --to transform_data --verify syntax
 ```
 
 ## CLI Reference
@@ -53,19 +53,17 @@ These flags are available on refactoring commands (`apply`, `emit`, `analyze`) t
 | `--filter-list` | Flag | Output matched files as JSON and exit (no refactor) |
 | `-- <patterns...>` | Positional | Glob patterns (placed at end of command) |
 
-### Subcommands
+### Commands
 
-| Subcommand | Description | Example |
-|------------|-------------|---------|
-| `snapshot` | Create workspace snapshot | `tug snapshot` |
-| `analyze-impact` | Analyze refactoring impact | `tug analyze-impact rename-symbol --at file:1:5 --to bar` |
-| `run` | Execute refactoring operation | `tug run --apply rename-symbol --at file:1:5 --to bar` |
+| Command | Description | Example |
+|---------|-------------|---------|
+| `apply <lang> <op>` | Apply refactoring (modifies files) | `tug apply python rename --at f.py:1:5 --to bar` |
+| `emit <lang> <op>` | Emit diff without modifying | `tug emit python rename --at f.py:1:5 --to bar` |
+| `analyze <lang> <op>` | Analyze impact (read-only) | `tug analyze python rename --at f.py:1:5 --to bar` |
 | `session status` | Show session status | `tug session status` |
-| `verify` | Run verification on workspace | `tug verify syntax` |
-| `clean` | Clean session resources | `tug clean --workers --cache` |
-| `toolchain <lang> setup` | Set up language toolchain | `tug toolchain python setup` |
-| `toolchain <lang> info` | Show toolchain configuration | `tug toolchain python info` |
-| `toolchain <lang> check` | Verify toolchain is valid | `tug toolchain python check` |
+| `clean` | Clean session resources | `tug clean --cache` |
+| `doctor` | Run environment diagnostics | `tug doctor` |
+| `fixture fetch` | Fetch test fixtures | `tug fixture fetch` |
 
 ### File Filtering
 

@@ -6,6 +6,73 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Phase 12 Complete: Agent-Focused CLI Redesign | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Full phase review (all sections 12.0-12.7)
+- Code-architect agent review of commits 0dc8907..HEAD
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| 12.0-12.6: Core CLI Redesign (`tug <action> <language> <command>`) | Done |
+| 12.7.1: Predicate types (path, name, ext, lang, kind, size, mtime, git_*) | Done |
+| 12.7.2: Expression parser with winnow | Done |
+| 12.7.3: JSON filter schema | Done |
+| 12.7.4: Content predicates with binary detection | Done |
+| 12.7.5: CLI options integration | Done |
+| 12.7.6: Deliverables verification | Done |
+| Step 10: Golden tests for filter system | Done |
+| Binary detection (null-byte heuristic, first 8KB) | Done |
+| Non-UTF-8 file handling (skip gracefully) | Done |
+| `mtime` predicate with RFC3339/YYYY-MM-DD parsing | Done |
+| Default 5MB limit for --filter-content-max-bytes | Done |
+| lang:python filter controls file collection | Done |
+| Git rename parsing fix (-z format) | Done |
+| Plan status updated to complete | Done |
+| AGENT_API.md updated with new command syntax | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/combined.rs` - Binary detection, non-UTF-8 handling
+- `crates/tugtool-core/src/filter/predicate.rs` - mtime predicate, git rename parsing fix
+- `crates/tugtool-python/src/files.rs` - Filter-controlled file collection
+- `crates/tugtool/src/main.rs` - Default content max bytes, lang:python filter
+- `crates/tugtool/tests/golden_tests.rs` - Filter golden tests
+- `CLAUDE.md` - mtime predicate documentation
+- `docs/AGENT_API.md` - Updated Quick Start and Commands sections
+- `plans/phase-12.md` - Status changed to complete
+
+**Files Created:**
+- `crates/tugtool/tests/golden/output_schema/filter_list_response.json`
+- `crates/tugtool/tests/golden/output_schema/filter_expr_error.json`
+- `crates/tugtool/tests/golden/output_schema/filter_json_error.json`
+- `crates/tugtool/tests/golden/output_schema/filter_content_without_flag_error.json`
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1974 tests passed, 0 skipped
+- `cargo clippy --workspace -- -D warnings`: Clean (no warnings)
+
+**Checkpoints Verified:**
+- All 12.6 exit criteria: PASS
+- All 12.7.6 exit criteria: PASS
+- Golden tests for filter errors: PASS
+- Binary file detection: PASS
+- Non-UTF-8 file handling: PASS
+- mtime predicate parsing: PASS
+
+**Key Decisions/Notes:**
+- `mtime` predicate was implemented despite being listed as follow-on in plan (bonus feature)
+- `ctime` predicate explicitly deferred to follow-on work
+- Binary detection uses null-byte heuristic in first 8KB (per plan spec)
+- Non-UTF-8 files return `Ok(None)` instead of erroring (graceful skip)
+- `lang:python` filter added to `build_combined_filter()` so it controls file collection
+- Phase 12 is now COMPLETE - all exit criteria met
+
+---
+
 ## [phase-12.md] Section 12.7.6: Deliverables and Checkpoints | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
