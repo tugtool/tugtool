@@ -1325,42 +1325,42 @@ Spec S08, Table T20, (#file-filtering-spec)
 - Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
 
 **Tasks:**
-- [ ] Define `PredicateKey` enum: `Path`, `Name`, `Ext`, `Lang`, `Kind`, `Size`, `Contains`, `Regex`, `GitStatus`, `GitTracked`, `GitIgnored`, `GitStage`
-- [ ] Define `PredicateOp` enum: `Glob`, `Eq`, `Neq`, `Gt`, `Gte`, `Lt`, `Lte`, `Match`
-- [ ] Define `FilterPredicate` struct with `key`, `op`, `value` fields
-- [ ] Implement `FilterPredicate::evaluate(&self, path: &Path, metadata: Option<&Metadata>, git_state: Option<&GitState>) -> Result<bool, FilterError>`
-- [ ] Implement size parsing with suffixes (bytes, k/K, m/M, g/G)
-- [ ] Add `FilterPredicate::requires_content(&self) -> bool` method
-- [ ] Add `FilterPredicate::requires_git(&self) -> bool` method
-- [ ] Add `FilterError::ContentPredicateWithoutFlag` variant
-- [ ] Define `GitState` struct to hold parsed `git status --porcelain=v1 -z` output
-- [ ] Implement `GitState::load(workspace: &Path) -> Option<GitState>` (returns None if no .git)
-- [ ] Implement git predicate evaluation per Spec S08 semantics
+- [x] Define `PredicateKey` enum: `Path`, `Name`, `Ext`, `Lang`, `Kind`, `Size`, `Contains`, `Regex`, `GitStatus`, `GitTracked`, `GitIgnored`, `GitStage`
+- [x] Define `PredicateOp` enum: `Glob`, `Eq`, `Neq`, `Gt`, `Gte`, `Lt`, `Lte`, `Match`
+- [x] Define `FilterPredicate` struct with `key`, `op`, `value` fields
+- [x] Implement `FilterPredicate::evaluate(&self, path: &Path, metadata: Option<&Metadata>, git_state: Option<&GitState>) -> Result<bool, FilterError>`
+- [x] Implement size parsing with suffixes (bytes, k/K, m/M, g/G)
+- [x] Add `FilterPredicate::requires_content(&self) -> bool` method
+- [x] Add `FilterPredicate::requires_git(&self) -> bool` method
+- [x] Add `FilterError::ContentPredicateWithoutFlag` variant
+- [x] Define `GitState` struct to hold parsed `git status --porcelain=v1 -z` output
+- [x] Implement `GitState::load(workspace: &Path) -> Option<GitState>` (returns None if no .git)
+- [x] Implement git predicate evaluation per Spec S08 semantics
 
 **Tests:**
-- [ ] unit: `test_predicate_path_glob_match`
-- [ ] unit: `test_predicate_path_glob_no_match`
-- [ ] unit: `test_predicate_name_glob`
-- [ ] unit: `test_predicate_ext_eq`
-- [ ] unit: `test_predicate_ext_neq`
-- [ ] unit: `test_predicate_size_gt`
-- [ ] unit: `test_predicate_size_lte`
-- [ ] unit: `test_predicate_size_suffixes_k_m_g`
-- [ ] unit: `test_predicate_requires_content_contains`
-- [ ] unit: `test_predicate_requires_content_regex`
-- [ ] unit: `test_predicate_requires_content_path_false`
-- [ ] unit: `test_predicate_git_tracked_true`
-- [ ] unit: `test_predicate_git_tracked_false`
-- [ ] unit: `test_predicate_git_status_modified`
-- [ ] unit: `test_predicate_git_status_untracked`
-- [ ] unit: `test_predicate_git_stage_staged`
-- [ ] unit: `test_predicate_git_ignored`
-- [ ] unit: `test_predicate_git_no_repo_returns_false`
-- [ ] unit: `test_predicate_git_any_always_true`
+- [x] unit: `test_predicate_path_glob_match`
+- [x] unit: `test_predicate_path_glob_no_match`
+- [x] unit: `test_predicate_name_glob`
+- [x] unit: `test_predicate_ext_eq`
+- [x] unit: `test_predicate_ext_neq`
+- [x] unit: `test_predicate_size_gt`
+- [x] unit: `test_predicate_size_lte`
+- [x] unit: `test_predicate_size_suffixes_k_m_g`
+- [x] unit: `test_predicate_requires_content_contains`
+- [x] unit: `test_predicate_requires_content_regex`
+- [x] unit: `test_predicate_requires_content_path_false`
+- [x] unit: `test_predicate_git_tracked_true`
+- [x] unit: `test_predicate_git_tracked_false`
+- [x] unit: `test_predicate_git_status_modified`
+- [x] unit: `test_predicate_git_status_untracked`
+- [x] unit: `test_predicate_git_stage_staged`
+- [x] unit: `test_predicate_git_ignored`
+- [x] unit: `test_predicate_git_no_repo_returns_false`
+- [x] unit: `test_predicate_git_any_always_true`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core predicate`
-- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+- [x] `cargo nextest run -p tugtool-core predicate`
+- [x] `cargo clippy -p tugtool-core -- -D warnings`
 
 **Rollback:** Delete `predicate.rs`, revert `mod.rs`
 

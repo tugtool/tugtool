@@ -1076,6 +1076,7 @@ dependencies = [
  "globset",
  "hex",
  "libc",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

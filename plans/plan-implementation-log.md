@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 1: Add Predicate Types | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 1 specification (lines 1316-1366)
+- [D11] Default Exclusions Always Apply (line 1147)
+- [D14] Git Predicates Are Supported (line 1159)
+- Spec S08: Filter Expression Language - predicates table and git predicate semantics (lines 1167-1214)
+- Table T20: Filter CLI Options (lines 1257-1268)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `PredicateKey` enum | Done |
+| Define `PredicateOp` enum | Done |
+| Define `FilterPredicate` struct with key, op, value fields | Done |
+| Implement `FilterPredicate::evaluate` method | Done |
+| Implement size parsing with suffixes (bytes, k/K, m/M, g/G) | Done |
+| Add `FilterPredicate::requires_content` method | Done |
+| Add `FilterPredicate::requires_git` method | Done |
+| Add `PredicateError::ContentPredicateWithoutFlag` variant | Done |
+| Define `GitState` struct | Done |
+| Implement `GitState::load` method | Done |
+| Implement git predicate evaluation per Spec S08 | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter/predicate.rs` - Predicate types, evaluation logic, and GitState
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/mod.rs` - Added predicate module and re-exports
+- `crates/tugtool-core/Cargo.toml` - Added `regex = "1"` dependency
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core predicate`: 19 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core predicate`: PASS (19/19 tests)
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- Used `PredicateError` as a separate error type for cleaner separation from `FilterError`
+- The `evaluate` method takes `content: Option<&str>` as a 4th parameter for content predicates
+- Git state loading parses `git status --porcelain=v1 -z` and `git ls-files -z` output
+- The `"any"` value for git predicates always returns true, even without a git repo (per [D14])
+- Renamed `from_str` methods to `parse` to avoid clippy warning about trait name conflict
+
+---
+
 ## [phase-12.md] Step 0: Refactor filter.rs to Directory Module | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
