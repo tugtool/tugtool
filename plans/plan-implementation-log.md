@@ -6,6 +6,48 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Plan Creation: Agent-Focused CLI Redesign | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `crates/tugtool/src/main.rs` - Current CLI structure
+- `crates/tugtool/src/cli.rs` - Current CLI implementation
+- `CLAUDE.md` - Project documentation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define new command structure (`tug <action> <language> <command>`) | Done |
+| Design three actions: `apply`, `emit`, `analyze` | Done |
+| Design optional file filter spec with gitignore syntax | Done |
+| Define Clap derive macro structure (per-action, per-language enums) | Done |
+| Specify `emit --json` schema (Spec S07) with extensible metadata | Done |
+| Define extensibility principles for future commands | Done |
+| Distinguish mutation commands from query-only commands | Done |
+| Document error codes including "rust not implemented" | Done |
+| Specify `--verify`/`--no-verify` conflict resolution | Done |
+| Document `--workspace` global option | Done |
+| Create execution steps (0-7) with checkpoints | Done |
+| Define test cases for new CLI structure | Done |
+| Review and fix internal inconsistencies | Done |
+
+**Files Created:**
+- `plans/phase-12.md` - Complete plan for agent-focused CLI redesign
+
+**Key Decisions/Notes:**
+- **D01**: Three actions only (`apply`, `emit`, `analyze`) - no `--dry-run` or `--format` flags
+- **D02**: Language is a required positional argument
+- **D03**: File filters are optional; default to all language-appropriate files
+- **D07**: `emit` outputs plain diff by default; `--json` wraps in extensible envelope
+- **D08**: Long-form options only (no short aliases) for agent clarity
+- **Extensibility Principle 3**: Mutation commands exist for all three actions; query commands (`callers`, `references`) exist only for `analyze`
+- **Clap Structure**: Per-action, per-language enums make invalid states unrepresentable
+- **No Migration Required**: Zero external users, clean slate replacement
+
+---
+
 ## [phase-11E.md] Section 11E.5: Deliverables and Checkpoints | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
