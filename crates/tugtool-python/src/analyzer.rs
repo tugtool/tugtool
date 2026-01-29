@@ -73,6 +73,7 @@ use tugtool_core::patch::{ContentHash, FileId, Span};
 
 use crate::alias::AliasGraph;
 use crate::cross_file_types::{lookup_import_target, CrossFileTypeCache, ImportTargetKind};
+use crate::type_narrowing::{type_of_with_narrowing, NarrowingContext};
 use crate::type_tracker::TypeTracker;
 use crate::types::{BindingInfo, ScopeInfo};
 use std::collections::{HashMap, HashSet};
@@ -356,6 +357,8 @@ pub struct FileAnalysis {
     pub call_sites: Vec<tugtool_python_cst::CallSiteInfo>,
     /// Class inheritance information (class name -> base class names).
     pub class_hierarchies: Vec<tugtool_python_cst::ClassInheritanceInfo>,
+    /// isinstance checks for type narrowing.
+    pub isinstance_checks: Vec<tugtool_python_cst::IsInstanceCheck>,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -1576,6 +1579,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         attribute_accesses: native_result.attribute_accesses,
         call_sites: native_result.call_sites,
         class_hierarchies: native_result.class_inheritance,
+        isinstance_checks: native_result.isinstance_checks,
     })
 }
 
@@ -3659,11 +3663,13 @@ impl PythonAdapter {
             tracker,
             scoped_symbol_map,
             symbol_kinds,
-            &HashMap::new(), // No import targets in legacy mode
+            &HashMap::new(), // No import targets
             cross_file_map,
             None, // No cross-file cache
             None, // No workspace root
             0,    // Initial depth
+            None, // No narrowing context
+            None, // No site span
         )
     }
 
@@ -3687,6 +3693,8 @@ impl PythonAdapter {
     /// - `cross_file_cache`: Optional cache for loading type info from other files
     /// - `workspace_root`: Workspace root for relative path resolution
     /// - `depth`: Current cross-file resolution depth (for limiting chain length)
+    /// - `narrowing`: Optional narrowing context from isinstance checks
+    /// - `site_span`: Optional span of the usage site (for narrowing scope check)
     #[allow(clippy::too_many_arguments)]
     fn resolve_receiver_path_with_cross_file(
         &self,
@@ -3700,6 +3708,8 @@ impl PythonAdapter {
         cross_file_cache: Option<&mut CrossFileTypeCache>,
         workspace_root: Option<&Path>,
         depth: usize,
+        narrowing: Option<&NarrowingContext>,
+        site_span: Option<Span>,
     ) -> Option<ResolvedSymbol> {
         use crate::cross_file_types::MAX_CROSS_FILE_DEPTH;
 
@@ -3722,8 +3732,16 @@ impl PythonAdapter {
         for (step_idx, step) in receiver_path.steps.iter().enumerate() {
             match step {
                 ReceiverStep::Name { value: name } => {
-                    if let Some(type_str) = tracker.type_of(scope_path, name) {
-                        // Found typed variable
+                    // Try narrowing-aware type lookup if context and site_span are available
+                    let type_str = match (narrowing, site_span) {
+                        (Some(ctx), Some(span)) => {
+                            type_of_with_narrowing(scope_path, name, span, ctx, tracker)
+                        }
+                        _ => tracker.type_of(scope_path, name),
+                    };
+
+                    if let Some(type_str) = type_str {
+                        // Found typed variable (possibly narrowed)
                         current_type = Some(type_str.to_string());
                         last_name_was_class = is_class_in_scope(scope_path, name, symbol_kinds);
                         last_name_is_unresolved_callable = false;
@@ -4127,6 +4145,8 @@ impl PythonAdapter {
                 Some(cache),
                 Some(workspace_root),
                 depth + 1,
+                None, // No narrowing in cross-file context
+                None, // No site span in cross-file context
             );
         }
 
@@ -4164,6 +4184,8 @@ impl PythonAdapter {
                     Some(cache),
                     Some(workspace_root),
                     depth + 1,
+                    None, // Narrowing is per-file, not cross-file
+                    None,
                 );
             }
         }
@@ -4269,6 +4291,8 @@ impl PythonAdapter {
                     Some(cache),
                     Some(workspace_root),
                     depth + 1,
+                    None, // Narrowing is per-file, not cross-file
+                    None,
                 );
             }
             Some(SymbolKind::Function) => {
@@ -4301,6 +4325,8 @@ impl PythonAdapter {
                             Some(cache),
                             Some(workspace_root),
                             depth + 1,
+                            None, // Narrowing is per-file, not cross-file
+                            None,
                         );
                     }
                 }
@@ -4454,6 +4480,9 @@ impl PythonAdapter {
         >,
         cross_file_cache: Option<&mut CrossFileTypeCache>,
         workspace_root: Option<&Path>,
+        // Type narrowing parameters (optional)
+        narrowing: Option<&NarrowingContext>,
+        site_span: Option<Span>,
     ) -> Option<ResolvedSymbol> {
         // If we have a structured path from CST, use ONLY TypeNode-based resolution.
         // This is the authoritative answer - no fallback to string-based resolution.
@@ -4478,6 +4507,8 @@ impl PythonAdapter {
                     Some(cache),
                     Some(ws_root),
                     0, // Initial depth
+                    narrowing,
+                    site_span,
                 );
             }
 
@@ -4583,6 +4614,9 @@ impl PythonAdapter {
             path: analysis.path.clone(),
             ..Default::default()
         };
+
+        // Build narrowing context from isinstance checks
+        let narrowing = crate::type_narrowing::build_narrowing_context(&analysis.isinstance_checks);
 
         // Convert scopes
         for scope in &analysis.scopes {
@@ -4865,10 +4899,11 @@ impl PythonAdapter {
                 &symbol_kinds,
                 &symbol_name_to_index,
                 cross_file_map,
-                // Cross-file resolution not yet wired up in convert_file_analysis
                 None, // import_targets
                 None, // cross_file_cache
                 None, // workspace_root
+                Some(&narrowing),
+                attr.attr_span,
             );
 
             // Split resolution into local index vs cross-file qualified name
@@ -4920,10 +4955,11 @@ impl PythonAdapter {
                         &symbol_kinds,
                         &symbol_name_to_index,
                         cross_file_map,
-                        // Cross-file resolution not yet wired up in convert_file_analysis
                         None, // import_targets
                         None, // cross_file_cache
                         None, // workspace_root
+                        Some(&narrowing),
+                        call.span,
                     )
                 });
 

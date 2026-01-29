@@ -44,6 +44,9 @@ use tugtool_python_cst::{
     ImportCollector,
     ImportInfo as CstImportInfo,
     InheritanceCollector,
+    // isinstance type narrowing
+    IsInstanceCheck as CstIsInstanceCheck,
+    IsInstanceCollector,
     MethodCallCollector,
     MethodCallInfo as CstMethodCallInfo,
     ReferenceCollector,
@@ -128,6 +131,10 @@ pub struct NativeAnalysisResult {
     // P2 analysis (dynamic pattern detection)
     /// Dynamic patterns that may affect rename safety.
     pub dynamic_patterns: Vec<CstDynamicPatternInfo>,
+
+    // isinstance checks for type narrowing
+    /// isinstance checks detected in conditional expressions.
+    pub isinstance_checks: Vec<CstIsInstanceCheck>,
 }
 
 // ============================================================================
@@ -304,6 +311,9 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     // P2: Collect dynamic patterns
     let dynamic_patterns = DynamicPatternDetector::collect(&parsed.module, &parsed.positions);
 
+    // Collect isinstance checks for type narrowing
+    let isinstance_checks = IsInstanceCollector::collect(&parsed.module, &parsed.positions);
+
     Ok(NativeAnalysisResult {
         // P0
         scopes,
@@ -321,6 +331,8 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
         call_sites,
         // P2
         dynamic_patterns,
+        // Type narrowing
+        isinstance_checks,
     })
 }
 

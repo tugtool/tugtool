@@ -46,6 +46,7 @@ pub mod files;
 pub mod lookup;
 pub mod mro;
 pub mod ops;
+pub mod type_narrowing;
 pub mod type_tracker;
 pub mod types;
 pub mod validation;
@@ -53,3 +54,6 @@ pub mod verification;
 
 // Re-export PythonAdapter and options for easy access
 pub use analyzer::{PythonAdapter, PythonAnalyzerOptions};
+
+// Re-export type narrowing for easy access
+pub use type_narrowing::{build_narrowing_context, NarrowingContext, type_of_with_narrowing};

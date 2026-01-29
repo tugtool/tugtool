@@ -1946,27 +1946,27 @@ grep -A 20 "pub struct Match<" crates/tugtool-python-cst/src/nodes/statement.rs 
 - Integration with cst_bridge
 
 **Tasks:**
-- [ ] Create `crates/tugtool-python/src/type_narrowing.rs`
-- [ ] Implement `NarrowingContext` with narrow/get methods
-- [ ] Implement `type_of_with_narrowing` function
-- [ ] Implement span-based scope checking: check if site_span ⊆ branch_span (per D09)
-- [ ] Apply span check for both attribute accesses and call sites
-- [ ] Integrate IsInstanceCollector into cst_bridge analysis
-- [ ] Add optional `NarrowingContext` parameter to `resolve_receiver_path`
-- [ ] Use `type_of_with_narrowing` inside receiver resolution for Name steps
-- [ ] Export from lib.rs
+- [x] Create `crates/tugtool-python/src/type_narrowing.rs`
+- [x] Implement `NarrowingContext` with narrow/get methods
+- [x] Implement `type_of_with_narrowing` function
+- [x] Implement span-based scope checking: check if site_span ⊆ branch_span (per D09)
+- [x] Apply span check for both attribute accesses and call sites
+- [x] Integrate IsInstanceCollector into cst_bridge analysis
+- [x] Add optional `NarrowingContext` parameter to `resolve_receiver_path`
+- [x] Use `type_of_with_narrowing` inside receiver resolution for Name steps
+- [x] Export from lib.rs
 
 **Tests:**
-- [ ] Unit: NarrowingContext::narrow stores narrowing
-- [ ] Unit: NarrowingContext::get_narrowed_type retrieves narrowing
-- [ ] Unit: type_of_with_narrowing returns narrowed type when available
-- [ ] Unit: type_of_with_narrowing falls back to tracker when not narrowed
-- [ ] Integration: isinstance(x, Handler) narrows x to Handler in branch
-- [ ] Integration: Narrowing does not persist outside if-branch (span check)
+- [x] Unit: NarrowingContext::narrow stores narrowing
+- [x] Unit: NarrowingContext::get_narrowed_type retrieves narrowing
+- [x] Unit: type_of_with_narrowing returns narrowed type when available
+- [x] Unit: type_of_with_narrowing falls back to tracker when not narrowed
+- [x] Integration: isinstance(x, Handler) narrows x to Handler in branch
+- [x] Integration: Narrowing does not persist outside if-branch (span check)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python narrowing`
-- [ ] `cargo nextest run -p tugtool-python isinstance`
+- [x] `cargo nextest run -p tugtool-python narrowing`
+- [x] `cargo nextest run -p tugtool-python isinstance`
 
 **Rollback:** Revert commit
 

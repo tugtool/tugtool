@@ -2021,6 +2021,7 @@ class Child(Parent):
             attribute_accesses: vec![],
             call_sites: vec![],
             class_hierarchies: vec![],
+            isinstance_checks: vec![],
         }
     }
 

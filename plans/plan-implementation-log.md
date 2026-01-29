@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-11E.md] Step 6: Implement NarrowingContext and Integration | COMPLETE | 2026-01-28
+
+**Completed:** 2026-01-28
+
+**References Reviewed:**
+- `plans/phase-11E.md` - Step 6 specification and design decisions D03, D09
+- `crates/tugtool-python/src/type_tracker.rs` - TypeTracker type_of implementation
+- `crates/tugtool-python/src/analyzer.rs` - resolve_receiver_path_with_cross_file function
+- `crates/tugtool-python-cst/src/visitor/isinstance.rs` - IsInstanceCollector and IsInstanceCheck
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `crates/tugtool-python/src/type_narrowing.rs` | Done |
+| Implement `NarrowingContext` with narrow/get methods | Done |
+| Implement `type_of_with_narrowing` function | Done |
+| Implement span-based scope checking (site_span ⊆ branch_span) | Done |
+| Apply span check for attribute accesses and call sites | Done |
+| Integrate IsInstanceCollector into cst_bridge analysis | Done |
+| Add optional `NarrowingContext` parameter to `resolve_receiver_path` | Done |
+| Use `type_of_with_narrowing` inside receiver resolution for Name steps | Done |
+| Export from lib.rs | Done |
+| Add `build_narrowing_context` function | Done |
+| Add `isinstance_checks` field to `FileAnalysis` | Done |
+| Wire up narrowing in `convert_file_analysis` | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/type_narrowing.rs` - NarrowingContext struct, type_of_with_narrowing function, build_narrowing_context function, span containment check
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added type_narrowing module and exports
+- `crates/tugtool-python/src/cst_bridge.rs` - Added IsInstanceCollector import and isinstance_checks collection
+- `crates/tugtool-python/src/analyzer.rs` - Added FileAnalysis.isinstance_checks field, added narrowing/site_span parameters to resolve_receiver_path_with_cross_file and resolve_receiver_to_symbol_with_path, wired up narrowing context building and passing
+- `crates/tugtool-python/src/cross_file_types.rs` - Added isinstance_checks to test helper FileAnalysis initializer
+- `crates/tugtool-python/src/ops/rename.rs` - Added isinstance_checks to test helper FileAnalysis initializers
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python narrowing`: 14 tests passed
+- `cargo nextest run -p tugtool-python isinstance`: 3 tests passed
+- `cargo nextest run --workspace`: 1916 tests passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python narrowing`: PASS (14 tests)
+- `cargo nextest run -p tugtool-python isinstance`: PASS (3 tests)
+
+**Key Decisions/Notes:**
+- Used code-architect agent to devise tactical plan before implementation
+- NarrowingContext built once per file from isinstance_checks in convert_file_analysis
+- site_span passed through resolution chain: attr_span for AttributeAccessInfo, call.span for CallSiteInfo
+- Cross-file recursive resolution calls pass None for narrowing (narrowing is per-file, not cross-file)
+- For tuple isinstance checks (multiple types), narrows to first type for simplicity
+
+---
+
 ## [phase-11E.md] Step 5C: Add node_id to Remaining Compound Statements | COMPLETE | 2026-01-28
 
 **Completed:** 2026-01-28
