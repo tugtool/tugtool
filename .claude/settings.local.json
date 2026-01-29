@@ -279,7 +279,9 @@
       "Bash(then .tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v)",
       "Bash(else echo \"Temporale fixture or venv not set up. Skipping.\")",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug emit python rename:*)",
-      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug:*)"
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug:*)",
+      "WebFetch(domain:rope.readthedocs.io)",
+      "WebFetch(domain:www.jetbrains.com)"
     ],
     "deny": [],
     "ask": []
