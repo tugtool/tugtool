@@ -237,7 +237,7 @@ struct FilterOptions {
     /// Maximum file size for content predicates (bytes).
     ///
     /// Files larger than this are skipped for content matching.
-    /// Default: no limit.
+    /// Default: 5MB when --filter-content is set.
     #[arg(long, value_name = "BYTES")]
     filter_content_max_bytes: Option<u64>,
 
@@ -1289,23 +1289,40 @@ fn validate_filter_options(filter_opts: &FilterOptions) -> Result<(), TugError> 
 /// Build a CombinedFilter from FilterOptions and glob patterns.
 ///
 /// Combines all filter sources:
+/// - Default `lang:python` expression (always added for Python operations)
 /// - Glob patterns from `-- <patterns...>`
 /// - Expression filters from `--filter`
 /// - JSON filter from `--filter-json`
 /// - Filter file content from `--filter-file` + `--filter-file-format`
 ///
 /// All sources are combined with logical AND per [D09].
+///
+/// The `lang:python` expression ensures only Python files (.py, .pyi) are
+/// collected. This makes the `lang` predicate meaningful rather than cosmetic.
 #[cfg(feature = "python")]
 fn build_combined_filter(
     filter_opts: &FilterOptions,
     glob_patterns: &[String],
     workspace_root: &Path,
 ) -> Result<CombinedFilter, TugError> {
+    const DEFAULT_FILTER_CONTENT_MAX_BYTES: u64 = 5 * 1024 * 1024;
+    let content_max_bytes = if filter_opts.filter_content {
+        filter_opts
+            .filter_content_max_bytes
+            .or(Some(DEFAULT_FILTER_CONTENT_MAX_BYTES))
+    } else {
+        filter_opts.filter_content_max_bytes
+    };
+
     let mut builder = CombinedFilter::builder()
         .with_glob_patterns(glob_patterns)
         .map_err(|e| TugError::invalid_args(e.to_string()))?
+        // Add default lang:python filter - the filter is the single source of truth
+        // for file collection, not hardcoded extension checks
+        .with_expression("lang:python")
+        .map_err(|e| TugError::invalid_args(e.to_string()))?
         .with_content_enabled(filter_opts.filter_content)
-        .with_content_max_bytes(filter_opts.filter_content_max_bytes)
+        .with_content_max_bytes(content_max_bytes)
         .with_workspace_root(workspace_root);
 
     // Add expression filters from --filter
@@ -1462,11 +1479,12 @@ fn collect_python_files_for_filter_list(
 
             if path.is_dir() {
                 walk_dir(&path, workspace, filter, files)?;
-            } else if path.extension().is_some_and(|ext| ext == "py") {
+            } else {
                 // Get relative path from workspace (filters use relative paths)
                 let relative_path = path.strip_prefix(workspace).unwrap_or(&path);
 
-                // Check if file matches the filter using relative path
+                // The filter is the single source of truth for file selection
+                // (lang:python is added by build_combined_filter)
                 if filter
                     .matches(relative_path)
                     .map_err(|e| TugError::internal(e.to_string()))?

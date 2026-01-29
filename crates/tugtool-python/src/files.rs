@@ -160,6 +160,10 @@ pub fn collect_python_files_filtered(
 /// - JSON filters from `--filter-json`
 /// - Content predicates (when `--filter-content` is enabled)
 ///
+/// **Important:** The filter is the single source of truth for file selection.
+/// Callers should add a `lang:python` expression to the filter if they want
+/// only Python files. This function does not hardcode any extension checks.
+///
 /// Default exclusions (`.git`, `__pycache__`, `venv`, etc.) are always applied
 /// by the CombinedFilter internally.
 ///
@@ -169,8 +173,7 @@ pub fn collect_python_files_filtered(
 /// use tugtool_core::filter::CombinedFilter;
 ///
 /// let mut filter = CombinedFilter::builder()
-///     .with_glob_patterns(&["src/**/*.py".to_string()])?
-///     .with_expression("ext:py")?
+///     .with_expression("lang:python")?  // Filter to Python files
 ///     .build()?;
 /// let files = collect_python_files_with_combined_filter(workspace_root, &mut filter)?;
 /// ```
@@ -187,18 +190,19 @@ pub fn collect_python_files_with_combined_filter(
     {
         let path = entry.path();
 
+        // Skip directories
+        if path.is_dir() {
+            continue;
+        }
+
         // Get relative path first - filters use workspace-relative paths
         let rel_path = match path.strip_prefix(workspace_root) {
             Ok(p) => p,
             Err(_) => continue, // Skip files outside workspace root
         };
 
-        // Only consider Python files
-        if path.extension().is_none_or(|ext| ext != "py") {
-            continue;
-        }
-
-        // Apply combined filter (includes default exclusions)
+        // Apply combined filter (includes default exclusions and lang filter)
+        // The filter is the single source of truth - no hardcoded extension checks
         match filter.matches(rel_path) {
             Ok(true) => {
                 // File passes all filters

@@ -349,6 +349,7 @@ Filter expressions provide powerful file selection beyond simple glob patterns. 
 | `lang` | Language tag | `lang:python` |
 | `kind` | `file` or `dir` | `kind:file` |
 | `size` | File size in bytes | `size>10k`, `size<=2m` |
+| `mtime` | File modified time | `mtime>2024-01-01`, `mtime<=2024-12-31T23:59:59Z` |
 | `contains` | Content substring | `contains:"TODO"` |
 | `regex` | Content regex | `regex:/@deprecated\b/` |
 | `git_status` | Git status | `git_status:modified`, `git_status:untracked` |
@@ -364,8 +365,8 @@ Filter expressions provide powerful file selection beyond simple glob patterns. 
 | `~` | Regex match | `name~test_\d+\.py` |
 | `=` | Exact equality | `ext=py` |
 | `!=` | Not equal | `ext!=pyc` |
-| `>`, `>=` | Greater than | `size>1m` |
-| `<`, `<=` | Less than | `size<=100k` |
+| `>`, `>=` | Greater than | `size>1m`, `mtime>2024-01-01` |
+| `<`, `<=` | Less than | `size<=100k`, `mtime<2024-12-31` |
 
 **Combinators:**
 
@@ -488,6 +489,9 @@ tug apply python rename --at f.py:1:5 --to bar --filter "path:src/**" --filter-l
 
 # Large files only
 --filter "size>50k"
+
+# Recently modified files (after a date)
+--filter "mtime>2024-01-01"
 
 # Multiple conditions
 --filter "ext:py" --filter "path:src/**" --filter "not name:*_test.py"

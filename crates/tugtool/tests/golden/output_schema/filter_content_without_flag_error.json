@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": 2,
+    "message": "invalid arguments: content predicate requires --filter-content flag"
+  },
+  "schema_version": "1",
+  "status": "error"
+}

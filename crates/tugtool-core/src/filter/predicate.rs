@@ -11,6 +11,7 @@
 //! - `lang` - Language tag matching
 //! - `kind` - File or directory
 //! - `size` - File size comparisons
+//! - `mtime` - File modified time comparisons
 //! - `contains` - Content substring (requires `--filter-content`)
 //! - `regex` - Content regex (requires `--filter-content`)
 //! - `git_status` - Git status (modified, untracked, etc.)
@@ -69,6 +70,8 @@ pub enum PredicateKey {
     Contains,
     /// Content regex search (requires --filter-content).
     Regex,
+    /// Modified time comparison (requires metadata).
+    Mtime,
     /// Git status (modified, untracked, added, deleted, renamed, conflicted).
     GitStatus,
     /// Whether file is tracked by git.
@@ -91,6 +94,7 @@ impl PredicateKey {
             "size" => Some(PredicateKey::Size),
             "contains" => Some(PredicateKey::Contains),
             "regex" => Some(PredicateKey::Regex),
+            "mtime" => Some(PredicateKey::Mtime),
             "git_status" => Some(PredicateKey::GitStatus),
             "git_tracked" => Some(PredicateKey::GitTracked),
             "git_ignored" => Some(PredicateKey::GitIgnored),
@@ -117,7 +121,10 @@ impl PredicateKey {
 
     /// Returns true if this predicate requires file metadata.
     pub fn requires_metadata(&self) -> bool {
-        matches!(self, PredicateKey::Kind | PredicateKey::Size)
+        matches!(
+            self,
+            PredicateKey::Kind | PredicateKey::Size | PredicateKey::Mtime
+        )
     }
 }
 
@@ -265,6 +272,7 @@ impl FilterPredicate {
             PredicateKey::Size => self.evaluate_size(metadata),
             PredicateKey::Contains => self.evaluate_contains(content),
             PredicateKey::Regex => self.evaluate_regex(content),
+            PredicateKey::Mtime => self.evaluate_mtime(metadata),
             PredicateKey::GitStatus => self.evaluate_git_status(path, git_state),
             PredicateKey::GitTracked => self.evaluate_git_tracked(path, git_state),
             PredicateKey::GitIgnored => self.evaluate_git_ignored(path, git_state),
@@ -336,6 +344,27 @@ impl FilterPredicate {
         let size = metadata.map(|m| m.len()).unwrap_or(0);
         let target = parse_size(&self.value)?;
         Ok(apply_op_numeric(self.op, size, target))
+    }
+
+    fn evaluate_mtime(&self, metadata: Option<&Metadata>) -> Result<bool, PredicateError> {
+        let metadata = match metadata {
+            Some(m) => m,
+            None => return Ok(false),
+        };
+
+        let modified = metadata
+            .modified()
+            .map_err(|e| PredicateError::InvalidValue {
+                key: "mtime".to_string(),
+                value: self.value.clone(),
+                message: e.to_string(),
+            })?;
+
+        let modified_dt: chrono::DateTime<chrono::Utc> = modified.into();
+        let actual = modified_dt.timestamp_millis();
+        let expected = parse_mtime_value(&self.value)?;
+
+        Ok(apply_op_numeric_i64(self.op, actual, expected))
     }
 
     fn evaluate_contains(&self, content: Option<&str>) -> Result<bool, PredicateError> {
@@ -509,6 +538,17 @@ fn apply_op_numeric(op: PredicateOp, actual: u64, expected: u64) -> bool {
     }
 }
 
+fn apply_op_numeric_i64(op: PredicateOp, actual: i64, expected: i64) -> bool {
+    match op {
+        PredicateOp::Glob | PredicateOp::Eq | PredicateOp::Match => actual == expected,
+        PredicateOp::Neq => actual != expected,
+        PredicateOp::Gt => actual > expected,
+        PredicateOp::Gte => actual >= expected,
+        PredicateOp::Lt => actual < expected,
+        PredicateOp::Lte => actual <= expected,
+    }
+}
+
 /// Parse a size value with optional suffix (k/K, m/M, g/G).
 ///
 /// Examples:
@@ -541,6 +581,45 @@ pub fn parse_size(value: &str) -> Result<u64, PredicateError> {
     })?;
 
     Ok(num * multiplier)
+}
+
+/// Parse a modified time value (RFC3339 or YYYY-MM-DD) to milliseconds since epoch.
+fn parse_mtime_value(value: &str) -> Result<i64, PredicateError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(PredicateError::InvalidValue {
+            key: "mtime".to_string(),
+            value: value.to_string(),
+            message: "empty mtime value".to_string(),
+        });
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Ok(dt.timestamp_millis());
+    }
+
+    if let Ok(date_time) = chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S") {
+        let dt = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(date_time, chrono::Utc);
+        return Ok(dt.timestamp_millis());
+    }
+
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        let date_time = date
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| PredicateError::InvalidValue {
+                key: "mtime".to_string(),
+                value: value.to_string(),
+                message: "invalid date value".to_string(),
+            })?;
+        let dt = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(date_time, chrono::Utc);
+        return Ok(dt.timestamp_millis());
+    }
+
+    Err(PredicateError::InvalidValue {
+        key: "mtime".to_string(),
+        value: value.to_string(),
+        message: "expected RFC3339 or YYYY-MM-DD".to_string(),
+    })
 }
 
 /// Git file status from porcelain output.
@@ -661,6 +740,7 @@ impl GitState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::NamedTempFile;
 
     // =========================================================================
     // Path Glob Tests
@@ -761,6 +841,26 @@ mod tests {
         assert_eq!(parse_size("5M").unwrap(), 5 * 1024 * 1024);
         assert_eq!(parse_size("2g").unwrap(), 2 * 1024 * 1024 * 1024);
         assert_eq!(parse_size("2G").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    // =========================================================================
+    // Modified Time Tests
+    // =========================================================================
+
+    #[test]
+    fn test_predicate_mtime_comparisons() {
+        let file = NamedTempFile::new().unwrap();
+        let metadata = file.as_file().metadata().unwrap();
+
+        let pred_gt = FilterPredicate::new(PredicateKey::Mtime, PredicateOp::Gt, "1970-01-01");
+        assert!(pred_gt
+            .evaluate(file.path(), Some(&metadata), None, None)
+            .unwrap());
+
+        let pred_lt = FilterPredicate::new(PredicateKey::Mtime, PredicateOp::Lt, "2999-01-01");
+        assert!(pred_lt
+            .evaluate(file.path(), Some(&metadata), None, None)
+            .unwrap());
     }
 
     // =========================================================================

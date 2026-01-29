@@ -813,3 +813,114 @@ fn test_rust_not_implemented() {
         "Should mention not implemented"
     );
 }
+
+// ============================================================================
+// Filter System Golden Tests (Phase 12, Step 10)
+// ============================================================================
+
+/// Test that --filter-list response has correct schema.
+#[test]
+fn golden_filter_list_response() {
+    let python = find_python_for_tests();
+
+    let result = run_golden_test(
+        &[
+            "apply",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_name",
+            "--filter-list",
+        ],
+        "filter_list_response.json",
+        Some("rename_function"),
+        &python,
+    );
+
+    if let Err(e) = result {
+        panic!("Golden test failed: {}", e);
+    }
+}
+
+/// Test that filter expression parse errors have correct format.
+#[test]
+fn golden_filter_expr_error() {
+    let python = find_python_for_tests();
+
+    let result = run_golden_test(
+        &[
+            "apply",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_name",
+            "--filter",
+            "invalid:::syntax",
+        ],
+        "filter_expr_error.json",
+        Some("rename_function"),
+        &python,
+    );
+
+    if let Err(e) = result {
+        panic!("Golden test failed: {}", e);
+    }
+}
+
+/// Test that JSON filter parse errors have correct format.
+#[test]
+fn golden_filter_json_error() {
+    let python = find_python_for_tests();
+
+    let result = run_golden_test(
+        &[
+            "apply",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_name",
+            "--filter-json",
+            "{invalid json}",
+        ],
+        "filter_json_error.json",
+        Some("rename_function"),
+        &python,
+    );
+
+    if let Err(e) = result {
+        panic!("Golden test failed: {}", e);
+    }
+}
+
+/// Test that content predicate without --filter-content flag produces correct error.
+#[test]
+fn golden_filter_content_without_flag_error() {
+    let python = find_python_for_tests();
+
+    let result = run_golden_test(
+        &[
+            "apply",
+            "python",
+            "rename",
+            "--at",
+            "input.py:1:5",
+            "--to",
+            "new_name",
+            "--filter",
+            "contains:TODO",
+        ],
+        "filter_content_without_flag_error.json",
+        Some("rename_function"),
+        &python,
+    );
+
+    if let Err(e) = result {
+        panic!("Golden test failed: {}", e);
+    }
+}

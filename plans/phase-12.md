@@ -827,8 +827,8 @@ enum AnalyzeOutput {
 - Modified: `crates/tugtool/src/main.rs` (new enum definitions)
 
 **Tasks:**
-- [ ] Define `Action` enum: `Apply`, `Emit`, `Analyze`
-- [ ] Define `Language` enum: `Python`, `Rust`
+- [x] Define `Action` enum: `Apply`, `Emit`, `Analyze` *(superseded by per-action enums: ApplyLanguage, EmitLanguage, AnalyzeLanguage)*
+- [x] Define `Language` enum: `Python`, `Rust` *(superseded by per-action enums)*
 - [x] Define `PythonCommand` enum with `Rename` variant
 - [x] Define `RustCommand` enum (placeholder)
 - [x] Update `Cli` struct to use new subcommand structure
@@ -1718,22 +1718,22 @@ Spec S10, (#file-filtering-spec)
 - New: Golden test files for filter outputs
 
 **Tasks:**
-- [ ] Add golden test for `--filter-list` response schema
-- [ ] Add golden test for filter expression error message format
-- [ ] Add golden test for JSON filter error message format
-- [ ] Add golden test for content predicate without flag error
-- [ ] Verify expression/JSON parity (same filter logic yields same file set)
-- [ ] Add drift prevention test for `FilterListResponse` schema
+- [x] Add golden test for `--filter-list` response schema
+- [x] Add golden test for filter expression error message format
+- [x] Add golden test for JSON filter error message format
+- [x] Add golden test for content predicate without flag error
+- [x] Verify expression/JSON parity (same filter logic yields same file set) *(covered by filter system unit tests)*
+- [x] Add drift prevention test for `FilterListResponse` schema *(golden test infrastructure detects drift)*
 
 **Tests:**
-- [ ] golden: `filter_list_response.json`
-- [ ] golden: `filter_expr_error.json`
-- [ ] golden: `filter_json_error.json`
-- [ ] golden: `filter_content_without_flag_error.json`
+- [x] golden: `filter_list_response.json`
+- [x] golden: `filter_expr_error.json`
+- [x] golden: `filter_json_error.json`
+- [x] golden: `filter_content_without_flag_error.json`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool golden`
-- [ ] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if needed to create baselines)
+- [x] `cargo nextest run -p tugtool golden`
+- [x] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if needed to create baselines)
 
 **Rollback:** Delete golden test files
 

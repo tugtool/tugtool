@@ -52,6 +52,30 @@ pub enum CombinedFilterError {
     ContentReadError(String),
 }
 
+/// Size limit for binary detection (8KB as per plan spec).
+const BINARY_DETECTION_BYTES: usize = 8 * 1024;
+
+/// Read file content, returning None if the file appears to be binary.
+///
+/// Binary detection uses null-byte heuristic: if the first 8KB contains \x00,
+/// the file is considered binary and skipped for content predicates.
+fn read_text_content(path: &Path) -> Result<Option<String>, CombinedFilterError> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| CombinedFilterError::ContentReadError(format!("{}: {}", path.display(), e)))?;
+
+    // Check for null bytes in first 8KB (binary detection)
+    let check_len = bytes.len().min(BINARY_DETECTION_BYTES);
+    if bytes[..check_len].contains(&0) {
+        return Ok(None); // Binary file
+    }
+
+    // Convert to string (skip non-UTF-8 content)
+    match String::from_utf8(bytes) {
+        Ok(content) => Ok(Some(content)),
+        Err(_) => Ok(None),
+    }
+}
+
 /// Combined filter that unifies all filter sources.
 ///
 /// Use the builder pattern via `CombinedFilter::builder()` to construct.
@@ -268,11 +292,11 @@ impl CombinedFilter {
             }
         }
 
-        // Read content from workspace-rooted path
-        let content = std::fs::read_to_string(full_path).map_err(|e| {
-            CombinedFilterError::ContentReadError(format!("{}: {}", full_path.display(), e))
-        })?;
-        Ok(ContentAccessOwned::Available(content))
+        // Read content with binary detection (null-byte heuristic in first 8KB)
+        match read_text_content(full_path)? {
+            Some(content) => Ok(ContentAccessOwned::Available(content)),
+            None => Ok(ContentAccessOwned::Unavailable), // Binary file, skip
+        }
     }
 
     /// Resolve the full path for content and metadata access.
@@ -528,6 +552,40 @@ mod tests {
             .unwrap();
 
         assert!(!filter.matches(file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_combined_content_skips_binary_file() {
+        // Create a file with null bytes (binary)
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(b"hello\x00world").unwrap(); // Contains null byte
+        file.flush().unwrap();
+
+        let mut filter = CombinedFilter::builder()
+            .with_expression("contains:hello")
+            .unwrap()
+            .with_content_enabled(true)
+            .build()
+            .unwrap();
+
+        // Binary file should be skipped (treated as no match)
+        assert!(!filter.matches(file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_combined_content_matches_text_file() {
+        // Create a text file without null bytes
+        let file = create_temp_file("hello world");
+
+        let mut filter = CombinedFilter::builder()
+            .with_expression("contains:hello")
+            .unwrap()
+            .with_content_enabled(true)
+            .build()
+            .unwrap();
+
+        // Text file should match
+        assert!(filter.matches(file.path()).unwrap());
     }
 
     #[test]
