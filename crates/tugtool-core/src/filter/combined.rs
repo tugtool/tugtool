@@ -61,6 +61,8 @@ pub struct CombinedFilter {
     json_filter: Option<FilterExpr>,
     /// Whether content predicates are enabled (from `--filter-content`).
     content_enabled: bool,
+    /// Maximum file size for content predicates (from `--filter-content-max-bytes`).
+    content_max_bytes: Option<u64>,
     /// Git state for git predicates (lazily loaded).
     git_state: Option<GitState>,
     /// Workspace root for git state loading.
@@ -182,6 +184,17 @@ impl CombinedFilter {
             return Err(CombinedFilterError::ContentPredicateWithoutFlag);
         }
 
+        // Check file size limit if set
+        if let Some(max_bytes) = self.content_max_bytes {
+            let metadata = std::fs::metadata(path).map_err(|e| {
+                CombinedFilterError::ContentReadError(format!("{}: {}", path.display(), e))
+            })?;
+            if metadata.len() > max_bytes {
+                // File too large - treat as non-matching for content predicates
+                return Ok(None);
+            }
+        }
+
         // Read content directly (ContentMatcher caches internally)
         let content = std::fs::read_to_string(path).map_err(|e| {
             CombinedFilterError::ContentReadError(format!("{}: {}", path.display(), e))
@@ -197,6 +210,7 @@ pub struct CombinedFilterBuilder {
     expressions: Vec<FilterExpr>,
     json_filter: Option<FilterExpr>,
     content_enabled: bool,
+    content_max_bytes: Option<u64>,
     workspace_root: Option<std::path::PathBuf>,
 }
 
@@ -229,6 +243,14 @@ impl CombinedFilterBuilder {
     /// Enable or disable content predicates.
     pub fn with_content_enabled(mut self, enabled: bool) -> Self {
         self.content_enabled = enabled;
+        self
+    }
+
+    /// Set maximum file size for content predicates.
+    ///
+    /// Files larger than this limit are skipped for content matching.
+    pub fn with_content_max_bytes(mut self, max_bytes: Option<u64>) -> Self {
+        self.content_max_bytes = max_bytes;
         self
     }
 
@@ -269,6 +291,7 @@ impl CombinedFilterBuilder {
             expressions: self.expressions,
             json_filter: self.json_filter,
             content_enabled: self.content_enabled,
+            content_max_bytes: self.content_max_bytes,
             git_state: None,
             workspace_root: self.workspace_root,
             git_state_loaded: false,

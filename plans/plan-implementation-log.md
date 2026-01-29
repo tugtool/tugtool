@@ -6,6 +6,62 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 8: Integrate Combined Filter into Operations | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 8 specification (lines 1633-1674)
+- [D09] Filter Inputs Are Additive (line 1133)
+- [D10] Content Filters Are Opt-In (line 1139)
+- [D11] Default Exclusions Always Apply (line 1145)
+- [D14] Git Predicates Are Supported (line 1163)
+- Spec S10 Filter Combination Order (lines 1233-1241)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `collect_python_files_filtered()` signature to accept `&mut CombinedFilter` | Done |
+| Update `analyze_rename()` in `cli.rs` to accept `CombinedFilter` | Done |
+| Update `do_rename()` in `cli.rs` to accept `CombinedFilter` | Done |
+| Build `CombinedFilter` in `execute_apply_python()` from all filter sources | Done |
+| Build `CombinedFilter` in `execute_emit_python()` from all filter sources | Done |
+| Build `CombinedFilter` in `execute_analyze_python()` from all filter sources | Done |
+| Ensure backward compatibility: glob-only usage (`-- patterns`) still works | Done |
+| Support `--filter-file` input based on `--filter-file-format` | Done |
+| Enforce `--filter-content-max-bytes` when content predicates are used | Done |
+| Ensure filter errors produce proper JSON error output | Done |
+
+**Files Created:**
+- None (all changes in existing files)
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/combined.rs` - Added `content_max_bytes: Option<u64>` field and `with_content_max_bytes()` builder method; updated `get_content_if_any_needs_it()` to enforce size limit
+- `crates/tugtool-python/src/files.rs` - Added `collect_python_files_with_combined_filter()` function that walks workspace and applies CombinedFilter with relative paths
+- `crates/tugtool/src/cli.rs` - Updated `analyze_rename()` and `do_rename()` signatures to take `&mut CombinedFilter` directly (removed old FileFilterSpec parameter)
+- `crates/tugtool/src/main.rs` - Added `build_combined_filter()` helper function; updated all three executors to build and use CombinedFilter
+
+**Test Results:**
+- `cargo nextest run -p tugtool`: 193 tests passed
+- `cargo nextest run -p tugtool-python`: 688 tests passed
+- `cargo clippy --workspace -- -D warnings`: Clean (no warnings)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool`: PASS
+- `cargo nextest run -p tugtool-python`: PASS
+- Manual: `tug apply python rename --at test.py:1:5 --to new_name --filter "path:src/**"`: PASS
+- Manual: `tug emit python rename --at test.py:1:5 --to new_name --filter "ext:py" -- "!tests/**"`: PASS
+- Existing glob-only tests: PASS
+
+**Key Decisions/Notes:**
+- **Simplification:** Initially created duplicate `_with_combined_filter` functions for backward compatibility, but this was unnecessary since there are ZERO external users. Removed duplicates and updated original functions directly.
+- `build_combined_filter()` helper centralizes filter construction from FilterOptions, glob patterns, and workspace root
+- CombinedFilter now enforces `content_max_bytes` - files larger than the limit are skipped for content matching (treated as non-matching)
+- All filters use relative paths internally; `collect_python_files_with_combined_filter()` strips workspace prefix before calling `filter.matches()`
+
+---
+
 ## [phase-12.md] Step 7: Implement Filter List Mode | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

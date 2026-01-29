@@ -1644,31 +1644,31 @@ Spec S10, (#file-filtering-spec)
 - Modified: `crates/tugtool-python/src/files.rs`
 
 **Tasks:**
-- [ ] Update `collect_python_files_filtered()` signature to accept `&mut CombinedFilter`
-- [ ] Update `analyze_rename()` in `cli.rs` to accept `CombinedFilter`
-- [ ] Update `do_rename()` in `cli.rs` to accept `CombinedFilter`
-- [ ] Build `CombinedFilter` in `execute_apply_python()` from all filter sources
-- [ ] Build `CombinedFilter` in `execute_emit_python()` from all filter sources
-- [ ] Build `CombinedFilter` in `execute_analyze_python()` from all filter sources
-- [ ] Ensure backward compatibility: glob-only usage (`-- patterns`) still works
-- [ ] Support `--filter-file` input based on `--filter-file-format`
-- [ ] Enforce `--filter-content-max-bytes` when content predicates are used
-- [ ] Ensure filter errors produce proper JSON error output
+- [x] Update `collect_python_files_filtered()` signature to accept `&mut CombinedFilter`
+- [x] Update `analyze_rename()` in `cli.rs` to accept `CombinedFilter`
+- [x] Update `do_rename()` in `cli.rs` to accept `CombinedFilter`
+- [x] Build `CombinedFilter` in `execute_apply_python()` from all filter sources
+- [x] Build `CombinedFilter` in `execute_emit_python()` from all filter sources
+- [x] Build `CombinedFilter` in `execute_analyze_python()` from all filter sources
+- [x] Ensure backward compatibility: glob-only usage (`-- patterns`) still works
+- [x] Support `--filter-file` input based on `--filter-file-format`
+- [x] Enforce `--filter-content-max-bytes` when content predicates are used
+- [x] Ensure filter errors produce proper JSON error output
 
 **Tests:**
-- [ ] integration: `--filter "ext:py"` restricts rename scope
-- [ ] integration: `--filter "path:src/**"` restricts to src directory
-- [ ] integration: `--filter "not name:*_test.py"` excludes test files
-- [ ] integration: `--filter` + `-- patterns` both apply (AND)
-- [ ] integration: `--filter-json '{...}'` restricts scope
-- [ ] integration: existing glob-only tests still pass
-- [ ] integration: content predicate without `--filter-content` errors
+- [x] integration: `--filter "ext:py"` restricts rename scope
+- [x] integration: `--filter "path:src/**"` restricts to src directory
+- [x] integration: `--filter "not name:*_test.py"` excludes test files
+- [x] integration: `--filter` + `-- patterns` both apply (AND)
+- [x] integration: `--filter-json '{...}'` restricts scope
+- [x] integration: existing glob-only tests still pass
+- [x] integration: content predicate without `--filter-content` errors
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool`
-- [ ] `cargo nextest run -p tugtool-python`
-- [ ] Manual: `tug apply python rename --at test.py:1:5 --to new_name --filter "path:src/**"`
-- [ ] Manual: `tug emit python rename --at test.py:1:5 --to new_name --filter "ext:py" -- "!tests/**"`
+- [x] `cargo nextest run -p tugtool`
+- [x] `cargo nextest run -p tugtool-python`
+- [x] Manual: `tug apply python rename --at test.py:1:5 --to new_name --filter "path:src/**"`
+- [x] Manual: `tug emit python rename --at test.py:1:5 --to new_name --filter "ext:py" -- "!tests/**"`
 
 **Rollback:** Revert changes to `main.rs`, `cli.rs`, `files.rs`
 

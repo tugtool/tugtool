@@ -8,7 +8,7 @@ use std::path::Path;
 use thiserror::Error;
 use walkdir::WalkDir;
 
-use tugtool_core::filter::FileFilterSpec;
+use tugtool_core::filter::{CombinedFilter, FileFilterSpec};
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
 // ============================================================================
@@ -134,6 +134,90 @@ pub fn collect_python_files_filtered(
         let rel_path_str = rel_path.to_string_lossy().to_string();
         let content = fs::read_to_string(path)?;
         files.push((rel_path_str, content));
+    }
+
+    // Sort files by path for deterministic ID assignment (Contract C8).
+    files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
+
+    Ok(files)
+}
+
+/// Collect Python files using a CombinedFilter.
+///
+/// This is the primary entry point for refactoring operations that support
+/// the full filter system: expression filters, JSON filters, and glob patterns.
+///
+/// # Arguments
+///
+/// * `workspace_root` - The workspace root directory
+/// * `filter` - CombinedFilter that unifies all filter sources
+///
+/// # Filter Behavior
+///
+/// The CombinedFilter applies all filter sources with logical AND:
+/// - Glob patterns from `-- <patterns...>`
+/// - Expression filters from `--filter "<expr>"`
+/// - JSON filters from `--filter-json`
+/// - Content predicates (when `--filter-content` is enabled)
+///
+/// Default exclusions (`.git`, `__pycache__`, `venv`, etc.) are always applied
+/// by the CombinedFilter internally.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_core::filter::CombinedFilter;
+///
+/// let mut filter = CombinedFilter::builder()
+///     .with_glob_patterns(&["src/**/*.py".to_string()])?
+///     .with_expression("ext:py")?
+///     .build()?;
+/// let files = collect_python_files_with_combined_filter(workspace_root, &mut filter)?;
+/// ```
+pub fn collect_python_files_with_combined_filter(
+    workspace_root: &Path,
+    filter: &mut CombinedFilter,
+) -> FileResult<Vec<(String, String)>> {
+    let mut files = Vec::new();
+
+    for entry in WalkDir::new(workspace_root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+
+        // Get relative path first - filters use workspace-relative paths
+        let rel_path = match path.strip_prefix(workspace_root) {
+            Ok(p) => p,
+            Err(_) => continue, // Skip files outside workspace root
+        };
+
+        // Only consider Python files
+        if path.extension().is_none_or(|ext| ext != "py") {
+            continue;
+        }
+
+        // Apply combined filter (includes default exclusions)
+        match filter.matches(rel_path) {
+            Ok(true) => {
+                // File passes all filters
+                let rel_path_str = rel_path.to_string_lossy().to_string();
+                let content = fs::read_to_string(path)?;
+                files.push((rel_path_str, content));
+            }
+            Ok(false) => {
+                // File filtered out
+                continue;
+            }
+            Err(e) => {
+                // Filter error - convert to IO error for FileResult
+                return Err(FileError::Io(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("filter error: {}", e),
+                )));
+            }
+        }
     }
 
     // Sort files by path for deterministic ID assignment (Contract C8).

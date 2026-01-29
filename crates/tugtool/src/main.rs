@@ -43,7 +43,7 @@ use tugtool_core::session::{Session, SessionOptions};
 #[cfg(feature = "python")]
 use tugtool::cli::{analyze_rename, do_rename};
 #[cfg(feature = "python")]
-use tugtool_core::filter::{CombinedFilter, FileFilterSpec};
+use tugtool_core::filter::CombinedFilter;
 #[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
@@ -628,11 +628,9 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Parse file filter specification (glob patterns from `-- <patterns...>`)
-            let filter_spec = FileFilterSpec::parse(&filter)
-                .map_err(|e| TugError::invalid_args(e.to_string()))?;
-
-            // TODO (Step 8): Integrate filter_opts into CombinedFilter
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
 
             // Determine effective verification mode
             // --no-verify takes precedence
@@ -642,7 +640,7 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
                 verify.into()
             };
 
-            // Run the rename operation (apply=true)
+            // Run the rename operation (apply=true) with combined filter
             let json = do_rename(
                 &session,
                 Some(python_path),
@@ -650,7 +648,7 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
                 &to,
                 effective_verify,
                 true,
-                filter_spec.as_ref(),
+                &mut combined_filter,
             )?;
 
             // Output JSON result
@@ -697,11 +695,9 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Parse file filter specification (glob patterns from `-- <patterns...>`)
-            let filter_spec = FileFilterSpec::parse(&filter)
-                .map_err(|e| TugError::invalid_args(e.to_string()))?;
-
-            // TODO (Step 8): Integrate filter_opts into CombinedFilter
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
 
             // Run rename in dry-run mode (apply=false) with no verification
             let json_result = do_rename(
@@ -711,7 +707,7 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
                 &to,
                 VerificationMode::None,
                 false, // Never apply changes
-                filter_spec.as_ref(),
+                &mut combined_filter,
             )?;
 
             // Parse result to extract diff
@@ -800,15 +796,18 @@ fn execute_analyze_python(
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Parse file filter specification (glob patterns from `-- <patterns...>`)
-            let filter_spec = FileFilterSpec::parse(&filter)
-                .map_err(|e| TugError::invalid_args(e.to_string()))?;
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
 
-            // TODO (Step 8): Integrate filter_opts into CombinedFilter
-
-            // Run impact analysis (read-only)
-            let json_result =
-                analyze_rename(&session, Some(python_path), &at, &to, filter_spec.as_ref())?;
+            // Run impact analysis (read-only) with combined filter
+            let json_result = analyze_rename(
+                &session,
+                Some(python_path),
+                &at,
+                &to,
+                &mut combined_filter,
+            )?;
 
             // Parse result
             let result: serde_json::Value = serde_json::from_str(&json_result)
@@ -1264,7 +1263,6 @@ fn find_python_in_path() -> Option<String> {
 /// Parse a filter file and return its contents as a string.
 ///
 /// Reads the file at the given path and validates it exists.
-#[allow(dead_code)] // Used in Step 8
 fn parse_filter_file(path: &Path) -> Result<String, TugError> {
     std::fs::read_to_string(path).map_err(|e| {
         TugError::invalid_args(format!("failed to read filter file '{}': {}", path.display(), e))
@@ -1287,6 +1285,88 @@ fn validate_filter_options(filter_opts: &FilterOptions) -> Result<(), TugError> 
     // (clap allows it, we just ignore it)
 
     Ok(())
+}
+
+/// Build a CombinedFilter from FilterOptions and glob patterns.
+///
+/// Combines all filter sources:
+/// - Glob patterns from `-- <patterns...>`
+/// - Expression filters from `--filter`
+/// - JSON filter from `--filter-json`
+/// - Filter file content from `--filter-file` + `--filter-file-format`
+///
+/// All sources are combined with logical AND per [D09].
+#[cfg(feature = "python")]
+fn build_combined_filter(
+    filter_opts: &FilterOptions,
+    glob_patterns: &[String],
+    workspace_root: &Path,
+) -> Result<CombinedFilter, TugError> {
+    let mut builder = CombinedFilter::builder()
+        .with_glob_patterns(glob_patterns)
+        .map_err(|e| TugError::invalid_args(e.to_string()))?
+        .with_content_enabled(filter_opts.filter_content)
+        .with_content_max_bytes(filter_opts.filter_content_max_bytes)
+        .with_workspace_root(workspace_root);
+
+    // Add expression filters from --filter
+    for expr in &filter_opts.filter_expr {
+        builder = builder
+            .with_expression(expr)
+            .map_err(|e| TugError::invalid_args(e.to_string()))?;
+    }
+
+    // Add JSON filter from --filter-json
+    if let Some(ref json) = filter_opts.filter_json {
+        builder = builder
+            .with_json(json)
+            .map_err(|e| TugError::invalid_args(e.to_string()))?;
+    }
+
+    // Add filter file content based on --filter-file-format
+    if let (Some(ref path), Some(ref format)) =
+        (&filter_opts.filter_file, &filter_opts.filter_file_format)
+    {
+        let content = parse_filter_file(path)?;
+        match format.as_str() {
+            "json" => {
+                builder = builder
+                    .with_json(&content)
+                    .map_err(|e| TugError::invalid_args(e.to_string()))?;
+            }
+            "glob" => {
+                // Parse as newline-separated glob patterns
+                let patterns: Vec<String> = content
+                    .lines()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && !s.starts_with('#'))
+                    .map(String::from)
+                    .collect();
+                builder = builder
+                    .with_glob_patterns(&patterns)
+                    .map_err(|e| TugError::invalid_args(e.to_string()))?;
+            }
+            "expr" => {
+                // Parse as newline-separated expression filters
+                for line in content.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() && !line.starts_with('#') {
+                        builder = builder
+                            .with_expression(line)
+                            .map_err(|e| TugError::invalid_args(e.to_string()))?;
+                    }
+                }
+            }
+            _ => {
+                return Err(TugError::invalid_args(format!(
+                    "unknown filter file format '{}', expected: json, glob, or expr",
+                    format
+                )));
+            }
+        }
+    }
+
+    builder.build().map_err(|e| TugError::invalid_args(e.to_string()))
 }
 
 /// Handle --filter-list mode if enabled.
