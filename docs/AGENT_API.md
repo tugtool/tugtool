@@ -96,8 +96,9 @@ tug apply python rename --at f.py:1:5 --to bar --filter "git_status:modified"
 | `lang` | Language tag | `lang:python` |
 | `kind` | `file` or `dir` | `kind:file` |
 | `size` | File size | `size>10k`, `size<=2m` |
+| `mtime` | Modified time | `mtime>2025-01-01` |
 | `contains` | Content substring | `contains:"TODO"` |
-| `regex` | Content regex | `regex:/@deprecated\b/` |
+| `regex` | Content regex | `regex:TODO` |
 | `git_status` | Git status | `git_status:modified` |
 | `git_tracked` | Tracked by git | `git_tracked:true` |
 | `git_ignored` | Ignored by git | `git_ignored:true` |
@@ -132,7 +133,7 @@ tug apply python rename --at f.py:1:5 --to bar --filter-json '{
 }
 ```
 
-**Operations:** `eq`, `glob`, `regex`, `gt`, `gte`, `lt`, `lte`
+**Operations:** `eq`, `glob`, `match`, `gt`, `gte`, `lt`, `lte`
 
 #### Glob Patterns
 
@@ -154,7 +155,7 @@ The `contains` and `regex` predicates require `--filter-content`:
 tug apply python rename --at f.py:1:5 --to bar --filter "contains:TODO" --filter-content
 ```
 
-Use `--filter-content-max-bytes <n>` to skip large files.
+Use `--filter-content-max-bytes <n>` to skip large files (default: 5MB when enabled).
 
 #### Filter Introspection
 

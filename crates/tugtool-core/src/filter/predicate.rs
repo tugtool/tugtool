@@ -379,10 +379,11 @@ impl FilterPredicate {
         let content = content.ok_or_else(|| PredicateError::ContentPredicateWithoutFlag {
             predicate: "regex".to_string(),
         })?;
-        let re = regex::Regex::new(&self.value).map_err(|e| PredicateError::InvalidPattern {
-            pattern: self.value.clone(),
-            message: e.to_string(),
-        })?;
+        let re =
+            regex::Regex::new(self.value.trim()).map_err(|e| PredicateError::InvalidPattern {
+                pattern: self.value.clone(),
+                message: e.to_string(),
+            })?;
         let matches = re.is_match(content);
         Ok(apply_op_bool(self.op, matches))
     }
@@ -707,7 +708,8 @@ impl GitState {
 
     /// Parse `git status --porcelain=v1 -z` output.
     fn parse_status_output(&mut self, output: &str) {
-        for entry in output.split('\0') {
+        let mut entries = output.split('\0');
+        while let Some(entry) = entries.next() {
             if entry.len() < 4 {
                 continue;
             }
@@ -716,18 +718,20 @@ impl GitState {
             let index = chars[0];
             let worktree = chars[1];
             // chars[2] is space
-            let path = &entry[3..];
+            let mut path = &entry[3..];
 
-            // Handle renamed files (format: "R  old -> new")
-            let path = if index == 'R' || worktree == 'R' {
-                if let Some(arrow_pos) = path.find(" -> ") {
-                    &path[arrow_pos + 4..]
-                } else {
-                    path
+            // Handle renamed/copied files.
+            // Non -z format: "R  old -> new"
+            if let Some(arrow_pos) = path.find(" -> ") {
+                path = &path[arrow_pos + 4..];
+            } else if index == 'R' || worktree == 'R' || index == 'C' || worktree == 'C' {
+                // -z format: "R  old\0new\0" (next entry is new path)
+                if let Some(new_path) = entries.next() {
+                    if !new_path.is_empty() {
+                        path = new_path;
+                    }
                 }
-            } else {
-                path
-            };
+            }
 
             if !path.is_empty() {
                 self.status
@@ -928,6 +932,22 @@ mod tests {
         state.ignored_files.insert("ignored.py".to_string());
 
         state
+    }
+
+    #[test]
+    fn test_parse_status_output_rename_uses_new_path() {
+        let mut state = GitState {
+            status: HashMap::new(),
+            tracked_files: std::collections::HashSet::new(),
+            ignored_files: std::collections::HashSet::new(),
+        };
+
+        state.parse_status_output("R  old.py\0new.py\0");
+
+        assert!(state.status.contains_key("new.py"));
+        assert!(!state.status.contains_key("old.py"));
+        let status = state.status.get("new.py").unwrap();
+        assert_eq!(status.index, 'R');
     }
 
     #[test]
