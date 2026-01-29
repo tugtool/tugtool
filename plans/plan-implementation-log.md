@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Phase 13 Restructure: Infrastructure-First Plan | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-13.md` - Original operations inventory plan
+- `plans/plan-skeleton.md` - Plan format template
+- Code-planner agent analysis of tugtool-python infrastructure layers
+- `crates/tugtool-python/src/ops/rename.rs` - Reference implementation
+- `crates/tugtool-python/src/analyzer.rs` - Analysis pipeline
+- `crates/tugtool-python-cst/src/visitor/` - Existing CST visitors
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Analyze existing infrastructure for Layer 0 | Done |
+| Identify 7 infrastructure layers | Done |
+| Add Layer 0 (Foundation) with rename gaps table | Done |
+| Create operation-to-layer mapping (Table T03) | Done |
+| Define 6 design decisions ([D01]-[D06]) | Done |
+| Create 4 implementation stages with execution steps | Done |
+| Add open questions ([Q01], [Q02]) | Done |
+| Add risk assessment (R01) | Done |
+| Format according to plan-skeleton.md | Done |
+| Add milestones (M01-M04) | Done |
+| Clean up temporary analysis file | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Complete restructure around infrastructure layers (1643 lines)
+
+**Files Deleted:**
+- `plans/phase-13-restructure-analysis.md` - Temporary analysis incorporated into main plan
+
+**Key Structural Changes:**
+
+| Section | Description |
+|---------|-------------|
+| Layer 0 (Foundation) | Documents existing rename infrastructure, identifies 9 gaps in Table T02 |
+| Layers 1-6 | New infrastructure layers with components and operations enabled |
+| Table T03 | Operation-to-layer dependency matrix |
+| Table T04 | Competitive feature comparison (tugtool vs rope/bowler/ruff) |
+| Tables T05-T07 | Component inventories for Layers 1-3 |
+| Stages 1-4 | Implementation stages with 17 execution steps |
+
+**Design Decisions Added:**
+- [D01] Layer-based implementation order (not operation order)
+- [D02] Conservative side-effect analysis (assume impure if uncertain)
+- [D03] Simple-cases-first for control flow (single entry/exit)
+- [D04] Template-based code generation (not CST construction)
+- [D05] Rename as reference implementation
+- [D06] Aliases are informational only
+
+**Key Decisions/Notes:**
+- Restructured from "feasibility tiers" to "infrastructure layers" approach
+- Added Tier 0 / Layer 0 for existing rename operation with gap analysis
+- 15 operations mapped to 7 infrastructure layers
+- 4 stages deliver 11 operations (Stages 1-4); Stage 5 deferred for Layers 5-6
+- Plan now follows plan-skeleton.md format with proper anchors, tables, and execution steps
+
+---
+
 ## [phase-13.md] Phase 13 Planning: Python Refactor Operations Inventory | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
