@@ -42,6 +42,7 @@ pub use tugtool_core::workspace;
 // ============================================================================
 
 pub mod cli;
+pub mod filter;
 pub mod fixture;
 pub mod testcmd;
 

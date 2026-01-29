@@ -795,23 +795,23 @@ enum AnalyzeOutput {
 - New file: `crates/tugtool/src/filter.rs`
 
 **Tasks:**
-- [ ] Create `FileFilterSpec` struct with `inclusions` and `exclusions` Vec<Pattern>
-- [ ] Implement `FileFilterSpec::parse(args: &[String]) -> Result<Self, Error>`
-- [ ] Implement `FileFilterSpec::matches(&self, path: &Path) -> bool`
-- [ ] Add dependency on `globset` crate for pattern matching
-- [ ] Export from `lib.rs`
+- [x] Create `FileFilterSpec` struct with `inclusions` and `exclusions` Vec<Pattern>
+- [x] Implement `FileFilterSpec::parse(args: &[String]) -> Result<Self, Error>`
+- [x] Implement `FileFilterSpec::matches(&self, path: &Path) -> bool`
+- [x] Add dependency on `globset` crate for pattern matching
+- [x] Export from `lib.rs`
 
 **Tests:**
-- [ ] unit: `test_filter_parse_empty_returns_none`
-- [ ] unit: `test_filter_parse_inclusion`
-- [ ] unit: `test_filter_parse_exclusion`
-- [ ] unit: `test_filter_parse_mixed`
-- [ ] unit: `test_filter_matches_inclusion`
-- [ ] unit: `test_filter_matches_exclusion`
-- [ ] unit: `test_filter_matches_combined`
+- [x] unit: `test_filter_parse_empty_returns_none`
+- [x] unit: `test_filter_parse_inclusion`
+- [x] unit: `test_filter_parse_exclusion`
+- [x] unit: `test_filter_parse_mixed`
+- [x] unit: `test_filter_matches_inclusion`
+- [x] unit: `test_filter_matches_exclusion`
+- [x] unit: `test_filter_matches_combined`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool filter`
+- [x] `cargo nextest run -p tugtool filter`
 
 **Rollback:** Delete `filter.rs`, remove from `lib.rs`
 

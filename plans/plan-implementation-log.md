@@ -6,6 +6,47 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 0: Add File Filter Module | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Phase 12 plan (Step 0 specification, D03, Spec S05)
+- `crates/tugtool/src/lib.rs` - Existing module structure
+- `crates/tugtool/Cargo.toml` - Existing dependencies
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `FileFilterSpec` struct with `inclusions` and `exclusions` Vec<Pattern> | Done |
+| Implement `FileFilterSpec::parse(args: &[String]) -> Result<Self, Error>` | Done |
+| Implement `FileFilterSpec::matches(&self, path: &Path) -> bool` | Done |
+| Add dependency on `globset` crate for pattern matching | Done |
+| Export from `lib.rs` | Done |
+
+**Files Created:**
+- `crates/tugtool/src/filter.rs` - File filter parsing and matching module
+
+**Files Modified:**
+- `crates/tugtool/Cargo.toml` - Added `globset = "0.4"` dependency
+- `crates/tugtool/src/lib.rs` - Added `pub mod filter;` export
+
+**Test Results:**
+- `cargo nextest run -p tugtool filter`: 13 tests passed
+- `cargo clippy -p tugtool -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool filter`: PASS (13 tests)
+
+**Key Decisions/Notes:**
+- `FileFilterSpec::parse()` returns `Option<FileFilterSpec>` - `None` when no patterns provided, following plan's guidance that empty filter = all files
+- Implemented `DEFAULT_EXCLUSIONS` constant with `.git`, `__pycache__`, `venv`, `.venv`, `node_modules`, `target` per Spec S05
+- Added extra helper methods `has_inclusions()` and `has_exclusions()` for future use
+- Added extra tests beyond plan requirements: `test_filter_parse_invalid_pattern`, `test_filter_exclusion_only_includes_all_else`, `test_filter_multiple_inclusions`, `test_filter_multiple_exclusions`
+
+---
+
 ## [phase-12.md] Plan Creation: Agent-Focused CLI Redesign | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
