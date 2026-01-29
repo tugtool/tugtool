@@ -1,4 +1,4 @@
-//! File filter specification for restricting operation scope.
+//! Glob-based file filtering for restricting operation scope.
 //!
 //! This module implements gitignore-style file filtering for refactoring operations.
 //! Patterns are parsed from CLI arguments and can include both inclusions and exclusions.

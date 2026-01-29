@@ -1059,3 +1059,728 @@ enum AnalyzeOutput {
 | All tests | `cargo nextest run --workspace` |
 
 **Phase complete when all checkpoints pass.**
+
+---
+
+### 12.7 Revisit File Filtering To Make It Great {#file-filtering-great}
+
+**Purpose:** Add a powerful, agent-first file filtering system that supports structured filters, composable logic, and optional content-aware matching while remaining deterministic and explicit.
+
+---
+
+#### Context {#file-filtering-context}
+
+The current filter system is glob-based and CLI-friendly, but it is not expressive enough for agents that want precise, multi-criteria selection (path + metadata + git state + content signals). Agents should be able to express complex constraints in a single call without precomputing file lists.
+
+#### Strategy {#file-filtering-strategy}
+
+- Preserve the existing glob filter for simple cases (`-- <patterns...>`)
+- Add a structured filter expression language for complex selection
+- Add a JSON filter schema for deterministic, machine-authored queries
+- Keep evaluation deterministic and order-independent
+- Make content-aware filters explicit and opt-in (avoid accidental expensive scans)
+
+#### Stakeholders / Primary Customers {#file-filtering-stakeholders}
+
+1. AI coding agents (primary)
+2. Tool integrators who generate filters programmatically
+
+#### Success Criteria (Measurable) {#file-filtering-success}
+
+- An agent can express compound selection: `path:src/** and ext:py and not name:*_test.py`
+- JSON filters can reproduce any expression filter result (parity)
+- Content filters only run when explicitly enabled (performance safety)
+- Filters are deterministic: same workspace snapshot → same matched set
+- `emit`/`apply` use identical filtering semantics for the same filter spec
+
+#### Scope {#file-filtering-scope}
+
+1. Filter expression syntax (`--filter "<expr>"`)
+2. JSON filter schema (`--filter-json '{...}'`)
+3. Multiple filter sources, combined deterministically
+4. Optional content-aware matching (explicitly enabled)
+5. Filter introspection mode for agents (list matched files)
+
+#### Non-goals (Explicitly out of scope) {#file-filtering-non-goals}
+
+- Fuzzy semantic search or embedding-based selection
+- Language-aware AST queries (future analyze subcommands)
+- Implicitly reading file contents for filtering unless explicitly requested
+
+#### Dependencies / Prerequisites {#file-filtering-deps}
+
+- Existing `FileFilterSpec` and default exclusions
+- Workspace root resolution and file collection
+
+#### Constraints {#file-filtering-constraints}
+
+- Filters must be deterministic and side-effect free
+- Content filters must be opt-in and should short-circuit where possible
+- All filters must be evaluable without requiring the language analyzer
+- Content predicates operate on UTF-8 text; binary files are skipped with a warning-level diagnostic
+- Binary detection uses null-byte heuristic: file contains `\x00` in first 8KB
+- Content predicates enforce a maximum file size (default 5MB) unless `--filter-content-max-bytes` overrides
+
+#### Assumptions {#file-filtering-assumptions}
+
+- Agents can generate structured JSON filters reliably
+- CLI consumers can pass JSON safely via `--filter-file` with explicit format selection
+
+---
+
+### 12.7.0 Design Decisions {#file-filtering-decisions}
+
+#### [D09] Filter Inputs Are Additive (DECIDED) {#d09-filter-inputs}
+
+**Decision:** Filters can be provided via any of:
+- Trailing glob patterns (`-- <patterns...>`)
+- Expression filters (`--filter "<expr>"`, repeatable)
+- JSON filter (`--filter-json '{...}'`, single instance)
+- Filter file (`--filter-file path.json` or `path.txt`)
+
+All filter sources are combined with logical **AND**.
+
+#### [D10] Content Filters Are Opt-In (DECIDED) {#d10-content-opt-in}
+
+**Decision:** Content-aware matching requires an explicit flag (`--filter-content`) and is ignored (or errors) without it.
+
+#### [D11] Default Exclusions Always Apply (DECIDED) {#d11-default-exclusions}
+
+**Decision:** Default exclusions (`.git`, `__pycache__`, `venv`, `.venv`, `node_modules`, `target`) always apply to all filter modes.
+
+#### [D12] Filter Introspection for Agents (DECIDED) {#d12-filter-introspection}
+
+**Decision:** Add a lightweight listing mode (`--filter-list`) that prints the matched file list as JSON when used with any refactor command.
+
+#### [D13] Filter File Format Is Explicit (DECIDED) {#d13-filter-file-format}
+
+**Decision:** `--filter-file` requires a companion `--filter-file-format` flag with one of: `json`, `glob`, `expr`.
+
+#### [D14] Git Predicates Are Supported (DECIDED) {#d14-git-predicates}
+
+**Decision:** Filters can query git state (tracked/ignored/status) when a `.git` directory is present. If no git repo is detected, git predicates return false unless explicitly set to `any`.
+
+---
+
+### 12.7.1 Specification {#file-filtering-spec}
+
+**Spec S08: Filter Expression Language** {#s08-filter-expr}
+
+Expression grammar (case-insensitive operators):
+
+```
+<expr>       := <term> (("and" | "or") <term>)*
+<term>       := ["not"] <factor>
+<factor>     := <predicate> | "(" <expr> ")"
+<predicate>  := key ":" value | key "~" regex | key comparator value
+```
+
+Supported predicates:
+
+| Key | Meaning | Examples |
+|-----|---------|----------|
+| `path` | Path glob | `path:src/**` |
+| `name` | Basename glob | `name:*_test.py` |
+| `ext` | File extension | `ext:py` |
+| `lang` | Language tag | `lang:python` |
+| `kind` | `file` or `dir` | `kind:file` |
+| `size` | Bytes | `size>10k`, `size<=2m` |
+| `contains` | Content substring (requires `--filter-content`) | `contains:"TODO"` |
+| `regex` | Content regex (requires `--filter-content`) | `regex:/@deprecated\\b/` |
+| `git_status` | Git status (requires repo) | `git_status:modified`, `git_status:untracked` |
+| `git_tracked` | File tracked by git | `git_tracked:true` |
+| `git_ignored` | File ignored by git | `git_ignored:true` |
+| `git_stage` | Stage state | `git_stage:staged`, `git_stage:unstaged` |
+
+Operator precedence: `not` binds tighter than `and`, which binds tighter than `or`. Parentheses override.
+
+**Git predicate semantics:**
+
+- Source of truth: `git status --porcelain=v1 -z` at workspace root
+- A file is **tracked** if it appears in the index or HEAD (not `??`)
+- `git_tracked:true` matches tracked files; `git_tracked:false` matches untracked files
+- `git_ignored:true` matches files ignored by git (from `git check-ignore`)
+- `git_status` values map to porcelain codes:
+  - `modified`: `M` in index or worktree
+  - `added`: `A` in index
+  - `deleted`: `D` in index or worktree
+  - `renamed`: `R` in index
+  - `untracked`: `??`
+  - `conflicted`: `U`
+- `git_stage` values:
+  - `staged`: index status is not blank
+  - `unstaged`: worktree status is not blank
+- If no `.git` directory is found, git predicates return **false** unless value is `"any"`, which always returns true
+
+**Spec S09: JSON Filter Schema** {#s09-filter-json}
+
+```
+{
+  "all": [ <filter>, ... ],
+  "any": [ <filter>, ... ],
+  "not": <filter>,
+  "predicates": [
+    { "key": "path", "op": "glob", "value": "src/**" },
+    { "key": "ext", "op": "eq", "value": "py" }
+  ]
+}
+```
+
+- `all` and `any` support nested filters for complex logic
+- `predicates` are combined with AND
+- Content predicates (`contains`, `regex`) require `--filter-content`
+- Git predicates require a git repository; if no repo is found, they evaluate to false unless `value` is `"any"`
+
+**Spec S10: Filter Combination Rules** {#s10-filter-combine}
+
+1. Start with language-appropriate file set
+2. Apply default exclusions
+3. Apply glob patterns (`-- <patterns...>`)
+4. Apply all `--filter` expressions (AND)
+5. Apply `--filter-json` (AND)
+6. Apply `--filter-file` content according to `--filter-file-format` (AND)
+
+**Spec S11: Filter Output / Introspection** {#s11-filter-list}
+
+`--filter-list` outputs JSON:
+
+```
+{ "files": ["src/a.py", "src/b.py"], "count": 2 }
+```
+
+This flag runs filtering only and exits 0 (no refactor performed).
+
+---
+
+### 12.7.2 Symbol Inventory {#file-filtering-symbols}
+
+**Table T20: Filter CLI Options** {#t20-filter-options}
+
+| Option | Type | Notes |
+|--------|------|-------|
+| `--filter <expr>` | repeatable | Expression filter |
+| `--filter-json <json>` | single | JSON filter schema |
+| `--filter-file <path>` | single | File containing JSON or expression/glob lines |
+| `--filter-file-format <format>` | single | Required with `--filter-file`: `json`, `glob`, `expr` |
+| `--filter-content` | flag | Enables content predicates |
+| `--filter-content-max-bytes <n>` | single | Max bytes per file for content predicates |
+| `--filter-list` | flag | Outputs matched files and exits |
+
+---
+
+### 12.7.3 Documentation Plan {#file-filtering-docs}
+
+- Update `docs/AGENT_API.md` with filter expression + JSON schema
+- Add examples to `README.md` for common filter recipes
+
+---
+
+### 12.7.4 Test Plan Concepts {#file-filtering-tests}
+
+- Unit: expression parser, JSON schema parser, predicate evaluation
+- Integration: `--filter` + `--filter-json` + glob parity
+- Performance: content filters require explicit flag; error otherwise
+
+---
+
+### 12.7.5 Execution Steps {#file-filtering-steps}
+
+#### Step 0: Refactor filter.rs to Directory Module {#step-filter-0}
+
+**Commit:** `refactor(filter): convert filter.rs to directory module`
+
+**References:** [D11] Default Exclusions Always Apply, (#file-filtering-context)
+
+**Artifacts:**
+- Renamed: `crates/tugtool-core/src/filter.rs` → `crates/tugtool-core/src/filter/mod.rs`
+- New: `crates/tugtool-core/src/filter/glob.rs` (existing code moved here)
+
+**Tasks:**
+- [x] Create `filter/` directory in `tugtool-core/src/`
+- [x] Move existing `filter.rs` content to `filter/glob.rs`
+- [x] Create `filter/mod.rs` that re-exports from `glob.rs`
+- [x] Update `lib.rs` if necessary to maintain public exports
+- [x] Verify all existing imports continue to work
+
+**Tests:**
+- [x] unit: All existing filter tests pass unchanged
+
+**Checkpoint:**
+- [x] `cargo nextest run -p tugtool-core filter`
+- [x] `cargo build --workspace`
+
+**Rollback:** Revert to single-file `filter.rs`
+
+---
+
+#### Step 1: Add Predicate Types {#step-filter-1}
+
+**Commit:** `feat(filter): add predicate types and evaluation`
+
+**References:** [D11] Default Exclusions Always Apply, [D14] Git Predicates Are Supported,
+Spec S08, Table T20, (#file-filtering-spec)
+
+**Artifacts:**
+- New: `crates/tugtool-core/src/filter/predicate.rs`
+- Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
+
+**Tasks:**
+- [ ] Define `PredicateKey` enum: `Path`, `Name`, `Ext`, `Lang`, `Kind`, `Size`, `Contains`, `Regex`, `GitStatus`, `GitTracked`, `GitIgnored`, `GitStage`
+- [ ] Define `PredicateOp` enum: `Glob`, `Eq`, `Neq`, `Gt`, `Gte`, `Lt`, `Lte`, `Match`
+- [ ] Define `FilterPredicate` struct with `key`, `op`, `value` fields
+- [ ] Implement `FilterPredicate::evaluate(&self, path: &Path, metadata: Option<&Metadata>, git_state: Option<&GitState>) -> Result<bool, FilterError>`
+- [ ] Implement size parsing with suffixes (bytes, k/K, m/M, g/G)
+- [ ] Add `FilterPredicate::requires_content(&self) -> bool` method
+- [ ] Add `FilterPredicate::requires_git(&self) -> bool` method
+- [ ] Add `FilterError::ContentPredicateWithoutFlag` variant
+- [ ] Define `GitState` struct to hold parsed `git status --porcelain=v1 -z` output
+- [ ] Implement `GitState::load(workspace: &Path) -> Option<GitState>` (returns None if no .git)
+- [ ] Implement git predicate evaluation per Spec S08 semantics
+
+**Tests:**
+- [ ] unit: `test_predicate_path_glob_match`
+- [ ] unit: `test_predicate_path_glob_no_match`
+- [ ] unit: `test_predicate_name_glob`
+- [ ] unit: `test_predicate_ext_eq`
+- [ ] unit: `test_predicate_ext_neq`
+- [ ] unit: `test_predicate_size_gt`
+- [ ] unit: `test_predicate_size_lte`
+- [ ] unit: `test_predicate_size_suffixes_k_m_g`
+- [ ] unit: `test_predicate_requires_content_contains`
+- [ ] unit: `test_predicate_requires_content_regex`
+- [ ] unit: `test_predicate_requires_content_path_false`
+- [ ] unit: `test_predicate_git_tracked_true`
+- [ ] unit: `test_predicate_git_tracked_false`
+- [ ] unit: `test_predicate_git_status_modified`
+- [ ] unit: `test_predicate_git_status_untracked`
+- [ ] unit: `test_predicate_git_stage_staged`
+- [ ] unit: `test_predicate_git_ignored`
+- [ ] unit: `test_predicate_git_no_repo_returns_false`
+- [ ] unit: `test_predicate_git_any_always_true`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core predicate`
+- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+
+**Rollback:** Delete `predicate.rs`, revert `mod.rs`
+
+---
+
+#### Step 2: Implement Expression Parser {#step-filter-2}
+
+**Commit:** `feat(filter): add expression parser`
+
+**References:** [D09] Filter Inputs Are Additive, Spec S08, (#file-filtering-spec)
+
+**Artifacts:**
+- New: `crates/tugtool-core/src/filter/expr.rs`
+- Modified: `crates/tugtool-core/Cargo.toml` (add `winnow` dependency)
+- Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
+
+**Tasks:**
+- [ ] Add `winnow` parser combinator to `tugtool-core` dependencies
+- [ ] Define `FilterExpr` enum: `And(Vec<FilterExpr>)`, `Or(Vec<FilterExpr>)`, `Not(Box<FilterExpr>)`, `Pred(FilterPredicate)`
+- [ ] Implement `parse_filter_expr(input: &str) -> Result<FilterExpr, FilterError>`
+- [ ] Handle case-insensitive keywords (`and`, `AND`, `And`)
+- [ ] Handle quoted values (`"value with spaces"`, `'single quoted'`)
+- [ ] Handle unquoted values (`src/**`)
+- [ ] Implement operator parsing: `:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`
+- [ ] Implement parentheses for grouping
+- [ ] Add `FilterError::InvalidExpression { input, message }` variant
+- [ ] Implement `FilterExpr::evaluate(&self, path: &Path, metadata: Option<&Metadata>, content: Option<&str>) -> Result<bool, FilterError>`
+
+**Tests:**
+- [ ] unit: `test_parse_simple_predicate` (`ext:py`)
+- [ ] unit: `test_parse_predicate_with_colon` (`path:src/**`)
+- [ ] unit: `test_parse_predicate_with_comparison` (`size>10k`)
+- [ ] unit: `test_parse_and_expression` (`ext:py and path:src/**`)
+- [ ] unit: `test_parse_or_expression` (`ext:py or ext:pyi`)
+- [ ] unit: `test_parse_not_expression` (`not name:*_test.py`)
+- [ ] unit: `test_parse_nested_parentheses` (`(ext:py or ext:pyi) and path:src/**`)
+- [ ] unit: `test_parse_case_insensitive_and` (`ext:py AND path:src/**`)
+- [ ] unit: `test_parse_case_insensitive_or` (`ext:py OR ext:pyi`)
+- [ ] unit: `test_parse_quoted_value` (`contains:"hello world"`)
+- [ ] unit: `test_parse_invalid_syntax_error`
+- [ ] unit: `test_evaluate_and_both_true`
+- [ ] unit: `test_evaluate_and_one_false`
+- [ ] unit: `test_evaluate_or_one_true`
+- [ ] unit: `test_evaluate_not_inverts`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core expr`
+- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+
+**Rollback:** Delete `expr.rs`, revert Cargo.toml and `mod.rs`
+
+---
+
+#### Step 3: Implement JSON Filter Schema {#step-filter-3}
+
+**Commit:** `feat(filter): add JSON filter schema support`
+
+**References:** [D09] Filter Inputs Are Additive, [D14] Git Predicates Are Supported,
+Spec S09, (#file-filtering-spec)
+
+**Artifacts:**
+- New: `crates/tugtool-core/src/filter/json.rs`
+- Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
+
+**Tasks:**
+- [ ] Define `JsonFilter` enum matching Spec S09 schema (`All`, `Any`, `Not`, `Predicates`)
+- [ ] Define `JsonPredicate` struct with `key`, `op`, `value` fields (string-typed for serde)
+- [ ] Implement `serde::Deserialize` for `JsonFilter` and `JsonPredicate`
+- [ ] Implement `parse_filter_json(input: &str) -> Result<FilterExpr, FilterError>` (converts to FilterExpr)
+- [ ] Validate schema structure (reject empty `all`/`any`, missing required fields)
+- [ ] Add `FilterError::InvalidJsonFilter { message }` variant
+- [ ] Map JSON operators (`glob`, `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `match`) to `PredicateOp`
+
+**Tests:**
+- [ ] unit: `test_parse_json_simple_predicate`
+- [ ] unit: `test_parse_json_all_combinator`
+- [ ] unit: `test_parse_json_any_combinator`
+- [ ] unit: `test_parse_json_not_combinator`
+- [ ] unit: `test_parse_json_nested_all_any`
+- [ ] unit: `test_parse_json_predicates_list`
+- [ ] unit: `test_parse_json_invalid_missing_key`
+- [ ] unit: `test_parse_json_invalid_unknown_operator`
+- [ ] unit: `test_parse_json_empty_all_error`
+- [ ] unit: `test_json_to_expr_parity` (same filter in JSON and expr yields same result)
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core json`
+- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+
+**Rollback:** Delete `json.rs`, revert `mod.rs`
+
+---
+
+#### Step 4: Implement Content Predicates {#step-filter-4}
+
+**Commit:** `feat(filter): add content-aware predicates`
+
+**References:** [D10] Content Filters Are Opt-In, Spec S08, (#file-filtering-spec)
+
+**Artifacts:**
+- New: `crates/tugtool-core/src/filter/content.rs`
+- Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
+- Modified: `crates/tugtool-core/Cargo.toml` (add `regex` if not present)
+
+**Tasks:**
+- [ ] Define `ContentMatcher` struct that holds cached file contents
+- [ ] Implement `ContentMatcher::new() -> Self`
+- [ ] Implement `ContentMatcher::matches_contains(&mut self, path: &Path, substring: &str) -> Result<bool, FilterError>`
+- [ ] Implement `ContentMatcher::matches_regex(&mut self, path: &Path, pattern: &str) -> Result<bool, FilterError>`
+- [ ] Add lazy file reading with caching (avoid re-reading same file)
+- [ ] Add `FilterError::ContentReadError { path, message }` variant
+- [ ] Add `FilterError::InvalidRegex { pattern, message }` variant
+- [ ] Implement short-circuit on first match for `contains`
+
+**Tests:**
+- [ ] unit: `test_content_contains_match`
+- [ ] unit: `test_content_contains_no_match`
+- [ ] unit: `test_content_contains_multiline`
+- [ ] unit: `test_content_regex_match`
+- [ ] unit: `test_content_regex_no_match`
+- [ ] unit: `test_content_regex_multiline`
+- [ ] unit: `test_content_regex_invalid_pattern_error`
+- [ ] unit: `test_content_file_not_found_error`
+- [ ] unit: `test_content_caching_reads_once`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core content`
+- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+
+**Rollback:** Delete `content.rs`, revert `mod.rs` and Cargo.toml
+
+---
+
+#### Step 5: Implement Combined Filter {#step-filter-5}
+
+**Commit:** `feat(filter): add combined filter evaluation`
+
+**References:** [D09] Filter Inputs Are Additive, [D10] Content Filters Are Opt-In,
+[D11] Default Exclusions Always Apply, [D14] Git Predicates Are Supported,
+Spec S10, (#file-filtering-spec)
+
+**Artifacts:**
+- New: `crates/tugtool-core/src/filter/combined.rs`
+- Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports, add `CombinedFilter` as primary public type)
+
+**Tasks:**
+- [ ] Define `CombinedFilter` struct holding:
+  - `glob_spec: Option<FileFilterSpec>` (existing glob filter)
+  - `expressions: Vec<FilterExpr>` (parsed from `--filter`)
+  - `json_filter: Option<FilterExpr>` (parsed from `--filter-json`)
+  - `content_enabled: bool` (from `--filter-content`)
+  - `content_matcher: ContentMatcher` (lazily populated)
+  - `git_state: Option<GitState>` (lazily loaded if git predicates used)
+- [ ] Implement `CombinedFilter::builder() -> CombinedFilterBuilder` pattern
+- [ ] Implement `CombinedFilterBuilder::with_glob_patterns(patterns: &[String]) -> Result<Self, FilterError>`
+- [ ] Implement `CombinedFilterBuilder::with_expression(expr: &str) -> Result<Self, FilterError>`
+- [ ] Implement `CombinedFilterBuilder::with_json(json: &str) -> Result<Self, FilterError>`
+- [ ] Implement `CombinedFilterBuilder::with_content_enabled(enabled: bool) -> Self`
+- [ ] Implement `CombinedFilterBuilder::build() -> Result<CombinedFilter, FilterError>`
+- [ ] Implement `CombinedFilter::matches(&mut self, path: &Path) -> Result<bool, FilterError>`
+- [ ] Implement `CombinedFilter::requires_content(&self) -> bool`
+- [ ] Add validation: reject content predicates if `!content_enabled`
+- [ ] Implement filter combination per Spec S10 (all sources AND'd)
+
+**Tests:**
+- [ ] unit: `test_combined_glob_only`
+- [ ] unit: `test_combined_expr_only`
+- [ ] unit: `test_combined_json_only`
+- [ ] unit: `test_combined_glob_and_expr`
+- [ ] unit: `test_combined_all_sources_and`
+- [ ] unit: `test_combined_content_without_flag_error`
+- [ ] unit: `test_combined_content_with_flag_ok`
+- [ ] unit: `test_combined_empty_is_all_files`
+- [ ] unit: `test_combined_default_exclusions_always_apply`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-core combined`
+- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+
+**Rollback:** Delete `combined.rs`, revert `mod.rs`
+
+---
+
+#### Step 6: Add CLI Options {#step-filter-6}
+
+**Commit:** `feat(cli): add filter expression and JSON options`
+
+**References:** [D09] Filter Inputs Are Additive, [D10] Content Filters Are Opt-In,
+[D13] Filter File Format Is Explicit, Table T20, (#file-filtering-symbols)
+
+**Artifacts:**
+- Modified: `crates/tugtool/src/main.rs` (add new CLI options to all command variants)
+
+**Tasks:**
+- [ ] Add `--filter <expr>` option to `ApplyPythonCommand::Rename` (repeatable via `Vec<String>`)
+- [ ] Add `--filter <expr>` option to `EmitPythonCommand::Rename`
+- [ ] Add `--filter <expr>` option to `AnalyzePythonCommand::Rename`
+- [ ] Add `--filter-json <json>` option (single, `Option<String>`)
+- [ ] Add `--filter-file <path>` option (single, `Option<PathBuf>`)
+- [ ] Add `--filter-file-format <format>` option (single, `Option<String>`)
+- [ ] Add `--filter-content` flag (`bool`)
+- [ ] Add `--filter-content-max-bytes <n>` option (`Option<u64>`)
+- [ ] Add `--filter-list` flag (`bool`)
+- [ ] Implement `parse_filter_file(path: &Path) -> Result<String, TugError>` helper
+- [ ] Reject multiple `--filter-json` with clear error (clap handles this)
+- [ ] Validate required pairing: `--filter-file` requires `--filter-file-format`
+- [ ] Validate mutual exclusivity: `--filter-list` skips operation execution
+
+**Tests:**
+- [ ] unit: CLI parses `--filter "ext:py"`
+- [ ] unit: CLI parses multiple `--filter` options
+- [ ] unit: CLI parses `--filter-json '{...}'`
+- [ ] unit: CLI parses `--filter-file path.txt`
+- [ ] unit: CLI rejects `--filter-file` without `--filter-file-format`
+- [ ] unit: CLI parses `--filter-content` flag
+- [ ] unit: CLI parses `--filter-content-max-bytes 1048576`
+- [ ] unit: CLI parses `--filter-list` flag
+- [ ] unit: CLI parses combined `--filter` and `-- patterns`
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool`
+- [ ] `cargo run -p tugtool -- apply python rename --help` shows new options
+- [ ] `cargo run -p tugtool -- emit python rename --help` shows new options
+- [ ] `cargo run -p tugtool -- analyze python rename --help` shows new options
+
+**Rollback:** Revert `main.rs` changes
+
+---
+
+#### Step 7: Implement Filter List Mode {#step-filter-7}
+
+**Commit:** `feat(cli): add --filter-list introspection mode`
+
+**References:** [D12] Filter Introspection for Agents, Spec S11, (#file-filtering-spec)
+
+**Artifacts:**
+- Modified: `crates/tugtool/src/main.rs` (add filter-list handling)
+- Modified: `crates/tugtool-core/src/output.rs` (add `FilterListResponse`)
+
+**Tasks:**
+- [ ] Add `FilterListResponse` struct to `output.rs`:
+  - `files: Vec<String>` (sorted relative paths)
+  - `count: usize`
+  - `filter_summary: FilterSummary`
+- [ ] Add `FilterSummary` struct:
+  - `glob_patterns: Vec<String>`
+  - `expressions: Vec<String>`
+  - `json_filter: Option<serde_json::Value>`
+  - `content_enabled: bool`
+- [ ] Implement `Serialize` for `FilterListResponse`
+- [ ] In command execution, check `--filter-list` flag first
+- [ ] If set, build `CombinedFilter`, collect matching files, output JSON, exit 0
+- [ ] Skip actual rename/analyze operation when `--filter-list` is set
+
+**Tests:**
+- [ ] integration: `--filter-list` with glob patterns outputs JSON with correct files
+- [ ] integration: `--filter-list` with expression outputs JSON
+- [ ] integration: `--filter-list` count matches file list length
+- [ ] integration: `--filter-list` returns exit code 0
+- [ ] integration: `--filter-list` does not modify any files
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool filter_list`
+- [ ] Manual: `tug apply python rename --at x:1:1 --to y --filter-list` outputs JSON
+
+**Rollback:** Revert `main.rs` and `output.rs` changes
+
+---
+
+#### Step 8: Integrate Combined Filter into Operations {#step-filter-8}
+
+**Commit:** `feat(cli): use combined filter in refactoring operations`
+
+**References:** [D09] Filter Inputs Are Additive, [D10] Content Filters Are Opt-In,
+[D11] Default Exclusions Always Apply, [D14] Git Predicates Are Supported,
+Spec S10, (#file-filtering-spec)
+
+**Artifacts:**
+- Modified: `crates/tugtool/src/main.rs`
+- Modified: `crates/tugtool/src/cli.rs`
+- Modified: `crates/tugtool-python/src/files.rs`
+
+**Tasks:**
+- [ ] Update `collect_python_files_filtered()` signature to accept `&mut CombinedFilter`
+- [ ] Update `analyze_rename()` in `cli.rs` to accept `CombinedFilter`
+- [ ] Update `do_rename()` in `cli.rs` to accept `CombinedFilter`
+- [ ] Build `CombinedFilter` in `execute_apply_python()` from all filter sources
+- [ ] Build `CombinedFilter` in `execute_emit_python()` from all filter sources
+- [ ] Build `CombinedFilter` in `execute_analyze_python()` from all filter sources
+- [ ] Ensure backward compatibility: glob-only usage (`-- patterns`) still works
+- [ ] Support `--filter-file` input based on `--filter-file-format`
+- [ ] Enforce `--filter-content-max-bytes` when content predicates are used
+- [ ] Ensure filter errors produce proper JSON error output
+
+**Tests:**
+- [ ] integration: `--filter "ext:py"` restricts rename scope
+- [ ] integration: `--filter "path:src/**"` restricts to src directory
+- [ ] integration: `--filter "not name:*_test.py"` excludes test files
+- [ ] integration: `--filter` + `-- patterns` both apply (AND)
+- [ ] integration: `--filter-json '{...}'` restricts scope
+- [ ] integration: existing glob-only tests still pass
+- [ ] integration: content predicate without `--filter-content` errors
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool`
+- [ ] `cargo nextest run -p tugtool-python`
+- [ ] Manual: `tug apply python rename --at test.py:1:5 --to new_name --filter "path:src/**"`
+- [ ] Manual: `tug emit python rename --at test.py:1:5 --to new_name --filter "ext:py" -- "!tests/**"`
+
+**Rollback:** Revert changes to `main.rs`, `cli.rs`, `files.rs`
+
+---
+
+#### Step 9: Documentation {#step-filter-9}
+
+**Commit:** `docs: add filter expression and JSON documentation`
+
+**References:** (#file-filtering-docs), Spec S08, Spec S09, Table T20
+
+**Artifacts:**
+- Modified: `CLAUDE.md`
+- Modified: `docs/AGENT_API.md`
+
+**Tasks:**
+- [ ] Add "Filter Expression Language" section to CLAUDE.md Quick Reference
+- [ ] Document all predicates (`path`, `name`, `ext`, `lang`, `kind`, `size`, `contains`, `regex`)
+- [ ] Document operators (`:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`)
+- [ ] Document combinators (`and`, `or`, `not`, parentheses)
+- [ ] Add JSON filter schema documentation with examples
+- [ ] Document `--filter-content` requirement for content predicates
+- [ ] Document `--filter-list` introspection mode
+- [ ] Add "Common Filter Recipes" section with agent-focused examples
+- [ ] Update `docs/AGENT_API.md` with filter CLI options
+
+**Tests:**
+- [ ] Documentation examples execute correctly when copy-pasted
+
+**Checkpoint:**
+- [ ] Manual review of CLAUDE.md changes
+- [ ] Manual review of AGENT_API.md changes
+- [ ] Run documented examples to verify they work
+
+**Rollback:** Revert documentation changes
+
+---
+
+#### Step 10: Golden Tests {#step-filter-10}
+
+**Commit:** `test: add golden tests for filter system`
+
+**References:** (#file-filtering-tests), Spec S08, Spec S09, Spec S11
+
+**Artifacts:**
+- New: `crates/tugtool/tests/golden/filter/` directory
+- New: Golden test files for filter outputs
+
+**Tasks:**
+- [ ] Add golden test for `--filter-list` response schema
+- [ ] Add golden test for filter expression error message format
+- [ ] Add golden test for JSON filter error message format
+- [ ] Add golden test for content predicate without flag error
+- [ ] Verify expression/JSON parity (same filter logic yields same file set)
+- [ ] Add drift prevention test for `FilterListResponse` schema
+
+**Tests:**
+- [ ] golden: `filter_list_response.json`
+- [ ] golden: `filter_expr_error.json`
+- [ ] golden: `filter_json_error.json`
+- [ ] golden: `filter_content_without_flag_error.json`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool golden`
+- [ ] `TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden` (if needed to create baselines)
+
+**Rollback:** Delete golden test files
+
+---
+
+### 12.7.6 Deliverables and Checkpoints {#file-filtering-deliverables}
+
+**Deliverable:** Advanced file filtering system with expression language, JSON schema, and introspection mode.
+
+#### Phase Exit Criteria ("Done means...") {#file-filtering-exit}
+
+- [ ] `--filter "path:src/** and ext:py"` works on all refactoring commands
+- [ ] `--filter-json '{"all":[...]}'` works on all refactoring commands
+- [ ] `--filter` + `-- patterns` both apply (AND combination)
+- [ ] `contains`/`regex` predicates error without `--filter-content`
+- [ ] `contains`/`regex` predicates work with `--filter-content`
+- [ ] `--filter "git_tracked:true"` restricts to tracked files
+- [ ] Git predicates return false gracefully when no `.git` present
+- [ ] `--filter-list` outputs matched files JSON and exits 0
+- [ ] All existing glob-only tests pass unchanged
+- [ ] Documentation updated in CLAUDE.md and AGENT_API.md
+- [ ] No clippy warnings: `cargo clippy --workspace -- -D warnings`
+
+#### Acceptance Tests {#file-filtering-acceptance}
+
+- [ ] integration: Expression filter restricts rename scope
+- [ ] integration: JSON filter restricts rename scope
+- [ ] integration: Filter parity (same predicate in expr vs JSON yields same files)
+- [ ] integration: Content filter requires `--filter-content` flag
+- [ ] integration: Git predicate restricts to tracked/modified files
+- [ ] integration: Git predicate graceful when no `.git` present
+- [ ] integration: `--filter-list` returns correct file count
+
+| Checkpoint | Verification |
+|------------|--------------|
+| Parser tests | `cargo nextest run -p tugtool-core expr json` |
+| Predicate tests | `cargo nextest run -p tugtool-core predicate content` |
+| CLI options | `tug apply python rename --help` shows filter options |
+| Filter list | `tug apply python rename --at x:1:1 --to y --filter-list` |
+| Integration | `cargo nextest run --workspace` |
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#file-filtering-roadmap}
+
+- [ ] Add `mtime` predicate (file modification time comparison)
+- [ ] Add `ctime` predicate (file creation time comparison)
+- [ ] Add `--include-default-excluded` override flag
+- [ ] Add filter preset system (`--filter-preset no-tests`)
+- [ ] Parallel content scanning for large codebases
+
+**Phase complete when all checkpoints pass.**

@@ -6,6 +6,105 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 0: Refactor filter.rs to Directory Module | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 0 specification (lines 1288-1313)
+- `crates/tugtool-core/src/filter.rs` - Original filter implementation
+- `crates/tugtool-core/src/lib.rs` - Module declarations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `filter/` directory in `tugtool-core/src/` | Done |
+| Move existing `filter.rs` content to `filter/glob.rs` | Done |
+| Create `filter/mod.rs` that re-exports from `glob.rs` | Done |
+| Update `lib.rs` if necessary to maintain public exports | Done (no change needed) |
+| Verify all existing imports continue to work | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter/glob.rs` - Contains existing glob-based filtering code (moved from filter.rs)
+- `crates/tugtool-core/src/filter/mod.rs` - Module file re-exporting `FileFilterSpec`, `FilterError`, `DEFAULT_EXCLUSIONS`
+
+**Files Modified:**
+- `plans/phase-12.md` - Checked off all Step 0 tasks and checkpoints
+
+**Files Deleted:**
+- `crates/tugtool-core/src/filter.rs` - Replaced by directory module structure
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core filter`: 13 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core filter`: PASS (13/13 tests)
+- `cargo build --workspace`: PASS
+
+**Key Decisions/Notes:**
+- No changes to `lib.rs` needed since `pub mod filter;` works with both `filter.rs` and `filter/mod.rs`
+- Public API unchanged: all existing imports continue to work
+- Module doc comment updated in `glob.rs` to reflect its role as the glob submodule
+
+---
+
+## [phase-12.md] Section 12.7.5: Execution Steps (File Filtering) | PLAN WRITTEN | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Section 12.7 "Revisit File Filtering To Make It Great"
+- `plans/plan-skeleton.md` - Execution step format requirements
+- `crates/tugtool-core/src/filter.rs` - Current filter implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Review existing filter implementation | Done |
+| Review plan-skeleton.md format requirements | Done |
+| Expand stub execution steps into full format | Done |
+| Add Step 0: Refactor filter.rs to directory module | Done |
+| Add Step 1: Add predicate types | Done |
+| Add Step 2: Implement expression parser | Done |
+| Add Step 3: Implement JSON filter schema | Done |
+| Add Step 4: Implement content predicates | Done |
+| Add Step 5: Implement combined filter | Done |
+| Add Step 6: Add CLI options | Done |
+| Add Step 7: Implement filter list mode | Done |
+| Add Step 8: Integrate combined filter into operations | Done |
+| Add Step 9: Documentation | Done |
+| Add Step 10: Golden tests | Done |
+| Add Section 12.7.6 Deliverables and Checkpoints | Done |
+| Remove redundant phase-12.7-file-filtering.md file | Done |
+
+**Files Created:**
+- None (plan content only)
+
+**Files Modified:**
+- `plans/phase-12.md` - Replaced stub execution steps (8, 9, 10) with 11 properly detailed steps (0-10) following plan-skeleton.md format
+
+**Files Deleted:**
+- `plans/phase-12.7-file-filtering.md` - Redundant file from initial code-planner agent run
+
+**Test Results:**
+- N/A (plan documentation only, no code changes)
+
+**Checkpoints Verified:**
+- Plan follows plan-skeleton.md format: PASS
+- Each step has: commit message, references, artifacts, tasks, tests, checkpoint, rollback: PASS
+
+**Key Decisions/Notes:**
+- User rejected initial stub steps as not following plan-skeleton.md format properly
+- Expanded from 3 stub steps to 11 detailed steps covering the full implementation
+- Chose `winnow` parser combinator over `pest` for expression parsing (simpler, no grammar file needed)
+- Added `CombinedFilter` with builder pattern to unify all filter sources
+- Content predicates require explicit `--filter-content` flag per [D10]
+- All filter sources combine with AND per [D09]
+
+---
+
 ## [phase-12.md] Section 12.6: Deliverables and Checkpoints | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
