@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 4: Implement Content Predicates | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 4 specification (lines 1457-1493)
+- [D10] Content Filters Are Opt-In (line 1143)
+- Spec S08: Filter Expression Language - content predicate semantics (lines 1167-1214)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `ContentMatcher` struct with cached file contents | Done |
+| Implement `ContentMatcher::new() -> Self` | Done |
+| Implement `matches_contains` method | Done |
+| Implement `matches_regex` method | Done |
+| Add lazy file reading with caching | Done |
+| Add `ContentError::ContentReadError` variant | Done |
+| Add `ContentError::InvalidRegex` variant | Done |
+| Implement short-circuit on first match for `contains` | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter/content.rs` - ContentMatcher with caching, substring/regex matching
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/mod.rs` - Added content module and re-exports (ContentMatcher, ContentError)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core content`: 29 tests passed (9 in content module)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core content`: PASS
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- Used `ContentError` as a dedicated error type (consistent with ExprError, JsonFilterError pattern)
+- File content and regex patterns are cached to avoid redundant I/O and compilation
+- Used HashMap Entry API to satisfy clippy's `map_entry` lint
+- `#[cfg(test)]` `read_count` field allows verification that caching works correctly
+
+---
+
 ## [phase-12.md] Step 3: Implement JSON Filter Schema | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

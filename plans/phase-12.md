@@ -1466,29 +1466,29 @@ Spec S09, (#file-filtering-spec)
 - Modified: `crates/tugtool-core/Cargo.toml` (add `regex` if not present)
 
 **Tasks:**
-- [ ] Define `ContentMatcher` struct that holds cached file contents
-- [ ] Implement `ContentMatcher::new() -> Self`
-- [ ] Implement `ContentMatcher::matches_contains(&mut self, path: &Path, substring: &str) -> Result<bool, FilterError>`
-- [ ] Implement `ContentMatcher::matches_regex(&mut self, path: &Path, pattern: &str) -> Result<bool, FilterError>`
-- [ ] Add lazy file reading with caching (avoid re-reading same file)
-- [ ] Add `FilterError::ContentReadError { path, message }` variant
-- [ ] Add `FilterError::InvalidRegex { pattern, message }` variant
-- [ ] Implement short-circuit on first match for `contains`
+- [x] Define `ContentMatcher` struct that holds cached file contents
+- [x] Implement `ContentMatcher::new() -> Self`
+- [x] Implement `ContentMatcher::matches_contains(&mut self, path: &Path, substring: &str) -> Result<bool, FilterError>`
+- [x] Implement `ContentMatcher::matches_regex(&mut self, path: &Path, pattern: &str) -> Result<bool, FilterError>`
+- [x] Add lazy file reading with caching (avoid re-reading same file)
+- [x] Add `FilterError::ContentReadError { path, message }` variant
+- [x] Add `FilterError::InvalidRegex { pattern, message }` variant
+- [x] Implement short-circuit on first match for `contains`
 
 **Tests:**
-- [ ] unit: `test_content_contains_match`
-- [ ] unit: `test_content_contains_no_match`
-- [ ] unit: `test_content_contains_multiline`
-- [ ] unit: `test_content_regex_match`
-- [ ] unit: `test_content_regex_no_match`
-- [ ] unit: `test_content_regex_multiline`
-- [ ] unit: `test_content_regex_invalid_pattern_error`
-- [ ] unit: `test_content_file_not_found_error`
-- [ ] unit: `test_content_caching_reads_once`
+- [x] unit: `test_content_contains_match`
+- [x] unit: `test_content_contains_no_match`
+- [x] unit: `test_content_contains_multiline`
+- [x] unit: `test_content_regex_match`
+- [x] unit: `test_content_regex_no_match`
+- [x] unit: `test_content_regex_multiline`
+- [x] unit: `test_content_regex_invalid_pattern_error`
+- [x] unit: `test_content_file_not_found_error`
+- [x] unit: `test_content_caching_reads_once`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core content`
-- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+- [x] `cargo nextest run -p tugtool-core content`
+- [x] `cargo clippy -p tugtool-core -- -D warnings`
 
 **Rollback:** Delete `content.rs`, revert `mod.rs` and Cargo.toml
 

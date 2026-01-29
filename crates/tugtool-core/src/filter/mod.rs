@@ -7,6 +7,7 @@
 //! - Predicate-based filtering (path, extension, size, git state, content)
 //! - Expression-based filtering with boolean operators
 //! - JSON-based filter schema for programmatic use
+//! - Content-aware matching (substring and regex, requires opt-in)
 //!
 //! ## Usage
 //!
@@ -22,6 +23,7 @@
 //! assert!(!spec.matches(Path::new("tests/test_main.py")));
 //! ```
 
+mod content;
 mod expr;
 mod glob;
 mod json;
@@ -41,3 +43,6 @@ pub use expr::{parse_filter_expr, ExprError, FilterExpr};
 
 // Re-export public API from JSON filter module
 pub use json::{parse_filter_json, JsonFilter, JsonFilterError, JsonPredicate};
+
+// Re-export public API from content module
+pub use content::{ContentError, ContentMatcher};
