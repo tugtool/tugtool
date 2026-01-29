@@ -8,6 +8,7 @@ use std::path::Path;
 use thiserror::Error;
 use walkdir::WalkDir;
 
+use tugtool_core::filter::FileFilterSpec;
 use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 
 // ============================================================================
@@ -48,6 +49,105 @@ pub type FileResult<T> = Result<T, FileError>;
 /// ```
 pub fn collect_python_files(workspace_root: &Path) -> FileResult<Vec<(String, String)>> {
     collect_python_files_excluding(workspace_root, &[])
+}
+
+/// Collect Python files with optional filter specification.
+///
+/// This is the primary entry point for refactoring operations that support
+/// gitignore-style file filtering via the CLI's `-- <patterns>` syntax.
+///
+/// # Arguments
+///
+/// * `workspace_root` - The workspace root directory
+/// * `filter` - Optional filter specification. When `None`, all Python files are collected.
+///
+/// # Filter Behavior
+///
+/// When a filter is provided:
+/// - If the filter has inclusion patterns, only files matching those patterns are included
+/// - If the filter has exclusion patterns, matching files are excluded
+/// - Default exclusions (`.git`, `__pycache__`, `venv`, etc.) always apply
+///
+/// When no filter is provided:
+/// - All Python files are collected (respecting default exclusions)
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_core::filter::FileFilterSpec;
+///
+/// // No filter - all Python files
+/// let files = collect_python_files_filtered(workspace_root, None)?;
+///
+/// // With filter - only src/**/*.py, excluding tests
+/// let filter = FileFilterSpec::parse(&[
+///     "src/**/*.py".to_string(),
+///     "!tests/**".to_string(),
+/// ])?;
+/// let files = collect_python_files_filtered(workspace_root, filter.as_ref())?;
+/// ```
+pub fn collect_python_files_filtered(
+    workspace_root: &Path,
+    filter: Option<&FileFilterSpec>,
+) -> FileResult<Vec<(String, String)>> {
+    let mut files = Vec::new();
+
+    for entry in WalkDir::new(workspace_root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+
+        // Get relative path first - we only want to filter on workspace-relative paths,
+        // not the full system path (which may include temp directory names like .tmpXXX)
+        let rel_path = match path.strip_prefix(workspace_root) {
+            Ok(p) => p,
+            Err(_) => continue, // Skip files outside workspace root
+        };
+
+        // Only consider Python files
+        if path.extension().is_none_or(|ext| ext != "py") {
+            continue;
+        }
+
+        // Apply filter if provided
+        if let Some(spec) = filter {
+            // FileFilterSpec.matches() handles default exclusions internally
+            if !spec.matches(rel_path) {
+                continue;
+            }
+        } else {
+            // No filter - apply default exclusions manually
+            // Skip hidden directories
+            if rel_path
+                .components()
+                .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+            {
+                continue;
+            }
+            // Skip common exclusions
+            if rel_path.components().any(|c| {
+                let name = c.as_os_str().to_string_lossy();
+                name == "__pycache__"
+                    || name == "node_modules"
+                    || name == "venv"
+                    || name == ".venv"
+                    || name == "target"
+            }) {
+                continue;
+            }
+        }
+
+        let rel_path_str = rel_path.to_string_lossy().to_string();
+        let content = fs::read_to_string(path)?;
+        files.push((rel_path_str, content));
+    }
+
+    // Sort files by path for deterministic ID assignment (Contract C8).
+    files.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
+
+    Ok(files)
 }
 
 /// Collect Python files, excluding paths matching any exclusion pattern.
@@ -566,5 +666,120 @@ mod tests {
         assert!(matches_simple_glob("foo_bar_baz.py", "foo_*_baz.py"));
         assert!(matches_simple_glob("foo__baz.py", "foo_*_baz.py"));
         assert!(!matches_simple_glob("foo_bar.py", "foo_*_baz.py"));
+    }
+
+    // ========================================================================
+    // FileFilterSpec Integration Tests (collect_python_files_filtered)
+    // ========================================================================
+
+    #[test]
+    fn collect_filtered_no_filter_returns_all() {
+        let workspace = create_test_workspace_with_tests();
+
+        // No filter = all Python files (same as collect_python_files)
+        let filtered = collect_python_files_filtered(workspace.path(), None).unwrap();
+        let all = collect_python_files(workspace.path()).unwrap();
+
+        assert_eq!(filtered, all);
+    }
+
+    #[test]
+    fn collect_filtered_with_inclusion_restricts_scope() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Only include src/**/*.py
+        let filter = FileFilterSpec::parse(&["src/**/*.py".to_string()])
+            .unwrap()
+            .unwrap();
+        let files = collect_python_files_filtered(workspace.path(), Some(&filter)).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should only include files in src/
+        assert!(paths.contains(&"src/main.py"));
+        assert!(paths.contains(&"src/utils.py"));
+
+        // Should NOT include tests/ or root files
+        assert!(!paths.iter().any(|p| p.starts_with("tests/")));
+        assert!(!paths.contains(&"test_integration.py"));
+    }
+
+    #[test]
+    fn collect_filtered_with_exclusion_only() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Exclude tests directory
+        let filter = FileFilterSpec::parse(&["!tests/**".to_string()])
+            .unwrap()
+            .unwrap();
+        let files = collect_python_files_filtered(workspace.path(), Some(&filter)).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should include src and root files
+        assert!(paths.contains(&"src/main.py"));
+        assert!(paths.contains(&"src/utils.py"));
+        assert!(paths.contains(&"test_integration.py"));
+
+        // Should NOT include tests/
+        assert!(!paths.iter().any(|p| p.starts_with("tests/")));
+    }
+
+    #[test]
+    fn collect_filtered_with_combined_patterns() {
+        let workspace = create_test_workspace_with_tests();
+
+        // Include src/**/*.py but exclude test_*.py
+        let filter = FileFilterSpec::parse(&[
+            "src/**/*.py".to_string(),
+            "!**/test_*.py".to_string(),
+        ])
+        .unwrap()
+        .unwrap();
+        let files = collect_python_files_filtered(workspace.path(), Some(&filter)).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should include src/ non-test files
+        assert!(paths.contains(&"src/main.py"));
+        assert!(paths.contains(&"src/utils.py"));
+
+        // Should not include any test_*.py files
+        assert!(!paths.iter().any(|p| {
+            Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().starts_with("test_"))
+                .unwrap_or(false)
+        }));
+    }
+
+    #[test]
+    fn collect_filtered_respects_default_exclusions() {
+        let dir = TempDir::new().unwrap();
+
+        // Create files in normally-excluded directories
+        fs::create_dir_all(dir.path().join("__pycache__")).unwrap();
+        fs::create_dir_all(dir.path().join("venv/lib")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+
+        File::create(dir.path().join("__pycache__/module.py"))
+            .unwrap()
+            .write_all(b"# cached")
+            .unwrap();
+        File::create(dir.path().join("venv/lib/site.py"))
+            .unwrap()
+            .write_all(b"# venv")
+            .unwrap();
+        File::create(dir.path().join("src/main.py"))
+            .unwrap()
+            .write_all(b"# source")
+            .unwrap();
+
+        // With a filter that would match everything
+        let filter = FileFilterSpec::parse(&["**/*.py".to_string()])
+            .unwrap()
+            .unwrap();
+        let files = collect_python_files_filtered(dir.path(), Some(&filter)).unwrap();
+        let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+
+        // Should only include src/main.py (default exclusions filter out pycache and venv)
+        assert_eq!(paths, vec!["src/main.py"]);
     }
 }

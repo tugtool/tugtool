@@ -1073,6 +1073,7 @@ name = "tugtool-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "globset",
  "hex",
  "libc",
  "serde",

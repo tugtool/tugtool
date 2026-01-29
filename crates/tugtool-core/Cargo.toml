@@ -8,6 +8,7 @@ description = "Core infrastructure for tugtool: patch IR, facts, session, worksp
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+globset = "0.4"
 hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

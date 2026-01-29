@@ -44,6 +44,8 @@ use tugtool_core::workspace::{Language, SnapshotConfig, WorkspaceSnapshot};
 #[cfg(feature = "python")]
 use tugtool::cli::do_rename;
 #[cfg(feature = "python")]
+use tugtool_core::filter::FileFilterSpec;
+#[cfg(feature = "python")]
 use tugtool_python::verification::VerificationMode;
 
 // ============================================================================
@@ -540,10 +542,14 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             to,
             verify,
             no_verify,
-            filter: _filter, // TODO: Step 3 will integrate filter
+            filter,
         } => {
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Parse file filter specification
+            let filter_spec = FileFilterSpec::parse(&filter)
+                .map_err(|e| TugError::invalid_args(e.to_string()))?;
 
             // Determine effective verification mode
             // --no-verify takes precedence
@@ -554,7 +560,15 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             };
 
             // Run the rename operation (apply=true)
-            let json = do_rename(&session, Some(python_path), &at, &to, effective_verify, true)?;
+            let json = do_rename(
+                &session,
+                Some(python_path),
+                &at,
+                &to,
+                effective_verify,
+                true,
+                filter_spec.as_ref(),
+            )?;
 
             // Output JSON result
             println!("{}", json);
@@ -586,10 +600,14 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
             at,
             to,
             json: emit_json,
-            filter: _filter, // TODO: Step 3 will integrate filter
+            filter,
         } => {
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Parse file filter specification
+            let filter_spec = FileFilterSpec::parse(&filter)
+                .map_err(|e| TugError::invalid_args(e.to_string()))?;
 
             // Run rename in dry-run mode (apply=false) with no verification
             let json_result = do_rename(
@@ -599,6 +617,7 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
                 &to,
                 VerificationMode::None,
                 false, // Never apply changes
+                filter_spec.as_ref(),
             )?;
 
             // Parse result to extract diff
@@ -673,10 +692,14 @@ fn execute_analyze_python(
             at,
             to,
             output,
-            filter: _filter, // TODO: Step 3 will integrate filter
+            filter,
         } => {
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Parse file filter specification
+            let filter_spec = FileFilterSpec::parse(&filter)
+                .map_err(|e| TugError::invalid_args(e.to_string()))?;
 
             // Run rename in dry-run mode with no verification
             let json_result = do_rename(
@@ -686,6 +709,7 @@ fn execute_analyze_python(
                 &to,
                 VerificationMode::None,
                 false, // Never apply changes
+                filter_spec.as_ref(),
             )?;
 
             // Parse result

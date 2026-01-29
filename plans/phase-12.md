@@ -892,20 +892,20 @@ enum AnalyzeOutput {
 - Modified: `crates/tugtool-python/src/files.rs`
 
 **Tasks:**
-- [ ] Add `filter: Option<&FileFilterSpec>` parameter to `collect_python_files_filtered()`
-- [ ] Modify file collection to apply filter after default exclusions
-- [ ] Update `analyze_rename` and `do_rename` in cli.rs to accept filter
-- [ ] Pass filter from CLI through to file collection
-- [ ] Test with filter patterns
+- [x] Add `filter: Option<&FileFilterSpec>` parameter to `collect_python_files_filtered()`
+- [x] Modify file collection to apply filter after default exclusions
+- [x] Update `analyze_rename` and `do_rename` in cli.rs to accept filter
+- [x] Pass filter from CLI through to file collection
+- [x] Test with filter patterns
 
 **Tests:**
-- [ ] integration: rename with `-- src/**/*.py` only affects src files
-- [ ] integration: rename with `-- !tests/**` excludes tests directory
-- [ ] integration: rename with combined filter works correctly
+- [x] integration: rename with `-- src/**/*.py` only affects src files
+- [x] integration: rename with `-- !tests/**` excludes tests directory
+- [x] integration: rename with combined filter works correctly
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool`
-- [ ] Manual test: `tug apply python rename --at ... --to ... -- src/**/*.py`
+- [x] `cargo nextest run -p tugtool`
+- [x] Manual test: `tug apply python rename --at ... --to ... -- src/**/*.py`
 
 **Rollback:** Revert cli.rs and files.rs changes
 

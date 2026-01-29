@@ -15,6 +15,7 @@ pub mod adapter;
 pub mod diff;
 pub mod error;
 pub mod facts;
+pub mod filter;
 pub mod output;
 pub mod patch;
 pub mod sandbox;

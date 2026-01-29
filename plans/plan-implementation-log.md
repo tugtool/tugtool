@@ -6,6 +6,63 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 3: Integrate File Filter into File Collection | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 3 tasks, D03 (gitignore syntax), Spec S05 (file filter spec)
+- `crates/tugtool/src/filter.rs` - FileFilterSpec implementation
+- `crates/tugtool-python/src/files.rs` - File collection functions
+- `crates/tugtool/src/cli.rs` - CLI helper functions (analyze_rename, do_rename)
+- `crates/tugtool/src/main.rs` - Execute functions for apply/emit/analyze
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Move `filter` module to `tugtool-core` (shared infrastructure) | Done |
+| Add `globset` dependency to `tugtool-core` | Done |
+| Add `collect_python_files_filtered()` with `Option<&FileFilterSpec>` parameter | Done |
+| Modify file collection to apply filter using `FileFilterSpec::matches()` | Done |
+| Update `analyze_rename` in cli.rs to accept filter parameter | Done |
+| Update `do_rename` in cli.rs to accept filter parameter | Done |
+| Parse filter in `execute_apply_python` and pass to `do_rename` | Done |
+| Parse filter in `execute_emit_python` and pass to `do_rename` | Done |
+| Parse filter in `execute_analyze_python` and pass to `do_rename` | Done |
+| Add integration tests for filter functionality | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter.rs` - FileFilterSpec moved from tugtool to core for shared access
+
+**Files Modified:**
+- `crates/tugtool-core/Cargo.toml` - Added `globset = "0.4"` dependency
+- `crates/tugtool-core/src/lib.rs` - Added `filter` module export
+- `crates/tugtool/src/filter.rs` - Changed to re-export from `tugtool_core::filter`
+- `crates/tugtool-python/src/files.rs` - Added `collect_python_files_filtered()` function and 5 new tests
+- `crates/tugtool/src/cli.rs` - Updated `analyze_rename` and `do_rename` signatures to accept filter parameter
+- `crates/tugtool/src/main.rs` - Integrated filter parsing in execute_apply_python, execute_emit_python, execute_analyze_python
+- `plans/phase-12.md` - Checked off Step 3 tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run --workspace`: 1885 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool`: PASS
+- Manual test `tug emit python rename --at ... --to ... -- 'src/**/*.py'`: PASS (only src files affected)
+- Manual test `tug emit python rename --at ... --to ... -- '!tests/**'`: PASS (tests excluded)
+
+**Key Decisions/Notes:**
+- Moved `FileFilterSpec` from `tugtool` to `tugtool-core` to allow `tugtool-python` to import it (avoids circular dependency)
+- When filter is `None`, `collect_python_files_filtered` applies default exclusions manually for backward compatibility
+- When filter is `Some`, `FileFilterSpec::matches()` handles both user patterns and default exclusions
+- Filter parsing uses `FileFilterSpec::parse()` which returns `Option<FileFilterSpec>` (None if no patterns)
+- Invalid glob patterns produce `TugError::invalid_args` with descriptive error message
+- Fixed clippy warning: changed `!path.extension().is_some_and(...)` to `path.extension().is_none_or(...)`
+
+---
+
 ## [phase-12.md] Steps 1-2: Define CLI Structure and Implement Dispatcher | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

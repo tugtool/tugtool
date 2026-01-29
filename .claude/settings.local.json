@@ -277,7 +277,9 @@
       "Bash(if [ -d \".tug/fixtures/temporale\" ])",
       "Bash([ -x \".tug-test-venv/bin/python\" ])",
       "Bash(then .tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v)",
-      "Bash(else echo \"Temporale fixture or venv not set up. Skipping.\")"
+      "Bash(else echo \"Temporale fixture or venv not set up. Skipping.\")",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug emit python rename:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug:*)"
     ],
     "deny": [],
     "ask": []

@@ -30,11 +30,13 @@ use std::path::PathBuf;
 
 use tugtool_core::error::TugError;
 #[cfg(feature = "python")]
+use tugtool_core::filter::FileFilterSpec;
+#[cfg(feature = "python")]
 use tugtool_core::output::Location;
 #[cfg(feature = "python")]
 use tugtool_core::session::Session;
 #[cfg(feature = "python")]
-use tugtool_python::files::collect_python_files;
+use tugtool_python::files::collect_python_files_filtered;
 #[cfg(feature = "python")]
 use tugtool_python::ops::rename::{analyze, rename};
 #[cfg(feature = "python")]
@@ -52,6 +54,7 @@ use tugtool_python::verification::VerificationMode;
 /// * `_python_path` - Unused (kept for API compatibility)
 /// * `at` - Location string in "file:line:col" format
 /// * `to` - New name for the symbol
+/// * `filter` - Optional file filter specification
 ///
 /// # Returns
 ///
@@ -66,6 +69,7 @@ pub fn analyze_rename(
     _python_path: Option<PathBuf>,
     at: &str,
     to: &str,
+    filter: Option<&FileFilterSpec>,
 ) -> Result<String, TugError> {
     // Parse location
     let location = Location::parse(at).ok_or_else(|| {
@@ -75,8 +79,8 @@ pub fn analyze_rename(
         ))
     })?;
 
-    // Collect Python files in workspace
-    let files = collect_python_files(session.workspace_root())
+    // Collect Python files in workspace (with optional filter)
+    let files = collect_python_files_filtered(session.workspace_root(), filter)
         .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
 
     // Run native analysis - RenameError converts to TugError via From impl
@@ -98,6 +102,7 @@ pub fn analyze_rename(
 /// * `to` - New name for the symbol
 /// * `verify_mode` - Verification mode after rename
 /// * `apply` - Whether to apply changes to files
+/// * `filter` - Optional file filter specification
 ///
 /// # Returns
 ///
@@ -114,6 +119,7 @@ pub fn do_rename(
     to: &str,
     verify_mode: VerificationMode,
     apply: bool,
+    filter: Option<&FileFilterSpec>,
 ) -> Result<String, TugError> {
     // Parse location
     let location = Location::parse(at).ok_or_else(|| {
@@ -126,8 +132,8 @@ pub fn do_rename(
     // Resolve Python interpreter for verification
     let python = resolve_python_path(python_path)?;
 
-    // Collect Python files in workspace
-    let files = collect_python_files(session.workspace_root())
+    // Collect Python files in workspace (with optional filter)
+    let files = collect_python_files_filtered(session.workspace_root(), filter)
         .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
 
     // Execute native rename - RenameError converts to TugError via From impl
@@ -248,6 +254,7 @@ mod tests {
                 Some(PathBuf::from("/usr/bin/python3")),
                 "bad:input", // Missing column
                 "bar",
+                None, // No filter
             );
 
             assert!(result.is_err());
@@ -268,6 +275,7 @@ mod tests {
                 "bar",
                 VerificationMode::None,
                 false,
+                None, // No filter
             );
 
             assert!(result.is_err());
@@ -297,7 +305,7 @@ mod tests {
 
             // Just verify the function can be called with Session
             // Result depends on Python availability - we only care about signature
-            let _result = analyze_rename(&session, None, "test.py:1:5", "bar");
+            let _result = analyze_rename(&session, None, "test.py:1:5", "bar", None);
         }
 
         #[test]
@@ -315,6 +323,7 @@ mod tests {
                 "bar",
                 VerificationMode::None,
                 false,
+                None, // No filter
             );
         }
     }
