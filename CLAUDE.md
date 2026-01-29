@@ -327,6 +327,175 @@ tug apply python rename ... -- 'src/**/*.py' '!**/test_*.py'
 tug apply python rename ... -- '!tests/**' '!**/conftest.py'
 ```
 
+### Filter Expression Language
+
+Filter expressions provide powerful file selection beyond simple glob patterns. Use `--filter "<expr>"` to specify filter expressions.
+
+**Grammar:**
+```
+<expr>       := <term> (("and" | "or") <term>)*
+<term>       := ["not"] <factor>
+<factor>     := <predicate> | "(" <expr> ")"
+<predicate>  := key ":" value | key "~" regex | key comparator value
+```
+
+**Predicates:**
+
+| Key | Meaning | Examples |
+|-----|---------|----------|
+| `path` | Path glob match | `path:src/**` |
+| `name` | Basename glob match | `name:*_test.py` |
+| `ext` | File extension (no dot) | `ext:py` |
+| `lang` | Language tag | `lang:python` |
+| `kind` | `file` or `dir` | `kind:file` |
+| `size` | File size in bytes | `size>10k`, `size<=2m` |
+| `contains` | Content substring | `contains:"TODO"` |
+| `regex` | Content regex | `regex:/@deprecated\b/` |
+| `git_status` | Git status | `git_status:modified`, `git_status:untracked` |
+| `git_tracked` | File tracked by git | `git_tracked:true` |
+| `git_ignored` | File ignored by git | `git_ignored:true` |
+| `git_stage` | Staging state | `git_stage:staged`, `git_stage:unstaged` |
+
+**Operators:**
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `:` | Glob/equality match | `ext:py`, `name:*.test.py` |
+| `~` | Regex match | `name~test_\d+\.py` |
+| `=` | Exact equality | `ext=py` |
+| `!=` | Not equal | `ext!=pyc` |
+| `>`, `>=` | Greater than | `size>1m` |
+| `<`, `<=` | Less than | `size<=100k` |
+
+**Combinators:**
+
+| Combinator | Meaning | Example |
+|------------|---------|---------|
+| `and` | Both must match | `ext:py and path:src/**` |
+| `or` | Either can match | `ext:py or ext:pyi` |
+| `not` | Negate expression | `not name:*_test.py` |
+| `(...)` | Grouping | `ext:py and (path:src/** or path:lib/**)` |
+
+**Precedence:** `not` > `and` > `or`. Use parentheses to override.
+
+**Content Predicates (`contains`, `regex`):**
+These predicates require the `--filter-content` flag:
+```bash
+tug apply python rename --at f.py:1:5 --to bar --filter "contains:TODO" --filter-content
+```
+
+Use `--filter-content-max-bytes <n>` to limit file size for content matching (skips larger files).
+
+**Git Predicates:**
+- If no `.git` directory is found, git predicates return `false`
+- `git_status` values: `modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`
+- `git_stage` values: `staged`, `unstaged`
+
+**Examples:**
+```bash
+# Python files in src/ directory
+tug apply python rename ... --filter "ext:py and path:src/**"
+
+# All Python files except tests
+tug apply python rename ... --filter "ext:py and not name:*_test.py"
+
+# Files modified in git
+tug apply python rename ... --filter "git_status:modified"
+
+# Large files only
+tug apply python rename ... --filter "size>100k"
+
+# Files containing TODO (requires --filter-content)
+tug apply python rename ... --filter "contains:TODO" --filter-content
+```
+
+### JSON Filter Schema
+
+For programmatic filter construction, use `--filter-json`:
+
+```json
+{
+  "all": [ <filter>, ... ],   // AND - all filters must match
+  "any": [ <filter>, ... ],   // OR - any filter can match
+  "not": <filter>,            // NOT - negate the filter
+  "predicates": [             // AND-combined predicate list
+    { "key": "path", "op": "glob", "value": "src/**" },
+    { "key": "ext", "op": "eq", "value": "py" }
+  ]
+}
+```
+
+**Predicate operations:** `eq`, `glob`, `regex`, `gt`, `gte`, `lt`, `lte`
+
+**Example:**
+```bash
+# JSON equivalent of: ext:py and path:src/**
+tug apply python rename ... --filter-json '{"predicates":[{"key":"ext","op":"eq","value":"py"},{"key":"path","op":"glob","value":"src/**"}]}'
+
+# Complex filter: (ext:py or ext:pyi) and not path:tests/**
+tug apply python rename ... --filter-json '{
+  "all": [
+    {"any": [
+      {"predicates": [{"key":"ext","op":"eq","value":"py"}]},
+      {"predicates": [{"key":"ext","op":"eq","value":"pyi"}]}
+    ]},
+    {"not": {"predicates": [{"key":"path","op":"glob","value":"tests/**"}]}}
+  ]
+}'
+```
+
+### Filter CLI Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--filter <expr>` | Repeatable | Expression filter (multiple are AND'd) |
+| `--filter-json <json>` | Single | JSON filter schema |
+| `--filter-file <path>` | Single | File containing filter content |
+| `--filter-file-format <fmt>` | Single | Format for `--filter-file`: `json`, `glob`, or `expr` |
+| `--filter-content` | Flag | Enable content predicates (`contains`, `regex`) |
+| `--filter-content-max-bytes <n>` | Single | Max file size for content matching |
+| `--filter-list` | Flag | Output matched files as JSON and exit (no refactor) |
+
+**Filter combination order:**
+1. Start with language-appropriate files (e.g., `**/*.py`)
+2. Apply default exclusions (`.git`, `__pycache__`, `venv`, etc.)
+3. Apply glob patterns (`-- <patterns...>`)
+4. Apply `--filter` expressions (AND)
+5. Apply `--filter-json` (AND)
+6. Apply `--filter-file` content (AND)
+
+**Filter introspection with `--filter-list`:**
+```bash
+# See which files match without running the operation
+tug apply python rename --at f.py:1:5 --to bar --filter "path:src/**" --filter-list
+# Output: {"files": ["src/a.py", "src/b.py"], "count": 2, "filter_summary": {...}}
+```
+
+### Common Filter Recipes
+
+```bash
+# Source files only (exclude tests)
+--filter "path:src/**" -- '!tests/**'
+
+# Only modified files (useful for incremental refactoring)
+--filter "git_status:modified"
+
+# Only tracked files (skip untracked/generated)
+--filter "git_tracked:true"
+
+# Files with TODOs (requires --filter-content)
+--filter "contains:TODO" --filter-content
+
+# Large files only
+--filter "size>50k"
+
+# Multiple conditions
+--filter "ext:py" --filter "path:src/**" --filter "not name:*_test.py"
+
+# Combining expression and glob filters
+--filter "ext:py and git_tracked:true" -- 'src/**' '!**/generated/**'
+```
+
 ### Agent Rules
 
 1. **Always analyze first**: Run `tug analyze python rename` or `tug emit python rename` before applying

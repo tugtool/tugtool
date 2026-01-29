@@ -6,6 +6,56 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 9: Documentation | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 9 specification (lines 1677-1707)
+- Spec S08: Filter Expression Language (lines 1167-1214)
+- Spec S09: JSON Filter Schema (lines 1215-1232)
+- Table T20: Filter CLI Options (lines 1257-1268)
+- Documentation Plan (#file-filtering-docs) (lines 1271-1276)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add "Filter Expression Language" section to CLAUDE.md Quick Reference | Done |
+| Document all predicates (`path`, `name`, `ext`, `lang`, `kind`, `size`, `contains`, `regex`) | Done |
+| Document operators (`:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`) | Done |
+| Document combinators (`and`, `or`, `not`, parentheses) | Done |
+| Add JSON filter schema documentation with examples | Done |
+| Document `--filter-content` requirement for content predicates | Done |
+| Document `--filter-list` introspection mode | Done |
+| Add "Common Filter Recipes" section with agent-focused examples | Done |
+| Update `docs/AGENT_API.md` with filter CLI options | Done |
+
+**Files Created:**
+- None (all changes in existing files)
+
+**Files Modified:**
+- `CLAUDE.md` - Added comprehensive filter documentation: "Filter Expression Language" section with grammar, predicates, operators, combinators; "JSON Filter Schema" section; "Filter CLI Options" table; "Common Filter Recipes" section
+- `docs/AGENT_API.md` - Added "Filter Flags" table and "File Filtering" section covering expression filters, JSON filters, glob patterns, content predicates, and filter introspection
+
+**Test Results:**
+- `cargo nextest run -p tugtool`: 193 tests passed
+- `cargo clippy --workspace -- -D warnings`: Clean (no warnings)
+- Documentation examples manually verified
+
+**Checkpoints Verified:**
+- Manual review of CLAUDE.md changes: PASS
+- Manual review of AGENT_API.md changes: PASS
+- Run documented examples to verify they work: PASS
+
+**Key Decisions/Notes:**
+- Documentation structured for both human readers and AI agents
+- Examples tested against real CLI to ensure copy-paste correctness
+- Filter recipes designed for common agent use cases (source-only, modified-only, tracked-only)
+- JSON filter schema documented with both simple predicates and complex nested examples
+
+---
+
 ## [phase-12.md] Step 8: Integrate Combined Filter into Operations | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

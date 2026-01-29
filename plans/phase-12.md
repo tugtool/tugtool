@@ -1685,23 +1685,23 @@ Spec S10, (#file-filtering-spec)
 - Modified: `docs/AGENT_API.md`
 
 **Tasks:**
-- [ ] Add "Filter Expression Language" section to CLAUDE.md Quick Reference
-- [ ] Document all predicates (`path`, `name`, `ext`, `lang`, `kind`, `size`, `contains`, `regex`)
-- [ ] Document operators (`:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`)
-- [ ] Document combinators (`and`, `or`, `not`, parentheses)
-- [ ] Add JSON filter schema documentation with examples
-- [ ] Document `--filter-content` requirement for content predicates
-- [ ] Document `--filter-list` introspection mode
-- [ ] Add "Common Filter Recipes" section with agent-focused examples
-- [ ] Update `docs/AGENT_API.md` with filter CLI options
+- [x] Add "Filter Expression Language" section to CLAUDE.md Quick Reference
+- [x] Document all predicates (`path`, `name`, `ext`, `lang`, `kind`, `size`, `contains`, `regex`)
+- [x] Document operators (`:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`)
+- [x] Document combinators (`and`, `or`, `not`, parentheses)
+- [x] Add JSON filter schema documentation with examples
+- [x] Document `--filter-content` requirement for content predicates
+- [x] Document `--filter-list` introspection mode
+- [x] Add "Common Filter Recipes" section with agent-focused examples
+- [x] Update `docs/AGENT_API.md` with filter CLI options
 
 **Tests:**
-- [ ] Documentation examples execute correctly when copy-pasted
+- [x] Documentation examples execute correctly when copy-pasted
 
 **Checkpoint:**
-- [ ] Manual review of CLAUDE.md changes
-- [ ] Manual review of AGENT_API.md changes
-- [ ] Run documented examples to verify they work
+- [x] Manual review of CLAUDE.md changes
+- [x] Manual review of AGENT_API.md changes
+- [x] Run documented examples to verify they work
 
 **Rollback:** Revert documentation changes
 

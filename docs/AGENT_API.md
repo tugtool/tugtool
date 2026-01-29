@@ -38,6 +38,21 @@ tug run --apply --verify syntax rename-symbol --at src/utils.py:42:5 --to transf
 | `--log-level <level>` | Log level (trace, debug, info, warn, error) | `warn` |
 | `--toolchain <lang>=<path>` | Explicit toolchain path override | Auto-detect |
 
+### Filter Flags
+
+These flags are available on refactoring commands (`apply`, `emit`, `analyze`) to restrict scope:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--filter <expr>` | Repeatable | Expression filter (multiple are AND'd together) |
+| `--filter-json <json>` | Single | JSON filter schema for complex filters |
+| `--filter-file <path>` | Single | File containing filter definitions |
+| `--filter-file-format <fmt>` | Single | Format for `--filter-file`: `json`, `glob`, or `expr` |
+| `--filter-content` | Flag | Enable content predicates (`contains`, `regex`) |
+| `--filter-content-max-bytes <n>` | Single | Max file size for content predicates |
+| `--filter-list` | Flag | Output matched files as JSON and exit (no refactor) |
+| `-- <patterns...>` | Positional | Glob patterns (placed at end of command) |
+
 ### Subcommands
 
 | Subcommand | Description | Example |
@@ -51,6 +66,127 @@ tug run --apply --verify syntax rename-symbol --at src/utils.py:42:5 --to transf
 | `toolchain <lang> setup` | Set up language toolchain | `tug toolchain python setup` |
 | `toolchain <lang> info` | Show toolchain configuration | `tug toolchain python info` |
 | `toolchain <lang> check` | Verify toolchain is valid | `tug toolchain python check` |
+
+### File Filtering
+
+Tug provides a powerful filtering system to restrict which files are included in refactoring operations.
+
+#### Expression Filters
+
+Use `--filter "<expr>"` for human-readable filter expressions:
+
+```bash
+# Filter by extension and path
+tug apply python rename --at f.py:1:5 --to bar --filter "ext:py and path:src/**"
+
+# Exclude test files
+tug apply python rename --at f.py:1:5 --to bar --filter "not name:*_test.py"
+
+# Only modified files
+tug apply python rename --at f.py:1:5 --to bar --filter "git_status:modified"
+```
+
+**Predicates:**
+
+| Key | Meaning | Example |
+|-----|---------|---------|
+| `path` | Path glob | `path:src/**` |
+| `name` | Basename glob | `name:*_test.py` |
+| `ext` | Extension (no dot) | `ext:py` |
+| `lang` | Language tag | `lang:python` |
+| `kind` | `file` or `dir` | `kind:file` |
+| `size` | File size | `size>10k`, `size<=2m` |
+| `contains` | Content substring | `contains:"TODO"` |
+| `regex` | Content regex | `regex:/@deprecated\b/` |
+| `git_status` | Git status | `git_status:modified` |
+| `git_tracked` | Tracked by git | `git_tracked:true` |
+| `git_ignored` | Ignored by git | `git_ignored:true` |
+| `git_stage` | Staging state | `git_stage:staged` |
+
+**Operators:** `:` (glob/eq), `~` (regex), `=`, `!=`, `>`, `>=`, `<`, `<=`
+
+**Combinators:** `and`, `or`, `not`, `(...)`
+
+**Precedence:** `not` > `and` > `or`
+
+#### JSON Filters
+
+Use `--filter-json` for programmatic filter construction:
+
+```bash
+tug apply python rename --at f.py:1:5 --to bar --filter-json '{
+  "predicates": [
+    {"key": "ext", "op": "eq", "value": "py"},
+    {"key": "path", "op": "glob", "value": "src/**"}
+  ]
+}'
+```
+
+**Schema:**
+```json
+{
+  "all": [ <filter>, ... ],   // AND
+  "any": [ <filter>, ... ],   // OR
+  "not": <filter>,            // NOT
+  "predicates": [...]         // AND-combined predicate list
+}
+```
+
+**Operations:** `eq`, `glob`, `regex`, `gt`, `gte`, `lt`, `lte`
+
+#### Glob Patterns
+
+Glob patterns appear after `--` at the end of the command:
+
+```bash
+# Include only src/ files
+tug apply python rename --at f.py:1:5 --to bar -- 'src/**/*.py'
+
+# Exclude tests
+tug apply python rename --at f.py:1:5 --to bar -- '!tests/**'
+```
+
+#### Content Predicates
+
+The `contains` and `regex` predicates require `--filter-content`:
+
+```bash
+tug apply python rename --at f.py:1:5 --to bar --filter "contains:TODO" --filter-content
+```
+
+Use `--filter-content-max-bytes <n>` to skip large files.
+
+#### Filter Introspection
+
+Use `--filter-list` to see matched files without running the refactor:
+
+```bash
+tug apply python rename --at f.py:1:5 --to bar --filter "path:src/**" --filter-list
+```
+
+**Output:**
+```json
+{
+  "files": ["src/a.py", "src/b.py"],
+  "count": 2,
+  "filter_summary": {
+    "glob_patterns": [],
+    "expressions": ["path:src/**"],
+    "json_filter": null,
+    "content_enabled": false
+  }
+}
+```
+
+#### Filter Combination Order
+
+Filters are combined with AND in this order:
+1. Language-appropriate files (`**/*.py` for Python)
+2. Default exclusions (`.git`, `__pycache__`, `venv`, etc.)
+3. Glob patterns (`-- <patterns...>`)
+4. Expression filters (`--filter`)
+5. JSON filter (`--filter-json`)
+6. Filter file content (`--filter-file`)
 
 ### Refactoring Operations
 
