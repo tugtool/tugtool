@@ -5,6 +5,7 @@
 //! - Inclusion and exclusion patterns
 //! - Default exclusions for common directories
 //! - Predicate-based filtering (path, extension, size, git state, content)
+//! - Expression-based filtering with boolean operators
 //!
 //! ## Usage
 //!
@@ -20,6 +21,7 @@
 //! assert!(!spec.matches(Path::new("tests/test_main.py")));
 //! ```
 
+mod expr;
 mod glob;
 mod predicate;
 
@@ -31,3 +33,6 @@ pub use predicate::{
     parse_size, FilterPredicate, GitFileStatus, GitState, PredicateError, PredicateKey,
     PredicateOp,
 };
+
+// Re-export public API from expression module
+pub use expr::{parse_filter_expr, ExprError, FilterExpr};

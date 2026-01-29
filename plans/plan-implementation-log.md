@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 2: Implement Expression Parser | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 2 specification (lines 1369-1414)
+- [D09] Filter Inputs Are Additive (line 1141)
+- Spec S08: Filter Expression Language - grammar specification (lines 1167-1214)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `winnow` parser combinator to `tugtool-core` dependencies | Done |
+| Define `FilterExpr` enum: And, Or, Not, Pred variants | Done |
+| Implement `parse_filter_expr(input: &str) -> Result<FilterExpr, ExprError>` | Done |
+| Handle case-insensitive keywords (and, AND, And, or, OR, Or, not, NOT, Not) | Done |
+| Handle quoted values (double and single quotes) | Done |
+| Handle unquoted values (glob patterns like `src/**`) | Done |
+| Implement operator parsing: `:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=` | Done |
+| Implement parentheses for grouping | Done |
+| Add `ExprError::InvalidExpression { input, message }` variant | Done |
+| Implement `FilterExpr::evaluate` method | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter/expr.rs` - Expression parser using winnow 0.7, FilterExpr enum, evaluation
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/mod.rs` - Added expr module and re-exports
+- `crates/tugtool-core/Cargo.toml` - Added `winnow = "0.7"` dependency
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core expr`: 15 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core expr`: PASS (15/15 tests)
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- Used winnow 0.7 which renamed `PResult` to `ModalResult` and changed error handling APIs
+- Operator precedence implemented via grammar structure: `not` > `and` > `or`
+- Keyword parsers check for word boundaries to avoid matching "nothing" as "not" + "hing"
+- Multi-character operators (`>=`, `<=`, `!=`) parsed before single-character to avoid ambiguity
+- Used `ExprError` as a separate error type (wraps `PredicateError` via `#[from]`)
+
+---
+
 ## [phase-12.md] Step 1: Add Predicate Types | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

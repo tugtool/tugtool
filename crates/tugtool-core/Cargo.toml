@@ -19,6 +19,7 @@ thiserror = "2.0"
 tracing = "0.1"
 wait-timeout = "0.2"
 walkdir = "2"
+winnow = "0.7"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

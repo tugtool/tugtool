@@ -1378,37 +1378,37 @@ Spec S08, Table T20, (#file-filtering-spec)
 - Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports)
 
 **Tasks:**
-- [ ] Add `winnow` parser combinator to `tugtool-core` dependencies
-- [ ] Define `FilterExpr` enum: `And(Vec<FilterExpr>)`, `Or(Vec<FilterExpr>)`, `Not(Box<FilterExpr>)`, `Pred(FilterPredicate)`
-- [ ] Implement `parse_filter_expr(input: &str) -> Result<FilterExpr, FilterError>`
-- [ ] Handle case-insensitive keywords (`and`, `AND`, `And`)
-- [ ] Handle quoted values (`"value with spaces"`, `'single quoted'`)
-- [ ] Handle unquoted values (`src/**`)
-- [ ] Implement operator parsing: `:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`
-- [ ] Implement parentheses for grouping
-- [ ] Add `FilterError::InvalidExpression { input, message }` variant
-- [ ] Implement `FilterExpr::evaluate(&self, path: &Path, metadata: Option<&Metadata>, content: Option<&str>) -> Result<bool, FilterError>`
+- [x] Add `winnow` parser combinator to `tugtool-core` dependencies
+- [x] Define `FilterExpr` enum: `And(Vec<FilterExpr>)`, `Or(Vec<FilterExpr>)`, `Not(Box<FilterExpr>)`, `Pred(FilterPredicate)`
+- [x] Implement `parse_filter_expr(input: &str) -> Result<FilterExpr, FilterError>`
+- [x] Handle case-insensitive keywords (`and`, `AND`, `And`)
+- [x] Handle quoted values (`"value with spaces"`, `'single quoted'`)
+- [x] Handle unquoted values (`src/**`)
+- [x] Implement operator parsing: `:`, `~`, `=`, `!=`, `>`, `>=`, `<`, `<=`
+- [x] Implement parentheses for grouping
+- [x] Add `FilterError::InvalidExpression { input, message }` variant
+- [x] Implement `FilterExpr::evaluate(&self, path: &Path, metadata: Option<&Metadata>, content: Option<&str>) -> Result<bool, FilterError>`
 
 **Tests:**
-- [ ] unit: `test_parse_simple_predicate` (`ext:py`)
-- [ ] unit: `test_parse_predicate_with_colon` (`path:src/**`)
-- [ ] unit: `test_parse_predicate_with_comparison` (`size>10k`)
-- [ ] unit: `test_parse_and_expression` (`ext:py and path:src/**`)
-- [ ] unit: `test_parse_or_expression` (`ext:py or ext:pyi`)
-- [ ] unit: `test_parse_not_expression` (`not name:*_test.py`)
-- [ ] unit: `test_parse_nested_parentheses` (`(ext:py or ext:pyi) and path:src/**`)
-- [ ] unit: `test_parse_case_insensitive_and` (`ext:py AND path:src/**`)
-- [ ] unit: `test_parse_case_insensitive_or` (`ext:py OR ext:pyi`)
-- [ ] unit: `test_parse_quoted_value` (`contains:"hello world"`)
-- [ ] unit: `test_parse_invalid_syntax_error`
-- [ ] unit: `test_evaluate_and_both_true`
-- [ ] unit: `test_evaluate_and_one_false`
-- [ ] unit: `test_evaluate_or_one_true`
-- [ ] unit: `test_evaluate_not_inverts`
+- [x] unit: `test_parse_simple_predicate` (`ext:py`)
+- [x] unit: `test_parse_predicate_with_colon` (`path:src/**`)
+- [x] unit: `test_parse_predicate_with_comparison` (`size>10k`)
+- [x] unit: `test_parse_and_expression` (`ext:py and path:src/**`)
+- [x] unit: `test_parse_or_expression` (`ext:py or ext:pyi`)
+- [x] unit: `test_parse_not_expression` (`not name:*_test.py`)
+- [x] unit: `test_parse_nested_parentheses` (`(ext:py or ext:pyi) and path:src/**`)
+- [x] unit: `test_parse_case_insensitive_and` (`ext:py AND path:src/**`)
+- [x] unit: `test_parse_case_insensitive_or` (`ext:py OR ext:pyi`)
+- [x] unit: `test_parse_quoted_value` (`contains:"hello world"`)
+- [x] unit: `test_parse_invalid_syntax_error`
+- [x] unit: `test_evaluate_and_both_true`
+- [x] unit: `test_evaluate_and_one_false`
+- [x] unit: `test_evaluate_or_one_true`
+- [x] unit: `test_evaluate_not_inverts`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core expr`
-- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+- [x] `cargo nextest run -p tugtool-core expr`
+- [x] `cargo clippy -p tugtool-core -- -D warnings`
 
 **Rollback:** Delete `expr.rs`, revert Cargo.toml and `mod.rs`
 
