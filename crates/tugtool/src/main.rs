@@ -23,7 +23,7 @@
 //! ```
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -192,6 +192,63 @@ enum ApplyLanguage {
     },
 }
 
+/// Filter options shared across commands (Table T20).
+#[derive(Parser, Debug, Default, Clone)]
+struct FilterOptions {
+    /// Expression filter (repeatable).
+    ///
+    /// Filters files using predicate expressions. Multiple --filter options
+    /// are combined with AND. Examples:
+    /// - `--filter "ext:py"` - Python files only
+    /// - `--filter "path:src/**"` - Files in src/ directory
+    /// - `--filter "size<100k"` - Files under 100KB
+    #[arg(long = "filter", value_name = "EXPR")]
+    filter_expr: Vec<String>,
+
+    /// JSON filter schema.
+    ///
+    /// A JSON object with optional `all`, `any`, `not`, and `predicates` fields.
+    /// Example: `--filter-json '{"predicates":[{"key":"ext","op":"eq","value":"py"}]}'`
+    #[arg(long, value_name = "JSON")]
+    filter_json: Option<String>,
+
+    /// Filter file path.
+    ///
+    /// A file containing filter definitions. Requires `--filter-file-format`.
+    #[arg(long, value_name = "PATH")]
+    filter_file: Option<PathBuf>,
+
+    /// Filter file format (required with --filter-file).
+    ///
+    /// Specifies how to interpret the filter file:
+    /// - `json`: JSON filter schema
+    /// - `glob`: Newline-separated glob patterns
+    /// - `expr`: Newline-separated expression filters
+    #[arg(long, value_name = "FORMAT", value_parser = ["json", "glob", "expr"])]
+    filter_file_format: Option<String>,
+
+    /// Enable content predicates.
+    ///
+    /// Required for `contains` and `regex` predicates. Without this flag,
+    /// content predicates will error.
+    #[arg(long)]
+    filter_content: bool,
+
+    /// Maximum file size for content predicates (bytes).
+    ///
+    /// Files larger than this are skipped for content matching.
+    /// Default: no limit.
+    #[arg(long, value_name = "BYTES")]
+    filter_content_max_bytes: Option<u64>,
+
+    /// List matched files and exit.
+    ///
+    /// Outputs JSON with matched files and exits without performing
+    /// the refactoring operation. Useful for verifying filter scope.
+    #[arg(long)]
+    filter_list: bool,
+}
+
 /// Python commands for apply action.
 #[derive(Subcommand, Debug)]
 enum ApplyPythonCommand {
@@ -209,6 +266,11 @@ enum ApplyPythonCommand {
         /// Skip verification entirely.
         #[arg(long)]
         no_verify: bool,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
         /// File filter patterns (optional, after --).
         #[arg(last = true)]
         filter: Vec<String>,
@@ -265,6 +327,11 @@ enum EmitPythonCommand {
         /// Output JSON envelope instead of plain diff.
         #[arg(long)]
         json: bool,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
         /// File filter patterns (optional, after --).
         #[arg(last = true)]
         filter: Vec<String>,
@@ -324,6 +391,11 @@ enum AnalyzePythonCommand {
         /// Output format.
         #[arg(long, value_enum, default_value = "impact")]
         output: AnalyzeOutput,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
         /// File filter patterns (optional, after --).
         #[arg(last = true)]
         filter: Vec<String>,
@@ -542,14 +614,22 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             to,
             verify,
             no_verify,
+            filter_opts,
             filter,
         } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // TODO (Step 7): Handle --filter-list mode here
+
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Parse file filter specification
+            // Parse file filter specification (glob patterns from `-- <patterns...>`)
             let filter_spec = FileFilterSpec::parse(&filter)
                 .map_err(|e| TugError::invalid_args(e.to_string()))?;
+
+            // TODO (Step 8): Integrate filter_opts into CombinedFilter
 
             // Determine effective verification mode
             // --no-verify takes precedence
@@ -600,14 +680,22 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
             at,
             to,
             json: emit_json,
+            filter_opts,
             filter,
         } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // TODO (Step 7): Handle --filter-list mode here
+
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Parse file filter specification
+            // Parse file filter specification (glob patterns from `-- <patterns...>`)
             let filter_spec = FileFilterSpec::parse(&filter)
                 .map_err(|e| TugError::invalid_args(e.to_string()))?;
+
+            // TODO (Step 8): Integrate filter_opts into CombinedFilter
 
             // Run rename in dry-run mode (apply=false) with no verification
             let json_result = do_rename(
@@ -692,14 +780,22 @@ fn execute_analyze_python(
             at,
             to,
             output,
+            filter_opts,
             filter,
         } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // TODO (Step 7): Handle --filter-list mode here
+
             let mut session = open_session(global)?;
             let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
 
-            // Parse file filter specification
+            // Parse file filter specification (glob patterns from `-- <patterns...>`)
             let filter_spec = FileFilterSpec::parse(&filter)
                 .map_err(|e| TugError::invalid_args(e.to_string()))?;
+
+            // TODO (Step 8): Integrate filter_opts into CombinedFilter
 
             // Run impact analysis (read-only)
             let json_result =
@@ -1156,6 +1252,34 @@ fn find_python_in_path() -> Option<String> {
 // Helper Functions
 // ============================================================================
 
+/// Parse a filter file and return its contents as a string.
+///
+/// Reads the file at the given path and validates it exists.
+#[allow(dead_code)] // Used in Step 8
+fn parse_filter_file(path: &Path) -> Result<String, TugError> {
+    std::fs::read_to_string(path).map_err(|e| {
+        TugError::invalid_args(format!("failed to read filter file '{}': {}", path.display(), e))
+    })
+}
+
+/// Validate filter options for consistency.
+///
+/// Enforces:
+/// - `--filter-file` requires `--filter-file-format`
+fn validate_filter_options(filter_opts: &FilterOptions) -> Result<(), TugError> {
+    // Validate: --filter-file requires --filter-file-format
+    if filter_opts.filter_file.is_some() && filter_opts.filter_file_format.is_none() {
+        return Err(TugError::invalid_args(
+            "--filter-file requires --filter-file-format (json, glob, or expr)".to_string(),
+        ));
+    }
+
+    // Validate: --filter-file-format without --filter-file is useless but not an error
+    // (clap allows it, we just ignore it)
+
+    Ok(())
+}
+
 /// Open a session with the given global arguments.
 fn open_session(global: &GlobalArgs) -> Result<Session, TugError> {
     let workspace = global
@@ -1516,6 +1640,278 @@ mod tests {
                 } => {}
                 _ => panic!("expected Apply Rust"),
             }
+        }
+
+        // ====================================================================
+        // Filter option tests (Phase 12.7)
+        // ====================================================================
+
+        #[test]
+        fn test_filter_expr_single() {
+            let args = [
+                "tug",
+                "apply",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter",
+                "ext:py",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert_eq!(filter_opts.filter_expr, vec!["ext:py"]);
+                }
+                _ => panic!("expected Apply Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_expr_multiple() {
+            let args = [
+                "tug",
+                "apply",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter",
+                "ext:py",
+                "--filter",
+                "path:src/**",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert_eq!(filter_opts.filter_expr, vec!["ext:py", "path:src/**"]);
+                }
+                _ => panic!("expected Apply Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_json() {
+            let args = [
+                "tug",
+                "emit",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter-json",
+                r#"{"predicates":[{"key":"ext","op":"eq","value":"py"}]}"#,
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Emit {
+                    language:
+                        EmitLanguage::Python {
+                            command: EmitPythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert!(filter_opts.filter_json.is_some());
+                    assert!(filter_opts.filter_json.unwrap().contains("predicates"));
+                }
+                _ => panic!("expected Emit Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_file() {
+            let args = [
+                "tug",
+                "analyze",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter-file",
+                "filters.json",
+                "--filter-file-format",
+                "json",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Analyze {
+                    language:
+                        AnalyzeLanguage::Python {
+                            command: AnalyzePythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert_eq!(
+                        filter_opts.filter_file,
+                        Some(PathBuf::from("filters.json"))
+                    );
+                    assert_eq!(filter_opts.filter_file_format, Some("json".to_string()));
+                }
+                _ => panic!("expected Analyze Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_content_flag() {
+            let args = [
+                "tug",
+                "apply",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter-content",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert!(filter_opts.filter_content);
+                }
+                _ => panic!("expected Apply Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_content_max_bytes() {
+            let args = [
+                "tug",
+                "apply",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter-content-max-bytes",
+                "1048576",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command: ApplyPythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert_eq!(filter_opts.filter_content_max_bytes, Some(1048576));
+                }
+                _ => panic!("expected Apply Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_list_flag() {
+            let args = [
+                "tug",
+                "emit",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter-list",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Emit {
+                    language:
+                        EmitLanguage::Python {
+                            command: EmitPythonCommand::Rename { filter_opts, .. },
+                        },
+                } => {
+                    assert!(filter_opts.filter_list);
+                }
+                _ => panic!("expected Emit Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_filter_combined_with_glob_patterns() {
+            let args = [
+                "tug",
+                "apply",
+                "python",
+                "rename",
+                "--at",
+                "x:1:1",
+                "--to",
+                "y",
+                "--filter",
+                "ext:py",
+                "--filter-content",
+                "--",
+                "src/**",
+                "!tests/**",
+            ];
+            let cli = Cli::try_parse_from(args).unwrap();
+            match cli.command {
+                TopLevelCommand::Apply {
+                    language:
+                        ApplyLanguage::Python {
+                            command:
+                                ApplyPythonCommand::Rename {
+                                    filter_opts,
+                                    filter,
+                                    ..
+                                },
+                        },
+                } => {
+                    assert_eq!(filter_opts.filter_expr, vec!["ext:py"]);
+                    assert!(filter_opts.filter_content);
+                    assert_eq!(filter, vec!["src/**", "!tests/**"]);
+                }
+                _ => panic!("expected Apply Python Rename"),
+            }
+        }
+
+        #[test]
+        fn test_validate_filter_options_missing_format() {
+            let filter_opts = FilterOptions {
+                filter_file: Some(PathBuf::from("filters.json")),
+                filter_file_format: None,
+                ..Default::default()
+            };
+            let result = validate_filter_options(&filter_opts);
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("--filter-file requires --filter-file-format"));
+        }
+
+        #[test]
+        fn test_validate_filter_options_valid() {
+            let filter_opts = FilterOptions {
+                filter_file: Some(PathBuf::from("filters.json")),
+                filter_file_format: Some("json".to_string()),
+                ..Default::default()
+            };
+            let result = validate_filter_options(&filter_opts);
+            assert!(result.is_ok());
         }
 
         // ====================================================================

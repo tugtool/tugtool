@@ -8,6 +8,7 @@
 //! - Expression-based filtering with boolean operators
 //! - JSON-based filter schema for programmatic use
 //! - Content-aware matching (substring and regex, requires opt-in)
+//! - Combined filtering from multiple sources (CombinedFilter)
 //!
 //! ## Usage
 //!
@@ -23,6 +24,7 @@
 //! assert!(!spec.matches(Path::new("tests/test_main.py")));
 //! ```
 
+mod combined;
 mod content;
 mod expr;
 mod glob;
@@ -46,3 +48,6 @@ pub use json::{parse_filter_json, JsonFilter, JsonFilterError, JsonPredicate};
 
 // Re-export public API from content module
 pub use content::{ContentError, ContentMatcher};
+
+// Re-export public API from combined filter module
+pub use combined::{CombinedFilter, CombinedFilterBuilder, CombinedFilterError};

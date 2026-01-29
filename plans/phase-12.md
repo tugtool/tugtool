@@ -1507,38 +1507,38 @@ Spec S10, (#file-filtering-spec)
 - Modified: `crates/tugtool-core/src/filter/mod.rs` (add exports, add `CombinedFilter` as primary public type)
 
 **Tasks:**
-- [ ] Define `CombinedFilter` struct holding:
+- [x] Define `CombinedFilter` struct holding:
   - `glob_spec: Option<FileFilterSpec>` (existing glob filter)
   - `expressions: Vec<FilterExpr>` (parsed from `--filter`)
   - `json_filter: Option<FilterExpr>` (parsed from `--filter-json`)
   - `content_enabled: bool` (from `--filter-content`)
   - `content_matcher: ContentMatcher` (lazily populated)
   - `git_state: Option<GitState>` (lazily loaded if git predicates used)
-- [ ] Implement `CombinedFilter::builder() -> CombinedFilterBuilder` pattern
-- [ ] Implement `CombinedFilterBuilder::with_glob_patterns(patterns: &[String]) -> Result<Self, FilterError>`
-- [ ] Implement `CombinedFilterBuilder::with_expression(expr: &str) -> Result<Self, FilterError>`
-- [ ] Implement `CombinedFilterBuilder::with_json(json: &str) -> Result<Self, FilterError>`
-- [ ] Implement `CombinedFilterBuilder::with_content_enabled(enabled: bool) -> Self`
-- [ ] Implement `CombinedFilterBuilder::build() -> Result<CombinedFilter, FilterError>`
-- [ ] Implement `CombinedFilter::matches(&mut self, path: &Path) -> Result<bool, FilterError>`
-- [ ] Implement `CombinedFilter::requires_content(&self) -> bool`
-- [ ] Add validation: reject content predicates if `!content_enabled`
-- [ ] Implement filter combination per Spec S10 (all sources AND'd)
+- [x] Implement `CombinedFilter::builder() -> CombinedFilterBuilder` pattern
+- [x] Implement `CombinedFilterBuilder::with_glob_patterns(patterns: &[String]) -> Result<Self, FilterError>`
+- [x] Implement `CombinedFilterBuilder::with_expression(expr: &str) -> Result<Self, FilterError>`
+- [x] Implement `CombinedFilterBuilder::with_json(json: &str) -> Result<Self, FilterError>`
+- [x] Implement `CombinedFilterBuilder::with_content_enabled(enabled: bool) -> Self`
+- [x] Implement `CombinedFilterBuilder::build() -> Result<CombinedFilter, FilterError>`
+- [x] Implement `CombinedFilter::matches(&mut self, path: &Path) -> Result<bool, FilterError>`
+- [x] Implement `CombinedFilter::requires_content(&self) -> bool`
+- [x] Add validation: reject content predicates if `!content_enabled`
+- [x] Implement filter combination per Spec S10 (all sources AND'd)
 
 **Tests:**
-- [ ] unit: `test_combined_glob_only`
-- [ ] unit: `test_combined_expr_only`
-- [ ] unit: `test_combined_json_only`
-- [ ] unit: `test_combined_glob_and_expr`
-- [ ] unit: `test_combined_all_sources_and`
-- [ ] unit: `test_combined_content_without_flag_error`
-- [ ] unit: `test_combined_content_with_flag_ok`
-- [ ] unit: `test_combined_empty_is_all_files`
-- [ ] unit: `test_combined_default_exclusions_always_apply`
+- [x] unit: `test_combined_glob_only`
+- [x] unit: `test_combined_expr_only`
+- [x] unit: `test_combined_json_only`
+- [x] unit: `test_combined_glob_and_expr`
+- [x] unit: `test_combined_all_sources_and`
+- [x] unit: `test_combined_content_without_flag_error`
+- [x] unit: `test_combined_content_with_flag_ok`
+- [x] unit: `test_combined_empty_is_all_files`
+- [x] unit: `test_combined_default_exclusions_always_apply`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-core combined`
-- [ ] `cargo clippy -p tugtool-core -- -D warnings`
+- [x] `cargo nextest run -p tugtool-core combined`
+- [x] `cargo clippy -p tugtool-core -- -D warnings`
 
 **Rollback:** Delete `combined.rs`, revert `mod.rs`
 
@@ -1555,36 +1555,36 @@ Spec S10, (#file-filtering-spec)
 - Modified: `crates/tugtool/src/main.rs` (add new CLI options to all command variants)
 
 **Tasks:**
-- [ ] Add `--filter <expr>` option to `ApplyPythonCommand::Rename` (repeatable via `Vec<String>`)
-- [ ] Add `--filter <expr>` option to `EmitPythonCommand::Rename`
-- [ ] Add `--filter <expr>` option to `AnalyzePythonCommand::Rename`
-- [ ] Add `--filter-json <json>` option (single, `Option<String>`)
-- [ ] Add `--filter-file <path>` option (single, `Option<PathBuf>`)
-- [ ] Add `--filter-file-format <format>` option (single, `Option<String>`)
-- [ ] Add `--filter-content` flag (`bool`)
-- [ ] Add `--filter-content-max-bytes <n>` option (`Option<u64>`)
-- [ ] Add `--filter-list` flag (`bool`)
-- [ ] Implement `parse_filter_file(path: &Path) -> Result<String, TugError>` helper
-- [ ] Reject multiple `--filter-json` with clear error (clap handles this)
-- [ ] Validate required pairing: `--filter-file` requires `--filter-file-format`
-- [ ] Validate mutual exclusivity: `--filter-list` skips operation execution
+- [x] Add `--filter <expr>` option to `ApplyPythonCommand::Rename` (repeatable via `Vec<String>`)
+- [x] Add `--filter <expr>` option to `EmitPythonCommand::Rename`
+- [x] Add `--filter <expr>` option to `AnalyzePythonCommand::Rename`
+- [x] Add `--filter-json <json>` option (single, `Option<String>`)
+- [x] Add `--filter-file <path>` option (single, `Option<PathBuf>`)
+- [x] Add `--filter-file-format <format>` option (single, `Option<String>`)
+- [x] Add `--filter-content` flag (`bool`)
+- [x] Add `--filter-content-max-bytes <n>` option (`Option<u64>`)
+- [x] Add `--filter-list` flag (`bool`)
+- [x] Implement `parse_filter_file(path: &Path) -> Result<String, TugError>` helper
+- [x] Reject multiple `--filter-json` with clear error (clap handles this)
+- [x] Validate required pairing: `--filter-file` requires `--filter-file-format`
+- [x] Validate mutual exclusivity: `--filter-list` skips operation execution
 
 **Tests:**
-- [ ] unit: CLI parses `--filter "ext:py"`
-- [ ] unit: CLI parses multiple `--filter` options
-- [ ] unit: CLI parses `--filter-json '{...}'`
-- [ ] unit: CLI parses `--filter-file path.txt`
-- [ ] unit: CLI rejects `--filter-file` without `--filter-file-format`
-- [ ] unit: CLI parses `--filter-content` flag
-- [ ] unit: CLI parses `--filter-content-max-bytes 1048576`
-- [ ] unit: CLI parses `--filter-list` flag
-- [ ] unit: CLI parses combined `--filter` and `-- patterns`
+- [x] unit: CLI parses `--filter "ext:py"`
+- [x] unit: CLI parses multiple `--filter` options
+- [x] unit: CLI parses `--filter-json '{...}'`
+- [x] unit: CLI parses `--filter-file path.txt`
+- [x] unit: CLI rejects `--filter-file` without `--filter-file-format`
+- [x] unit: CLI parses `--filter-content` flag
+- [x] unit: CLI parses `--filter-content-max-bytes 1048576`
+- [x] unit: CLI parses `--filter-list` flag
+- [x] unit: CLI parses combined `--filter` and `-- patterns`
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool`
-- [ ] `cargo run -p tugtool -- apply python rename --help` shows new options
-- [ ] `cargo run -p tugtool -- emit python rename --help` shows new options
-- [ ] `cargo run -p tugtool -- analyze python rename --help` shows new options
+- [x] `cargo build -p tugtool`
+- [x] `cargo run -p tugtool -- apply python rename --help` shows new options
+- [x] `cargo run -p tugtool -- emit python rename --help` shows new options
+- [x] `cargo run -p tugtool -- analyze python rename --help` shows new options
 
 **Rollback:** Revert `main.rs` changes
 

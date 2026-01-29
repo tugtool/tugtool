@@ -6,6 +6,110 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-12.md] Step 6: Add CLI Options | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 6 specification (lines 1547-1589)
+- [D09] Filter Inputs Are Additive (line 1133)
+- [D10] Content Filters Are Opt-In (line 1143)
+- [D13] Filter File Format Is Explicit (line 1155)
+- Table T20: Filter CLI Options (lines 1257-1267)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `--filter <expr>` option to `ApplyPythonCommand::Rename` | Done |
+| Add `--filter <expr>` option to `EmitPythonCommand::Rename` | Done |
+| Add `--filter <expr>` option to `AnalyzePythonCommand::Rename` | Done |
+| Add `--filter-json <json>` option | Done |
+| Add `--filter-file <path>` option | Done |
+| Add `--filter-file-format <format>` option | Done |
+| Add `--filter-content` flag | Done |
+| Add `--filter-content-max-bytes <n>` option | Done |
+| Add `--filter-list` flag | Done |
+| Implement `parse_filter_file` helper | Done |
+| Reject multiple `--filter-json` (clap handles) | Done |
+| Validate `--filter-file` requires `--filter-file-format` | Done |
+| Validate `--filter-list` skips operation execution | Done |
+
+**Files Created:**
+- None (all changes in existing files)
+
+**Files Modified:**
+- `crates/tugtool/src/main.rs` - Added `FilterOptions` struct, updated command enums to include `filter_opts`, added `parse_filter_file` and `validate_filter_options` helpers, added 10 unit tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool test_filter`: 8 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool`: PASS
+- `cargo clippy -p tugtool -- -D warnings`: PASS
+- `cargo run -p tugtool -- apply python rename --help` shows new options: PASS
+- `cargo run -p tugtool -- emit python rename --help` shows new options: PASS
+- `cargo run -p tugtool -- analyze python rename --help` shows new options: PASS
+
+**Key Decisions/Notes:**
+- Created shared `FilterOptions` struct with `#[command(flatten)]` to avoid duplication across commands
+- Used `#[arg(long = "filter", value_name = "EXPR")]` to rename `filter_expr` field to `--filter` flag
+- Added `#[allow(dead_code)]` to `parse_filter_file` since it won't be used until Step 8
+- Added TODO placeholders in executors for Step 7 (filter-list mode) and Step 8 (CombinedFilter integration)
+- Validation for `--filter-file` without `--filter-file-format` done via `validate_filter_options` helper
+
+---
+
+## [phase-12.md] Step 5: Implement Combined Filter | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-12.md` - Step 5 specification (lines 1497-1543)
+- [D09] Filter Inputs Are Additive (line 1141)
+- [D10] Content Filters Are Opt-In (line 1143)
+- [D11] Default Exclusions Always Apply (line 1147)
+- [D14] Git Predicates Are Supported (line 1159)
+- Spec S10: Filter Combination Rules (lines 1234-1241)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `CombinedFilter` struct with all fields | Done |
+| Implement `CombinedFilter::builder()` pattern | Done |
+| Implement `with_glob_patterns` method | Done |
+| Implement `with_expression` method | Done |
+| Implement `with_json` method | Done |
+| Implement `with_content_enabled` method | Done |
+| Implement `build` method | Done |
+| Implement `CombinedFilter::matches` method | Done |
+| Implement `requires_content` method | Done |
+| Add content predicate validation | Done |
+| Implement filter combination per Spec S10 | Done |
+
+**Files Created:**
+- `crates/tugtool-core/src/filter/combined.rs` - CombinedFilter, CombinedFilterBuilder, CombinedFilterError
+
+**Files Modified:**
+- `crates/tugtool-core/src/filter/mod.rs` - Added combined module and re-exports
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core combined`: 10 tests passed (9 specified + 1 bonus)
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-core combined`: PASS
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+
+**Key Decisions/Notes:**
+- Used builder pattern (`CombinedFilterBuilder`) for flexible filter construction
+- Removed `content_matcher` field since we read file content directly when needed
+- Git state is loaded lazily only when git predicates are used
+- Content predicates validated at build time to fail early if `--filter-content` not set
+- All filter sources (glob, expressions, JSON) are AND'd per Spec S10
+
+---
+
 ## [phase-12.md] Step 4: Implement Content Predicates | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
