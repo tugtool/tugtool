@@ -26,14 +26,15 @@ Use tug when the user requests symbol renaming or reference updates, especially:
 
 ## Available Commands
 
-- `/tug-rename` - Full rename workflow with analyze, review, and apply
-- `/tug-analyze-rename` - Analyze and preview only (no changes)
+- `/tug-apply-rename` - Full rename workflow with analyze, review, and apply
+- `/tug-emit-rename` - Generate unified diff without applying changes
+- `/tug-analyze-rename` - Analyze impact only (no changes, no diff)
 
 ## Workflow
 
 1. **Identify the symbol**: Determine file, line, and column of the symbol to rename
 2. **Get the new name**: Ask user for the desired new name if not provided
-3. **Invoke command**: Use `/tug-rename` for the full workflow
+3. **Invoke command**: Use `/tug-apply-rename` for the full workflow
 
 ## Why Tug Over Manual Editing
 
@@ -42,9 +43,22 @@ Use tug when the user requests symbol renaming or reference updates, especially:
 - **Deterministic**: Same input always produces same output
 - **Safe**: Requires explicit approval before applying changes
 
+## CLI Quick Reference
+
+```bash
+# Analyze impact (read-only, JSON output)
+tug analyze python rename --at <file:line:col> --to <new_name>
+
+# Emit diff (read-only, unified diff output)
+tug emit python rename --at <file:line:col> --to <new_name>
+
+# Apply rename (modifies files)
+tug apply python rename --at <file:line:col> --to <new_name>
+```
+
 ## Example
 
 User: "Rename the process_data function to transform_data"
 
 Response: I'll use tug to rename this function safely across all files.
-[Invoke /tug-rename]
+[Invoke /tug-apply-rename]

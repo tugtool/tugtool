@@ -254,9 +254,12 @@ Look for these patterns in user requests:
 
 ```bash
 # Full workflow (analyze -> review -> apply)
-/tug-rename
+/tug-apply-rename
 
-# Preview only (no changes)
+# Generate diff only (no changes)
+/tug-emit-rename
+
+# Analyze impact only (no changes)
 /tug-analyze-rename
 
 # CLI commands follow: tug <action> <language> <command> [options] [-- <filter>]

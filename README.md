@@ -42,8 +42,7 @@ Tugtool is designed for AI coding agents. It provides:
 
 ### Documentation
 
-- [Agent API Reference](docs/AGENT_API.md) - Full CLI and JSON schema documentation
-- [Agent Playbook](docs/AGENT_PLAYBOOK.md) - Copy-paste snippets and integration guides
+- [Agent Guide](docs/AGENT.md) - CLI reference, JSON schemas, and integration guides
 
 ## Supported Languages
 

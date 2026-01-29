@@ -18,28 +18,29 @@ This command shows what a rename would do without making any changes. Use this f
 
 ### Analyze and Preview
 
-The default format is unified diff (compatible with `git apply`):
+The default output is full impact analysis JSON:
 
 ```bash
-tug analyze rename --at <file:line:col> --to <new_name>
+tug analyze python rename --at <file:line:col> --to <new_name>
 ```
 
-For a brief text summary:
+For just the references:
 
 ```bash
-tug analyze rename --at <file:line:col> --to <new_name> --format summary
+tug analyze python rename --at <file:line:col> --to <new_name> --output references
 ```
 
-For full JSON output:
+For just the symbol info:
 
 ```bash
-tug analyze rename --at <file:line:col> --to <new_name> --format json
+tug analyze python rename --at <file:line:col> --to <new_name> --output symbol
 ```
 
 Show:
+- Symbol being renamed (name, kind, location)
 - Files that would change
-- Number of edits
-- The unified diff showing all changes
+- Number of references
+- All reference locations
 
 ## What This Command Does NOT Do
 
@@ -47,8 +48,17 @@ Show:
 - Does NOT modify any files
 - Does NOT require approval (nothing to approve)
 
-If you want to apply the changes, use `/tug-rename` instead.
+If you want to apply the changes, use `/tug-apply-rename` instead.
+If you want to see the actual diff, use `/tug-emit-rename`.
 
 ## Error Handling
 
-Same as `/tug-rename` - show errors and stop.
+Same as `/tug-apply-rename` - show errors and stop.
+
+## Example
+
+User: "How many places use the process_data function?"
+
+1. Get location (e.g., `src/utils.py:42:5`)
+2. Run `tug analyze python rename --at src/utils.py:42:5 --to transform_data`
+3. Show: "Symbol 'process_data' (function) has 4 references across 2 files"

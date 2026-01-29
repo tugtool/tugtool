@@ -1,4 +1,4 @@
-# /tug-rename
+# /tug-apply-rename
 
 Rename a symbol using tug with full verification workflow.
 
@@ -19,13 +19,18 @@ When the user wants to rename a symbol:
 ### Step 1: Preview Changes
 
 ```bash
-tug analyze rename --at <file:line:col> --to <new_name> --format summary
+tug analyze python rename --at <file:line:col> --to <new_name>
 ```
 
-Show the summary to the user. If you need the full diff:
+Show the impact summary to the user. The JSON output includes:
+- `symbol`: The symbol being renamed (name, kind, location)
+- `references`: All references that will be updated
+- `impact`: Summary with `files_affected` and `references_count`
+
+If you need a diff preview:
 
 ```bash
-tug analyze rename --at <file:line:col> --to <new_name>
+tug emit python rename --at <file:line:col> --to <new_name>
 ```
 
 Check:
@@ -39,16 +44,10 @@ Show the summary and ask: "Apply these changes? (yes/no)"
 Only if user approves:
 
 ```bash
-tug rename --at <file:line:col> --to <new_name>
+tug apply python rename --at <file:line:col> --to <new_name>
 ```
 
-This applies the changes with syntax verification by default. The output is human-readable text.
-
-For JSON output:
-
-```bash
-tug rename --at <file:line:col> --to <new_name> --format json
-```
+This applies the changes with syntax verification by default (`--verify=syntax`).
 
 Report the result.
 
@@ -68,8 +67,8 @@ Report the result.
 User: "Rename the function process_data to transform_data"
 
 1. Get location from cursor (e.g., `src/utils.py:42:5`)
-2. Run `tug analyze rename --at src/utils.py:42:5 --to transform_data --format summary`
-3. Show: "Would rename 'process_data': 2 file(s), 4 edit(s)"
+2. Run `tug analyze python rename --at src/utils.py:42:5 --to transform_data`
+3. Show: "Would rename 'process_data': 2 file(s), 4 reference(s)"
 4. Ask: "Apply these changes?"
-5. If yes: Run `tug rename --at src/utils.py:42:5 --to transform_data`
+5. If yes: Run `tug apply python rename --at src/utils.py:42:5 --to transform_data`
 6. Report success
