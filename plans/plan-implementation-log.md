@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.12: Import Statement Spans | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.12 specification
+- `plans/phase-13.md` - Step 0.2.0.11.6 (Import Infrastructure Foundation) for prerequisite infrastructure
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Import, ImportFrom, ImportAlias, AsName structs
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - DeflatedEndPos trait and dispatch macro
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - InflateCtx and record_ident_span() API
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Phase 1: Implement DeflatedEndPos for DeflatedImportAlias | Done |
+| Phase 1: Add helper function deflated_import_names_end_pos() | Done |
+| Phase 3: Import span recording in DeflatedImport::inflate() | Done |
+| Phase 3: ImportFrom span recording in DeflatedImportFrom::inflate() | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added DeflatedEndPos impl for DeflatedImportAlias (lines 883-895), added deflated_import_names_end_pos() helper (lines 157-170), added span recording to Import (lines 721-726) and ImportFrom (lines 796-805) inflate methods
+- `crates/tugtool-python-cst/src/lib.rs` - Added new import_span_tests module with 7 unit tests
+- `plans/phase-13.md` - Checked off all tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 722 tests passed (up from 715, +7 new tests)
+- `cargo nextest run -p tugtool-python-cst import_span`: 8 tests passed (7 new + 1 existing)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS (722 tests)
+- `cargo nextest run -p tugtool-python-cst import_span` passes: PASS
+- `cargo clippy -p tugtool-python-cst -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+- DeflatedEndPos for DeflatedImportAlias dispatches to asname.name.end_pos() (AssignTargetExpression) if alias present, otherwise name.end_pos() (NameOrAttribute)
+- deflated_import_names_end_pos() uses ImportStar.tok.end_pos for star imports (leveraging Step 0.2.0.11.6 infrastructure)
+- ImportFrom span recording directly accesses rpar.rpar_tok.end_pos rather than using rpar_end() helper since rpar is Option<RightParen> not Vec<RightParen>
+- Tests placed in separate import_span_tests module since they use parse_module_with_positions (inflated types) rather than deflated types used in other tests
+- Plan-step-reviewer confirmed implementation is complete and production-ready
+
+---
+
 ## [phase-13.md] Step 0.2.0.11.6: Import Infrastructure Foundation | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

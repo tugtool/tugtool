@@ -154,6 +154,21 @@ fn deflated_match_end_pos<'r, 'a>(dedent_tok: &TokenRef<'r, 'a>) -> usize {
     dedent_tok.start_pos.byte_idx()
 }
 
+/// Compute the end position for a DeflatedImportNames.
+///
+/// Returns:
+/// - For `Star(s)`: end of the `*` token (uses `tok` field from Step 0.2.0.11.6)
+/// - For `Aliases(vec)`: end of the last alias
+pub(crate) fn deflated_import_names_end_pos<'r, 'a>(names: &DeflatedImportNames<'r, 'a>) -> usize {
+    match names {
+        DeflatedImportNames::Star(s) => s.tok.end_pos.byte_idx(),
+        DeflatedImportNames::Aliases(aliases) => {
+            // Aliases is never empty in valid Python
+            aliases.last().unwrap().end_pos()
+        }
+    }
+}
+
 // Apply dispatch macro to DeflatedAssignTargetExpression (uses trait impls from expression.rs)
 // Both start_pos and end_pos are needed: start_pos for Assign/AnnAssign/AugAssign,
 // end_pos for AsName.name in import statements (which is AssignTargetExpression, not NameOrAttribute)
@@ -704,6 +719,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedImport<'r, 'a> {
     type Inflated = Import<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from import_tok to end of last alias
+        let start = self.import_tok.start_pos.byte_idx();
+        let end = self.names.last().unwrap().end_pos();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_import =
             parse_simple_whitespace(&ctx.ws, &mut self.import_tok.whitespace_after.borrow_mut())?;
         let names = self.names.inflate(ctx)?;
@@ -773,6 +794,16 @@ impl<'r, 'a> Inflate<'a> for DeflatedImportFrom<'r, 'a> {
     type Inflated = ImportFrom<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from from_tok to either rpar or end of import names
+        let start = self.from_tok.start_pos.byte_idx();
+        let end = if let Some(ref rpar) = self.rpar {
+            rpar.rpar_tok.end_pos.byte_idx()
+        } else {
+            deflated_import_names_end_pos(&self.names)
+        };
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_from =
             parse_simple_whitespace(&ctx.ws, &mut self.from_tok.whitespace_after.borrow_mut())?;
 
@@ -884,6 +915,22 @@ impl<'r, 'a> WithComma<'r, 'a> for DeflatedImportAlias<'r, 'a> {
     fn with_comma(self, comma: DeflatedComma<'r, 'a>) -> Self {
         let comma = Some(comma);
         Self { comma, ..self }
+    }
+}
+
+/// Compute the end position of a DeflatedImportAlias.
+///
+/// Returns the end of `asname.name` if present (via AssignTargetExpression dispatch),
+/// otherwise returns the end of `name` (via NameOrAttribute dispatch).
+impl<'r, 'a> DeflatedEndPos for DeflatedImportAlias<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        if let Some(asname) = &self.asname {
+            // asname.name is AssignTargetExpression, use its end_pos dispatch
+            asname.name.end_pos()
+        } else {
+            // name is NameOrAttribute, use its end_pos dispatch
+            self.name.end_pos()
+        }
     }
 }
 

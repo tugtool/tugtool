@@ -4840,4 +4840,195 @@ mod deflated_tests {
             panic!("Expected Simple statement");
         }
     }
+
+}
+
+// ========================================================================
+// Step 0.2.0.12: Import Statement Span Tests
+// ========================================================================
+// These tests use parse_module_with_positions which returns inflated types,
+// so they need to be in a separate module that uses inflated statement types.
+#[cfg(test)]
+mod import_span_tests {
+    use super::*;
+    use crate::nodes::statement::SmallStatement;
+    use crate::Statement;
+
+    #[test]
+    fn test_import_span_recorded() {
+        // Test that Import statement has ident_span recorded
+        let source = "import os\n";
+        //            0123456789
+        //            ^import: 0-9 (import os)
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("Import should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                assert_eq!(span.end, 9, "import span should end at 9");
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_import_multiple_span() {
+        // Test that Import statement span covers all imports
+        let source = "import os, sys\n";
+        //            01234567890123456
+        //            ^import os, sys: 0-14
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("Import should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                assert_eq!(span.end, 14, "import span should end at 14");
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_import_as_span() {
+        // Test that Import with alias includes the alias name in span
+        let source = "import os as operating_system\n";
+        //            01234567890123456789012345678901
+        //            ^import os as operating_system: 0-29
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("Import should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                assert_eq!(span.end, 29, "import span should end at 29");
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_import_from_span_recorded() {
+        // Test that ImportFrom statement has ident_span recorded
+        let source = "from os import path\n";
+        //            01234567890123456789
+        //            ^from os import path: 0-19
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::ImportFrom(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("ImportFrom should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                assert_eq!(span.end, 19, "import span should end at 19");
+            } else {
+                panic!("Expected ImportFrom statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_import_from_multiple_span() {
+        // Test that ImportFrom span covers all imports
+        let source = "from os import path, getcwd\n";
+        //            012345678901234567890123456789
+        //            ^from os import path, getcwd: 0-27
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::ImportFrom(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("ImportFrom should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                assert_eq!(span.end, 27, "import span should end at 27");
+            } else {
+                panic!("Expected ImportFrom statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_import_from_parens_span() {
+        // Test that ImportFrom with parentheses includes closing paren in span
+        let source = "from os import (\n    path,\n    getcwd\n)\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123456789
+        //            ^from os import (...): 0-39 (up to closing paren)
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::ImportFrom(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("ImportFrom should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                // The closing paren is at position 38, so end should be 39
+                assert_eq!(span.end, 39, "import span should end at 39 (after closing paren)");
+            } else {
+                panic!("Expected ImportFrom statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_import_from_star_span() {
+        // Test that ImportFrom with star (*) includes the star in span
+        // Uses tok field from Step 0.2.0.11.6
+        let source = "from os import *\n";
+        //            01234567890123456
+        //            ^from os import *: 0-16
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &parsed.module.body[0] {
+            if let SmallStatement::ImportFrom(import) = &simple.body[0] {
+                let node_id = import.node_id.expect("ImportFrom should have node_id");
+                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 0, "import span should start at 0");
+                assert_eq!(span.end, 16, "import span should end at 16 (after star)");
+            } else {
+                panic!("Expected ImportFrom statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }

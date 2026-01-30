@@ -3288,32 +3288,32 @@ For `ImportAlias`, the end position is computed from:
 **Tasks:**
 
 *Phase 1: Implement Import Alias End Position (statement.rs)*
-- [ ] Implement `DeflatedEndPos` for `DeflatedImportAlias`:
+- [x] Implement `DeflatedEndPos` for `DeflatedImportAlias`:
   - If `asname.is_some()`: return `asname.unwrap().name.end_pos()` (via AssignTargetExpression dispatch from Step 0.2.0.11.6)
   - Otherwise: return `name.end_pos()` (via NameOrAttribute dispatch from Step 0.2.0.11.6)
-- [ ] Add helper function `deflated_import_names_end_pos(&DeflatedImportNames) -> usize`:
+- [x] Add helper function `deflated_import_names_end_pos(&DeflatedImportNames) -> usize`:
   - Match on `Star(s)` -> return `s.tok.end_pos.byte_idx()` (uses `tok` field from Step 0.2.0.11.6)
   - Match on `Aliases(vec)` -> return `vec.last().unwrap().end_pos()`
 
 *Phase 3: Import Span Recording (statement.rs)*
-- [ ] `Import`: Add `record_ident_span` from `import_tok.start_pos` to `names.last().unwrap().end_pos()`
-- [ ] `ImportFrom`: Add `record_ident_span` from `from_tok.start_pos` to:
-  - If `rpar.is_some()`: `rpar_end(&[rpar.unwrap()])` using existing helper
+- [x] `Import`: Add `record_ident_span` from `import_tok.start_pos` to `names.last().unwrap().end_pos()`
+- [x] `ImportFrom`: Add `record_ident_span` from `from_tok.start_pos` to:
+  - If `rpar.is_some()`: `rpar.rpar_tok.end_pos.byte_idx()` (direct token access)
   - Otherwise: `deflated_import_names_end_pos(&names)`
 
 **Tests:**
-- [ ] Unit: `test_import_span_recorded` - Parse `import os`, verify ident_span
-- [ ] Unit: `test_import_multiple_span` - Parse `import os, sys`, verify span covers all
-- [ ] Unit: `test_import_as_span` - Parse `import os as operating_system`, verify span
-- [ ] Unit: `test_import_from_span_recorded` - Parse `from os import path`, verify ident_span
-- [ ] Unit: `test_import_from_multiple_span` - Parse `from os import path, getcwd`, verify span
-- [ ] Unit: `test_import_from_parens_span` - Parse `from os import (\n    path,\n    getcwd\n)`, verify span includes closing paren
-- [ ] Unit: `test_import_from_star_span` - Parse `from os import *`, verify span covers star (uses `tok` field from Step 0.2.0.11.6)
+- [x] Unit: `test_import_span_recorded` - Parse `import os`, verify ident_span
+- [x] Unit: `test_import_multiple_span` - Parse `import os, sys`, verify span covers all
+- [x] Unit: `test_import_as_span` - Parse `import os as operating_system`, verify span
+- [x] Unit: `test_import_from_span_recorded` - Parse `from os import path`, verify ident_span
+- [x] Unit: `test_import_from_multiple_span` - Parse `from os import path, getcwd`, verify span
+- [x] Unit: `test_import_from_parens_span` - Parse `from os import (\n    path,\n    getcwd\n)`, verify span includes closing paren
+- [x] Unit: `test_import_from_star_span` - Parse `from os import *`, verify span covers star (uses `tok` field from Step 0.2.0.11.6)
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst import_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 722 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst import_span` passes
 
 **Rollback:** Revert commit
 
