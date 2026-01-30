@@ -187,7 +187,7 @@ Template-based generation is the decided approach. CST construction was rejected
 |-----------------|---------------|-----------|
 | Literals (`42`, `"str"`, `True`) | Pure | No side effects |
 | Name lookup (`x`) | Pure | Reading a variable |
-| Binary/unary ops (`a + b`, `-x`) | Pure if operands pure | Operators on builtins are pure |
+| Binary/unary ops (`a + b`, `-x`) | **Impure** unless both operands are literals | Dunder methods may have side effects |
 | Comparison (`a < b`, `a == b`) | **Impure** | `__eq__`, `__lt__` may have side effects |
 | Attribute access (`obj.attr`, `self.x`) | **Impure** | Property getter may have side effects |
 | Subscript (`obj[key]`) | **Impure** | `__getitem__` may have side effects |
@@ -215,6 +215,7 @@ Template-based generation is the decided approach. CST construction was rejected
 - Can be refined incrementally with "known pure" patterns
 
 **Implications:**
+- Inline Variable treats non-literal binary/unary ops as impure (conservative)
 - Inline Variable refuses multi-use inlining for any expression with attribute access
 - Extract Variable "all occurrences" requires all occurrences to have pure context
 - Error message explains why and suggests manual refactoring
@@ -422,6 +423,28 @@ Operations emit a warning when generating code:
 1. **Stub files:** For `module.py`, check `module.pyi` (same directory) and `stubs/module.pyi`
 2. **String annotations:** Parse string content as type expression
 3. **Forward references:** Identified by quoted type in annotation position
+
+**Stub Parse Failure Policy:**
+
+- If a stub file exists but cannot be parsed, the operation fails with an error and no edits are applied.
+- The error includes the stub path and a suggestion to fix or remove the stub.
+
+**Stub Parse Error Code:**
+
+- `STUB_PARSE` - Stub file exists but failed to parse; no edits applied.
+
+```json
+{
+  "status": "error",
+  "code": 5,
+  "error": {
+    "kind": "stub_parse",
+    "stub_path": "pkg/api.pyi",
+    "message": "Failed to parse stub file",
+    "suggestion": "Fix or remove the stub, then retry"
+  }
+}
+```
 
 **Warning for Public Symbols Without Stubs:**
 
@@ -745,7 +768,7 @@ Adds control flow analysis and method body manipulation.
 | Operation | Layer 4 Dependencies |
 |-----------|---------------------|
 | Extract Method | Parameter/return analysis, body extraction |
-| Inline Method | Parameter substitution, return handling |
+| Inline Method | Parameter substitution, return handling, import cleanup (Layer 3) |
 | Change Signature | Parameter analysis, call site updates |
 
 ---
@@ -1401,6 +1424,27 @@ tug <action> python <operation> [options] [-- <filter>]
 **Range location:** `<file>:<start_line>:<start_col>-<end_line>:<end_col>`
 - Example: `src/utils.py:42:5-45:20`
 
+**Position Semantics:**
+- Line and column are 1-based.
+- Column counts Unicode scalar values, not bytes.
+- Internal edit spans use byte offsets; conversion uses UTF-8 encoding.
+
+**Position Error Code:**
+
+- `POS_OUT_OF_RANGE` - Line/column does not map to a valid position in file.
+
+```json
+{
+  "status": "error",
+  "code": 2,
+  "error": {
+    "kind": "position_out_of_range",
+    "message": "Location 120:80 is outside file bounds",
+    "suggestion": "Choose a location within the file"
+  }
+}
+```
+
 **Symbol location:** For some operations, the cursor can be anywhere on the symbol name.
 
 #### 13.4.3 Output Schemas {#output-schemas}
@@ -1417,6 +1461,22 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
   "warnings": [ ... ]
 }
 ```
+
+**Error Code System:**
+
+Errors use two complementary identifiers:
+- **Numeric exit codes** (process exit status): 2, 3, 4, 5, 10 per CLAUDE.md Table T26
+- **Text error kinds** (`error.kind` in JSON): Descriptive codes like `STUB_PARSE`, `CF_ASYNC`, etc.
+
+**Mapping:**
+
+| Exit Code | Category | Text Kinds |
+|-----------|----------|------------|
+| 2 | Invalid arguments | `POS_OUT_OF_RANGE`, `CF_*` codes (invalid selection) |
+| 3 | Resolution errors | `public_api`, `symbol_not_found` |
+| 5 | Verification failed | `STUB_PARSE` (stub exists but unparseable) |
+
+Control flow rejection codes (`CF_ASYNC`, `CF_GENERATOR`, `CF_EXCEPTION`, etc. from [Table T11](#t11-control-flow-reject)) all map to exit code 2 since they represent invalid user selections.
 
 ---
 
@@ -1565,6 +1625,7 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - [ ] Implement `find_expression_at_position(position) -> Option<ExpressionSpan>`
 - [ ] Implement `find_statement_at_position(position) -> Option<StatementSpan>`
 - [ ] Implement `find_enclosing_scope(position) -> Option<ScopeSpan>`
+- [ ] Define `line:col` to byte offset conversion (1-based, Unicode scalar columns)
 - [ ] Handle positions at whitespace/comments (find nearest node)
 - [ ] Handle positions at statement boundaries
 
@@ -1578,6 +1639,8 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - [ ] Unit: `test_position_at_whitespace`
 - [ ] Unit: `test_position_at_comment`
 - [ ] Unit: `test_position_between_statements`
+- [ ] Unit: `test_line_col_to_byte_offset_unicode`
+- [ ] Unit: `test_position_out_of_range_error`
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python-cst position_lookup`
@@ -1602,7 +1665,7 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - [ ] Implement `find_stub_for_module(module_path) -> Option<PathBuf>` (same-dir first, then stubs/)
 - [ ] Implement stub file parsing using existing CST parser
 - [ ] Create `StubUpdater` that applies rename/move edits to stub files
-- [ ] Handle stub files that don't parse (warn, don't fail)
+- [ ] Treat stub parse failures as errors (abort operation)
 - [ ] Handle namespace packages (PEP 420)
 
 **String Annotation Parsing:**
@@ -1619,6 +1682,7 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - [ ] Unit: `test_stub_parse_class`
 - [ ] Unit: `test_stub_parse_function`
 - [ ] Unit: `test_stub_update_rename`
+- [ ] Unit: `test_stub_parse_failure_errors`
 - [ ] Unit: `test_string_annotation_simple_name`
 - [ ] Unit: `test_string_annotation_qualified_name`
 - [ ] Unit: `test_string_annotation_preserves_quotes`
@@ -1987,7 +2051,7 @@ After completing Steps 2.1-2.3, you will have:
 
 **Tests:**
 - [ ] Unit: `test_import_insert_after_docstring`
-- [ ] Unit: `test_import_insert_grouped`
+- [ ] Unit: `test_import_insert_preserve`
 - [ ] Unit: `test_import_remove_single`
 - [ ] Unit: `test_import_remove_from_group`
 - [ ] Unit: `test_import_update_source`
@@ -2147,6 +2211,9 @@ After completing Steps 3.1-3.4, you will have:
 - [ ] Integration: `test_extract_method_with_params`
 - [ ] Integration: `test_extract_method_with_return`
 - [ ] Integration: `test_extract_method_reject_multi_return`
+- [ ] Integration: `test_extract_method_reject_async` (CF_ASYNC)
+- [ ] Integration: `test_extract_method_reject_generator` (CF_GENERATOR)
+- [ ] Integration: `test_extract_method_reject_exception_boundary` (CF_EXCEPTION)
 - [ ] Golden: `extract_method_response.json`
 
 **Checkpoint:**

@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Phase 13 Final Consistency Review | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase 13 Python Refactoring Operations plan
+- Code-architect agent comprehensive consistency review
+- CLAUDE.md Table T26 (error codes)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Verify purity rules consistency (T10, lines 184-221) | Done |
+| Verify import tests align with MVP scope (preserve only) | Done |
+| Verify stub parse failure policy (D08, lines 427-447) | Done |
+| Verify position semantics defined (lines 1427-1446) | Done |
+| Verify Inline Method Layer 3 dependency documented | Done |
+| Add error code mapping to Output Schemas | Done |
+| Add CF_* control flow rejection tests to Step 4.2 | Done |
+| Verify all 15 operations have consistent layer requirements | Done |
+| Verify all 4 milestones match stage outputs | Done |
+| Verify all cross-references resolve | Done |
+| Verify all dependency chains explicit | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Added error code mapping table and CF_* rejection tests
+
+**Key Changes:**
+
+| Section | Change |
+|---------|--------|
+| Output Schemas (lines 1467-1479) | Added error code mapping table: CF_* → exit code 2, STUB_PARSE → exit code 5 |
+| Step 4.2 Tests (lines 2214-2216) | Added `test_extract_method_reject_async`, `test_extract_method_reject_generator`, `test_extract_method_reject_exception_boundary` |
+
+**Consistency Verification Results:**
+
+| Check | Result |
+|-------|--------|
+| Operation layer requirements (T03 vs sections) | All 15 consistent |
+| Milestone requirements vs stage outputs | All 4 match |
+| Cross-references | All resolve |
+| Dependency chains | All explicit |
+| Infrastructure-before-use | All valid |
+
+**Checkpoints Verified:**
+- All clarifying questions have solid answers: PASS
+- No staging mismatches: PASS
+- Error codes mapped consistently: PASS
+- Test coverage includes error conditions: PASS
+
+**Key Decisions/Notes:**
+- CF_* control flow rejection codes map to exit code 2 (invalid arguments) since they represent invalid user selections
+- STUB_PARSE maps to exit code 5 (verification failed) since it's a file validation error
+- Plan is now ready for Stage 0 implementation
+
+---
+
 ## [phase-13.md] Phase 13 Critical Review: Stage 0 Infrastructure | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
