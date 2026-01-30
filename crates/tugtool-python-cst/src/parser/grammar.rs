@@ -1455,7 +1455,7 @@ parser! {
             = start:tok(FStringStart, "f\"")
                 parts:(_f_string() / _f_replacement())*
                 end:tok(FStringEnd, "\"") {
-                    make_fstring(start.string, parts, end.string)
+                    make_fstring(start, parts, end)
             }
 
         rule _f_string() -> FormattedStringContent<'input, 'a>
@@ -1490,7 +1490,7 @@ parser! {
             = start:tok(TStringStart, "t\"")
                 parts:(_t_string() / _t_replacement())*
                 end:tok(TStringEnd, "\"") {
-                    make_tstring(start.string, parts, end.string)
+                    make_tstring(start, parts, end)
             }
 
         rule _t_string() -> TemplatedStringContent<'input, 'a>
@@ -3014,30 +3014,34 @@ fn make_fstring_expression<'input, 'a>(
 }
 
 fn make_fstring<'input, 'a>(
-    start: &'a str,
+    start_tok: TokenRef<'input, 'a>,
     parts: Vec<FormattedStringContent<'input, 'a>>,
-    end: &'a str,
+    end_tok: TokenRef<'input, 'a>,
 ) -> FormattedString<'input, 'a> {
     FormattedString {
-        start,
+        start: start_tok.string,
         parts,
-        end,
+        end: end_tok.string,
         lpar: Default::default(),
         rpar: Default::default(),
+        start_tok,
+        end_tok,
     }
 }
 
 fn make_tstring<'input, 'a>(
-    start: &'a str,
+    start_tok: TokenRef<'input, 'a>,
     parts: Vec<TemplatedStringContent<'input, 'a>>,
-    end: &'a str,
+    end_tok: TokenRef<'input, 'a>,
 ) -> TemplatedString<'input, 'a> {
     TemplatedString {
-        start,
+        start: start_tok.string,
         parts,
-        end,
+        end: end_tok.string,
         lpar: Default::default(),
         rpar: Default::default(),
+        start_tok,
+        end_tok,
     }
 }
 

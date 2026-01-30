@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.8: String Type Spans | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.8 specification (lines 2916-2952)
+- Table T21: Expression Types Needing Span Recording (#t21-expression-spans)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - ConcatenatedString, FormattedString, TemplatedString Inflate implementations
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - fstring/tstring grammar rules and helper functions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `ConcatenatedString`: Add `record_ident_span` from `deflated_string_start_pos(left)` to `deflated_string_end_pos(right)` | Done |
+| `FormattedString`: Add `record_ident_span` using `start_tok` and `end_tok` for accurate full span | Done |
+| `TemplatedString`: Add `record_ident_span` using `start_tok` and `end_tok` for accurate full span | Done |
+| Add `start_tok` and `end_tok` fields to `FormattedString` and `TemplatedString` structs | Done |
+| Update parser grammar to pass full tokens to `make_fstring`/`make_tstring` | Done |
+| Update `deflated_string_start_pos` and `deflated_string_end_pos` helpers to use token positions | Done |
+| Write 4 unit tests for string type spans | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added `start_tok`/`end_tok` fields to FormattedString and TemplatedString; updated Inflate implementations with span recording; updated `deflated_string_start_pos`/`deflated_string_end_pos` helpers; removed obsolete fallback helpers
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Updated `fstring()` and `tstring()` rules to pass full TokenRef to `make_fstring`/`make_tstring`; updated helper functions to extract `.string` and store full tokens
+- `crates/tugtool-python-cst/src/lib.rs` - Added 4 tests: `test_string_span_concatenated_string`, `test_string_span_formatted_string`, `test_string_span_formatted_string_nested`, `test_string_span_multiline_string`
+- `plans/phase-13.md` - Marked Step 0.2.0.8 tasks, tests, and checkpoints complete; added note about resolution
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst string_span`: 4/4 passed
+- `cargo nextest run -p tugtool-python-cst`: 669/669 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 669/669
+- `cargo nextest run -p tugtool-python-cst string_span` passes: PASS - 4/4
+
+**Key Decisions/Notes:**
+- **Rejected "best effort" fallback approach**: Initial implementation used fallback to 0 when FormattedString/TemplatedString first part was Text (no position info). User explicitly rejected this: "We *HAVE TO* do better."
+- **Root cause identified**: Parser grammar captured full tokens with position info but only passed `.string` values to helper functions, discarding positions.
+- **Proper solution**: Added `start_tok` and `end_tok` fields to FormattedString and TemplatedString structs (same pattern as SimpleString.tok). Updated parser grammar rules to pass full TokenRef instead of just `.string`.
+- **Removed obsolete helpers**: `deflated_formatted_string_content_start_pos`, `deflated_formatted_string_content_end_pos`, `deflated_templated_string_content_start_pos`, `deflated_templated_string_content_end_pos` were no longer needed.
+- Tests verify full spans including f-string delimiters, nested f-strings, and multiline strings.
+
+---
+
 ## [phase-13.md] Step 0.2.0.7: Other Expression Spans | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

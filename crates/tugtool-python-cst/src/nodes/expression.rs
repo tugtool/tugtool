@@ -2496,23 +2496,10 @@ pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 
             rpar_end(&cs.rpar).unwrap_or_else(|| deflated_string_end_pos(&cs.right))
         }
         FormattedString(fs) => {
-            // FormattedString doesn't have a position-bearing end token,
-            // use the last part's position or fall back to 0
-            rpar_end(&fs.rpar).unwrap_or_else(|| {
-                fs.parts
-                    .last()
-                    .map(deflated_formatted_string_content_end_pos)
-                    .unwrap_or(0)
-            })
+            rpar_end(&fs.rpar).unwrap_or_else(|| fs.end_tok.end_pos.byte_idx())
         }
         TemplatedString(ts) => {
-            // Similar to FormattedString
-            rpar_end(&ts.rpar).unwrap_or_else(|| {
-                ts.parts
-                    .last()
-                    .map(deflated_templated_string_content_end_pos)
-                    .unwrap_or(0)
-            })
+            rpar_end(&ts.rpar).unwrap_or_else(|| ts.end_tok.end_pos.byte_idx())
         }
 
         // Named expression - recurse into value
@@ -2584,14 +2571,12 @@ fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> u
         ConcatenatedString(cs) => {
             lpar_start(&cs.lpar).unwrap_or_else(|| deflated_string_start_pos(&cs.left))
         }
-        FormattedString(fs) => lpar_start(&fs.lpar).unwrap_or({
-            // FormattedString starts with start field (the f" prefix)
-            0 // Fallback - FormattedString doesn't have start token
-        }),
-        TemplatedString(ts) => lpar_start(&ts.lpar).unwrap_or({
-            // TemplatedString starts with start field (the t" prefix)
-            0 // Fallback
-        }),
+        FormattedString(fs) => {
+            lpar_start(&fs.lpar).unwrap_or_else(|| fs.start_tok.start_pos.byte_idx())
+        }
+        TemplatedString(ts) => {
+            lpar_start(&ts.lpar).unwrap_or_else(|| ts.start_tok.start_pos.byte_idx())
+        }
 
         // Other expressions
         Tuple(t) => lpar_start(&t.lpar).unwrap_or_else(|| {
@@ -2626,8 +2611,8 @@ fn deflated_string_start_pos<'r, 'a>(s: &DeflatedString<'r, 'a>) -> usize {
     match s {
         DeflatedString::Simple(ss) => ss.tok.start_pos.byte_idx(),
         DeflatedString::Concatenated(cs) => deflated_string_start_pos(&cs.left),
-        DeflatedString::Formatted(_) => 0, // Fallback
-        DeflatedString::Templated(_) => 0, // Fallback
+        DeflatedString::Formatted(fs) => fs.start_tok.start_pos.byte_idx(),
+        DeflatedString::Templated(ts) => ts.start_tok.start_pos.byte_idx(),
     }
 }
 
@@ -2648,46 +2633,8 @@ fn deflated_string_end_pos<'r, 'a>(s: &DeflatedString<'r, 'a>) -> usize {
     match s {
         DeflatedString::Simple(ss) => ss.tok.end_pos.byte_idx(),
         DeflatedString::Concatenated(cs) => deflated_string_end_pos(&cs.right),
-        DeflatedString::Formatted(fs) => fs
-            .parts
-            .last()
-            .map(deflated_formatted_string_content_end_pos)
-            .unwrap_or(0),
-        DeflatedString::Templated(ts) => ts
-            .parts
-            .last()
-            .map(deflated_templated_string_content_end_pos)
-            .unwrap_or(0),
-    }
-}
-
-/// Helper for FormattedStringContent end position
-fn deflated_formatted_string_content_end_pos<'r, 'a>(
-    content: &DeflatedFormattedStringContent<'r, 'a>,
-) -> usize {
-    match content {
-        DeflatedFormattedStringContent::Text(_) => 0, // Text doesn't have position info
-        DeflatedFormattedStringContent::Expression(e) => {
-            // Expression ends at its closing brace if available
-            e.after_expr_tok
-                .as_ref()
-                .map(|t| t.end_pos.byte_idx())
-                .unwrap_or_else(|| deflated_expression_end_pos(&e.expression))
-        }
-    }
-}
-
-/// Helper for TemplatedStringContent end position
-fn deflated_templated_string_content_end_pos<'r, 'a>(
-    content: &DeflatedTemplatedStringContent<'r, 'a>,
-) -> usize {
-    match content {
-        DeflatedTemplatedStringContent::Text(_) => 0,
-        DeflatedTemplatedStringContent::Expression(e) => e
-            .after_expr_tok
-            .as_ref()
-            .map(|t| t.end_pos.byte_idx())
-            .unwrap_or_else(|| deflated_expression_end_pos(&e.expression)),
+        DeflatedString::Formatted(fs) => fs.end_tok.end_pos.byte_idx(),
+        DeflatedString::Templated(ts) => ts.end_tok.end_pos.byte_idx(),
     }
 }
 
@@ -3007,6 +2954,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedConcatenatedString<'r, 'a> {
     type Inflated = ConcatenatedString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // ConcatenatedString span: from left string start to right string end
+        let start = deflated_string_start_pos(&self.left);
+        let end = deflated_string_end_pos(&self.right);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let whitespace_between = parse_parenthesizable_whitespace(
@@ -3197,6 +3151,14 @@ pub struct TemplatedString<'a> {
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
 
+    /// Token for the t-string start delimiter (e.g., `t"`).
+    /// Provides accurate byte positions for the string start.
+    pub(crate) start_tok: TokenRef<'a>,
+
+    /// Token for the t-string end delimiter (e.g., `"`).
+    /// Provides accurate byte positions for the string end.
+    pub(crate) end_tok: TokenRef<'a>,
+
     /// Stable identity assigned during inflation.
     pub(crate) node_id: Option<NodeId>,
 }
@@ -3205,6 +3167,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedTemplatedString<'r, 'a> {
     type Inflated = TemplatedString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // TemplatedString span: from start_tok (t") to end_tok (closing ")
+        let start = self.start_tok.start_pos.byte_idx();
+        let end = self.end_tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let parts = self.parts.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
@@ -3343,6 +3312,14 @@ pub struct FormattedString<'a> {
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
 
+    /// Token for the f-string start delimiter (e.g., `f"`).
+    /// Provides accurate byte positions for the string start.
+    pub(crate) start_tok: TokenRef<'a>,
+
+    /// Token for the f-string end delimiter (e.g., `"`).
+    /// Provides accurate byte positions for the string end.
+    pub(crate) end_tok: TokenRef<'a>,
+
     /// Stable identity assigned during inflation.
     pub(crate) node_id: Option<NodeId>,
 }
@@ -3351,6 +3328,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedFormattedString<'r, 'a> {
     type Inflated = FormattedString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // FormattedString span: from start_tok (f") to end_tok (closing ")
+        let start = self.start_tok.start_pos.byte_idx();
+        let end = self.end_tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let parts = self.parts.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;

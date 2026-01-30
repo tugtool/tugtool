@@ -3099,6 +3099,163 @@ mod test {
             panic!("Expected Simple statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.8 Tests: String Type Spans
+    // ========================================================================
+    //
+    // These tests verify that string expression types (ConcatenatedString,
+    // FormattedString, TemplatedString) correctly record their spans using
+    // the start_tok and end_tok fields that capture the full string extent.
+
+    #[test]
+    fn test_string_span_concatenated_string() {
+        // Concatenated string: two adjacent string literals
+        let source = "\"a\" \"b\"\n";
+        //            01234567
+        //            ^concat: bytes 0-7
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::ConcatenatedString(concat) = &expr.value {
+                    let node_id = concat
+                        .node_id
+                        .expect("ConcatenatedString should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("ConcatenatedString should have position");
+                    let span = pos
+                        .ident_span
+                        .expect("ConcatenatedString should have ident_span");
+
+                    assert_eq!(span.start, 0, "concat should start at 0");
+                    assert_eq!(span.end, 7, "concat should end at 7");
+                    assert_eq!(&source[span.start..span.end], "\"a\" \"b\"");
+                } else {
+                    panic!("Expected ConcatenatedString expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_string_span_formatted_string() {
+        // Formatted string (f-string) with embedded expression
+        // Span should cover the ENTIRE f-string from f" to closing "
+        let source = "f\"hello {name}\"\n";
+        //            0         1
+        //            0123456789012345
+        //            ^fstring: bytes 0-15
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::FormattedString(fstring) = &expr.value {
+                    let node_id = fstring
+                        .node_id
+                        .expect("FormattedString should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("FormattedString should have position");
+                    let span = pos
+                        .ident_span
+                        .expect("FormattedString should have ident_span");
+
+                    // Span covers entire f-string including f" prefix and closing "
+                    assert_eq!(span.start, 0, "fstring should start at 0");
+                    assert_eq!(span.end, 15, "fstring should end at 15");
+                    assert_eq!(&source[span.start..span.end], "f\"hello {name}\"");
+                } else {
+                    panic!("Expected FormattedString expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_string_span_formatted_string_nested() {
+        // Nested f-string: f"outer {f'inner {x}'}"
+        // Each FormattedString gets its own span covering the entire string
+        let source = "f\"outer {f'inner {x}'}\"\n";
+        //            0         1         2
+        //            01234567890123456789012345
+        //            ^outer: bytes 0-23
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::FormattedString(outer) = &expr.value {
+                    let outer_id = outer
+                        .node_id
+                        .expect("Outer FormattedString should have node_id");
+                    let outer_pos = positions
+                        .get(&outer_id)
+                        .expect("Outer FormattedString should have position");
+                    let outer_span = outer_pos
+                        .ident_span
+                        .expect("Outer FormattedString should have ident_span");
+
+                    // Outer f-string covers entire string from f" to closing "
+                    assert_eq!(outer_span.start, 0, "outer fstring should start at 0");
+                    assert_eq!(outer_span.end, 23, "outer fstring should end at 23");
+                    assert_eq!(
+                        &source[outer_span.start..outer_span.end],
+                        "f\"outer {f'inner {x}'}\""
+                    );
+                } else {
+                    panic!("Expected FormattedString expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_string_span_multiline_string() {
+        // Triple-quoted multiline string - this is a SimpleString
+        let source = "\"\"\"line1\nline2\"\"\"\n";
+        //            0         1         2
+        //            012345678901234567890
+        //            ^simple string: bytes 0-17
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::SimpleString(ss) = &expr.value {
+                    let node_id = ss.node_id.expect("SimpleString should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("SimpleString should have position");
+                    let span = pos.ident_span.expect("SimpleString should have ident_span");
+
+                    assert_eq!(span.start, 0, "multiline string should start at 0");
+                    assert_eq!(span.end, 17, "multiline string should end at 17");
+                    assert_eq!(
+                        &source[span.start..span.end],
+                        "\"\"\"line1\nline2\"\"\""
+                    );
+                } else {
+                    panic!("Expected SimpleString expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================

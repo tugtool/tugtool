@@ -2921,29 +2921,32 @@ This step covers the remaining expression types that don't fit neatly into the p
 
 **Artifacts:**
 - Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+- Modified `crates/tugtool-python-cst/src/parser/grammar.rs`
 
 **Context:**
 
 String expressions have complex structure (concatenation, f-strings, template strings). Span computation requires handling multiple string parts.
 
-**Note:** These are marked as "best effort" in the original plan because string internal structure can be complex.
+**Note:** Originally marked "best effort" but resolved by adding `start_tok`/`end_tok` fields to capture accurate span boundaries from the parser.
 
 **Tasks:**
-- [ ] `ConcatenatedString`: Add `record_ident_span` from `deflated_string_start_pos(left)` to `deflated_string_end_pos(right)`
-- [ ] `FormattedString`: Add `record_ident_span` from first part start to last part end
-- [ ] `TemplatedString`: Add `record_ident_span` from first part start to last part end
-- [ ] Add helper functions for string position computation if needed (`deflated_string_start_pos`, `deflated_string_end_pos`)
+- [x] `ConcatenatedString`: Add `record_ident_span` from `deflated_string_start_pos(left)` to `deflated_string_end_pos(right)`
+- [x] `FormattedString`: Add `record_ident_span` using `start_tok` and `end_tok` for accurate full span
+- [x] `TemplatedString`: Add `record_ident_span` using `start_tok` and `end_tok` for accurate full span
+- [x] Add `start_tok` and `end_tok` fields to `FormattedString` and `TemplatedString` structs for proper position tracking
+- [x] Update parser grammar to pass full tokens to `make_fstring`/`make_tstring`
+- [x] Update `deflated_string_start_pos` and `deflated_string_end_pos` helpers to use token positions
 
 **Tests:**
-- [ ] Unit: `test_concatenated_string_span` - Parse `"a" "b"`, verify span covers both strings
-- [ ] Unit: `test_formatted_string_span` - Parse `f"hello {name}"`, verify span
-- [ ] Unit: `test_formatted_string_nested_span` - Parse `f"outer {f'inner'}"`, verify spans
-- [ ] Unit: `test_multiline_string_span` - Parse triple-quoted string, verify span
+- [x] Unit: `test_string_span_concatenated_string` - Parse `"a" "b"`, verify span covers both strings
+- [x] Unit: `test_string_span_formatted_string` - Parse `f"hello {name}"`, verify span covers entire f-string
+- [x] Unit: `test_string_span_formatted_string_nested` - Parse `f"outer {f'inner {x}'}"`, verify spans
+- [x] Unit: `test_string_span_multiline_string` - Parse triple-quoted string, verify span
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst string_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [x] `cargo nextest run -p tugtool-python-cst string_span` passes
 
 **Rollback:** Revert commit
 
