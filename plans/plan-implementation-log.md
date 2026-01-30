@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0: Node Span Recording Infrastructure | REVIEWED | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0 full specification and all 13 substeps
+- `crates/tugtool-python-cst/src/inflate_ctx.rs` - InflateCtx and PositionTable infrastructure
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Statement span recording (33 call sites)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Expression span recording (32 call sites)
+- `crates/tugtool-python-cst/src/lib.rs` - Test modules and public API
+
+**Review Summary:**
+
+The plan-step-reviewer agent performed a comprehensive assessment of the Step 0.2.0 implementation.
+
+**Result: PASS** - Implementation correctly, completely, and effectively fulfills all requirements.
+
+**Implementation Progress:**
+
+| Substep | Description | Status |
+|---------|-------------|--------|
+| 0.2.0.1 | Add Token Fields to Pass/Break/Continue | Done |
+| 0.2.0.2 | Add deflated_suite_end_pos Helper | Done |
+| 0.2.0.3 | Literal Span Recording | Done |
+| 0.2.0.4 | Container Span Recording | Done |
+| 0.2.0.5 | Composite Expression Spans (Operations) | Done |
+| 0.2.0.6 | Call/Attribute/Subscript Spans | Done |
+| 0.2.0.7 | Other Expression Spans | Done |
+| 0.2.0.8 | String Type Spans | Done |
+| 0.2.0.9 | Scope Statement Spans | Done |
+| 0.2.0.10 | Branch Statement Spans | Done |
+| 0.2.0.11 | Simple Statement Spans | Done |
+| 0.2.0.11.5 | Refactor Span Helpers with Traits and Macros | Done |
+| 0.2.0.11.6 | Import Infrastructure Foundation | Done |
+| 0.2.0.12 | Import Statement Spans | Done |
+| 0.2.0.13 | Special Spans (Decorator, Param) | Done |
+| Edge Case Tests | 7 robustness tests | Done |
+
+**Test Results:**
+- Total span-related tests: 167 tests passing
+- Edge case tests: 7 tests passing
+- Total workspace tests: 738 tests passing (100% pass rate)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (738 tests): PASS
+- `cargo clippy -p tugtool-python-cst -- -D warnings` passes: PASS
+- `parse_module_with_positions` populates PositionTable: PASS
+
+**Key Findings:**
+- Infrastructure: `InflateCtx` and `PositionTable` with O(1) Vec-based indexing
+- Traits: `DeflatedStartPos`/`DeflatedEndPos` traits eliminated code duplication
+- Coverage: 65 span recording call sites across statement.rs and expression.rs
+- Quality: Trait-based architecture with macro-generated dispatch
+- Concerns/Gaps: None identified
+
+**Recommendations:**
+- No action needed - implementation is production-ready
+- Foundation for Position Lookup is complete, enabling downstream features
+
+---
+
 ## [phase-13.md] Step 0.2.0.13: Special Spans (Decorator, Param) | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

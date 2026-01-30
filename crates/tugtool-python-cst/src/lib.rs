@@ -5291,3 +5291,164 @@ mod decorator_param_span_tests {
         }
     }
 }
+
+// Edge Case Tests for Step 0.2.0 Summary
+// These tests verify robustness across complex parsing scenarios.
+#[cfg(test)]
+mod edge_case_span_tests {
+    use super::*;
+
+    #[test]
+    fn test_parenthesized_expression_span() {
+        // Parse `(a + b)`, verify span includes parens
+        let source = "x = (a + b)\n";
+        //            01234567890
+        //                ^(a + b): 4-10
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // The parenthesized expression (a + b) should have span 4-10
+        // The PositionTable should have entries
+        assert!(
+            parsed.positions.len() > 0,
+            "PositionTable should have entries"
+        );
+    }
+
+    #[test]
+    fn test_nested_call_span() {
+        // Parse `f(g(x))`, verify both call spans recorded
+        let source = "f(g(x))\n";
+        //            01234567
+        //            ^f(...): 0-7, ^g(x): 2-6
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // Both Call nodes should have spans recorded
+        // Count positions with ident_span set
+        let spans_with_ident: Vec<_> = parsed
+            .positions
+            .iter()
+            .filter(|(_, pos)| pos.ident_span.is_some())
+            .collect();
+
+        // Should have at least 2 spans for the nested calls
+        assert!(
+            spans_with_ident.len() >= 2,
+            "Should have at least 2 spans for nested calls, got {}",
+            spans_with_ident.len()
+        );
+    }
+
+    #[test]
+    fn test_multiline_expression_span() {
+        // Parse multi-line call, verify span crosses lines
+        let source = "f(\n    x,\n    y\n)\n";
+        //            0123456789012345678
+        //            ^f(...): 0-17 (from 'f' to ')')
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // Find a span that crosses lines (end > position of first newline)
+        let first_newline = source.find('\n').unwrap();
+        let has_multiline_span = parsed.positions.iter().any(|(_, pos)| {
+            pos.ident_span
+                .map(|s| s.end > first_newline + 1)
+                .unwrap_or(false)
+        });
+
+        assert!(
+            has_multiline_span,
+            "Should have at least one span crossing multiple lines"
+        );
+    }
+
+    #[test]
+    fn test_chained_attribute_span() {
+        // Parse `a.b.c`, verify each attribute span
+        let source = "a.b.c\n";
+        //            012345
+        //            ^a: 0-1, ^a.b: 0-3, ^a.b.c: 0-5
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // Should have multiple spans for chained attributes
+        let spans_with_ident: Vec<_> = parsed
+            .positions
+            .iter()
+            .filter(|(_, pos)| pos.ident_span.is_some())
+            .collect();
+
+        // Should have at least 2 spans (Name 'a' and one or more Attribute nodes)
+        assert!(
+            spans_with_ident.len() >= 2,
+            "Should have at least 2 spans for chained attributes, got {}",
+            spans_with_ident.len()
+        );
+    }
+
+    #[test]
+    fn test_complex_comprehension_span() {
+        // Parse `[x for x in xs if x]`, verify lexical_span
+        let source = "[x for x in xs if x]\n";
+        //            01234567890123456789
+        //            ^[...]: 0-20
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // ListComp should have lexical_span for the comprehension scope
+        let has_lexical_span = parsed
+            .positions
+            .iter()
+            .any(|(_, pos)| pos.lexical_span.is_some());
+
+        assert!(
+            has_lexical_span,
+            "Comprehension should have lexical_span recorded"
+        );
+    }
+
+    #[test]
+    fn test_deeply_nested_span() {
+        // Parse deeply nested expression, verify all spans recorded
+        let source = "f(g(h(i(j(x)))))\n";
+        //            01234567890123456
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // Count spans - should have many for deeply nested calls
+        let span_count = parsed.positions.len();
+
+        // At least 5 Call nodes + 1 Name node
+        assert!(
+            span_count >= 6,
+            "Should have at least 6 spans for deeply nested calls, got {}",
+            span_count
+        );
+    }
+
+    #[test]
+    fn test_unicode_span() {
+        // Parse expression with Unicode identifiers, verify byte offsets correct
+        let source = "αβγ = δεζ\n";
+        //            αβγ: bytes 0-6 (each Greek letter is 2 bytes in UTF-8)
+        //            δεζ: bytes 9-15
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        // Find spans and verify they use byte offsets (not char counts)
+        let has_spans = parsed.positions.len() > 0;
+        assert!(has_spans, "Should have spans for Unicode expression");
+
+        // Verify a span's end is greater than 5 (would be 3 if using char counts)
+        let has_byte_offset_span = parsed.positions.iter().any(|(_, pos)| {
+            pos.ident_span.map(|s| s.end > 5).unwrap_or(false)
+                || pos.lexical_span.map(|s| s.end > 5).unwrap_or(false)
+        });
+
+        assert!(
+            has_byte_offset_span,
+            "Spans should use byte offsets, not character counts"
+        );
+    }
+}

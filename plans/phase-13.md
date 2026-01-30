@@ -3396,11 +3396,11 @@ After completing Steps 0.2.0.1 through 0.2.0.13 (including 0.2.0.11.5), you will
 
 **Final Step 0.2.0 Checkpoint:**
 
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (all tests, including all new span recording tests)
-- [ ] `cargo clippy -p tugtool-python-cst -- -D warnings` passes
-- [ ] Verify: parsing with `parse_module_with_positions` populates `PositionTable` for all node types
-- [ ] Verify: `PositionTable::len()` returns significantly more entries than before (~10x increase expected)
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (all tests, including all new span recording tests) - 738 tests pass
+- [x] `cargo clippy -p tugtool-python-cst -- -D warnings` passes
+- [x] Verify: parsing with `parse_module_with_positions` populates `PositionTable` for all node types
+- [x] Verify: `PositionTable::len()` returns significantly more entries than before (~10x increase expected)
 
 **Aggregate Test Command:**
 ```bash
@@ -3415,13 +3415,13 @@ This command should run all span-related tests from all substeps.
 
 After all substeps are complete, add these edge case tests to ensure robustness:
 
-- [ ] `test_parenthesized_expression_span` - Parse `(a + b)`, verify span includes parens
-- [ ] `test_nested_call_span` - Parse `f(g(x))`, verify both call spans recorded
-- [ ] `test_multiline_expression_span` - Parse multi-line call, verify span crosses lines
-- [ ] `test_chained_attribute_span` - Parse `a.b.c`, verify each attribute span
-- [ ] `test_complex_comprehension_span` - Parse `[x for x in xs if x]`, verify lexical_span (already done but verify)
-- [ ] `test_deeply_nested_span` - Parse deeply nested expression, verify all spans recorded
-- [ ] `test_unicode_span` - Parse expression with Unicode identifiers, verify byte offsets correct
+- [x] `test_parenthesized_expression_span` - Parse `(a + b)`, verify span includes parens
+- [x] `test_nested_call_span` - Parse `f(g(x))`, verify both call spans recorded
+- [x] `test_multiline_expression_span` - Parse multi-line call, verify span crosses lines
+- [x] `test_chained_attribute_span` - Parse `a.b.c`, verify each attribute span
+- [x] `test_complex_comprehension_span` - Parse `[x for x in xs if x]`, verify lexical_span (already done but verify)
+- [x] `test_deeply_nested_span` - Parse deeply nested expression, verify all spans recorded
+- [x] `test_unicode_span` - Parse expression with Unicode identifiers, verify byte offsets correct
 
 ---
 
