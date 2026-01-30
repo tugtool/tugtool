@@ -1053,6 +1053,13 @@ impl<'r, 'a> DeflatedStarredElement<'r, 'a> {
         is_last: bool,
     ) -> Result<StarredElement<'a>> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // StarredElement span: from star_tok start to value end (e.g., "*items")
+        let start = self.star_tok.start_pos.byte_idx();
+        let end = deflated_expression_end_pos(&self.value);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let whitespace_before_value = parse_parenthesizable_whitespace(
             &ctx.ws,
@@ -1182,6 +1189,34 @@ impl<'r, 'a> Inflate<'a> for DeflatedTuple<'r, 'a> {
     type Inflated = Tuple<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // Tuple span: from first element start to last element end (or parens if present)
+        // For empty tuple, use parens
+        let start = self
+            .lpar
+            .first()
+            .map(|lp| lp.lpar_tok.start_pos.byte_idx())
+            .or_else(|| {
+                self.elements.first().map(|el| match el {
+                    DeflatedElement::Simple { value, .. } => deflated_expression_start_pos(value),
+                    DeflatedElement::Starred(se) => se.star_tok.start_pos.byte_idx(),
+                })
+            })
+            .unwrap_or(0);
+        let end = self
+            .rpar
+            .last()
+            .map(|rp| rp.rpar_tok.end_pos.byte_idx())
+            .or_else(|| {
+                self.elements.last().map(|el| match el {
+                    DeflatedElement::Simple { value, .. } => deflated_expression_end_pos(value),
+                    DeflatedElement::Starred(se) => deflated_expression_end_pos(&se.value),
+                })
+            })
+            .unwrap_or(start);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let len = self.elements.len();
         let elements = self
@@ -2131,6 +2166,27 @@ impl<'r, 'a> Inflate<'a> for DeflatedSlice<'r, 'a> {
     type Inflated = Slice<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // Slice span: from lower start (or first_colon if no lower) to step/upper/second_colon end
+        let start = self
+            .lower
+            .as_ref()
+            .map(|l| deflated_expression_start_pos(l))
+            .unwrap_or_else(|| self.first_colon.tok.start_pos.byte_idx());
+        let end = self
+            .step
+            .as_ref()
+            .map(|s| deflated_expression_end_pos(s))
+            .or_else(|| {
+                self.second_colon
+                    .as_ref()
+                    .map(|c| c.tok.end_pos.byte_idx())
+            })
+            .or_else(|| self.upper.as_ref().map(|u| deflated_expression_end_pos(u)))
+            .unwrap_or_else(|| self.first_colon.tok.end_pos.byte_idx());
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lower = self.lower.inflate(ctx)?;
         let first_colon = self.first_colon.inflate(ctx)?;
         let upper = self.upper.inflate(ctx)?;
@@ -2279,6 +2335,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedIfExp<'r, 'a> {
     type Inflated = IfExp<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // IfExp span: from body start to orelse end (e.g., "x if cond else y")
+        let start = deflated_expression_start_pos(&self.body);
+        let end = deflated_expression_end_pos(&self.orelse);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let body = self.body.inflate(ctx)?;
         let whitespace_before_if = parse_parenthesizable_whitespace(
@@ -2802,6 +2865,20 @@ impl<'r, 'a> Inflate<'a> for DeflatedYield<'r, 'a> {
     type Inflated = Yield<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // Yield span: from yield_tok start to value end (or yield_tok end if no value)
+        let start = self.yield_tok.start_pos.byte_idx();
+        let end = self
+            .value
+            .as_ref()
+            .map(|v| match v.as_ref() {
+                DeflatedYieldValue::From(f) => deflated_expression_end_pos(&f.item),
+                DeflatedYieldValue::Expression(e) => deflated_expression_end_pos(e),
+            })
+            .unwrap_or_else(|| self.yield_tok.end_pos.byte_idx());
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_yield = if self.value.is_some() {
             Some(parse_parenthesizable_whitespace(
@@ -2857,6 +2934,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedAwait<'r, 'a> {
     type Inflated = Await<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // Await span: from await_tok start to expression end
+        let start = self.await_tok.start_pos.byte_idx();
+        let end = deflated_expression_end_pos(&self.expression);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_await = parse_parenthesizable_whitespace(
             &ctx.ws,
@@ -3325,6 +3409,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedNamedExpr<'r, 'a> {
     type Inflated = NamedExpr<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        // NamedExpr span: from target start to value end (e.g., "x := 42")
+        let start = deflated_expression_start_pos(&self.target);
+        let end = deflated_expression_end_pos(&self.value);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let target = self.target.inflate(ctx)?;
         let whitespace_before_walrus = parse_parenthesizable_whitespace(

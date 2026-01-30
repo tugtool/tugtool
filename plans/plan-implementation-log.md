@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.7: Other Expression Spans | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.7 specification (lines 2873-2912)
+- Table T21: Expression Types Needing Span Recording (#t21-expression-spans)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - IfExp, Yield, Await, NamedExpr, StarredElement, Tuple, Slice Inflate implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `IfExp`: Add `record_ident_span` from `deflated_expression_start_pos(body)` to `deflated_expression_end_pos(orelse)` | Done |
+| `Yield`: Add `record_ident_span` from `yield_tok.start_pos` to value end (or yield token if no value) | Done |
+| `Await`: Add `record_ident_span` from `await_tok.start_pos` to `deflated_expression_end_pos(expression)` | Done |
+| `NamedExpr`: Add `record_ident_span` from `deflated_expression_start_pos(target)` to `deflated_expression_end_pos(value)` | Done |
+| `StarredElement`: Add `record_ident_span` from `star_tok.start_pos` to `deflated_expression_end_pos(value)` | Done |
+| `Tuple`: Add `record_ident_span` from first element start to last element end (handle empty tuple) | Done |
+| `Slice`: Add `record_ident_span` from `first_colon` or `lower` start to `step` or `upper` or `second_colon` end | Done |
+| Write 10 unit tests for other expression spans | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording to IfExp, Yield, Await, NamedExpr, StarredElement (`inflate_element`), Tuple, Slice Inflate implementations
+- `crates/tugtool-python-cst/src/lib.rs` - Added 10 tests: `test_other_expr_span_if_exp_recorded`, `test_other_expr_span_yield_recorded`, `test_other_expr_span_yield_no_value`, `test_other_expr_span_await_recorded`, `test_other_expr_span_named_expr_recorded`, `test_other_expr_span_starred_element`, `test_other_expr_span_tuple_recorded`, `test_other_expr_span_tuple_no_parens`, `test_other_expr_span_slice_recorded`, `test_other_expr_span_slice_partial`
+- `plans/phase-13.md` - Marked Step 0.2.0.7 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst other_expr_span`: 10/10 passed
+- `cargo nextest run -p tugtool-python-cst`: 665/665 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 665/665
+- `cargo nextest run -p tugtool-python-cst other_expr_span` passes: PASS - 10/10
+
+**Key Decisions/Notes:**
+- Test names use `other_expr_span` prefix for consistent filtering with checkpoint command
+- Yield span handles both valued (`yield x`) and valueless (`yield`) forms
+- Tuple span prioritizes parentheses when present, falls back to elements for unparenthesized tuples
+- Slice span handles partial slices (`a[1:]`, `a[:2]`) with cascading fallbacks for end position
+- StarredElement span recording added to `inflate_element` method (not `inflate` trait impl, which delegates to `inflate_element`)
+- Tests for yield/await require wrapping in function context (async def for await)
+
+---
+
 ## [phase-13.md] Step 0.2.0.6: Call/Attribute/Subscript Spans | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

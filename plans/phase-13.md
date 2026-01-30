@@ -2884,30 +2884,30 @@ These nodes represent member access and invocation patterns that are common in r
 This step covers the remaining expression types that don't fit neatly into the previous categories.
 
 **Tasks:**
-- [ ] `IfExp`: Add `record_ident_span` from `deflated_expression_start_pos(body)` to `deflated_expression_end_pos(orelse)`
-- [ ] `Yield`: Add `record_ident_span` from `yield_tok.start_pos` to value end (or yield token if no value)
-- [ ] `Await`: Add `record_ident_span` from `await_tok.start_pos` to `deflated_expression_end_pos(expression)`
-- [ ] `NamedExpr`: Add `record_ident_span` from `deflated_expression_start_pos(target)` to `deflated_expression_end_pos(value)`
-- [ ] `StarredElement`: Add `record_ident_span` from `star_tok.start_pos` to `deflated_expression_end_pos(value)`
-- [ ] `Tuple`: Add `record_ident_span` from first element start to last element end (handle empty tuple)
-- [ ] `Slice`: Add `record_ident_span` from `first_colon` or `lower` start to `step` or `upper` or `second_colon` end
+- [x] `IfExp`: Add `record_ident_span` from `deflated_expression_start_pos(body)` to `deflated_expression_end_pos(orelse)`
+- [x] `Yield`: Add `record_ident_span` from `yield_tok.start_pos` to value end (or yield token if no value)
+- [x] `Await`: Add `record_ident_span` from `await_tok.start_pos` to `deflated_expression_end_pos(expression)`
+- [x] `NamedExpr`: Add `record_ident_span` from `deflated_expression_start_pos(target)` to `deflated_expression_end_pos(value)`
+- [x] `StarredElement`: Add `record_ident_span` from `star_tok.start_pos` to `deflated_expression_end_pos(value)`
+- [x] `Tuple`: Add `record_ident_span` from first element start to last element end (handle empty tuple)
+- [x] `Slice`: Add `record_ident_span` from `first_colon` or `lower` start to `step` or `upper` or `second_colon` end
 
 **Tests:**
-- [ ] Unit: `test_if_exp_span_recorded` - Parse `x if cond else y`, verify span covers entire ternary
-- [ ] Unit: `test_yield_span_recorded` - Parse `yield x`, verify span
-- [ ] Unit: `test_yield_no_value_span` - Parse `yield`, verify span covers just `yield`
-- [ ] Unit: `test_await_span_recorded` - Parse `await foo()`, verify span
-- [ ] Unit: `test_named_expr_span_recorded` - Parse `(x := 42)`, verify span
-- [ ] Unit: `test_starred_element_span` - Parse `[*items]`, verify starred element span
-- [ ] Unit: `test_tuple_span_recorded` - Parse `(1, 2)`, verify span includes parentheses
-- [ ] Unit: `test_tuple_no_parens_span` - Parse `1, 2`, verify span
-- [ ] Unit: `test_slice_span_recorded` - Parse `a[1:2:3]`, verify slice span (within subscript)
-- [ ] Unit: `test_slice_partial_span` - Parse `a[1:]`, verify slice span
+- [x] Unit: `test_if_exp_span_recorded` - Parse `x if cond else y`, verify span covers entire ternary
+- [x] Unit: `test_yield_span_recorded` - Parse `yield x`, verify span
+- [x] Unit: `test_yield_no_value_span` - Parse `yield`, verify span covers just `yield`
+- [x] Unit: `test_await_span_recorded` - Parse `await foo()`, verify span
+- [x] Unit: `test_named_expr_span_recorded` - Parse `(x := 42)`, verify span
+- [x] Unit: `test_starred_element_span` - Parse `[*items]`, verify starred element span
+- [x] Unit: `test_tuple_span_recorded` - Parse `(1, 2)`, verify span includes parentheses
+- [x] Unit: `test_tuple_no_parens_span` - Parse `1, 2`, verify span
+- [x] Unit: `test_slice_span_recorded` - Parse `a[1:2:3]`, verify slice span (within subscript)
+- [x] Unit: `test_slice_partial_span` - Parse `a[1:]`, verify slice span
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst other_expr_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [x] `cargo nextest run -p tugtool-python-cst other_expr_span` passes
 
 **Rollback:** Revert commit
 

@@ -2730,6 +2730,375 @@ mod test {
             panic!("Expected Simple statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.7 Tests: Other Expression Spans
+    // ========================================================================
+    //
+    // These tests verify that other expression types (IfExp, Yield, Await,
+    // NamedExpr, StarredElement, Tuple, Slice) correctly record their spans.
+
+    #[test]
+    fn test_other_expr_span_if_exp_recorded() {
+        let source = "x if cond else y\n";
+        //            0         1
+        //            0123456789012345678
+        //            ^ifexp: bytes 0-16
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::IfExp(if_exp) = &expr.value {
+                    let node_id = if_exp.node_id.expect("IfExp should have node_id");
+                    let pos = positions.get(&node_id).expect("IfExp should have position");
+                    let span = pos.ident_span.expect("IfExp should have ident_span");
+
+                    assert_eq!(span.start, 0, "ifexp should start at 0");
+                    assert_eq!(span.end, 16, "ifexp should end at 16");
+                    assert_eq!(&source[span.start..span.end], "x if cond else y");
+                } else {
+                    panic!("Expected IfExp expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_yield_recorded() {
+        // yield must be in a function
+        let source = "def f():\n    yield x\n";
+        //            0         1         2
+        //            0123456789012345678901
+        //                         ^yield: bytes 13-20
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func) = compound {
+                if let Suite::IndentedBlock(block) = &func.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Expr(expr) = &simple.body[0] {
+                            if let Expression::Yield(yield_expr) = &expr.value {
+                                let node_id =
+                                    yield_expr.node_id.expect("Yield should have node_id");
+                                let pos =
+                                    positions.get(&node_id).expect("Yield should have position");
+                                let span = pos.ident_span.expect("Yield should have ident_span");
+
+                                assert_eq!(span.start, 13, "yield should start at 13");
+                                assert_eq!(span.end, 20, "yield should end at 20");
+                                assert_eq!(&source[span.start..span.end], "yield x");
+                            } else {
+                                panic!("Expected Yield expression");
+                            }
+                        } else {
+                            panic!("Expected Expr statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock suite");
+                }
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_yield_no_value() {
+        // yield with no value
+        let source = "def f():\n    yield\n";
+        //            0         1         2
+        //            012345678901234567890
+        //                         ^yield: bytes 13-18
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func) = compound {
+                if let Suite::IndentedBlock(block) = &func.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Expr(expr) = &simple.body[0] {
+                            if let Expression::Yield(yield_expr) = &expr.value {
+                                let node_id =
+                                    yield_expr.node_id.expect("Yield should have node_id");
+                                let pos =
+                                    positions.get(&node_id).expect("Yield should have position");
+                                let span = pos.ident_span.expect("Yield should have ident_span");
+
+                                assert_eq!(span.start, 13, "yield should start at 13");
+                                assert_eq!(span.end, 18, "yield should end at 18");
+                                assert_eq!(&source[span.start..span.end], "yield");
+                            } else {
+                                panic!("Expected Yield expression");
+                            }
+                        } else {
+                            panic!("Expected Expr statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock suite");
+                }
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_await_recorded() {
+        // await must be in an async function
+        let source = "async def f():\n    await foo()\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890
+        //                                ^await: bytes 19-30
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func) = compound {
+                if let Suite::IndentedBlock(block) = &func.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Expr(expr) = &simple.body[0] {
+                            if let Expression::Await(await_expr) = &expr.value {
+                                let node_id =
+                                    await_expr.node_id.expect("Await should have node_id");
+                                let pos =
+                                    positions.get(&node_id).expect("Await should have position");
+                                let span = pos.ident_span.expect("Await should have ident_span");
+
+                                assert_eq!(span.start, 19, "await should start at 19");
+                                assert_eq!(span.end, 30, "await should end at 30");
+                                assert_eq!(&source[span.start..span.end], "await foo()");
+                            } else {
+                                panic!("Expected Await expression");
+                            }
+                        } else {
+                            panic!("Expected Expr statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock suite");
+                }
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_named_expr_recorded() {
+        // Named expression (walrus operator)
+        let source = "(x := 42)\n";
+        //            0123456789
+        //             ^named_expr: bytes 1-8 (inside parens)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::NamedExpr(named_expr) = &expr.value {
+                    let node_id = named_expr.node_id.expect("NamedExpr should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("NamedExpr should have position");
+                    let span = pos.ident_span.expect("NamedExpr should have ident_span");
+
+                    assert_eq!(span.start, 1, "named_expr should start at 1");
+                    assert_eq!(span.end, 8, "named_expr should end at 8");
+                    assert_eq!(&source[span.start..span.end], "x := 42");
+                } else {
+                    panic!("Expected NamedExpr expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_starred_element() {
+        // Starred element in a list
+        let source = "[*items]\n";
+        //            012345678
+        //             ^starred: bytes 1-7
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::List(list) = &expr.value {
+                    if let Some(Element::Starred(starred)) = list.elements.first() {
+                        let node_id = starred.node_id.expect("StarredElement should have node_id");
+                        let pos = positions
+                            .get(&node_id)
+                            .expect("StarredElement should have position");
+                        let span = pos
+                            .ident_span
+                            .expect("StarredElement should have ident_span");
+
+                        assert_eq!(span.start, 1, "starred should start at 1");
+                        assert_eq!(span.end, 7, "starred should end at 7");
+                        assert_eq!(&source[span.start..span.end], "*items");
+                    } else {
+                        panic!("Expected StarredElement in list");
+                    }
+                } else {
+                    panic!("Expected List expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_tuple_recorded() {
+        // Tuple with parentheses
+        let source = "(1, 2)\n";
+        //            0123456
+        //            ^tuple: bytes 0-6 (includes parens)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Tuple(tuple) = &expr.value {
+                    let node_id = tuple.node_id.expect("Tuple should have node_id");
+                    let pos = positions.get(&node_id).expect("Tuple should have position");
+                    let span = pos.ident_span.expect("Tuple should have ident_span");
+
+                    assert_eq!(span.start, 0, "tuple should start at 0");
+                    assert_eq!(span.end, 6, "tuple should end at 6");
+                    assert_eq!(&source[span.start..span.end], "(1, 2)");
+                } else {
+                    panic!("Expected Tuple expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_tuple_no_parens() {
+        // Tuple without parentheses
+        let source = "1, 2\n";
+        //            01234
+        //            ^tuple: bytes 0-4
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Tuple(tuple) = &expr.value {
+                    let node_id = tuple.node_id.expect("Tuple should have node_id");
+                    let pos = positions.get(&node_id).expect("Tuple should have position");
+                    let span = pos.ident_span.expect("Tuple should have ident_span");
+
+                    assert_eq!(span.start, 0, "tuple should start at 0");
+                    assert_eq!(span.end, 4, "tuple should end at 4");
+                    assert_eq!(&source[span.start..span.end], "1, 2");
+                } else {
+                    panic!("Expected Tuple expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_slice_recorded() {
+        // Slice within a subscript
+        let source = "a[1:2:3]\n";
+        //            012345678
+        //              ^slice: bytes 2-7 (1:2:3)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Subscript(subscript) = &expr.value {
+                    // Get the slice from the subscript
+                    if let Some(SubscriptElement {
+                        slice: BaseSlice::Slice(slice),
+                        ..
+                    }) = subscript.slice.first()
+                    {
+                        let node_id = slice.node_id.expect("Slice should have node_id");
+                        let pos = positions.get(&node_id).expect("Slice should have position");
+                        let span = pos.ident_span.expect("Slice should have ident_span");
+
+                        assert_eq!(span.start, 2, "slice should start at 2");
+                        assert_eq!(span.end, 7, "slice should end at 7");
+                        assert_eq!(&source[span.start..span.end], "1:2:3");
+                    } else {
+                        panic!("Expected Slice in subscript");
+                    }
+                } else {
+                    panic!("Expected Subscript expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_other_expr_span_slice_partial() {
+        // Slice with only lower and first colon
+        let source = "a[1:]\n";
+        //            012345
+        //              ^slice: bytes 2-4 (1:)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Subscript(subscript) = &expr.value {
+                    if let Some(SubscriptElement {
+                        slice: BaseSlice::Slice(slice),
+                        ..
+                    }) = subscript.slice.first()
+                    {
+                        let node_id = slice.node_id.expect("Slice should have node_id");
+                        let pos = positions.get(&node_id).expect("Slice should have position");
+                        let span = pos.ident_span.expect("Slice should have ident_span");
+
+                        assert_eq!(span.start, 2, "slice should start at 2");
+                        assert_eq!(span.end, 4, "slice should end at 4");
+                        assert_eq!(&source[span.start..span.end], "1:");
+                    } else {
+                        panic!("Expected Slice in subscript");
+                    }
+                } else {
+                    panic!("Expected Subscript expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================
