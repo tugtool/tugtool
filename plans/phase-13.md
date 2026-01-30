@@ -1596,31 +1596,683 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - New `crates/tugtool-python-cst/src/visitor/batch_edit.rs`
 - Updated `crates/tugtool-python-cst/src/visitor/mod.rs`
 
+---
+
+###### 0.1.1 API Specification {#step-0-1-api}
+
+**Core Types:**
+
+```rust
+use tugtool_core::patch::Span;
+
+/// An atomic edit operation on source text.
+///
+/// Edit primitives are collected and applied in reverse position order
+/// to preserve span validity as text lengths change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditPrimitive {
+    /// Replace content at span with new text.
+    /// Equivalent to delete + insert at span.start.
+    Replace {
+        span: Span,
+        new_text: String,
+    },
+
+    /// Insert text immediately before the given span.
+    /// The insertion point is `span.start`. The span itself identifies
+    /// context (e.g., a statement) for indentation detection.
+    InsertBefore {
+        anchor_span: Span,
+        text: String,
+    },
+
+    /// Insert text immediately after the given span.
+    /// The insertion point is `span.end`.
+    InsertAfter {
+        anchor_span: Span,
+        text: String,
+    },
+
+    /// Delete content at span. Equivalent to `Replace { span, new_text: "" }`.
+    Delete {
+        span: Span,
+    },
+
+    /// Insert text at an absolute byte position.
+    /// Use when no anchor span is available (e.g., inserting at file start).
+    InsertAt {
+        position: usize,
+        text: String,
+    },
+}
+
+impl EditPrimitive {
+    /// Returns the effective span this edit operates on.
+    /// For InsertAt, returns a zero-width span at the position.
+    pub fn effective_span(&self) -> Span;
+
+    /// Returns the insertion point (byte offset where new text begins).
+    pub fn insertion_point(&self) -> usize;
+
+    /// Returns true if this is an insertion (InsertBefore, InsertAfter, InsertAt).
+    pub fn is_insertion(&self) -> bool;
+}
+
+/// Error type for batch edit operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BatchEditError {
+    /// Two edits have overlapping spans.
+    OverlappingEdits {
+        edit1_span: Span,
+        edit2_span: Span,
+    },
+
+    /// An edit span extends beyond source length.
+    SpanOutOfBounds {
+        span: Span,
+        source_len: usize,
+    },
+
+    /// No edits to apply.
+    EmptyEdits,
+
+    /// Indentation detection failed (no reference line found).
+    IndentationDetectionFailed {
+        position: usize,
+    },
+}
+
+impl std::fmt::Display for BatchEditError { /* ... */ }
+impl std::error::Error for BatchEditError {}
+
+pub type BatchEditResult<T> = Result<T, BatchEditError>;
+
+/// Options for controlling edit application behavior.
+#[derive(Debug, Clone, Default)]
+pub struct BatchEditOptions {
+    /// If true, InsertBefore/InsertAfter will auto-detect and apply
+    /// indentation matching the surrounding context.
+    /// Default: true
+    pub auto_indent: bool,
+
+    /// If true, adjacent edits (one ends where another starts) are allowed.
+    /// Default: true
+    pub allow_adjacent: bool,
+
+    /// If true, empty edit list returns original source instead of error.
+    /// Default: false
+    pub allow_empty: bool,
+}
+
+/// A batch editor that collects edit primitives and applies them atomically.
+///
+/// # Design Notes
+///
+/// BatchSpanEditor generalizes the existing `RenameTransformer` to support
+/// all edit primitive types, not just Replace. The key differences:
+///
+/// 1. **Multiple edit types**: Replace, InsertBefore, InsertAfter, Delete, InsertAt
+/// 2. **Indentation handling**: InsertBefore/InsertAfter can auto-detect indentation
+/// 3. **Options**: Configurable behavior via `BatchEditOptions`
+///
+/// # Example
+///
+/// ```rust
+/// use tugtool_python_cst::visitor::{BatchSpanEditor, EditPrimitive};
+/// use tugtool_core::patch::Span;
+///
+/// let source = "def foo():\n    return 1\n";
+///
+/// let mut editor = BatchSpanEditor::new(source);
+/// editor.add(EditPrimitive::Replace {
+///     span: Span::new(4, 7),
+///     new_text: "bar".to_string(),
+/// });
+/// editor.add(EditPrimitive::InsertBefore {
+///     anchor_span: Span::new(15, 23),  // "return 1"
+///     text: "x = 42\n".to_string(),
+/// });
+///
+/// let result = editor.apply()?;
+/// assert_eq!(result, "def bar():\n    x = 42\n    return 1\n");
+/// ```
+pub struct BatchSpanEditor<'src> {
+    source: &'src str,
+    edits: Vec<EditPrimitive>,
+    options: BatchEditOptions,
+}
+
+impl<'src> BatchSpanEditor<'src> {
+    /// Create a new BatchSpanEditor for the given source.
+    pub fn new(source: &'src str) -> Self;
+
+    /// Create a new BatchSpanEditor with custom options.
+    pub fn with_options(source: &'src str, options: BatchEditOptions) -> Self;
+
+    /// Add an edit primitive to the batch.
+    pub fn add(&mut self, edit: EditPrimitive);
+
+    /// Add multiple edit primitives.
+    pub fn add_all(&mut self, edits: impl IntoIterator<Item = EditPrimitive>);
+
+    /// Returns the number of edits currently queued.
+    pub fn len(&self) -> usize;
+
+    /// Returns true if no edits are queued.
+    pub fn is_empty(&self) -> bool;
+
+    /// Apply all queued edits and return the transformed source.
+    ///
+    /// Edits are applied in reverse position order to preserve span validity.
+    /// Overlapping edits cause an error.
+    ///
+    /// # Errors
+    ///
+    /// - `BatchEditError::OverlappingEdits` if any two edits overlap
+    /// - `BatchEditError::SpanOutOfBounds` if any span exceeds source length
+    /// - `BatchEditError::EmptyEdits` if no edits and `allow_empty` is false
+    pub fn apply(self) -> BatchEditResult<String>;
+
+    /// Apply edits without validation (for internal use when pre-validated).
+    ///
+    /// # Safety (not unsafe, but requires care)
+    ///
+    /// Caller must ensure:
+    /// - All spans are within bounds
+    /// - No overlapping edits
+    pub fn apply_unchecked(self) -> String;
+
+    /// Validate edits without applying them.
+    ///
+    /// Returns `Ok(())` if edits are valid, or the first error encountered.
+    pub fn validate(&self) -> BatchEditResult<()>;
+
+    /// Check for overlapping edits and return all conflicts.
+    ///
+    /// Unlike `validate()`, this returns all overlaps, not just the first.
+    pub fn find_overlaps(&self) -> Vec<(Span, Span)>;
+}
+```
+
+**Helper Functions:**
+
+```rust
+/// Detect the indentation at a given byte position.
+///
+/// Returns the indentation string (spaces/tabs) of the line containing `position`.
+/// If the line is empty or position is at line start, looks at surrounding lines.
+///
+/// # Algorithm
+///
+/// 1. Find the line containing `position`
+/// 2. Extract leading whitespace from that line
+/// 3. If line is empty, check the previous non-empty line
+/// 4. If no reference found, return empty string
+pub fn detect_indentation(source: &str, position: usize) -> &str;
+
+/// Detect the indentation level (number of spaces/tabs) at a position.
+///
+/// Useful for computing relative indentation (e.g., one level deeper).
+pub fn detect_indentation_level(source: &str, position: usize) -> IndentInfo;
+
+/// Information about indentation at a position.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndentInfo {
+    /// The actual indentation string (spaces/tabs)
+    pub indent_str: String,
+    /// The visual width (assuming 4-space tabs)
+    pub visual_width: usize,
+    /// Whether the indent uses tabs
+    pub uses_tabs: bool,
+}
+
+/// Apply indentation to a multi-line text block.
+///
+/// Each line in `text` (after the first) is prefixed with `indent`.
+/// Handles both `\n` and `\r\n` line endings.
+pub fn apply_indentation(text: &str, indent: &str) -> String;
+
+/// Check if two spans overlap.
+///
+/// Re-exported from `rename.rs` for consistency.
+pub use super::rename::spans_overlap;
+```
+
+---
+
+###### 0.1.2 Internal Design Notes {#step-0-1-internal}
+
+**Relationship to Existing RenameTransformer:**
+
+The existing `RenameTransformer` in `visitor/rename.rs` handles Replace-only edits:
+
+```rust
+// Current RenameTransformer (simplified)
+pub struct RenameTransformer<'src> {
+    source: &'src str,
+    requests: Vec<RenameRequest>,  // Each is (Span, new_name)
+}
+```
+
+`BatchSpanEditor` generalizes this pattern:
+
+1. **Replace RenameRequest with EditPrimitive**: The new enum supports all edit types
+2. **Add indentation handling**: InsertBefore/InsertAfter need context-aware indentation
+3. **Add options**: Configurable behavior for different use cases
+4. **Keep the same core algorithm**: Sort by position descending, apply in reverse order
+
+**Core Apply Algorithm:**
+
+```rust
+fn apply(mut self) -> BatchEditResult<String> {
+    // 1. Handle empty case
+    if self.edits.is_empty() {
+        return if self.options.allow_empty {
+            Ok(self.source.to_string())
+        } else {
+            Err(BatchEditError::EmptyEdits)
+        };
+    }
+
+    // 2. Validate all spans are in bounds
+    let source_len = self.source.len();
+    for edit in &self.edits {
+        let span = edit.effective_span();
+        if span.end > source_len {
+            return Err(BatchEditError::SpanOutOfBounds { span, source_len });
+        }
+    }
+
+    // 3. Sort edits by effective position in DESCENDING order
+    //    For equal positions, insertion-type edits come AFTER deletions
+    //    (so insertions happen at the original position, not shifted position)
+    self.edits.sort_by(|a, b| {
+        let pos_a = a.insertion_point();
+        let pos_b = b.insertion_point();
+        match pos_b.cmp(&pos_a) {
+            Ordering::Equal => {
+                // Deletions before insertions at same position
+                match (a.is_insertion(), b.is_insertion()) {
+                    (false, true) => Ordering::Less,
+                    (true, false) => Ordering::Greater,
+                    _ => Ordering::Equal,
+                }
+            }
+            other => other,
+        }
+    });
+
+    // 4. Check for overlapping spans (after sorting)
+    for i in 1..self.edits.len() {
+        let span_prev = self.edits[i - 1].effective_span();
+        let span_curr = self.edits[i].effective_span();
+
+        // After descending sort: prev.start >= curr.start
+        // Check if curr overlaps with prev
+        if spans_overlap_for_edits(&span_prev, &span_curr, self.options.allow_adjacent) {
+            return Err(BatchEditError::OverlappingEdits {
+                edit1_span: span_curr,
+                edit2_span: span_prev,
+            });
+        }
+    }
+
+    // 5. Apply edits in reverse order
+    let mut result = self.source.to_string();
+    for edit in &self.edits {
+        result = apply_single_edit(&result, edit, &self.options)?;
+    }
+
+    Ok(result)
+}
+
+fn apply_single_edit(
+    source: &str,
+    edit: &EditPrimitive,
+    options: &BatchEditOptions,
+) -> BatchEditResult<String> {
+    match edit {
+        EditPrimitive::Replace { span, new_text } => {
+            Ok(format!(
+                "{}{}{}",
+                &source[..span.start],
+                new_text,
+                &source[span.end..]
+            ))
+        }
+        EditPrimitive::Delete { span } => {
+            Ok(format!("{}{}", &source[..span.start], &source[span.end..]))
+        }
+        EditPrimitive::InsertAt { position, text } => {
+            Ok(format!(
+                "{}{}{}",
+                &source[..*position],
+                text,
+                &source[*position..]
+            ))
+        }
+        EditPrimitive::InsertBefore { anchor_span, text } => {
+            let position = anchor_span.start;
+            let text = if options.auto_indent {
+                let indent = detect_indentation(source, position);
+                apply_indentation(text, indent)
+            } else {
+                text.clone()
+            };
+            Ok(format!(
+                "{}{}{}",
+                &source[..position],
+                text,
+                &source[position..]
+            ))
+        }
+        EditPrimitive::InsertAfter { anchor_span, text } => {
+            let position = anchor_span.end;
+            let text = if options.auto_indent {
+                let indent = detect_indentation(source, position);
+                apply_indentation(text, indent)
+            } else {
+                text.clone()
+            };
+            Ok(format!(
+                "{}{}{}",
+                &source[..position],
+                text,
+                &source[position..]
+            ))
+        }
+    }
+}
+```
+
+**Indentation Detection Algorithm:**
+
+```rust
+fn detect_indentation(source: &str, position: usize) -> &str {
+    // 1. Find line start
+    let line_start = source[..position]
+        .rfind('\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+
+    // 2. Find line end
+    let line_end = source[position..]
+        .find('\n')
+        .map(|i| position + i)
+        .unwrap_or(source.len());
+
+    let line = &source[line_start..line_end];
+
+    // 3. Extract leading whitespace
+    let indent_end = line
+        .char_indices()
+        .find(|(_, c)| !c.is_whitespace())
+        .map(|(i, _)| i)
+        .unwrap_or(line.len());
+
+    if indent_end > 0 {
+        return &line[..indent_end];
+    }
+
+    // 4. Line is empty or all whitespace - check previous line
+    if line_start > 0 {
+        let prev_line_end = line_start - 1;
+        let prev_line_start = source[..prev_line_end]
+            .rfind('\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+
+        let prev_line = &source[prev_line_start..prev_line_end];
+        let prev_indent_end = prev_line
+            .char_indices()
+            .find(|(_, c)| !c.is_whitespace())
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        if prev_indent_end > 0 {
+            return &prev_line[..prev_indent_end];
+        }
+    }
+
+    // 5. No reference indentation found
+    ""
+}
+```
+
+---
+
+###### 0.1.3 Edge Cases {#step-0-1-edge-cases}
+
+| Edge Case | Handling |
+|-----------|----------|
+| **Overlapping spans** | Detect during validation, return `OverlappingEdits` error |
+| **Adjacent spans** (end == start) | Allowed by default (`allow_adjacent: true`); can be disabled |
+| **Empty span Replace** | Legal - equivalent to `InsertAt` |
+| **Empty text Delete** | Legal - no-op (but span must be valid) |
+| **Unicode multi-byte spans** | All spans are byte offsets; slicing is safe on UTF-8 boundaries |
+| **Non-UTF-8 boundary span** | Will panic on slicing; callers must ensure valid UTF-8 boundaries |
+| **InsertBefore at file start** | Indentation defaults to empty string |
+| **InsertAfter at file end** | Works correctly (inserts before implicit EOF) |
+| **Nested indentation** | Uses containing line's indentation, not logical scope indentation |
+| **Mixed tabs/spaces** | Preserves whatever the source uses |
+| **CRLF line endings** | Indentation detection handles both `\n` and `\r\n` |
+| **Empty source** | InsertAt(0, text) works; other operations on empty source may error |
+| **Zero-width span at same position** | Multiple InsertAt at same position: applied in add order |
+
+**Unicode Handling:**
+
+Python source files are UTF-8. The existing CST parser produces byte offsets.
+`BatchSpanEditor` assumes all spans are valid UTF-8 boundaries. The caller (CST visitors)
+is responsible for providing valid byte offsets from the parser.
+
+```rust
+// CORRECT: Span from parser covers complete UTF-8 sequence
+let source = "def héllo():";
+//              ^   ^
+//              4   10 (byte offsets, 'é' is 2 bytes)
+editor.add(EditPrimitive::Replace {
+    span: Span::new(4, 10),  // "héllo"
+    new_text: "world".to_string(),
+});
+
+// INCORRECT: Would panic if span splits a multi-byte character
+// editor.add(EditPrimitive::Replace {
+//     span: Span::new(4, 6),  // Splits 'é' in the middle
+//     new_text: "x".to_string(),
+// });
+```
+
+---
+
+###### 0.1.4 Integration Points {#step-0-1-integration}
+
+**Existing Components:**
+
+| Component | Integration |
+|-----------|-------------|
+| `RenameTransformer` | Will be migrated to use `BatchSpanEditor` internally in Step 1.1 |
+| `tugtool_core::patch::Span` | Reuse the same `Span` type for consistency |
+| `spans_overlap()` in `rename.rs` | Reuse or move to common location |
+| `PatchSet` in `tugtool-core` | `BatchSpanEditor` is for single-file edits; `PatchSet` handles multi-file |
+
+**Module Structure:**
+
+```
+crates/tugtool-python-cst/src/visitor/
+├── mod.rs              # Add: pub mod batch_edit; pub use batch_edit::*;
+├── batch_edit.rs       # NEW: EditPrimitive, BatchSpanEditor, helpers
+├── rename.rs           # UNCHANGED initially; migrated in Step 1.1
+└── ...
+```
+
+**Export from lib.rs:**
+
+```rust
+// In crates/tugtool-python-cst/src/lib.rs
+pub use visitor::{
+    BatchSpanEditor, BatchEditError, BatchEditOptions, BatchEditResult,
+    EditPrimitive, IndentInfo,
+    detect_indentation, detect_indentation_level, apply_indentation,
+    // ... existing exports
+};
+```
+
+---
+
+###### 0.1.5 Concrete Examples {#step-0-1-examples}
+
+**Example 1: Simple Replace (Rename)**
+
+```rust
+let source = "def process_data(x):\n    return x * 2\n";
+let mut editor = BatchSpanEditor::new(source);
+
+// Rename "process_data" to "transform_data"
+editor.add(EditPrimitive::Replace {
+    span: Span::new(4, 16),  // "process_data"
+    new_text: "transform_data".to_string(),
+});
+
+let result = editor.apply()?;
+assert_eq!(result, "def transform_data(x):\n    return x * 2\n");
+```
+
+**Example 2: InsertBefore Statement (Extract Variable)**
+
+```rust
+let source = "def foo():\n    return get_value() * 2\n";
+//                         ^^^^^^^^^^^^^^^
+//                         15-26: "get_value() * 2"
+let mut editor = BatchSpanEditor::new(source);
+
+// Insert assignment before return statement
+editor.add(EditPrimitive::InsertBefore {
+    anchor_span: Span::new(15, 37),  // "return get_value() * 2"
+    text: "result = get_value()\n".to_string(),
+});
+
+// Replace expression with variable
+editor.add(EditPrimitive::Replace {
+    span: Span::new(22, 34),  // "get_value() * 2" (in return)
+    new_text: "result * 2".to_string(),
+});
+
+let result = editor.apply()?;
+assert_eq!(result, "def foo():\n    result = get_value()\n    return result * 2\n");
+```
+
+**Example 3: Delete (Remove Unused Variable)**
+
+```rust
+let source = "x = 1\nunused = 2\ny = 3\n";
+let mut editor = BatchSpanEditor::new(source);
+
+// Delete the unused assignment (including newline)
+editor.add(EditPrimitive::Delete {
+    span: Span::new(6, 17),  // "unused = 2\n"
+});
+
+let result = editor.apply()?;
+assert_eq!(result, "x = 1\ny = 3\n");
+```
+
+**Example 4: Multiple Non-Overlapping Edits**
+
+```rust
+let source = "a = foo\nb = bar\nc = baz\n";
+let mut editor = BatchSpanEditor::new(source);
+
+// Rename foo -> FOO
+editor.add(EditPrimitive::Replace {
+    span: Span::new(4, 7),
+    new_text: "FOO".to_string(),
+});
+
+// Rename bar -> BAR
+editor.add(EditPrimitive::Replace {
+    span: Span::new(12, 15),
+    new_text: "BAR".to_string(),
+});
+
+// Rename baz -> BAZ
+editor.add(EditPrimitive::Replace {
+    span: Span::new(20, 23),
+    new_text: "BAZ".to_string(),
+});
+
+let result = editor.apply()?;
+assert_eq!(result, "a = FOO\nb = BAR\nc = BAZ\n");
+```
+
+**Example 5: Overlapping Edits Error**
+
+```rust
+let source = "hello world";
+let mut editor = BatchSpanEditor::new(source);
+
+editor.add(EditPrimitive::Replace {
+    span: Span::new(0, 7),  // "hello w"
+    new_text: "hi".to_string(),
+});
+editor.add(EditPrimitive::Replace {
+    span: Span::new(5, 11),  // " world" - overlaps!
+    new_text: "there".to_string(),
+});
+
+let result = editor.apply();
+assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
+```
+
+---
+
 **Tasks:**
 - [ ] Create `EditPrimitive` enum with variants: Replace, InsertBefore, InsertAfter, Delete, InsertAt
-- [ ] Create `BatchSpanEditor` struct that collects edit primitives
-- [ ] Implement `apply_edits()` that applies edits in reverse position order
-- [ ] Implement overlapping edit detection and rejection
-- [ ] Implement indentation detection and insertion for InsertBefore/InsertAfter
-- [ ] Handle Unicode/multi-byte character spans correctly
-- [ ] Add comprehensive documentation and examples
+- [ ] Create `BatchEditError` enum with variants: OverlappingEdits, SpanOutOfBounds, EmptyEdits, IndentationDetectionFailed
+- [ ] Create `BatchEditOptions` struct with fields: auto_indent, allow_adjacent, allow_empty
+- [ ] Create `IndentInfo` struct for indentation detection results
+- [ ] Create `BatchSpanEditor` struct with new(), with_options(), add(), add_all(), len(), is_empty()
+- [ ] Implement `apply()` with reverse-order edit application
+- [ ] Implement `apply_unchecked()` for pre-validated edits
+- [ ] Implement `validate()` and `find_overlaps()` for pre-flight checking
+- [ ] Implement `detect_indentation()` helper function
+- [ ] Implement `detect_indentation_level()` helper function
+- [ ] Implement `apply_indentation()` helper function
+- [ ] Add comprehensive documentation and examples in doc comments
 
 **Tests:**
-- [ ] Unit: `test_replace_single_span`
-- [ ] Unit: `test_replace_multiple_spans`
-- [ ] Unit: `test_insert_before_statement`
-- [ ] Unit: `test_insert_after_expression`
-- [ ] Unit: `test_insert_at_position`
-- [ ] Unit: `test_delete_span`
-- [ ] Unit: `test_multiple_edits_non_overlapping`
-- [ ] Unit: `test_overlapping_edits_rejected`
-- [ ] Unit: `test_adjacent_edits_allowed`
-- [ ] Unit: `test_unicode_multibyte_spans`
-- [ ] Unit: `test_indentation_preservation`
+- [ ] Unit: `test_replace_single_span` - basic replace operation
+- [ ] Unit: `test_replace_multiple_spans` - multiple non-overlapping replaces
+- [ ] Unit: `test_replace_empty_span` - zero-width span (insertion)
+- [ ] Unit: `test_insert_before_statement` - with auto-indentation
+- [ ] Unit: `test_insert_after_expression` - with auto-indentation
+- [ ] Unit: `test_insert_at_position` - absolute position insertion
+- [ ] Unit: `test_insert_at_file_start` - edge case
+- [ ] Unit: `test_insert_at_file_end` - edge case
+- [ ] Unit: `test_delete_span` - basic deletion
+- [ ] Unit: `test_delete_with_newline` - deleting line including newline
+- [ ] Unit: `test_multiple_edits_non_overlapping` - mixed edit types
+- [ ] Unit: `test_overlapping_edits_rejected` - error case
+- [ ] Unit: `test_adjacent_edits_allowed` - default behavior
+- [ ] Unit: `test_adjacent_edits_rejected_when_disabled` - with option
+- [ ] Unit: `test_unicode_multibyte_spans` - non-ASCII identifiers
+- [ ] Unit: `test_indentation_detection_spaces` - space-indented code
+- [ ] Unit: `test_indentation_detection_tabs` - tab-indented code
+- [ ] Unit: `test_indentation_detection_mixed` - mixed indent
+- [ ] Unit: `test_indentation_detection_empty_line` - fallback to previous
+- [ ] Unit: `test_indentation_preservation_insert_before` - auto-indent
+- [ ] Unit: `test_indentation_preservation_insert_after` - auto-indent
+- [ ] Unit: `test_apply_indentation_multiline` - multi-line text
+- [ ] Unit: `test_empty_edits_error` - default behavior
+- [ ] Unit: `test_empty_edits_allowed` - with option
+- [ ] Unit: `test_span_out_of_bounds_error` - error case
+- [ ] Unit: `test_validate_without_applying` - pre-flight check
+- [ ] Unit: `test_find_all_overlaps` - returns all conflicts
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python-cst batch_edit`
 - [ ] All edit primitive variants have tests
+- [ ] Indentation detection handles spaces, tabs, and mixed
+- [ ] Unicode multi-byte spans work correctly
 
 **Rollback:** Revert commit
 
@@ -1636,33 +2288,781 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - New `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
 - Updated `crates/tugtool-python-cst/src/visitor/mod.rs`
 
+---
+
+###### 0.2.1 API Specification {#step-0-2-api}
+
+**Position Conversion Types (extend existing `tugtool-core/src/text.rs`):**
+
+```rust
+// In tugtool-core/src/text.rs (additions to existing module)
+
+/// A position in source code specified as line and column.
+///
+/// Both line and column are 1-indexed to match editor conventions.
+/// Columns count Unicode scalar values (chars), not bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LineCol {
+    /// 1-indexed line number
+    pub line: u32,
+    /// 1-indexed column number (Unicode scalars, not bytes)
+    pub col: u32,
+}
+
+impl LineCol {
+    pub fn new(line: u32, col: u32) -> Self {
+        Self {
+            line: line.max(1),
+            col: col.max(1),
+        }
+    }
+}
+
+/// Error when a position cannot be resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PositionError {
+    /// Line number exceeds file line count
+    LineOutOfRange { line: u32, max_line: u32 },
+    /// Column exceeds line length
+    ColumnOutOfRange { line: u32, col: u32, line_len: u32 },
+    /// Byte offset exceeds file length
+    OffsetOutOfRange { offset: usize, file_len: usize },
+}
+
+impl std::fmt::Display for PositionError { /* ... */ }
+impl std::error::Error for PositionError {}
+
+/// Result type for position operations.
+pub type PositionResult<T> = Result<T, PositionError>;
+
+/// Convert line:col to byte offset with validation.
+///
+/// Unlike the existing `position_to_byte_offset_str`, this version:
+/// 1. Returns a Result with specific error types
+/// 2. Handles edge cases explicitly
+///
+/// # Arguments
+/// * `content` - The source text
+/// * `line` - 1-indexed line number
+/// * `col` - 1-indexed column (Unicode scalar count)
+///
+/// # Returns
+/// The byte offset, or an error if position is invalid.
+pub fn line_col_to_byte_offset(content: &str, pos: LineCol) -> PositionResult<usize>;
+
+/// Convert byte offset to line:col with validation.
+pub fn byte_offset_to_line_col(content: &str, offset: usize) -> PositionResult<LineCol>;
+```
+
+**Core Position Lookup Types (new file):**
+
+```rust
+// In crates/tugtool-python-cst/src/visitor/position_lookup.rs
+
+use crate::nodes::*;
+use crate::inflate_ctx::{NodePosition, PositionTable};
+use tugtool_core::patch::Span;
+
+/// Identifies a node type found at a position.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeKind {
+    // Expressions
+    Name,
+    Integer,
+    Float,
+    String,
+    Attribute,
+    Call,
+    BinaryOp,
+    UnaryOp,
+    Compare,
+    BooleanOp,
+    IfExp,      // Ternary: x if cond else y
+    Lambda,
+    List,
+    Dict,
+    Set,
+    Tuple,
+    Subscript,
+    Slice,
+    Starred,
+    Await,
+    Yield,
+    NamedExpr,  // Walrus operator
+    GeneratorExp,
+    ListComp,
+    DictComp,
+    SetComp,
+
+    // Statements
+    Assign,
+    AugAssign,
+    AnnAssign,
+    Return,
+    Delete,
+    Pass,
+    Break,
+    Continue,
+    Raise,
+    Assert,
+    Import,
+    ImportFrom,
+    Global,
+    Nonlocal,
+    Expr,       // Expression statement
+
+    // Compound Statements
+    FunctionDef,
+    AsyncFunctionDef,
+    ClassDef,
+    If,
+    For,
+    AsyncFor,
+    While,
+    With,
+    AsyncWith,
+    Try,
+    TryStar,
+    Match,
+
+    // Other
+    Param,
+    Arg,
+    Keyword,
+    Decorator,
+    Alias,
+    ExceptHandler,
+    MatchCase,
+    Comment,
+    Module,
+}
+
+/// Information about a node found at a position.
+#[derive(Debug, Clone)]
+pub struct NodeInfo {
+    /// The kind of node
+    pub kind: NodeKind,
+    /// The span covering this node (may be from PositionTable or computed)
+    pub span: Span,
+    /// The NodeId if the node has one (tracked nodes only)
+    pub node_id: Option<NodeId>,
+}
+
+/// Information about an expression found at a position.
+#[derive(Debug, Clone)]
+pub struct ExpressionInfo {
+    /// The kind of expression
+    pub kind: NodeKind,
+    /// The span covering the entire expression (including parentheses)
+    pub span: Span,
+    /// The span covering just the "core" expression (excluding outer parens)
+    pub inner_span: Span,
+    /// True if this expression is parenthesized
+    pub is_parenthesized: bool,
+    /// True if this is a complete sub-expression (not part of larger expr)
+    pub is_complete: bool,
+    /// The NodeId if available
+    pub node_id: Option<NodeId>,
+}
+
+/// Information about a statement found at a position.
+#[derive(Debug, Clone)]
+pub struct StatementInfo {
+    /// The kind of statement
+    pub kind: NodeKind,
+    /// The span covering the entire statement (including any trailing newline)
+    pub span: Span,
+    /// True if this is a compound statement (has body)
+    pub is_compound: bool,
+    /// The NodeId if available
+    pub node_id: Option<NodeId>,
+}
+
+/// Information about a scope found at a position.
+#[derive(Debug, Clone)]
+pub struct ScopeInfo {
+    /// The kind of scope (FunctionDef, ClassDef, Module, Lambda, Comprehension)
+    pub kind: NodeKind,
+    /// The lexical span of the scope (where variables resolve to this scope)
+    pub lexical_span: Span,
+    /// The full definition span (including decorators for functions/classes)
+    pub def_span: Option<Span>,
+    /// The name of the scope (if named)
+    pub name: Option<String>,
+    /// The NodeId if available
+    pub node_id: Option<NodeId>,
+}
+
+/// Index for efficient position-to-node lookups.
+///
+/// Built from a parsed Module and its PositionTable, this index enables
+/// O(log n) position lookups by maintaining sorted interval data.
+///
+/// # Design
+///
+/// The index uses an interval tree approach:
+/// 1. All nodes with spans are collected during a traversal
+/// 2. Nodes are sorted by span.start for binary search
+/// 3. Lookup finds candidates via binary search, then filters by containment
+///
+/// # Memory
+///
+/// The index stores lightweight metadata (kind, span, node_id) rather than
+/// CST node references. This avoids lifetime complexity and allows the
+/// index to outlive the parsed Module if needed.
+pub struct PositionIndex {
+    /// Sorted list of (span, node_info) for all tracked nodes
+    nodes: Vec<(Span, NodeInfo)>,
+    /// Sorted list of expressions specifically (for expression lookups)
+    expressions: Vec<(Span, ExpressionInfo)>,
+    /// Sorted list of statements specifically (for statement lookups)
+    statements: Vec<(Span, StatementInfo)>,
+    /// Sorted list of scopes specifically (for scope lookups)
+    scopes: Vec<(Span, ScopeInfo)>,
+    /// Source length for bounds checking
+    source_len: usize,
+}
+
+impl PositionIndex {
+    /// Build a PositionIndex from a parsed module with position data.
+    ///
+    /// # Arguments
+    /// * `module` - The parsed Module CST
+    /// * `positions` - The PositionTable from parsing with positions enabled
+    /// * `source` - The original source text (for bounds checking)
+    ///
+    /// # Performance
+    /// O(n) where n is the number of nodes in the CST.
+    pub fn build(module: &Module, positions: &PositionTable, source: &str) -> Self;
+
+    /// Find the most specific node at the given byte offset.
+    ///
+    /// Returns the smallest (innermost) node whose span contains the position.
+    /// Returns None if position is outside all nodes (e.g., in whitespace
+    /// at end of file).
+    pub fn find_node_at(&self, offset: usize) -> Option<&NodeInfo>;
+
+    /// Find the expression at or containing the given byte offset.
+    ///
+    /// Returns the smallest expression whose span contains the position.
+    /// If the position is inside a sub-expression, returns that sub-expression.
+    pub fn find_expression_at(&self, offset: usize) -> Option<&ExpressionInfo>;
+
+    /// Find the statement at or containing the given byte offset.
+    ///
+    /// For positions within expressions, returns the containing statement.
+    pub fn find_statement_at(&self, offset: usize) -> Option<&StatementInfo>;
+
+    /// Find the scope (function, class, module) containing the given byte offset.
+    ///
+    /// Returns the innermost scope. For nested functions/classes, returns
+    /// the most deeply nested one.
+    pub fn find_scope_at(&self, offset: usize) -> Option<&ScopeInfo>;
+
+    /// Find all nodes whose spans contain the given offset.
+    ///
+    /// Returns nodes from outermost to innermost (module first, then
+    /// function, then statement, then expression, etc.).
+    pub fn find_all_at(&self, offset: usize) -> Vec<&NodeInfo>;
+
+    /// Find the enclosing expression if the position is inside a sub-expression.
+    ///
+    /// Given position in `foo.bar.baz`, returns info about the containing
+    /// attribute access chain.
+    pub fn find_enclosing_expression(&self, offset: usize) -> Option<&ExpressionInfo>;
+}
+
+/// Tracks ancestor context during CST traversal.
+///
+/// Used by position index builder to capture parent-child relationships.
+pub struct AncestorTracker<'a> {
+    /// Stack of ancestor nodes
+    stack: Vec<AncestorEntry<'a>>,
+}
+
+/// Entry in the ancestor stack.
+#[derive(Debug)]
+pub struct AncestorEntry<'a> {
+    pub kind: NodeKind,
+    pub span: Span,
+    pub node_id: Option<NodeId>,
+    /// Index of this entry in the stack (for efficient parent lookup)
+    pub depth: usize,
+}
+
+impl<'a> AncestorTracker<'a> {
+    pub fn new() -> Self;
+
+    /// Push a node onto the ancestor stack.
+    pub fn push(&mut self, kind: NodeKind, span: Span, node_id: Option<NodeId>);
+
+    /// Pop the top node from the ancestor stack.
+    pub fn pop(&mut self) -> Option<AncestorEntry<'a>>;
+
+    /// Get the current parent (top of stack).
+    pub fn parent(&self) -> Option<&AncestorEntry<'a>>;
+
+    /// Get the current depth (number of ancestors).
+    pub fn depth(&self) -> usize;
+
+    /// Get the ancestor at a specific depth (0 = root).
+    pub fn ancestor_at(&self, depth: usize) -> Option<&AncestorEntry<'a>>;
+
+    /// Check if the current context is inside an expression.
+    pub fn in_expression(&self) -> bool;
+
+    /// Check if the current context is inside a specific node kind.
+    pub fn inside(&self, kind: NodeKind) -> bool;
+
+    /// Get the nearest enclosing scope.
+    pub fn enclosing_scope(&self) -> Option<&AncestorEntry<'a>>;
+}
+```
+
+---
+
+###### 0.2.2 Internal Design Notes {#step-0-2-internal}
+
+**Relationship to Existing Infrastructure:**
+
+The codebase already has:
+
+1. **`tugtool-core/src/text.rs`**: Basic line:col <-> byte offset conversion
+2. **`InflateCtx` / `PositionTable`**: Span capture during parsing
+3. **Visitor traits**: Traversal infrastructure
+
+Position lookup builds on these foundations:
+
+```
+Existing:
+  parse_module_with_positions() -> (Module, PositionTable)
+                                          |
+New:                                      v
+  PositionIndex::build(module, positions) -> PositionIndex
+                                                    |
+                                                    v
+  index.find_expression_at(offset) -> ExpressionInfo
+```
+
+**Index Building Algorithm:**
+
+```rust
+impl PositionIndex {
+    pub fn build(module: &Module, positions: &PositionTable, source: &str) -> Self {
+        let source_len = source.len();
+        let mut collector = IndexCollector::new(positions);
+
+        // Single traversal collects all node info
+        walk_module(module, &mut collector);
+
+        // Sort by span.start for binary search
+        collector.nodes.sort_by_key(|(span, _)| span.start);
+        collector.expressions.sort_by_key(|(span, _)| span.start);
+        collector.statements.sort_by_key(|(span, _)| span.start);
+        collector.scopes.sort_by_key(|(span, _)| span.start);
+
+        Self {
+            nodes: collector.nodes,
+            expressions: collector.expressions,
+            statements: collector.statements,
+            scopes: collector.scopes,
+            source_len,
+        }
+    }
+}
+
+struct IndexCollector<'a> {
+    positions: &'a PositionTable,
+    nodes: Vec<(Span, NodeInfo)>,
+    expressions: Vec<(Span, ExpressionInfo)>,
+    statements: Vec<(Span, StatementInfo)>,
+    scopes: Vec<(Span, ScopeInfo)>,
+    ancestors: AncestorTracker<'a>,
+}
+
+impl<'a> Visitor<'a> for IndexCollector<'a> {
+    fn visit_name(&mut self, node: &Name<'a>) -> VisitResult {
+        if let Some(node_id) = node.node_id {
+            if let Some(pos) = self.positions.get(&node_id) {
+                if let Some(span) = pos.ident_span {
+                    self.nodes.push((span, NodeInfo {
+                        kind: NodeKind::Name,
+                        span,
+                        node_id: Some(node_id),
+                    }));
+                    self.expressions.push((span, ExpressionInfo {
+                        kind: NodeKind::Name,
+                        span,
+                        inner_span: span,
+                        is_parenthesized: false,
+                        is_complete: !self.ancestors.in_expression(),
+                        node_id: Some(node_id),
+                    }));
+                }
+            }
+        }
+        VisitResult::Continue
+    }
+
+    fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
+        if let Some(node_id) = node.node_id {
+            if let Some(pos) = self.positions.get(&node_id) {
+                let lexical_span = pos.lexical_span.unwrap_or_else(|| {
+                    // Fallback: compute span
+                    Span::new(0, 0)
+                });
+                let def_span = pos.def_span;
+
+                self.nodes.push((lexical_span, NodeInfo {
+                    kind: NodeKind::FunctionDef,
+                    span: lexical_span,
+                    node_id: Some(node_id),
+                }));
+
+                self.scopes.push((lexical_span, ScopeInfo {
+                    kind: NodeKind::FunctionDef,
+                    lexical_span,
+                    def_span,
+                    name: Some(node.name.value.to_string()),
+                    node_id: Some(node_id),
+                }));
+
+                self.ancestors.push(NodeKind::FunctionDef, lexical_span, Some(node_id));
+            }
+        }
+        VisitResult::Continue
+    }
+
+    fn leave_function_def(&mut self, _node: &FunctionDef<'a>) {
+        self.ancestors.pop();
+    }
+
+    // ... similar for other node types
+}
+```
+
+**Position Lookup Algorithm:**
+
+```rust
+impl PositionIndex {
+    pub fn find_node_at(&self, offset: usize) -> Option<&NodeInfo> {
+        if offset > self.source_len {
+            return None;
+        }
+
+        // Binary search to find first node where span.start <= offset
+        let idx = self.nodes
+            .partition_point(|(span, _)| span.start <= offset);
+
+        // Scan backwards to find all candidates
+        let mut candidates: Vec<&NodeInfo> = Vec::new();
+        for i in (0..idx).rev() {
+            let (span, info) = &self.nodes[i];
+            if span.start > offset {
+                continue;
+            }
+            if span.end <= offset {
+                // Spans are sorted by start; once end <= offset,
+                // earlier spans won't contain offset either
+                break;
+            }
+            // span.start <= offset < span.end: this node contains offset
+            candidates.push(info);
+        }
+
+        // Return smallest (innermost) containing node
+        candidates.into_iter()
+            .min_by_key(|info| info.span.len())
+    }
+
+    pub fn find_all_at(&self, offset: usize) -> Vec<&NodeInfo> {
+        if offset > self.source_len {
+            return Vec::new();
+        }
+
+        let idx = self.nodes.partition_point(|(span, _)| span.start <= offset);
+
+        let mut result: Vec<&NodeInfo> = self.nodes[..idx]
+            .iter()
+            .filter(|(span, _)| span.start <= offset && offset < span.end)
+            .map(|(_, info)| info)
+            .collect();
+
+        // Sort by span size descending (outermost first)
+        result.sort_by_key(|info| std::cmp::Reverse(info.span.len()));
+        result
+    }
+}
+```
+
+**Line:Col Conversion with Unicode:**
+
+```rust
+pub fn line_col_to_byte_offset(content: &str, pos: LineCol) -> PositionResult<usize> {
+    let mut current_line = 1u32;
+    let mut line_start = 0usize;
+
+    for (byte_idx, ch) in content.char_indices() {
+        if current_line == pos.line {
+            // Found the line - now count columns (Unicode scalars)
+            let mut current_col = 1u32;
+            for (col_byte_idx, col_ch) in content[byte_idx..].char_indices() {
+                if current_col == pos.col {
+                    return Ok(byte_idx + col_byte_idx);
+                }
+                if col_ch == '\n' {
+                    // Column exceeds line length
+                    return Err(PositionError::ColumnOutOfRange {
+                        line: pos.line,
+                        col: pos.col,
+                        line_len: current_col - 1,
+                    });
+                }
+                current_col += 1;
+            }
+            // Past end of content on this line
+            if current_col == pos.col {
+                return Ok(content.len());
+            }
+            return Err(PositionError::ColumnOutOfRange {
+                line: pos.line,
+                col: pos.col,
+                line_len: current_col - 1,
+            });
+        }
+        if ch == '\n' {
+            current_line += 1;
+            line_start = byte_idx + 1;
+        }
+    }
+
+    // Line not found
+    Err(PositionError::LineOutOfRange {
+        line: pos.line,
+        max_line: current_line,
+    })
+}
+```
+
+---
+
+###### 0.2.3 Edge Cases {#step-0-2-edge-cases}
+
+| Edge Case | Handling |
+|-----------|----------|
+| **Position in whitespace** | `find_node_at` returns None; `find_statement_at` returns containing/adjacent statement |
+| **Position in comment** | Returns None for node lookup (comments not in CST) |
+| **Position at statement boundary** | Returns the statement starting at that position |
+| **Position between statements** | `find_statement_at` returns None; `find_scope_at` returns containing scope |
+| **Position at EOF** | Returns containing scope (module) or None for node |
+| **Position beyond file** | Returns `PositionError::OffsetOutOfRange` |
+| **Unicode column counting** | Columns count Unicode scalar values, not bytes or graphemes |
+| **Tab characters** | Treated as single column (consistent with Python tokenizer) |
+| **Empty file** | Module scope spans [0,0); position 0 is valid |
+| **Multi-line string** | Entire string is single expression |
+| **f-string with expressions** | Each interpolation is separate expression within string |
+| **Comprehension scope** | Comprehensions create implicit scope for iteration variable |
+| **Lambda body** | Lambda creates scope; position in body returns lambda scope |
+| **Decorator position** | Returns decorator node; function's lexical_span excludes decorator |
+| **Nested functions** | Innermost function scope returned |
+
+**Column Counting Convention:**
+
+```
+Source: "x = 变量"
+        │ │ │  │
+        │ │ │  └─ col 5 (byte 8-11, '量' is 3 bytes)
+        │ │ └─ col 4 (byte 5-8, '变' is 3 bytes)
+        │ └─ col 3 (byte 4)
+        └─ col 1 (byte 0)
+
+LineCol { line: 1, col: 4 } -> byte offset 5
+```
+
+---
+
+###### 0.2.4 Integration Points {#step-0-2-integration}
+
+**Existing Components:**
+
+| Component | Integration |
+|-----------|-------------|
+| `parse_module_with_positions()` | Source of Module and PositionTable |
+| `PositionTable` | Provides spans for tracked nodes |
+| `tugtool_core::text` | Extend with `LineCol`, `PositionError`, validated conversion |
+| Visitor trait | Used for index building traversal |
+
+**Module Structure:**
+
+```
+crates/tugtool-python-cst/src/visitor/
+├── mod.rs              # Add: pub mod position_lookup; pub use position_lookup::*;
+├── position_lookup.rs  # NEW: PositionIndex, NodeInfo, etc.
+└── ...
+
+crates/tugtool-core/src/
+├── text.rs             # EXTEND: Add LineCol, PositionError, validated conversion
+└── ...
+```
+
+**Usage in Extract Variable (Layer 1):**
+
+```rust
+// Extract Variable needs to find the expression at cursor position
+let parsed = parse_module_with_positions(source, None)?;
+let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+// User clicks at byte position 25
+let expr = index.find_expression_at(25)
+    .ok_or(ExtractError::NoExpressionAtPosition)?;
+
+// Get the expression span for extraction
+let span = expr.span;
+let text = &source[span.start..span.end];
+```
+
+---
+
+###### 0.2.5 Concrete Examples {#step-0-2-examples}
+
+**Example 1: Find Expression at Position**
+
+```rust
+let source = "result = calculate_tax(get_price() * 1.08)\n";
+//            ^       ^              ^
+//            0       9              23
+//            |       |              |
+//            Assign  Call           BinaryOp
+
+let parsed = parse_module_with_positions(source, None)?;
+let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+// Position 23 is inside "get_price()"
+let expr = index.find_expression_at(23).unwrap();
+assert_eq!(expr.kind, NodeKind::Call);
+// span covers "get_price()"
+
+// Position 30 is in "* 1.08"
+let expr = index.find_expression_at(30).unwrap();
+assert_eq!(expr.kind, NodeKind::BinaryOp);
+// span covers "get_price() * 1.08"
+
+// Position 9 is start of "calculate_tax(...)"
+let expr = index.find_expression_at(9).unwrap();
+assert_eq!(expr.kind, NodeKind::Call);
+```
+
+**Example 2: Find Enclosing Scope**
+
+```rust
+let source = r#"
+def outer():
+    def inner():
+        x = 1
+    return inner
+"#;
+
+let parsed = parse_module_with_positions(source, None)?;
+let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+// Position in "x = 1" (inside inner)
+let scope = index.find_scope_at(35).unwrap();
+assert_eq!(scope.kind, NodeKind::FunctionDef);
+assert_eq!(scope.name, Some("inner".to_string()));
+
+// Position in "return inner" (inside outer, outside inner)
+let scope = index.find_scope_at(50).unwrap();
+assert_eq!(scope.kind, NodeKind::FunctionDef);
+assert_eq!(scope.name, Some("outer".to_string()));
+```
+
+**Example 3: Line:Col to Byte Offset with Unicode**
+
+```rust
+let source = "x = '你好世界'\n";
+//            ^   ^^^^^
+//            0   4 (bytes 4-16, 4 chars * 3 bytes each)
+
+// Column 5 is the first Chinese character
+let offset = line_col_to_byte_offset(source, LineCol::new(1, 5))?;
+assert_eq!(offset, 4);
+
+// Column 6 is the second Chinese character
+let offset = line_col_to_byte_offset(source, LineCol::new(1, 6))?;
+assert_eq!(offset, 7);  // 4 + 3 bytes for '你'
+
+// Column 100 exceeds line length
+let result = line_col_to_byte_offset(source, LineCol::new(1, 100));
+assert!(matches!(result, Err(PositionError::ColumnOutOfRange { .. })));
+```
+
+**Example 4: Find All Nodes at Position (for context)**
+
+```rust
+let source = "result = foo.bar.method(arg)\n";
+//                         ^
+//                         17 (inside "method")
+
+let parsed = parse_module_with_positions(source, None)?;
+let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+let all = index.find_all_at(17);
+// Returns (outermost to innermost):
+// 1. Module
+// 2. Assign statement
+// 3. Call expression (foo.bar.method(arg))
+// 4. Attribute expression (foo.bar.method)
+// 5. Name (method) - innermost
+```
+
+---
+
 **Tasks:**
-- [ ] Create `PositionIndex` struct that maps byte offsets to node information
-- [ ] Create `AncestorTracker` for maintaining parent context during traversal
-- [ ] Implement `find_node_at_position(position) -> Option<NodeInfo>`
-- [ ] Implement `find_expression_at_position(position) -> Option<ExpressionSpan>`
-- [ ] Implement `find_statement_at_position(position) -> Option<StatementSpan>`
-- [ ] Implement `find_enclosing_scope(position) -> Option<ScopeSpan>`
-- [ ] Define `line:col` to byte offset conversion (1-based, Unicode scalar columns)
-- [ ] Handle positions at whitespace/comments (find nearest node)
-- [ ] Handle positions at statement boundaries
+- [ ] Add `LineCol` struct to `tugtool-core/src/text.rs`
+- [ ] Add `PositionError` enum to `tugtool-core/src/text.rs`
+- [ ] Implement `line_col_to_byte_offset()` with Unicode scalar column counting
+- [ ] Implement `byte_offset_to_line_col()` with validation
+- [ ] Create `NodeKind` enum covering all Python AST node types
+- [ ] Create `NodeInfo`, `ExpressionInfo`, `StatementInfo`, `ScopeInfo` structs
+- [ ] Create `PositionIndex` struct with build() and lookup methods
+- [ ] Create `AncestorTracker` for traversal context
+- [ ] Implement `find_node_at()` with binary search and containment filtering
+- [ ] Implement `find_expression_at()` returning smallest containing expression
+- [ ] Implement `find_statement_at()` returning containing statement
+- [ ] Implement `find_scope_at()` returning innermost scope
+- [ ] Implement `find_all_at()` returning all containing nodes
+- [ ] Implement `find_enclosing_expression()` for parent expression lookup
+- [ ] Add comprehensive documentation and examples
 
 **Tests:**
-- [ ] Unit: `test_find_node_simple_expression`
-- [ ] Unit: `test_find_node_nested_expression`
-- [ ] Unit: `test_find_expression_in_call`
-- [ ] Unit: `test_find_expression_parenthesized`
-- [ ] Unit: `test_find_enclosing_statement`
-- [ ] Unit: `test_find_enclosing_scope`
-- [ ] Unit: `test_position_at_whitespace`
-- [ ] Unit: `test_position_at_comment`
-- [ ] Unit: `test_position_between_statements`
-- [ ] Unit: `test_line_col_to_byte_offset_unicode`
-- [ ] Unit: `test_position_out_of_range_error`
+- [ ] Unit: `test_find_node_simple_expression` - Name, Integer, String
+- [ ] Unit: `test_find_node_nested_expression` - Attribute chain
+- [ ] Unit: `test_find_expression_in_call` - argument position
+- [ ] Unit: `test_find_expression_parenthesized` - (a + b) grouping
+- [ ] Unit: `test_find_expression_binary_op` - left/right operand
+- [ ] Unit: `test_find_enclosing_statement` - expression inside statement
+- [ ] Unit: `test_find_enclosing_scope_function` - nested functions
+- [ ] Unit: `test_find_enclosing_scope_class` - method inside class
+- [ ] Unit: `test_find_enclosing_scope_lambda` - lambda body
+- [ ] Unit: `test_find_enclosing_scope_comprehension` - list comp variable
+- [ ] Unit: `test_position_at_whitespace` - between tokens
+- [ ] Unit: `test_position_at_comment` - in line comment
+- [ ] Unit: `test_position_between_statements` - newline area
+- [ ] Unit: `test_position_at_eof` - end of file
+- [ ] Unit: `test_position_beyond_file` - error case
+- [ ] Unit: `test_line_col_to_byte_offset_ascii` - simple case
+- [ ] Unit: `test_line_col_to_byte_offset_unicode` - multi-byte chars
+- [ ] Unit: `test_line_col_to_byte_offset_line_out_of_range` - error
+- [ ] Unit: `test_line_col_to_byte_offset_col_out_of_range` - error
+- [ ] Unit: `test_byte_offset_to_line_col_roundtrip` - conversion symmetry
+- [ ] Unit: `test_find_all_at` - returns correct hierarchy
+- [ ] Unit: `test_find_enclosing_expression` - attribute chain parent
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python-cst position_lookup`
+- [ ] `cargo nextest run -p tugtool-core text`
 - [ ] All lookup functions return correct spans
+- [ ] Unicode column counting works correctly
 
 **Rollback:** Revert commit
 
@@ -1678,37 +3078,938 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 - New `crates/tugtool-python/src/stubs.rs`
 - Updated `crates/tugtool-python/src/lib.rs`
 
-**Tasks:**
-- [ ] Create `StubDiscovery` struct for finding stub files
-- [ ] Implement `find_stub_for_module(module_path) -> Option<PathBuf>` (same-dir first, then stubs/)
-- [ ] Implement stub file parsing using existing CST parser
-- [ ] Create `StubUpdater` that applies rename/move edits to stub files
-- [ ] Treat stub parse failures as errors (abort operation)
-- [ ] Handle namespace packages (PEP 420)
+---
+
+###### 0.3.1 API Specification {#step-0-3-api}
+
+**Stub Discovery Types:**
+
+```rust
+// In crates/tugtool-python/src/stubs.rs
+
+use std::path::{Path, PathBuf};
+use tugtool_core::patch::Span;
+
+/// Error type for stub operations.
+#[derive(Debug, Clone)]
+pub enum StubError {
+    /// Stub file exists but failed to parse.
+    ParseError {
+        stub_path: PathBuf,
+        message: String,
+    },
+
+    /// Stub file not found at expected location.
+    NotFound {
+        source_path: PathBuf,
+        searched_locations: Vec<PathBuf>,
+    },
+
+    /// IO error reading stub file.
+    IoError {
+        stub_path: PathBuf,
+        message: String,
+    },
+
+    /// String annotation has invalid syntax.
+    InvalidAnnotation {
+        annotation: String,
+        message: String,
+    },
+}
+
+impl std::fmt::Display for StubError { /* ... */ }
+impl std::error::Error for StubError {}
+
+pub type StubResult<T> = Result<T, StubError>;
+
+/// Information about a discovered stub file.
+#[derive(Debug, Clone)]
+pub struct StubInfo {
+    /// Path to the stub file
+    pub stub_path: PathBuf,
+    /// Path to the corresponding source file
+    pub source_path: PathBuf,
+    /// Whether stub was found in same directory (inline) or stubs/ folder
+    pub location: StubLocation,
+}
+
+/// Where the stub was found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StubLocation {
+    /// Stub is `module.pyi` in same directory as `module.py`
+    Inline,
+    /// Stub is in `stubs/` directory at workspace root
+    StubsFolder,
+    /// Stub is in typeshed-style `stubs/package-stubs/` directory
+    TypeshedStyle,
+}
+
+/// Options for stub discovery.
+#[derive(Debug, Clone)]
+pub struct StubDiscoveryOptions {
+    /// Workspace root for finding stubs/ folder
+    pub workspace_root: PathBuf,
+
+    /// Additional directories to search for stubs
+    pub extra_stub_dirs: Vec<PathBuf>,
+
+    /// Whether to check typeshed-style package-stubs directories
+    pub check_typeshed_style: bool,
+}
+
+impl Default for StubDiscoveryOptions {
+    fn default() -> Self {
+        Self {
+            workspace_root: PathBuf::from("."),
+            extra_stub_dirs: Vec::new(),
+            check_typeshed_style: true,
+        }
+    }
+}
+
+/// Discovers type stub files (.pyi) for Python modules.
+///
+/// # Discovery Order
+///
+/// For a source file `pkg/module.py`, stubs are searched in this order:
+///
+/// 1. **Inline stub**: `pkg/module.pyi` (same directory)
+/// 2. **Stubs folder**: `{workspace_root}/stubs/pkg/module.pyi`
+/// 3. **Typeshed-style**: `{workspace_root}/stubs/pkg-stubs/module.pyi`
+/// 4. **Extra dirs**: Each directory in `extra_stub_dirs`
+///
+/// The first existing file is returned.
+///
+/// # Example
+///
+/// ```rust
+/// let discovery = StubDiscovery::new(StubDiscoveryOptions {
+///     workspace_root: PathBuf::from("/project"),
+///     ..Default::default()
+/// });
+///
+/// // Find stub for /project/src/mypackage/utils.py
+/// let stub = discovery.find_stub_for(&PathBuf::from("/project/src/mypackage/utils.py"));
+/// // Returns Some(StubInfo) if /project/src/mypackage/utils.pyi exists
+/// // or /project/stubs/mypackage/utils.pyi exists
+/// ```
+pub struct StubDiscovery {
+    options: StubDiscoveryOptions,
+}
+
+impl StubDiscovery {
+    /// Create a new StubDiscovery with the given options.
+    pub fn new(options: StubDiscoveryOptions) -> Self;
+
+    /// Create a StubDiscovery with default options and given workspace root.
+    pub fn for_workspace(workspace_root: impl Into<PathBuf>) -> Self;
+
+    /// Find the stub file for a given Python source file.
+    ///
+    /// Returns `Some(StubInfo)` if a stub exists, `None` if no stub found.
+    pub fn find_stub_for(&self, source_path: &Path) -> Option<StubInfo>;
+
+    /// Find stub and return error with searched locations if not found.
+    ///
+    /// Use this when stub is expected/required (e.g., public API symbol).
+    pub fn find_stub_or_err(&self, source_path: &Path) -> StubResult<StubInfo>;
+
+    /// Check if a stub exists for the given source file.
+    pub fn has_stub(&self, source_path: &Path) -> bool;
+
+    /// Get the expected stub path (whether it exists or not).
+    ///
+    /// Returns the inline stub path (`module.pyi` in same directory).
+    pub fn expected_stub_path(&self, source_path: &Path) -> PathBuf;
+
+    /// List all searched locations for a source file.
+    ///
+    /// Useful for error messages and debugging.
+    pub fn search_locations(&self, source_path: &Path) -> Vec<PathBuf>;
+}
+
+/// Parsed stub file with symbol information.
+///
+/// A lightweight representation of a stub file's contents,
+/// focused on what's needed for refactoring operations.
+#[derive(Debug, Clone)]
+pub struct ParsedStub {
+    /// Path to the stub file
+    pub path: PathBuf,
+    /// Functions defined in the stub
+    pub functions: Vec<StubFunction>,
+    /// Classes defined in the stub
+    pub classes: Vec<StubClass>,
+    /// Type aliases defined in the stub
+    pub type_aliases: Vec<StubTypeAlias>,
+    /// Module-level variables with type annotations
+    pub variables: Vec<StubVariable>,
+    /// The raw source text
+    pub source: String,
+}
+
+/// Function signature in a stub file.
+#[derive(Debug, Clone)]
+pub struct StubFunction {
+    pub name: String,
+    pub name_span: Span,
+    /// Full signature span (from 'def' to ':')
+    pub signature_span: Span,
+    /// Full definition span (including decorators, body ellipsis)
+    pub def_span: Span,
+    pub is_async: bool,
+    pub decorators: Vec<String>,
+}
+
+/// Class definition in a stub file.
+#[derive(Debug, Clone)]
+pub struct StubClass {
+    pub name: String,
+    pub name_span: Span,
+    /// Span of 'class Name(bases):'
+    pub header_span: Span,
+    /// Full definition span (including body)
+    pub def_span: Span,
+    pub methods: Vec<StubFunction>,
+    pub attributes: Vec<StubVariable>,
+}
+
+/// Type alias in a stub file.
+#[derive(Debug, Clone)]
+pub struct StubTypeAlias {
+    pub name: String,
+    pub name_span: Span,
+    pub value_span: Span,
+}
+
+/// Variable with type annotation.
+#[derive(Debug, Clone)]
+pub struct StubVariable {
+    pub name: String,
+    pub name_span: Span,
+    pub annotation_span: Option<Span>,
+}
+
+impl ParsedStub {
+    /// Parse a stub file from a path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StubError::IoError` if file cannot be read.
+    /// Returns `StubError::ParseError` if file has syntax errors.
+    pub fn parse(stub_path: &Path) -> StubResult<Self>;
+
+    /// Parse stub content directly (for testing).
+    pub fn parse_str(source: &str, stub_path: PathBuf) -> StubResult<Self>;
+
+    /// Find a function by name.
+    pub fn find_function(&self, name: &str) -> Option<&StubFunction>;
+
+    /// Find a class by name.
+    pub fn find_class(&self, name: &str) -> Option<&StubClass>;
+
+    /// Find a method in a class.
+    pub fn find_method(&self, class_name: &str, method_name: &str) -> Option<&StubFunction>;
+
+    /// Check if stub defines a symbol (function, class, or variable).
+    pub fn has_symbol(&self, name: &str) -> bool;
+}
+
+/// Applies edits to stub files.
+///
+/// Handles the coordination between source file edits and stub file edits.
+pub struct StubUpdater {
+    discovery: StubDiscovery,
+}
+
+impl StubUpdater {
+    pub fn new(discovery: StubDiscovery) -> Self;
+
+    /// Generate stub edits for a rename operation.
+    ///
+    /// Given a symbol rename in source, returns the corresponding edits
+    /// needed in the stub file (if one exists).
+    ///
+    /// # Arguments
+    /// * `source_path` - Path to the source file being modified
+    /// * `old_name` - The old symbol name
+    /// * `new_name` - The new symbol name
+    ///
+    /// # Returns
+    /// * `Ok(Some(edits))` - Stub exists and needs these edits
+    /// * `Ok(None)` - No stub file exists (no edits needed)
+    /// * `Err` - Stub exists but has parse errors
+    pub fn rename_edits(
+        &self,
+        source_path: &Path,
+        old_name: &str,
+        new_name: &str,
+    ) -> StubResult<Option<StubEdits>>;
+
+    /// Generate stub edits for moving a symbol to another module.
+    ///
+    /// Returns edits to remove from source stub and add to target stub.
+    pub fn move_edits(
+        &self,
+        source_path: &Path,
+        target_path: &Path,
+        symbol_name: &str,
+    ) -> StubResult<MoveStubEdits>;
+}
+
+/// Edits to apply to a stub file.
+#[derive(Debug, Clone)]
+pub struct StubEdits {
+    pub stub_path: PathBuf,
+    pub edits: Vec<StubEdit>,
+}
+
+/// A single edit in a stub file.
+#[derive(Debug, Clone)]
+pub enum StubEdit {
+    /// Rename a symbol
+    Rename { span: Span, new_name: String },
+    /// Delete a symbol definition
+    Delete { span: Span },
+    /// Insert a new symbol definition
+    Insert { position: usize, text: String },
+}
+
+/// Edits for moving a symbol between stubs.
+#[derive(Debug, Clone)]
+pub struct MoveStubEdits {
+    /// Edits to source stub (delete the symbol)
+    pub source_edits: Option<StubEdits>,
+    /// Edits to target stub (insert the symbol)
+    pub target_edits: Option<StubEdits>,
+}
+```
+
+**String Annotation Parser:**
+
+```rust
+/// Parses and transforms type expressions in string annotations.
+///
+/// String annotations are used for forward references and lazy imports:
+/// ```python
+/// def process(handler: "Handler") -> "Result":
+///     items: "List[Item]" = []
+/// ```
+///
+/// This parser extracts type names from string content for renaming.
+pub struct StringAnnotationParser;
+
+/// A reference found in a string annotation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnotationRef {
+    /// The name referenced (e.g., "Handler", "module.Class")
+    pub name: String,
+    /// Position within the annotation string (not including quotes)
+    pub offset_in_string: usize,
+    /// Length of the name
+    pub length: usize,
+}
+
+/// Information about a parsed string annotation.
+#[derive(Debug, Clone)]
+pub struct ParsedAnnotation {
+    /// The original string content (without quotes)
+    pub content: String,
+    /// Quote character used (' or ")
+    pub quote_char: char,
+    /// All type references found
+    pub refs: Vec<AnnotationRef>,
+}
+
+impl StringAnnotationParser {
+    /// Parse a string annotation and extract type references.
+    ///
+    /// # Arguments
+    /// * `annotation` - The annotation including quotes (e.g., `"Handler"`)
+    ///
+    /// # Returns
+    /// Parsed annotation info, or error if invalid syntax.
+    ///
+    /// # Supported Patterns
+    /// * Simple names: `"ClassName"` -> refs `["ClassName"]`
+    /// * Qualified names: `"module.Class"` -> refs `["module", "Class"]`
+    /// * Generic types: `"List[Item]"` -> refs `["List", "Item"]`
+    /// * Union types: `"A | B"` -> refs `["A", "B"]`
+    /// * Optional: `"Optional[T]"` -> refs `["Optional", "T"]`
+    /// * Callable: `"Callable[[A], B]"` -> refs `["Callable", "A", "B"]`
+    pub fn parse(annotation: &str) -> StubResult<ParsedAnnotation>;
+
+    /// Transform a string annotation by renaming a symbol.
+    ///
+    /// # Arguments
+    /// * `annotation` - Original annotation (including quotes)
+    /// * `old_name` - Name to replace
+    /// * `new_name` - Replacement name
+    ///
+    /// # Returns
+    /// The transformed annotation string, preserving quote style.
+    ///
+    /// # Example
+    /// ```rust
+    /// let result = StringAnnotationParser::rename(
+    ///     "\"Handler\"",
+    ///     "Handler",
+    ///     "RequestHandler"
+    /// )?;
+    /// assert_eq!(result, "\"RequestHandler\"");
+    ///
+    /// // Preserves single quotes
+    /// let result = StringAnnotationParser::rename(
+    ///     "'List[Handler]'",
+    ///     "Handler",
+    ///     "RequestHandler"
+    /// )?;
+    /// assert_eq!(result, "'List[RequestHandler]'");
+    /// ```
+    pub fn rename(annotation: &str, old_name: &str, new_name: &str) -> StubResult<String>;
+
+    /// Check if an annotation contains a reference to a given name.
+    pub fn contains_name(annotation: &str, name: &str) -> StubResult<bool>;
+}
+```
+
+---
+
+###### 0.3.2 Internal Design Notes {#step-0-3-internal}
+
+**Stub Discovery Algorithm:**
+
+```rust
+impl StubDiscovery {
+    pub fn find_stub_for(&self, source_path: &Path) -> Option<StubInfo> {
+        // 1. Get the .pyi path for inline stub
+        let inline_stub = self.inline_stub_path(source_path);
+        if inline_stub.exists() {
+            return Some(StubInfo {
+                stub_path: inline_stub,
+                source_path: source_path.to_path_buf(),
+                location: StubLocation::Inline,
+            });
+        }
+
+        // 2. Try stubs/ folder at workspace root
+        let module_path = self.module_path_from_source(source_path)?;
+        let stubs_folder_stub = self.options.workspace_root
+            .join("stubs")
+            .join(&module_path);
+        if stubs_folder_stub.exists() {
+            return Some(StubInfo {
+                stub_path: stubs_folder_stub,
+                source_path: source_path.to_path_buf(),
+                location: StubLocation::StubsFolder,
+            });
+        }
+
+        // 3. Try typeshed-style package-stubs
+        if self.options.check_typeshed_style {
+            if let Some(stub) = self.find_typeshed_style_stub(source_path, &module_path) {
+                return Some(stub);
+            }
+        }
+
+        // 4. Try extra stub directories
+        for extra_dir in &self.options.extra_stub_dirs {
+            let extra_stub = extra_dir.join(&module_path);
+            if extra_stub.exists() {
+                return Some(StubInfo {
+                    stub_path: extra_stub,
+                    source_path: source_path.to_path_buf(),
+                    location: StubLocation::StubsFolder,
+                });
+            }
+        }
+
+        None
+    }
+
+    fn inline_stub_path(&self, source_path: &Path) -> PathBuf {
+        source_path.with_extension("pyi")
+    }
+
+    fn module_path_from_source(&self, source_path: &Path) -> Option<PathBuf> {
+        // Convert /project/src/pkg/module.py -> pkg/module.pyi
+        // This requires knowing the Python source roots
+
+        // For now, use relative path from workspace root
+        let relative = source_path.strip_prefix(&self.options.workspace_root).ok()?;
+        Some(relative.with_extension("pyi"))
+    }
+
+    fn find_typeshed_style_stub(&self, source_path: &Path, module_path: &Path) -> Option<StubInfo> {
+        // For pkg/module.py, check stubs/pkg-stubs/module.pyi
+        let components: Vec<_> = module_path.components().collect();
+        if components.is_empty() {
+            return None;
+        }
+
+        // Get top-level package name
+        let top_level = components[0].as_os_str().to_string_lossy();
+        let stubs_pkg = format!("{}-stubs", top_level);
+
+        let mut typeshed_path = self.options.workspace_root.join("stubs").join(&stubs_pkg);
+        for component in &components[1..] {
+            typeshed_path = typeshed_path.join(component);
+        }
+
+        if typeshed_path.exists() {
+            Some(StubInfo {
+                stub_path: typeshed_path,
+                source_path: source_path.to_path_buf(),
+                location: StubLocation::TypeshedStyle,
+            })
+        } else {
+            None
+        }
+    }
+}
+```
+
+**Stub Parsing:**
+
+Stub parsing reuses the existing CST parser. Stubs have simpler structure:
+- Function bodies are `...` or `pass`
+- Class bodies contain only signatures and `...`
+- No runtime code
+
+```rust
+impl ParsedStub {
+    pub fn parse(stub_path: &Path) -> StubResult<Self> {
+        let source = std::fs::read_to_string(stub_path)
+            .map_err(|e| StubError::IoError {
+                stub_path: stub_path.to_path_buf(),
+                message: e.to_string(),
+            })?;
+
+        Self::parse_str(&source, stub_path.to_path_buf())
+    }
+
+    pub fn parse_str(source: &str, stub_path: PathBuf) -> StubResult<Self> {
+        use tugtool_python_cst::{parse_module_with_positions, ParsedModule};
+
+        let parsed = parse_module_with_positions(source, None)
+            .map_err(|e| StubError::ParseError {
+                stub_path: stub_path.clone(),
+                message: format!("{}", e),
+            })?;
+
+        // Extract function, class, type alias, and variable definitions
+        let mut collector = StubCollector::new(&parsed.positions);
+        walk_module(&parsed.module, &mut collector);
+
+        Ok(Self {
+            path: stub_path,
+            functions: collector.functions,
+            classes: collector.classes,
+            type_aliases: collector.type_aliases,
+            variables: collector.variables,
+            source: source.to_string(),
+        })
+    }
+}
+```
 
 **String Annotation Parsing:**
-- [ ] Create `StringAnnotationParser` for parsing type expressions in string annotations
-- [ ] Handle simple names: `"ClassName"` → rename to `"NewName"`
-- [ ] Handle qualified names: `"module.ClassName"` → update appropriately
-- [ ] Handle forward references in function annotations: `def f(x: "Foo")`
-- [ ] Preserve quoting style (single vs double quotes)
+
+String annotations contain Python type expressions. We parse them using a lightweight tokenizer:
+
+```rust
+impl StringAnnotationParser {
+    pub fn parse(annotation: &str) -> StubResult<ParsedAnnotation> {
+        // 1. Extract quote character and content
+        let (quote_char, content) = Self::extract_content(annotation)?;
+
+        // 2. Tokenize the content
+        let tokens = Self::tokenize(content)?;
+
+        // 3. Extract name references
+        let refs = Self::extract_refs(&tokens);
+
+        Ok(ParsedAnnotation {
+            content: content.to_string(),
+            quote_char,
+            refs,
+        })
+    }
+
+    fn extract_content(annotation: &str) -> StubResult<(char, &str)> {
+        let bytes = annotation.as_bytes();
+        if bytes.len() < 2 {
+            return Err(StubError::InvalidAnnotation {
+                annotation: annotation.to_string(),
+                message: "Annotation too short".to_string(),
+            });
+        }
+
+        let quote = bytes[0] as char;
+        if quote != '"' && quote != '\'' {
+            return Err(StubError::InvalidAnnotation {
+                annotation: annotation.to_string(),
+                message: format!("Invalid quote character: {}", quote),
+            });
+        }
+
+        let last = bytes[bytes.len() - 1] as char;
+        if last != quote {
+            return Err(StubError::InvalidAnnotation {
+                annotation: annotation.to_string(),
+                message: "Mismatched quotes".to_string(),
+            });
+        }
+
+        Ok((quote, &annotation[1..annotation.len()-1]))
+    }
+
+    fn tokenize(content: &str) -> StubResult<Vec<AnnotationToken>> {
+        let mut tokens = Vec::new();
+        let mut chars = content.char_indices().peekable();
+
+        while let Some((i, ch)) = chars.next() {
+            match ch {
+                // Identifier start
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    let start = i;
+                    while let Some(&(_, c)) = chars.peek() {
+                        if c.is_alphanumeric() || c == '_' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    let end = chars.peek().map(|(i, _)| *i).unwrap_or(content.len());
+                    tokens.push(AnnotationToken::Name {
+                        value: content[start..end].to_string(),
+                        offset: start,
+                    });
+                }
+                // Operators and delimiters
+                '[' | ']' | ',' | '|' | '.' | '(' | ')' => {
+                    tokens.push(AnnotationToken::Punct(ch));
+                }
+                // Whitespace
+                ' ' | '\t' | '\n' => continue,
+                // Unknown
+                _ => {
+                    return Err(StubError::InvalidAnnotation {
+                        annotation: content.to_string(),
+                        message: format!("Unexpected character: {}", ch),
+                    });
+                }
+            }
+        }
+
+        Ok(tokens)
+    }
+
+    fn extract_refs(tokens: &[AnnotationToken]) -> Vec<AnnotationRef> {
+        tokens.iter()
+            .filter_map(|t| {
+                if let AnnotationToken::Name { value, offset } = t {
+                    Some(AnnotationRef {
+                        name: value.clone(),
+                        offset_in_string: *offset,
+                        length: value.len(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn rename(annotation: &str, old_name: &str, new_name: &str) -> StubResult<String> {
+        let parsed = Self::parse(annotation)?;
+
+        // Find all occurrences of old_name and replace
+        let mut result = parsed.content.clone();
+
+        // Replace in reverse order to preserve offsets
+        let mut replacements: Vec<_> = parsed.refs.iter()
+            .filter(|r| r.name == old_name)
+            .collect();
+        replacements.sort_by(|a, b| b.offset_in_string.cmp(&a.offset_in_string));
+
+        for r in replacements {
+            result.replace_range(
+                r.offset_in_string..r.offset_in_string + r.length,
+                new_name
+            );
+        }
+
+        Ok(format!("{}{}{}", parsed.quote_char, result, parsed.quote_char))
+    }
+}
+
+#[derive(Debug)]
+enum AnnotationToken {
+    Name { value: String, offset: usize },
+    Punct(char),
+}
+```
+
+---
+
+###### 0.3.3 Edge Cases {#step-0-3-edge-cases}
+
+| Edge Case | Handling |
+|-----------|----------|
+| **No stub exists** | `find_stub_for` returns None; not an error |
+| **Stub has parse error** | Return `StubError::ParseError`; operation aborts |
+| **Stub exists but is empty** | Valid; returns empty lists for functions/classes |
+| **Package `__init__.py`** | Stub is `__init__.pyi` in same location |
+| **Namespace package** | No `__init__.py`; check module path directly |
+| **Nested packages** | `pkg/sub/module.py` -> `pkg/sub/module.pyi` or `stubs/pkg/sub/module.pyi` |
+| **Private module** | `_private.py` treated same as public |
+| **String annotation with escapes** | `"Class\"Name"` - handle escaped quotes |
+| **Triple-quoted annotation** | `"""Long\nAnnotation"""` - preserve across lines |
+| **f-string in annotation** | Invalid for type annotations; return error |
+| **Raw string annotation** | `r"path\to\thing"` - not a type annotation; skip |
+| **Annotation with comment** | `"Type # comment"` - parse error |
+| **Generic with nested generics** | `"Dict[str, List[int]]"` - extract all names |
+| **Union with None** | `"Optional[T]"` = `"T | None"` - extract T, None |
+| **TypeVar usage** | `"T"` where T is TypeVar - treat as name reference |
+| **Class from `__all__`** | Stub should export what source exports |
+
+**Stub Parse Failure Policy:**
+
+Per [D08](#d08-stub-updates), stub parse failures are errors that abort the operation:
+
+```json
+{
+  "status": "error",
+  "code": 5,
+  "error": {
+    "kind": "STUB_PARSE",
+    "stub_path": "pkg/api.pyi",
+    "message": "Failed to parse stub file: unexpected token at line 10",
+    "suggestion": "Fix the syntax error in the stub file, or remove it"
+  }
+}
+```
+
+---
+
+###### 0.3.4 Integration Points {#step-0-3-integration}
+
+**Existing Components:**
+
+| Component | Integration |
+|-----------|-------------|
+| `parse_module_with_positions()` | Reused for stub parsing |
+| `PositionTable` | Provides spans for stub symbols |
+| `BatchSpanEditor` | Used to apply stub edits |
+| `tugtool-python/src/analyzer.rs` | Already has stub support for type resolution |
+
+**Module Structure:**
+
+```
+crates/tugtool-python/src/
+├── lib.rs          # Add: pub mod stubs;
+├── stubs.rs        # NEW: StubDiscovery, ParsedStub, StubUpdater, StringAnnotationParser
+├── analyzer.rs     # Has existing stub integration for types
+└── ...
+```
+
+**Usage in Rename Operation:**
+
+```rust
+// In rename operation
+let stub_discovery = StubDiscovery::for_workspace(workspace_root);
+let stub_updater = StubUpdater::new(stub_discovery);
+
+// Generate stub edits
+let stub_edits = stub_updater.rename_edits(
+    &source_path,
+    old_name,
+    new_name,
+)?;
+
+// Include stub edits in the PatchSet
+if let Some(edits) = stub_edits {
+    for edit in edits.edits {
+        patch_set = patch_set.with_edit(edit.into_patch_edit(stub_file_id));
+    }
+}
+```
+
+---
+
+###### 0.3.5 Concrete Examples {#step-0-3-examples}
+
+**Example 1: Find Inline Stub**
+
+```
+Project structure:
+  /project/
+    src/
+      mypackage/
+        handlers.py
+        handlers.pyi   <- Inline stub
+```
+
+```rust
+let discovery = StubDiscovery::for_workspace("/project");
+let stub = discovery.find_stub_for(Path::new("/project/src/mypackage/handlers.py"));
+
+assert!(stub.is_some());
+let info = stub.unwrap();
+assert_eq!(info.stub_path, Path::new("/project/src/mypackage/handlers.pyi"));
+assert_eq!(info.location, StubLocation::Inline);
+```
+
+**Example 2: Find Stub in stubs/ Folder**
+
+```
+Project structure:
+  /project/
+    src/
+      mypackage/
+        handlers.py    <- No inline stub
+    stubs/
+      mypackage/
+        handlers.pyi   <- Stubs folder stub
+```
+
+```rust
+let discovery = StubDiscovery::for_workspace("/project");
+let stub = discovery.find_stub_for(Path::new("/project/src/mypackage/handlers.py"));
+
+assert!(stub.is_some());
+let info = stub.unwrap();
+assert_eq!(info.stub_path, Path::new("/project/stubs/mypackage/handlers.pyi"));
+assert_eq!(info.location, StubLocation::StubsFolder);
+```
+
+**Example 3: Parse Stub and Find Symbol**
+
+```rust
+let stub_content = r#"
+from typing import Optional
+
+class Handler:
+    def process(self, data: bytes) -> Optional[str]: ...
+    def reset(self) -> None: ...
+
+def create_handler(config: dict) -> Handler: ...
+"#;
+
+let stub = ParsedStub::parse_str(stub_content, PathBuf::from("handlers.pyi"))?;
+
+assert!(stub.has_symbol("Handler"));
+assert!(stub.has_symbol("create_handler"));
+
+let handler_class = stub.find_class("Handler").unwrap();
+assert_eq!(handler_class.methods.len(), 2);
+
+let process_method = stub.find_method("Handler", "process").unwrap();
+assert_eq!(process_method.name, "process");
+```
+
+**Example 4: Rename Symbol in Stub**
+
+```rust
+let stub_updater = StubUpdater::new(StubDiscovery::for_workspace("/project"));
+
+// Rename Handler -> RequestHandler
+let edits = stub_updater.rename_edits(
+    Path::new("/project/src/handlers.py"),
+    "Handler",
+    "RequestHandler",
+)?;
+
+// If stub exists, we get edits for:
+// - Class name: "Handler" -> "RequestHandler"
+// - Return type annotation: "-> Handler" -> "-> RequestHandler"
+```
+
+**Example 5: String Annotation Parsing**
+
+```rust
+// Simple name
+let result = StringAnnotationParser::rename("\"Handler\"", "Handler", "RequestHandler")?;
+assert_eq!(result, "\"RequestHandler\"");
+
+// Qualified name
+let result = StringAnnotationParser::rename("\"pkg.Handler\"", "Handler", "RequestHandler")?;
+assert_eq!(result, "\"pkg.RequestHandler\"");
+
+// Generic type
+let result = StringAnnotationParser::rename("'List[Handler]'", "Handler", "RequestHandler")?;
+assert_eq!(result, "'List[RequestHandler]'");
+
+// Multiple references
+let result = StringAnnotationParser::rename(
+    "\"Dict[Handler, Handler]\"",
+    "Handler",
+    "RequestHandler"
+)?;
+assert_eq!(result, "\"Dict[RequestHandler, RequestHandler]\"");
+
+// Union type
+let result = StringAnnotationParser::rename("\"Handler | None\"", "Handler", "RequestHandler")?;
+assert_eq!(result, "\"RequestHandler | None\"");
+```
+
+---
+
+**Tasks:**
+- [ ] Create `StubError` enum with ParseError, NotFound, IoError, InvalidAnnotation variants
+- [ ] Create `StubInfo`, `StubLocation` types for discovery results
+- [ ] Create `StubDiscoveryOptions` with workspace_root, extra_stub_dirs, check_typeshed_style
+- [ ] Create `StubDiscovery` struct with new(), for_workspace(), find_stub_for(), etc.
+- [ ] Implement inline stub discovery (`module.pyi` same directory)
+- [ ] Implement stubs folder discovery (`stubs/` at workspace root)
+- [ ] Implement typeshed-style discovery (`pkg-stubs/`)
+- [ ] Create `ParsedStub`, `StubFunction`, `StubClass`, `StubTypeAlias`, `StubVariable` types
+- [ ] Implement `ParsedStub::parse()` using existing CST parser
+- [ ] Implement symbol lookup methods (find_function, find_class, find_method)
+- [ ] Create `StubUpdater` for generating stub edits
+- [ ] Implement `rename_edits()` for symbol renames
+- [ ] Implement `move_edits()` for symbol moves
+- [ ] Create `StringAnnotationParser` for parsing type expressions in strings
+- [ ] Implement `parse()` to extract type references from string annotations
+- [ ] Implement `rename()` to transform string annotations
+- [ ] Handle quote style preservation (single vs double)
+- [ ] Handle generic types (`List[T]`, `Dict[K, V]`)
+- [ ] Handle union types (`A | B`, `Optional[T]`)
 
 **Tests:**
-- [ ] Unit: `test_find_stub_same_directory`
-- [ ] Unit: `test_find_stub_stubs_folder`
-- [ ] Unit: `test_no_stub_exists`
-- [ ] Unit: `test_stub_parse_class`
-- [ ] Unit: `test_stub_parse_function`
-- [ ] Unit: `test_stub_update_rename`
-- [ ] Unit: `test_stub_parse_failure_errors`
-- [ ] Unit: `test_string_annotation_simple_name`
-- [ ] Unit: `test_string_annotation_qualified_name`
-- [ ] Unit: `test_string_annotation_preserves_quotes`
+- [ ] Unit: `test_find_stub_same_directory` - inline stub exists
+- [ ] Unit: `test_find_stub_stubs_folder` - stubs/ folder stub
+- [ ] Unit: `test_find_stub_typeshed_style` - pkg-stubs pattern
+- [ ] Unit: `test_find_stub_extra_dirs` - custom stub directories
+- [ ] Unit: `test_no_stub_exists` - returns None
+- [ ] Unit: `test_stub_parse_class` - extract class info
+- [ ] Unit: `test_stub_parse_function` - extract function info
+- [ ] Unit: `test_stub_parse_methods` - extract methods from class
+- [ ] Unit: `test_stub_parse_type_alias` - TypeAlias support
+- [ ] Unit: `test_stub_parse_variable` - module-level variables
+- [ ] Unit: `test_stub_update_rename_function` - rename function in stub
+- [ ] Unit: `test_stub_update_rename_class` - rename class in stub
+- [ ] Unit: `test_stub_update_rename_method` - rename method in stub
+- [ ] Unit: `test_stub_parse_failure_returns_error` - invalid syntax
+- [ ] Unit: `test_string_annotation_simple_name` - `"ClassName"`
+- [ ] Unit: `test_string_annotation_qualified_name` - `"module.Class"`
+- [ ] Unit: `test_string_annotation_generic` - `"List[Item]"`
+- [ ] Unit: `test_string_annotation_union` - `"A | B"`
+- [ ] Unit: `test_string_annotation_optional` - `"Optional[T]"`
+- [ ] Unit: `test_string_annotation_callable` - `"Callable[[A], B]"`
+- [ ] Unit: `test_string_annotation_preserves_single_quotes` - `'Type'`
+- [ ] Unit: `test_string_annotation_preserves_double_quotes` - `"Type"`
+- [ ] Unit: `test_string_annotation_nested_generics` - `"Dict[str, List[int]]"`
+- [ ] Unit: `test_string_annotation_rename_multiple` - multiple refs to same name
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python stubs`
-- [ ] Stub discovery works for both locations
-- [ ] String annotation parsing handles common cases
+- [ ] Stub discovery works for inline, stubs folder, and typeshed-style
+- [ ] Stub parsing extracts all symbol types
+- [ ] String annotation parsing handles common patterns
+- [ ] Rename edits are generated correctly for stubs
 
 **Rollback:** Revert commit
 

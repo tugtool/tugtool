@@ -6,6 +6,74 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Stage 0 Detailed Specification Expansion | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase 13 Python Refactoring Operations plan
+- `crates/tugtool-python-cst/src/visitor/rename.rs` - Existing RenameTransformer pattern
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Visitor module structure
+- `crates/tugtool-python-cst/src/visitor/span_collector.rs` - SpanCollector pattern
+- `crates/tugtool-python-cst/src/nodes/traits.rs` - Span, NodeId types
+- `crates/tugtool-core/src/patch.rs` - Core Span type
+- Code-architect agent for detailed specification expansion
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Expand Step 0.1: Edit Primitive Infrastructure | Done |
+| Add 0.1.1 API Specification (EditPrimitive, BatchSpanEditor, etc.) | Done |
+| Add 0.1.2 Internal Design Notes (algorithms) | Done |
+| Add 0.1.3 Edge Cases table (12 cases) | Done |
+| Add 0.1.4 Integration Points | Done |
+| Add 0.1.5 Concrete Examples (5 examples) | Done |
+| Expand Step 0.2: Position Lookup Infrastructure | Done |
+| Add 0.2.1 API Specification (PositionIndex, NodeInfo, etc.) | Done |
+| Add 0.2.2 Internal Design Notes (index building, binary search) | Done |
+| Add 0.2.3 Edge Cases table (18 cases) | Done |
+| Add 0.2.4 Integration Points | Done |
+| Add 0.2.5 Concrete Examples (4 examples) | Done |
+| Expand Step 0.3: Stub Discovery Infrastructure | Done |
+| Add 0.3.1 API Specification (StubDiscovery, ParsedStub, StringAnnotationParser) | Done |
+| Add 0.3.2 Internal Design Notes (discovery algorithm, parsing) | Done |
+| Add 0.3.3 Edge Cases table (17 cases) | Done |
+| Add 0.3.4 Integration Points | Done |
+| Add 0.3.5 Concrete Examples (5 examples) | Done |
+| Expand Tasks and Tests lists for all 3 steps | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Expanded Stage 0 from ~150 lines to ~2400 lines
+
+**Key Changes:**
+
+| Section | Lines Added | Key Content |
+|---------|-------------|-------------|
+| Step 0.1 | ~700 | EditPrimitive enum, BatchSpanEditor, indentation detection algorithms |
+| Step 0.2 | ~800 | NodeKind enum (38 variants), PositionIndex, line:col Unicode conversion |
+| Step 0.3 | ~900 | StubDiscovery, ParsedStub, StringAnnotationParser, annotation tokenization |
+
+**Key Design Decisions Documented:**
+
+1. **BatchSpanEditor generalizes RenameTransformer**: Same reverse-order algorithm, supports all edit types
+2. **Line:col columns count Unicode scalars**: Consistent with Python tokenizer
+3. **Stub discovery order**: Inline → stubs/ → typeshed-style → extra dirs
+4. **Stub parse failures are errors**: Abort operation per D08
+5. **String annotation parser**: Lightweight tokenizer extracts type names
+
+**Test Coverage Expansion:**
+- Step 0.1: 27 unit tests specified
+- Step 0.2: 22 unit tests specified
+- Step 0.3: 25 unit tests specified
+
+**Notes:**
+- Plan grew from ~2400 to 4675 lines (95% increase)
+- Each step now has API specification, algorithms, edge cases, integration points, and examples
+- Sufficient detail for implementers to proceed without ambiguity
+
+---
+
 ## [phase-13.md] Phase 13 Final Consistency Review | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
