@@ -2278,7 +2278,7 @@ assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
 
 ---
 
-# Step 0.2.0: Node Span Recording Infrastructure (Restructured) {#step-0-2-0-restructured}
+# Step 0.2.0: Node Span Recording Infrastructure {#step-0-2-0-restructured}
 
 **Parent Step:** [Step 0.2: Position Lookup Infrastructure](#step-0-2)
 
@@ -2642,31 +2642,31 @@ The `Pass`, `Break`, and `Continue` structs do not currently store their keyword
 This prerequisite must be completed before span recording can be added to these nodes.
 
 **Tasks:**
-- [ ] Add `tok: TokenRef<'input, 'a>` field to `Pass` struct in `statement.rs`
-- [ ] Add `tok: TokenRef<'input, 'a>` field to `Break` struct in `statement.rs`
-- [ ] Add `tok: TokenRef<'input, 'a>` field to `Continue` struct in `statement.rs`
-- [ ] Update `DeflatedPass` in `statement.rs` to include `tok` field
-- [ ] Update `DeflatedBreak` in `statement.rs` to include `tok` field
-- [ ] Update `DeflatedContinue` in `statement.rs` to include `tok` field
-- [ ] Update grammar rule for `pass` in `parser/grammar.rs` to capture token: `t:lit("pass") { ... tok: t ... }`
-- [ ] Update grammar rule for `break` in `parser/grammar.rs` to capture token
-- [ ] Update grammar rule for `continue` in `parser/grammar.rs` to capture token
-- [ ] Update `Default` impl for `Pass` if needed (may need to remove Default or provide dummy token)
-- [ ] Update `Default` impl for `Break` if needed
-- [ ] Update `Default` impl for `Continue` if needed
+- [x] Add `tok: TokenRef<'input, 'a>` field to `Pass` struct in `statement.rs`
+- [x] Add `tok: TokenRef<'input, 'a>` field to `Break` struct in `statement.rs`
+- [x] Add `tok: TokenRef<'input, 'a>` field to `Continue` struct in `statement.rs`
+- [x] Update `DeflatedPass` in `statement.rs` to include `tok` field
+- [x] Update `DeflatedBreak` in `statement.rs` to include `tok` field
+- [x] Update `DeflatedContinue` in `statement.rs` to include `tok` field
+- [x] Update grammar rule for `pass` in `parser/grammar.rs` to capture token: `t:lit("pass") { ... tok: t ... }`
+- [x] Update grammar rule for `break` in `parser/grammar.rs` to capture token
+- [x] Update grammar rule for `continue` in `parser/grammar.rs` to capture token
+- [x] Update `Default` impl for `Pass` if needed (may need to remove Default or provide dummy token)
+- [x] Update `Default` impl for `Break` if needed
+- [x] Update `Default` impl for `Continue` if needed
 
 **Tests:**
-- [ ] Unit: `test_pass_has_token` - Parse `pass`, verify `Pass.tok` is populated with correct span
-- [ ] Unit: `test_break_has_token` - Parse `while True:\n    break`, verify `Break.tok` spans `break`
-- [ ] Unit: `test_continue_has_token` - Parse `while True:\n    continue`, verify `Continue.tok` spans `continue`
-- [ ] Unit: `test_pass_with_semicolon` - Parse `pass;`, verify `tok` spans only `pass` (not semicolon)
+- [x] Unit: `test_pass_has_token` - Parse `pass`, verify `Pass.tok` is populated with correct span
+- [x] Unit: `test_break_has_token` - Parse `while True:\n    break`, verify `Break.tok` spans `break`
+- [x] Unit: `test_continue_has_token` - Parse `while True:\n    continue`, verify `Continue.tok` spans `continue`
+- [x] Unit: `test_pass_with_semicolon` - Parse `pass;`, verify `tok` spans only `pass` (not semicolon)
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst pass_has_token` passes
-- [ ] `cargo nextest run -p tugtool-python-cst break_has_token` passes
-- [ ] `cargo nextest run -p tugtool-python-cst continue_has_token` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) *Note: 1 pre-existing failure in position_lookup (Integer span not recorded yet - Step 0.2.0.3)*
+- [x] `cargo nextest run -p tugtool-python-cst pass_has_token` passes
+- [x] `cargo nextest run -p tugtool-python-cst break_has_token` passes
+- [x] `cargo nextest run -p tugtool-python-cst continue_has_token` passes
 
 **Rollback:** Revert commit
 

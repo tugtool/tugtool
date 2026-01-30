@@ -334,12 +334,18 @@ impl<'r, 'a> DeflatedSmallStatement<'r, 'a> {
 pub struct Pass<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
+    /// The `pass` keyword token.
+    pub(crate) tok: TokenRef<'a>,
+
     /// Stable identity assigned during inflation.
     pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedPass<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
-        Self { semicolon }
+        Self {
+            tok: self.tok,
+            semicolon,
+        }
     }
 }
 impl<'a> Codegen<'a> for Pass<'a> {
@@ -364,12 +370,18 @@ impl<'r, 'a> Inflate<'a> for DeflatedPass<'r, 'a> {
 pub struct Break<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
+    /// The `break` keyword token.
+    pub(crate) tok: TokenRef<'a>,
+
     /// Stable identity assigned during inflation.
     pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedBreak<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
-        Self { semicolon }
+        Self {
+            tok: self.tok,
+            semicolon,
+        }
     }
 }
 impl<'a> Codegen<'a> for Break<'a> {
@@ -394,12 +406,18 @@ impl<'r, 'a> Inflate<'a> for DeflatedBreak<'r, 'a> {
 pub struct Continue<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
+    /// The `continue` keyword token.
+    pub(crate) tok: TokenRef<'a>,
+
     /// Stable identity assigned during inflation.
     pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedContinue<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
-        Self { semicolon }
+        Self {
+            tok: self.tok,
+            semicolon,
+        }
     }
 }
 impl<'a> Codegen<'a> for Continue<'a> {

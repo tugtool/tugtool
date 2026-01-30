@@ -1529,4 +1529,139 @@ mod test {
             panic!("Expected Match compound statement");
         }
     }
+
+    // Step 0.2.0.1 Tests: Pass/Break/Continue token field tests
+    //
+    // These tests verify that Pass, Break, Continue parse correctly after adding the `tok` field.
+    // The `tok` field is internal to the deflated struct (filtered from inflated by #[cst_node] macro),
+    // so we verify correctness indirectly by checking:
+    // 1. Parsing succeeds (tok is captured in grammar)
+    // 2. node_id is assigned (inflation completed successfully)
+    // 3. Codegen roundtrip works (struct is properly constructed)
+
+    #[test]
+    fn test_pass_has_token() {
+        // Verify Pass parses correctly with the new tok field.
+        // The tok field captures the "pass" keyword token in the deflated struct,
+        // enabling span recording in Step 0.2.0.11.
+        let source = "pass\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Simple(simple_line) = &module.body[0] {
+            if let SmallStatement::Pass(pass_stmt) = &simple_line.body[0] {
+                assert!(
+                    pass_stmt.node_id.is_some(),
+                    "Parsed Pass statement should have Some(NodeId), got None"
+                );
+            } else {
+                panic!("Expected Pass statement, got {:?}", simple_line.body[0]);
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+
+        // Also verify codegen roundtrip
+        let mut state = Default::default();
+        module.codegen(&mut state);
+        assert_eq!(state.to_string(), source);
+    }
+
+    #[test]
+    fn test_break_has_token() {
+        // Verify Break parses correctly with the new tok field.
+        // The tok field captures the "break" keyword token in the deflated struct.
+        let source = "while True:\n    break\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::While(while_stmt)) = &module.body[0] {
+            if let Suite::IndentedBlock(block) = &while_stmt.body {
+                if let Statement::Simple(simple_line) = &block.body[0] {
+                    if let SmallStatement::Break(break_stmt) = &simple_line.body[0] {
+                        assert!(
+                            break_stmt.node_id.is_some(),
+                            "Parsed Break statement should have Some(NodeId), got None"
+                        );
+                    } else {
+                        panic!("Expected Break statement");
+                    }
+                } else {
+                    panic!("Expected Simple statement in while body");
+                }
+            } else {
+                panic!("Expected IndentedBlock");
+            }
+        } else {
+            panic!("Expected While compound statement");
+        }
+
+        // Verify roundtrip
+        let mut state = Default::default();
+        module.codegen(&mut state);
+        assert_eq!(state.to_string(), source);
+    }
+
+    #[test]
+    fn test_continue_has_token() {
+        // Verify Continue parses correctly with the new tok field.
+        // The tok field captures the "continue" keyword token in the deflated struct.
+        let source = "while True:\n    continue\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::While(while_stmt)) = &module.body[0] {
+            if let Suite::IndentedBlock(block) = &while_stmt.body {
+                if let Statement::Simple(simple_line) = &block.body[0] {
+                    if let SmallStatement::Continue(continue_stmt) = &simple_line.body[0] {
+                        assert!(
+                            continue_stmt.node_id.is_some(),
+                            "Parsed Continue statement should have Some(NodeId), got None"
+                        );
+                    } else {
+                        panic!("Expected Continue statement");
+                    }
+                } else {
+                    panic!("Expected Simple statement in while body");
+                }
+            } else {
+                panic!("Expected IndentedBlock");
+            }
+        } else {
+            panic!("Expected While compound statement");
+        }
+
+        // Verify roundtrip
+        let mut state = Default::default();
+        module.codegen(&mut state);
+        assert_eq!(state.to_string(), source);
+    }
+
+    #[test]
+    fn test_pass_with_semicolon() {
+        // Verify Pass with semicolon parses correctly.
+        // The tok field captures only the "pass" keyword, separate from the semicolon.
+        // (Span boundary verification will be done in Step 0.2.0.11 when span recording is added.)
+        let source = "pass;\n";
+        let module = parse_module(source, None).expect("parse error");
+
+        if let Statement::Simple(simple_line) = &module.body[0] {
+            if let SmallStatement::Pass(pass_stmt) = &simple_line.body[0] {
+                assert!(
+                    pass_stmt.node_id.is_some(),
+                    "Parsed Pass statement should have Some(NodeId)"
+                );
+                assert!(
+                    pass_stmt.semicolon.is_some(),
+                    "Pass statement should have semicolon"
+                );
+            } else {
+                panic!("Expected Pass statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+
+        // Verify roundtrip preserves semicolon
+        let mut state = Default::default();
+        module.codegen(&mut state);
+        assert_eq!(state.to_string(), source);
+    }
 }

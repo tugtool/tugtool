@@ -140,12 +140,12 @@ parser! {
             / &lit("import") i:import_name() { SmallStatement::Import(i) }
             / &lit("from") i:import_from() { SmallStatement::ImportFrom(i) }
             / &lit("raise") r:raise_stmt() { SmallStatement::Raise(r) }
-            / lit("pass") { SmallStatement::Pass(Pass { semicolon: None }) }
+            / t:lit("pass") { SmallStatement::Pass(Pass { tok: t, semicolon: None }) }
             / &lit("del") s:del_stmt() { SmallStatement::Del(s) }
             / &lit("yield") s:yield_stmt() { SmallStatement::Expr(Expr { value: s, semicolon: None }) }
             / &lit("assert") s:assert_stmt() {SmallStatement::Assert(s)}
-            / lit("break") { SmallStatement::Break(Break { semicolon: None })}
-            / lit("continue") { SmallStatement::Continue(Continue { semicolon: None })}
+            / t:lit("break") { SmallStatement::Break(Break { tok: t, semicolon: None })}
+            / t:lit("continue") { SmallStatement::Continue(Continue { tok: t, semicolon: None })}
             / &lit("global") s:global_stmt() {SmallStatement::Global(s)}
             / &lit("nonlocal") s:nonlocal_stmt() {SmallStatement::Nonlocal(s)}
 

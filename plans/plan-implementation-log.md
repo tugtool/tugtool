@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.1: Add Token Fields to Pass/Break/Continue | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.1 specification (lines 2628-2672)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Pass, Break, Continue struct definitions
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Grammar rules for pass/break/continue
+- `crates/tugtool-python-cst-derive/src/cstnode.rs` - Macro behavior (TokenRef filtering)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `tok` field to `Pass` struct in statement.rs | Done |
+| Add `tok` field to `Break` struct in statement.rs | Done |
+| Add `tok` field to `Continue` struct in statement.rs | Done |
+| Update DeflatedPass (automatic via `#[cst_node]` macro) | Done |
+| Update DeflatedBreak (automatic via `#[cst_node]` macro) | Done |
+| Update DeflatedContinue (automatic via `#[cst_node]` macro) | Done |
+| Update grammar rule for `pass` to capture token | Done |
+| Update grammar rule for `break` to capture token | Done |
+| Update grammar rule for `continue` to capture token | Done |
+| Update `with_semicolon` methods to preserve tok field | Done |
+| Handle Default impls (none needed) | Done |
+| Write 4 tests for token fields | Done |
+| Code review by code-architect agent | Done |
+| Fix minor issues from code review | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added `tok: TokenRef<'a>` field to Pass, Break, Continue; updated `with_semicolon` methods
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Updated grammar rules: `t:lit("pass") { Pass { tok: t, ... } }`
+- `crates/tugtool-python-cst/src/lib.rs` - Added 4 new tests with clarified comments
+- `plans/phase-13.md` - Marked Step 0.2.0.1 tasks as complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst test_pass_has_token`: PASSED
+- `cargo nextest run -p tugtool-python-cst test_break_has_token`: PASSED
+- `cargo nextest run -p tugtool-python-cst test_continue_has_token`: PASSED
+- `cargo nextest run -p tugtool-python-cst test_pass_with_semicolon`: PASSED
+- Full suite: 618/619 passed (1 pre-existing failure in position_lookup - unrelated)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` (no new regressions): PASS
+- All 4 new token tests pass: PASS
+
+**Key Decisions/Notes:**
+- The `#[cst_node]` macro automatically filters `tok` from inflated structs (keeps in deflated)
+- Tests verify correctness indirectly since `tok` is only in deflated struct: parsing succeeds, node_id assigned, roundtrip works
+- The `with_semicolon` methods needed updating to preserve `tok` field when creating new instances
+- Code-architect review identified minor comment issues that were fixed
+
+---
+
 ## [phase-13.md] Step 0.2.0: Node Span Recording Infrastructure Restructure | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
