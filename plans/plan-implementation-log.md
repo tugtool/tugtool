@@ -6,6 +6,42 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Plan Update: Steps 0.2.0.12-0.2.0.13 Updated for Trait Infrastructure | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.11.5 trait/macro infrastructure
+- `plans/phase-13.md` - Step 0.2.0.12 (Import Statement Spans) original specification
+- `plans/phase-13.md` - Step 0.2.0.13 (Special Spans) original specification
+- `plans/phase-13.md` - Notes for Implementer section
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update Step 0.2.0.12 to reference trait infrastructure | Done |
+| Add Infrastructure Reuse section to Step 0.2.0.12 | Done |
+| Restructure Step 0.2.0.12 tasks into phases using trait dispatch | Done |
+| Add new tests for NameOrAttribute dispatch to Step 0.2.0.12 | Done |
+| Update Step 0.2.0.13 to reference trait infrastructure | Done |
+| Add Infrastructure Reuse section to Step 0.2.0.13 | Done |
+| Restructure Step 0.2.0.13 tasks into phases using trait dispatch | Done |
+| Add note #6 (trait dispatch guidance) to Notes for Implementer | Done |
+| Update Step 0.2.0 Summary to include trait infrastructure | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Updated Steps 0.2.0.12, 0.2.0.13, Notes for Implementer, and Step 0.2.0 Summary
+
+**Key Decisions/Notes:**
+- Plan update only (no code changes) - aligns downstream steps with new trait/macro infrastructure
+- Step 0.2.0.12 now uses `impl_deflated_pos_dispatch!` for `DeflatedNameOrAttribute`
+- Step 0.2.0.13 now leverages existing `DeflatedExpression.end_pos()` trait dispatch
+- Added Note #6 establishing trait dispatch as the preferred pattern for future work
+- Ensures consistency: all remaining steps follow the DRY pattern from Step 0.2.0.11.5
+
+---
+
 ## [phase-13.md] Step 0.2.0.11.5: Refactor Span Helpers with Traits and Macros | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

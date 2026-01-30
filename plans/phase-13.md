@@ -3182,18 +3182,43 @@ This step eliminates the duplication using a trait-based approach with macro-gen
 
 **Commit:** `feat(python-cst): record ident_span for import statement nodes`
 
-**References:** Table T22 Import Statements (#t22-statement-spans)
+**References:** Table T22 Import Statements (#t22-statement-spans), Step 0.2.0.11.5 (#step-0-2-0-11-5)
 
 **Artifacts:**
-- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs` (trait impls for NameOrAttribute)
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs` (Import, ImportFrom span recording)
 
 **Context:**
 
-Import statements have their own token patterns and are commonly targeted in refactoring operations.
+Import statements have their own token patterns and are commonly targeted in refactoring operations. This step leverages the trait/macro infrastructure from Step 0.2.0.11.5 for consistent position computation.
+
+**Infrastructure Reuse:**
+
+The `DeflatedNameOrAttribute` enum contains `N(DeflatedName)` and `A(DeflatedAttribute)` variants. Since `DeflatedName` and `DeflatedAttribute` already implement `DeflatedStartPos` and `DeflatedEndPos` (from Step 0.2.0.11.5), apply the dispatch macro to enable `name_or_attr.end_pos()` calls for computing alias end positions.
+
+For `ImportAlias`, the end position is computed from:
+1. If `asname` is present: end of `asname.name` (which is `NameOrAttribute`)
+2. Otherwise: end of `name` (which is `NameOrAttribute`)
 
 **Tasks:**
-- [ ] `Import`: Add `record_ident_span` from `import_tok.start_pos` to last alias end
-- [ ] `ImportFrom`: Add `record_ident_span` from `from_tok.start_pos` to names end (rpar or last alias)
+
+*Phase 1: Extend Trait Infrastructure (expression.rs)*
+- [ ] Apply `impl_deflated_pos_dispatch!` to `DeflatedNameOrAttribute` with variants: `N`, `A`
+  - Both `start_pos` and `end_pos` (the inner `DeflatedName`/`DeflatedAttribute` already have trait impls)
+
+*Phase 2: Implement Import Alias End Position (statement.rs)*
+- [ ] Implement `DeflatedEndPos` for `DeflatedImportAlias`:
+  - If `asname.is_some()`: return `asname.unwrap().name.end_pos()` (via NameOrAttribute dispatch)
+  - Otherwise: return `name.end_pos()` (via NameOrAttribute dispatch)
+- [ ] Add helper function `deflated_import_names_end_pos(&DeflatedImportNames) -> usize`:
+  - Match on `Star(s)` -> return `s.tok.end_pos.byte_idx()` (requires star_tok field on DeflatedImportStar)
+  - Match on `Aliases(vec)` -> return `vec.last().unwrap().end_pos()`
+
+*Phase 3: Import Span Recording (statement.rs)*
+- [ ] `Import`: Add `record_ident_span` from `import_tok.start_pos` to `names.last().unwrap().end_pos()`
+- [ ] `ImportFrom`: Add `record_ident_span` from `from_tok.start_pos` to:
+  - If `rpar.is_some()`: `rpar_end(&[rpar.unwrap()])` using existing helper
+  - Otherwise: `deflated_import_names_end_pos(&names)`
 
 **Tests:**
 - [ ] Unit: `test_import_span_recorded` - Parse `import os`, verify ident_span
@@ -3202,11 +3227,14 @@ Import statements have their own token patterns and are commonly targeted in ref
 - [ ] Unit: `test_import_from_span_recorded` - Parse `from os import path`, verify ident_span
 - [ ] Unit: `test_import_from_multiple_span` - Parse `from os import path, getcwd`, verify span
 - [ ] Unit: `test_import_from_parens_span` - Parse `from os import (\n    path,\n    getcwd\n)`, verify span includes closing paren
+- [ ] Unit: `test_import_from_star_span` - Parse `from os import *`, verify span covers star
+- [ ] Unit: `test_name_or_attribute_dispatch` - Verify `DeflatedNameOrAttribute.end_pos()` works for both variants
 
 **Checkpoint:**
 - [ ] `cargo build -p tugtool-python-cst` succeeds
 - [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
 - [ ] `cargo nextest run -p tugtool-python-cst import_span` passes
+- [ ] `cargo nextest run -p tugtool-python-cst name_or_attribute_dispatch` passes
 
 **Rollback:** Revert commit
 
@@ -3216,7 +3244,7 @@ Import statements have their own token patterns and are commonly targeted in ref
 
 **Commit:** `feat(python-cst): record ident_span for Decorator and Param nodes`
 
-**References:** Table T21 Parameter Node, Table T22 Decorator (#t21-expression-spans, #t22-statement-spans)
+**References:** Table T21 Parameter Node, Table T22 Decorator (#t21-expression-spans, #t22-statement-spans), Step 0.2.0.11.5 (#step-0-2-0-11-5)
 
 **Artifacts:**
 - Modified `crates/tugtool-python-cst/src/nodes/expression.rs` (Param)
@@ -3226,9 +3254,27 @@ Import statements have their own token patterns and are commonly targeted in ref
 
 Decorators and parameters are special nodes that appear in specific contexts. They complete the span recording coverage.
 
+**Infrastructure Reuse:**
+
+Both `Decorator` and `Param` can leverage the trait infrastructure from Step 0.2.0.11.5:
+
+- **Decorator**: The end position is computed from the decorator expression. Use `self.decorator.end_pos()` which dispatches via the `DeflatedExpression` trait impl (already has all expression variants implemented).
+
+- **Param**: The end position depends on which optional components are present. When `default` is present, use `default.end_pos()` via `DeflatedExpression` trait dispatch. When only `annotation` is present and ends with an expression, use trait dispatch on the annotation's expression.
+
 **Tasks:**
-- [ ] `Decorator`: Add `record_ident_span` from `at_tok.start_pos` to decorator expression end
-- [ ] `Param`: Add `record_ident_span` from `star_tok` (if present) or `name.tok` start to default/annotation end or name end
+
+*Phase 1: Decorator Span (statement.rs)*
+- [ ] `Decorator`: Add `record_ident_span` from `at_tok.start_pos.byte_idx()` to `self.decorator.end_pos()`
+  - Uses existing `DeflatedExpression.end_pos()` trait dispatch from Step 0.2.0.11.5
+
+*Phase 2: Param Span (expression.rs)*
+- [ ] `Param`: Add `record_ident_span` with start/end computed as:
+  - **Start**: If `star_tok.is_some()`: `star_tok.start_pos.byte_idx()`, else `name.tok.start_pos.byte_idx()`
+  - **End** (in priority order):
+    1. If `default.is_some()`: `default.unwrap().end_pos()` (uses DeflatedExpression trait dispatch)
+    2. If `annotation.is_some()`: `annotation.unwrap().annotation.end_pos()` (uses DeflatedExpression trait dispatch)
+    3. Otherwise: `name.tok.end_pos.byte_idx()`
 
 **Tests:**
 - [ ] Unit: `test_decorator_span_recorded` - Parse `@dec\ndef f(): pass`, verify decorator span from `@` to expression end
@@ -3382,9 +3428,11 @@ mod edge_cases {
 
 5. **Use existing helpers:** The `deflated_expression_start_pos` and `deflated_expression_end_pos` functions already handle parenthesized expressions correctly.
 
-6. **Performance:** Span recording is opt-in (only when `InflateCtx::with_positions()` is used). No performance impact on normal parsing.
+6. **Use trait dispatch (Step 0.2.0.11.5+):** For new types, prefer implementing `DeflatedStartPos`/`DeflatedEndPos` traits rather than writing new helper functions. For enum types, use `impl_deflated_pos_dispatch!` macro to generate dispatch methods. This ensures consistent patterns and avoids code duplication. The traits and macro are defined in `expression.rs` and re-exported for use in `statement.rs`.
 
-7. **Commit discipline:** Each substep has a clear commit boundary. Commit after each substep's checkpoint passes.
+7. **Performance:** Span recording is opt-in (only when `InflateCtx::with_positions()` is used). No performance impact on normal parsing.
+
+8. **Commit discipline:** Each substep has a clear commit boundary. Commit after each substep's checkpoint passes.
 
 ---
 
