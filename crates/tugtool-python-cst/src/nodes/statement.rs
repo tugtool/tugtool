@@ -618,7 +618,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedAssign<'r, 'a> {
         let node_id = ctx.next_id();
 
         // Record ident_span from first target start to value end (BEFORE inflating children)
-        let start = self.targets.first()
+        let start = self
+            .targets
+            .first()
             .map(|t| t.target.start_pos())
             .unwrap_or(0);
         let end = deflated_expression_end_pos(&self.value);
@@ -1419,7 +1421,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedElse<'r, 'a> {
         // Compute branch span BEFORE inflating (tokens stripped during inflation)
         let branch_start = self.else_tok.start_pos.byte_idx();
         let branch_end = deflated_suite_end_pos(&self.body);
-        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+        ctx.record_branch_span(
+            node_id,
+            Span {
+                start: branch_start,
+                end: branch_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -1520,7 +1528,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedAnnAssign<'r, 'a> {
 
         // Record ident_span from target start to value end (or annotation end if no value)
         let start = self.target.start_pos();
-        let end = self.value.as_ref()
+        let end = self
+            .value
+            .as_ref()
             .map(deflated_expression_end_pos)
             .unwrap_or_else(|| deflated_expression_end_pos(&self.annotation.annotation));
         ctx.record_ident_span(node_id, Span { start, end });
@@ -1584,7 +1594,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedReturn<'r, 'a> {
 
         // Record ident_span from return_tok to value end (or return_tok if no value)
         let start = self.return_tok.start_pos.byte_idx();
-        let end = self.value.as_ref()
+        let end = self
+            .value
+            .as_ref()
             .map(deflated_expression_end_pos)
             .unwrap_or_else(|| self.return_tok.end_pos.byte_idx());
         ctx.record_ident_span(node_id, Span { start, end });
@@ -1655,7 +1667,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedAssert<'r, 'a> {
 
         // Record ident_span from assert_tok to msg end (or test end if no msg)
         let start = self.assert_tok.start_pos.byte_idx();
-        let end = self.msg.as_ref()
+        let end = self
+            .msg
+            .as_ref()
             .map(deflated_expression_end_pos)
             .unwrap_or_else(|| deflated_expression_end_pos(&self.test));
         ctx.record_ident_span(node_id, Span { start, end });
@@ -1705,7 +1719,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedRaise<'r, 'a> {
 
         // Record ident_span: raise_tok to cause end > exc end > raise_tok
         let start = self.raise_tok.start_pos.byte_idx();
-        let end = self.cause.as_ref()
+        let end = self
+            .cause
+            .as_ref()
             .map(|c| deflated_expression_end_pos(&c.item))
             .or_else(|| self.exc.as_ref().map(deflated_expression_end_pos))
             .unwrap_or_else(|| self.raise_tok.end_pos.byte_idx());
@@ -1814,7 +1830,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedGlobal<'r, 'a> {
 
         // Record ident_span from tok to last name end
         let start = self.tok.start_pos.byte_idx();
-        let end = self.names.last()
+        let end = self
+            .names
+            .last()
             .and_then(|item| item.name.tok.map(|t| t.end_pos.byte_idx()))
             .unwrap_or_else(|| self.tok.end_pos.byte_idx());
         ctx.record_ident_span(node_id, Span { start, end });
@@ -1872,7 +1890,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedNonlocal<'r, 'a> {
 
         // Record ident_span from tok to last name end
         let start = self.tok.start_pos.byte_idx();
-        let end = self.names.last()
+        let end = self
+            .names
+            .last()
             .and_then(|item| item.name.tok.map(|t| t.end_pos.byte_idx()))
             .unwrap_or_else(|| self.tok.end_pos.byte_idx());
         ctx.record_ident_span(node_id, Span { start, end });
@@ -1977,7 +1997,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
         // End: body suite end
         let scope_end = deflated_suite_end_pos(&self.body);
 
-        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: scope_end,
+            },
+        );
 
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
@@ -2076,7 +2102,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedWhile<'r, 'a> {
         // Compute lexical span BEFORE inflating (tokens stripped during inflation)
         let lexical_start = self.while_tok.start_pos.byte_idx();
         let scope_end = deflated_suite_end_pos(&self.body);
-        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: scope_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2322,7 +2354,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedFinally<'r, 'a> {
         // Compute branch span BEFORE inflating (tokens stripped during inflation)
         let branch_start = self.finally_tok.start_pos.byte_idx();
         let branch_end = deflated_suite_end_pos(&self.body);
-        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+        ctx.record_branch_span(
+            node_id,
+            Span {
+                start: branch_start,
+                end: branch_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2386,7 +2424,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedExceptHandler<'r, 'a> {
         // Compute branch span BEFORE inflating (tokens stripped during inflation)
         let branch_start = self.except_tok.start_pos.byte_idx();
         let branch_end = deflated_suite_end_pos(&self.body);
-        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+        ctx.record_branch_span(
+            node_id,
+            Span {
+                start: branch_start,
+                end: branch_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2464,7 +2508,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedExceptStarHandler<'r, 'a> {
         // Compute branch span BEFORE inflating (tokens stripped during inflation)
         let branch_start = self.except_tok.start_pos.byte_idx();
         let branch_end = deflated_suite_end_pos(&self.body);
-        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+        ctx.record_branch_span(
+            node_id,
+            Span {
+                start: branch_start,
+                end: branch_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2543,8 +2593,15 @@ impl<'r, 'a> Inflate<'a> for DeflatedTry<'r, 'a> {
 
         // Compute lexical span BEFORE inflating (tokens stripped during inflation)
         let lexical_start = self.try_tok.start_pos.byte_idx();
-        let scope_end = deflated_try_end_pos(&self.body, &self.handlers, &self.orelse, &self.finalbody);
-        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        let scope_end =
+            deflated_try_end_pos(&self.body, &self.handlers, &self.orelse, &self.finalbody);
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: scope_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2614,8 +2671,15 @@ impl<'r, 'a> Inflate<'a> for DeflatedTryStar<'r, 'a> {
 
         // Compute lexical span BEFORE inflating (tokens stripped during inflation)
         let lexical_start = self.try_tok.start_pos.byte_idx();
-        let scope_end = deflated_try_star_end_pos(&self.body, &self.handlers, &self.orelse, &self.finalbody);
-        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        let scope_end =
+            deflated_try_star_end_pos(&self.body, &self.handlers, &self.orelse, &self.finalbody);
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: scope_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2818,7 +2882,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedWith<'r, 'a> {
         // End: body suite end
         let scope_end = deflated_suite_end_pos(&self.body);
 
-        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: scope_end,
+            },
+        );
 
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
@@ -3020,7 +3090,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedMatch<'r, 'a> {
         // Compute lexical span BEFORE inflating (tokens stripped during inflation)
         let lexical_start = self.match_tok.start_pos.byte_idx();
         let scope_end = deflated_match_end_pos(&self.dedent_tok);
-        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+        ctx.record_lexical_span(
+            node_id,
+            Span {
+                start: lexical_start,
+                end: scope_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -3108,7 +3184,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedMatchCase<'r, 'a> {
         // Compute branch span BEFORE inflating (tokens stripped during inflation)
         let branch_start = self.case_tok.start_pos.byte_idx();
         let branch_end = deflated_suite_end_pos(&self.body);
-        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+        ctx.record_branch_span(
+            node_id,
+            Span {
+                start: branch_start,
+                end: branch_end,
+            },
+        );
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,

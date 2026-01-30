@@ -281,7 +281,8 @@
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug emit python rename:*)",
       "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/debug/tug:*)",
       "WebFetch(domain:rope.readthedocs.io)",
-      "WebFetch(domain:www.jetbrains.com)"
+      "WebFetch(domain:www.jetbrains.com)",
+      "Bash(git diff:*)"
     ],
     "deny": [],
     "ask": []

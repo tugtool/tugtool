@@ -978,11 +978,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAttribute<'r, 'a> {
 
         // Record ident_span BEFORE inflating (tokens stripped during inflation)
         let start = deflated_expression_start_pos(&self.value);
-        let end = self
-            .attr
-            .tok
-            .map(|t| t.end_pos.byte_idx())
-            .unwrap_or(start);
+        let end = self.attr.tok.map(|t| t.end_pos.byte_idx()).unwrap_or(start);
         ctx.record_ident_span(node_id, Span { start, end });
 
         let lpar = self.lpar.inflate(ctx)?;
@@ -2204,11 +2200,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedSlice<'r, 'a> {
             .step
             .as_ref()
             .map(|s| deflated_expression_end_pos(s))
-            .or_else(|| {
-                self.second_colon
-                    .as_ref()
-                    .map(|c| c.tok.end_pos.byte_idx())
-            })
+            .or_else(|| self.second_colon.as_ref().map(|c| c.tok.end_pos.byte_idx()))
             .or_else(|| self.upper.as_ref().map(|u| deflated_expression_end_pos(u)))
             .unwrap_or_else(|| self.first_colon.tok.end_pos.byte_idx());
         ctx.record_ident_span(node_id, Span { start, end });

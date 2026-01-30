@@ -628,7 +628,9 @@ impl PositionIndex {
             return None;
         }
 
-        let idx = self.scopes.partition_point(|(span, _)| span.start <= offset);
+        let idx = self
+            .scopes
+            .partition_point(|(span, _)| span.start <= offset);
 
         let mut candidates: Vec<&ScopeLookupInfo> = Vec::new();
         for i in (0..idx).rev() {
@@ -1085,12 +1087,7 @@ impl<'src, 'pos> Visitor<'src> for IndexCollector<'pos> {
 
     fn visit_unary_operation(&mut self, node: &UnaryOperation<'src>) -> VisitResult {
         if let Some(span) = self.get_span(node.node_id) {
-            self.add_expression(
-                NodeKind::UnaryOp,
-                span,
-                node.node_id,
-                !node.lpar.is_empty(),
-            );
+            self.add_expression(NodeKind::UnaryOp, span, node.node_id, !node.lpar.is_empty());
             self.ancestors.push(NodeKind::UnaryOp, span, node.node_id);
         }
         VisitResult::Continue
@@ -1110,8 +1107,7 @@ impl<'src, 'pos> Visitor<'src> for IndexCollector<'pos> {
                 node.node_id,
                 !node.lpar.is_empty(),
             );
-            self.ancestors
-                .push(NodeKind::BooleanOp, span, node.node_id);
+            self.ancestors.push(NodeKind::BooleanOp, span, node.node_id);
         }
         VisitResult::Continue
     }
@@ -1124,12 +1120,7 @@ impl<'src, 'pos> Visitor<'src> for IndexCollector<'pos> {
 
     fn visit_comparison(&mut self, node: &Comparison<'src>) -> VisitResult {
         if let Some(span) = self.get_span(node.node_id) {
-            self.add_expression(
-                NodeKind::Compare,
-                span,
-                node.node_id,
-                !node.lpar.is_empty(),
-            );
+            self.add_expression(NodeKind::Compare, span, node.node_id, !node.lpar.is_empty());
             self.ancestors.push(NodeKind::Compare, span, node.node_id);
         }
         VisitResult::Continue
@@ -1501,7 +1492,11 @@ impl<'src, 'pos> Visitor<'src> for IndexCollector<'pos> {
             let def_span = self.get_def_span(node.node_id);
             let name = node.name.value.to_string();
 
-            self.add_statement(NodeKind::FunctionDef, def_span.unwrap_or(span), node.node_id);
+            self.add_statement(
+                NodeKind::FunctionDef,
+                def_span.unwrap_or(span),
+                node.node_id,
+            );
             self.add_scope(
                 NodeKind::FunctionDef,
                 span,
@@ -1527,13 +1522,7 @@ impl<'src, 'pos> Visitor<'src> for IndexCollector<'pos> {
             let name = node.name.value.to_string();
 
             self.add_statement(NodeKind::ClassDef, def_span.unwrap_or(span), node.node_id);
-            self.add_scope(
-                NodeKind::ClassDef,
-                span,
-                def_span,
-                Some(name),
-                node.node_id,
-            );
+            self.add_scope(NodeKind::ClassDef, span, def_span, Some(name), node.node_id);
             self.ancestors.push(NodeKind::ClassDef, span, node.node_id);
         }
         VisitResult::Continue

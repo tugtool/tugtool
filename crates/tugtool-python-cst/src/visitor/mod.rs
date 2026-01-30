@@ -85,8 +85,8 @@ mod dynamic;
 
 // P0 exports
 pub use batch_edit::{
-    apply_indentation, detect_indentation, detect_indentation_level, spans_overlap,
-    BatchEditError, BatchEditOptions, BatchEditResult, BatchSpanEditor, EditPrimitive, IndentInfo,
+    apply_indentation, detect_indentation, detect_indentation_level, spans_overlap, BatchEditError,
+    BatchEditOptions, BatchEditResult, BatchSpanEditor, EditPrimitive, IndentInfo,
 };
 pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;

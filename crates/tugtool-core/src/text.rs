@@ -86,7 +86,11 @@ impl std::fmt::Display for PositionError {
             PositionError::LineOutOfRange { line, max_line } => {
                 write!(f, "line {} out of range (max: {})", line, max_line)
             }
-            PositionError::ColumnOutOfRange { line, col, line_len } => {
+            PositionError::ColumnOutOfRange {
+                line,
+                col,
+                line_len,
+            } => {
                 write!(
                     f,
                     "column {} out of range on line {} (line length: {})",
@@ -755,7 +759,10 @@ mod tests {
         fn test_line_col_to_byte_offset_col_out_of_range() {
             let source = "hello\n";
             let result = line_col_to_byte_offset(source, LineCol::new(1, 100));
-            assert!(matches!(result, Err(PositionError::ColumnOutOfRange { .. })));
+            assert!(matches!(
+                result,
+                Err(PositionError::ColumnOutOfRange { .. })
+            ));
         }
 
         #[test]
@@ -775,7 +782,10 @@ mod tests {
         fn test_byte_offset_to_line_col_out_of_range() {
             let source = "hello";
             let result = byte_offset_to_line_col(source, 100);
-            assert!(matches!(result, Err(PositionError::OffsetOutOfRange { .. })));
+            assert!(matches!(
+                result,
+                Err(PositionError::OffsetOutOfRange { .. })
+            ));
         }
 
         #[test]

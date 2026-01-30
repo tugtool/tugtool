@@ -49,37 +49,23 @@ use tugtool_core::patch::Span;
 pub enum EditPrimitive {
     /// Replace content at span with new text.
     /// Equivalent to delete + insert at span.start.
-    Replace {
-        span: Span,
-        new_text: String,
-    },
+    Replace { span: Span, new_text: String },
 
     /// Insert text immediately before the given span.
     /// The insertion point is `span.start`. The span itself identifies
     /// context (e.g., a statement) for indentation detection.
-    InsertBefore {
-        anchor_span: Span,
-        text: String,
-    },
+    InsertBefore { anchor_span: Span, text: String },
 
     /// Insert text immediately after the given span.
     /// The insertion point is `span.end`.
-    InsertAfter {
-        anchor_span: Span,
-        text: String,
-    },
+    InsertAfter { anchor_span: Span, text: String },
 
     /// Delete content at span. Equivalent to `Replace { span, new_text: "" }`.
-    Delete {
-        span: Span,
-    },
+    Delete { span: Span },
 
     /// Insert text at an absolute byte position.
     /// Use when no anchor span is available (e.g., inserting at file start).
-    InsertAt {
-        position: usize,
-        text: String,
-    },
+    InsertAt { position: usize, text: String },
 }
 
 impl EditPrimitive {
@@ -121,30 +107,25 @@ impl EditPrimitive {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatchEditError {
     /// Two edits have overlapping spans.
-    OverlappingEdits {
-        edit1_span: Span,
-        edit2_span: Span,
-    },
+    OverlappingEdits { edit1_span: Span, edit2_span: Span },
 
     /// An edit span extends beyond source length.
-    SpanOutOfBounds {
-        span: Span,
-        source_len: usize,
-    },
+    SpanOutOfBounds { span: Span, source_len: usize },
 
     /// No edits to apply.
     EmptyEdits,
 
     /// Indentation detection failed (no reference line found).
-    IndentationDetectionFailed {
-        position: usize,
-    },
+    IndentationDetectionFailed { position: usize },
 }
 
 impl std::fmt::Display for BatchEditError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BatchEditError::OverlappingEdits { edit1_span, edit2_span } => {
+            BatchEditError::OverlappingEdits {
+                edit1_span,
+                edit2_span,
+            } => {
                 write!(
                     f,
                     "overlapping edits: ({}, {}) and ({}, {})",
@@ -513,12 +494,7 @@ impl<'src> BatchSpanEditor<'src> {
                 format!("{}{}", &source[..span.start], &source[span.end..])
             }
             EditPrimitive::InsertAt { position, text } => {
-                format!(
-                    "{}{}{}",
-                    &source[..*position],
-                    text,
-                    &source[*position..]
-                )
+                format!("{}{}{}", &source[..*position], text, &source[*position..])
             }
             EditPrimitive::InsertBefore { anchor_span, text } => {
                 let position = anchor_span.start;
@@ -529,12 +505,7 @@ impl<'src> BatchSpanEditor<'src> {
                 } else {
                     text.clone()
                 };
-                format!(
-                    "{}{}{}",
-                    &source[..position],
-                    text,
-                    &source[position..]
-                )
+                format!("{}{}{}", &source[..position], text, &source[position..])
             }
             EditPrimitive::InsertAfter { anchor_span, text } => {
                 let position = anchor_span.end;
@@ -544,12 +515,7 @@ impl<'src> BatchSpanEditor<'src> {
                 } else {
                     text.clone()
                 };
-                format!(
-                    "{}{}{}",
-                    &source[..position],
-                    text,
-                    &source[position..]
-                )
+                format!("{}{}{}", &source[..position], text, &source[position..])
             }
         }
     }
@@ -572,10 +538,7 @@ pub fn detect_indentation(source: &str, position: usize) -> &str {
     }
 
     // 1. Find line start
-    let line_start = source[..position]
-        .rfind('\n')
-        .map(|i| i + 1)
-        .unwrap_or(0);
+    let line_start = source[..position].rfind('\n').map(|i| i + 1).unwrap_or(0);
 
     // 2. Find line end
     let line_end = source[position..]
@@ -1036,7 +999,10 @@ mod tests {
             new_text: "there".to_string(),
         });
         let result = editor.apply();
-        assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
+        assert!(matches!(
+            result,
+            Err(BatchEditError::OverlappingEdits { .. })
+        ));
     }
 
     #[test]
@@ -1072,7 +1038,10 @@ mod tests {
             new_text: " there".to_string(),
         });
         let result = editor.apply();
-        assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
+        assert!(matches!(
+            result,
+            Err(BatchEditError::OverlappingEdits { .. })
+        ));
     }
 
     #[test]
@@ -1104,7 +1073,10 @@ mod tests {
             new_text: "x".to_string(),
         });
         let result = editor.apply();
-        assert!(matches!(result, Err(BatchEditError::SpanOutOfBounds { .. })));
+        assert!(matches!(
+            result,
+            Err(BatchEditError::SpanOutOfBounds { .. })
+        ));
     }
 
     // ========================================================================
@@ -1228,10 +1200,7 @@ mod tests {
     fn test_apply_indentation_multiline() {
         let text = "if cond:\n    print('a')\n    print('b')\n";
         let result = apply_indentation(text, "    ");
-        assert_eq!(
-            result,
-            "if cond:\n        print('a')\n        print('b')\n"
-        );
+        assert_eq!(result, "if cond:\n        print('a')\n        print('b')\n");
     }
 
     // ========================================================================

@@ -2054,7 +2054,10 @@ mod test {
 
                     assert_eq!(outer_span.start, 0, "outer list should start at 0");
                     assert_eq!(outer_span.end, 16, "outer list should end at 16");
-                    assert_eq!(&source[outer_span.start..outer_span.end], "[[1, 2], [3, 4]]");
+                    assert_eq!(
+                        &source[outer_span.start..outer_span.end],
+                        "[[1, 2], [3, 4]]"
+                    );
 
                     // Verify inner lists
                     if let Element::Simple { value, .. } = &outer_list.elements[0] {
@@ -2275,7 +2278,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::Expr(expr) = &simple.body[0] {
                 if let Expression::BooleanOperation(boolop) = &expr.value {
-                    let node_id = boolop.node_id.expect("BooleanOperation should have node_id");
+                    let node_id = boolop
+                        .node_id
+                        .expect("BooleanOperation should have node_id");
                     let pos = positions
                         .get(&node_id)
                         .expect("BooleanOperation should have position");
@@ -3242,10 +3247,7 @@ mod test {
 
                     assert_eq!(span.start, 0, "multiline string should start at 0");
                     assert_eq!(span.end, 17, "multiline string should end at 17");
-                    assert_eq!(
-                        &source[span.start..span.end],
-                        "\"\"\"line1\nline2\"\"\""
-                    );
+                    assert_eq!(&source[span.start..span.end], "\"\"\"line1\nline2\"\"\"");
                 } else {
                     panic!("Expected SimpleString expression");
                 }
@@ -3506,8 +3508,12 @@ mod test {
             if let CompoundStatement::Try(try_stmt) = compound {
                 let handler = &try_stmt.handlers[0];
                 let node_id = handler.node_id.expect("ExceptHandler should have node_id");
-                let pos = positions.get(&node_id).expect("ExceptHandler should have position");
-                let span = pos.branch_span.expect("ExceptHandler should have branch_span");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("ExceptHandler should have position");
+                let span = pos
+                    .branch_span
+                    .expect("ExceptHandler should have branch_span");
 
                 assert_eq!(span.start, 14, "except should start at 14");
                 assert_eq!(span.end, 33, "except should end at 33 (dedent)");
@@ -3530,7 +3536,9 @@ mod test {
         if let Statement::Compound(compound) = &module.body[0] {
             if let CompoundStatement::TryStar(try_star) = compound {
                 let handler = &try_star.handlers[0];
-                let node_id = handler.node_id.expect("ExceptStarHandler should have node_id");
+                let node_id = handler
+                    .node_id
+                    .expect("ExceptStarHandler should have node_id");
                 let pos = positions
                     .get(&node_id)
                     .expect("ExceptStarHandler should have position");
@@ -3560,7 +3568,9 @@ mod test {
             if let CompoundStatement::Try(try_stmt) = compound {
                 if let Some(finally_clause) = &try_stmt.finalbody {
                     let node_id = finally_clause.node_id.expect("Finally should have node_id");
-                    let pos = positions.get(&node_id).expect("Finally should have position");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Finally should have position");
                     let span = pos.branch_span.expect("Finally should have branch_span");
 
                     assert_eq!(span.start, 14, "finally should start at 14");
@@ -3588,7 +3598,9 @@ mod test {
             if let CompoundStatement::Match(match_stmt) = compound {
                 let case_clause = &match_stmt.cases[0];
                 let node_id = case_clause.node_id.expect("MatchCase should have node_id");
-                let pos = positions.get(&node_id).expect("MatchCase should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("MatchCase should have position");
                 let span = pos.branch_span.expect("MatchCase should have branch_span");
 
                 assert_eq!(span.start, 13, "case should start at 13");
@@ -3614,7 +3626,9 @@ mod test {
             if let CompoundStatement::Try(try_stmt) = compound {
                 // First handler (except A)
                 let handler1 = &try_stmt.handlers[0];
-                let node_id1 = handler1.node_id.expect("First ExceptHandler should have node_id");
+                let node_id1 = handler1
+                    .node_id
+                    .expect("First ExceptHandler should have node_id");
                 let pos1 = positions
                     .get(&node_id1)
                     .expect("First ExceptHandler should have position");
@@ -3627,7 +3641,9 @@ mod test {
 
                 // Second handler (except B)
                 let handler2 = &try_stmt.handlers[1];
-                let node_id2 = handler2.node_id.expect("Second ExceptHandler should have node_id");
+                let node_id2 = handler2
+                    .node_id
+                    .expect("Second ExceptHandler should have node_id");
                 let pos2 = positions
                     .get(&node_id2)
                     .expect("Second ExceptHandler should have position");
@@ -3722,8 +3738,9 @@ mod test {
                     if let Statement::Simple(simple) = &block.body[0] {
                         if let SmallStatement::Continue(cont) = &simple.body[0] {
                             let node_id = cont.node_id.expect("Continue should have node_id");
-                            let pos =
-                                positions.get(&node_id).expect("Continue should have position");
+                            let pos = positions
+                                .get(&node_id)
+                                .expect("Continue should have position");
                             let span = pos.ident_span.expect("Continue should have ident_span");
 
                             assert_eq!(span.start, 16, "continue should start at 16");
@@ -3778,7 +3795,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::Assign(assign) = &simple.body[0] {
                 let node_id = assign.node_id.expect("Assign should have node_id");
-                let pos = positions.get(&node_id).expect("Assign should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("Assign should have position");
                 let span = pos.ident_span.expect("Assign should have ident_span");
 
                 assert_eq!(span.start, 0, "assign should start at 0");
@@ -3801,7 +3820,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::Assign(assign) = &simple.body[0] {
                 let node_id = assign.node_id.expect("Assign should have node_id");
-                let pos = positions.get(&node_id).expect("Assign should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("Assign should have position");
                 let span = pos.ident_span.expect("Assign should have ident_span");
 
                 assert_eq!(span.start, 0, "assign should start at 0");
@@ -3824,7 +3845,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::AugAssign(aug) = &simple.body[0] {
                 let node_id = aug.node_id.expect("AugAssign should have node_id");
-                let pos = positions.get(&node_id).expect("AugAssign should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("AugAssign should have position");
                 let span = pos.ident_span.expect("AugAssign should have ident_span");
 
                 assert_eq!(span.start, 0, "aug_assign should start at 0");
@@ -3847,7 +3870,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::AnnAssign(ann) = &simple.body[0] {
                 let node_id = ann.node_id.expect("AnnAssign should have node_id");
-                let pos = positions.get(&node_id).expect("AnnAssign should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("AnnAssign should have position");
                 let span = pos.ident_span.expect("AnnAssign should have ident_span");
 
                 assert_eq!(span.start, 0, "ann_assign should start at 0");
@@ -3870,7 +3895,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::AnnAssign(ann) = &simple.body[0] {
                 let node_id = ann.node_id.expect("AnnAssign should have node_id");
-                let pos = positions.get(&node_id).expect("AnnAssign should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("AnnAssign should have position");
                 let span = pos.ident_span.expect("AnnAssign should have ident_span");
 
                 assert_eq!(span.start, 0, "ann_assign should start at 0");
@@ -3897,8 +3924,9 @@ mod test {
                     if let Statement::Simple(simple) = &block.body[0] {
                         if let SmallStatement::Return(ret) = &simple.body[0] {
                             let node_id = ret.node_id.expect("Return should have node_id");
-                            let pos =
-                                positions.get(&node_id).expect("Return should have position");
+                            let pos = positions
+                                .get(&node_id)
+                                .expect("Return should have position");
                             let span = pos.ident_span.expect("Return should have ident_span");
 
                             assert_eq!(span.start, 13, "return should start at 13");
@@ -3934,8 +3962,9 @@ mod test {
                     if let Statement::Simple(simple) = &block.body[0] {
                         if let SmallStatement::Return(ret) = &simple.body[0] {
                             let node_id = ret.node_id.expect("Return should have node_id");
-                            let pos =
-                                positions.get(&node_id).expect("Return should have position");
+                            let pos = positions
+                                .get(&node_id)
+                                .expect("Return should have position");
                             let span = pos.ident_span.expect("Return should have ident_span");
 
                             assert_eq!(span.start, 13, "return should start at 13");
@@ -4013,7 +4042,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::Assert(assert_stmt) = &simple.body[0] {
                 let node_id = assert_stmt.node_id.expect("Assert should have node_id");
-                let pos = positions.get(&node_id).expect("Assert should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("Assert should have position");
                 let span = pos.ident_span.expect("Assert should have ident_span");
 
                 assert_eq!(span.start, 0, "assert should start at 0");
@@ -4037,7 +4068,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::Assert(assert_stmt) = &simple.body[0] {
                 let node_id = assert_stmt.node_id.expect("Assert should have node_id");
-                let pos = positions.get(&node_id).expect("Assert should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("Assert should have position");
                 let span = pos.ident_span.expect("Assert should have ident_span");
 
                 assert_eq!(span.start, 0, "assert should start at 0");
@@ -4060,7 +4093,9 @@ mod test {
         if let Statement::Simple(simple) = &module.body[0] {
             if let SmallStatement::Global(global) = &simple.body[0] {
                 let node_id = global.node_id.expect("Global should have node_id");
-                let pos = positions.get(&node_id).expect("Global should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("Global should have position");
                 let span = pos.ident_span.expect("Global should have ident_span");
 
                 assert_eq!(span.start, 0, "global should start at 0");
@@ -4087,8 +4122,9 @@ mod test {
                     if let Statement::Simple(simple) = &block.body[0] {
                         if let SmallStatement::Nonlocal(nonlocal) = &simple.body[0] {
                             let node_id = nonlocal.node_id.expect("Nonlocal should have node_id");
-                            let pos =
-                                positions.get(&node_id).expect("Nonlocal should have position");
+                            let pos = positions
+                                .get(&node_id)
+                                .expect("Nonlocal should have position");
                             let span = pos.ident_span.expect("Nonlocal should have ident_span");
 
                             assert_eq!(span.start, 13, "nonlocal should start at 13");
@@ -4166,8 +4202,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Pass(pass) = &simple.body[0] {
@@ -4198,8 +4233,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Pass(pass) = &simple.body[0] {
@@ -4232,8 +4266,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Compound(CompoundStatement::While(while_stmt)) = &deflated.body[0] {
             if let Suite::IndentedBlock(block) = &while_stmt.body {
@@ -4249,7 +4282,10 @@ mod deflated_tests {
                             21,
                             "break tok should end at byte 21"
                         );
-                        assert_eq!(break_stmt.tok.string, "break", "tok.string should be 'break'");
+                        assert_eq!(
+                            break_stmt.tok.string, "break",
+                            "tok.string should be 'break'"
+                        );
                     } else {
                         panic!("Expected Break statement");
                     }
@@ -4273,8 +4309,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Compound(CompoundStatement::For(for_stmt)) = &deflated.body[0] {
             if let Suite::IndentedBlock(block) = &for_stmt.body {
@@ -4324,8 +4359,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &deflated.body[0] {
             if let Suite::IndentedBlock(block) = &func.body {
@@ -4362,8 +4396,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &deflated.body[0] {
             if let Suite::SimpleStatementSuite(suite) = &func.body {
@@ -4395,8 +4428,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Compound(CompoundStatement::FunctionDef(outer)) = &deflated.body[0] {
             if let Suite::IndentedBlock(outer_block) = &outer.body {
@@ -4447,8 +4479,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Expr(expr_stmt) = &simple.body[0] {
@@ -4474,8 +4505,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Expr(expr_stmt) = &simple.body[0] {
@@ -4501,8 +4531,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Assign(assign) = &simple.body[0] {
@@ -4527,8 +4556,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Del(del) = &simple.body[0] {
@@ -4568,7 +4596,9 @@ mod deflated_tests {
         if let crate::nodes::Statement::Simple(simple) = &module.body[0] {
             if let crate::nodes::SmallStatement::Assign(assign) = &simple.body[0] {
                 let node_id = assign.node_id.expect("Assign should have node_id");
-                let pos = positions.get(&node_id).expect("Assign should have position");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("Assign should have position");
                 let span = pos.ident_span.expect("Assign should have ident_span");
 
                 assert_eq!(span.start, 0, "assign should start at 0");
@@ -4620,8 +4650,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::ImportFrom(import_from) = &simple.body[0] {
@@ -4650,8 +4679,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::ImportFrom(import_from) = &simple.body[0] {
@@ -4685,8 +4713,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
@@ -4713,8 +4740,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
@@ -4741,8 +4767,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
@@ -4769,8 +4794,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
@@ -4798,8 +4822,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Assign(assign) = &simple.body[0] {
@@ -4824,8 +4847,7 @@ mod deflated_tests {
 
         let tokens = tokenize(source).expect("tokenize error");
         let tokvec: TokVec = tokens.into();
-        let deflated =
-            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let deflated = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
 
         if let Statement::Simple(simple) = &deflated.body[0] {
             if let SmallStatement::Assign(assign) = &simple.body[0] {
@@ -4840,7 +4862,6 @@ mod deflated_tests {
             panic!("Expected Simple statement");
         }
     }
-
 }
 
 // ========================================================================
@@ -4866,7 +4887,10 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("Import should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
@@ -4891,7 +4915,10 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("Import should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
@@ -4916,7 +4943,10 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::Import(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("Import should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
@@ -4941,7 +4971,10 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::ImportFrom(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("ImportFrom should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
@@ -4966,7 +4999,10 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::ImportFrom(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("ImportFrom should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
@@ -4992,12 +5028,18 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::ImportFrom(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("ImportFrom should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
                 // The closing paren is at position 38, so end should be 39
-                assert_eq!(span.end, 39, "import span should end at 39 (after closing paren)");
+                assert_eq!(
+                    span.end, 39,
+                    "import span should end at 39 (after closing paren)"
+                );
             } else {
                 panic!("Expected ImportFrom statement");
             }
@@ -5019,7 +5061,10 @@ mod import_span_tests {
         if let Statement::Simple(simple) = &parsed.module.body[0] {
             if let SmallStatement::ImportFrom(import) = &simple.body[0] {
                 let node_id = import.node_id.expect("ImportFrom should have node_id");
-                let pos = parsed.positions.get(&node_id).expect("Should have position");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
                 let span = pos.ident_span.expect("Should have ident_span");
 
                 assert_eq!(span.start, 0, "import span should start at 0");
