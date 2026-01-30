@@ -89,6 +89,28 @@ pub enum Suite<'a> {
     SimpleStatementSuite(SimpleStatementSuite<'a>),
 }
 
+/// Compute the byte end position of a deflated Suite.
+///
+/// This helper enables consistent span computation for all scope-creating and branch statements
+/// (FunctionDef, ClassDef, If, For, While, With, Try, etc.) that contain Suite bodies.
+///
+/// # Returns
+/// - For `IndentedBlock`: returns the dedent token's start position (the boundary marking
+///   the end of the indented scope)
+/// - For `SimpleStatementSuite`: returns the newline token's end position (the boundary
+///   marking the end of the inline statement)
+///
+/// # Usage
+/// Use this helper when computing `ident_span` for any statement that contains a `Suite` body,
+/// particularly when the span should extend from the statement keyword to the end of its body.
+#[allow(dead_code)] // Used by span recording in subsequent steps
+pub(crate) fn deflated_suite_end_pos<'r, 'a>(suite: &DeflatedSuite<'r, 'a>) -> usize {
+    match suite {
+        DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
+        DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
+    }
+}
+
 #[cst_node]
 pub struct IndentedBlock<'a> {
     /// Sequence of statements belonging to this indented block.

@@ -1665,3 +1665,296 @@ mod test {
         assert_eq!(state.to_string(), source);
     }
 }
+
+// ============================================================================
+// Deflated State Tests
+// ============================================================================
+//
+// These tests verify functionality that operates on deflated structs before
+// inflation. The deflated structs contain TokenRef fields with position
+// information that is filtered out during inflation.
+//
+// Key insight: parse_tokens_without_whitespace returns DeflatedModule,
+// giving us direct access to deflated state for verification.
+
+#[cfg(test)]
+mod deflated_tests {
+    use super::*;
+    use crate::nodes::deflated::{CompoundStatement, SmallStatement, Statement, Suite};
+    use crate::nodes::statement::deflated_suite_end_pos;
+
+    // ========================================================================
+    // Step 0.2.0.1 Tests: Token Field Capture Verification
+    // ========================================================================
+    //
+    // These tests verify that Pass, Break, Continue tok fields correctly
+    // capture the keyword token with accurate position information.
+
+    #[test]
+    fn test_pass_tok_captures_keyword_position() {
+        let source = "pass\n";
+        //            01234
+        //            ^pass: start=0, end=4
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Pass(pass) = &simple.body[0] {
+                assert_eq!(
+                    pass.tok.start_pos.byte_idx(),
+                    0,
+                    "pass tok should start at byte 0"
+                );
+                assert_eq!(
+                    pass.tok.end_pos.byte_idx(),
+                    4,
+                    "pass tok should end at byte 4"
+                );
+                assert_eq!(pass.tok.string, "pass", "tok.string should be 'pass'");
+            } else {
+                panic!("Expected Pass statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_pass_tok_with_semicolon_is_separate() {
+        let source = "pass;\n";
+        //            012345
+        //            ^pass: start=0, end=4 (semicolon is separate)
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Pass(pass) = &simple.body[0] {
+                // tok should only cover "pass", not the semicolon
+                assert_eq!(
+                    pass.tok.start_pos.byte_idx(),
+                    0,
+                    "pass tok should start at byte 0"
+                );
+                assert_eq!(
+                    pass.tok.end_pos.byte_idx(),
+                    4,
+                    "pass tok should end at byte 4 (before semicolon)"
+                );
+                assert!(pass.semicolon.is_some(), "semicolon should be present");
+            } else {
+                panic!("Expected Pass statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_break_tok_captures_keyword_position() {
+        let source = "while True:\n    break\n";
+        //            0         1         2
+        //            0123456789012345678901
+        //                            ^break: start=16, end=21
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::While(while_stmt)) = &deflated.body[0] {
+            if let Suite::IndentedBlock(block) = &while_stmt.body {
+                if let Statement::Simple(simple) = &block.body[0] {
+                    if let SmallStatement::Break(break_stmt) = &simple.body[0] {
+                        assert_eq!(
+                            break_stmt.tok.start_pos.byte_idx(),
+                            16,
+                            "break tok should start at byte 16"
+                        );
+                        assert_eq!(
+                            break_stmt.tok.end_pos.byte_idx(),
+                            21,
+                            "break tok should end at byte 21"
+                        );
+                        assert_eq!(break_stmt.tok.string, "break", "tok.string should be 'break'");
+                    } else {
+                        panic!("Expected Break statement");
+                    }
+                } else {
+                    panic!("Expected Simple statement in while body");
+                }
+            } else {
+                panic!("Expected IndentedBlock");
+            }
+        } else {
+            panic!("Expected While compound statement");
+        }
+    }
+
+    #[test]
+    fn test_continue_tok_captures_keyword_position() {
+        let source = "for x in y:\n    continue\n";
+        //            0         1         2
+        //            0123456789012345678901234
+        //                            ^continue: start=16, end=24
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::For(for_stmt)) = &deflated.body[0] {
+            if let Suite::IndentedBlock(block) = &for_stmt.body {
+                if let Statement::Simple(simple) = &block.body[0] {
+                    if let SmallStatement::Continue(continue_stmt) = &simple.body[0] {
+                        assert_eq!(
+                            continue_stmt.tok.start_pos.byte_idx(),
+                            16,
+                            "continue tok should start at byte 16"
+                        );
+                        assert_eq!(
+                            continue_stmt.tok.end_pos.byte_idx(),
+                            24,
+                            "continue tok should end at byte 24"
+                        );
+                        assert_eq!(
+                            continue_stmt.tok.string, "continue",
+                            "tok.string should be 'continue'"
+                        );
+                    } else {
+                        panic!("Expected Continue statement");
+                    }
+                } else {
+                    panic!("Expected Simple statement in for body");
+                }
+            } else {
+                panic!("Expected IndentedBlock");
+            }
+        } else {
+            panic!("Expected For compound statement");
+        }
+    }
+
+    // ========================================================================
+    // Step 0.2.0.2 Tests: Suite End Position Helper
+    // ========================================================================
+    //
+    // These tests verify that deflated_suite_end_pos correctly computes
+    // the byte end position for both IndentedBlock and SimpleStatementSuite.
+
+    #[test]
+    fn test_suite_end_pos_indented_block() {
+        let source = "def f():\n    pass\n";
+        //            0         1
+        //            012345678901234567
+        //                             ^newline at 17, dedent follows
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &deflated.body[0] {
+            if let Suite::IndentedBlock(block) = &func.body {
+                let end_pos = deflated_suite_end_pos(&func.body);
+
+                // For IndentedBlock, end_pos should be dedent_tok.start_pos
+                // The dedent token appears at the end of the indented content
+                assert_eq!(
+                    end_pos,
+                    block.dedent_tok.start_pos.byte_idx(),
+                    "suite end_pos should match dedent_tok.start_pos"
+                );
+
+                // Verify the position is at or after the content
+                assert!(
+                    end_pos >= 17,
+                    "suite end_pos {} should be >= 17 (end of 'pass\\n')",
+                    end_pos
+                );
+            } else {
+                panic!("Expected IndentedBlock");
+            }
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_suite_end_pos_simple_statement_suite() {
+        let source = "def f(): pass\n";
+        //            0         1
+        //            01234567890123
+        //                         ^newline at 13, ends at 14
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &deflated.body[0] {
+            if let Suite::SimpleStatementSuite(suite) = &func.body {
+                let end_pos = deflated_suite_end_pos(&func.body);
+
+                // For SimpleStatementSuite, end_pos should be newline_tok.end_pos
+                assert_eq!(
+                    end_pos,
+                    suite.newline_tok.end_pos.byte_idx(),
+                    "suite end_pos should match newline_tok.end_pos"
+                );
+
+                // The newline ends at byte 14 (source length)
+                assert_eq!(end_pos, 14, "suite end_pos should be 14 (after newline)");
+            } else {
+                panic!("Expected SimpleStatementSuite");
+            }
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_suite_end_pos_nested_functions() {
+        // Verify inner function body ends before outer function body
+        let source = "def outer():\n    def inner():\n        pass\n    x = 1\n";
+        //            0         1         2         3         4         5
+        //            012345678901234567890123456789012345678901234567890123
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(outer)) = &deflated.body[0] {
+            if let Suite::IndentedBlock(outer_block) = &outer.body {
+                let outer_end = deflated_suite_end_pos(&outer.body);
+
+                // Find inner function
+                if let Statement::Compound(CompoundStatement::FunctionDef(inner)) =
+                    &outer_block.body[0]
+                {
+                    let inner_end = deflated_suite_end_pos(&inner.body);
+
+                    // Inner function body should end before outer function body
+                    assert!(
+                        inner_end < outer_end,
+                        "inner end {} should be < outer end {}",
+                        inner_end,
+                        outer_end
+                    );
+                } else {
+                    panic!("Expected inner FunctionDef");
+                }
+            } else {
+                panic!("Expected outer IndentedBlock");
+            }
+        } else {
+            panic!("Expected outer FunctionDef");
+        }
+    }
+}

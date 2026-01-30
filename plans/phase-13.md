@@ -2660,6 +2660,10 @@ This prerequisite must be completed before span recording can be added to these 
 - [x] Unit: `test_break_has_token` - Parse `while True:\n    break`, verify `Break.tok` spans `break`
 - [x] Unit: `test_continue_has_token` - Parse `while True:\n    continue`, verify `Continue.tok` spans `continue`
 - [x] Unit: `test_pass_with_semicolon` - Parse `pass;`, verify `tok` spans only `pass` (not semicolon)
+- [x] Unit (backported): `test_pass_tok_captures_keyword_position` - Verify deflated Pass.tok has correct start/end positions
+- [x] Unit (backported): `test_pass_tok_with_semicolon_is_separate` - Verify deflated tok ends before semicolon
+- [x] Unit (backported): `test_break_tok_captures_keyword_position` - Verify deflated Break.tok has correct positions
+- [x] Unit (backported): `test_continue_tok_captures_keyword_position` - Verify deflated Continue.tok has correct positions
 
 **Checkpoint:**
 - [x] `cargo build -p tugtool-python-cst` succeeds
@@ -2686,7 +2690,7 @@ This prerequisite must be completed before span recording can be added to these 
 Several statement types need to compute the end of their body `Suite`. This helper function enables consistent span computation for all scope-creating and branch statements.
 
 **Tasks:**
-- [ ] Add `deflated_suite_end_pos` helper function in `statement.rs`:
+- [x] Add `deflated_suite_end_pos` helper function in `statement.rs`:
 
 ```rust
 /// Compute the byte end position of a deflated Suite.
@@ -2701,17 +2705,18 @@ fn deflated_suite_end_pos<'r, 'a>(suite: &DeflatedSuite<'r, 'a>) -> usize {
 }
 ```
 
-- [ ] Place the helper near other helper functions in `statement.rs`
-- [ ] Add documentation explaining when to use this helper
+- [x] Place the helper near other helper functions in `statement.rs`
+- [x] Add documentation explaining when to use this helper
 
 **Tests:**
-- [ ] Unit: `test_suite_end_pos_indented` - Verify helper returns dedent position for indented block
-- [ ] Unit: `test_suite_end_pos_simple` - Verify helper returns newline end for simple statement suite
+- [x] Unit: `test_suite_end_pos_indented_block` - Verify helper returns dedent position for indented block
+- [x] Unit: `test_suite_end_pos_simple_statement_suite` - Verify helper returns newline end for simple statement suite
+- [x] Unit: `test_suite_end_pos_nested_functions` - Verify inner function body ends before outer (bonus test)
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst suite_end_pos` passes
-- [ ] Helper function is documented and accessible where needed
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst suite_end_pos` passes
+- [x] Helper function is documented and accessible where needed
 
 **Rollback:** Revert commit
 

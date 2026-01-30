@@ -6,6 +6,58 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.2: Add deflated_suite_end_pos Helper | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.2 specification (lines 2675-2717)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Suite enum, IndentedBlock, SimpleStatementSuite structs
+- `crates/tugtool-python-cst/src/nodes/mod.rs` - deflated module re-exports
+- Code-architect agent analysis of deflated state testing strategy
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `deflated_suite_end_pos` helper function in statement.rs | Done |
+| Place helper near Suite enum definition | Done |
+| Add comprehensive documentation with usage guidance | Done |
+| Create `deflated_tests` module with proper testing infrastructure | Done |
+| Write `test_suite_end_pos_indented_block` test | Done |
+| Write `test_suite_end_pos_simple_statement_suite` test | Done |
+| Write `test_suite_end_pos_nested_functions` test (bonus) | Done |
+| Backport: `test_pass_tok_captures_keyword_position` | Done |
+| Backport: `test_pass_tok_with_semicolon_is_separate` | Done |
+| Backport: `test_break_tok_captures_keyword_position` | Done |
+| Backport: `test_continue_tok_captures_keyword_position` | Done |
+| Plan-step-reviewer agent review | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added `deflated_suite_end_pos` helper function (lines 92-112) with comprehensive documentation
+- `crates/tugtool-python-cst/src/lib.rs` - Added `deflated_tests` module with 7 tests (4 backported tok tests + 3 suite_end_pos tests)
+- `plans/phase-13.md` - Marked Step 0.2.0.2 tasks complete, added backported tests to Step 0.2.0.1
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst deflated_tests`: 7/7 passed
+- `cargo nextest run -p tugtool-python-cst suite_end_pos`: 3/3 passed
+- All 11 tok/suite_end_pos tests pass
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst suite_end_pos` passes: PASS
+- Helper function is documented and accessible where needed: PASS
+
+**Key Decisions/Notes:**
+- Created proper deflated state testing infrastructure using `parse_tokens_without_whitespace` which returns `DeflatedModule`
+- Tests directly verify `TokenRef` positions via `tok.start_pos.byte_idx()` / `tok.end_pos.byte_idx()`
+- Backported comprehensive tests for Step 0.2.0.1 that verify actual token positions (not just parsing success)
+- This testing pattern is reusable for all future span recording tests in upcoming steps
+- Helper marked with `#[allow(dead_code)]` since it will be used in subsequent steps
+- Plan-step-reviewer agent approved implementation as production-ready
+
+---
+
 ## [phase-13.md] Step 0.2.0.1: Add Token Fields to Pass/Break/Continue | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30
