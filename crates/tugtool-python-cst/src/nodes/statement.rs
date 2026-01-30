@@ -333,6 +333,9 @@ impl<'r, 'a> DeflatedSmallStatement<'r, 'a> {
 #[cst_node]
 pub struct Pass<'a> {
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedPass<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
@@ -348,14 +351,21 @@ impl<'a> Codegen<'a> for Pass<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedPass<'r, 'a> {
     type Inflated = Pass<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let semicolon = self.semicolon.inflate(ctx)?;
-        Ok(Self::Inflated { semicolon })
+        Ok(Self::Inflated {
+            semicolon,
+            node_id: Some(node_id),
+        })
     }
 }
 
 #[cst_node]
 pub struct Break<'a> {
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedBreak<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
@@ -371,14 +381,21 @@ impl<'a> Codegen<'a> for Break<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedBreak<'r, 'a> {
     type Inflated = Break<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let semicolon = self.semicolon.inflate(ctx)?;
-        Ok(Self::Inflated { semicolon })
+        Ok(Self::Inflated {
+            semicolon,
+            node_id: Some(node_id),
+        })
     }
 }
 
 #[cst_node]
 pub struct Continue<'a> {
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedContinue<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
@@ -394,8 +411,12 @@ impl<'a> Codegen<'a> for Continue<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedContinue<'r, 'a> {
     type Inflated = Continue<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let semicolon = self.semicolon.inflate(ctx)?;
-        Ok(Self::Inflated { semicolon })
+        Ok(Self::Inflated {
+            semicolon,
+            node_id: Some(node_id),
+        })
     }
 }
 
@@ -403,6 +424,9 @@ impl<'r, 'a> Inflate<'a> for DeflatedContinue<'r, 'a> {
 pub struct Expr<'a> {
     pub value: Expression<'a>,
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 impl<'r, 'a> DeflatedExpr<'r, 'a> {
     pub fn with_semicolon(self, semicolon: Option<DeflatedSemicolon<'r, 'a>>) -> Self {
@@ -418,9 +442,14 @@ impl<'a> Codegen<'a> for Expr<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedExpr<'r, 'a> {
     type Inflated = Expr<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let value = self.value.inflate(ctx)?;
         let semicolon = self.semicolon.inflate(ctx)?;
-        Ok(Self::Inflated { value, semicolon })
+        Ok(Self::Inflated {
+            value,
+            semicolon,
+            node_id: Some(node_id),
+        })
     }
 }
 
@@ -429,6 +458,9 @@ pub struct Assign<'a> {
     pub targets: Vec<AssignTarget<'a>>,
     pub value: Expression<'a>,
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Assign<'a> {
@@ -446,6 +478,7 @@ impl<'a> Codegen<'a> for Assign<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedAssign<'r, 'a> {
     type Inflated = Assign<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let targets = self.targets.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
         let semicolon = self.semicolon.inflate(ctx)?;
@@ -453,6 +486,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAssign<'r, 'a> {
             targets,
             value,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -515,6 +549,9 @@ pub struct Import<'a> {
     pub whitespace_after_import: SimpleWhitespace<'a>,
 
     pub(crate) import_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Import<'a> {
@@ -536,6 +573,7 @@ impl<'a> Codegen<'a> for Import<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedImport<'r, 'a> {
     type Inflated = Import<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_import =
             parse_simple_whitespace(&ctx.ws, &mut self.import_tok.whitespace_after.borrow_mut())?;
         let names = self.names.inflate(ctx)?;
@@ -544,6 +582,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedImport<'r, 'a> {
             names,
             semicolon,
             whitespace_after_import,
+            node_id: Some(node_id),
         })
     }
 }
@@ -568,6 +607,9 @@ pub struct ImportFrom<'a> {
 
     pub(crate) from_tok: TokenRef<'a>,
     pub(crate) import_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for ImportFrom<'a> {
@@ -600,6 +642,7 @@ impl<'a> Codegen<'a> for ImportFrom<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedImportFrom<'r, 'a> {
     type Inflated = ImportFrom<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_from =
             parse_simple_whitespace(&ctx.ws, &mut self.from_tok.whitespace_after.borrow_mut())?;
 
@@ -644,6 +687,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedImportFrom<'r, 'a> {
             whitespace_after_from,
             whitespace_before_import,
             whitespace_after_import,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1166,6 +1210,9 @@ pub struct Else<'a> {
 
     pub(crate) else_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Else<'a> {
@@ -1185,6 +1232,7 @@ impl<'a> Codegen<'a> for Else<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedElse<'r, 'a> {
     type Inflated = Else<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.else_tok.whitespace_before.borrow_mut(),
@@ -1198,6 +1246,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedElse<'r, 'a> {
             body,
             leading_lines,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1252,6 +1301,9 @@ pub struct AnnAssign<'a> {
     pub value: Option<Expression<'a>>,
     pub equal: Option<AssignEqual<'a>>,
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for AnnAssign<'a> {
@@ -1276,6 +1328,7 @@ impl<'a> Codegen<'a> for AnnAssign<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedAnnAssign<'r, 'a> {
     type Inflated = AnnAssign<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let target = self.target.inflate(ctx)?;
         let annotation = self.annotation.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
@@ -1287,6 +1340,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAnnAssign<'r, 'a> {
             value,
             equal,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1304,6 +1358,9 @@ pub struct Return<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
     pub(crate) return_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Return<'a> {
@@ -1327,6 +1384,7 @@ impl<'a> Codegen<'a> for Return<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedReturn<'r, 'a> {
     type Inflated = Return<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_return = if self.value.is_some() {
             Some(parse_simple_whitespace(
                 &ctx.ws,
@@ -1343,6 +1401,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedReturn<'r, 'a> {
             value,
             whitespace_after_return,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1362,6 +1421,9 @@ pub struct Assert<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
     pub(crate) assert_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Assert<'a> {
@@ -1385,6 +1447,7 @@ impl<'a> Codegen<'a> for Assert<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedAssert<'r, 'a> {
     type Inflated = Assert<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_assert =
             parse_simple_whitespace(&ctx.ws, &mut self.assert_tok.whitespace_after.borrow_mut())?;
 
@@ -1399,6 +1462,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAssert<'r, 'a> {
             comma,
             whitespace_after_assert,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1417,11 +1481,15 @@ pub struct Raise<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
     pub(crate) raise_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedRaise<'r, 'a> {
     type Inflated = Raise<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_raise = if self.exc.is_some() {
             Some(parse_simple_whitespace(
                 &ctx.ws,
@@ -1446,6 +1514,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedRaise<'r, 'a> {
             cause,
             whitespace_after_raise,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1512,11 +1581,15 @@ pub struct Global<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
     pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedGlobal<'r, 'a> {
     type Inflated = Global<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_global =
             parse_simple_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
         let names = self.names.inflate(ctx)?;
@@ -1525,6 +1598,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedGlobal<'r, 'a> {
             names,
             whitespace_after_global,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1557,11 +1631,15 @@ pub struct Nonlocal<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
     pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedNonlocal<'r, 'a> {
     type Inflated = Nonlocal<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_nonlocal =
             parse_simple_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
         let names = self.names.inflate(ctx)?;
@@ -1570,6 +1648,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedNonlocal<'r, 'a> {
             names,
             whitespace_after_nonlocal,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1961,6 +2040,9 @@ pub struct Finally<'a> {
 
     pub(crate) finally_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Finally<'a> {
@@ -1980,6 +2062,7 @@ impl<'a> Codegen<'a> for Finally<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedFinally<'r, 'a> {
     type Inflated = Finally<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.finally_tok.whitespace_before.borrow_mut(),
@@ -1992,6 +2075,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedFinally<'r, 'a> {
             body,
             leading_lines,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2007,6 +2091,9 @@ pub struct ExceptHandler<'a> {
 
     pub(crate) except_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for ExceptHandler<'a> {
@@ -2033,6 +2120,7 @@ impl<'a> Codegen<'a> for ExceptHandler<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedExceptHandler<'r, 'a> {
     type Inflated = ExceptHandler<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.except_tok.whitespace_before.borrow_mut(),
@@ -2057,6 +2145,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedExceptHandler<'r, 'a> {
             leading_lines,
             whitespace_after_except,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2074,6 +2163,9 @@ pub struct ExceptStarHandler<'a> {
     pub(crate) except_tok: TokenRef<'a>,
     pub(crate) star_tok: TokenRef<'a>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for ExceptStarHandler<'a> {
@@ -2100,6 +2192,7 @@ impl<'a> Codegen<'a> for ExceptStarHandler<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedExceptStarHandler<'r, 'a> {
     type Inflated = ExceptStarHandler<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.except_tok.whitespace_before.borrow_mut(),
@@ -2127,6 +2220,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedExceptStarHandler<'r, 'a> {
             whitespace_after_except,
             whitespace_after_star,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2269,11 +2363,15 @@ pub struct AugAssign<'a> {
     pub operator: AugOp<'a>,
     pub value: Expression<'a>,
     pub semicolon: Option<Semicolon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedAugAssign<'r, 'a> {
     type Inflated = AugAssign<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let target = self.target.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
@@ -2283,6 +2381,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugAssign<'r, 'a> {
             operator,
             value,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2516,11 +2615,15 @@ pub struct Del<'a> {
     pub semicolon: Option<Semicolon<'a>>,
 
     pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedDel<'r, 'a> {
     type Inflated = Del<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_del =
             parse_simple_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
         let target = self.target.inflate(ctx)?;
@@ -2529,6 +2632,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedDel<'r, 'a> {
             target,
             whitespace_after_del,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2657,6 +2761,9 @@ pub struct MatchCase<'a> {
     pub(crate) case_tok: TokenRef<'a>,
     pub(crate) if_tok: Option<TokenRef<'a>>,
     pub(crate) colon_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for MatchCase<'a> {
@@ -2683,6 +2790,7 @@ impl<'a> Codegen<'a> for MatchCase<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedMatchCase<'r, 'a> {
     type Inflated = MatchCase<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.case_tok.whitespace_before.borrow_mut(),
@@ -2713,6 +2821,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedMatchCase<'r, 'a> {
             whitespace_before_if,
             whitespace_after_if,
             whitespace_before_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -3710,6 +3819,9 @@ pub struct TypeAlias<'a> {
     pub(crate) type_tok: TokenRef<'a>,
     pub(crate) lbracket_tok: Option<TokenRef<'a>>,
     pub(crate) equals_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for TypeAlias<'a> {
@@ -3736,6 +3848,7 @@ impl<'a> Codegen<'a> for TypeAlias<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedTypeAlias<'r, 'a> {
     type Inflated = TypeAlias<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let whitespace_after_type =
             parse_simple_whitespace(&ctx.ws, &mut self.type_tok.whitespace_after.borrow_mut())?;
         let name = self.name.inflate(ctx)?;
@@ -3766,6 +3879,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedTypeAlias<'r, 'a> {
             whitespace_after_type_parameters,
             whitespace_after_equals,
             semicolon,
+            node_id: Some(node_id),
         })
     }
 }

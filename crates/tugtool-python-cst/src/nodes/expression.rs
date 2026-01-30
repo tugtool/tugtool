@@ -510,6 +510,9 @@ pub struct Ellipsis<'a> {
 
     /// Token for the `...` ellipsis literal.
     pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Ellipsis<'a> {
@@ -522,9 +525,14 @@ impl<'a> Codegen<'a> for Ellipsis<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedEllipsis<'r, 'a> {
     type Inflated = Ellipsis<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
-        Ok(Self::Inflated { lpar, rpar })
+        Ok(Self::Inflated {
+            lpar,
+            rpar,
+            node_id: Some(node_id),
+        })
     }
 }
 
@@ -617,6 +625,9 @@ pub struct Imaginary<'a> {
 
     /// Token for the imaginary literal.
     pub(crate) tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Imaginary<'a> {
@@ -630,12 +641,14 @@ impl<'a> Codegen<'a> for Imaginary<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedImaginary<'r, 'a> {
     type Inflated = Imaginary<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
             value: self.value,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -646,6 +659,9 @@ pub struct Comparison<'a> {
     pub comparisons: Vec<ComparisonTarget<'a>>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for Comparison<'a> {
@@ -661,6 +677,7 @@ impl<'a> Codegen<'a> for Comparison<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedComparison<'r, 'a> {
     type Inflated = Comparison<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let comparisons = self.comparisons.inflate(ctx)?;
@@ -670,6 +687,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedComparison<'r, 'a> {
             comparisons,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -680,6 +698,9 @@ pub struct UnaryOperation<'a> {
     pub expression: Box<Expression<'a>>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for UnaryOperation<'a> {
@@ -694,6 +715,7 @@ impl<'a> Codegen<'a> for UnaryOperation<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedUnaryOperation<'r, 'a> {
     type Inflated = UnaryOperation<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
         let expression = self.expression.inflate(ctx)?;
@@ -703,6 +725,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedUnaryOperation<'r, 'a> {
             expression,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -714,6 +737,9 @@ pub struct BinaryOperation<'a> {
     pub right: Box<Expression<'a>>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for BinaryOperation<'a> {
@@ -729,6 +755,7 @@ impl<'a> Codegen<'a> for BinaryOperation<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedBinaryOperation<'r, 'a> {
     type Inflated = BinaryOperation<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
@@ -740,6 +767,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOperation<'r, 'a> {
             right,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -751,6 +779,9 @@ pub struct BooleanOperation<'a> {
     pub right: Box<Expression<'a>>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for BooleanOperation<'a> {
@@ -766,6 +797,7 @@ impl<'a> Codegen<'a> for BooleanOperation<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedBooleanOperation<'r, 'a> {
     type Inflated = BooleanOperation<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
@@ -777,6 +809,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedBooleanOperation<'r, 'a> {
             right,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -792,11 +825,15 @@ pub struct Call<'a> {
 
     pub(crate) lpar_tok: TokenRef<'a>,
     pub(crate) rpar_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedCall<'r, 'a> {
     type Inflated = Call<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let func = self.func.inflate(ctx)?;
         let whitespace_after_func = parse_parenthesizable_whitespace(
@@ -826,6 +863,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedCall<'r, 'a> {
             rpar,
             whitespace_after_func,
             whitespace_before_args,
+            node_id: Some(node_id),
         })
     }
 }
@@ -853,11 +891,15 @@ pub struct Attribute<'a> {
     pub dot: Dot<'a>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedAttribute<'r, 'a> {
     type Inflated = Attribute<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
         let dot = self.dot.inflate(ctx)?;
@@ -869,6 +911,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAttribute<'r, 'a> {
             dot,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -932,6 +975,9 @@ pub struct StarredElement<'a> {
     pub whitespace_before_value: ParenthesizableWhitespace<'a>,
 
     pub(crate) star_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> DeflatedStarredElement<'r, 'a> {
@@ -940,6 +986,7 @@ impl<'r, 'a> DeflatedStarredElement<'r, 'a> {
         ctx: &mut InflateCtx<'a>,
         is_last: bool,
     ) -> Result<StarredElement<'a>> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let whitespace_before_value = parse_parenthesizable_whitespace(
             &ctx.ws,
@@ -958,6 +1005,7 @@ impl<'r, 'a> DeflatedStarredElement<'r, 'a> {
             lpar,
             rpar,
             whitespace_before_value,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1059,11 +1107,15 @@ pub struct Tuple<'a> {
     pub elements: Vec<Element<'a>>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedTuple<'r, 'a> {
     type Inflated = Tuple<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let len = self.elements.len();
         let elements = self
@@ -1077,6 +1129,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedTuple<'r, 'a> {
             elements,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1618,11 +1671,15 @@ pub struct List<'a> {
     pub rbracket: RightSquareBracket<'a>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedList<'r, 'a> {
     type Inflated = List<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let lbracket = self.lbracket.inflate(ctx)?;
         let len = self.elements.len();
@@ -1645,6 +1702,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedList<'r, 'a> {
             rbracket,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1669,11 +1727,15 @@ pub struct Set<'a> {
     pub rbrace: RightCurlyBrace<'a>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedSet<'r, 'a> {
     type Inflated = Set<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let lbrace = self.lbrace.inflate(ctx)?;
         let len = self.elements.len();
@@ -1695,6 +1757,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedSet<'r, 'a> {
             rbrace,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1719,11 +1782,15 @@ pub struct Dict<'a> {
     pub rbrace: RightCurlyBrace<'a>,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedDict<'r, 'a> {
     type Inflated = Dict<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let lbrace = self.lbrace.inflate(ctx)?;
         let len = self.elements.len();
@@ -1745,6 +1812,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedDict<'r, 'a> {
             rbrace,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -1970,11 +2038,15 @@ pub struct Slice<'a> {
     pub step: Option<Expression<'a>>,
     pub first_colon: Colon<'a>,
     pub second_colon: Option<Colon<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedSlice<'r, 'a> {
     type Inflated = Slice<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lower = self.lower.inflate(ctx)?;
         let first_colon = self.first_colon.inflate(ctx)?;
         let upper = self.upper.inflate(ctx)?;
@@ -1986,6 +2058,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedSlice<'r, 'a> {
             step,
             first_colon,
             second_colon,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2043,11 +2116,15 @@ pub struct Subscript<'a> {
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
     pub whitespace_after_value: ParenthesizableWhitespace<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedSubscript<'r, 'a> {
     type Inflated = Subscript<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
         let whitespace_after_value = parse_parenthesizable_whitespace(
@@ -2066,6 +2143,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedSubscript<'r, 'a> {
             lpar,
             rpar,
             whitespace_after_value,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2102,11 +2180,15 @@ pub struct IfExp<'a> {
 
     pub(crate) if_tok: TokenRef<'a>,
     pub(crate) else_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedIfExp<'r, 'a> {
     type Inflated = IfExp<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let body = self.body.inflate(ctx)?;
         let whitespace_before_if = parse_parenthesizable_whitespace(
@@ -2138,6 +2220,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedIfExp<'r, 'a> {
             whitespace_after_if,
             whitespace_before_else,
             whitespace_after_else,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2610,11 +2693,15 @@ pub struct Yield<'a> {
     pub whitespace_after_yield: Option<ParenthesizableWhitespace<'a>>,
 
     pub(crate) yield_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedYield<'r, 'a> {
     type Inflated = Yield<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_yield = if self.value.is_some() {
             Some(parse_parenthesizable_whitespace(
@@ -2631,6 +2718,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedYield<'r, 'a> {
             lpar,
             rpar,
             whitespace_after_yield,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2660,11 +2748,15 @@ pub struct Await<'a> {
     pub whitespace_after_await: ParenthesizableWhitespace<'a>,
 
     pub(crate) await_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedAwait<'r, 'a> {
     type Inflated = Await<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let whitespace_after_await = parse_parenthesizable_whitespace(
             &ctx.ws,
@@ -2677,6 +2769,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedAwait<'r, 'a> {
             lpar,
             rpar,
             whitespace_after_await,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2721,11 +2814,15 @@ pub struct ConcatenatedString<'a> {
     // we capture the next token after each string piece so Inflate can extract the
     // whitespace between individual pieces
     pub(crate) right_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedConcatenatedString<'r, 'a> {
     type Inflated = ConcatenatedString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let whitespace_between = parse_parenthesizable_whitespace(
@@ -2740,6 +2837,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedConcatenatedString<'r, 'a> {
             lpar,
             rpar,
             whitespace_between,
+            node_id: Some(node_id),
         })
     }
 }
@@ -2914,11 +3012,15 @@ pub struct TemplatedString<'a> {
     pub end: &'a str,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedTemplatedString<'r, 'a> {
     type Inflated = TemplatedString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let parts = self.parts.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
@@ -2928,6 +3030,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedTemplatedString<'r, 'a> {
             end: self.end,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -3055,11 +3158,15 @@ pub struct FormattedString<'a> {
     pub end: &'a str,
     pub lpar: Vec<LeftParen<'a>>,
     pub rpar: Vec<RightParen<'a>>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'r, 'a> Inflate<'a> for DeflatedFormattedString<'r, 'a> {
     type Inflated = FormattedString<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let parts = self.parts.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
@@ -3069,6 +3176,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedFormattedString<'r, 'a> {
             end: self.end,
             lpar,
             rpar,
+            node_id: Some(node_id),
         })
     }
 }
@@ -3096,6 +3204,9 @@ pub struct NamedExpr<'a> {
     pub whitespace_after_walrus: ParenthesizableWhitespace<'a>,
 
     pub(crate) walrus_tok: TokenRef<'a>,
+
+    /// Stable identity assigned during inflation.
+    pub(crate) node_id: Option<NodeId>,
 }
 
 impl<'a> Codegen<'a> for NamedExpr<'a> {
@@ -3113,6 +3224,7 @@ impl<'a> Codegen<'a> for NamedExpr<'a> {
 impl<'r, 'a> Inflate<'a> for DeflatedNamedExpr<'r, 'a> {
     type Inflated = NamedExpr<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
         let lpar = self.lpar.inflate(ctx)?;
         let target = self.target.inflate(ctx)?;
         let whitespace_before_walrus = parse_parenthesizable_whitespace(
@@ -3132,6 +3244,7 @@ impl<'r, 'a> Inflate<'a> for DeflatedNamedExpr<'r, 'a> {
             rpar,
             whitespace_before_walrus,
             whitespace_after_walrus,
+            node_id: Some(node_id),
         })
     }
 }

@@ -224,17 +224,6 @@ impl<'src> RenameTransformer<'src> {
     }
 }
 
-/// Check if two spans overlap.
-///
-/// Two spans overlap if they share any byte positions.
-/// Adjacent spans (one ends where the other begins) do NOT overlap.
-pub fn spans_overlap(a: &Span, b: &Span) -> bool {
-    // Spans overlap if they share any byte positions
-    // [a.start, a.end) and [b.start, b.end) overlap iff:
-    // a.start < b.end AND b.start < a.end
-    a.start < b.end && b.start < a.end
-}
-
 /// Sort rename requests by span start position.
 ///
 /// Returns a new sorted vector (ascending order by start position).
@@ -254,6 +243,7 @@ pub fn sort_requests_by_start_reverse(mut requests: Vec<RenameRequest>) -> Vec<R
 
 #[cfg(test)]
 mod tests {
+    use super::super::batch_edit::spans_overlap;
     use super::*;
 
     #[test]

@@ -6,6 +6,72 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0: Node Span Recording Infrastructure Restructure | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase 13 Python Refactoring Operations plan
+- `plans/plan-skeleton.md` - Plan structure template
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Pass, Break, Continue struct definitions
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Parser rules for pass/break/continue
+- Code-planner agent for restructuring work
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Identify CST design inconsistency (Pass/Break/Continue missing tok field) | Done |
+| Investigate root cause in parser grammar | Done |
+| Update Special Considerations section to recommend Option C (add tok field) | Done |
+| Update Statement Types table T22 for Pass/Break/Continue | Done |
+| Add 14 prerequisite tasks for token field addition | Done |
+| Update Implementation Order to add step 0 prerequisite | Done |
+| Add prerequisite tests (4 tests) | Done |
+| Add span recording tests for Pass/Break/Continue (3 tests) | Done |
+| Restructure monolithic Step 0.2.0 into 13 discrete substeps | Done |
+| Create step-0-2-0-restructured.md with full substep breakdown | Done |
+
+**Files Created:**
+- `plans/step-0-2-0-restructured.md` - Restructured Step 0.2.0 with 13 substeps (~1000 lines)
+
+**Files Modified:**
+- `plans/phase-13.md` - Updated Step 0.2.0 Special Considerations, tables, and task lists
+
+**Key Changes:**
+
+| Change | Description |
+|--------|-------------|
+| CST Fix Identified | Pass/Break/Continue structs don't store keyword tokens; parser discards them |
+| Prerequisite Added | Step 0.2.0.1 now adds `tok` field to Pass/Break/Continue before span recording |
+| Substep Breakdown | 13 substeps with clear commit boundaries, tests, and checkpoints |
+
+**Restructured Substeps:**
+
+| Substep | Title |
+|---------|-------|
+| 0.2.0.1 | Add Token Fields to Pass/Break/Continue (prerequisite) |
+| 0.2.0.2 | Add deflated_suite_end_pos Helper |
+| 0.2.0.3 | Literal Span Recording |
+| 0.2.0.4 | Container Span Recording |
+| 0.2.0.5 | Composite Expression Spans (Operations) |
+| 0.2.0.6 | Call/Attribute/Subscript Spans |
+| 0.2.0.7 | Other Expression Spans |
+| 0.2.0.8 | String Type Spans |
+| 0.2.0.9 | Scope Statement Spans |
+| 0.2.0.10 | Branch Statement Spans |
+| 0.2.0.11 | Simple Statement Spans |
+| 0.2.0.12 | Import Statement Spans |
+| 0.2.0.13 | Special Spans (Decorator, Param) |
+
+**Key Decisions/Notes:**
+- Identified that LibCST design inconsistency was inherited: parser matches `lit("pass")` but constructs `Pass { semicolon: None }` without storing the token
+- Fix requires adding `tok: TokenRef` field and updating grammar rules: `t:lit("pass") { Pass { tok: t, ... } }`
+- Restructured plan retained all original nuance: Tables T20-T22, 5 implementation patterns, special considerations
+- Added test file organization guidance and notes for implementer
+
+---
+
 ## [phase-13.md] Stage 0 Detailed Specification Expansion | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29

@@ -58,9 +58,11 @@
 //! ```
 
 // P0 visitors (core functionality)
+mod batch_edit;
 mod binding;
 mod dispatch;
 mod exports;
+mod position_lookup;
 mod reference;
 mod rename;
 mod scope;
@@ -82,13 +84,21 @@ mod type_inference;
 mod dynamic;
 
 // P0 exports
+pub use batch_edit::{
+    apply_indentation, detect_indentation, detect_indentation_level, spans_overlap,
+    BatchEditError, BatchEditOptions, BatchEditResult, BatchSpanEditor, EditPrimitive, IndentInfo,
+};
 pub use binding::{BindingCollector, BindingInfo, BindingKind};
 pub use dispatch::*;
 pub use exports::{ExportCollector, ExportInfo, ExportKind};
+pub use position_lookup::{
+    AncestorEntry, AncestorTracker, ExpressionInfo, NodeInfo, NodeKind, PositionIndex,
+    ScopeLookupInfo, StatementInfo,
+};
 pub use reference::{ReferenceCollector, ReferenceInfo, ReferenceKind};
 pub use rename::{
-    sort_requests_by_start, sort_requests_by_start_reverse, spans_overlap, RenameError,
-    RenameRequest, RenameResult, RenameTransformer,
+    sort_requests_by_start, sort_requests_by_start_reverse, RenameError, RenameRequest,
+    RenameResult, RenameTransformer,
 };
 pub use scope::{ScopeCollector, ScopeInfo, ScopeKind};
 pub use span_collector::SpanCollector;

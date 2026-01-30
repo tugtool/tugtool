@@ -26,6 +26,209 @@
 use crate::patch::Span;
 
 // ============================================================================
+// Position Types
+// ============================================================================
+
+/// A position in source code specified as line and column.
+///
+/// Both line and column are 1-indexed to match editor conventions.
+/// Columns count Unicode scalar values (chars), not bytes.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_core::text::LineCol;
+///
+/// let pos = LineCol::new(10, 5);
+/// assert_eq!(pos.line, 10);
+/// assert_eq!(pos.col, 5);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LineCol {
+    /// 1-indexed line number
+    pub line: u32,
+    /// 1-indexed column number (Unicode scalars, not bytes)
+    pub col: u32,
+}
+
+impl LineCol {
+    /// Create a new LineCol position.
+    ///
+    /// Values of 0 are clamped to 1 (defensive).
+    pub fn new(line: u32, col: u32) -> Self {
+        Self {
+            line: line.max(1),
+            col: col.max(1),
+        }
+    }
+}
+
+impl std::fmt::Display for LineCol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.line, self.col)
+    }
+}
+
+/// Error when a position cannot be resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PositionError {
+    /// Line number exceeds file line count
+    LineOutOfRange { line: u32, max_line: u32 },
+    /// Column exceeds line length
+    ColumnOutOfRange { line: u32, col: u32, line_len: u32 },
+    /// Byte offset exceeds file length
+    OffsetOutOfRange { offset: usize, file_len: usize },
+}
+
+impl std::fmt::Display for PositionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PositionError::LineOutOfRange { line, max_line } => {
+                write!(f, "line {} out of range (max: {})", line, max_line)
+            }
+            PositionError::ColumnOutOfRange { line, col, line_len } => {
+                write!(
+                    f,
+                    "column {} out of range on line {} (line length: {})",
+                    col, line, line_len
+                )
+            }
+            PositionError::OffsetOutOfRange { offset, file_len } => {
+                write!(
+                    f,
+                    "byte offset {} out of range (file length: {})",
+                    offset, file_len
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for PositionError {}
+
+/// Result type for position operations.
+pub type PositionResult<T> = Result<T, PositionError>;
+
+/// Convert line:col to byte offset with validation.
+///
+/// Unlike the existing `position_to_byte_offset_str`, this version:
+/// 1. Returns a Result with specific error types
+/// 2. Handles edge cases explicitly
+///
+/// # Arguments
+/// * `content` - The source text
+/// * `pos` - LineCol position (1-indexed)
+///
+/// # Returns
+/// The byte offset, or an error if position is invalid.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_core::text::{LineCol, line_col_to_byte_offset};
+///
+/// let source = "hello\nworld\n";
+/// assert_eq!(line_col_to_byte_offset(source, LineCol::new(1, 1)).unwrap(), 0);
+/// assert_eq!(line_col_to_byte_offset(source, LineCol::new(2, 1)).unwrap(), 6);
+/// ```
+pub fn line_col_to_byte_offset(content: &str, pos: LineCol) -> PositionResult<usize> {
+    let mut current_line = 1u32;
+
+    for (byte_idx, ch) in content.char_indices() {
+        if current_line == pos.line {
+            // Found the line - now count columns (Unicode scalars)
+            let line_start = byte_idx;
+            let mut current_col = 1u32;
+
+            for (col_byte_offset, col_ch) in content[line_start..].char_indices() {
+                if current_col == pos.col {
+                    return Ok(line_start + col_byte_offset);
+                }
+                if col_ch == '\n' {
+                    // Column exceeds line length
+                    return Err(PositionError::ColumnOutOfRange {
+                        line: pos.line,
+                        col: pos.col,
+                        line_len: current_col - 1,
+                    });
+                }
+                current_col += 1;
+            }
+
+            // Past end of content on this line
+            if current_col == pos.col {
+                return Ok(content.len());
+            }
+            return Err(PositionError::ColumnOutOfRange {
+                line: pos.line,
+                col: pos.col,
+                line_len: current_col - 1,
+            });
+        }
+
+        if ch == '\n' {
+            current_line += 1;
+        }
+    }
+
+    // Line not found - might be asking for exact end of file
+    if current_line == pos.line && pos.col == 1 {
+        return Ok(content.len());
+    }
+
+    Err(PositionError::LineOutOfRange {
+        line: pos.line,
+        max_line: current_line,
+    })
+}
+
+/// Convert byte offset to line:col with validation.
+///
+/// # Arguments
+/// * `content` - The source text
+/// * `offset` - Byte offset (0-indexed)
+///
+/// # Returns
+/// The LineCol position, or an error if offset is invalid.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_core::text::{LineCol, byte_offset_to_line_col};
+///
+/// let source = "hello\nworld\n";
+/// assert_eq!(byte_offset_to_line_col(source, 0).unwrap(), LineCol::new(1, 1));
+/// assert_eq!(byte_offset_to_line_col(source, 6).unwrap(), LineCol::new(2, 1));
+/// ```
+pub fn byte_offset_to_line_col(content: &str, offset: usize) -> PositionResult<LineCol> {
+    if offset > content.len() {
+        return Err(PositionError::OffsetOutOfRange {
+            offset,
+            file_len: content.len(),
+        });
+    }
+
+    let mut line = 1u32;
+    let mut col = 1u32;
+    let mut current_byte = 0usize;
+
+    for ch in content.chars() {
+        if current_byte >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+        current_byte += ch.len_utf8();
+    }
+
+    Ok(LineCol { line, col })
+}
+
+// ============================================================================
 // Byte-based Conversions (for &[u8])
 // ============================================================================
 
@@ -470,6 +673,140 @@ mod tests {
             let content = b"x";
             assert_eq!(byte_offset_to_position(content, 0), (1, 1));
             assert_eq!(position_to_byte_offset(content, 1, 1), 0);
+        }
+    }
+
+    mod line_col_tests {
+        use super::*;
+
+        #[test]
+        fn test_line_col_new() {
+            let pos = LineCol::new(10, 5);
+            assert_eq!(pos.line, 10);
+            assert_eq!(pos.col, 5);
+        }
+
+        #[test]
+        fn test_line_col_clamps_zero() {
+            let pos = LineCol::new(0, 0);
+            assert_eq!(pos.line, 1);
+            assert_eq!(pos.col, 1);
+        }
+
+        #[test]
+        fn test_line_col_display() {
+            let pos = LineCol::new(10, 5);
+            assert_eq!(format!("{}", pos), "10:5");
+        }
+
+        #[test]
+        fn test_line_col_to_byte_offset_ascii() {
+            let source = "hello\nworld\n";
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 1)).unwrap(),
+                0
+            );
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 6)).unwrap(),
+                5
+            ); // the newline
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(2, 1)).unwrap(),
+                6
+            );
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(2, 3)).unwrap(),
+                8
+            ); // 'r' in "world"
+        }
+
+        #[test]
+        fn test_line_col_to_byte_offset_unicode() {
+            // '你' is 3 bytes, '好' is 3 bytes
+            let source = "x = '你好'\n";
+            //            0123456789...
+            // Char indices: x=0, ' '=1, ==2, ' '=3, '=4, 你=5..7, 好=8..10, '=11, \n=12
+
+            // Position at start
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 1)).unwrap(),
+                0
+            );
+            // Position at '你' (col 6, counting chars)
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 6)).unwrap(),
+                5
+            );
+            // Position at '好' (col 7)
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 7)).unwrap(),
+                8
+            );
+        }
+
+        #[test]
+        fn test_line_col_to_byte_offset_line_out_of_range() {
+            let source = "hello\n";
+            let result = line_col_to_byte_offset(source, LineCol::new(100, 1));
+            assert!(matches!(result, Err(PositionError::LineOutOfRange { .. })));
+        }
+
+        #[test]
+        fn test_line_col_to_byte_offset_col_out_of_range() {
+            let source = "hello\n";
+            let result = line_col_to_byte_offset(source, LineCol::new(1, 100));
+            assert!(matches!(result, Err(PositionError::ColumnOutOfRange { .. })));
+        }
+
+        #[test]
+        fn test_byte_offset_to_line_col_simple() {
+            let source = "hello\nworld\n";
+            assert_eq!(
+                byte_offset_to_line_col(source, 0).unwrap(),
+                LineCol::new(1, 1)
+            );
+            assert_eq!(
+                byte_offset_to_line_col(source, 6).unwrap(),
+                LineCol::new(2, 1)
+            );
+        }
+
+        #[test]
+        fn test_byte_offset_to_line_col_out_of_range() {
+            let source = "hello";
+            let result = byte_offset_to_line_col(source, 100);
+            assert!(matches!(result, Err(PositionError::OffsetOutOfRange { .. })));
+        }
+
+        #[test]
+        fn test_byte_offset_to_line_col_roundtrip() {
+            let source = "def foo():\n    return x\n";
+            for offset in 0..source.len() {
+                let pos = byte_offset_to_line_col(source, offset).unwrap();
+                let recovered = line_col_to_byte_offset(source, pos).unwrap();
+                assert_eq!(
+                    recovered, offset,
+                    "roundtrip failed: offset {} -> {:?} -> {}",
+                    offset, pos, recovered
+                );
+            }
+        }
+
+        #[test]
+        fn test_byte_offset_to_line_col_roundtrip_unicode() {
+            let source = "x = '你好世界'\ny = 1\n";
+            for offset in 0..source.len() {
+                // Only test on char boundaries
+                if source.is_char_boundary(offset) {
+                    let pos = byte_offset_to_line_col(source, offset).unwrap();
+                    let recovered = line_col_to_byte_offset(source, pos).unwrap();
+                    assert_eq!(
+                        recovered, offset,
+                        "roundtrip failed: offset {} -> {:?} -> {}",
+                        offset, pos, recovered
+                    );
+                }
+            }
         }
     }
 }

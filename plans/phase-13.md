@@ -2226,55 +2226,1061 @@ assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
 ---
 
 **Tasks:**
-- [ ] Create `EditPrimitive` enum with variants: Replace, InsertBefore, InsertAfter, Delete, InsertAt
-- [ ] Create `BatchEditError` enum with variants: OverlappingEdits, SpanOutOfBounds, EmptyEdits, IndentationDetectionFailed
-- [ ] Create `BatchEditOptions` struct with fields: auto_indent, allow_adjacent, allow_empty
-- [ ] Create `IndentInfo` struct for indentation detection results
-- [ ] Create `BatchSpanEditor` struct with new(), with_options(), add(), add_all(), len(), is_empty()
-- [ ] Implement `apply()` with reverse-order edit application
-- [ ] Implement `apply_unchecked()` for pre-validated edits
-- [ ] Implement `validate()` and `find_overlaps()` for pre-flight checking
-- [ ] Implement `detect_indentation()` helper function
-- [ ] Implement `detect_indentation_level()` helper function
-- [ ] Implement `apply_indentation()` helper function
-- [ ] Add comprehensive documentation and examples in doc comments
+- [x] Create `EditPrimitive` enum with variants: Replace, InsertBefore, InsertAfter, Delete, InsertAt
+- [x] Create `BatchEditError` enum with variants: OverlappingEdits, SpanOutOfBounds, EmptyEdits, IndentationDetectionFailed
+- [x] Create `BatchEditOptions` struct with fields: auto_indent, allow_adjacent, allow_empty
+- [x] Create `IndentInfo` struct for indentation detection results
+- [x] Create `BatchSpanEditor` struct with new(), with_options(), add(), add_all(), len(), is_empty()
+- [x] Implement `apply()` with reverse-order edit application
+- [x] Implement `apply_unchecked()` for pre-validated edits
+- [x] Implement `validate()` and `find_overlaps()` for pre-flight checking
+- [x] Implement `detect_indentation()` helper function
+- [x] Implement `detect_indentation_level()` helper function
+- [x] Implement `apply_indentation()` helper function
+- [x] Add comprehensive documentation and examples in doc comments
 
 **Tests:**
-- [ ] Unit: `test_replace_single_span` - basic replace operation
-- [ ] Unit: `test_replace_multiple_spans` - multiple non-overlapping replaces
-- [ ] Unit: `test_replace_empty_span` - zero-width span (insertion)
-- [ ] Unit: `test_insert_before_statement` - with auto-indentation
-- [ ] Unit: `test_insert_after_expression` - with auto-indentation
-- [ ] Unit: `test_insert_at_position` - absolute position insertion
-- [ ] Unit: `test_insert_at_file_start` - edge case
-- [ ] Unit: `test_insert_at_file_end` - edge case
-- [ ] Unit: `test_delete_span` - basic deletion
-- [ ] Unit: `test_delete_with_newline` - deleting line including newline
-- [ ] Unit: `test_multiple_edits_non_overlapping` - mixed edit types
-- [ ] Unit: `test_overlapping_edits_rejected` - error case
-- [ ] Unit: `test_adjacent_edits_allowed` - default behavior
-- [ ] Unit: `test_adjacent_edits_rejected_when_disabled` - with option
-- [ ] Unit: `test_unicode_multibyte_spans` - non-ASCII identifiers
-- [ ] Unit: `test_indentation_detection_spaces` - space-indented code
-- [ ] Unit: `test_indentation_detection_tabs` - tab-indented code
-- [ ] Unit: `test_indentation_detection_mixed` - mixed indent
-- [ ] Unit: `test_indentation_detection_empty_line` - fallback to previous
-- [ ] Unit: `test_indentation_preservation_insert_before` - auto-indent
-- [ ] Unit: `test_indentation_preservation_insert_after` - auto-indent
-- [ ] Unit: `test_apply_indentation_multiline` - multi-line text
-- [ ] Unit: `test_empty_edits_error` - default behavior
-- [ ] Unit: `test_empty_edits_allowed` - with option
-- [ ] Unit: `test_span_out_of_bounds_error` - error case
-- [ ] Unit: `test_validate_without_applying` - pre-flight check
-- [ ] Unit: `test_find_all_overlaps` - returns all conflicts
+- [x] Unit: `test_replace_single_span` - basic replace operation
+- [x] Unit: `test_replace_multiple_spans` - multiple non-overlapping replaces
+- [x] Unit: `test_replace_empty_span` - zero-width span (insertion)
+- [x] Unit: `test_insert_before_statement` - with auto-indentation
+- [x] Unit: `test_insert_after_expression` - with auto-indentation
+- [x] Unit: `test_insert_at_position` - absolute position insertion
+- [x] Unit: `test_insert_at_file_start` - edge case
+- [x] Unit: `test_insert_at_file_end` - edge case
+- [x] Unit: `test_delete_span` - basic deletion
+- [x] Unit: `test_delete_with_newline` - deleting line including newline
+- [x] Unit: `test_multiple_edits_non_overlapping` - mixed edit types
+- [x] Unit: `test_overlapping_edits_rejected` - error case
+- [x] Unit: `test_adjacent_edits_allowed` - default behavior
+- [x] Unit: `test_adjacent_edits_rejected_when_disabled` - with option
+- [x] Unit: `test_unicode_multibyte_spans` - non-ASCII identifiers
+- [x] Unit: `test_indentation_detection_spaces` - space-indented code
+- [x] Unit: `test_indentation_detection_tabs` - tab-indented code
+- [x] Unit: `test_indentation_detection_mixed` - mixed indent
+- [x] Unit: `test_indentation_detection_empty_line` - fallback to previous
+- [x] Unit: `test_indentation_preservation_insert_before` - auto-indent
+- [x] Unit: `test_indentation_preservation_insert_after` - auto-indent
+- [x] Unit: `test_apply_indentation_multiline` - multi-line text
+- [x] Unit: `test_empty_edits_error` - default behavior
+- [x] Unit: `test_empty_edits_allowed` - with option
+- [x] Unit: `test_span_out_of_bounds_error` - error case
+- [x] Unit: `test_validate_without_applying` - pre-flight check
+- [x] Unit: `test_find_all_overlaps` - returns all conflicts
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python-cst batch_edit`
-- [ ] All edit primitive variants have tests
-- [ ] Indentation detection handles spaces, tabs, and mixed
-- [ ] Unicode multi-byte spans work correctly
+- [x] `cargo nextest run -p tugtool-python-cst batch_edit`
+- [x] All edit primitive variants have tests
+- [x] Indentation detection handles spaces, tabs, and mixed
+- [x] Unicode multi-byte spans work correctly
 
 **Rollback:** Revert commit
+
+---
+
+# Step 0.2.0: Node Span Recording Infrastructure (Restructured) {#step-0-2-0-restructured}
+
+**Parent Step:** [Step 0.2: Position Lookup Infrastructure](#step-0-2)
+
+**Purpose:** Record spans for all expression and statement nodes during CST inflation, enabling Position Lookup to function correctly.
+
+---
+
+## Overview
+
+This document restructures Step 0.2.0 from phase-13.md into digestible substeps with clear commit boundaries, tests, and checkpoints. The implementation follows the recommended order from the original plan.
+
+**Total Substeps:** 13
+
+**Estimated Complexity:** Medium-High (touches many node types, but each follows established patterns)
+
+---
+
+## Problem Statement {#step-0-2-0-problem}
+
+Position Lookup (Step 0.2) requires spans to be recorded for nodes in the `PositionTable` during CST inflation. Currently, only 10 node types record their spans:
+
+**Nodes that DO record spans:**
+
+| Node | Span Type | Location | Purpose |
+|------|-----------|----------|---------|
+| `Name` | `ident_span` | expression.rs:218 | Identifier text for rename |
+| `SimpleString` | `ident_span` | expression.rs:2895 | String literal for `__all__` lookup |
+| `FunctionDef` | `lexical_span` + `def_span` | statement.rs:937-949 | Scope boundary |
+| `ClassDef` | `lexical_span` + `def_span` | statement.rs:1952-1964 | Scope boundary |
+| `If` | `branch_span` | statement.rs:1162 | isinstance type narrowing |
+| `Lambda` | `lexical_span` | expression.rs:2568 | Scope boundary |
+| `GeneratorExp` | `lexical_span` | expression.rs:1198 | Scope boundary |
+| `ListComp` | `lexical_span` | expression.rs:1255 | Scope boundary |
+| `SetComp` | `lexical_span` | expression.rs:1353 | Scope boundary |
+| `DictComp` | `lexical_span` | expression.rs:1419 | Scope boundary |
+
+**Most other node types assign `node_id` but do NOT record spans**, meaning `PositionTable.get(&node_id)` returns `None`. Position Lookup cannot function without span data.
+
+---
+
+## Span Type Selection Criteria {#step-0-2-0-criteria}
+
+**Table T20: Span Type Selection Criteria** {#t20-span-type-criteria}
+
+| Span Type | Use Case | When to Use |
+|-----------|----------|-------------|
+| `ident_span` | Position-to-expression lookup | Literals with tokens, simple expressions |
+| `lexical_span` | Scope containment queries | Scope-creating constructs (for, while, with, try, match) |
+| `branch_span` | Type narrowing boundaries | Conditional bodies (else, match case, except) |
+| `def_span` | Complete definition extraction | Only for decorated definitions (func, class) |
+
+**Selection Algorithm:**
+
+1. **Has a single defining token** (e.g., keyword, literal) -> `ident_span` from that token
+2. **Creates a lexical scope** (loop, context manager, exception handler) -> `lexical_span`
+3. **Is a conditional branch** (else, except, case) -> `branch_span`
+4. **Is a composite expression** (binary op, call, attribute) -> `ident_span` computed from first/last child
+
+---
+
+## Node Catalogs {#step-0-2-0-catalogs}
+
+### Expression Types Needing Span Recording {#step-0-2-0-expressions}
+
+**Table T21: Expression Types Needing Span Recording** {#t21-expression-spans}
+
+Nodes marked with [DONE] already record spans. All others need implementation.
+
+**Literals (Token-Based Spans):**
+
+| Node | Has `tok` | Span Type | Span Computation |
+|------|-----------|-----------|------------------|
+| `Ellipsis` | Yes | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Integer` | Yes | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Float` | Yes | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Imaginary` | Yes | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Name` | Yes | `ident_span` | [DONE] |
+| `SimpleString` | Yes | `ident_span` | [DONE] |
+
+**Composite Expressions (Computed Spans):**
+
+| Node | Span Type | Span Computation |
+|------|-----------|------------------|
+| `Comparison` | `ident_span` | `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(last comparison)` |
+| `UnaryOperation` | `ident_span` | Operator token start to `deflated_expression_end_pos(expression)` |
+| `BinaryOperation` | `ident_span` | `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)` |
+| `BooleanOperation` | `ident_span` | `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)` |
+| `Call` | `ident_span` | `deflated_expression_start_pos(func)` to `rpar_tok.end_pos` |
+| `Attribute` | `ident_span` | `deflated_expression_start_pos(value)` to `attr.tok.end_pos` |
+| `StarredElement` | `ident_span` | `star_tok.start_pos` to `deflated_expression_end_pos(value)` |
+| `Tuple` | `ident_span` | First element start to last element end |
+| `Slice` | `ident_span` | `first_colon` or `lower` start to `step` or `upper` or `second_colon` end |
+| `Subscript` | `ident_span` | `deflated_expression_start_pos(value)` to `rbracket.tok.end_pos` |
+| `IfExp` | `ident_span` | `deflated_expression_start_pos(body)` to `deflated_expression_end_pos(orelse)` |
+| `Yield` | `ident_span` | `yield_tok.start_pos` to value end (or yield token if no value) |
+| `Await` | `ident_span` | `await_tok.start_pos` to `deflated_expression_end_pos(expression)` |
+| `ConcatenatedString` | `ident_span` | `deflated_string_start_pos(left)` to `deflated_string_end_pos(right)` |
+| `FormattedString` | `ident_span` | First part start to last part end |
+| `TemplatedString` | `ident_span` | First part start to last part end |
+| `NamedExpr` | `ident_span` | `deflated_expression_start_pos(target)` to `deflated_expression_end_pos(value)` |
+
+**Container Expressions (Bracket-Delimited Spans):**
+
+| Node | Span Type | Span Computation |
+|------|-----------|------------------|
+| `List` | `ident_span` | `lbracket.tok.start_pos` to `rbracket.tok.end_pos` |
+| `Set` | `ident_span` | `lbrace.tok.start_pos` to `rbrace.tok.end_pos` |
+| `Dict` | `ident_span` | `lbrace.tok.start_pos` to `rbrace.tok.end_pos` |
+
+**Scope-Creating Expressions (Already Done):**
+
+| Node | Span Type | Status |
+|------|-----------|--------|
+| `Lambda` | `lexical_span` | [DONE] |
+| `GeneratorExp` | `lexical_span` | [DONE] |
+| `ListComp` | `lexical_span` | [DONE] |
+| `SetComp` | `lexical_span` | [DONE] |
+| `DictComp` | `lexical_span` | [DONE] |
+
+**Parameter Node:**
+
+| Node | Span Type | Span Computation |
+|------|-----------|------------------|
+| `Param` | `ident_span` | `star_tok` or `name.tok` start to default/annotation end or name end |
+
+### Statement Types Needing Span Recording {#step-0-2-0-statements}
+
+**Table T22: Statement Types Needing Span Recording** {#t22-statement-spans}
+
+**Simple Statements (Token-Based):**
+
+| Node | Has Token | Span Type | Span Computation |
+|------|-----------|-----------|------------------|
+| `Pass` | Yes (after prereq) | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Break` | Yes (after prereq) | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Continue` | Yes (after prereq) | `ident_span` | `tok.start_pos` to `tok.end_pos` |
+| `Expr` | No | `ident_span` | `deflated_expression_start_pos(value)` to expression end |
+| `Assign` | No | `ident_span` | First target start to value end |
+| `AugAssign` | No | `ident_span` | Target start to value end |
+| `AnnAssign` | No | `ident_span` | Target start to value end (or annotation end if no value) |
+| `Return` | Yes (`return_tok`) | `ident_span` | `return_tok.start_pos` to value end (or return token) |
+| `Assert` | Yes (`assert_tok`) | `ident_span` | `assert_tok.start_pos` to msg end (or test end) |
+| `Raise` | Yes (`raise_tok`) | `ident_span` | `raise_tok.start_pos` to cause end (or exc end or raise token) |
+| `Global` | Yes (`tok`) | `ident_span` | `tok.start_pos` to last name end |
+| `Nonlocal` | Yes (`tok`) | `ident_span` | `tok.start_pos` to last name end |
+| `Del` | Yes (`tok`) | `ident_span` | `tok.start_pos` to target end |
+| `TypeAlias` | Yes (`type_tok`) | `ident_span` | `type_tok.start_pos` to value end |
+
+**Import Statements:**
+
+| Node | Has Token | Span Type | Span Computation |
+|------|-----------|-----------|------------------|
+| `Import` | Yes (`import_tok`) | `ident_span` | `import_tok.start_pos` to last alias end |
+| `ImportFrom` | Yes (`from_tok`) | `ident_span` | `from_tok.start_pos` to names end (rpar or last alias) |
+
+**Scope-Creating Statements:**
+
+| Node | Span Type | Span Computation |
+|------|-----------|------------------|
+| `FunctionDef` | `lexical_span` + `def_span` | [DONE] |
+| `ClassDef` | `lexical_span` + `def_span` | [DONE] |
+| `For` | `lexical_span` | `for_tok` (or `async_tok`) start to body suite end |
+| `While` | `lexical_span` | `while_tok.start_pos` to body suite end |
+| `With` | `lexical_span` | `with_tok` (or `async_tok`) start to body suite end |
+| `Try` | `lexical_span` | `try_tok.start_pos` to finalbody/orelse/handlers end |
+| `TryStar` | `lexical_span` | `try_tok.start_pos` to finalbody/orelse/handlers end |
+| `Match` | `lexical_span` | `match_tok.start_pos` to last case end |
+
+**Branch Statements:**
+
+| Node | Span Type | Span Computation |
+|------|-----------|------------------|
+| `If` | `branch_span` | [DONE] |
+| `Else` | `branch_span` | `else_tok.start_pos` to body suite end |
+| `ExceptHandler` | `branch_span` | `except_tok.start_pos` to body suite end |
+| `ExceptStarHandler` | `branch_span` | `except_tok.start_pos` to body suite end |
+| `Finally` | `branch_span` | `finally_tok.start_pos` to body suite end |
+| `MatchCase` | `branch_span` | `case_tok.start_pos` to body suite end |
+
+**Decorator:**
+
+| Node | Span Type | Span Computation |
+|------|-----------|------------------|
+| `Decorator` | `ident_span` | `at_tok.start_pos` to decorator expression end |
+
+---
+
+## Implementation Patterns {#step-0-2-0-patterns}
+
+**Pattern 1: Literal with Token**
+
+```rust
+// Example: Integer
+impl<'r, 'a> Inflate<'a> for DeflatedInteger<'r, 'a> {
+    type Inflated = Integer<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
+
+        // Record ident_span from token (BEFORE inflating children)
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
+        let lpar = self.lpar.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated {
+            value: self.value,
+            lpar,
+            rpar,
+            node_id: Some(node_id),
+        })
+    }
+}
+```
+
+**Pattern 2: Composite Expression with Children**
+
+```rust
+// Example: BinaryOperation
+impl<'r, 'a> Inflate<'a> for DeflatedBinaryOperation<'r, 'a> {
+    type Inflated = BinaryOperation<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
+
+        // Compute span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.left);
+        let end = deflated_expression_end_pos(&self.right);
+        ctx.record_ident_span(node_id, Span { start, end });
+
+        let lpar = self.lpar.inflate(ctx)?;
+        let left = self.left.inflate(ctx)?;
+        let operator = self.operator.inflate(ctx)?;
+        let right = self.right.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated {
+            left,
+            operator,
+            right,
+            lpar,
+            rpar,
+            node_id: Some(node_id),
+        })
+    }
+}
+```
+
+**Pattern 3: Bracket-Delimited Container**
+
+```rust
+// Example: List
+impl<'r, 'a> Inflate<'a> for DeflatedList<'r, 'a> {
+    type Inflated = List<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
+
+        // Record span from bracket tokens BEFORE inflating
+        let start = self.lbracket.tok.start_pos.byte_idx();
+        let end = self.rbracket.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
+        let lpar = self.lpar.inflate(ctx)?;
+        let lbracket = self.lbracket.inflate(ctx)?;
+        let elements = self.elements.inflate(ctx)?;
+        let rbracket = self.rbracket.inflate(ctx)?;
+        let rpar = self.rpar.inflate(ctx)?;
+        Ok(Self::Inflated {
+            elements,
+            lbracket,
+            rbracket,
+            lpar,
+            rpar,
+            node_id: Some(node_id),
+        })
+    }
+}
+```
+
+**Pattern 4: Scope-Creating Statement**
+
+```rust
+// Example: For
+impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
+    type Inflated = For<'a>;
+    fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        // Start: async_tok if present, otherwise for_tok
+        let lexical_start = self.async_tok
+            .as_ref()
+            .map(|t| t.start_pos.byte_idx())
+            .unwrap_or_else(|| self.for_tok.start_pos.byte_idx());
+
+        // End: body suite end (dedent token for indented, newline for simple)
+        let scope_end = deflated_suite_end_pos(&self.body);
+
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+
+        // Continue with inflation...
+    }
+}
+```
+
+**Pattern 5: Branch Statement**
+
+```rust
+// Example: Else
+impl<'r, 'a> Inflate<'a> for DeflatedElse<'r, 'a> {
+    type Inflated = Else<'a>;
+    fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating
+        let branch_start = self.else_tok.start_pos.byte_idx();
+        let branch_end = deflated_suite_end_pos(&self.body);
+
+        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+
+        // Continue with inflation...
+    }
+}
+```
+
+---
+
+## Special Considerations {#step-0-2-0-special}
+
+### Parenthesized Expressions
+
+When an expression is parenthesized, the span should include the parentheses if they belong to the expression (outer `lpar`/`rpar`). The existing `deflated_expression_start_pos` and `deflated_expression_end_pos` functions already handle this correctly by checking `lpar.first()` and `rpar.last()`.
+
+### Performance
+
+Recording spans adds a small overhead during inflation. However:
+1. This only occurs when `InflateCtx::with_positions()` is used
+2. The `record_*_span` methods are O(1) (Vec insertion with amortized growth)
+3. Position tracking is already opt-in
+
+No performance regression is expected for normal parsing without position tracking.
+
+---
+
+## Execution Steps {#execution-steps}
+
+---
+
+### Step 0.2.0.1: Add Token Fields to Pass/Break/Continue {#step-0-2-0-1}
+
+**Commit:** `feat(python-cst): add tok field to Pass, Break, Continue for span recording`
+
+**References:** Table T22 (#t22-statement-spans), Pattern 1 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs` (Pass, Break, Continue structs)
+- Modified `crates/tugtool-python-cst/src/parser/grammar.rs` (pass, break, continue rules)
+
+**Context:**
+
+The `Pass`, `Break`, and `Continue` structs do not currently store their keyword tokens. The parser matches `lit("pass")` but then constructs `Pass { semicolon: None }` without capturing the `TokenRef`. This is a design inconsistency -- a CST should preserve all tokens.
+
+This prerequisite must be completed before span recording can be added to these nodes.
+
+**Tasks:**
+- [ ] Add `tok: TokenRef<'input, 'a>` field to `Pass` struct in `statement.rs`
+- [ ] Add `tok: TokenRef<'input, 'a>` field to `Break` struct in `statement.rs`
+- [ ] Add `tok: TokenRef<'input, 'a>` field to `Continue` struct in `statement.rs`
+- [ ] Update `DeflatedPass` in `statement.rs` to include `tok` field
+- [ ] Update `DeflatedBreak` in `statement.rs` to include `tok` field
+- [ ] Update `DeflatedContinue` in `statement.rs` to include `tok` field
+- [ ] Update grammar rule for `pass` in `parser/grammar.rs` to capture token: `t:lit("pass") { ... tok: t ... }`
+- [ ] Update grammar rule for `break` in `parser/grammar.rs` to capture token
+- [ ] Update grammar rule for `continue` in `parser/grammar.rs` to capture token
+- [ ] Update `Default` impl for `Pass` if needed (may need to remove Default or provide dummy token)
+- [ ] Update `Default` impl for `Break` if needed
+- [ ] Update `Default` impl for `Continue` if needed
+
+**Tests:**
+- [ ] Unit: `test_pass_has_token` - Parse `pass`, verify `Pass.tok` is populated with correct span
+- [ ] Unit: `test_break_has_token` - Parse `while True:\n    break`, verify `Break.tok` spans `break`
+- [ ] Unit: `test_continue_has_token` - Parse `while True:\n    continue`, verify `Continue.tok` spans `continue`
+- [ ] Unit: `test_pass_with_semicolon` - Parse `pass;`, verify `tok` spans only `pass` (not semicolon)
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst pass_has_token` passes
+- [ ] `cargo nextest run -p tugtool-python-cst break_has_token` passes
+- [ ] `cargo nextest run -p tugtool-python-cst continue_has_token` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.2: Add deflated_suite_end_pos Helper {#step-0-2-0-2}
+
+**Commit:** `feat(python-cst): add deflated_suite_end_pos helper for scope span computation`
+
+**References:** Section 0.2.0.6 Suite End Position Helper from original plan
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs` (new helper function)
+
+**Context:**
+
+Several statement types need to compute the end of their body `Suite`. This helper function enables consistent span computation for all scope-creating and branch statements.
+
+**Tasks:**
+- [ ] Add `deflated_suite_end_pos` helper function in `statement.rs`:
+
+```rust
+/// Compute the byte end position of a deflated Suite.
+///
+/// For IndentedBlock: returns dedent token start position (scope boundary).
+/// For SimpleStatementSuite: returns newline token end position.
+fn deflated_suite_end_pos<'r, 'a>(suite: &DeflatedSuite<'r, 'a>) -> usize {
+    match suite {
+        DeflatedSuite::IndentedBlock(block) => block.dedent_tok.start_pos.byte_idx(),
+        DeflatedSuite::SimpleStatementSuite(suite) => suite.newline_tok.end_pos.byte_idx(),
+    }
+}
+```
+
+- [ ] Place the helper near other helper functions in `statement.rs`
+- [ ] Add documentation explaining when to use this helper
+
+**Tests:**
+- [ ] Unit: `test_suite_end_pos_indented` - Verify helper returns dedent position for indented block
+- [ ] Unit: `test_suite_end_pos_simple` - Verify helper returns newline end for simple statement suite
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst suite_end_pos` passes
+- [ ] Helper function is documented and accessible where needed
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.3: Literal Span Recording {#step-0-2-0-3}
+
+**Commit:** `feat(python-cst): record ident_span for literal expression nodes`
+
+**References:** Table T21 Literals (#t21-expression-spans), Pattern 1 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Context:**
+
+Literals have direct token access, making span recording straightforward. This is the simplest pattern and a good starting point.
+
+**Tasks:**
+- [ ] `Ellipsis`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [ ] `Integer`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [ ] `Float`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [ ] `Imaginary`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+
+**Tests:**
+- [ ] Unit: `test_ellipsis_span_recorded` - Parse `...`, verify ident_span covers `...`
+- [ ] Unit: `test_integer_span_recorded` - Parse `42`, verify ident_span covers `42`
+- [ ] Unit: `test_float_span_recorded` - Parse `3.14`, verify ident_span covers `3.14`
+- [ ] Unit: `test_imaginary_span_recorded` - Parse `2j`, verify ident_span covers `2j`
+- [ ] Unit: `test_integer_with_parens_span` - Parse `(42)`, verify span includes parentheses
+- [ ] Unit: `test_name_span_recorded` - Parse `foo`, verify ident_span (already done, regression test)
+- [ ] Unit: `test_string_span_recorded` - Parse `"hello"`, verify ident_span (already done, regression test)
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst literal_span` passes
+- [ ] Verify: parsing `42` with positions enabled returns span in PositionTable
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.4: Container Span Recording {#step-0-2-0-4}
+
+**Commit:** `feat(python-cst): record ident_span for container expression nodes (List, Set, Dict)`
+
+**References:** Table T21 Containers (#t21-expression-spans), Pattern 3 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Context:**
+
+Container expressions have bracket tokens that define clear boundaries. The span runs from opening bracket to closing bracket.
+
+**Tasks:**
+- [ ] `List`: Add `record_ident_span` from `lbracket.tok.start_pos` to `rbracket.tok.end_pos`
+- [ ] `Set`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos`
+- [ ] `Dict`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos`
+
+**Tests:**
+- [ ] Unit: `test_list_span_recorded` - Parse `[1, 2, 3]`, verify span from `[` to `]`
+- [ ] Unit: `test_empty_list_span_recorded` - Parse `[]`, verify span
+- [ ] Unit: `test_set_span_recorded` - Parse `{1, 2}`, verify span from `{` to `}`
+- [ ] Unit: `test_dict_span_recorded` - Parse `{"a": 1}`, verify span from `{` to `}`
+- [ ] Unit: `test_empty_dict_span_recorded` - Parse `{}`, verify span
+- [ ] Unit: `test_nested_list_span` - Parse `[[1, 2], [3, 4]]`, verify both outer and inner spans
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst container_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.5: Composite Expression Spans (Operations) {#step-0-2-0-5}
+
+**Commit:** `feat(python-cst): record ident_span for operation expression nodes`
+
+**References:** Table T21 Composite Expressions (#t21-expression-spans), Pattern 2 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Context:**
+
+Operation expressions (binary, unary, boolean, comparison) require computing spans from their operands using the existing `deflated_expression_start_pos` and `deflated_expression_end_pos` helpers.
+
+**Tasks:**
+- [ ] `BinaryOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)`
+- [ ] `UnaryOperation`: Add `record_ident_span` from operator token start to `deflated_expression_end_pos(expression)`
+- [ ] `BooleanOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)`
+- [ ] `Comparison`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(last comparator)`
+
+**Tests:**
+- [ ] Unit: `test_binary_op_span_recorded` - Parse `a + b`, verify span covers `a + b`
+- [ ] Unit: `test_binary_op_nested_span` - Parse `a + b * c`, verify both operation spans
+- [ ] Unit: `test_unary_op_span_recorded` - Parse `-x`, verify span covers `-x`
+- [ ] Unit: `test_unary_not_span_recorded` - Parse `not x`, verify span covers `not x`
+- [ ] Unit: `test_boolean_op_span_recorded` - Parse `a and b`, verify span covers `a and b`
+- [ ] Unit: `test_boolean_op_chain_span` - Parse `a and b or c`, verify spans
+- [ ] Unit: `test_comparison_span_recorded` - Parse `a < b`, verify span
+- [ ] Unit: `test_comparison_chain_span` - Parse `a < b < c`, verify span covers entire chain
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst operation_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.6: Call/Attribute/Subscript Spans {#step-0-2-0-6}
+
+**Commit:** `feat(python-cst): record ident_span for Call, Attribute, Subscript nodes`
+
+**References:** Table T21 Composite Expressions (#t21-expression-spans), Pattern 2 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Context:**
+
+These nodes represent member access and invocation patterns that are common in refactoring operations. Correct spans are critical for position lookup in attribute chains.
+
+**Tasks:**
+- [ ] `Call`: Add `record_ident_span` from `deflated_expression_start_pos(func)` to `rpar_tok.end_pos`
+- [ ] `Attribute`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `attr.tok.end_pos`
+- [ ] `Subscript`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `rbracket.tok.end_pos`
+
+**Tests:**
+- [ ] Unit: `test_call_span_recorded` - Parse `foo(x, y)`, verify span covers entire call
+- [ ] Unit: `test_call_no_args_span` - Parse `foo()`, verify span
+- [ ] Unit: `test_attribute_span_recorded` - Parse `obj.attr`, verify span covers `obj.attr`
+- [ ] Unit: `test_chained_attribute_span` - Parse `a.b.c`, verify each attribute span
+- [ ] Unit: `test_subscript_span_recorded` - Parse `obj[key]`, verify span covers `obj[key]`
+- [ ] Unit: `test_subscript_with_slice_span` - Parse `obj[1:2]`, verify span
+- [ ] Unit: `test_method_call_span` - Parse `obj.method(arg)`, verify span covers entire expression
+- [ ] Unit: `test_nested_call_span` - Parse `f(g(x))`, verify both call spans recorded
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst call_attr_subscript_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.7: Other Expression Spans {#step-0-2-0-7}
+
+**Commit:** `feat(python-cst): record ident_span for remaining expression nodes`
+
+**References:** Table T21 Composite Expressions (#t21-expression-spans)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Context:**
+
+This step covers the remaining expression types that don't fit neatly into the previous categories.
+
+**Tasks:**
+- [ ] `IfExp`: Add `record_ident_span` from `deflated_expression_start_pos(body)` to `deflated_expression_end_pos(orelse)`
+- [ ] `Yield`: Add `record_ident_span` from `yield_tok.start_pos` to value end (or yield token if no value)
+- [ ] `Await`: Add `record_ident_span` from `await_tok.start_pos` to `deflated_expression_end_pos(expression)`
+- [ ] `NamedExpr`: Add `record_ident_span` from `deflated_expression_start_pos(target)` to `deflated_expression_end_pos(value)`
+- [ ] `StarredElement`: Add `record_ident_span` from `star_tok.start_pos` to `deflated_expression_end_pos(value)`
+- [ ] `Tuple`: Add `record_ident_span` from first element start to last element end (handle empty tuple)
+- [ ] `Slice`: Add `record_ident_span` from `first_colon` or `lower` start to `step` or `upper` or `second_colon` end
+
+**Tests:**
+- [ ] Unit: `test_if_exp_span_recorded` - Parse `x if cond else y`, verify span covers entire ternary
+- [ ] Unit: `test_yield_span_recorded` - Parse `yield x`, verify span
+- [ ] Unit: `test_yield_no_value_span` - Parse `yield`, verify span covers just `yield`
+- [ ] Unit: `test_await_span_recorded` - Parse `await foo()`, verify span
+- [ ] Unit: `test_named_expr_span_recorded` - Parse `(x := 42)`, verify span
+- [ ] Unit: `test_starred_element_span` - Parse `[*items]`, verify starred element span
+- [ ] Unit: `test_tuple_span_recorded` - Parse `(1, 2)`, verify span includes parentheses
+- [ ] Unit: `test_tuple_no_parens_span` - Parse `1, 2`, verify span
+- [ ] Unit: `test_slice_span_recorded` - Parse `a[1:2:3]`, verify slice span (within subscript)
+- [ ] Unit: `test_slice_partial_span` - Parse `a[1:]`, verify slice span
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst other_expr_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.8: String Type Spans {#step-0-2-0-8}
+
+**Commit:** `feat(python-cst): record ident_span for string expression nodes`
+
+**References:** Table T21 Composite Expressions (#t21-expression-spans)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+
+**Context:**
+
+String expressions have complex structure (concatenation, f-strings, template strings). Span computation requires handling multiple string parts.
+
+**Note:** These are marked as "best effort" in the original plan because string internal structure can be complex.
+
+**Tasks:**
+- [ ] `ConcatenatedString`: Add `record_ident_span` from `deflated_string_start_pos(left)` to `deflated_string_end_pos(right)`
+- [ ] `FormattedString`: Add `record_ident_span` from first part start to last part end
+- [ ] `TemplatedString`: Add `record_ident_span` from first part start to last part end
+- [ ] Add helper functions for string position computation if needed (`deflated_string_start_pos`, `deflated_string_end_pos`)
+
+**Tests:**
+- [ ] Unit: `test_concatenated_string_span` - Parse `"a" "b"`, verify span covers both strings
+- [ ] Unit: `test_formatted_string_span` - Parse `f"hello {name}"`, verify span
+- [ ] Unit: `test_formatted_string_nested_span` - Parse `f"outer {f'inner'}"`, verify spans
+- [ ] Unit: `test_multiline_string_span` - Parse triple-quoted string, verify span
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst string_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.9: Scope Statement Spans {#step-0-2-0-9}
+
+**Commit:** `feat(python-cst): record lexical_span for scope-creating statement nodes`
+
+**References:** Table T22 Scope-Creating Statements (#t22-statement-spans), Pattern 4 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+
+**Context:**
+
+Scope-creating statements use `lexical_span` to define their scope boundaries. The span starts at the keyword (or `async` if present) and ends at the suite end.
+
+**Tasks:**
+- [ ] `For`: Add `record_lexical_span` from `for_tok` (or `async_tok` if present) start to `deflated_suite_end_pos(&body)`
+- [ ] `While`: Add `record_lexical_span` from `while_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [ ] `With`: Add `record_lexical_span` from `with_tok` (or `async_tok` if present) start to `deflated_suite_end_pos(&body)`
+- [ ] `Try`: Add `record_lexical_span` from `try_tok.start_pos` to end of finalbody/orelse/handlers (whichever is last)
+- [ ] `TryStar`: Add `record_lexical_span` from `try_tok.start_pos` to end of finalbody/orelse/handlers
+- [ ] `Match`: Add `record_lexical_span` from `match_tok.start_pos` to last case end
+
+**Tests:**
+- [ ] Unit: `test_for_lexical_span_recorded` - Parse `for x in xs:\n    pass`, verify lexical_span
+- [ ] Unit: `test_async_for_lexical_span` - Parse `async for x in xs:\n    pass`, verify span starts at `async`
+- [ ] Unit: `test_while_lexical_span_recorded` - Parse `while cond:\n    pass`, verify lexical_span
+- [ ] Unit: `test_with_lexical_span_recorded` - Parse `with ctx:\n    pass`, verify lexical_span
+- [ ] Unit: `test_async_with_lexical_span` - Parse `async with ctx:\n    pass`, verify span starts at `async`
+- [ ] Unit: `test_try_lexical_span_recorded` - Parse `try:\n    pass\nexcept:\n    pass`, verify lexical_span
+- [ ] Unit: `test_try_with_finally_span` - Parse `try:\n    pass\nfinally:\n    pass`, verify span extends to finally end
+- [ ] Unit: `test_match_lexical_span_recorded` - Parse `match x:\n    case 1:\n        pass`, verify lexical_span
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst scope_stmt_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.10: Branch Statement Spans {#step-0-2-0-10}
+
+**Commit:** `feat(python-cst): record branch_span for branch statement nodes`
+
+**References:** Table T22 Branch Statements (#t22-statement-spans), Pattern 5 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+
+**Context:**
+
+Branch statements use `branch_span` to define conditional branch boundaries. These are used for type narrowing analysis (e.g., isinstance checks).
+
+**Tasks:**
+- [ ] `Else`: Add `record_branch_span` from `else_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [ ] `ExceptHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [ ] `ExceptStarHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [ ] `Finally`: Add `record_branch_span` from `finally_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [ ] `MatchCase`: Add `record_branch_span` from `case_tok.start_pos` to `deflated_suite_end_pos(&body)`
+
+**Tests:**
+- [ ] Unit: `test_else_branch_span_recorded` - Parse `if cond:\n    pass\nelse:\n    pass`, verify else branch_span
+- [ ] Unit: `test_except_branch_span_recorded` - Parse `try:\n    pass\nexcept E:\n    pass`, verify except branch_span
+- [ ] Unit: `test_except_star_branch_span` - Parse `try:\n    pass\nexcept* E:\n    pass`, verify branch_span
+- [ ] Unit: `test_finally_branch_span_recorded` - Parse `try:\n    pass\nfinally:\n    pass`, verify finally branch_span
+- [ ] Unit: `test_match_case_branch_span_recorded` - Parse `match x:\n    case 1:\n        pass`, verify case branch_span
+- [ ] Unit: `test_multiple_except_handlers_spans` - Parse try with multiple except handlers, verify each branch_span
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst branch_stmt_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.11: Simple Statement Spans {#step-0-2-0-11}
+
+**Commit:** `feat(python-cst): record ident_span for simple statement nodes`
+
+**References:** Table T22 Simple Statements (#t22-statement-spans), Pattern 1 (#step-0-2-0-patterns)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+
+**Context:**
+
+Simple statements have various starting tokens and ending expressions. This step covers all the simple statements except imports (which are handled separately).
+
+**Tasks:**
+- [ ] `Pass`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
+- [ ] `Break`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
+- [ ] `Continue`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
+- [ ] `Expr`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to expression end
+- [ ] `Assign`: Add `record_ident_span` from first target start to value end
+- [ ] `AugAssign`: Add `record_ident_span` from target start to value end
+- [ ] `AnnAssign`: Add `record_ident_span` from target start to value end (or annotation end if no value)
+- [ ] `Return`: Add `record_ident_span` from `return_tok.start_pos` to value end (or return token if no value)
+- [ ] `Assert`: Add `record_ident_span` from `assert_tok.start_pos` to msg end (or test end if no msg)
+- [ ] `Raise`: Add `record_ident_span` from `raise_tok.start_pos` to cause end (or exc end or raise token)
+- [ ] `Global`: Add `record_ident_span` from `tok.start_pos` to last name end
+- [ ] `Nonlocal`: Add `record_ident_span` from `tok.start_pos` to last name end
+- [ ] `Del`: Add `record_ident_span` from `tok.start_pos` to target end
+- [ ] `TypeAlias`: Add `record_ident_span` from `type_tok.start_pos` to value end
+
+**Tests:**
+- [ ] Unit: `test_pass_span_recorded` - Parse `pass`, verify ident_span from tok
+- [ ] Unit: `test_break_span_recorded` - Parse `while True:\n    break`, verify ident_span
+- [ ] Unit: `test_continue_span_recorded` - Parse `while True:\n    continue`, verify ident_span
+- [ ] Unit: `test_expr_stmt_span_recorded` - Parse `foo()`, verify ident_span covers the expression
+- [ ] Unit: `test_assign_span_recorded` - Parse `x = 42`, verify ident_span from `x` to `42`
+- [ ] Unit: `test_multi_target_assign_span` - Parse `x = y = 42`, verify span covers all
+- [ ] Unit: `test_aug_assign_span_recorded` - Parse `x += 1`, verify ident_span
+- [ ] Unit: `test_ann_assign_span_recorded` - Parse `x: int = 1`, verify ident_span
+- [ ] Unit: `test_ann_assign_no_value_span` - Parse `x: int`, verify span ends at annotation
+- [ ] Unit: `test_return_span_recorded` - Parse `return x`, verify ident_span
+- [ ] Unit: `test_return_no_value_span` - Parse `return`, verify span covers just `return`
+- [ ] Unit: `test_raise_span_recorded` - Parse `raise E`, verify ident_span
+- [ ] Unit: `test_raise_no_exc_span` - Parse `raise`, verify span covers just `raise`
+- [ ] Unit: `test_assert_span_recorded` - Parse `assert x`, verify ident_span
+- [ ] Unit: `test_assert_with_msg_span` - Parse `assert x, "msg"`, verify span includes message
+- [ ] Unit: `test_global_span_recorded` - Parse `global x`, verify ident_span
+- [ ] Unit: `test_nonlocal_span_recorded` - Parse `nonlocal x`, verify ident_span
+- [ ] Unit: `test_del_span_recorded` - Parse `del x`, verify ident_span
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst simple_stmt_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.12: Import Statement Spans {#step-0-2-0-12}
+
+**Commit:** `feat(python-cst): record ident_span for import statement nodes`
+
+**References:** Table T22 Import Statements (#t22-statement-spans)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+
+**Context:**
+
+Import statements have their own token patterns and are commonly targeted in refactoring operations.
+
+**Tasks:**
+- [ ] `Import`: Add `record_ident_span` from `import_tok.start_pos` to last alias end
+- [ ] `ImportFrom`: Add `record_ident_span` from `from_tok.start_pos` to names end (rpar or last alias)
+
+**Tests:**
+- [ ] Unit: `test_import_span_recorded` - Parse `import os`, verify ident_span
+- [ ] Unit: `test_import_multiple_span` - Parse `import os, sys`, verify span covers all
+- [ ] Unit: `test_import_as_span` - Parse `import os as operating_system`, verify span
+- [ ] Unit: `test_import_from_span_recorded` - Parse `from os import path`, verify ident_span
+- [ ] Unit: `test_import_from_multiple_span` - Parse `from os import path, getcwd`, verify span
+- [ ] Unit: `test_import_from_parens_span` - Parse `from os import (\n    path,\n    getcwd\n)`, verify span includes closing paren
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst import_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.13: Special Spans (Decorator, Param) {#step-0-2-0-13}
+
+**Commit:** `feat(python-cst): record ident_span for Decorator and Param nodes`
+
+**References:** Table T21 Parameter Node, Table T22 Decorator (#t21-expression-spans, #t22-statement-spans)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs` (Param)
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs` (Decorator)
+
+**Context:**
+
+Decorators and parameters are special nodes that appear in specific contexts. They complete the span recording coverage.
+
+**Tasks:**
+- [ ] `Decorator`: Add `record_ident_span` from `at_tok.start_pos` to decorator expression end
+- [ ] `Param`: Add `record_ident_span` from `star_tok` (if present) or `name.tok` start to default/annotation end or name end
+
+**Tests:**
+- [ ] Unit: `test_decorator_span_recorded` - Parse `@dec\ndef f(): pass`, verify decorator span from `@` to expression end
+- [ ] Unit: `test_decorator_with_call_span` - Parse `@dec(arg)\ndef f(): pass`, verify span includes call
+- [ ] Unit: `test_decorator_multiline_span` - Parse decorator with parenthesized arguments spanning multiple lines
+- [ ] Unit: `test_param_simple_span` - Parse `def f(x): pass`, verify param span covers `x`
+- [ ] Unit: `test_param_with_default_span` - Parse `def f(x=1): pass`, verify span covers `x=1`
+- [ ] Unit: `test_param_with_annotation_span` - Parse `def f(x: int): pass`, verify span covers `x: int`
+- [ ] Unit: `test_param_with_both_span` - Parse `def f(x: int = 1): pass`, verify span covers `x: int = 1`
+- [ ] Unit: `test_param_star_span` - Parse `def f(*args): pass`, verify span starts at `*`
+- [ ] Unit: `test_param_kwargs_span` - Parse `def f(**kwargs): pass`, verify span starts at `**`
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [ ] `cargo nextest run -p tugtool-python-cst decorator_param_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+## Step 0.2.0 Summary {#step-0-2-0-summary}
+
+After completing Steps 0.2.0.1 through 0.2.0.13, you will have:
+
+- Token fields added to `Pass`, `Break`, `Continue` structs
+- The `deflated_suite_end_pos` helper function
+- Span recording for all literal expressions (`Ellipsis`, `Integer`, `Float`, `Imaginary`)
+- Span recording for all container expressions (`List`, `Set`, `Dict`)
+- Span recording for all operation expressions (`BinaryOperation`, `UnaryOperation`, `BooleanOperation`, `Comparison`)
+- Span recording for access expressions (`Call`, `Attribute`, `Subscript`)
+- Span recording for other expressions (`IfExp`, `Yield`, `Await`, `NamedExpr`, `StarredElement`, `Tuple`, `Slice`)
+- Span recording for string expressions (`ConcatenatedString`, `FormattedString`, `TemplatedString`)
+- Span recording for scope-creating statements (`For`, `While`, `With`, `Try`, `TryStar`, `Match`)
+- Span recording for branch statements (`Else`, `ExceptHandler`, `ExceptStarHandler`, `Finally`, `MatchCase`)
+- Span recording for simple statements (all assignment, control flow, and declaration statements)
+- Span recording for import statements (`Import`, `ImportFrom`)
+- Span recording for special nodes (`Decorator`, `Param`)
+
+**Final Step 0.2.0 Checkpoint:**
+
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes (all tests, including all new span recording tests)
+- [ ] `cargo clippy -p tugtool-python-cst -- -D warnings` passes
+- [ ] Verify: parsing with `parse_module_with_positions` populates `PositionTable` for all node types
+- [ ] Verify: `PositionTable::len()` returns significantly more entries than before (~10x increase expected)
+
+**Aggregate Test Command:**
+```bash
+cargo nextest run -p tugtool-python-cst span
+```
+
+This command should run all span-related tests from all substeps.
+
+---
+
+## Edge Case Tests {#edge-case-tests}
+
+After all substeps are complete, add these edge case tests to ensure robustness:
+
+- [ ] `test_parenthesized_expression_span` - Parse `(a + b)`, verify span includes parens
+- [ ] `test_nested_call_span` - Parse `f(g(x))`, verify both call spans recorded
+- [ ] `test_multiline_expression_span` - Parse multi-line call, verify span crosses lines
+- [ ] `test_chained_attribute_span` - Parse `a.b.c`, verify each attribute span
+- [ ] `test_complex_comprehension_span` - Parse `[x for x in xs if x]`, verify lexical_span (already done but verify)
+- [ ] `test_deeply_nested_span` - Parse deeply nested expression, verify all spans recorded
+- [ ] `test_unicode_span` - Parse expression with Unicode identifiers, verify byte offsets correct
+
+---
+
+## Test File Organization {#test-file-org}
+
+Create a new test file `crates/tugtool-python-cst/tests/span_recording.rs` organized by substep:
+
+```rust
+// crates/tugtool-python-cst/tests/span_recording.rs
+
+mod step_0_2_0_1_token_fields {
+    // Tests for Pass/Break/Continue token fields
+}
+
+mod step_0_2_0_2_suite_helper {
+    // Tests for deflated_suite_end_pos helper
+}
+
+mod step_0_2_0_3_literal_spans {
+    // Tests for literal span recording
+}
+
+mod step_0_2_0_4_container_spans {
+    // Tests for container span recording
+}
+
+mod step_0_2_0_5_operation_spans {
+    // Tests for operation span recording
+}
+
+mod step_0_2_0_6_call_attr_spans {
+    // Tests for Call/Attribute/Subscript span recording
+}
+
+mod step_0_2_0_7_other_expr_spans {
+    // Tests for other expression span recording
+}
+
+mod step_0_2_0_8_string_spans {
+    // Tests for string span recording
+}
+
+mod step_0_2_0_9_scope_spans {
+    // Tests for scope statement span recording
+}
+
+mod step_0_2_0_10_branch_spans {
+    // Tests for branch statement span recording
+}
+
+mod step_0_2_0_11_simple_stmt_spans {
+    // Tests for simple statement span recording
+}
+
+mod step_0_2_0_12_import_spans {
+    // Tests for import statement span recording
+}
+
+mod step_0_2_0_13_special_spans {
+    // Tests for Decorator and Param span recording
+}
+
+mod edge_cases {
+    // Edge case tests from the Edge Case Tests section
+}
+```
+
+---
+
+## Notes for Implementer {#notes}
+
+1. **Order matters:** Complete substeps in order. Later substeps depend on earlier ones (e.g., simple statement spans depend on token fields from Step 0.2.0.1).
+
+2. **Pattern reference:** Each substep references the appropriate implementation pattern. Refer to the Patterns section when implementing.
+
+3. **Test as you go:** Write tests alongside implementation for each substep. This catches issues early.
+
+4. **Span recording timing:** Always record spans BEFORE inflating children. Token positions are lost during inflation.
+
+5. **Use existing helpers:** The `deflated_expression_start_pos` and `deflated_expression_end_pos` functions already handle parenthesized expressions correctly.
+
+6. **Performance:** Span recording is opt-in (only when `InflateCtx::with_positions()` is used). No performance impact on normal parsing.
+
+7. **Commit discipline:** Each substep has a clear commit boundary. Commit after each substep's checkpoint passes.
 
 ---
 
