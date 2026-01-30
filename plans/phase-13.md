@@ -54,7 +54,7 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - [ ] **10+ operations implemented** (up from 1): `tug analyze python <op> --help` lists operations
-- [ ] **Stage 0 infrastructure complete:** Edit primitives, position lookup, stub discovery
+- [ ] **Stage 0 infrastructure complete:** Edit primitives, position lookup, stub discovery (see [Stage 0](#stage-0))
 - [ ] **All Layer 0-4 infrastructure complete:** Each layer has dedicated tests
 - [ ] **Rename hardened:** All edge cases in [Table T02](#t02-rename-gaps) addressed
 - [ ] **Cross-layer integration tests:** 50+ integration tests across operations
@@ -62,10 +62,10 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 
 #### Scope {#scope}
 
-1. Build Stage 0 infrastructure (edit primitives, position lookup, stub discovery)
-2. Harden existing rename operation (Layer 0)
-3. Implement Layers 1-4 infrastructure
-4. Ship operations: Extract Variable, Inline Variable, Safe Delete, Move Function, Move Class, Extract Method, Inline Method, Change Signature
+1. Build [Stage 0](#stage-0) infrastructure (edit primitives, position lookup, stub discovery; see [D07](#d07-edit-primitives) and [D08](#d08-stub-updates))
+2. Harden existing rename operation ([Layer 0](#layer-0), [Table T02](#t02-rename-gaps))
+3. Implement [Layers 1-4](#infrastructure-layers) infrastructure
+4. Ship operations: [Extract Variable](#op-extract-variable), [Inline Variable](#op-inline-variable), [Safe Delete](#op-safe-delete), [Move Function](#op-move-function), [Move Class](#op-move-class), [Extract Method](#op-extract-method), [Inline Method](#op-inline-method), [Change Signature](#op-change-signature)
 5. Document all operations in AGENT_API.md
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -438,7 +438,7 @@ Operations emit a warning when generating code:
   "status": "error",
   "code": 5,
   "error": {
-    "kind": "stub_parse",
+    "kind": "STUB_PARSE",
     "stub_path": "pkg/api.pyi",
     "message": "Failed to parse stub file",
     "suggestion": "Fix or remove the stub, then retry"
@@ -923,6 +923,8 @@ result = calculate_tax(total_with_markup)
 tug apply python extract-variable --at <file:start_line:start_col-end_line:end_col> --name <var_name>
 ```
 
+**See:** [Layer 1](#layer-1), [D07](#d07-edit-primitives), [Step 1.4](#step-1-4)
+
 **Competitive Advantage:** Origin-aware scoping prevents incorrect extractions in nested class hierarchies.
 
 ---
@@ -950,6 +952,8 @@ def calculate_tax(price):
 tug apply python extract-constant --at <file:line:col> --name <CONSTANT_NAME>
 ```
 
+**See:** [Layer 1](#layer-1), [D07](#d07-edit-primitives), [Step 1.5](#step-1-5)
+
 ---
 
 #### Operation 4: Inline Variable {#op-inline-variable}
@@ -975,6 +979,8 @@ tug apply python inline-variable --at <file:line:col>
 **Constraints:**
 - Variable must have single assignment
 - Expression must be pure (or used only once)
+
+**See:** [Layer 2](#layer-2), [D02](#d02-conservative-side-effects), [Table T10](#t10-purity-rules), [D07](#d07-edit-primitives), [Step 2.2](#step-2-2)
 
 **Competitive Advantage:** Alias tracking catches transitive cases (`a = b; c = a`).
 
@@ -1051,6 +1057,8 @@ Warning: Deleting public API symbol 'process_data'
 
 **Competitive Advantage:** Cross-file resolution catches imports that static analysis might miss.
 
+**See:** [Layer 2](#layer-2), [Layer 3](#layer-3), [Table T12](#t12-public-api), [D08](#d08-stub-updates), [Step 2.3](#step-2-3), [Step 3.4](#step-3-4)
+
 ---
 
 #### Operation 6: Move Function {#op-move-function}
@@ -1076,6 +1084,8 @@ helper()
 tug apply python move --at <file:line:col> --to <target_module>
 ```
 
+**See:** [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [D08](#d08-stub-updates), [Step 3.2](#step-3-2)
+
 **Competitive Advantage:** Origin-aware tracking handles re-exports correctly.
 
 ---
@@ -1094,6 +1104,8 @@ Same infrastructure as Move Function, plus:
 ```bash
 tug apply python move --at <file:line:col> --to <target_module>
 ```
+
+**See:** [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [D08](#d08-stub-updates), [Step 3.3](#step-3-3)
 
 ---
 
@@ -1136,6 +1148,8 @@ tug apply python extract-method --at <file:start-end> --name <method_name>
 - No exception handlers crossing selection boundary
 - Single return value (or tuple)
 
+**See:** [Layer 4](#layer-4), [D03](#d03-simple-control-flow), [Table T11](#t11-control-flow-reject), [D07](#d07-edit-primitives), [Step 4.2](#step-4-2)
+
 **Competitive Advantage:** Type inference provides parameter type hints.
 
 ---
@@ -1165,6 +1179,8 @@ class Calculator:
 ```bash
 tug apply python inline-method --at <file:line:col>
 ```
+
+**See:** [Layer 4](#layer-4), [Layer 3](#layer-3), [D03](#d03-simple-control-flow), [Table T11](#t11-control-flow-reject), [D07](#d07-edit-primitives), [Step 4.3](#step-4-3)
 
 **Competitive Advantage:** MRO-aware inlining handles inherited methods correctly.
 
@@ -1197,6 +1213,8 @@ tug apply python change-signature --at <file:line:col> --remove "debug"
 tug apply python change-signature --at <file:line:col> --reorder "port,host"
 tug apply python change-signature --at <file:line:col> --rename "old_name:new_name"
 ```
+
+**See:** [Layer 4](#layer-4), [Table T13](#t13-signature-support), [Table T14](#t14-callsite-constraints), [D08](#d08-stub-updates), [Step 4.4](#step-4-4)
 
 ##### Signature Constraints (MVP) {#signature-constraints}
 
@@ -1438,7 +1456,7 @@ tug <action> python <operation> [options] [-- <filter>]
   "status": "error",
   "code": 2,
   "error": {
-    "kind": "position_out_of_range",
+    "kind": "POS_OUT_OF_RANGE",
     "message": "Location 120:80 is outside file bounds",
     "suggestion": "Choose a location within the file"
   }
@@ -1449,7 +1467,7 @@ tug <action> python <operation> [options] [-- <filter>]
 
 #### 13.4.3 Output Schemas {#output-schemas}
 
-See Phase 12 documentation for base schemas. New operations follow the same envelope format:
+See [Phase 12](phase-12.md) documentation for base schemas. New operations follow the same envelope format:
 
 ```json
 {
@@ -1465,7 +1483,7 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 **Error Code System:**
 
 Errors use two complementary identifiers:
-- **Numeric exit codes** (process exit status): 2, 3, 4, 5, 10 per CLAUDE.md Table T26
+- **Numeric exit codes** (process exit status): 2, 3, 4, 5, 10 per [CLAUDE.md](../CLAUDE.md) Table T26
 - **Text error kinds** (`error.kind` in JSON): Descriptive codes like `STUB_PARSE`, `CF_ASYNC`, etc.
 
 **Mapping:**
@@ -1612,7 +1630,7 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 
 **Commit:** `feat(python-cst): add position-to-node lookup and parent context`
 
-**References:** (#layer-1) - required for `ExpressionBoundaryDetector`
+**References:** [Layer 1](#layer-1) - required for `ExpressionBoundaryDetector` and [Step 1.3](#step-1-3)
 
 **Artifacts:**
 - New `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
@@ -1699,9 +1717,9 @@ Stage 0 creates the foundational infrastructure required by all subsequent stage
 #### Stage 0 Summary {#stage-0-summary}
 
 After completing Steps 0.1-0.3, you will have:
-- Edit primitive infrastructure supporting all D07 operations
-- Position-to-node lookup for expression/statement boundary detection
-- Stub file discovery and update infrastructure for D08 compliance
+- Edit primitive infrastructure supporting all [D07](#d07-edit-primitives) operations ([Step 0.1](#step-0-1))
+- Position-to-node lookup for expression/statement boundary detection ([Step 0.2](#step-0-2))
+- Stub file discovery and update infrastructure for [D08](#d08-stub-updates) compliance ([Step 0.3](#step-0-3))
 
 **Final Stage 0 Checkpoint:**
 - [ ] `cargo nextest run --workspace`
@@ -1716,7 +1734,7 @@ After completing Steps 0.1-0.3, you will have:
 
 **Commit:** `fix(python): address rename edge cases and add missing tests`
 
-**References:** [D05] Rename as reference, [Table T02](#t02-rename-gaps), (#layer-0)
+**References:** [D05](#d05-rename-reference), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D07](#d07-edit-primitives), [D08](#d08-stub-updates), [Step 0.1](#step-0-1), [Step 0.3](#step-0-3)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/ops/rename.rs`
@@ -1759,7 +1777,7 @@ After completing Steps 0.1-0.3, you will have:
 
 **Commit:** `feat(python): add rename-param operation`
 
-**References:** [D05] Rename as reference, (#op-rename-param)
+**References:** [D05](#d05-rename-reference), [Operation 1: Rename Parameter](#op-rename-param), [D08](#d08-stub-updates)
 
 **Artifacts:**
 - Updated CLI in `crates/tugtool/src/cli.rs`
@@ -1788,7 +1806,7 @@ After completing Steps 0.1-0.3, you will have:
 
 **Commit:** `feat(python): add Layer 1 expression analysis infrastructure`
 
-**References:** (#layer-1), [Table T05](#t05-layer1-components)
+**References:** [Layer 1](#layer-1), [Table T05](#t05-layer1-components), [Step 0.2](#step-0-2)
 
 **Dependencies:** [Step 0.2](#step-0-2) (position lookup infrastructure)
 
@@ -1825,7 +1843,7 @@ After completing Steps 0.1-0.3, you will have:
 
 **Commit:** `feat(python): add extract-variable operation`
 
-**References:** (#op-extract-variable), (#layer-1)
+**References:** [Operation 2: Extract Variable](#op-extract-variable), [Layer 1](#layer-1), [D07](#d07-edit-primitives), [Step 0.1](#step-0-1), [Step 0.2](#step-0-2), [Step 1.3](#step-1-3)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/ops/extract_variable.rs`
@@ -1873,7 +1891,7 @@ The extracted variable assignment is inserted:
 
 **Commit:** `feat(python): add extract-constant operation`
 
-**References:** (#op-extract-constant), (#layer-1)
+**References:** [Operation 3: Extract Constant](#op-extract-constant), [Layer 1](#layer-1), [D07](#d07-edit-primitives), [Step 0.1](#step-0-1), [Step 1.3](#step-1-3)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/ops/extract_constant.rs`
@@ -1934,7 +1952,7 @@ After completing Steps 1.1-1.5, you will have:
 
 **Commit:** `feat(python): add Layer 2 statement analysis infrastructure`
 
-**References:** (#layer-2), [Table T06](#t06-layer2-components)
+**References:** [Layer 2](#layer-2), [D02](#d02-conservative-side-effects), [Table T10](#t10-purity-rules), [Table T06](#t06-layer2-components)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/layers/statement.rs`
@@ -1963,7 +1981,7 @@ After completing Steps 1.1-1.5, you will have:
 
 **Commit:** `feat(python): add inline-variable operation`
 
-**References:** (#op-inline-variable), (#layer-2), [D02](#d02-conservative-side-effects)
+**References:** [Operation 4: Inline Variable](#op-inline-variable), [Layer 2](#layer-2), [D02](#d02-conservative-side-effects), [Table T10](#t10-purity-rules), [D07](#d07-edit-primitives), [Step 0.1](#step-0-1), [Step 2.1](#step-2-1)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/ops/inline_variable.rs`
@@ -1994,7 +2012,7 @@ After completing Steps 1.1-1.5, you will have:
 
 **Commit:** `feat(python): add safe-delete operation (basic)`
 
-**References:** (#op-safe-delete), (#layer-2)
+**References:** [Operation 5: Safe Delete](#op-safe-delete), [Layer 2](#layer-2), [Table T12](#t12-public-api), [Step 2.1](#step-2-1)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/ops/safe_delete.rs`
@@ -2038,7 +2056,7 @@ After completing Steps 2.1-2.3, you will have:
 
 **Commit:** `feat(python): add Layer 3 import manipulation infrastructure`
 
-**References:** (#layer-3), [Table T07](#t07-layer3-components)
+**References:** [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [Table T07](#t07-layer3-components)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/layers/imports.rs`
@@ -2067,7 +2085,7 @@ After completing Steps 2.1-2.3, you will have:
 
 **Commit:** `feat(python): add move-function operation`
 
-**References:** (#op-move-function), (#layer-3)
+**References:** [Operation 6: Move Function](#op-move-function), [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 3.1](#step-3-1)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/ops/move_symbol.rs`
@@ -2102,7 +2120,7 @@ After completing Steps 2.1-2.3, you will have:
 
 **Commit:** `feat(python): extend move operation for classes`
 
-**References:** (#op-move-class), (#layer-3)
+**References:** [Operation 7: Move Class](#op-move-class), [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 3.1](#step-3-1)
 
 **Tasks:**
 - [ ] Extend move operation for classes
@@ -2127,7 +2145,7 @@ After completing Steps 2.1-2.3, you will have:
 
 **Commit:** `feat(python): enhance safe-delete with import cleanup`
 
-**References:** (#op-safe-delete), (#layer-3)
+**References:** [Operation 5: Safe Delete](#op-safe-delete), [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [Step 3.1](#step-3-1)
 
 **Tasks:**
 - [ ] Enhance safe-delete to remove imports
@@ -2164,7 +2182,7 @@ After completing Steps 3.1-3.4, you will have:
 
 **Commit:** `feat(python): add Layer 4 method transformation infrastructure`
 
-**References:** (#layer-4), [D03](#d03-simple-control-flow)
+**References:** [Layer 4](#layer-4), [D03](#d03-simple-control-flow), [Table T11](#t11-control-flow-reject), [D07](#d07-edit-primitives), [Step 0.1](#step-0-1)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/layers/transform.rs`
@@ -2193,7 +2211,7 @@ After completing Steps 3.1-3.4, you will have:
 
 **Commit:** `feat(python): add extract-method operation`
 
-**References:** (#op-extract-method), (#layer-4), [D03](#d03-simple-control-flow)
+**References:** [Operation 8: Extract Method](#op-extract-method), [Layer 4](#layer-4), [D03](#d03-simple-control-flow), [Table T11](#t11-control-flow-reject), [D07](#d07-edit-primitives), [Step 0.1](#step-0-1), [Step 4.1](#step-4-1)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/ops/extract_method.rs`
@@ -2227,7 +2245,7 @@ After completing Steps 3.1-3.4, you will have:
 
 **Commit:** `feat(python): add inline-method operation`
 
-**References:** (#op-inline-method), (#layer-4)
+**References:** [Operation 9: Inline Method](#op-inline-method), [Layer 4](#layer-4), [Layer 3](#layer-3), [D03](#d03-simple-control-flow), [Table T11](#t11-control-flow-reject), [D07](#d07-edit-primitives), [Step 0.1](#step-0-1), [Step 4.1](#step-4-1)
 
 **Tasks:**
 - [ ] Implement inline-method operation
@@ -2253,7 +2271,7 @@ After completing Steps 3.1-3.4, you will have:
 
 **Commit:** `feat(python): add change-signature operation`
 
-**References:** (#op-change-signature), (#layer-4)
+**References:** [Operation 10: Change Signature](#op-change-signature), [Layer 4](#layer-4), [Table T13](#t13-signature-support), [Table T14](#t14-callsite-constraints), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 4.1](#step-4-1)
 
 **Tasks:**
 - [ ] Implement change-signature operation
