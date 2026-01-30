@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.13: Special Spans (Decorator, Param) | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.13 specification (lines 3322-3375)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Decorator struct and Inflate impl
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Param struct and Inflate impl
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Annotation struct for annotation.annotation end position
+- Existing DeflatedStartPos/DeflatedEndPos trait infrastructure from Step 0.2.0.11.5
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Phase 1: Decorator span recording in DeflatedDecorator::inflate() | Done |
+| Phase 2: Param span recording in DeflatedParam::inflate() | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added span recording to Decorator::inflate() from at_tok.start_pos to decorator.end_pos()
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording to Param::inflate() with priority-based end computation (default > annotation > name)
+- `crates/tugtool-python-cst/src/lib.rs` - Added new decorator_param_span_tests module with 9 unit tests
+- `plans/phase-13.md` - Checked off all tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 731 tests passed (up from 722, +9 new tests)
+- `cargo nextest run -p tugtool-python-cst decorator_param_span`: 9 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS (731 tests)
+- `cargo nextest run -p tugtool-python-cst decorator_param_span` passes: PASS
+- `cargo clippy -p tugtool-python-cst -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+- Decorator span uses at_tok.start_pos.byte_idx() for start and self.decorator.end_pos() for end (trait dispatch)
+- Param span uses star_tok.start_pos if present, otherwise name.start_pos() via trait dispatch
+- Param end position priority: default.end_pos() > annotation.annotation.end_pos() > name.end_pos()
+- Used existing DeflatedStartPos/DeflatedEndPos trait methods instead of manual token field access for cleaner code
+- Tests placed in separate decorator_param_span_tests module following pattern from import_span_tests
+
+---
+
 ## [phase-13.md] Step 0.2.0.12: Import Statement Spans | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

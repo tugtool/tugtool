@@ -263,6 +263,25 @@ impl<'r, 'a> Inflate<'a> for DeflatedParam<'r, 'a> {
         // Assign identity for this Param node
         let node_id = ctx.next_id();
 
+        // Record ident_span for Param (BEFORE inflating, tokens stripped during inflation)
+        // Start: star_tok if present, otherwise name start position
+        let start = self
+            .star_tok
+            .as_ref()
+            .map(|t| t.start_pos.byte_idx())
+            .unwrap_or_else(|| self.name.start_pos());
+
+        // End (in priority order): default > annotation > name end position
+        let end = if let Some(ref default) = self.default {
+            default.end_pos()
+        } else if let Some(ref annotation) = self.annotation {
+            annotation.annotation.end_pos()
+        } else {
+            self.name.end_pos()
+        };
+
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let name = self.name.inflate(ctx)?;
         let annotation = self.annotation.inflate(ctx)?;
         let equal = self.equal.inflate(ctx)?;

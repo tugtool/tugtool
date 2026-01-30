@@ -3344,11 +3344,11 @@ Both `Decorator` and `Param` can leverage the trait infrastructure from Step 0.2
 **Tasks:**
 
 *Phase 1: Decorator Span (statement.rs)*
-- [ ] `Decorator`: Add `record_ident_span` from `at_tok.start_pos.byte_idx()` to `self.decorator.end_pos()`
+- [x] `Decorator`: Add `record_ident_span` from `at_tok.start_pos.byte_idx()` to `self.decorator.end_pos()`
   - Uses existing `DeflatedExpression.end_pos()` trait dispatch from Step 0.2.0.11.5
 
 *Phase 2: Param Span (expression.rs)*
-- [ ] `Param`: Add `record_ident_span` with start/end computed as:
+- [x] `Param`: Add `record_ident_span` with start/end computed as:
   - **Start**: If `star_tok.is_some()`: `star_tok.start_pos.byte_idx()`, else `name.tok.start_pos.byte_idx()`
   - **End** (in priority order):
     1. If `default.is_some()`: `default.unwrap().end_pos()` (uses DeflatedExpression trait dispatch)
@@ -3356,20 +3356,20 @@ Both `Decorator` and `Param` can leverage the trait infrastructure from Step 0.2
     3. Otherwise: `name.tok.end_pos.byte_idx()`
 
 **Tests:**
-- [ ] Unit: `test_decorator_span_recorded` - Parse `@dec\ndef f(): pass`, verify decorator span from `@` to expression end
-- [ ] Unit: `test_decorator_with_call_span` - Parse `@dec(arg)\ndef f(): pass`, verify span includes call
-- [ ] Unit: `test_decorator_multiline_span` - Parse decorator with parenthesized arguments spanning multiple lines
-- [ ] Unit: `test_param_simple_span` - Parse `def f(x): pass`, verify param span covers `x`
-- [ ] Unit: `test_param_with_default_span` - Parse `def f(x=1): pass`, verify span covers `x=1`
-- [ ] Unit: `test_param_with_annotation_span` - Parse `def f(x: int): pass`, verify span covers `x: int`
-- [ ] Unit: `test_param_with_both_span` - Parse `def f(x: int = 1): pass`, verify span covers `x: int = 1`
-- [ ] Unit: `test_param_star_span` - Parse `def f(*args): pass`, verify span starts at `*`
-- [ ] Unit: `test_param_kwargs_span` - Parse `def f(**kwargs): pass`, verify span starts at `**`
+- [x] Unit: `test_decorator_span_recorded` - Parse `@dec\ndef f(): pass`, verify decorator span from `@` to expression end
+- [x] Unit: `test_decorator_with_call_span` - Parse `@dec(arg)\ndef f(): pass`, verify span includes call
+- [x] Unit: `test_decorator_multiline_span` - Parse decorator with parenthesized arguments spanning multiple lines
+- [x] Unit: `test_param_simple_span` - Parse `def f(x): pass`, verify param span covers `x`
+- [x] Unit: `test_param_with_default_span` - Parse `def f(x=1): pass`, verify span covers `x=1`
+- [x] Unit: `test_param_with_annotation_span` - Parse `def f(x: int): pass`, verify span covers `x: int`
+- [x] Unit: `test_param_with_both_span` - Parse `def f(x: int = 1): pass`, verify span covers `x: int = 1`
+- [x] Unit: `test_param_star_span` - Parse `def f(*args): pass`, verify span starts at `*`
+- [x] Unit: `test_param_kwargs_span` - Parse `def f(**kwargs): pass`, verify span starts at `**`
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst decorator_param_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 731 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst decorator_param_span` passes - 9 tests pass
 
 **Rollback:** Revert commit
 

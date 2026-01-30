@@ -5032,3 +5032,262 @@ mod import_span_tests {
         }
     }
 }
+
+// Tests for decorator and param span recording (Step 0.2.0.13)
+// These tests use parse_module_with_positions which returns inflated types,
+// so they need to be in a separate module that uses inflated statement types.
+#[cfg(test)]
+mod decorator_param_span_tests {
+    use super::*;
+    use crate::nodes::statement::CompoundStatement;
+    use crate::Statement;
+
+    #[test]
+    fn test_decorator_span_recorded() {
+        // Test that Decorator has ident_span from '@' to decorator expression end
+        let source = "@dec\ndef f(): pass\n";
+        //            01234567890123456789
+        //            ^@dec: 0-4
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            assert_eq!(func.decorators.len(), 1);
+            let dec = &func.decorators[0];
+            let node_id = dec.node_id.expect("Decorator should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 0, "decorator span should start at 0 (@)");
+            assert_eq!(span.end, 4, "decorator span should end at 4 (after 'dec')");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_decorator_with_call_span() {
+        // Test that Decorator span includes call expression with arguments
+        let source = "@dec(arg)\ndef f(): pass\n";
+        //            01234567890123456789012345
+        //            ^@dec(arg): 0-9
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            assert_eq!(func.decorators.len(), 1);
+            let dec = &func.decorators[0];
+            let node_id = dec.node_id.expect("Decorator should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 0, "decorator span should start at 0 (@)");
+            assert_eq!(span.end, 9, "decorator span should end at 9 (after ')')");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_decorator_multiline_span() {
+        // Test decorator with parenthesized arguments spanning multiple lines
+        let source = "@dec(\n    arg\n)\ndef f(): pass\n";
+        //            @dec(\n    arg\n)
+        //            0123456789012345
+        //            ^@dec(...): 0-15 (ends after closing paren)
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            assert_eq!(func.decorators.len(), 1);
+            let dec = &func.decorators[0];
+            let node_id = dec.node_id.expect("Decorator should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 0, "decorator span should start at 0 (@)");
+            assert_eq!(span.end, 15, "decorator span should end at 15 (after ')')");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_param_simple_span() {
+        // Test that simple Param has ident_span covering just the name
+        let source = "def f(x): pass\n";
+        //            0123456789012345
+        //                  ^x: 6-7
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            let params = &func.params.params;
+            assert_eq!(params.len(), 1);
+            let param = &params[0];
+            let node_id = param.node_id.expect("Param should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 6, "param span should start at 6 (x)");
+            assert_eq!(span.end, 7, "param span should end at 7 (after x)");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_param_with_default_span() {
+        // Test that Param with default covers x=1
+        let source = "def f(x=1): pass\n";
+        //            01234567890123456
+        //                  ^x=1: 6-9
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            let params = &func.params.params;
+            assert_eq!(params.len(), 1);
+            let param = &params[0];
+            let node_id = param.node_id.expect("Param should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 6, "param span should start at 6 (x)");
+            assert_eq!(span.end, 9, "param span should end at 9 (after 1)");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_param_with_annotation_span() {
+        // Test that Param with annotation covers x: int
+        let source = "def f(x: int): pass\n";
+        //            01234567890123456789
+        //                  ^x: int: 6-12
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            let params = &func.params.params;
+            assert_eq!(params.len(), 1);
+            let param = &params[0];
+            let node_id = param.node_id.expect("Param should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 6, "param span should start at 6 (x)");
+            assert_eq!(span.end, 12, "param span should end at 12 (after 'int')");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_param_with_both_span() {
+        // Test that Param with annotation and default covers x: int = 1
+        let source = "def f(x: int = 1): pass\n";
+        //            0         1         2
+        //            012345678901234567890123
+        //                  ^x: int = 1: 6-16
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            let params = &func.params.params;
+            assert_eq!(params.len(), 1);
+            let param = &params[0];
+            let node_id = param.node_id.expect("Param should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 6, "param span should start at 6 (x)");
+            assert_eq!(span.end, 16, "param span should end at 16 (after 1)");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_param_star_span() {
+        // Test that *args param starts at *
+        let source = "def f(*args): pass\n";
+        //            01234567890123456789
+        //                  ^*args: 6-11
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            // *args is in star_arg, not params
+            let star_arg = func.params.star_arg.as_ref().expect("should have star_arg");
+            if let crate::nodes::expression::StarArg::Param(param) = star_arg {
+                let node_id = param.node_id.expect("Param should have node_id");
+                let pos = parsed
+                    .positions
+                    .get(&node_id)
+                    .expect("Should have position");
+                let span = pos.ident_span.expect("Should have ident_span");
+
+                assert_eq!(span.start, 6, "param span should start at 6 (*)");
+                assert_eq!(span.end, 11, "param span should end at 11 (after 'args')");
+            } else {
+                panic!("Expected Param in star_arg");
+            }
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+
+    #[test]
+    fn test_param_kwargs_span() {
+        // Test that **kwargs param starts at **
+        let source = "def f(**kwargs): pass\n";
+        //            0         1         2
+        //            012345678901234567890
+        //                  ^**kwargs: 6-14
+
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+
+        if let Statement::Compound(CompoundStatement::FunctionDef(func)) = &parsed.module.body[0] {
+            // **kwargs is in star_kwarg, not params
+            let star_kwarg = func
+                .params
+                .star_kwarg
+                .as_ref()
+                .expect("should have star_kwarg");
+            let node_id = star_kwarg.node_id.expect("Param should have node_id");
+            let pos = parsed
+                .positions
+                .get(&node_id)
+                .expect("Should have position");
+            let span = pos.ident_span.expect("Should have ident_span");
+
+            assert_eq!(span.start, 6, "param span should start at 6 (**)");
+            assert_eq!(span.end, 14, "param span should end at 14 (after 'kwargs')");
+        } else {
+            panic!("Expected FunctionDef");
+        }
+    }
+}

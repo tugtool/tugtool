@@ -1249,6 +1249,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedDecorator<'r, 'a> {
         // Assign identity for this Decorator node
         let node_id = ctx.next_id();
 
+        // Record ident_span from '@' token to decorator expression end (BEFORE inflating)
+        let start = self.at_tok.start_pos.byte_idx();
+        let end = self.decorator.end_pos();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.at_tok.whitespace_before.borrow_mut(),
