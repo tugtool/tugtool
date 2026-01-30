@@ -3256,6 +3256,207 @@ mod test {
             panic!("Expected Simple statement");
         }
     }
+
+    // =========================================================================
+    // Step 0.2.0.9: Scope Statement Spans
+    // =========================================================================
+
+    #[test]
+    fn test_scope_stmt_span_for_recorded() {
+        let source = "for x in xs:\n    pass\n";
+        //            0         1         2
+        //            0123456789012345678901 2
+        //            ^for: bytes 0-22 (dedent at 22, after final newline)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::For(for_stmt) = compound {
+                let node_id = for_stmt.node_id.expect("For should have node_id");
+                let pos = positions.get(&node_id).expect("For should have position");
+                let span = pos.lexical_span.expect("For should have lexical_span");
+
+                assert_eq!(span.start, 0, "for should start at 0");
+                assert_eq!(span.end, 22, "for should end at 22 (dedent)");
+            } else {
+                panic!("Expected For statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_async_for() {
+        let source = "async for x in xs:\n    pass\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567 8
+        //            ^async for: bytes 0-28 (dedent at 28)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::For(for_stmt) = compound {
+                let node_id = for_stmt.node_id.expect("For should have node_id");
+                let pos = positions.get(&node_id).expect("For should have position");
+                let span = pos.lexical_span.expect("For should have lexical_span");
+
+                // Should start at 'async', not 'for'
+                assert_eq!(span.start, 0, "async for should start at 0");
+                assert_eq!(span.end, 28, "async for should end at 28");
+                assert_eq!(&source[span.start..6], "async ");
+            } else {
+                panic!("Expected For statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_while_recorded() {
+        let source = "while cond:\n    pass\n";
+        //            0         1         2
+        //            01234567890123456789012
+        //            ^while: bytes 0-21
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::While(while_stmt) = compound {
+                let node_id = while_stmt.node_id.expect("While should have node_id");
+                let pos = positions.get(&node_id).expect("While should have position");
+                let span = pos.lexical_span.expect("While should have lexical_span");
+
+                assert_eq!(span.start, 0, "while should start at 0");
+                assert_eq!(span.end, 21, "while should end at 21");
+            } else {
+                panic!("Expected While statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_with_recorded() {
+        let source = "with ctx:\n    pass\n";
+        //            0         1
+        //            0123456789012345678 9
+        //            ^with: bytes 0-19
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::With(with_stmt) = compound {
+                let node_id = with_stmt.node_id.expect("With should have node_id");
+                let pos = positions.get(&node_id).expect("With should have position");
+                let span = pos.lexical_span.expect("With should have lexical_span");
+
+                assert_eq!(span.start, 0, "with should start at 0");
+                assert_eq!(span.end, 19, "with should end at 19");
+            } else {
+                panic!("Expected With statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_async_with() {
+        let source = "async with ctx:\n    pass\n";
+        //            0         1         2
+        //            012345678901234567890123456
+        //            ^async with: bytes 0-25
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::With(with_stmt) = compound {
+                let node_id = with_stmt.node_id.expect("With should have node_id");
+                let pos = positions.get(&node_id).expect("With should have position");
+                let span = pos.lexical_span.expect("With should have lexical_span");
+
+                // Should start at 'async', not 'with'
+                assert_eq!(span.start, 0, "async with should start at 0");
+                assert_eq!(span.end, 25, "async with should end at 25");
+                assert_eq!(&source[span.start..6], "async ");
+            } else {
+                panic!("Expected With statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_try_recorded() {
+        let source = "try:\n    pass\nexcept:\n    pass\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890 1
+        //            ^try: bytes 0-31 (ends at except body dedent)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Try(try_stmt) = compound {
+                let node_id = try_stmt.node_id.expect("Try should have node_id");
+                let pos = positions.get(&node_id).expect("Try should have position");
+                let span = pos.lexical_span.expect("Try should have lexical_span");
+
+                assert_eq!(span.start, 0, "try should start at 0");
+                assert_eq!(span.end, 31, "try should end at 31");
+            } else {
+                panic!("Expected Try statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_try_with_finally() {
+        let source = "try:\n    pass\nfinally:\n    pass\n";
+        //            0         1         2         3
+        //            012345678901234567890123456789012
+        //            ^try: bytes 0-32 (ends at finally body dedent)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Try(try_stmt) = compound {
+                let node_id = try_stmt.node_id.expect("Try should have node_id");
+                let pos = positions.get(&node_id).expect("Try should have position");
+                let span = pos.lexical_span.expect("Try should have lexical_span");
+
+                assert_eq!(span.start, 0, "try should start at 0");
+                // Span should extend to the finally body's dedent
+                assert_eq!(span.end, 32, "try should end at 32 (finally end)");
+            } else {
+                panic!("Expected Try statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_scope_stmt_span_match_recorded() {
+        let source = "match x:\n    case 1:\n        pass\n";
+        //            0         1         2         3
+        //            01234567890123456789012345678901234
+        //            ^match: bytes 0-34
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Match(match_stmt) = compound {
+                let node_id = match_stmt.node_id.expect("Match should have node_id");
+                let pos = positions.get(&node_id).expect("Match should have position");
+                let span = pos.lexical_span.expect("Match should have lexical_span");
+
+                assert_eq!(span.start, 0, "match should start at 0");
+                assert_eq!(span.end, 34, "match should end at 34");
+            } else {
+                panic!("Expected Match statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
 }
 
 // ============================================================================

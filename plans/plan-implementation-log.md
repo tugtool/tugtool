@@ -6,6 +6,55 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.9: Scope Statement Spans | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.9 specification (lines 2955-2992)
+- Table T22: Scope-Creating Statements (#t22-statement-spans)
+- Pattern 4: Scope-Creating Statement (#step-0-2-0-patterns)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - For, While, With, Try, TryStar, Match Inflate implementations
+- Existing `deflated_suite_end_pos` helper function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `For`: Add `record_lexical_span` from `for_tok` (or `async_tok` if present) to body end | Done |
+| `While`: Add `record_lexical_span` from `while_tok.start_pos` to body end | Done |
+| `With`: Add `record_lexical_span` from `with_tok` (or `async_tok` if present) to body end | Done |
+| `Try`: Add `record_lexical_span` from `try_tok.start_pos` to finalbody/orelse/handlers end | Done |
+| `TryStar`: Add `record_lexical_span` from `try_tok.start_pos` to finalbody/orelse/handlers end | Done |
+| `Match`: Add `record_lexical_span` from `match_tok.start_pos` to dedent_tok | Done |
+| Write 8 unit tests for scope statement spans | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added helper functions (`deflated_try_end_pos`, `deflated_try_star_end_pos`, `deflated_match_end_pos`); added `record_lexical_span` to For, While, With, Try, TryStar, Match Inflate implementations
+- `crates/tugtool-python-cst/src/lib.rs` - Added 8 tests: `test_scope_stmt_span_for_recorded`, `test_scope_stmt_span_async_for`, `test_scope_stmt_span_while_recorded`, `test_scope_stmt_span_with_recorded`, `test_scope_stmt_span_async_with`, `test_scope_stmt_span_try_recorded`, `test_scope_stmt_span_try_with_finally`, `test_scope_stmt_span_match_recorded`
+- `plans/phase-13.md` - Marked Step 0.2.0.9 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst scope_stmt_span`: 8/8 passed
+- `cargo nextest run -p tugtool-python-cst`: 677/677 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 677/677
+- `cargo nextest run -p tugtool-python-cst scope_stmt_span` passes: PASS - 8/8
+
+**Key Decisions/Notes:**
+- Added three helper functions for computing end positions of complex statements:
+  - `deflated_try_end_pos`: Priority order finalbody > orelse > handlers > body
+  - `deflated_try_star_end_pos`: Mirror for TryStar with ExceptStarHandler type
+  - `deflated_match_end_pos`: Simple wrapper using Match's dedent_tok
+- For and With handle async variants by checking `async_tok.as_ref()` for start position
+- Test names use `scope_stmt_span` prefix for consistent filtering with checkpoint command
+- Tests verify both sync and async variants for For and With statements
+- Try tests cover both except-only and finally cases to verify priority logic
+
+---
+
 ## [phase-13.md] Step 0.2.0.8: String Type Spans | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

@@ -2966,27 +2966,27 @@ String expressions have complex structure (concatenation, f-strings, template st
 Scope-creating statements use `lexical_span` to define their scope boundaries. The span starts at the keyword (or `async` if present) and ends at the suite end.
 
 **Tasks:**
-- [ ] `For`: Add `record_lexical_span` from `for_tok` (or `async_tok` if present) start to `deflated_suite_end_pos(&body)`
-- [ ] `While`: Add `record_lexical_span` from `while_tok.start_pos` to `deflated_suite_end_pos(&body)`
-- [ ] `With`: Add `record_lexical_span` from `with_tok` (or `async_tok` if present) start to `deflated_suite_end_pos(&body)`
-- [ ] `Try`: Add `record_lexical_span` from `try_tok.start_pos` to end of finalbody/orelse/handlers (whichever is last)
-- [ ] `TryStar`: Add `record_lexical_span` from `try_tok.start_pos` to end of finalbody/orelse/handlers
-- [ ] `Match`: Add `record_lexical_span` from `match_tok.start_pos` to last case end
+- [x] `For`: Add `record_lexical_span` from `for_tok` (or `async_tok` if present) start to `deflated_suite_end_pos(&body)`
+- [x] `While`: Add `record_lexical_span` from `while_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [x] `With`: Add `record_lexical_span` from `with_tok` (or `async_tok` if present) start to `deflated_suite_end_pos(&body)`
+- [x] `Try`: Add `record_lexical_span` from `try_tok.start_pos` to end of finalbody/orelse/handlers (whichever is last)
+- [x] `TryStar`: Add `record_lexical_span` from `try_tok.start_pos` to end of finalbody/orelse/handlers
+- [x] `Match`: Add `record_lexical_span` from `match_tok.start_pos` to last case end
 
 **Tests:**
-- [ ] Unit: `test_for_lexical_span_recorded` - Parse `for x in xs:\n    pass`, verify lexical_span
-- [ ] Unit: `test_async_for_lexical_span` - Parse `async for x in xs:\n    pass`, verify span starts at `async`
-- [ ] Unit: `test_while_lexical_span_recorded` - Parse `while cond:\n    pass`, verify lexical_span
-- [ ] Unit: `test_with_lexical_span_recorded` - Parse `with ctx:\n    pass`, verify lexical_span
-- [ ] Unit: `test_async_with_lexical_span` - Parse `async with ctx:\n    pass`, verify span starts at `async`
-- [ ] Unit: `test_try_lexical_span_recorded` - Parse `try:\n    pass\nexcept:\n    pass`, verify lexical_span
-- [ ] Unit: `test_try_with_finally_span` - Parse `try:\n    pass\nfinally:\n    pass`, verify span extends to finally end
-- [ ] Unit: `test_match_lexical_span_recorded` - Parse `match x:\n    case 1:\n        pass`, verify lexical_span
+- [x] Unit: `test_scope_stmt_span_for_recorded` - Parse `for x in xs:\n    pass`, verify lexical_span
+- [x] Unit: `test_scope_stmt_span_async_for` - Parse `async for x in xs:\n    pass`, verify span starts at `async`
+- [x] Unit: `test_scope_stmt_span_while_recorded` - Parse `while cond:\n    pass`, verify lexical_span
+- [x] Unit: `test_scope_stmt_span_with_recorded` - Parse `with ctx:\n    pass`, verify lexical_span
+- [x] Unit: `test_scope_stmt_span_async_with` - Parse `async with ctx:\n    pass`, verify span starts at `async`
+- [x] Unit: `test_scope_stmt_span_try_recorded` - Parse `try:\n    pass\nexcept:\n    pass`, verify lexical_span
+- [x] Unit: `test_scope_stmt_span_try_with_finally` - Parse `try:\n    pass\nfinally:\n    pass`, verify span extends to finally end
+- [x] Unit: `test_scope_stmt_span_match_recorded` - Parse `match x:\n    case 1:\n        pass`, verify lexical_span
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst scope_stmt_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [x] `cargo nextest run -p tugtool-python-cst scope_stmt_span` passes
 
 **Rollback:** Revert commit
 

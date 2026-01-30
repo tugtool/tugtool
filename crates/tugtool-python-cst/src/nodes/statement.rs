@@ -111,6 +111,49 @@ pub(crate) fn deflated_suite_end_pos<'r, 'a>(suite: &DeflatedSuite<'r, 'a>) -> u
     }
 }
 
+/// Compute the end position for a Try statement.
+/// Priority: finalbody > orelse > handlers > body
+fn deflated_try_end_pos<'r, 'a>(
+    body: &DeflatedSuite<'r, 'a>,
+    handlers: &[DeflatedExceptHandler<'r, 'a>],
+    orelse: &Option<DeflatedElse<'r, 'a>>,
+    finalbody: &Option<DeflatedFinally<'r, 'a>>,
+) -> usize {
+    if let Some(f) = finalbody {
+        deflated_suite_end_pos(&f.body)
+    } else if let Some(e) = orelse {
+        deflated_suite_end_pos(&e.body)
+    } else if let Some(h) = handlers.last() {
+        deflated_suite_end_pos(&h.body)
+    } else {
+        deflated_suite_end_pos(body)
+    }
+}
+
+/// Compute the end position for a TryStar statement.
+/// Priority: finalbody > orelse > handlers > body
+fn deflated_try_star_end_pos<'r, 'a>(
+    body: &DeflatedSuite<'r, 'a>,
+    handlers: &[DeflatedExceptStarHandler<'r, 'a>],
+    orelse: &Option<DeflatedElse<'r, 'a>>,
+    finalbody: &Option<DeflatedFinally<'r, 'a>>,
+) -> usize {
+    if let Some(f) = finalbody {
+        deflated_suite_end_pos(&f.body)
+    } else if let Some(e) = orelse {
+        deflated_suite_end_pos(&e.body)
+    } else if let Some(h) = handlers.last() {
+        deflated_suite_end_pos(&h.body)
+    } else {
+        deflated_suite_end_pos(body)
+    }
+}
+
+/// Compute the end position for a Match statement using its dedent token.
+fn deflated_match_end_pos<'r, 'a>(dedent_tok: &TokenRef<'r, 'a>) -> usize {
+    dedent_tok.start_pos.byte_idx()
+}
+
 #[cst_node]
 pub struct IndentedBlock<'a> {
     /// Sequence of statements belonging to this indented block.
@@ -1769,6 +1812,19 @@ impl<'r, 'a> Inflate<'a> for DeflatedFor<'r, 'a> {
         // Assign identity for this For node
         let node_id = ctx.next_id();
 
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        // Start: async_tok if present, otherwise for_tok
+        let lexical_start = self
+            .async_tok
+            .as_ref()
+            .map(|t| t.start_pos.byte_idx())
+            .unwrap_or_else(|| self.for_tok.start_pos.byte_idx());
+
+        // End: body suite end
+        let scope_end = deflated_suite_end_pos(&self.body);
+
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
                 parse_parenthesizable_whitespace(&ctx.ws, &mut asy.whitespace_after.borrow_mut())?;
@@ -1862,6 +1918,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedWhile<'r, 'a> {
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this While node
         let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        let lexical_start = self.while_tok.start_pos.byte_idx();
+        let scope_end = deflated_suite_end_pos(&self.body);
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2308,6 +2369,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedTry<'r, 'a> {
         // Assign identity for this Try node
         let node_id = ctx.next_id();
 
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        let lexical_start = self.try_tok.start_pos.byte_idx();
+        let scope_end = deflated_try_end_pos(&self.body, &self.handlers, &self.orelse, &self.finalbody);
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.try_tok.whitespace_before.borrow_mut(),
@@ -2373,6 +2439,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedTryStar<'r, 'a> {
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this TryStar node
         let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        let lexical_start = self.try_tok.start_pos.byte_idx();
+        let scope_end = deflated_try_star_end_pos(&self.body, &self.handlers, &self.orelse, &self.finalbody);
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
@@ -2557,6 +2628,19 @@ impl<'r, 'a> Inflate<'a> for DeflatedWith<'r, 'a> {
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this With node
         let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        // Start: async_tok if present, otherwise with_tok
+        let lexical_start = self
+            .async_tok
+            .as_ref()
+            .map(|t| t.start_pos.byte_idx())
+            .unwrap_or_else(|| self.with_tok.start_pos.byte_idx());
+
+        // End: body suite end
+        let scope_end = deflated_suite_end_pos(&self.body);
+
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
 
         let (asynchronous, leading_lines) = if let Some(asy) = self.async_tok.as_mut() {
             let whitespace_after =
@@ -2748,6 +2832,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedMatch<'r, 'a> {
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this Match node
         let node_id = ctx.next_id();
+
+        // Compute lexical span BEFORE inflating (tokens stripped during inflation)
+        let lexical_start = self.match_tok.start_pos.byte_idx();
+        let scope_end = deflated_match_end_pos(&self.dedent_tok);
+        ctx.record_lexical_span(node_id, Span { start: lexical_start, end: scope_end });
 
         let leading_lines = parse_empty_lines(
             &ctx.ws,
