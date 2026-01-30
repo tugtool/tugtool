@@ -155,9 +155,12 @@ fn deflated_match_end_pos<'r, 'a>(dedent_tok: &TokenRef<'r, 'a>) -> usize {
 }
 
 // Apply dispatch macro to DeflatedAssignTargetExpression (uses trait impls from expression.rs)
+// Both start_pos and end_pos are needed: start_pos for Assign/AnnAssign/AugAssign,
+// end_pos for AsName.name in import statements (which is AssignTargetExpression, not NameOrAttribute)
 impl_deflated_pos_dispatch!(
     DeflatedAssignTargetExpression<'r, 'a>,
-    start_pos: [Name, Attribute, StarredElement, Tuple, List, Subscript]
+    start_pos: [Name, Attribute, StarredElement, Tuple, List, Subscript],
+    end_pos: [Name, Attribute, StarredElement, Tuple, List, Subscript]
 );
 
 // Apply dispatch macro to DeflatedDelTargetExpression (uses trait impls from expression.rs)

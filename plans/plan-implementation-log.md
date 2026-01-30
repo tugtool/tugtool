@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.11.6: Import Infrastructure Foundation | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.11.6 specification
+- `plans/phase-13.md` - Step 0.2.0.12 (Import Statement Spans) for context on infrastructure needs
+- `crates/tugtool-python-cst/src/nodes/op.rs` - ImportStar struct and #[cst_node] macro behavior
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Import star parsing rule
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - NameOrAttribute enum and dispatch macro
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - AssignTargetExpression dispatch
+- `crates/tugtool-python-cst-derive/src/cstnode.rs` - Understanding how #[cst_node] splits tok fields
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Phase 1: Add `tok: TokenRef<'a>` field to ImportStar struct | Done |
+| Phase 1: Update `make_importstar()` signature and body | Done |
+| Phase 1: Update `Inflate` impl for DeflatedImportStar | Done |
+| Phase 2: Update grammar rule to pass star token to `make_importstar(star)` | Done |
+| Phase 3: Apply `impl_deflated_pos_dispatch!` to DeflatedNameOrAttribute | Done |
+| Phase 4: Extend AssignTargetExpression dispatch to include `end_pos` | Done |
+| Phase 5: Documentation fix (already correct in plan) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/op.rs` - Added tok field to ImportStar, updated make_importstar() and Inflate impl
+- `crates/tugtool-python-cst/src/parser/grammar.rs` - Updated import star rule to pass token
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added dispatch macro for DeflatedNameOrAttribute with N, A variants
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Extended DeflatedAssignTargetExpression dispatch to include end_pos
+- `crates/tugtool-python-cst/src/lib.rs` - Added 8 unit tests and DeflatedImportNames import
+- `plans/phase-13.md` - Checked off all tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 715 tests passed (up from 707, +8 new tests)
+- `cargo nextest run -p tugtool-python-cst importstar`: 2 tests passed
+- `cargo nextest run -p tugtool-python-cst name_or_attribute`: 4 tests passed
+- `cargo nextest run -p tugtool-python-cst assign_target_end_pos`: 2 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS (715 tests)
+- `cargo clippy -p tugtool-python-cst -- -D warnings` passes: PASS
+- Grep confirms ImportStar struct has tok field: PASS
+- Grep confirms impl_deflated_pos_dispatch! applied to DeflatedNameOrAttribute: PASS
+
+**Key Decisions/Notes:**
+- The #[cst_node] macro automatically strips TokenRef fields from the inflated type, so ImportStar inflated type has no fields (empty struct) while DeflatedImportStar has the tok field
+- ImportStar remains without a lifetime parameter since all its fields are stripped in the inflated form
+- Documentation fix (Phase 5) was already done in a previous plan update - Step 0.2.0.12 correctly shows AssignTargetExpression at line 3285
+- This foundation step unblocks Step 0.2.0.12 (Import Statement Spans) by providing: ImportStar.tok for star position, DeflatedNameOrAttribute dispatch for import alias names, DeflatedAssignTargetExpression.end_pos() for AsName handling
+
+---
+
 ## [phase-13.md] Plan Update: Steps 0.2.0.12-0.2.0.13 Updated for Trait Infrastructure | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

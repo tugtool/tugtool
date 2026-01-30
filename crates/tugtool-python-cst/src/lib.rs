@@ -4149,7 +4149,7 @@ mod test {
 mod deflated_tests {
     use super::*;
     use crate::nodes::deflated::{CompoundStatement, SmallStatement, Statement, Suite};
-    use crate::nodes::statement::deflated_suite_end_pos;
+    use crate::nodes::statement::{deflated_suite_end_pos, DeflatedImportNames};
 
     // ========================================================================
     // Step 0.2.0.1 Tests: Token Field Capture Verification
@@ -4601,6 +4601,240 @@ mod deflated_tests {
                 assert_eq!(span.end, 5, "del should end at 5");
             } else {
                 panic!("Expected Del statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    // ========================================================================
+    // Step 0.2.0.11.6: Import Infrastructure Foundation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_importstar_has_tok_field() {
+        // Test that DeflatedImportStar has a populated tok field
+        let source = "from os import *\n";
+        //            0123456789012345
+        //                           ^ star at 15
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::ImportFrom(import_from) = &simple.body[0] {
+                if let DeflatedImportNames::Star(star) = &import_from.names {
+                    // Verify tok field exists and is accessible
+                    let start = star.tok.start_pos.byte_idx();
+                    let end = star.tok.end_pos.byte_idx();
+                    assert!(start < end, "tok should have valid positions");
+                } else {
+                    panic!("Expected ImportNames::Star");
+                }
+            } else {
+                panic!("Expected ImportFrom statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_importstar_tok_position() {
+        // Test that ImportStar.tok positions point to the '*' character
+        let source = "from os import *\n";
+        //            0123456789012345
+        //                           ^ star at 15
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::ImportFrom(import_from) = &simple.body[0] {
+                if let DeflatedImportNames::Star(star) = &import_from.names {
+                    let start = star.tok.start_pos.byte_idx();
+                    let end = star.tok.end_pos.byte_idx();
+
+                    assert_eq!(start, 15, "star token should start at 15");
+                    assert_eq!(end, 16, "star token should end at 16");
+
+                    // Verify the source slice is "*"
+                    let slice = &source[start..end];
+                    assert_eq!(slice, "*", "token should span the '*' character");
+                } else {
+                    panic!("Expected ImportNames::Star");
+                }
+            } else {
+                panic!("Expected ImportFrom statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_name_or_attribute_start_pos_name() {
+        // Test that DeflatedNameOrAttribute::N.start_pos() works
+        let source = "import os\n";
+        //            0123456789
+        //                   ^os: 7
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                if let Some(alias) = import.names.first() {
+                    let start = alias.name.start_pos();
+                    assert_eq!(start, 7, "name should start at 7");
+                } else {
+                    panic!("Expected at least one import alias");
+                }
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_name_or_attribute_end_pos_name() {
+        // Test that DeflatedNameOrAttribute::N.end_pos() works
+        let source = "import os\n";
+        //            0123456789
+        //                   ^os: 7-9
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                if let Some(alias) = import.names.first() {
+                    let end = alias.name.end_pos();
+                    assert_eq!(end, 9, "name should end at 9");
+                } else {
+                    panic!("Expected at least one import alias");
+                }
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_name_or_attribute_start_pos_attribute() {
+        // Test that DeflatedNameOrAttribute::A.start_pos() works
+        let source = "import os.path\n";
+        //            01234567890123456
+        //                   ^os.path: 7
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                if let Some(alias) = import.names.first() {
+                    let start = alias.name.start_pos();
+                    assert_eq!(start, 7, "attribute should start at 7");
+                } else {
+                    panic!("Expected at least one import alias");
+                }
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_name_or_attribute_end_pos_attribute() {
+        // Test that DeflatedNameOrAttribute::A.end_pos() works
+        let source = "import os.path\n";
+        //            01234567890123456
+        //                   ^os.path: 7-14
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Import(import) = &simple.body[0] {
+                if let Some(alias) = import.names.first() {
+                    let end = alias.name.end_pos();
+                    assert_eq!(end, 14, "attribute should end at 14");
+                } else {
+                    panic!("Expected at least one import alias");
+                }
+            } else {
+                panic!("Expected Import statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_assign_target_end_pos_name() {
+        // Test that DeflatedAssignTargetExpression::Name.end_pos() works
+        // (This tests the end_pos dispatch that was added in Step 0.2.0.11.6)
+        let source = "x = 1\n";
+        //            012345
+        //            ^x: 0-1
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                let target = &assign.targets[0].target;
+                let end = target.end_pos();
+
+                assert_eq!(end, 1, "assign target should end at 1");
+            } else {
+                panic!("Expected Assign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_assign_target_end_pos_attribute() {
+        // Test that DeflatedAssignTargetExpression::Attribute.end_pos() works
+        let source = "obj.attr = 1\n";
+        //            0123456789012
+        //            ^obj.attr: 0-8
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                let target = &assign.targets[0].target;
+                let end = target.end_pos();
+
+                assert_eq!(end, 8, "assign target should end at 8");
+            } else {
+                panic!("Expected Assign statement");
             }
         } else {
             panic!("Expected Simple statement");

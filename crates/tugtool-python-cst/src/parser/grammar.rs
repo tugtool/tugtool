@@ -269,7 +269,7 @@ parser! {
                 (Some(lpar), ImportNames::Aliases(als), Some(rpar))
             }
             / als:import_from_as_names() !lit(",") { (None, ImportNames::Aliases(als), None)}
-            / star:lit("*") { (None, ImportNames::Star(make_importstar()), None) }
+            / star:lit("*") { (None, ImportNames::Star(make_importstar(star)), None) }
 
         rule import_from_as_names() -> Vec<ImportAlias<'input, 'a>>
             = items:separated(<import_from_as_name()>, <comma()>) {

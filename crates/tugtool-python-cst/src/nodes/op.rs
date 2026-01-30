@@ -175,13 +175,20 @@ impl<'r, 'a> DeflatedDot<'r, 'a> {
     }
 }
 
+/// Represents a `*` in `from x import *`.
+///
+/// The deflated form (`DeflatedImportStar`) holds a reference to the `*` token
+/// for position tracking during parsing. The inflated form is empty since
+/// position information is not needed after inflation.
 #[cst_node]
-pub struct ImportStar {}
+pub struct ImportStar {
+    /// Token reference for the `*` character - only available in deflated form.
+    /// Used for position tracking during span computation in inflation.
+    pub(crate) tok: TokenRef<'a>,
+}
 
-pub(crate) fn make_importstar<'r, 'a>() -> DeflatedImportStar<'r, 'a> {
-    DeflatedImportStar {
-        _phantom: Default::default(),
-    }
+pub(crate) fn make_importstar<'r, 'a>(tok: TokenRef<'r, 'a>) -> DeflatedImportStar<'r, 'a> {
+    DeflatedImportStar { tok }
 }
 
 impl<'a> Codegen<'a> for ImportStar {
@@ -193,6 +200,8 @@ impl<'a> Codegen<'a> for ImportStar {
 impl<'r, 'a> Inflate<'a> for DeflatedImportStar<'r, 'a> {
     type Inflated = ImportStar;
     fn inflate(self, _ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
+        // The tok field is only used for position tracking during span computation
+        // in the deflated form. The inflated ImportStar is empty.
         Ok(ImportStar {})
     }
 }

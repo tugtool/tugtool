@@ -3178,40 +3178,121 @@ This step eliminates the duplication using a trait-based approach with macro-gen
 
 ---
 
+### Step 0.2.0.11.6: Import Infrastructure Foundation {#step-0-2-0-11-6}
+
+**Commit:** `feat(python-cst): add import infrastructure for span recording`
+
+**References:** Step 0.2.0.11.5 (#step-0-2-0-11-5), Step 0.2.0.12 (#step-0-2-0-12)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/op.rs`
+- Modified `crates/tugtool-python-cst/src/parser/grammar.rs`
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+- Modified `plans/phase-13.md` (documentation fix)
+
+**Context:**
+
+Step 0.2.0.12 (Import Statement Spans) requires several infrastructure components that are currently missing or incomplete. This foundation step addresses those gaps to unblock Step 0.2.0.12 implementation.
+
+**Gap Analysis:**
+
+1. **ImportStar Token Field (op.rs):** The `ImportStar` node currently has no fields, making it impossible to determine the position of the `*` token for span computation. The grammar captures the token but discards it.
+
+2. **DeflatedNameOrAttribute Dispatch (expression.rs):** The enum exists with `N(DeflatedName)` and `A(DeflatedAttribute)` variants, but the `impl_deflated_pos_dispatch!` macro has not been applied. This prevents `name_or_attr.start_pos()` and `name_or_attr.end_pos()` calls needed for `ImportAlias` span computation.
+
+3. **DeflatedAssignTargetExpression End Position (statement.rs):** The dispatch macro is currently applied only for `start_pos`. Step 0.2.0.12 needs `end_pos` because `AsName.name` is `AssignTargetExpression`, not `NameOrAttribute` as incorrectly documented.
+
+4. **Documentation Error (phase-13.md):** Step 0.2.0.12 incorrectly states that `AsName.name` is `NameOrAttribute`. The actual type is `AssignTargetExpression`, which affects how end positions must be computed.
+
+**Tasks:**
+
+*Phase 1: ImportStar Token Field (op.rs)*
+- [x] Add `tok: TokenRef<'a>` field to `ImportStar` struct (via `#[cst_node]` attribute)
+- [x] Update `make_importstar()` signature to accept `tok: TokenRef<'r, 'a>` parameter
+- [x] Update `make_importstar()` body to initialize `tok` field in `DeflatedImportStar`
+- [x] Update `Inflate` impl for `DeflatedImportStar` if needed (likely auto-handled by macro)
+
+*Phase 2: Parser Grammar Update (grammar.rs)*
+- [x] Update import star rule at line 272 to pass captured `star` token to `make_importstar(star)`
+- [x] Verify the rule compiles: `/ star:lit("*") { (None, ImportNames::Star(make_importstar(star)), None) }`
+
+*Phase 3: DeflatedNameOrAttribute Dispatch (expression.rs)*
+- [x] Apply `impl_deflated_pos_dispatch!` to `DeflatedNameOrAttribute<'r, 'a>`:
+  - `start_pos: [N, A]`
+  - `end_pos: [N, A]`
+- [x] Verify macro placement after the enum definition (around line 1008)
+
+*Phase 4: DeflatedAssignTargetExpression End Position (statement.rs)*
+- [x] Extend existing `impl_deflated_pos_dispatch!` invocation to include `end_pos`:
+  - Current: `start_pos: [Name, Attribute, StarredElement, Tuple, List, Subscript]`
+  - New: Add `end_pos: [Name, Attribute, StarredElement, Tuple, List, Subscript]`
+- [x] All inner types already have `DeflatedEndPos` implementations from Step 0.2.0.11.5
+
+*Phase 5: Documentation Fix (phase-13.md)*
+- [x] Update Step 0.2.0.12 line 3200-3201 to reflect correct type:
+  - Current: "If `asname` is present: end of `asname.name` (which is `NameOrAttribute`)"
+  - Fixed: "If `asname` is present: end of `asname.name` (which is `AssignTargetExpression`)"
+- [x] Update Step 0.2.0.12 Phase 2 implementation notes to use `AssignTargetExpression.end_pos()` via dispatch
+
+**Tests:**
+
+*Unit Tests (tugtool-python-cst)*
+- [x] `test_importstar_has_tok_field` - Parse `from os import *`, verify `ImportStar` has populated `tok` field
+- [x] `test_importstar_tok_position` - Verify `tok.start_pos` and `tok.end_pos` point to `*` character
+- [x] `test_name_or_attribute_start_pos_name` - Verify `DeflatedNameOrAttribute::N(name).start_pos()` returns correct position
+- [x] `test_name_or_attribute_end_pos_name` - Verify `DeflatedNameOrAttribute::N(name).end_pos()` returns correct position
+- [x] `test_name_or_attribute_start_pos_attribute` - Verify `DeflatedNameOrAttribute::A(attr).start_pos()` returns correct position
+- [x] `test_name_or_attribute_end_pos_attribute` - Verify `DeflatedNameOrAttribute::A(attr).end_pos()` returns correct position
+- [x] `test_assign_target_end_pos_name` - Verify `DeflatedAssignTargetExpression::Name(n).end_pos()` works
+- [x] `test_assign_target_end_pos_attribute` - Verify `DeflatedAssignTargetExpression::Attribute(a).end_pos()` works
+
+**Checkpoint:**
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 715 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst importstar` passes
+- [x] `cargo nextest run -p tugtool-python-cst name_or_attribute` passes
+- [x] `cargo nextest run -p tugtool-python-cst assign_target_end_pos` passes
+- [x] `cargo clippy -p tugtool-python-cst -- -D warnings` passes
+- [x] Grep confirms `ImportStar` struct has `tok` field
+- [x] Grep confirms `impl_deflated_pos_dispatch!` applied to `DeflatedNameOrAttribute`
+
+**Rollback:** Revert commit
+
+---
+
 ### Step 0.2.0.12: Import Statement Spans {#step-0-2-0-12}
 
 **Commit:** `feat(python-cst): record ident_span for import statement nodes`
 
-**References:** Table T22 Import Statements (#t22-statement-spans), Step 0.2.0.11.5 (#step-0-2-0-11-5)
+**References:** Table T22 Import Statements (#t22-statement-spans), Step 0.2.0.11.6 (#step-0-2-0-11-6)
 
 **Artifacts:**
-- Modified `crates/tugtool-python-cst/src/nodes/expression.rs` (trait impls for NameOrAttribute)
 - Modified `crates/tugtool-python-cst/src/nodes/statement.rs` (Import, ImportFrom span recording)
 
 **Context:**
 
-Import statements have their own token patterns and are commonly targeted in refactoring operations. This step leverages the trait/macro infrastructure from Step 0.2.0.11.5 for consistent position computation.
+Import statements have their own token patterns and are commonly targeted in refactoring operations. This step leverages the trait/macro infrastructure from Step 0.2.0.11.5 and the foundation work from Step 0.2.0.11.6 for consistent position computation.
 
-**Infrastructure Reuse:**
+**Infrastructure (from Step 0.2.0.11.6):**
 
-The `DeflatedNameOrAttribute` enum contains `N(DeflatedName)` and `A(DeflatedAttribute)` variants. Since `DeflatedName` and `DeflatedAttribute` already implement `DeflatedStartPos` and `DeflatedEndPos` (from Step 0.2.0.11.5), apply the dispatch macro to enable `name_or_attr.end_pos()` calls for computing alias end positions.
+Step 0.2.0.11.6 provides the following infrastructure that this step depends on:
+- `ImportStar.tok` field for `*` token position
+- `impl_deflated_pos_dispatch!` for `DeflatedNameOrAttribute` with `N`, `A` variants
+- `impl_deflated_pos_dispatch!` for `DeflatedAssignTargetExpression` with `end_pos` support
 
 For `ImportAlias`, the end position is computed from:
-1. If `asname` is present: end of `asname.name` (which is `NameOrAttribute`)
+1. If `asname` is present: end of `asname.name` (which is `AssignTargetExpression`)
 2. Otherwise: end of `name` (which is `NameOrAttribute`)
 
 **Tasks:**
 
-*Phase 1: Extend Trait Infrastructure (expression.rs)*
-- [ ] Apply `impl_deflated_pos_dispatch!` to `DeflatedNameOrAttribute` with variants: `N`, `A`
-  - Both `start_pos` and `end_pos` (the inner `DeflatedName`/`DeflatedAttribute` already have trait impls)
-
-*Phase 2: Implement Import Alias End Position (statement.rs)*
+*Phase 1: Implement Import Alias End Position (statement.rs)*
 - [ ] Implement `DeflatedEndPos` for `DeflatedImportAlias`:
-  - If `asname.is_some()`: return `asname.unwrap().name.end_pos()` (via NameOrAttribute dispatch)
-  - Otherwise: return `name.end_pos()` (via NameOrAttribute dispatch)
+  - If `asname.is_some()`: return `asname.unwrap().name.end_pos()` (via AssignTargetExpression dispatch from Step 0.2.0.11.6)
+  - Otherwise: return `name.end_pos()` (via NameOrAttribute dispatch from Step 0.2.0.11.6)
 - [ ] Add helper function `deflated_import_names_end_pos(&DeflatedImportNames) -> usize`:
-  - Match on `Star(s)` -> return `s.tok.end_pos.byte_idx()` (requires star_tok field on DeflatedImportStar)
+  - Match on `Star(s)` -> return `s.tok.end_pos.byte_idx()` (uses `tok` field from Step 0.2.0.11.6)
   - Match on `Aliases(vec)` -> return `vec.last().unwrap().end_pos()`
 
 *Phase 3: Import Span Recording (statement.rs)*
@@ -3227,14 +3308,12 @@ For `ImportAlias`, the end position is computed from:
 - [ ] Unit: `test_import_from_span_recorded` - Parse `from os import path`, verify ident_span
 - [ ] Unit: `test_import_from_multiple_span` - Parse `from os import path, getcwd`, verify span
 - [ ] Unit: `test_import_from_parens_span` - Parse `from os import (\n    path,\n    getcwd\n)`, verify span includes closing paren
-- [ ] Unit: `test_import_from_star_span` - Parse `from os import *`, verify span covers star
-- [ ] Unit: `test_name_or_attribute_dispatch` - Verify `DeflatedNameOrAttribute.end_pos()` works for both variants
+- [ ] Unit: `test_import_from_star_span` - Parse `from os import *`, verify span covers star (uses `tok` field from Step 0.2.0.11.6)
 
 **Checkpoint:**
 - [ ] `cargo build -p tugtool-python-cst` succeeds
 - [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
 - [ ] `cargo nextest run -p tugtool-python-cst import_span` passes
-- [ ] `cargo nextest run -p tugtool-python-cst name_or_attribute_dispatch` passes
 
 **Rollback:** Revert commit
 

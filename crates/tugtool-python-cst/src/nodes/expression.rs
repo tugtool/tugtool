@@ -998,6 +998,13 @@ pub enum NameOrAttribute<'a> {
     A(Box<Attribute<'a>>),
 }
 
+// Apply dispatch macro to DeflatedNameOrAttribute for import span computation
+impl_deflated_pos_dispatch!(
+    DeflatedNameOrAttribute<'r, 'a>,
+    start_pos: [N, A],
+    end_pos: [N, A]
+);
+
 impl<'r, 'a> std::convert::From<DeflatedNameOrAttribute<'r, 'a>> for DeflatedExpression<'r, 'a> {
     fn from(x: DeflatedNameOrAttribute<'r, 'a>) -> Self {
         match x {
