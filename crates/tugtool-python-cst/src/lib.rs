@@ -2420,6 +2420,316 @@ mod test {
             panic!("Expected Simple statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.6 Tests: Call/Attribute/Subscript Spans
+    // ========================================================================
+
+    #[test]
+    fn test_call_attr_subscript_span_call_recorded() {
+        let source = "foo(x, y)\n";
+        //            0123456789
+        //            ^call: bytes 0-9
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Call(call) = &expr.value {
+                    let node_id = call.node_id.expect("Call should have node_id");
+                    let pos = positions.get(&node_id).expect("Call should have position");
+                    let span = pos.ident_span.expect("Call should have ident_span");
+
+                    assert_eq!(span.start, 0, "call should start at 0");
+                    assert_eq!(span.end, 9, "call should end at 9");
+                    assert_eq!(&source[span.start..span.end], "foo(x, y)");
+                } else {
+                    panic!("Expected Call expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_call_no_args() {
+        let source = "foo()\n";
+        //            012345
+        //            ^call: bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Call(call) = &expr.value {
+                    let node_id = call.node_id.expect("Call should have node_id");
+                    let pos = positions.get(&node_id).expect("Call should have position");
+                    let span = pos.ident_span.expect("Call should have ident_span");
+
+                    assert_eq!(span.start, 0, "call should start at 0");
+                    assert_eq!(span.end, 5, "call should end at 5");
+                    assert_eq!(&source[span.start..span.end], "foo()");
+                } else {
+                    panic!("Expected Call expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_attribute_recorded() {
+        let source = "obj.attr\n";
+        //            012345678
+        //            ^attribute: bytes 0-8
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Attribute(attr) = &expr.value {
+                    let node_id = attr.node_id.expect("Attribute should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Attribute should have position");
+                    let span = pos.ident_span.expect("Attribute should have ident_span");
+
+                    assert_eq!(span.start, 0, "attribute should start at 0");
+                    assert_eq!(span.end, 8, "attribute should end at 8");
+                    assert_eq!(&source[span.start..span.end], "obj.attr");
+                } else {
+                    panic!("Expected Attribute expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_chained_attribute() {
+        let source = "a.b.c\n";
+        //            012345
+        //            ^outer attr (a.b.c): bytes 0-5
+        //            ^inner attr (a.b): bytes 0-3
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                // a.b.c parses as (a.b).c - outer is Attribute with value Attribute
+                if let Expression::Attribute(outer_attr) = &expr.value {
+                    // Verify outer attribute span (a.b.c)
+                    let outer_id = outer_attr
+                        .node_id
+                        .expect("Outer Attribute should have node_id");
+                    let outer_pos = positions
+                        .get(&outer_id)
+                        .expect("Outer Attribute should have position");
+                    let outer_span = outer_pos
+                        .ident_span
+                        .expect("Outer Attribute should have ident_span");
+
+                    assert_eq!(outer_span.start, 0, "outer attr should start at 0");
+                    assert_eq!(outer_span.end, 5, "outer attr should end at 5");
+                    assert_eq!(&source[outer_span.start..outer_span.end], "a.b.c");
+
+                    // Verify inner attribute span (a.b)
+                    if let Expression::Attribute(inner_attr) = outer_attr.value.as_ref() {
+                        let inner_id = inner_attr
+                            .node_id
+                            .expect("Inner Attribute should have node_id");
+                        let inner_pos = positions
+                            .get(&inner_id)
+                            .expect("Inner Attribute should have position");
+                        let inner_span = inner_pos
+                            .ident_span
+                            .expect("Inner Attribute should have ident_span");
+
+                        assert_eq!(inner_span.start, 0, "inner attr should start at 0");
+                        assert_eq!(inner_span.end, 3, "inner attr should end at 3");
+                        assert_eq!(&source[inner_span.start..inner_span.end], "a.b");
+                    } else {
+                        panic!("Expected inner Attribute expression");
+                    }
+                } else {
+                    panic!("Expected Attribute expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_subscript_recorded() {
+        let source = "obj[key]\n";
+        //            012345678
+        //            ^subscript: bytes 0-8
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Subscript(subscript) = &expr.value {
+                    let node_id = subscript.node_id.expect("Subscript should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Subscript should have position");
+                    let span = pos.ident_span.expect("Subscript should have ident_span");
+
+                    assert_eq!(span.start, 0, "subscript should start at 0");
+                    assert_eq!(span.end, 8, "subscript should end at 8");
+                    assert_eq!(&source[span.start..span.end], "obj[key]");
+                } else {
+                    panic!("Expected Subscript expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_subscript_with_slice() {
+        let source = "obj[1:2]\n";
+        //            012345678
+        //            ^subscript: bytes 0-8
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Subscript(subscript) = &expr.value {
+                    let node_id = subscript.node_id.expect("Subscript should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Subscript should have position");
+                    let span = pos.ident_span.expect("Subscript should have ident_span");
+
+                    assert_eq!(span.start, 0, "subscript should start at 0");
+                    assert_eq!(span.end, 8, "subscript should end at 8");
+                    assert_eq!(&source[span.start..span.end], "obj[1:2]");
+                } else {
+                    panic!("Expected Subscript expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_method_call() {
+        let source = "obj.method(arg)\n";
+        //            0         1
+        //            0123456789012345
+        //            ^call: bytes 0-15
+        //            ^attr: bytes 0-10
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                // obj.method(arg) parses as Call with func = Attribute
+                if let Expression::Call(call) = &expr.value {
+                    let call_id = call.node_id.expect("Call should have node_id");
+                    let call_pos = positions.get(&call_id).expect("Call should have position");
+                    let call_span = call_pos.ident_span.expect("Call should have ident_span");
+
+                    assert_eq!(call_span.start, 0, "call should start at 0");
+                    assert_eq!(call_span.end, 15, "call should end at 15");
+                    assert_eq!(&source[call_span.start..call_span.end], "obj.method(arg)");
+
+                    // Verify the inner attribute span (obj.method)
+                    if let Expression::Attribute(attr) = call.func.as_ref() {
+                        let attr_id = attr.node_id.expect("Attribute should have node_id");
+                        let attr_pos = positions
+                            .get(&attr_id)
+                            .expect("Attribute should have position");
+                        let attr_span = attr_pos
+                            .ident_span
+                            .expect("Attribute should have ident_span");
+
+                        assert_eq!(attr_span.start, 0, "attr should start at 0");
+                        assert_eq!(attr_span.end, 10, "attr should end at 10");
+                        assert_eq!(&source[attr_span.start..attr_span.end], "obj.method");
+                    } else {
+                        panic!("Expected Attribute as call func");
+                    }
+                } else {
+                    panic!("Expected Call expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_call_attr_subscript_span_nested_call() {
+        let source = "f(g(x))\n";
+        //            01234567
+        //            ^outer call: bytes 0-7
+        //              ^inner call: bytes 2-6
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Call(outer_call) = &expr.value {
+                    // Verify outer call span f(g(x))
+                    let outer_id = outer_call.node_id.expect("Outer Call should have node_id");
+                    let outer_pos = positions
+                        .get(&outer_id)
+                        .expect("Outer Call should have position");
+                    let outer_span = outer_pos
+                        .ident_span
+                        .expect("Outer Call should have ident_span");
+
+                    assert_eq!(outer_span.start, 0, "outer call should start at 0");
+                    assert_eq!(outer_span.end, 7, "outer call should end at 7");
+                    assert_eq!(&source[outer_span.start..outer_span.end], "f(g(x))");
+
+                    // Verify inner call span g(x)
+                    if let Some(arg) = outer_call.args.first() {
+                        if let Expression::Call(inner_call) = &arg.value {
+                            let inner_id =
+                                inner_call.node_id.expect("Inner Call should have node_id");
+                            let inner_pos = positions
+                                .get(&inner_id)
+                                .expect("Inner Call should have position");
+                            let inner_span = inner_pos
+                                .ident_span
+                                .expect("Inner Call should have ident_span");
+
+                            assert_eq!(inner_span.start, 2, "inner call should start at 2");
+                            assert_eq!(inner_span.end, 6, "inner call should end at 6");
+                            assert_eq!(&source[inner_span.start..inner_span.end], "g(x)");
+                        } else {
+                            panic!("Expected inner Call expression");
+                        }
+                    } else {
+                        panic!("Expected outer call to have args");
+                    }
+                } else {
+                    panic!("Expected Call expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================

@@ -6,6 +6,47 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.6: Call/Attribute/Subscript Spans | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.6 specification (lines 2836-2869)
+- Table T21: Expression Types Needing Span Recording (#t21-expression-spans)
+- Pattern 2: Composite Expression with Children (#step-0-2-0-patterns)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Call, Attribute, Subscript Inflate implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `Call`: Add `record_ident_span` from `deflated_expression_start_pos(func)` to `rpar_tok.end_pos` | Done |
+| `Attribute`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `attr.tok.end_pos` | Done |
+| `Subscript`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `rbracket.tok.end_pos` | Done |
+| Write 8 Call/Attribute/Subscript span tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording to Call (lines 888-892), Attribute (lines 960-967), Subscript (lines 2214-2218) Inflate implementations
+- `crates/tugtool-python-cst/src/lib.rs` - Added 8 tests: `test_call_attr_subscript_span_call_recorded`, `test_call_attr_subscript_span_call_no_args`, `test_call_attr_subscript_span_attribute_recorded`, `test_call_attr_subscript_span_chained_attribute`, `test_call_attr_subscript_span_subscript_recorded`, `test_call_attr_subscript_span_subscript_with_slice`, `test_call_attr_subscript_span_method_call`, `test_call_attr_subscript_span_nested_call`
+- `plans/phase-13.md` - Marked Step 0.2.0.6 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst call_attr_subscript_span`: 8/8 passed
+- `cargo nextest run -p tugtool-python-cst`: 655/655 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 655/655
+- `cargo nextest run -p tugtool-python-cst call_attr_subscript_span` passes: PASS - 8/8
+
+**Key Decisions/Notes:**
+- Test names include `call_attr_subscript_span` prefix for easy filtering with checkpoint command
+- For Attribute, `attr.tok` is `Option<TokenRef>`, handled with `.map(...).unwrap_or(start)` fallback (token should always exist in valid CST)
+- Tests cover complex patterns: chained attributes (`a.b.c`), method calls (`obj.method(arg)`), nested calls (`f(g(x))`)
+- Each complex test verifies BOTH outer and inner spans for thorough validation
+
+---
+
 ## [phase-13.md] Step 0.2.0.5: Composite Expression Spans (Operations) | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

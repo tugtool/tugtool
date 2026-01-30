@@ -884,6 +884,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedCall<'r, 'a> {
     type Inflated = Call<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.func);
+        let end = self.rpar_tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let func = self.func.inflate(ctx)?;
         let whitespace_after_func = parse_parenthesizable_whitespace(
@@ -950,6 +956,16 @@ impl<'r, 'a> Inflate<'a> for DeflatedAttribute<'r, 'a> {
     type Inflated = Attribute<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.value);
+        let end = self
+            .attr
+            .tok
+            .map(|t| t.end_pos.byte_idx())
+            .unwrap_or(start);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
         let dot = self.dot.inflate(ctx)?;
@@ -2193,6 +2209,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedSubscript<'r, 'a> {
     type Inflated = Subscript<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.value);
+        let end = self.rbracket.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
         let whitespace_after_value = parse_parenthesizable_whitespace(

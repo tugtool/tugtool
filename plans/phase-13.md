@@ -2847,24 +2847,24 @@ Operation expressions (binary, unary, boolean, comparison) require computing spa
 These nodes represent member access and invocation patterns that are common in refactoring operations. Correct spans are critical for position lookup in attribute chains.
 
 **Tasks:**
-- [ ] `Call`: Add `record_ident_span` from `deflated_expression_start_pos(func)` to `rpar_tok.end_pos`
-- [ ] `Attribute`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `attr.tok.end_pos`
-- [ ] `Subscript`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `rbracket.tok.end_pos`
+- [x] `Call`: Add `record_ident_span` from `deflated_expression_start_pos(func)` to `rpar_tok.end_pos`
+- [x] `Attribute`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `attr.tok.end_pos`
+- [x] `Subscript`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to `rbracket.tok.end_pos`
 
 **Tests:**
-- [ ] Unit: `test_call_span_recorded` - Parse `foo(x, y)`, verify span covers entire call
-- [ ] Unit: `test_call_no_args_span` - Parse `foo()`, verify span
-- [ ] Unit: `test_attribute_span_recorded` - Parse `obj.attr`, verify span covers `obj.attr`
-- [ ] Unit: `test_chained_attribute_span` - Parse `a.b.c`, verify each attribute span
-- [ ] Unit: `test_subscript_span_recorded` - Parse `obj[key]`, verify span covers `obj[key]`
-- [ ] Unit: `test_subscript_with_slice_span` - Parse `obj[1:2]`, verify span
-- [ ] Unit: `test_method_call_span` - Parse `obj.method(arg)`, verify span covers entire expression
-- [ ] Unit: `test_nested_call_span` - Parse `f(g(x))`, verify both call spans recorded
+- [x] Unit: `test_call_span_recorded` - Parse `foo(x, y)`, verify span covers entire call
+- [x] Unit: `test_call_no_args_span` - Parse `foo()`, verify span
+- [x] Unit: `test_attribute_span_recorded` - Parse `obj.attr`, verify span covers `obj.attr`
+- [x] Unit: `test_chained_attribute_span` - Parse `a.b.c`, verify each attribute span
+- [x] Unit: `test_subscript_span_recorded` - Parse `obj[key]`, verify span covers `obj[key]`
+- [x] Unit: `test_subscript_with_slice_span` - Parse `obj[1:2]`, verify span
+- [x] Unit: `test_method_call_span` - Parse `obj.method(arg)`, verify span covers entire expression
+- [x] Unit: `test_nested_call_span` - Parse `f(g(x))`, verify both call spans recorded
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst call_attr_subscript_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 655/655 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst call_attr_subscript_span` passes - 8/8 tests pass
 
 **Rollback:** Revert commit
 
