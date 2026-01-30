@@ -3644,6 +3644,494 @@ mod test {
             panic!("Expected Compound statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.11 Tests: Simple Statement Span Recording
+    // ========================================================================
+
+    #[test]
+    fn test_simple_stmt_span_pass_recorded() {
+        let source = "pass\n";
+        //            01234
+        //            ^pass: bytes 0-4
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Pass(pass) = &simple.body[0] {
+                let node_id = pass.node_id.expect("Pass should have node_id");
+                let pos = positions.get(&node_id).expect("Pass should have position");
+                let span = pos.ident_span.expect("Pass should have ident_span");
+
+                assert_eq!(span.start, 0, "pass should start at 0");
+                assert_eq!(span.end, 4, "pass should end at 4");
+            } else {
+                panic!("Expected Pass statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_break_recorded() {
+        let source = "while True:\n    break\n";
+        //            0         1         2
+        //            0123456789012345678901
+        //                        ^break: bytes 16-21
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::While(while_stmt) = compound {
+                if let Suite::IndentedBlock(block) = &while_stmt.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Break(brk) = &simple.body[0] {
+                            let node_id = brk.node_id.expect("Break should have node_id");
+                            let pos = positions.get(&node_id).expect("Break should have position");
+                            let span = pos.ident_span.expect("Break should have ident_span");
+
+                            assert_eq!(span.start, 16, "break should start at 16");
+                            assert_eq!(span.end, 21, "break should end at 21");
+                        } else {
+                            panic!("Expected Break statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock");
+                }
+            } else {
+                panic!("Expected While statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_continue_recorded() {
+        let source = "while True:\n    continue\n";
+        //            0         1         2
+        //            0123456789012345678901234
+        //                        ^continue: bytes 16-24
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::While(while_stmt) = compound {
+                if let Suite::IndentedBlock(block) = &while_stmt.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Continue(cont) = &simple.body[0] {
+                            let node_id = cont.node_id.expect("Continue should have node_id");
+                            let pos =
+                                positions.get(&node_id).expect("Continue should have position");
+                            let span = pos.ident_span.expect("Continue should have ident_span");
+
+                            assert_eq!(span.start, 16, "continue should start at 16");
+                            assert_eq!(span.end, 24, "continue should end at 24");
+                        } else {
+                            panic!("Expected Continue statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock");
+                }
+            } else {
+                panic!("Expected While statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_expr_recorded() {
+        let source = "foo()\n";
+        //            012345
+        //            ^foo(): bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                let node_id = expr.node_id.expect("Expr should have node_id");
+                let pos = positions.get(&node_id).expect("Expr should have position");
+                let span = pos.ident_span.expect("Expr should have ident_span");
+
+                assert_eq!(span.start, 0, "expr should start at 0");
+                assert_eq!(span.end, 5, "expr should end at 5");
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_assign_recorded() {
+        let source = "x = 42\n";
+        //            0123456
+        //            ^x = 42: bytes 0-6
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                let node_id = assign.node_id.expect("Assign should have node_id");
+                let pos = positions.get(&node_id).expect("Assign should have position");
+                let span = pos.ident_span.expect("Assign should have ident_span");
+
+                assert_eq!(span.start, 0, "assign should start at 0");
+                assert_eq!(span.end, 6, "assign should end at 6");
+            } else {
+                panic!("Expected Assign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_multi_target_assign() {
+        let source = "x = y = 42\n";
+        //            01234567890
+        //            ^x = y = 42: bytes 0-10
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                let node_id = assign.node_id.expect("Assign should have node_id");
+                let pos = positions.get(&node_id).expect("Assign should have position");
+                let span = pos.ident_span.expect("Assign should have ident_span");
+
+                assert_eq!(span.start, 0, "assign should start at 0");
+                assert_eq!(span.end, 10, "assign should end at 10");
+            } else {
+                panic!("Expected Assign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_aug_assign_recorded() {
+        let source = "x += 1\n";
+        //            0123456
+        //            ^x += 1: bytes 0-6
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::AugAssign(aug) = &simple.body[0] {
+                let node_id = aug.node_id.expect("AugAssign should have node_id");
+                let pos = positions.get(&node_id).expect("AugAssign should have position");
+                let span = pos.ident_span.expect("AugAssign should have ident_span");
+
+                assert_eq!(span.start, 0, "aug_assign should start at 0");
+                assert_eq!(span.end, 6, "aug_assign should end at 6");
+            } else {
+                panic!("Expected AugAssign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_ann_assign_recorded() {
+        let source = "x: int = 1\n";
+        //            01234567890
+        //            ^x: int = 1: bytes 0-10
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::AnnAssign(ann) = &simple.body[0] {
+                let node_id = ann.node_id.expect("AnnAssign should have node_id");
+                let pos = positions.get(&node_id).expect("AnnAssign should have position");
+                let span = pos.ident_span.expect("AnnAssign should have ident_span");
+
+                assert_eq!(span.start, 0, "ann_assign should start at 0");
+                assert_eq!(span.end, 10, "ann_assign should end at 10");
+            } else {
+                panic!("Expected AnnAssign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_ann_assign_no_value() {
+        let source = "x: int\n";
+        //            0123456
+        //            ^x: int: bytes 0-6
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::AnnAssign(ann) = &simple.body[0] {
+                let node_id = ann.node_id.expect("AnnAssign should have node_id");
+                let pos = positions.get(&node_id).expect("AnnAssign should have position");
+                let span = pos.ident_span.expect("AnnAssign should have ident_span");
+
+                assert_eq!(span.start, 0, "ann_assign should start at 0");
+                assert_eq!(span.end, 6, "ann_assign should end at 6");
+            } else {
+                panic!("Expected AnnAssign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_return_recorded() {
+        let source = "def f():\n    return x\n";
+        //            0         1         2
+        //            01234567890123456789012
+        //                      ^return x: bytes 13-21
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func) = compound {
+                if let Suite::IndentedBlock(block) = &func.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Return(ret) = &simple.body[0] {
+                            let node_id = ret.node_id.expect("Return should have node_id");
+                            let pos =
+                                positions.get(&node_id).expect("Return should have position");
+                            let span = pos.ident_span.expect("Return should have ident_span");
+
+                            assert_eq!(span.start, 13, "return should start at 13");
+                            assert_eq!(span.end, 21, "return should end at 21");
+                        } else {
+                            panic!("Expected Return statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock");
+                }
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_return_no_value() {
+        let source = "def f():\n    return\n";
+        //            0         1
+        //            01234567890123456789
+        //                      ^return: bytes 13-19
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func) = compound {
+                if let Suite::IndentedBlock(block) = &func.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Return(ret) = &simple.body[0] {
+                            let node_id = ret.node_id.expect("Return should have node_id");
+                            let pos =
+                                positions.get(&node_id).expect("Return should have position");
+                            let span = pos.ident_span.expect("Return should have ident_span");
+
+                            assert_eq!(span.start, 13, "return should start at 13");
+                            assert_eq!(span.end, 19, "return should end at 19");
+                        } else {
+                            panic!("Expected Return statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock");
+                }
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_raise_recorded() {
+        let source = "raise E\n";
+        //            01234567
+        //            ^raise E: bytes 0-7
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Raise(raise) = &simple.body[0] {
+                let node_id = raise.node_id.expect("Raise should have node_id");
+                let pos = positions.get(&node_id).expect("Raise should have position");
+                let span = pos.ident_span.expect("Raise should have ident_span");
+
+                assert_eq!(span.start, 0, "raise should start at 0");
+                assert_eq!(span.end, 7, "raise should end at 7");
+            } else {
+                panic!("Expected Raise statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_raise_no_exc() {
+        let source = "raise\n";
+        //            012345
+        //            ^raise: bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Raise(raise) = &simple.body[0] {
+                let node_id = raise.node_id.expect("Raise should have node_id");
+                let pos = positions.get(&node_id).expect("Raise should have position");
+                let span = pos.ident_span.expect("Raise should have ident_span");
+
+                assert_eq!(span.start, 0, "raise should start at 0");
+                assert_eq!(span.end, 5, "raise should end at 5");
+            } else {
+                panic!("Expected Raise statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_assert_recorded() {
+        let source = "assert x\n";
+        //            012345678
+        //            ^assert x: bytes 0-8
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assert(assert_stmt) = &simple.body[0] {
+                let node_id = assert_stmt.node_id.expect("Assert should have node_id");
+                let pos = positions.get(&node_id).expect("Assert should have position");
+                let span = pos.ident_span.expect("Assert should have ident_span");
+
+                assert_eq!(span.start, 0, "assert should start at 0");
+                assert_eq!(span.end, 8, "assert should end at 8");
+            } else {
+                panic!("Expected Assert statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_assert_with_msg() {
+        let source = "assert x, \"msg\"\n";
+        //            0         1
+        //            0123456789012345
+        //            ^assert x, "msg": bytes 0-15
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Assert(assert_stmt) = &simple.body[0] {
+                let node_id = assert_stmt.node_id.expect("Assert should have node_id");
+                let pos = positions.get(&node_id).expect("Assert should have position");
+                let span = pos.ident_span.expect("Assert should have ident_span");
+
+                assert_eq!(span.start, 0, "assert should start at 0");
+                assert_eq!(span.end, 15, "assert should end at 15");
+            } else {
+                panic!("Expected Assert statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_global_recorded() {
+        let source = "global x\n";
+        //            012345678
+        //            ^global x: bytes 0-8
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Global(global) = &simple.body[0] {
+                let node_id = global.node_id.expect("Global should have node_id");
+                let pos = positions.get(&node_id).expect("Global should have position");
+                let span = pos.ident_span.expect("Global should have ident_span");
+
+                assert_eq!(span.start, 0, "global should start at 0");
+                assert_eq!(span.end, 8, "global should end at 8");
+            } else {
+                panic!("Expected Global statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_nonlocal_recorded() {
+        let source = "def f():\n    nonlocal x\n";
+        //            0         1         2
+        //            012345678901234567890123
+        //                      ^nonlocal x: bytes 13-23
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::FunctionDef(func) = compound {
+                if let Suite::IndentedBlock(block) = &func.body {
+                    if let Statement::Simple(simple) = &block.body[0] {
+                        if let SmallStatement::Nonlocal(nonlocal) = &simple.body[0] {
+                            let node_id = nonlocal.node_id.expect("Nonlocal should have node_id");
+                            let pos =
+                                positions.get(&node_id).expect("Nonlocal should have position");
+                            let span = pos.ident_span.expect("Nonlocal should have ident_span");
+
+                            assert_eq!(span.start, 13, "nonlocal should start at 13");
+                            assert_eq!(span.end, 23, "nonlocal should end at 23");
+                        } else {
+                            panic!("Expected Nonlocal statement");
+                        }
+                    } else {
+                        panic!("Expected Simple statement");
+                    }
+                } else {
+                    panic!("Expected IndentedBlock");
+                }
+            } else {
+                panic!("Expected FunctionDef");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_simple_stmt_span_del_recorded() {
+        let source = "del x\n";
+        //            012345
+        //            ^del x: bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Del(del) = &simple.body[0] {
+                let node_id = del.node_id.expect("Del should have node_id");
+                let pos = positions.get(&node_id).expect("Del should have position");
+                let span = pos.ident_span.expect("Del should have ident_span");
+
+                assert_eq!(span.start, 0, "del should start at 0");
+                assert_eq!(span.end, 5, "del should end at 5");
+            } else {
+                panic!("Expected Del statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================
@@ -3935,6 +4423,187 @@ mod deflated_tests {
             }
         } else {
             panic!("Expected outer FunctionDef");
+        }
+    }
+
+    // ========================================================================
+    // Step 0.2.0.11.5 Tests: Trait Dispatch Verification
+    // ========================================================================
+    //
+    // These tests verify that the trait-based position dispatch works correctly
+    // for all expression and target types. The traits DeflatedStartPos and
+    // DeflatedEndPos are implemented on inner types, and the dispatch macro
+    // generates methods on enum types.
+
+    #[test]
+    fn test_trait_dispatch_expression_positions() {
+        // Test that the trait dispatch works for various expression types
+        let source = "x + y * z\n";
+        //            0123456789
+        //            ^x: 0-1
+        //                ^y: 4-5
+        //                    ^z: 8-9
+        //            ^x + y * z: 0-9
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Expr(expr_stmt) = &simple.body[0] {
+                // The expr is a BinaryOperation (x + (y * z))
+                let start = expr_stmt.value.start_pos();
+                let end = expr_stmt.value.end_pos();
+
+                assert_eq!(start, 0, "expression should start at 0");
+                assert_eq!(end, 9, "expression should end at 9");
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_trait_dispatch_name_positions() {
+        let source = "foo\n";
+        //            0123
+        //            ^foo: 0-3
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Expr(expr_stmt) = &simple.body[0] {
+                let start = expr_stmt.value.start_pos();
+                let end = expr_stmt.value.end_pos();
+
+                assert_eq!(start, 0, "name should start at 0");
+                assert_eq!(end, 3, "name should end at 3");
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_trait_dispatch_assign_target_start_pos() {
+        // Test that DeflatedAssignTargetExpression.start_pos() works
+        let source = "x = 1\n";
+        //            012345
+        //            ^x: 0
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Assign(assign) = &simple.body[0] {
+                let target = &assign.targets[0].target;
+                let start = target.start_pos();
+
+                assert_eq!(start, 0, "assign target should start at 0");
+            } else {
+                panic!("Expected Assign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_trait_dispatch_del_target_end_pos() {
+        // Test that DeflatedDelTargetExpression.end_pos() works
+        let source = "del x\n";
+        //            012345
+        //                ^x: ends at 5
+
+        let tokens = tokenize(source).expect("tokenize error");
+        let tokvec: TokVec = tokens.into();
+        let deflated =
+            parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+
+        if let Statement::Simple(simple) = &deflated.body[0] {
+            if let SmallStatement::Del(del) = &simple.body[0] {
+                let end = del.target.end_pos();
+
+                assert_eq!(end, 5, "del target should end at 5");
+            } else {
+                panic!("Expected Del statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    /// Helper to parse with positions for span verification tests
+    fn parse_with_positions_local(source: &str) -> (crate::nodes::Module, PositionTable) {
+        let tokens = tokenize(source).expect("tokenize error");
+        let conf = whitespace_parser::Config::new(source, &tokens);
+        let mut ctx = InflateCtx::with_positions(conf);
+        let tokvec: TokVec = tokens.into();
+        let m = parse_tokens_without_whitespace(&tokvec, source, None).expect("parse error");
+        let module = m.inflate(&mut ctx).expect("inflate error");
+        let positions = ctx.positions.expect("positions should be enabled");
+        (module, positions)
+    }
+
+    #[test]
+    fn test_trait_dispatch_assign_span_still_correct() {
+        // Verify that the assign span is still computed correctly after refactoring
+        // This is equivalent to re-running test_simple_stmt_span_assign_recorded
+        let source = "x = 42\n";
+        //            0123456
+        //            ^x = 42: bytes 0-6
+
+        let (module, positions) = parse_with_positions_local(source);
+
+        if let crate::nodes::Statement::Simple(simple) = &module.body[0] {
+            if let crate::nodes::SmallStatement::Assign(assign) = &simple.body[0] {
+                let node_id = assign.node_id.expect("Assign should have node_id");
+                let pos = positions.get(&node_id).expect("Assign should have position");
+                let span = pos.ident_span.expect("Assign should have ident_span");
+
+                assert_eq!(span.start, 0, "assign should start at 0");
+                assert_eq!(span.end, 6, "assign should end at 6");
+            } else {
+                panic!("Expected Assign statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_trait_dispatch_del_span_still_correct() {
+        // Verify that the del span is still computed correctly after refactoring
+        // This is equivalent to re-running test_simple_stmt_span_del_recorded
+        let source = "del x\n";
+        //            012345
+        //            ^del x: bytes 0-5
+
+        let (module, positions) = parse_with_positions_local(source);
+
+        if let crate::nodes::Statement::Simple(simple) = &module.body[0] {
+            if let crate::nodes::SmallStatement::Del(del) = &simple.body[0] {
+                let node_id = del.node_id.expect("Del should have node_id");
+                let pos = positions.get(&node_id).expect("Del should have position");
+                let span = pos.ident_span.expect("Del should have ident_span");
+
+                assert_eq!(span.start, 0, "del should start at 0");
+                assert_eq!(span.end, 5, "del should end at 5");
+            } else {
+                panic!("Expected Del statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
         }
     }
 }

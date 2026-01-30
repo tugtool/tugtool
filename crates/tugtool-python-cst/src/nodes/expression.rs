@@ -2394,6 +2394,542 @@ impl<'a> Codegen<'a> for IfExp<'a> {
     }
 }
 
+// ============================================================================
+// Position Traits
+// ============================================================================
+//
+// These traits provide zero-cost position computation for deflated node types.
+// By implementing these traits on the inner types (DeflatedName, DeflatedAttribute, etc.),
+// we can use a macro to generate dispatch methods on enum types, eliminating code
+// duplication across DeflatedExpression, DeflatedAssignTargetExpression, and
+// DeflatedDelTargetExpression.
+
+/// Trait for deflated node types that can compute their start position.
+///
+/// Implementors return the byte offset of the leftmost token, accounting
+/// for parenthesization (lpar takes precedence).
+pub(crate) trait DeflatedStartPos {
+    fn start_pos(&self) -> usize;
+}
+
+/// Trait for deflated node types that can compute their end position.
+///
+/// Implementors return the byte offset past the rightmost token, accounting
+/// for parenthesization (rpar takes precedence).
+pub(crate) trait DeflatedEndPos {
+    fn end_pos(&self) -> usize;
+}
+
+// Helper functions for lpar/rpar position extraction
+fn lpar_start<'r, 'a>(lpar: &[DeflatedLeftParen<'r, 'a>]) -> Option<usize> {
+    lpar.first().map(|lp| lp.lpar_tok.start_pos.byte_idx())
+}
+
+fn rpar_end<'r, 'a>(rpar: &[DeflatedRightParen<'r, 'a>]) -> Option<usize> {
+    rpar.last().map(|rp| rp.rpar_tok.end_pos.byte_idx())
+}
+
+// ============================================================================
+// Trait Implementations for Shared Inner Types
+// ============================================================================
+//
+// These inner types are shared between DeflatedExpression, DeflatedAssignTargetExpression,
+// and DeflatedDelTargetExpression. Implementing the traits once here allows all three
+// enum types to use macro-generated dispatch.
+
+impl<'r, 'a> DeflatedStartPos for DeflatedName<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar)
+            .or_else(|| self.tok.map(|t| t.start_pos.byte_idx()))
+            .unwrap_or(0)
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedName<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar)
+            .or_else(|| self.tok.map(|t| t.end_pos.byte_idx()))
+            .unwrap_or(0)
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedAttribute<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.value))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedAttribute<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar)
+            .or_else(|| self.attr.tok.map(|t| t.end_pos.byte_idx()))
+            .unwrap_or(0)
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedTuple<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| {
+            self.elements
+                .first()
+                .map(|e| match e {
+                    DeflatedElement::Simple { value, .. } => deflated_expression_start_pos(value),
+                    DeflatedElement::Starred(se) => se.star_tok.start_pos.byte_idx(),
+                })
+                .unwrap_or(0)
+        })
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedTuple<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| {
+            self.elements
+                .last()
+                .map(|e| match e {
+                    DeflatedElement::Simple { value, .. } => deflated_expression_end_pos(value),
+                    DeflatedElement::Starred(se) => deflated_expression_end_pos(&se.value),
+                })
+                .unwrap_or(0)
+        })
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedList<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lbracket.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedList<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbracket.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedSubscript<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.value))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedSubscript<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbracket.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedStarredElement<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.star_tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedStarredElement<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.value))
+    }
+}
+
+// ============================================================================
+// Trait Implementations for Remaining Expression Types
+// ============================================================================
+
+impl<'r, 'a> DeflatedStartPos for DeflatedEllipsis<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedEllipsis<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedInteger<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedInteger<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedFloat<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedFloat<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedImaginary<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedImaginary<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedCall<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.func))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedCall<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rpar_tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedSet<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lbrace.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedSet<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbrace.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedDict<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lbrace.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedDict<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbrace.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedListComp<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lbracket.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedListComp<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbracket.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedSetComp<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lbrace.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedSetComp<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbrace.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedDictComp<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lbrace.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedDictComp<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.rbrace.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedGeneratorExp<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.elt))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedGeneratorExp<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_comp_for_end_pos(&self.for_in))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedBinaryOperation<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.left))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedBinaryOperation<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.right))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedBooleanOperation<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.left))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedBooleanOperation<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.right))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedUnaryOperation<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or(0)
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedUnaryOperation<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.expression))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedComparison<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.left))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedComparison<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| {
+            self.comparisons
+                .last()
+                .map(|ct| deflated_expression_end_pos(&ct.comparator))
+                .unwrap_or_else(|| deflated_expression_end_pos(&self.left))
+        })
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedSimpleString<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedSimpleString<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedConcatenatedString<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_string_start_pos(&self.left))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedConcatenatedString<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_string_end_pos(&self.right))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedFormattedString<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.start_tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedFormattedString<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.end_tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedTemplatedString<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.start_tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedTemplatedString<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| self.end_tok.end_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedIfExp<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.body))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedIfExp<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.orelse))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedLambda<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.lambda_tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedLambda<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.body))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedYield<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.yield_tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedYield<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| {
+            self.value
+                .as_ref()
+                .map(|v| match v.as_ref() {
+                    DeflatedYieldValue::From(f) => deflated_expression_end_pos(&f.item),
+                    DeflatedYieldValue::Expression(e) => deflated_expression_end_pos(e),
+                })
+                .unwrap_or_else(|| self.yield_tok.end_pos.byte_idx())
+        })
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedAwait<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| self.await_tok.start_pos.byte_idx())
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedAwait<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.expression))
+    }
+}
+
+impl<'r, 'a> DeflatedStartPos for DeflatedNamedExpr<'r, 'a> {
+    fn start_pos(&self) -> usize {
+        lpar_start(&self.lpar).unwrap_or_else(|| deflated_expression_start_pos(&self.target))
+    }
+}
+
+impl<'r, 'a> DeflatedEndPos for DeflatedNamedExpr<'r, 'a> {
+    fn end_pos(&self) -> usize {
+        rpar_end(&self.rpar).unwrap_or_else(|| deflated_expression_end_pos(&self.value))
+    }
+}
+
+// ============================================================================
+// Dispatch Macro
+// ============================================================================
+//
+// This macro generates dispatch methods on enum types that match on variants
+// and call the corresponding trait implementations on the inner types.
+// This eliminates code duplication across enum types that share variants.
+
+/// Generate position dispatch methods for an enum type.
+///
+/// This macro generates `start_pos` and/or `end_pos` methods that dispatch
+/// to the trait implementations on the inner types.
+///
+/// Usage:
+/// ```ignore
+/// impl_deflated_pos_dispatch!(
+///     DeflatedExpression<'r, 'a>,
+///     start_pos: [Name, Attribute, Tuple, ...],
+///     end_pos: [Name, Attribute, Tuple, ...]
+/// );
+/// ```
+macro_rules! impl_deflated_pos_dispatch {
+    // Generate both start_pos and end_pos
+    ($enum_ty:ty, start_pos: [$($start_variant:ident),+ $(,)?], end_pos: [$($end_variant:ident),+ $(,)?]) => {
+        impl<'r, 'a> $enum_ty {
+            #[allow(dead_code)]
+            pub(crate) fn start_pos(&self) -> usize {
+                match self {
+                    $(Self::$start_variant(inner) => DeflatedStartPos::start_pos(inner.as_ref()),)+
+                }
+            }
+
+            #[allow(dead_code)]
+            pub(crate) fn end_pos(&self) -> usize {
+                match self {
+                    $(Self::$end_variant(inner) => DeflatedEndPos::end_pos(inner.as_ref()),)+
+                }
+            }
+        }
+    };
+
+    // Generate only start_pos
+    ($enum_ty:ty, start_pos: [$($variant:ident),+ $(,)?]) => {
+        impl<'r, 'a> $enum_ty {
+            #[allow(dead_code)]
+            pub(crate) fn start_pos(&self) -> usize {
+                match self {
+                    $(Self::$variant(inner) => DeflatedStartPos::start_pos(inner.as_ref()),)+
+                }
+            }
+        }
+    };
+
+    // Generate only end_pos
+    ($enum_ty:ty, end_pos: [$($variant:ident),+ $(,)?]) => {
+        impl<'r, 'a> $enum_ty {
+            #[allow(dead_code)]
+            pub(crate) fn end_pos(&self) -> usize {
+                match self {
+                    $(Self::$variant(inner) => DeflatedEndPos::end_pos(inner.as_ref()),)+
+                }
+            }
+        }
+    };
+}
+
+// Make the macro available to other modules in this crate
+pub(crate) use impl_deflated_pos_dispatch;
+
+// Apply the macro to DeflatedExpression for all variants
+impl_deflated_pos_dispatch!(
+    DeflatedExpression<'r, 'a>,
+    start_pos: [
+        Name, Ellipsis, Integer, Float, Imaginary,
+        Call, Subscript, List, Set, Dict,
+        ListComp, SetComp, DictComp, GeneratorExp,
+        BinaryOperation, BooleanOperation, UnaryOperation, Comparison,
+        Attribute, Tuple, StarredElement,
+        IfExp, Lambda, Yield, Await,
+        SimpleString, ConcatenatedString, FormattedString, TemplatedString,
+        NamedExpr,
+    ],
+    end_pos: [
+        Name, Ellipsis, Integer, Float, Imaginary,
+        Call, Subscript, List, Set, Dict,
+        ListComp, SetComp, DictComp, GeneratorExp,
+        BinaryOperation, BooleanOperation, UnaryOperation, Comparison,
+        Attribute, Tuple, StarredElement,
+        IfExp, Lambda, Yield, Await,
+        SimpleString, ConcatenatedString, FormattedString, TemplatedString,
+        NamedExpr,
+    ]
+);
+
 /// Compute the byte end position of a deflated expression.
 ///
 /// This is used to determine lambda scope spans. Returns 0 as a fallback if
@@ -2403,207 +2939,15 @@ impl<'a> Codegen<'a> for IfExp<'a> {
 /// falls back to type-specific token positions or recursion for compound
 /// expressions.
 pub(crate) fn deflated_expression_end_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> usize {
-    use DeflatedExpression::*;
-
-    // Helper: get end position from the last rpar if available
-    fn rpar_end<'r, 'a>(rpar: &[DeflatedRightParen<'r, 'a>]) -> Option<usize> {
-        rpar.last().map(|rp| rp.rpar_tok.end_pos.byte_idx())
-    }
-
-    match expr {
-        // Simple expressions with tokens
-        Name(n) => rpar_end(&n.rpar)
-            .or_else(|| n.tok.map(|t| t.end_pos.byte_idx()))
-            .unwrap_or(0),
-        Ellipsis(e) => rpar_end(&e.rpar).unwrap_or_else(|| e.tok.end_pos.byte_idx()),
-
-        // Literals with tok fields
-        Integer(i) => rpar_end(&i.rpar).unwrap_or_else(|| i.tok.end_pos.byte_idx()),
-        Float(f) => rpar_end(&f.rpar).unwrap_or_else(|| f.tok.end_pos.byte_idx()),
-        Imaginary(i) => rpar_end(&i.rpar).unwrap_or_else(|| i.tok.end_pos.byte_idx()),
-
-        // Expressions with explicit closing tokens
-        Call(c) => rpar_end(&c.rpar).unwrap_or_else(|| c.rpar_tok.end_pos.byte_idx()),
-        Subscript(s) => rpar_end(&s.rpar).unwrap_or_else(|| s.rbracket.tok.end_pos.byte_idx()),
-        List(l) => rpar_end(&l.rpar).unwrap_or_else(|| l.rbracket.tok.end_pos.byte_idx()),
-        Set(s) => rpar_end(&s.rpar).unwrap_or_else(|| s.rbrace.tok.end_pos.byte_idx()),
-        Dict(d) => rpar_end(&d.rpar).unwrap_or_else(|| d.rbrace.tok.end_pos.byte_idx()),
-        ListComp(lc) => rpar_end(&lc.rpar).unwrap_or_else(|| lc.rbracket.tok.end_pos.byte_idx()),
-        SetComp(sc) => rpar_end(&sc.rpar).unwrap_or_else(|| sc.rbrace.tok.end_pos.byte_idx()),
-        DictComp(dc) => rpar_end(&dc.rpar).unwrap_or_else(|| dc.rbrace.tok.end_pos.byte_idx()),
-        GeneratorExp(ge) => {
-            // Generator expressions end at rpar if parenthesized, otherwise recurse to for_in
-            rpar_end(&ge.rpar).unwrap_or_else(|| deflated_comp_for_end_pos(&ge.for_in))
-        }
-
-        // Compound expressions - recurse into rightmost sub-expression
-        BinaryOperation(op) => {
-            rpar_end(&op.rpar).unwrap_or_else(|| deflated_expression_end_pos(&op.right))
-        }
-        BooleanOperation(op) => {
-            rpar_end(&op.rpar).unwrap_or_else(|| deflated_expression_end_pos(&op.right))
-        }
-        UnaryOperation(op) => {
-            rpar_end(&op.rpar).unwrap_or_else(|| deflated_expression_end_pos(&op.expression))
-        }
-        Comparison(c) => rpar_end(&c.rpar).unwrap_or_else(|| {
-            c.comparisons
-                .last()
-                .map(|ct| deflated_expression_end_pos(&ct.comparator))
-                .unwrap_or_else(|| deflated_expression_end_pos(&c.left))
-        }),
-        IfExp(ie) => rpar_end(&ie.rpar).unwrap_or_else(|| deflated_expression_end_pos(&ie.orelse)),
-
-        // Attribute access - attr name has token
-        Attribute(a) => rpar_end(&a.rpar)
-            .or_else(|| a.attr.tok.map(|t| t.end_pos.byte_idx()))
-            .unwrap_or(0),
-
-        // Tuple - may be unparenthesized, recurse into last element
-        Tuple(t) => rpar_end(&t.rpar).unwrap_or_else(|| {
-            t.elements
-                .last()
-                .map(|e| match e {
-                    DeflatedElement::Simple { value, .. } => deflated_expression_end_pos(value),
-                    DeflatedElement::Starred(se) => deflated_expression_end_pos(&se.value),
-                })
-                .unwrap_or(0)
-        }),
-
-        // Starred element - recurse
-        StarredElement(se) => {
-            rpar_end(&se.rpar).unwrap_or_else(|| deflated_expression_end_pos(&se.value))
-        }
-
-        // Nested lambda - recurse into body
-        Lambda(l) => rpar_end(&l.rpar).unwrap_or_else(|| deflated_expression_end_pos(&l.body)),
-
-        // Yield/Await - may have value or just keyword
-        Yield(y) => rpar_end(&y.rpar).unwrap_or_else(|| {
-            y.value
-                .as_ref()
-                .map(|v| match v.as_ref() {
-                    DeflatedYieldValue::From(f) => deflated_expression_end_pos(&f.item),
-                    DeflatedYieldValue::Expression(e) => deflated_expression_end_pos(e),
-                })
-                .unwrap_or_else(|| y.yield_tok.end_pos.byte_idx())
-        }),
-        Await(a) => rpar_end(&a.rpar).unwrap_or_else(|| deflated_expression_end_pos(&a.expression)),
-
-        // String types
-        SimpleString(ss) => rpar_end(&ss.rpar).unwrap_or_else(|| ss.tok.end_pos.byte_idx()),
-        ConcatenatedString(cs) => {
-            rpar_end(&cs.rpar).unwrap_or_else(|| deflated_string_end_pos(&cs.right))
-        }
-        FormattedString(fs) => {
-            rpar_end(&fs.rpar).unwrap_or_else(|| fs.end_tok.end_pos.byte_idx())
-        }
-        TemplatedString(ts) => {
-            rpar_end(&ts.rpar).unwrap_or_else(|| ts.end_tok.end_pos.byte_idx())
-        }
-
-        // Named expression - recurse into value
-        NamedExpr(ne) => {
-            rpar_end(&ne.rpar).unwrap_or_else(|| deflated_expression_end_pos(&ne.value))
-        }
-    }
+    expr.end_pos()
 }
 
 /// Compute the byte start position of a deflated expression.
 ///
 /// This is used for implicit generator expressions where we need the start of the elt.
 /// Returns 0 as a fallback if the expression type doesn't have accessible position information.
-fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> usize {
-    use DeflatedExpression::*;
-
-    // Helper: get start position from the first lpar if available
-    fn lpar_start<'r, 'a>(lpar: &[DeflatedLeftParen<'r, 'a>]) -> Option<usize> {
-        lpar.first().map(|lp| lp.lpar_tok.start_pos.byte_idx())
-    }
-
-    match expr {
-        // Simple expressions with tokens
-        Name(n) => lpar_start(&n.lpar)
-            .or_else(|| n.tok.map(|t| t.start_pos.byte_idx()))
-            .unwrap_or(0),
-        Ellipsis(e) => lpar_start(&e.lpar).unwrap_or_else(|| e.tok.start_pos.byte_idx()),
-
-        // Literals with tok fields
-        Integer(i) => lpar_start(&i.lpar).unwrap_or_else(|| i.tok.start_pos.byte_idx()),
-        Float(f) => lpar_start(&f.lpar).unwrap_or_else(|| f.tok.start_pos.byte_idx()),
-        Imaginary(i) => lpar_start(&i.lpar).unwrap_or_else(|| i.tok.start_pos.byte_idx()),
-
-        // Expressions with explicit opening tokens
-        Call(c) => lpar_start(&c.lpar).unwrap_or_else(|| deflated_expression_start_pos(&c.func)),
-        Subscript(s) => {
-            lpar_start(&s.lpar).unwrap_or_else(|| deflated_expression_start_pos(&s.value))
-        }
-        List(l) => lpar_start(&l.lpar).unwrap_or_else(|| l.lbracket.tok.start_pos.byte_idx()),
-        Set(s) => lpar_start(&s.lpar).unwrap_or_else(|| s.lbrace.tok.start_pos.byte_idx()),
-        Dict(d) => lpar_start(&d.lpar).unwrap_or_else(|| d.lbrace.tok.start_pos.byte_idx()),
-        ListComp(lc) => {
-            lpar_start(&lc.lpar).unwrap_or_else(|| lc.lbracket.tok.start_pos.byte_idx())
-        }
-        SetComp(sc) => lpar_start(&sc.lpar).unwrap_or_else(|| sc.lbrace.tok.start_pos.byte_idx()),
-        DictComp(dc) => lpar_start(&dc.lpar).unwrap_or_else(|| dc.lbrace.tok.start_pos.byte_idx()),
-        GeneratorExp(ge) => {
-            lpar_start(&ge.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ge.elt))
-        }
-
-        // Compound expressions - recurse into leftmost sub-expression
-        BinaryOperation(op) => {
-            lpar_start(&op.lpar).unwrap_or_else(|| deflated_expression_start_pos(&op.left))
-        }
-        BooleanOperation(op) => {
-            lpar_start(&op.lpar).unwrap_or_else(|| deflated_expression_start_pos(&op.left))
-        }
-        UnaryOperation(op) => {
-            // UnaryOp is an enum, each variant has a tok field
-            // For simplicity, fall back to 0 if no lpar - this is a rare edge case
-            lpar_start(&op.lpar).unwrap_or(0)
-        }
-        Comparison(c) => {
-            lpar_start(&c.lpar).unwrap_or_else(|| deflated_expression_start_pos(&c.left))
-        }
-
-        // String types
-        SimpleString(ss) => lpar_start(&ss.lpar).unwrap_or_else(|| ss.tok.start_pos.byte_idx()),
-        ConcatenatedString(cs) => {
-            lpar_start(&cs.lpar).unwrap_or_else(|| deflated_string_start_pos(&cs.left))
-        }
-        FormattedString(fs) => {
-            lpar_start(&fs.lpar).unwrap_or_else(|| fs.start_tok.start_pos.byte_idx())
-        }
-        TemplatedString(ts) => {
-            lpar_start(&ts.lpar).unwrap_or_else(|| ts.start_tok.start_pos.byte_idx())
-        }
-
-        // Other expressions
-        Tuple(t) => lpar_start(&t.lpar).unwrap_or_else(|| {
-            t.elements
-                .first()
-                .map(|e| match e {
-                    DeflatedElement::Simple { value, .. } => deflated_expression_start_pos(value),
-                    DeflatedElement::Starred(se) => se.star_tok.start_pos.byte_idx(),
-                })
-                .unwrap_or(0)
-        }),
-        Attribute(a) => {
-            lpar_start(&a.lpar).unwrap_or_else(|| deflated_expression_start_pos(&a.value))
-        }
-        StarredElement(se) => {
-            lpar_start(&se.lpar).unwrap_or_else(|| se.star_tok.start_pos.byte_idx())
-        }
-        IfExp(ie) => {
-            lpar_start(&ie.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ie.body))
-        }
-        Lambda(l) => lpar_start(&l.lpar).unwrap_or_else(|| l.lambda_tok.start_pos.byte_idx()),
-        Yield(y) => lpar_start(&y.lpar).unwrap_or_else(|| y.yield_tok.start_pos.byte_idx()),
-        Await(a) => lpar_start(&a.lpar).unwrap_or_else(|| a.await_tok.start_pos.byte_idx()),
-        NamedExpr(ne) => {
-            lpar_start(&ne.lpar).unwrap_or_else(|| deflated_expression_start_pos(&ne.target))
-        }
-    }
+pub(crate) fn deflated_expression_start_pos<'r, 'a>(expr: &DeflatedExpression<'r, 'a>) -> usize {
+    expr.start_pos()
 }
 
 /// Helper for String start position

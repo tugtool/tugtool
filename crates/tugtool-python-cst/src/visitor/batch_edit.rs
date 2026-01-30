@@ -201,7 +201,7 @@ impl Default for BatchEditOptions {
 }
 
 /// Information about indentation at a position.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IndentInfo {
     /// The actual indentation string (spaces/tabs)
     pub indent_str: String,
@@ -209,16 +209,6 @@ pub struct IndentInfo {
     pub visual_width: usize,
     /// Whether the indent uses tabs
     pub uses_tabs: bool,
-}
-
-impl Default for IndentInfo {
-    fn default() -> Self {
-        Self {
-            indent_str: String::new(),
-            visual_width: 0,
-            uses_tabs: false,
-        }
-    }
 }
 
 /// A batch editor that collects edit primitives and applies them atomically.

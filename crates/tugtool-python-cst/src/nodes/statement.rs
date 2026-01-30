@@ -154,6 +154,18 @@ fn deflated_match_end_pos<'r, 'a>(dedent_tok: &TokenRef<'r, 'a>) -> usize {
     dedent_tok.start_pos.byte_idx()
 }
 
+// Apply dispatch macro to DeflatedAssignTargetExpression (uses trait impls from expression.rs)
+impl_deflated_pos_dispatch!(
+    DeflatedAssignTargetExpression<'r, 'a>,
+    start_pos: [Name, Attribute, StarredElement, Tuple, List, Subscript]
+);
+
+// Apply dispatch macro to DeflatedDelTargetExpression (uses trait impls from expression.rs)
+impl_deflated_pos_dispatch!(
+    DeflatedDelTargetExpression<'r, 'a>,
+    end_pos: [Name, Attribute, Tuple, List, Subscript]
+);
+
 #[cst_node]
 pub struct IndentedBlock<'a> {
     /// Sequence of statements belonging to this indented block.
@@ -423,6 +435,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedPass<'r, 'a> {
     type Inflated = Pass<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from tok (BEFORE inflating children)
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let semicolon = self.semicolon.inflate(ctx)?;
         Ok(Self::Inflated {
             semicolon,
@@ -459,6 +477,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedBreak<'r, 'a> {
     type Inflated = Break<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from tok (BEFORE inflating children)
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let semicolon = self.semicolon.inflate(ctx)?;
         Ok(Self::Inflated {
             semicolon,
@@ -495,6 +519,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedContinue<'r, 'a> {
     type Inflated = Continue<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from tok (BEFORE inflating children)
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let semicolon = self.semicolon.inflate(ctx)?;
         Ok(Self::Inflated {
             semicolon,
@@ -526,6 +556,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedExpr<'r, 'a> {
     type Inflated = Expr<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from expression bounds (BEFORE inflating children)
+        let start = deflated_expression_start_pos(&self.value);
+        let end = deflated_expression_end_pos(&self.value);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let value = self.value.inflate(ctx)?;
         let semicolon = self.semicolon.inflate(ctx)?;
         Ok(Self::Inflated {
@@ -562,6 +598,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedAssign<'r, 'a> {
     type Inflated = Assign<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from first target start to value end (BEFORE inflating children)
+        let start = self.targets.first()
+            .map(|t| t.target.start_pos())
+            .unwrap_or(0);
+        let end = deflated_expression_end_pos(&self.value);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let targets = self.targets.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
         let semicolon = self.semicolon.inflate(ctx)?;
@@ -1418,6 +1462,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedAnnAssign<'r, 'a> {
     type Inflated = AnnAssign<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from target start to value end (or annotation end if no value)
+        let start = self.target.start_pos();
+        let end = self.value.as_ref()
+            .map(deflated_expression_end_pos)
+            .unwrap_or_else(|| deflated_expression_end_pos(&self.annotation.annotation));
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let target = self.target.inflate(ctx)?;
         let annotation = self.annotation.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
@@ -1474,6 +1526,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedReturn<'r, 'a> {
     type Inflated = Return<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from return_tok to value end (or return_tok if no value)
+        let start = self.return_tok.start_pos.byte_idx();
+        let end = self.value.as_ref()
+            .map(deflated_expression_end_pos)
+            .unwrap_or_else(|| self.return_tok.end_pos.byte_idx());
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_return = if self.value.is_some() {
             Some(parse_simple_whitespace(
                 &ctx.ws,
@@ -1537,6 +1597,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedAssert<'r, 'a> {
     type Inflated = Assert<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from assert_tok to msg end (or test end if no msg)
+        let start = self.assert_tok.start_pos.byte_idx();
+        let end = self.msg.as_ref()
+            .map(deflated_expression_end_pos)
+            .unwrap_or_else(|| deflated_expression_end_pos(&self.test));
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_assert =
             parse_simple_whitespace(&ctx.ws, &mut self.assert_tok.whitespace_after.borrow_mut())?;
 
@@ -1579,6 +1647,15 @@ impl<'r, 'a> Inflate<'a> for DeflatedRaise<'r, 'a> {
     type Inflated = Raise<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span: raise_tok to cause end > exc end > raise_tok
+        let start = self.raise_tok.start_pos.byte_idx();
+        let end = self.cause.as_ref()
+            .map(|c| deflated_expression_end_pos(&c.item))
+            .or_else(|| self.exc.as_ref().map(deflated_expression_end_pos))
+            .unwrap_or_else(|| self.raise_tok.end_pos.byte_idx());
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_raise = if self.exc.is_some() {
             Some(parse_simple_whitespace(
                 &ctx.ws,
@@ -1679,6 +1756,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedGlobal<'r, 'a> {
     type Inflated = Global<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from tok to last name end
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.names.last()
+            .and_then(|item| item.name.tok.map(|t| t.end_pos.byte_idx()))
+            .unwrap_or_else(|| self.tok.end_pos.byte_idx());
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_global =
             parse_simple_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
         let names = self.names.inflate(ctx)?;
@@ -1729,6 +1814,14 @@ impl<'r, 'a> Inflate<'a> for DeflatedNonlocal<'r, 'a> {
     type Inflated = Nonlocal<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from tok to last name end
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.names.last()
+            .and_then(|item| item.name.tok.map(|t| t.end_pos.byte_idx()))
+            .unwrap_or_else(|| self.tok.end_pos.byte_idx());
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_nonlocal =
             parse_simple_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
         let names = self.names.inflate(ctx)?;
@@ -2507,6 +2600,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedAugAssign<'r, 'a> {
     type Inflated = AugAssign<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from target start to value end (BEFORE inflating children)
+        let start = self.target.start_pos();
+        let end = deflated_expression_end_pos(&self.value);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let target = self.target.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
         let value = self.value.inflate(ctx)?;
@@ -2772,6 +2871,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedDel<'r, 'a> {
     type Inflated = Del<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from tok to target end
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.target.end_pos();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_del =
             parse_simple_whitespace(&ctx.ws, &mut self.tok.whitespace_after.borrow_mut())?;
         let target = self.target.inflate(ctx)?;
@@ -4008,6 +4113,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedTypeAlias<'r, 'a> {
     type Inflated = TypeAlias<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from type_tok to value end
+        let start = self.type_tok.start_pos.byte_idx();
+        let end = deflated_expression_end_pos(&self.value);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let whitespace_after_type =
             parse_simple_whitespace(&ctx.ws, &mut self.type_tok.whitespace_after.borrow_mut())?;
         let name = self.name.inflate(ctx)?;

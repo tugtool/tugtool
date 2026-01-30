@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.11.5: Refactor Span Helpers with Traits and Macros | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.11.5 specification (lines 3090-3178)
+- Step 0.2.0.11 (Simple Statement Spans) - identified duplication pattern
+- code-architect analysis recommending zero-cost trait-based approach
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - existing `deflated_expression_start_pos`/`end_pos` helpers
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - duplicate helpers introduced in Step 0.2.0.11
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Phase 1: Define `DeflatedStartPos` and `DeflatedEndPos` traits | Done |
+| Phase 2: Implement traits for 6 shared inner types (Name, Attribute, Tuple, List, Subscript, StarredElement) | Done |
+| Phase 3: Create `impl_deflated_pos_dispatch!` macro with 3 variants | Done |
+| Phase 3: Apply macro to DeflatedExpression (30 variants) | Done |
+| Phase 4: Apply macro to DeflatedAssignTargetExpression (6 variants, start_pos only) | Done |
+| Phase 4: Apply macro to DeflatedDelTargetExpression (5 variants, end_pos only) | Done |
+| Phase 4: Remove `deflated_assign_target_expr_start_pos` helper | Done |
+| Phase 4: Remove `deflated_del_target_expr_end_pos` helper | Done |
+| Phase 4: Update call sites in Assign, AnnAssign, AugAssign, Del Inflate implementations | Done |
+| Phase 5: Implement traits for remaining 24 expression types | Done |
+| Write 6 unit tests for trait dispatch | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added `DeflatedStartPos`/`DeflatedEndPos` traits, `lpar_start`/`rpar_end` helpers, 30 trait implementations, `impl_deflated_pos_dispatch!` macro (3 arms), macro invocation for DeflatedExpression
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added macro invocations for DeflatedAssignTargetExpression and DeflatedDelTargetExpression, removed duplicate helpers, updated call sites
+- `crates/tugtool-python-cst/src/lib.rs` - Added 6 tests in `deflated_tests` module
+- `crates/tugtool-python-cst/src/visitor/batch_edit.rs` - Fixed pre-existing clippy warning (derivable Default impl)
+- `plans/phase-13.md` - Marked Step 0.2.0.11.5 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst trait_dispatch`: 6/6 passed
+- `cargo nextest run -p tugtool-python-cst`: 707/707 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS
+- `cargo clippy -p tugtool-python-cst -- -D warnings` passes: PASS
+- Grep confirms `deflated_assign_target_expr_start_pos` no longer exists: PASS
+- Grep confirms `deflated_del_target_expr_end_pos` no longer exists: PASS
+
+**Key Decisions/Notes:**
+- Zero-cost abstraction achieved: traits compile to direct function calls, macro generates static match statements, no vtables or allocations
+- Steps 0.2.0.11 and 0.2.0.11.5 were implemented together - duplicate helpers were never actually created, the trait-based approach was implemented from the start (pragmatic optimization)
+- Macro has 3 arms: both start_pos+end_pos, start_pos only, end_pos only - allows flexible application to different enum types
+- Test count increased from 683 to 707 (includes both Step 0.2.0.11 and Step 0.2.0.11.5 tests)
+- plan-step-reviewer verdict: PASS WITH COMMENDATION (95/100)
+
+---
+
 ## [phase-13.md] Step 0.2.0.10: Branch Statement Spans | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

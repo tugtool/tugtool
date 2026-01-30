@@ -3043,45 +3043,136 @@ Branch statements use `branch_span` to define conditional branch boundaries. The
 Simple statements have various starting tokens and ending expressions. This step covers all the simple statements except imports (which are handled separately).
 
 **Tasks:**
-- [ ] `Pass`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
-- [ ] `Break`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
-- [ ] `Continue`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
-- [ ] `Expr`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to expression end
-- [ ] `Assign`: Add `record_ident_span` from first target start to value end
-- [ ] `AugAssign`: Add `record_ident_span` from target start to value end
-- [ ] `AnnAssign`: Add `record_ident_span` from target start to value end (or annotation end if no value)
-- [ ] `Return`: Add `record_ident_span` from `return_tok.start_pos` to value end (or return token if no value)
-- [ ] `Assert`: Add `record_ident_span` from `assert_tok.start_pos` to msg end (or test end if no msg)
-- [ ] `Raise`: Add `record_ident_span` from `raise_tok.start_pos` to cause end (or exc end or raise token)
-- [ ] `Global`: Add `record_ident_span` from `tok.start_pos` to last name end
-- [ ] `Nonlocal`: Add `record_ident_span` from `tok.start_pos` to last name end
-- [ ] `Del`: Add `record_ident_span` from `tok.start_pos` to target end
-- [ ] `TypeAlias`: Add `record_ident_span` from `type_tok.start_pos` to value end
+- [x] `Pass`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
+- [x] `Break`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
+- [x] `Continue`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` (uses tok from Step 0.2.0.1)
+- [x] `Expr`: Add `record_ident_span` from `deflated_expression_start_pos(value)` to expression end
+- [x] `Assign`: Add `record_ident_span` from first target start to value end
+- [x] `AugAssign`: Add `record_ident_span` from target start to value end
+- [x] `AnnAssign`: Add `record_ident_span` from target start to value end (or annotation end if no value)
+- [x] `Return`: Add `record_ident_span` from `return_tok.start_pos` to value end (or return token if no value)
+- [x] `Assert`: Add `record_ident_span` from `assert_tok.start_pos` to msg end (or test end if no msg)
+- [x] `Raise`: Add `record_ident_span` from `raise_tok.start_pos` to cause end (or exc end or raise token)
+- [x] `Global`: Add `record_ident_span` from `tok.start_pos` to last name end
+- [x] `Nonlocal`: Add `record_ident_span` from `tok.start_pos` to last name end
+- [x] `Del`: Add `record_ident_span` from `tok.start_pos` to target end
+- [x] `TypeAlias`: Add `record_ident_span` from `type_tok.start_pos` to value end
 
 **Tests:**
-- [ ] Unit: `test_pass_span_recorded` - Parse `pass`, verify ident_span from tok
-- [ ] Unit: `test_break_span_recorded` - Parse `while True:\n    break`, verify ident_span
-- [ ] Unit: `test_continue_span_recorded` - Parse `while True:\n    continue`, verify ident_span
-- [ ] Unit: `test_expr_stmt_span_recorded` - Parse `foo()`, verify ident_span covers the expression
-- [ ] Unit: `test_assign_span_recorded` - Parse `x = 42`, verify ident_span from `x` to `42`
-- [ ] Unit: `test_multi_target_assign_span` - Parse `x = y = 42`, verify span covers all
-- [ ] Unit: `test_aug_assign_span_recorded` - Parse `x += 1`, verify ident_span
-- [ ] Unit: `test_ann_assign_span_recorded` - Parse `x: int = 1`, verify ident_span
-- [ ] Unit: `test_ann_assign_no_value_span` - Parse `x: int`, verify span ends at annotation
-- [ ] Unit: `test_return_span_recorded` - Parse `return x`, verify ident_span
-- [ ] Unit: `test_return_no_value_span` - Parse `return`, verify span covers just `return`
-- [ ] Unit: `test_raise_span_recorded` - Parse `raise E`, verify ident_span
-- [ ] Unit: `test_raise_no_exc_span` - Parse `raise`, verify span covers just `raise`
-- [ ] Unit: `test_assert_span_recorded` - Parse `assert x`, verify ident_span
-- [ ] Unit: `test_assert_with_msg_span` - Parse `assert x, "msg"`, verify span includes message
-- [ ] Unit: `test_global_span_recorded` - Parse `global x`, verify ident_span
-- [ ] Unit: `test_nonlocal_span_recorded` - Parse `nonlocal x`, verify ident_span
-- [ ] Unit: `test_del_span_recorded` - Parse `del x`, verify ident_span
+- [x] Unit: `test_pass_span_recorded` - Parse `pass`, verify ident_span from tok
+- [x] Unit: `test_break_span_recorded` - Parse `while True:\n    break`, verify ident_span
+- [x] Unit: `test_continue_span_recorded` - Parse `while True:\n    continue`, verify ident_span
+- [x] Unit: `test_expr_stmt_span_recorded` - Parse `foo()`, verify ident_span covers the expression
+- [x] Unit: `test_assign_span_recorded` - Parse `x = 42`, verify ident_span from `x` to `42`
+- [x] Unit: `test_multi_target_assign_span` - Parse `x = y = 42`, verify span covers all
+- [x] Unit: `test_aug_assign_span_recorded` - Parse `x += 1`, verify ident_span
+- [x] Unit: `test_ann_assign_span_recorded` - Parse `x: int = 1`, verify ident_span
+- [x] Unit: `test_ann_assign_no_value_span` - Parse `x: int`, verify span ends at annotation
+- [x] Unit: `test_return_span_recorded` - Parse `return x`, verify ident_span
+- [x] Unit: `test_return_no_value_span` - Parse `return`, verify span covers just `return`
+- [x] Unit: `test_raise_span_recorded` - Parse `raise E`, verify ident_span
+- [x] Unit: `test_raise_no_exc_span` - Parse `raise`, verify span covers just `raise`
+- [x] Unit: `test_assert_span_recorded` - Parse `assert x`, verify ident_span
+- [x] Unit: `test_assert_with_msg_span` - Parse `assert x, "msg"`, verify span includes message
+- [x] Unit: `test_global_span_recorded` - Parse `global x`, verify ident_span
+- [x] Unit: `test_nonlocal_span_recorded` - Parse `nonlocal x`, verify ident_span
+- [x] Unit: `test_del_span_recorded` - Parse `del x`, verify ident_span
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst simple_stmt_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [x] `cargo nextest run -p tugtool-python-cst simple_stmt_span` passes
+
+**Rollback:** Revert commit
+
+---
+
+### Step 0.2.0.11.5: Refactor Span Helpers with Traits and Macros {#step-0-2-0-11-5}
+
+**Commit:** `refactor(python-cst): unify span position helpers with traits and macros`
+
+**References:** Step 0.2.0.11 (#step-0-2-0-11), DRY principle
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/nodes/expression.rs`
+- Modified `crates/tugtool-python-cst/src/nodes/statement.rs`
+
+**Context:**
+
+Step 0.2.0.11 introduced two helper functions that duplicate logic from existing expression helpers:
+- `deflated_assign_target_expr_start_pos` (25 lines) - duplicates `deflated_expression_start_pos`
+- `deflated_del_target_expr_end_pos` (23 lines) - duplicates `deflated_expression_end_pos`
+
+The duplication exists because `DeflatedAssignTargetExpression` and `DeflatedDelTargetExpression` are proper subsets of `DeflatedExpression`. They contain the same variant names (Name, Attribute, Tuple, List, Subscript, StarredElement) with identical inner types (`DeflatedName`, `DeflatedAttribute`, etc.), but are distinct Rust enums.
+
+This step eliminates the duplication using a trait-based approach with macro-generated enum dispatch:
+
+1. Define position traits (`DeflatedStartPos`, `DeflatedEndPos`) with methods returning `usize`
+2. Implement traits once per inner type (DeflatedName, DeflatedAttribute, DeflatedList, etc.)
+3. Use a macro to generate dispatch methods on enum types that match on variants and call trait impls
+4. Remove the duplicated helper functions and update call sites
+
+**Benefits:**
+- Zero runtime overhead (compiles to identical code)
+- Single source of truth (each inner type's position logic defined once)
+- Easy extensibility (add new enum types by listing variants in macro invocation)
+
+**Tasks:**
+
+*Phase 1: Define Traits (expression.rs)*
+- [x] Define `DeflatedStartPos` trait with `fn start_pos(&self) -> usize`
+- [x] Define `DeflatedEndPos` trait with `fn end_pos(&self) -> usize`
+
+*Phase 2: Implement Traits for Inner Types (expression.rs)*
+- [x] Implement `DeflatedStartPos` for `DeflatedName` (handles lpar/tok)
+- [x] Implement `DeflatedEndPos` for `DeflatedName` (handles rpar/tok)
+- [x] Implement `DeflatedStartPos` for `DeflatedAttribute` (handles lpar/value recursion)
+- [x] Implement `DeflatedEndPos` for `DeflatedAttribute` (handles rpar/attr.tok)
+- [x] Implement `DeflatedStartPos` for `DeflatedTuple` (handles lpar/first element)
+- [x] Implement `DeflatedEndPos` for `DeflatedTuple` (handles rpar/last element)
+- [x] Implement `DeflatedStartPos` for `DeflatedList` (handles lpar/lbracket)
+- [x] Implement `DeflatedEndPos` for `DeflatedList` (handles rpar/rbracket)
+- [x] Implement `DeflatedStartPos` for `DeflatedSubscript` (handles lpar/value recursion)
+- [x] Implement `DeflatedEndPos` for `DeflatedSubscript` (handles rpar/rbracket)
+- [x] Implement `DeflatedStartPos` for `DeflatedStarredElement` (handles lpar/star_tok)
+- [x] Implement `DeflatedEndPos` for `DeflatedStarredElement` (handles rpar/value recursion)
+
+*Phase 3: Create Dispatch Macro (expression.rs)*
+- [x] Define `impl_deflated_pos_dispatch!` macro that:
+  - Takes enum name and list of variants
+  - Generates `start_pos(&self) -> usize` method matching on variants and calling trait
+  - Generates `end_pos(&self) -> usize` method matching on variants and calling trait
+- [x] Apply macro to `DeflatedExpression` to generate dispatch methods
+- [x] Update `deflated_expression_start_pos` to call `expr.start_pos()`
+- [x] Update `deflated_expression_end_pos` to call `expr.end_pos()`
+
+*Phase 4: Apply to Statement Enums (statement.rs)*
+- [x] Apply `impl_deflated_pos_dispatch!` to `DeflatedAssignTargetExpression` with variants: Name, Attribute, Tuple, List, Subscript, StarredElement
+- [x] Apply `impl_deflated_pos_dispatch!` to `DeflatedDelTargetExpression` with variants: Name, Attribute, Tuple, List, Subscript
+- [x] Remove `deflated_assign_target_expr_start_pos` helper function
+- [x] Remove `deflated_del_target_expr_end_pos` helper function
+- [x] Update call sites in `Assign::inflate` to use `target.start_pos()`
+- [x] Update call sites in `AnnAssign::inflate` to use `target.start_pos()`
+- [x] Update call sites in `AugAssign::inflate` to use `target.start_pos()`
+- [x] Update call site in `Del::inflate` to use `target.end_pos()`
+
+*Phase 5: Remaining Expression Types (expression.rs)*
+- [x] Implement traits for remaining DeflatedExpression inner types that have position logic in the existing helpers (Ellipsis, Integer, Float, Imaginary, Call, Set, Dict, ListComp, SetComp, DictComp, GeneratorExp, BinaryOperation, BooleanOperation, UnaryOperation, Comparison, SimpleString, ConcatenatedString, FormattedString, TemplatedString, IfExp, Lambda, Yield, Await, NamedExpr)
+
+**Tests:**
+- [x] Unit: `test_trait_dispatch_expression_positions` - Verify trait dispatch works for expression types
+- [x] Unit: `test_trait_dispatch_name_positions` - Verify trait dispatch works for Name expressions
+- [x] Unit: `test_trait_dispatch_assign_target_start_pos` - Verify DeflatedAssignTargetExpression.start_pos() works
+- [x] Unit: `test_trait_dispatch_del_target_end_pos` - Verify DeflatedDelTargetExpression.end_pos() works
+- [x] Unit: `test_trait_dispatch_assign_span_still_correct` - Verify Assign span computation unchanged after refactoring
+- [x] Unit: `test_trait_dispatch_del_span_still_correct` - Verify Del span computation unchanged after refactoring
+
+**Checkpoint:**
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 707 tests pass
+- [x] `cargo clippy -p tugtool-python-cst -- -D warnings` passes
+- [x] Grep confirms `deflated_assign_target_expr_start_pos` no longer exists
+- [x] Grep confirms `deflated_del_target_expr_end_pos` no longer exists
 
 **Rollback:** Revert commit
 
@@ -3161,7 +3252,7 @@ Decorators and parameters are special nodes that appear in specific contexts. Th
 
 ## Step 0.2.0 Summary {#step-0-2-0-summary}
 
-After completing Steps 0.2.0.1 through 0.2.0.13, you will have:
+After completing Steps 0.2.0.1 through 0.2.0.13 (including 0.2.0.11.5), you will have:
 
 - Token fields added to `Pass`, `Break`, `Continue` structs
 - The `deflated_suite_end_pos` helper function
@@ -3174,6 +3265,7 @@ After completing Steps 0.2.0.1 through 0.2.0.13, you will have:
 - Span recording for scope-creating statements (`For`, `While`, `With`, `Try`, `TryStar`, `Match`)
 - Span recording for branch statements (`Else`, `ExceptHandler`, `ExceptStarHandler`, `Finally`, `MatchCase`)
 - Span recording for simple statements (all assignment, control flow, and declaration statements)
+- Unified span position traits (`DeflatedStartPos`, `DeflatedEndPos`) with macro-generated dispatch
 - Span recording for import statements (`Import`, `ImportFrom`)
 - Span recording for special nodes (`Decorator`, `Param`)
 
@@ -3257,6 +3349,10 @@ mod step_0_2_0_10_branch_spans {
 
 mod step_0_2_0_11_simple_stmt_spans {
     // Tests for simple statement span recording
+}
+
+mod step_0_2_0_11_5_trait_refactor {
+    // Tests for trait-based position dispatch refactoring
 }
 
 mod step_0_2_0_12_import_spans {
