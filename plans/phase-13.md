@@ -2809,25 +2809,25 @@ Container expressions have bracket tokens that define clear boundaries. The span
 Operation expressions (binary, unary, boolean, comparison) require computing spans from their operands using the existing `deflated_expression_start_pos` and `deflated_expression_end_pos` helpers.
 
 **Tasks:**
-- [ ] `BinaryOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)`
-- [ ] `UnaryOperation`: Add `record_ident_span` from operator token start to `deflated_expression_end_pos(expression)`
-- [ ] `BooleanOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)`
-- [ ] `Comparison`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(last comparator)`
+- [x] `BinaryOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)`
+- [x] `UnaryOperation`: Add `record_ident_span` from operator token start to `deflated_expression_end_pos(expression)`
+- [x] `BooleanOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)`
+- [x] `Comparison`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(last comparator)`
 
 **Tests:**
-- [ ] Unit: `test_binary_op_span_recorded` - Parse `a + b`, verify span covers `a + b`
-- [ ] Unit: `test_binary_op_nested_span` - Parse `a + b * c`, verify both operation spans
-- [ ] Unit: `test_unary_op_span_recorded` - Parse `-x`, verify span covers `-x`
-- [ ] Unit: `test_unary_not_span_recorded` - Parse `not x`, verify span covers `not x`
-- [ ] Unit: `test_boolean_op_span_recorded` - Parse `a and b`, verify span covers `a and b`
-- [ ] Unit: `test_boolean_op_chain_span` - Parse `a and b or c`, verify spans
-- [ ] Unit: `test_comparison_span_recorded` - Parse `a < b`, verify span
-- [ ] Unit: `test_comparison_chain_span` - Parse `a < b < c`, verify span covers entire chain
+- [x] Unit: `test_binary_op_span_recorded` - Parse `a + b`, verify span covers `a + b`
+- [x] Unit: `test_binary_op_nested_span` - Parse `a + b * c`, verify both operation spans
+- [x] Unit: `test_unary_op_span_recorded` - Parse `-x`, verify span covers `-x`
+- [x] Unit: `test_unary_not_span_recorded` - Parse `not x`, verify span covers `not x`
+- [x] Unit: `test_boolean_op_span_recorded` - Parse `a and b`, verify span covers `a and b`
+- [x] Unit: `test_boolean_op_chain_span` - Parse `a and b or c`, verify spans
+- [x] Unit: `test_comparison_span_recorded` - Parse `a < b`, verify span
+- [x] Unit: `test_comparison_chain_span` - Parse `a < b < c`, verify span covers entire chain
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst operation_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 647/647 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst operation_span` passes - 8/8 tests pass
 
 **Rollback:** Revert commit
 

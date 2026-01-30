@@ -700,6 +700,16 @@ impl<'r, 'a> Inflate<'a> for DeflatedComparison<'r, 'a> {
     type Inflated = Comparison<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.left);
+        let end = self
+            .comparisons
+            .last()
+            .map(|ct| deflated_expression_end_pos(&ct.comparator))
+            .unwrap_or_else(|| deflated_expression_end_pos(&self.left));
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let comparisons = self.comparisons.inflate(ctx)?;
@@ -738,6 +748,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedUnaryOperation<'r, 'a> {
     type Inflated = UnaryOperation<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_unary_op_start_pos(&self.operator);
+        let end = deflated_expression_end_pos(&self.expression);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
         let expression = self.expression.inflate(ctx)?;
@@ -778,6 +794,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedBinaryOperation<'r, 'a> {
     type Inflated = BinaryOperation<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.left);
+        let end = deflated_expression_end_pos(&self.right);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
@@ -820,6 +842,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedBooleanOperation<'r, 'a> {
     type Inflated = BooleanOperation<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span BEFORE inflating (tokens stripped during inflation)
+        let start = deflated_expression_start_pos(&self.left);
+        let end = deflated_expression_end_pos(&self.right);
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let left = self.left.inflate(ctx)?;
         let operator = self.operator.inflate(ctx)?;
@@ -2575,6 +2603,16 @@ fn deflated_templated_string_content_end_pos<'r, 'a>(
             .as_ref()
             .map(|t| t.end_pos.byte_idx())
             .unwrap_or_else(|| deflated_expression_end_pos(&e.expression)),
+    }
+}
+
+/// Get the start position of a DeflatedUnaryOp's operator token.
+fn deflated_unary_op_start_pos<'r, 'a>(op: &DeflatedUnaryOp<'r, 'a>) -> usize {
+    match op {
+        DeflatedUnaryOp::Plus { tok, .. } => tok.start_pos.byte_idx(),
+        DeflatedUnaryOp::Minus { tok, .. } => tok.start_pos.byte_idx(),
+        DeflatedUnaryOp::BitInvert { tok, .. } => tok.start_pos.byte_idx(),
+        DeflatedUnaryOp::Not { tok, .. } => tok.start_pos.byte_idx(),
     }
 }
 

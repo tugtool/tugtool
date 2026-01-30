@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.5: Composite Expression Spans (Operations) | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.5 specification (lines 2798-2832)
+- Table T21: Expression Types Needing Span Recording (#t21-expression-spans)
+- Pattern 2: Composite Expression with Children (#step-0-2-0-patterns)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - BinaryOperation, UnaryOperation, BooleanOperation, Comparison Inflate implementations
+- `crates/tugtool-python-cst/src/nodes/op.rs` - DeflatedUnaryOp structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `BinaryOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)` | Done |
+| `UnaryOperation`: Add `record_ident_span` from operator token start to `deflated_expression_end_pos(expression)` | Done |
+| `BooleanOperation`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(right)` | Done |
+| `Comparison`: Add `record_ident_span` from `deflated_expression_start_pos(left)` to `deflated_expression_end_pos(last comparator)` | Done |
+| Write 8 operation span tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording to BinaryOperation, UnaryOperation, BooleanOperation, Comparison Inflate implementations; added `deflated_unary_op_start_pos` helper function
+- `crates/tugtool-python-cst/src/lib.rs` - Added 8 tests: `test_binary_operation_span_recorded`, `test_binary_operation_span_nested`, `test_unary_operation_span_recorded`, `test_unary_not_operation_span_recorded`, `test_boolean_operation_span_recorded`, `test_boolean_operation_span_chain`, `test_comparison_operation_span_recorded`, `test_comparison_chain_operation_span`
+- `plans/phase-13.md` - Marked Step 0.2.0.5 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst operation_span`: 8/8 passed
+- `cargo nextest run -p tugtool-python-cst`: 647/647 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 647/647
+- `cargo nextest run -p tugtool-python-cst operation_span` passes: PASS - 8/8
+
+**Key Decisions/Notes:**
+- Added `deflated_unary_op_start_pos` helper function to extract operator token start position from DeflatedUnaryOp variants (Plus, Minus, BitInvert, Not)
+- For Comparison nodes, the span extends from left operand to the last comparator in the chain
+- Test names use `operation_span` substring for easy filtering with checkpoint command
+- Tests cover nested/chained operations to verify both outer and inner spans are recorded correctly
+
+---
+
 ## [phase-13.md] Step 0.2.0.4: Container Span Recording | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

@@ -2108,6 +2108,318 @@ mod test {
             panic!("Expected Simple statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.5 Tests: Composite Expression Spans (Operations)
+    // ========================================================================
+
+    #[test]
+    fn test_binary_operation_span_recorded() {
+        let source = "a + b\n";
+        //            012345
+        //            ^binary: bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::BinaryOperation(binop) = &expr.value {
+                    let node_id = binop.node_id.expect("BinaryOperation should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("BinaryOperation should have position");
+                    let span = pos
+                        .ident_span
+                        .expect("BinaryOperation should have ident_span");
+
+                    assert_eq!(span.start, 0, "binary op should start at 0");
+                    assert_eq!(span.end, 5, "binary op should end at 5");
+                    assert_eq!(&source[span.start..span.end], "a + b");
+                } else {
+                    panic!("Expected BinaryOperation expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_binary_operation_span_nested() {
+        // Due to operator precedence, this parses as: a + (b * c)
+        let source = "a + b * c\n";
+        //            0123456789
+        //            ^outer binop: bytes 0-9
+        //                ^inner binop: bytes 4-9
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::BinaryOperation(outer_binop) = &expr.value {
+                    // Verify outer binop span (a + b * c)
+                    let outer_id = outer_binop
+                        .node_id
+                        .expect("Outer BinaryOperation should have node_id");
+                    let outer_pos = positions
+                        .get(&outer_id)
+                        .expect("Outer BinaryOperation should have position");
+                    let outer_span = outer_pos
+                        .ident_span
+                        .expect("Outer BinaryOperation should have ident_span");
+
+                    assert_eq!(outer_span.start, 0, "outer binop should start at 0");
+                    assert_eq!(outer_span.end, 9, "outer binop should end at 9");
+                    assert_eq!(&source[outer_span.start..outer_span.end], "a + b * c");
+
+                    // Verify inner binop span (b * c)
+                    if let Expression::BinaryOperation(inner_binop) = outer_binop.right.as_ref() {
+                        let inner_id = inner_binop
+                            .node_id
+                            .expect("Inner BinaryOperation should have node_id");
+                        let inner_pos = positions
+                            .get(&inner_id)
+                            .expect("Inner BinaryOperation should have position");
+                        let inner_span = inner_pos
+                            .ident_span
+                            .expect("Inner BinaryOperation should have ident_span");
+
+                        assert_eq!(inner_span.start, 4, "inner binop should start at 4");
+                        assert_eq!(inner_span.end, 9, "inner binop should end at 9");
+                        assert_eq!(&source[inner_span.start..inner_span.end], "b * c");
+                    } else {
+                        panic!("Expected inner BinaryOperation in right operand");
+                    }
+                } else {
+                    panic!("Expected BinaryOperation expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_unary_operation_span_recorded() {
+        let source = "-x\n";
+        //            012
+        //            ^unary: bytes 0-2
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::UnaryOperation(unop) = &expr.value {
+                    let node_id = unop.node_id.expect("UnaryOperation should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("UnaryOperation should have position");
+                    let span = pos
+                        .ident_span
+                        .expect("UnaryOperation should have ident_span");
+
+                    assert_eq!(span.start, 0, "unary op should start at 0");
+                    assert_eq!(span.end, 2, "unary op should end at 2");
+                    assert_eq!(&source[span.start..span.end], "-x");
+                } else {
+                    panic!("Expected UnaryOperation expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_unary_not_operation_span_recorded() {
+        let source = "not x\n";
+        //            012345
+        //            ^unary: bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::UnaryOperation(unop) = &expr.value {
+                    let node_id = unop.node_id.expect("UnaryOperation should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("UnaryOperation should have position");
+                    let span = pos
+                        .ident_span
+                        .expect("UnaryOperation should have ident_span");
+
+                    assert_eq!(span.start, 0, "not op should start at 0");
+                    assert_eq!(span.end, 5, "not op should end at 5");
+                    assert_eq!(&source[span.start..span.end], "not x");
+                } else {
+                    panic!("Expected UnaryOperation expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_boolean_operation_span_recorded() {
+        let source = "a and b\n";
+        //            01234567
+        //            ^boolean: bytes 0-7
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::BooleanOperation(boolop) = &expr.value {
+                    let node_id = boolop.node_id.expect("BooleanOperation should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("BooleanOperation should have position");
+                    let span = pos
+                        .ident_span
+                        .expect("BooleanOperation should have ident_span");
+
+                    assert_eq!(span.start, 0, "boolean op should start at 0");
+                    assert_eq!(span.end, 7, "boolean op should end at 7");
+                    assert_eq!(&source[span.start..span.end], "a and b");
+                } else {
+                    panic!("Expected BooleanOperation expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_boolean_operation_span_chain() {
+        // Due to operator precedence, this parses as: (a and b) or c
+        let source = "a and b or c\n";
+        //            0         1
+        //            0123456789012
+        //            ^outer boolop: bytes 0-12
+        //            ^inner boolop: bytes 0-7
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::BooleanOperation(outer_boolop) = &expr.value {
+                    // Verify outer boolop span (a and b or c)
+                    let outer_id = outer_boolop
+                        .node_id
+                        .expect("Outer BooleanOperation should have node_id");
+                    let outer_pos = positions
+                        .get(&outer_id)
+                        .expect("Outer BooleanOperation should have position");
+                    let outer_span = outer_pos
+                        .ident_span
+                        .expect("Outer BooleanOperation should have ident_span");
+
+                    assert_eq!(outer_span.start, 0, "outer boolop should start at 0");
+                    assert_eq!(outer_span.end, 12, "outer boolop should end at 12");
+                    assert_eq!(&source[outer_span.start..outer_span.end], "a and b or c");
+
+                    // Verify inner boolop span (a and b)
+                    if let Expression::BooleanOperation(inner_boolop) = outer_boolop.left.as_ref() {
+                        let inner_id = inner_boolop
+                            .node_id
+                            .expect("Inner BooleanOperation should have node_id");
+                        let inner_pos = positions
+                            .get(&inner_id)
+                            .expect("Inner BooleanOperation should have position");
+                        let inner_span = inner_pos
+                            .ident_span
+                            .expect("Inner BooleanOperation should have ident_span");
+
+                        assert_eq!(inner_span.start, 0, "inner boolop should start at 0");
+                        assert_eq!(inner_span.end, 7, "inner boolop should end at 7");
+                        assert_eq!(&source[inner_span.start..inner_span.end], "a and b");
+                    } else {
+                        panic!("Expected inner BooleanOperation in left operand");
+                    }
+                } else {
+                    panic!("Expected BooleanOperation expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_comparison_operation_span_recorded() {
+        let source = "a < b\n";
+        //            012345
+        //            ^comparison: bytes 0-5
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Comparison(cmp) = &expr.value {
+                    let node_id = cmp.node_id.expect("Comparison should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Comparison should have position");
+                    let span = pos.ident_span.expect("Comparison should have ident_span");
+
+                    assert_eq!(span.start, 0, "comparison should start at 0");
+                    assert_eq!(span.end, 5, "comparison should end at 5");
+                    assert_eq!(&source[span.start..span.end], "a < b");
+                } else {
+                    panic!("Expected Comparison expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_comparison_chain_operation_span() {
+        let source = "a < b < c\n";
+        //            0123456789
+        //            ^comparison: bytes 0-9
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Comparison(cmp) = &expr.value {
+                    let node_id = cmp.node_id.expect("Comparison should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Comparison should have position");
+                    let span = pos.ident_span.expect("Comparison should have ident_span");
+
+                    assert_eq!(span.start, 0, "comparison chain should start at 0");
+                    assert_eq!(span.end, 9, "comparison chain should end at 9");
+                    assert_eq!(&source[span.start..span.end], "a < b < c");
+
+                    // Verify the comparison has two comparators in the chain
+                    assert_eq!(
+                        cmp.comparisons.len(),
+                        2,
+                        "comparison chain should have 2 comparators"
+                    );
+                } else {
+                    panic!("Expected Comparison expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================
