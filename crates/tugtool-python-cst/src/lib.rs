@@ -1664,6 +1664,224 @@ mod test {
         module.codegen(&mut state);
         assert_eq!(state.to_string(), source);
     }
+
+    // ========================================================================
+    // Step 0.2.0.3 Tests: Literal Span Recording
+    // ========================================================================
+    //
+    // These tests verify that literal expression nodes (Ellipsis, Integer,
+    // Float, Imaginary) correctly record their ident_span during inflation.
+
+    #[test]
+    fn test_ellipsis_literal_span_recorded() {
+        let source = "...\n";
+        //            0123
+        //            ^ellipsis: bytes 0-3
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Ellipsis(ellipsis) = &expr.value {
+                    let node_id = ellipsis.node_id.expect("Ellipsis should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Ellipsis should have position");
+                    let span = pos.ident_span.expect("Ellipsis should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 3, "ident_span should end at 3");
+                    assert_eq!(&source[span.start..span.end], "...");
+                } else {
+                    panic!("Expected Ellipsis expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_integer_literal_span_recorded() {
+        let source = "42\n";
+        //            012
+        //            ^integer: bytes 0-2
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Integer(integer) = &expr.value {
+                    let node_id = integer.node_id.expect("Integer should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Integer should have position");
+                    let span = pos.ident_span.expect("Integer should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 2, "ident_span should end at 2");
+                    assert_eq!(&source[span.start..span.end], "42");
+                } else {
+                    panic!("Expected Integer expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_float_literal_span_recorded() {
+        let source = "3.14\n";
+        //            01234
+        //            ^float: bytes 0-4
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Float(float) = &expr.value {
+                    let node_id = float.node_id.expect("Float should have node_id");
+                    let pos = positions.get(&node_id).expect("Float should have position");
+                    let span = pos.ident_span.expect("Float should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 4, "ident_span should end at 4");
+                    assert_eq!(&source[span.start..span.end], "3.14");
+                } else {
+                    panic!("Expected Float expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_imaginary_literal_span_recorded() {
+        let source = "2j\n";
+        //            012
+        //            ^imaginary: bytes 0-2
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Imaginary(imaginary) = &expr.value {
+                    let node_id = imaginary.node_id.expect("Imaginary should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Imaginary should have position");
+                    let span = pos.ident_span.expect("Imaginary should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 2, "ident_span should end at 2");
+                    assert_eq!(&source[span.start..span.end], "2j");
+                } else {
+                    panic!("Expected Imaginary expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_integer_with_parens_literal_span() {
+        // Per the plan, the span should cover just the integer token, not parentheses
+        // (parentheses are in lpar/rpar, not the literal token)
+        let source = "(42)\n";
+        //            01234
+        //             ^integer token: bytes 1-3
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Integer(integer) = &expr.value {
+                    let node_id = integer.node_id.expect("Integer should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("Integer should have position");
+                    let span = pos.ident_span.expect("Integer should have ident_span");
+
+                    // Span covers the integer token itself, not the parens
+                    assert_eq!(span.start, 1, "ident_span should start at 1 (after '(')");
+                    assert_eq!(span.end, 3, "ident_span should end at 3 (before ')')");
+                    assert_eq!(&source[span.start..span.end], "42");
+                } else {
+                    panic!("Expected Integer expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_name_literal_span_recorded() {
+        // Regression test: Name spans are already implemented, verify they still work
+        let source = "foo\n";
+        //            0123
+        //            ^name: bytes 0-3
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Name(name) = &expr.value {
+                    let node_id = name.node_id.expect("Name should have node_id");
+                    let pos = positions.get(&node_id).expect("Name should have position");
+                    let span = pos.ident_span.expect("Name should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 3, "ident_span should end at 3");
+                    assert_eq!(&source[span.start..span.end], "foo");
+                } else {
+                    panic!("Expected Name expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_string_literal_span_recorded() {
+        // Regression test: SimpleString spans are already implemented, verify they still work
+        let source = "\"hello\"\n";
+        //            01234567
+        //            ^string: bytes 0-7
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::SimpleString(string) = &expr.value {
+                    let node_id = string.node_id.expect("SimpleString should have node_id");
+                    let pos = positions
+                        .get(&node_id)
+                        .expect("SimpleString should have position");
+                    let span = pos.ident_span.expect("SimpleString should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 7, "ident_span should end at 7");
+                    assert_eq!(&source[span.start..span.end], "\"hello\"");
+                } else {
+                    panic!("Expected SimpleString expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================

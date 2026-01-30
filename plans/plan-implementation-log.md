@@ -6,6 +6,51 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.3: Literal Span Recording | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.3 specification (lines 2725-2759)
+- Table T21: Expression Types Needing Span Recording (#t21-expression-spans)
+- Pattern 1: Literal with Token (#step-0-2-0-patterns)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Ellipsis, Integer, Float, Imaginary Inflate implementations
+- Existing `Name` span recording implementation as reference
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `Ellipsis`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` | Done |
+| `Integer`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` | Done |
+| `Float`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` | Done |
+| `Imaginary`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos` | Done |
+| Write 7 literal span tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording to Ellipsis (line 531-534), Integer (line 576-579), Float (line 616-619), Imaginary (line 661-664) Inflate implementations
+- `crates/tugtool-python-cst/src/lib.rs` - Added 7 tests in main `test` module: `test_ellipsis_literal_span_recorded`, `test_integer_literal_span_recorded`, `test_float_literal_span_recorded`, `test_imaginary_literal_span_recorded`, `test_integer_with_parens_literal_span`, `test_name_literal_span_recorded`, `test_string_literal_span_recorded`
+- `plans/phase-13.md` - Marked Step 0.2.0.3 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst literal_span`: 7/7 passed
+- `cargo nextest run -p tugtool-python-cst`: 633/633 passed (all tests pass, including previously failing position_lookup test)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 633/633
+- `cargo nextest run -p tugtool-python-cst literal_span` passes: PASS - 7/7
+- Verify: parsing `42` with positions enabled returns span in PositionTable: PASS
+
+**Key Decisions/Notes:**
+- Implementation follows Pattern 1: record span from `tok.start_pos.byte_idx()` to `tok.end_pos.byte_idx()` after getting node_id
+- All literal types (Ellipsis, Integer, Float, Imaginary) already had `tok: TokenRef<'a>` fields
+- Span covers only the literal token, not surrounding parentheses (verified by `test_integer_with_parens_literal_span`)
+- The previously failing `test_find_node_simple_expression` test now passes because Integer records its span
+- Test names follow `test_<type>_literal_span_recorded` convention for consistency
+
+---
+
 ## [phase-13.md] Step 0.2.0.2: Add deflated_suite_end_pos Helper | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

@@ -526,6 +526,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedEllipsis<'r, 'a> {
     type Inflated = Ellipsis<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from token
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
@@ -564,6 +570,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedInteger<'r, 'a> {
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         // Assign identity for this Integer node
         let node_id = ctx.next_id();
+
+        // Record ident_span from token
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
 
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
@@ -605,6 +616,11 @@ impl<'r, 'a> Inflate<'a> for DeflatedFloat<'r, 'a> {
         // Assign identity for this Float node
         let node_id = ctx.next_id();
 
+        // Record ident_span from token
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {
@@ -642,6 +658,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedImaginary<'r, 'a> {
     type Inflated = Imaginary<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from token
+        let start = self.tok.start_pos.byte_idx();
+        let end = self.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let rpar = self.rpar.inflate(ctx)?;
         Ok(Self::Inflated {

@@ -2736,25 +2736,25 @@ fn deflated_suite_end_pos<'r, 'a>(suite: &DeflatedSuite<'r, 'a>) -> usize {
 Literals have direct token access, making span recording straightforward. This is the simplest pattern and a good starting point.
 
 **Tasks:**
-- [ ] `Ellipsis`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
-- [ ] `Integer`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
-- [ ] `Float`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
-- [ ] `Imaginary`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [x] `Ellipsis`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [x] `Integer`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [x] `Float`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
+- [x] `Imaginary`: Add `record_ident_span` from `tok.start_pos` to `tok.end_pos`
 
 **Tests:**
-- [ ] Unit: `test_ellipsis_span_recorded` - Parse `...`, verify ident_span covers `...`
-- [ ] Unit: `test_integer_span_recorded` - Parse `42`, verify ident_span covers `42`
-- [ ] Unit: `test_float_span_recorded` - Parse `3.14`, verify ident_span covers `3.14`
-- [ ] Unit: `test_imaginary_span_recorded` - Parse `2j`, verify ident_span covers `2j`
-- [ ] Unit: `test_integer_with_parens_span` - Parse `(42)`, verify span includes parentheses
-- [ ] Unit: `test_name_span_recorded` - Parse `foo`, verify ident_span (already done, regression test)
-- [ ] Unit: `test_string_span_recorded` - Parse `"hello"`, verify ident_span (already done, regression test)
+- [x] Unit: `test_ellipsis_literal_span_recorded` - Parse `...`, verify ident_span covers `...`
+- [x] Unit: `test_integer_literal_span_recorded` - Parse `42`, verify ident_span covers `42`
+- [x] Unit: `test_float_literal_span_recorded` - Parse `3.14`, verify ident_span covers `3.14`
+- [x] Unit: `test_imaginary_literal_span_recorded` - Parse `2j`, verify ident_span covers `2j`
+- [x] Unit: `test_integer_with_parens_literal_span` - Parse `(42)`, verify span covers token (not parens)
+- [x] Unit: `test_name_literal_span_recorded` - Parse `foo`, verify ident_span (regression test)
+- [x] Unit: `test_string_literal_span_recorded` - Parse `"hello"`, verify ident_span (regression test)
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst literal_span` passes
-- [ ] Verify: parsing `42` with positions enabled returns span in PositionTable
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 633/633 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst literal_span` passes - 7/7 tests pass
+- [x] Verify: parsing `42` with positions enabled returns span in PositionTable
 
 **Rollback:** Revert commit
 
