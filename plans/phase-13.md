@@ -3006,24 +3006,24 @@ Scope-creating statements use `lexical_span` to define their scope boundaries. T
 Branch statements use `branch_span` to define conditional branch boundaries. These are used for type narrowing analysis (e.g., isinstance checks).
 
 **Tasks:**
-- [ ] `Else`: Add `record_branch_span` from `else_tok.start_pos` to `deflated_suite_end_pos(&body)`
-- [ ] `ExceptHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)`
-- [ ] `ExceptStarHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)`
-- [ ] `Finally`: Add `record_branch_span` from `finally_tok.start_pos` to `deflated_suite_end_pos(&body)`
-- [ ] `MatchCase`: Add `record_branch_span` from `case_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [x] `Else`: Add `record_branch_span` from `else_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [x] `ExceptHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [x] `ExceptStarHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [x] `Finally`: Add `record_branch_span` from `finally_tok.start_pos` to `deflated_suite_end_pos(&body)`
+- [x] `MatchCase`: Add `record_branch_span` from `case_tok.start_pos` to `deflated_suite_end_pos(&body)`
 
 **Tests:**
-- [ ] Unit: `test_else_branch_span_recorded` - Parse `if cond:\n    pass\nelse:\n    pass`, verify else branch_span
-- [ ] Unit: `test_except_branch_span_recorded` - Parse `try:\n    pass\nexcept E:\n    pass`, verify except branch_span
-- [ ] Unit: `test_except_star_branch_span` - Parse `try:\n    pass\nexcept* E:\n    pass`, verify branch_span
-- [ ] Unit: `test_finally_branch_span_recorded` - Parse `try:\n    pass\nfinally:\n    pass`, verify finally branch_span
-- [ ] Unit: `test_match_case_branch_span_recorded` - Parse `match x:\n    case 1:\n        pass`, verify case branch_span
-- [ ] Unit: `test_multiple_except_handlers_spans` - Parse try with multiple except handlers, verify each branch_span
+- [x] Unit: `test_else_branch_span_recorded` - Parse `if cond:\n    pass\nelse:\n    pass`, verify else branch_span
+- [x] Unit: `test_except_branch_span_recorded` - Parse `try:\n    pass\nexcept E:\n    pass`, verify except branch_span
+- [x] Unit: `test_except_star_branch_span` - Parse `try:\n    pass\nexcept* E:\n    pass`, verify branch_span
+- [x] Unit: `test_finally_branch_span_recorded` - Parse `try:\n    pass\nfinally:\n    pass`, verify finally branch_span
+- [x] Unit: `test_match_case_branch_span_recorded` - Parse `match x:\n    case 1:\n        pass`, verify case branch_span
+- [x] Unit: `test_multiple_except_handlers_spans` - Parse try with multiple except handlers, verify each branch_span
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst branch_stmt_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
+- [x] `cargo nextest run -p tugtool-python-cst branch_stmt_span` passes
 
 **Rollback:** Revert commit
 

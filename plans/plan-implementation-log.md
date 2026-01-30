@@ -6,6 +6,49 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.10: Branch Statement Spans | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.10 specification (lines 2995-3029)
+- Table T22: Branch Statements (#t22-statement-spans)
+- Pattern 5: Branch Statement (#step-0-2-0-patterns)
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Else, ExceptHandler, ExceptStarHandler, Finally, MatchCase Inflate implementations
+- Existing `deflated_suite_end_pos` helper function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `Else`: Add `record_branch_span` from `else_tok.start_pos` to `deflated_suite_end_pos(&body)` | Done |
+| `ExceptHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)` | Done |
+| `ExceptStarHandler`: Add `record_branch_span` from `except_tok.start_pos` to `deflated_suite_end_pos(&body)` | Done |
+| `Finally`: Add `record_branch_span` from `finally_tok.start_pos` to `deflated_suite_end_pos(&body)` | Done |
+| `MatchCase`: Add `record_branch_span` from `case_tok.start_pos` to `deflated_suite_end_pos(&body)` | Done |
+| Write 6 unit tests for branch statement spans | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/statement.rs` - Added `record_branch_span` to Else (line 1323), ExceptHandler (line 2241), ExceptStarHandler (line 2319), Finally (line 2177), MatchCase (line 2951) Inflate implementations
+- `crates/tugtool-python-cst/src/lib.rs` - Added 6 tests: `test_branch_stmt_span_else_recorded`, `test_branch_stmt_span_except_recorded`, `test_branch_stmt_span_except_star`, `test_branch_stmt_span_finally_recorded`, `test_branch_stmt_span_match_case_recorded`, `test_branch_stmt_span_multiple_except_handlers`
+- `plans/phase-13.md` - Marked Step 0.2.0.10 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst branch_stmt_span`: 6/6 passed
+- `cargo nextest run -p tugtool-python-cst`: 683/683 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS
+- `cargo nextest run -p tugtool-python-cst branch_stmt_span` passes: PASS
+
+**Key Decisions/Notes:**
+- Branch statements record `branch_span` (not `lexical_span`) to define conditional branch boundaries for type narrowing analysis
+- Pattern differs from `If` which records `branch_span` from `colon_tok.end_pos`; these branch statements record from their keyword token's `start_pos`
+- Test count increased from 677 to 683 (6 new tests)
+
+---
+
 ## [phase-13.md] Step 0.2.0.9: Scope Statement Spans | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

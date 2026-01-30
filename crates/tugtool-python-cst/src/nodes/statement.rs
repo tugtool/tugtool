@@ -1316,6 +1316,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedElse<'r, 'a> {
     type Inflated = Else<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating (tokens stripped during inflation)
+        let branch_start = self.else_tok.start_pos.byte_idx();
+        let branch_end = deflated_suite_end_pos(&self.body);
+        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.else_tok.whitespace_before.borrow_mut(),
@@ -2164,6 +2170,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedFinally<'r, 'a> {
     type Inflated = Finally<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating (tokens stripped during inflation)
+        let branch_start = self.finally_tok.start_pos.byte_idx();
+        let branch_end = deflated_suite_end_pos(&self.body);
+        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.finally_tok.whitespace_before.borrow_mut(),
@@ -2222,6 +2234,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedExceptHandler<'r, 'a> {
     type Inflated = ExceptHandler<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating (tokens stripped during inflation)
+        let branch_start = self.except_tok.start_pos.byte_idx();
+        let branch_end = deflated_suite_end_pos(&self.body);
+        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.except_tok.whitespace_before.borrow_mut(),
@@ -2294,6 +2312,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedExceptStarHandler<'r, 'a> {
     type Inflated = ExceptStarHandler<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating (tokens stripped during inflation)
+        let branch_start = self.except_tok.start_pos.byte_idx();
+        let branch_end = deflated_suite_end_pos(&self.body);
+        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.except_tok.whitespace_before.borrow_mut(),
@@ -2920,6 +2944,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedMatchCase<'r, 'a> {
     type Inflated = MatchCase<'a>;
     fn inflate(mut self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Compute branch span BEFORE inflating (tokens stripped during inflation)
+        let branch_start = self.case_tok.start_pos.byte_idx();
+        let branch_end = deflated_suite_end_pos(&self.body);
+        ctx.record_branch_span(node_id, Span { start: branch_start, end: branch_end });
+
         let leading_lines = parse_empty_lines(
             &ctx.ws,
             &mut self.case_tok.whitespace_before.borrow_mut(),

@@ -3457,6 +3457,193 @@ mod test {
             panic!("Expected Compound statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.10 Tests: Branch Statement Span Recording
+    // ========================================================================
+
+    #[test]
+    fn test_branch_stmt_span_else_recorded() {
+        let source = "if cond:\n    pass\nelse:\n    pass\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123
+        //                              ^else: bytes 18-33 (dedent at 33)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::If(if_stmt) = compound {
+                if let Some(orelse) = &if_stmt.orelse {
+                    if let OrElse::Else(else_clause) = orelse.as_ref() {
+                        let node_id = else_clause.node_id.expect("Else should have node_id");
+                        let pos = positions.get(&node_id).expect("Else should have position");
+                        let span = pos.branch_span.expect("Else should have branch_span");
+
+                        assert_eq!(span.start, 18, "else should start at 18");
+                        assert_eq!(span.end, 33, "else should end at 33 (dedent)");
+                    } else {
+                        panic!("Expected Else clause, got Elif");
+                    }
+                } else {
+                    panic!("Expected orelse clause");
+                }
+            } else {
+                panic!("Expected If statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_branch_stmt_span_except_recorded() {
+        let source = "try:\n    pass\nexcept E:\n    pass\n";
+        //            0         1         2         3
+        //            01234567890123456789012345678901234
+        //                        ^except: bytes 14-33 (dedent at 33)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Try(try_stmt) = compound {
+                let handler = &try_stmt.handlers[0];
+                let node_id = handler.node_id.expect("ExceptHandler should have node_id");
+                let pos = positions.get(&node_id).expect("ExceptHandler should have position");
+                let span = pos.branch_span.expect("ExceptHandler should have branch_span");
+
+                assert_eq!(span.start, 14, "except should start at 14");
+                assert_eq!(span.end, 33, "except should end at 33 (dedent)");
+            } else {
+                panic!("Expected Try statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_branch_stmt_span_except_star() {
+        let source = "try:\n    pass\nexcept* E:\n    pass\n";
+        //            0         1         2         3
+        //            012345678901234567890123456789012345
+        //                        ^except*: bytes 14-34 (dedent at 34)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::TryStar(try_star) = compound {
+                let handler = &try_star.handlers[0];
+                let node_id = handler.node_id.expect("ExceptStarHandler should have node_id");
+                let pos = positions
+                    .get(&node_id)
+                    .expect("ExceptStarHandler should have position");
+                let span = pos
+                    .branch_span
+                    .expect("ExceptStarHandler should have branch_span");
+
+                assert_eq!(span.start, 14, "except* should start at 14");
+                assert_eq!(span.end, 34, "except* should end at 34 (dedent)");
+            } else {
+                panic!("Expected TryStar statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_branch_stmt_span_finally_recorded() {
+        let source = "try:\n    pass\nfinally:\n    pass\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123
+        //                        ^finally: bytes 14-32 (dedent at 32)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Try(try_stmt) = compound {
+                if let Some(finally_clause) = &try_stmt.finalbody {
+                    let node_id = finally_clause.node_id.expect("Finally should have node_id");
+                    let pos = positions.get(&node_id).expect("Finally should have position");
+                    let span = pos.branch_span.expect("Finally should have branch_span");
+
+                    assert_eq!(span.start, 14, "finally should start at 14");
+                    assert_eq!(span.end, 32, "finally should end at 32 (dedent)");
+                } else {
+                    panic!("Expected finalbody clause");
+                }
+            } else {
+                panic!("Expected Try statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_branch_stmt_span_match_case_recorded() {
+        let source = "match x:\n    case 1:\n        pass\n";
+        //            0         1         2         3
+        //            0123456789012345678901234567890123 4
+        //                       ^case: bytes 13-34 (dedent at 34)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Match(match_stmt) = compound {
+                let case_clause = &match_stmt.cases[0];
+                let node_id = case_clause.node_id.expect("MatchCase should have node_id");
+                let pos = positions.get(&node_id).expect("MatchCase should have position");
+                let span = pos.branch_span.expect("MatchCase should have branch_span");
+
+                assert_eq!(span.start, 13, "case should start at 13");
+                assert_eq!(span.end, 34, "case should end at 34 (dedent)");
+            } else {
+                panic!("Expected Match statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
+
+    #[test]
+    fn test_branch_stmt_span_multiple_except_handlers() {
+        let source = "try:\n    pass\nexcept A:\n    pass\nexcept B:\n    pass\n";
+        //            0         1         2         3         4         5
+        //            01234567890123456789012345678901234567890123456789012
+        //                        ^except A: bytes 14-33
+        //                                         ^except B: bytes 33-52 (dedent at 52)
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Compound(compound) = &module.body[0] {
+            if let CompoundStatement::Try(try_stmt) = compound {
+                // First handler (except A)
+                let handler1 = &try_stmt.handlers[0];
+                let node_id1 = handler1.node_id.expect("First ExceptHandler should have node_id");
+                let pos1 = positions
+                    .get(&node_id1)
+                    .expect("First ExceptHandler should have position");
+                let span1 = pos1
+                    .branch_span
+                    .expect("First ExceptHandler should have branch_span");
+
+                assert_eq!(span1.start, 14, "first except should start at 14");
+                assert_eq!(span1.end, 33, "first except should end at 33");
+
+                // Second handler (except B)
+                let handler2 = &try_stmt.handlers[1];
+                let node_id2 = handler2.node_id.expect("Second ExceptHandler should have node_id");
+                let pos2 = positions
+                    .get(&node_id2)
+                    .expect("Second ExceptHandler should have position");
+                let span2 = pos2
+                    .branch_span
+                    .expect("Second ExceptHandler should have branch_span");
+
+                assert_eq!(span2.start, 33, "second except should start at 33");
+                assert_eq!(span2.end, 52, "second except should end at 52 (dedent)");
+            } else {
+                panic!("Expected Try statement");
+            }
+        } else {
+            panic!("Expected Compound statement");
+        }
+    }
 }
 
 // ============================================================================
