@@ -1702,6 +1702,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedList<'r, 'a> {
     type Inflated = List<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from bracket tokens
+        let start = self.lbracket.tok.start_pos.byte_idx();
+        let end = self.rbracket.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let lbracket = self.lbracket.inflate(ctx)?;
         let len = self.elements.len();
@@ -1758,6 +1764,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedSet<'r, 'a> {
     type Inflated = Set<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from brace tokens
+        let start = self.lbrace.tok.start_pos.byte_idx();
+        let end = self.rbrace.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let lbrace = self.lbrace.inflate(ctx)?;
         let len = self.elements.len();
@@ -1813,6 +1825,12 @@ impl<'r, 'a> Inflate<'a> for DeflatedDict<'r, 'a> {
     type Inflated = Dict<'a>;
     fn inflate(self, ctx: &mut InflateCtx<'a>) -> Result<Self::Inflated> {
         let node_id = ctx.next_id();
+
+        // Record ident_span from brace tokens
+        let start = self.lbrace.tok.start_pos.byte_idx();
+        let end = self.rbrace.tok.end_pos.byte_idx();
+        ctx.record_ident_span(node_id, Span { start, end });
+
         let lpar = self.lpar.inflate(ctx)?;
         let lbrace = self.lbrace.inflate(ctx)?;
         let len = self.elements.len();

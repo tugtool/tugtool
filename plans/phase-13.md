@@ -2774,22 +2774,22 @@ Literals have direct token access, making span recording straightforward. This i
 Container expressions have bracket tokens that define clear boundaries. The span runs from opening bracket to closing bracket.
 
 **Tasks:**
-- [ ] `List`: Add `record_ident_span` from `lbracket.tok.start_pos` to `rbracket.tok.end_pos`
-- [ ] `Set`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos`
-- [ ] `Dict`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos`
+- [x] `List`: Add `record_ident_span` from `lbracket.tok.start_pos` to `rbracket.tok.end_pos`
+- [x] `Set`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos`
+- [x] `Dict`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos`
 
 **Tests:**
-- [ ] Unit: `test_list_span_recorded` - Parse `[1, 2, 3]`, verify span from `[` to `]`
-- [ ] Unit: `test_empty_list_span_recorded` - Parse `[]`, verify span
-- [ ] Unit: `test_set_span_recorded` - Parse `{1, 2}`, verify span from `{` to `}`
-- [ ] Unit: `test_dict_span_recorded` - Parse `{"a": 1}`, verify span from `{` to `}`
-- [ ] Unit: `test_empty_dict_span_recorded` - Parse `{}`, verify span
-- [ ] Unit: `test_nested_list_span` - Parse `[[1, 2], [3, 4]]`, verify both outer and inner spans
+- [x] Unit: `test_list_container_span_recorded` - Parse `[1, 2, 3]`, verify span from `[` to `]`
+- [x] Unit: `test_empty_list_container_span_recorded` - Parse `[]`, verify span
+- [x] Unit: `test_set_container_span_recorded` - Parse `{1, 2}`, verify span from `{` to `}`
+- [x] Unit: `test_dict_container_span_recorded` - Parse `{"a": 1}`, verify span from `{` to `}`
+- [x] Unit: `test_empty_dict_container_span_recorded` - Parse `{}`, verify span
+- [x] Unit: `test_nested_list_container_span` - Parse `[[1, 2], [3, 4]]`, verify both outer and inner spans
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes (no regressions)
-- [ ] `cargo nextest run -p tugtool-python-cst container_span` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes (no regressions) - 639/639 tests pass
+- [x] `cargo nextest run -p tugtool-python-cst container_span` passes - 6/6 tests pass
 
 **Rollback:** Revert commit
 

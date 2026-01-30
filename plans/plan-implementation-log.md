@@ -6,6 +6,48 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.0.4: Container Span Recording | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.0.4 specification (lines 2763-2795)
+- Table T21: Expression Types Needing Span Recording (#t21-expression-spans)
+- Pattern 3: Bracket-Delimited Container (#step-0-2-0-patterns)
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - List, Set, Dict Inflate implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| `List`: Add `record_ident_span` from `lbracket.tok.start_pos` to `rbracket.tok.end_pos` | Done |
+| `Set`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos` | Done |
+| `Dict`: Add `record_ident_span` from `lbrace.tok.start_pos` to `rbrace.tok.end_pos` | Done |
+| Write 6 container span tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/nodes/expression.rs` - Added span recording to List (lines 1704-1709), Set (lines 1766-1771), Dict (lines 1827-1832) Inflate implementations
+- `crates/tugtool-python-cst/src/lib.rs` - Added 6 tests: `test_list_container_span_recorded`, `test_empty_list_container_span_recorded`, `test_set_container_span_recorded`, `test_dict_container_span_recorded`, `test_empty_dict_container_span_recorded`, `test_nested_list_container_span`
+- `plans/phase-13.md` - Marked Step 0.2.0.4 tasks, tests, and checkpoints complete
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst container_span`: 6/6 passed
+- `cargo nextest run -p tugtool-python-cst`: 639/639 passed (no regressions)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes (no regressions): PASS - 639/639
+- `cargo nextest run -p tugtool-python-cst container_span` passes: PASS - 6/6
+
+**Key Decisions/Notes:**
+- Implementation follows Pattern 3: record span from opening bracket/brace to closing bracket/brace
+- List uses `lbracket.tok`/`rbracket.tok`, Set and Dict use `lbrace.tok`/`rbrace.tok`
+- Nested containers properly record independent spans (verified by `test_nested_list_container_span`)
+- Empty containers (`[]`, `{}`) correctly record 2-byte spans
+- Test added for nested list validates outer span (bytes 0-16), inner span 1 (bytes 1-7), inner span 2 (bytes 9-15)
+
+---
+
 ## [phase-13.md] Step 0.2.0.3: Literal Span Recording | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

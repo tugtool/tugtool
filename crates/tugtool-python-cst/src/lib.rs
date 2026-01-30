@@ -1882,6 +1882,232 @@ mod test {
             panic!("Expected Simple statement");
         }
     }
+
+    // ========================================================================
+    // Step 0.2.0.4 Tests: Container Span Recording
+    // ========================================================================
+    //
+    // These tests verify that container expression nodes (List, Set, Dict)
+    // correctly record their ident_span from bracket tokens during inflation.
+
+    #[test]
+    fn test_list_container_span_recorded() {
+        let source = "[1, 2, 3]\n";
+        //            0123456789
+        //            ^list: bytes 0-9
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::List(list) = &expr.value {
+                    let node_id = list.node_id.expect("List should have node_id");
+                    let pos = positions.get(&node_id).expect("List should have position");
+                    let span = pos.ident_span.expect("List should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 9, "ident_span should end at 9");
+                    assert_eq!(&source[span.start..span.end], "[1, 2, 3]");
+                } else {
+                    panic!("Expected List expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_empty_list_container_span_recorded() {
+        let source = "[]\n";
+        //            012
+        //            ^list: bytes 0-2
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::List(list) = &expr.value {
+                    let node_id = list.node_id.expect("List should have node_id");
+                    let pos = positions.get(&node_id).expect("List should have position");
+                    let span = pos.ident_span.expect("List should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 2, "ident_span should end at 2");
+                    assert_eq!(&source[span.start..span.end], "[]");
+                } else {
+                    panic!("Expected List expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_set_container_span_recorded() {
+        let source = "{1, 2}\n";
+        //            0123456
+        //            ^set: bytes 0-6
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Set(set) = &expr.value {
+                    let node_id = set.node_id.expect("Set should have node_id");
+                    let pos = positions.get(&node_id).expect("Set should have position");
+                    let span = pos.ident_span.expect("Set should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 6, "ident_span should end at 6");
+                    assert_eq!(&source[span.start..span.end], "{1, 2}");
+                } else {
+                    panic!("Expected Set expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_dict_container_span_recorded() {
+        let source = "{\"a\": 1}\n";
+        //            012345678
+        //            ^dict: bytes 0-8
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Dict(dict) = &expr.value {
+                    let node_id = dict.node_id.expect("Dict should have node_id");
+                    let pos = positions.get(&node_id).expect("Dict should have position");
+                    let span = pos.ident_span.expect("Dict should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 8, "ident_span should end at 8");
+                    assert_eq!(&source[span.start..span.end], "{\"a\": 1}");
+                } else {
+                    panic!("Expected Dict expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_empty_dict_container_span_recorded() {
+        let source = "{}\n";
+        //            012
+        //            ^dict: bytes 0-2
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::Dict(dict) = &expr.value {
+                    let node_id = dict.node_id.expect("Dict should have node_id");
+                    let pos = positions.get(&node_id).expect("Dict should have position");
+                    let span = pos.ident_span.expect("Dict should have ident_span");
+
+                    assert_eq!(span.start, 0, "ident_span should start at 0");
+                    assert_eq!(span.end, 2, "ident_span should end at 2");
+                    assert_eq!(&source[span.start..span.end], "{}");
+                } else {
+                    panic!("Expected Dict expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
+
+    #[test]
+    fn test_nested_list_container_span() {
+        let source = "[[1, 2], [3, 4]]\n";
+        //            0         1
+        //            0123456789012345 6
+        //            ^outer: bytes 0-16 (exclusive)
+        //             ^inner1: bytes 1-7
+        //                      ^inner2: bytes 9-15
+        let (module, positions) = parse_with_positions(source);
+
+        if let Statement::Simple(simple) = &module.body[0] {
+            if let SmallStatement::Expr(expr) = &simple.body[0] {
+                if let Expression::List(outer_list) = &expr.value {
+                    // Verify outer list span
+                    let outer_id = outer_list.node_id.expect("Outer list should have node_id");
+                    let outer_pos = positions
+                        .get(&outer_id)
+                        .expect("Outer list should have position");
+                    let outer_span = outer_pos
+                        .ident_span
+                        .expect("Outer list should have ident_span");
+
+                    assert_eq!(outer_span.start, 0, "outer list should start at 0");
+                    assert_eq!(outer_span.end, 16, "outer list should end at 16");
+                    assert_eq!(&source[outer_span.start..outer_span.end], "[[1, 2], [3, 4]]");
+
+                    // Verify inner lists
+                    if let Element::Simple { value, .. } = &outer_list.elements[0] {
+                        if let Expression::List(inner1) = value {
+                            let inner1_id =
+                                inner1.node_id.expect("Inner list 1 should have node_id");
+                            let inner1_pos = positions
+                                .get(&inner1_id)
+                                .expect("Inner list 1 should have position");
+                            let inner1_span = inner1_pos
+                                .ident_span
+                                .expect("Inner list 1 should have ident_span");
+
+                            assert_eq!(inner1_span.start, 1, "inner list 1 should start at 1");
+                            assert_eq!(inner1_span.end, 7, "inner list 1 should end at 7");
+                            assert_eq!(&source[inner1_span.start..inner1_span.end], "[1, 2]");
+                        } else {
+                            panic!("Expected inner List expression");
+                        }
+                    } else {
+                        panic!("Expected Simple element");
+                    }
+
+                    if let Element::Simple { value, .. } = &outer_list.elements[1] {
+                        if let Expression::List(inner2) = value {
+                            let inner2_id =
+                                inner2.node_id.expect("Inner list 2 should have node_id");
+                            let inner2_pos = positions
+                                .get(&inner2_id)
+                                .expect("Inner list 2 should have position");
+                            let inner2_span = inner2_pos
+                                .ident_span
+                                .expect("Inner list 2 should have ident_span");
+
+                            assert_eq!(inner2_span.start, 9, "inner list 2 should start at 9");
+                            assert_eq!(inner2_span.end, 15, "inner list 2 should end at 15");
+                            assert_eq!(&source[inner2_span.start..inner2_span.end], "[3, 4]");
+                        } else {
+                            panic!("Expected inner List expression");
+                        }
+                    } else {
+                        panic!("Expected Simple element");
+                    }
+                } else {
+                    panic!("Expected outer List expression");
+                }
+            } else {
+                panic!("Expected Expr statement");
+            }
+        } else {
+            panic!("Expected Simple statement");
+        }
+    }
 }
 
 // ============================================================================
