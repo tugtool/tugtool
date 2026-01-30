@@ -54,17 +54,19 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - [ ] **10+ operations implemented** (up from 1): `tug analyze python <op> --help` lists operations
-- [ ] **All Layer 0-3 infrastructure complete:** Each layer has dedicated tests
+- [ ] **Stage 0 infrastructure complete:** Edit primitives, position lookup, stub discovery
+- [ ] **All Layer 0-4 infrastructure complete:** Each layer has dedicated tests
 - [ ] **Rename hardened:** All edge cases in [Table T02](#t02-rename-gaps) addressed
 - [ ] **Cross-layer integration tests:** 50+ integration tests across operations
 - [ ] **Temporale fixture coverage:** All operations tested against real Python code
 
 #### Scope {#scope}
 
-1. Harden existing rename operation (Layer 0)
-2. Implement Layers 1-4 infrastructure
-3. Ship operations: Extract Variable, Inline Variable, Safe Delete, Move Function, Move Class, Extract Method, Inline Method, Change Signature
-4. Document all operations in AGENT_API.md
+1. Build Stage 0 infrastructure (edit primitives, position lookup, stub discovery)
+2. Harden existing rename operation (Layer 0)
+3. Implement Layers 1-4 infrastructure
+4. Ship operations: Extract Variable, Inline Variable, Safe Delete, Move Function, Move Class, Extract Method, Inline Method, Change Signature
+5. Document all operations in AGENT_API.md
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -81,8 +83,8 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 #### Constraints {#constraints}
 
 - No Python runtime required (all analysis in Rust)
-- Span-based replacement only (no CST node insertion)
-- Must preserve all formatting/comments (CST-based)
+- Span-based edits only (no full CST reconstruction) - see [D07](#d07-edit-primitives) for edit model
+- Must preserve all formatting/comments in unedited regions
 
 #### Assumptions {#assumptions}
 
@@ -111,19 +113,13 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 
 ---
 
-#### [Q02] Code generation strategy (OPEN) {#q02-code-generation}
+#### [Q02] Code generation strategy (CLOSED) {#q02-code-generation}
 
 **Question:** Template-based generation vs. CST construction?
 
-**Why it matters:** Affects maintainability and formatting consistency.
+**Resolution:** CLOSED - See [D04](#d04-template-generation)
 
-**Options:**
-- Templates: String interpolation with explicit indentation
-- CST: Build nodes programmatically, serialize
-
-**Plan to resolve:** Prototype property generation both ways, compare
-
-**Resolution:** OPEN
+Template-based generation is the decided approach. CST construction was rejected due to verbosity and complexity. See [D04] for full rationale and formatting rules.
 
 ---
 
@@ -134,12 +130,33 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 | Control flow complexity | High | High | Simple-cases-first, clear error messages | >50% of extractions rejected |
 | Import manipulation bugs | High | Medium | Extensive golden tests, conservative updates | Any incorrect import after move |
 | Side-effect false positives | Medium | Medium | Conservative = safe; document limitations | User complaints about refused refactors |
+| Edit primitive correctness | High | Medium | Comprehensive unit tests, overlapping edit rejection | Any corrupted file after edit |
+| CST lifetime issues | Medium | Low | Careful API design, collect edits before applying | Borrow checker errors during implementation |
+| Test fixture coverage gaps | Medium | Medium | Create dedicated edge-case fixtures beyond Temporale | Edge cases not covered by Temporale |
 
 **Risk R01: Layer 4 Complexity** {#r01-layer4-complexity}
 
 - **Risk:** Control flow analysis for Extract Method is significantly more complex than other infrastructure
 - **Mitigation:** Define strict MVP scope (single entry/exit, no exceptions crossing boundary); defer complex cases
 - **Residual risk:** Some valid extractions will be rejected; document clearly
+
+**Risk R02: Edit Primitive Correctness** {#r02-edit-primitives}
+
+- **Risk:** Edit primitive infrastructure could corrupt files through overlapping edits, incorrect span handling, or Unicode edge cases
+- **Mitigation:** Comprehensive unit tests for all primitives; reject overlapping edits; test with multi-byte Unicode
+- **Residual risk:** Rare edge cases may slip through; syntax verification catches most issues
+
+**Risk R03: CST Lifetime Issues** {#r03-cst-lifetime}
+
+- **Risk:** Rust's borrow checker may complicate edit operations that need to hold CST references while computing edits
+- **Mitigation:** Design API to collect all edit primitives before applying; never mutate CST directly
+- **Residual risk:** API may be less ergonomic than ideal
+
+**Risk R04: Test Fixture Coverage** {#r04-fixture-coverage}
+
+- **Risk:** Temporale fixture (a datetime library) may not exercise all refactoring edge cases
+- **Mitigation:** Create dedicated test fixtures for edge cases (nested classes, diamond inheritance, complex imports)
+- **Residual risk:** Real-world edge cases discovered post-release; add to fixture as found
 
 ---
 
@@ -162,49 +179,156 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 
 #### [D02] Conservative Side-Effect Analysis (DECIDED) {#d02-conservative-side-effects}
 
-**Decision:** For MVP, assume expressions with function calls are impure.
+**Decision:** For MVP, use explicit purity rules with conservative defaults for uncertain cases.
+
+**Table T10: Expression Purity Rules (MVP)** {#t10-purity-rules}
+
+| Expression Type | Classification | Rationale |
+|-----------------|---------------|-----------|
+| Literals (`42`, `"str"`, `True`) | Pure | No side effects |
+| Name lookup (`x`) | Pure | Reading a variable |
+| Binary/unary ops (`a + b`, `-x`) | Pure if operands pure | Operators on builtins are pure |
+| Comparison (`a < b`, `a == b`) | **Impure** | `__eq__`, `__lt__` may have side effects |
+| Attribute access (`obj.attr`, `self.x`) | **Impure** | Property getter may have side effects |
+| Subscript (`obj[key]`) | **Impure** | `__getitem__` may have side effects |
+| Function call (`f()`) | **Impure** | Calls may have arbitrary side effects |
+| Method call (`obj.method()`) | **Impure** | May mutate `obj` or have side effects |
+| Comprehensions | **Impure** | Contains implicit iteration with possible side effects |
+| Lambda | Pure (definition) | Lambda itself is pure; calling it may not be |
+| Conditional expr (`a if c else b`) | Impure if any part impure | Conservative |
+| Walrus (`:=`) | **Impure** | Assignment is a side effect |
+| Await | **Impure** | Async operations may have side effects |
+| Yield/Yield from | **Impure** | Generator control flow |
+
+**Known Safe Patterns (Future Enhancement):**
+
+| Pattern | Why Safe | Status |
+|---------|----------|--------|
+| `len(x)`, `str(x)`, `repr(x)` | Stdlib builtins are pure | Deferred |
+| `x.lower()`, `x.strip()` | String methods are pure | Deferred |
+| `isinstance(x, T)` | Type check is pure | Deferred |
 
 **Rationale:**
-- Full purity analysis requires deep type system integration
 - Conservative analysis is safe (may refuse valid refactors, never breaks code)
-- Can be refined incrementally
+- Dunder methods (`__eq__`, `__getitem__`, etc.) can contain arbitrary code
+- Property getters are commonly used for lazy initialization (side effects)
+- Can be refined incrementally with "known pure" patterns
 
 **Implications:**
-- Inline Variable may refuse to inline some safe cases
+- Inline Variable refuses multi-use inlining for any expression with attribute access
+- Extract Variable "all occurrences" requires all occurrences to have pure context
 - Error message explains why and suggests manual refactoring
 
 ---
 
 #### [D03] Simple-Cases-First for Control Flow (DECIDED) {#d03-simple-control-flow}
 
-**Decision:** Extract Method MVP supports only:
-- Single-entry, single-exit blocks
-- No exception handlers crossing selection boundary
-- Single return value (or tuple)
+**Decision:** Extract Method and Inline Method MVP reject complex control flow patterns.
+
+**Table T11: Control Flow Rejection List (MVP)** {#t11-control-flow-reject}
+
+| Pattern | Rejection Reason | Error Code |
+|---------|------------------|------------|
+| `async def` / `await` | Async control flow complexity | `CF_ASYNC` |
+| `yield` / `yield from` | Generator control flow | `CF_GENERATOR` |
+| `try`/`except`/`finally` crossing boundary | Exception flow escapes selection | `CF_EXCEPTION` |
+| `with` statement crossing boundary | Context manager flow | `CF_CONTEXT` |
+| `match`/`case` (Python 3.10+) | Pattern matching complexity | `CF_MATCH` |
+| `break` targeting loop outside selection | Control escapes selection | `CF_BREAK` |
+| `continue` targeting loop outside selection | Control escapes selection | `CF_CONTINUE` |
+| `return` in middle of selection (not end) | Multiple exit points | `CF_MULTI_EXIT` |
+| Multiple `return` statements | Multiple exit points | `CF_MULTI_RETURN` |
+| `raise` without enclosing `try` | Exception escapes selection | `CF_RAISE` |
+| `nonlocal` / `global` declarations | Scope manipulation | `CF_SCOPE` |
+
+**Boundary Crossing:** A construct "crosses the boundary" when it starts inside the selection but its effect extends outside, or vice versa.
+
+**Allowed Patterns (MVP):**
+
+| Pattern | Conditions |
+|---------|------------|
+| Single `return` at end of selection | Last statement only |
+| `return` with tuple | Single return, tuple is fine |
+| Local `try`/`except`/`finally` | Entire construct within selection |
+| Local `with` statement | Entire construct within selection |
+| Local `for`/`while` with `break`/`continue` | Loop and control within selection |
+
+**Error Message Format:**
+
+```
+Error: Cannot extract method - selection contains control flow that would escape.
+
+Details:
+  - Line 15: 'break' targets loop at line 10, outside selection
+
+Suggestion: Expand selection to include the 'for' loop at line 10
+```
 
 **Rationale:**
-- Complex control flow significantly increases complexity
-- Simple cases cover majority of real-world extractions
-- Clear error messages for rejected cases
+- Complex control flow requires sophisticated analysis to preserve semantics
+- Simple cases cover majority of real-world extractions (>80% estimated)
+- Clear error messages for rejected cases guide users toward valid selections
+- Future phases can expand support for async/generators
 
 **Implications:**
-- Some extractions will be rejected
-- Future enhancement can expand scope
+- Some valid extractions will be rejected
+- Users can manually refactor or expand selection
 
 ---
 
 #### [D04] Template-Based Code Generation (DECIDED) {#d04-template-generation}
 
-**Decision:** Use string templates (not CST construction) for generated code.
+**Decision:** Use string templates (not CST construction) for generated code, with explicit formatting rules.
 
 **Rationale:**
 - CST construction is verbose and error-prone
 - Templates are readable and maintainable
 - Indentation handling is explicit
 
+**Table T15: Code Formatting Rules** {#t15-formatting-rules}
+
+| Context | Rule | Example |
+|---------|------|---------|
+| Edited existing spans | Preserve original formatting | Rename `foo` to `bar` preserves whitespace |
+| Inserted statements | Match surrounding indentation | New assignment matches function body indent |
+| Generated functions | Minimal deterministic format | Single blank line before, no trailing blank |
+| Generated classes | Minimal deterministic format | Single blank line before and after |
+| Line length | No wrapping (may exceed limits) | Long lines remain long |
+| Trailing whitespace | None added | Clean line endings |
+| Final newline | Preserve file's existing style | Match original EOF |
+
+**Indentation Detection:**
+
+The indentation at the insertion point is detected from:
+1. The first non-empty line in the selection (for extractions)
+2. The line before the insertion point (for insertions)
+3. The containing scope's indentation + one level (fallback)
+
+**Generated Code Style:**
+
+Generated code uses a minimal, deterministic style:
+- No blank lines between simple statements
+- Single blank line before function/class definitions
+- No docstrings (user can add)
+- No type hints unless inferred from context
+
+**Style Mismatch Warning:**
+
+Operations emit a warning when generating code:
+```json
+{
+  "warnings": [{
+    "code": "W_STYLE",
+    "message": "Generated code may not match project style",
+    "suggestion": "Run your formatter (black, ruff format) after applying"
+  }]
+}
+```
+
 **Implications:**
 - Generated code formatting may not exactly match user's style
-- Consider black integration for post-generation formatting
+- Users should run their formatter after refactoring operations
+- Future: optional `--format=black` flag to run formatter post-generation
 
 ---
 
@@ -235,6 +359,91 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 **Implications:**
 - Rename output includes `aliases_not_renamed` field
 - Users can manually rename aliases if desired
+
+---
+
+#### [D07] Span-Based Edit Primitives (DECIDED) {#d07-edit-primitives}
+
+**Decision:** All code transformations use span-anchored edit primitives that do not require full CST reconstruction.
+
+**Context:** The constraint "span-based edits only" refers to avoiding a full CST re-printer that would reserialize entire nodes. It does NOT prevent code insertion—insertions are expressed as span-anchored operations.
+
+**Edit Primitives:**
+
+| Primitive | Description | Span Semantics |
+|-----------|-------------|----------------|
+| `Replace(span, text)` | Replace content at span with new text | `span.start..span.end` becomes `text` |
+| `InsertBefore(span, text)` | Insert text immediately before span | Insert at `span.start` |
+| `InsertAfter(span, text)` | Insert text immediately after span | Insert at `span.end` |
+| `Delete(span)` | Remove content at span | Equivalent to `Replace(span, "")` |
+| `InsertAt(position, text)` | Insert at absolute position | Zero-width span at position |
+
+**Formatting Preservation Rules:**
+
+1. **Surrounding whitespace:** Primitives operate on exact spans; surrounding whitespace is preserved
+2. **Indentation:** New code inherits indentation from context (detected at insertion point)
+3. **Trailing content:** Content after the span remains unchanged
+4. **Comments:** Comments within spans are included; comments before/after are preserved
+
+**Implementation Notes:**
+
+- Edits are collected and applied in reverse position order to avoid span invalidation
+- Overlapping edits are rejected (indicates logic error)
+- A new `BatchSpanEditor` component in `tugtool-python-cst` implements all primitives (see [Step 0.1](#step-0-1))
+
+**Rationale:**
+- Span-based edits preserve formatting by not touching unaffected regions
+- No CST re-serialization means no risk of reformatting user code
+- Explicit primitives make edit semantics clear and testable
+
+**Implications:**
+- Extract Variable uses `InsertBefore` for the assignment statement
+- Move Function uses `InsertAfter` (after imports) combined with `Delete` (from source)
+- All edits are reversible given the original spans
+
+---
+
+#### [D08] Type Stub and Annotation Updates (DECIDED) {#d08-stub-updates}
+
+**Decision:** Operations that change symbol names or signatures MUST update type stubs and string annotations when they exist in the workspace.
+
+**Scope of Updates:**
+
+| Artifact | When to Update | Example |
+|----------|---------------|---------|
+| `.pyi` stub file | Symbol renamed/moved, signature changed | `def foo() -> int` in stub |
+| String annotations | Symbol renamed | `x: "ClassName"` becomes `x: "NewName"` |
+| Forward references | Symbol renamed | `def f(x: "Foo")` |
+| `__all__` entries | Symbol renamed/deleted | `__all__ = ["foo"]` |
+| Docstring references | **Not updated** (too fragile) | `"""See :func:`foo`"""` |
+
+**Discovery Rules:**
+
+1. **Stub files:** For `module.py`, check `module.pyi` (same directory) and `stubs/module.pyi`
+2. **String annotations:** Parse string content as type expression
+3. **Forward references:** Identified by quoted type in annotation position
+
+**Warning for Public Symbols Without Stubs:**
+
+```json
+{
+  "warnings": [{
+    "code": "W_NO_STUB",
+    "message": "Symbol 'foo' appears to be public (in __all__) but has no .pyi stub",
+    "suggestion": "Consider adding a type stub for API stability"
+  }]
+}
+```
+
+**Rationale:**
+- Stubs define the public API; they must stay synchronized
+- String annotations are common for forward references and lazy imports
+- Docstrings are natural language with uncertain parsing
+
+**Implications:**
+- Rename operations must locate and update stub files
+- String annotation updates require parsing annotation content
+- Move operations must update import statements in stubs
 
 ---
 
@@ -270,7 +479,8 @@ The existing rename infrastructure forms the foundation for all operations.
 | Alias Graph | `tugtool-python/src/alias.rs` | Transitive alias detection |
 | Cross-file Analysis | `tugtool-python/src/analyzer.rs` | 4-pass analysis pipeline |
 | MRO Computation | `tugtool-python/src/mro.rs` | C3 linearization with origin tracking |
-| Batch Span Replacement | `tugtool-python-cst/src/visitor/rename.rs` | CST-preserving edits |
+| Rename Transformer | `tugtool-python-cst/src/visitor/rename.rs` | Rename-specific CST edits |
+| Batch Span Editor | `tugtool-python-cst/src/visitor/batch_edit.rs` | General edit primitives (see [Step 0.1](#step-0-1)) |
 | Verification Pipeline | `tugtool-python/src/verification.rs` | Syntax verification |
 
 **Existing Collectors (P0 - Core):**
@@ -319,18 +529,19 @@ Adds the ability to analyze and manipulate expressions.
 
 | Component | Purpose | Complexity |
 |-----------|---------|------------|
-| `ExpressionBoundaryDetector` | Find complete expression at cursor position | Medium |
+| `ExpressionBoundaryDetector` | Find complete expression at cursor position | High |
 | `ExpressionExtractor` | Extract expression text with proper span | Low |
-| `UniqueNameGenerator` | Generate non-conflicting names in scope | Low |
-| `SingleAssignmentChecker` | Verify variable has exactly one assignment | Low |
+| `UniqueNameGenerator` | Generate non-conflicting names in scope | Medium |
+| `SingleAssignmentChecker` | Verify variable has exactly one assignment | Medium |
 | `LiteralDetector` | Identify extractable literals (numbers, strings) | Low |
 
 **Implementation Notes:**
 
-- Expression boundary uses CST node parent traversal
-- Handle parenthesized expressions correctly
-- Unique names consult scope bindings at target location
-- Literal detection identifies magic numbers/strings
+- Expression boundary requires position-to-node lookup and parent context (see [Step 0.2](#step-0-2))
+- Handle parenthesized expressions, multi-line expressions, and f-strings correctly
+- Unique names must consult ALL visible bindings (imports, enclosing scopes, builtins, generator scopes)
+- Single-assignment must handle augmented assignment, walrus operator, and tuple unpacking
+- Literal detection identifies magic numbers/strings (including bytes, complex, boolean, None)
 
 **Operations Enabled:**
 
@@ -377,7 +588,7 @@ Adds statement-level analysis and basic side-effect tracking.
 
 **Status:** Planned
 
-Adds the ability to modify import statements programmatically.
+Adds the ability to modify import statements programmatically with precise control over placement and formatting.
 
 **Components:**
 
@@ -388,21 +599,120 @@ Adds the ability to modify import statements programmatically.
 | `ImportUpdater` | Change import source or target | Medium |
 | `StdlibDetector` | Identify standard library modules | Low |
 | `CircularImportChecker` | Detect import cycles before move | Low |
+| `ImportBlockAnalyzer` | Analyze existing import structure | Medium |
 
-**Implementation Notes:**
+##### Import Ordering Rules {#import-ordering-rules}
 
-- Import insertion finds correct position (after docstring, before code)
-- Handle `from X import Y as Z` correctly
-- Stdlib detection uses bundled module list
-- Circular import check uses existing import graph
+**Table T08: Import Section Order (Mandatory)** {#t08-import-order}
+
+| Section | Description | Must Precede |
+|---------|-------------|--------------|
+| `__future__` | Future imports | All other imports |
+| `TYPE_CHECKING` block | Type-only imports | None (special block) |
+| Standard library | stdlib imports | Third-party, local |
+| Third-party | External packages | Local |
+| Local | Project imports | None |
+
+**Insertion Modes:**
+
+| Mode | Description | When to Use |
+|------|-------------|-------------|
+| `preserve` | Insert in existing section, minimize diff | Default for all operations |
+| `pep8` | Full PEP 8 grouping with blank lines | User-requested reorganization |
+| `grouped` | Custom grouping via configuration | Project-specific rules |
+
+**MVP uses `preserve` mode only.** The `pep8` and `grouped` modes are deferred to future phases.
+
+##### Preserve Mode Rules {#preserve-mode-rules}
+
+1. **Find matching section:** If an import from the same module exists, add to that import statement
+2. **Find similar section:** If imports from related packages exist, insert nearby
+3. **Fallback:** Insert after last import, before first non-import statement
+4. **Exception:** `__future__` imports always go first, `TYPE_CHECKING` blocks handled specially
+
+**Example:**
+
+```python
+# Existing:
+from typing import List
+from mypackage import foo
+
+# Adding: from mypackage import bar
+# Result (preserve mode):
+from typing import List
+from mypackage import foo, bar  # Added to existing import
+```
+
+##### Special Import Patterns {#special-import-patterns}
+
+**Table T09: Special Import Handling** {#t09-special-imports}
+
+| Pattern | Handling |
+|---------|----------|
+| `from __future__ import ...` | After module docstring (if present), before any other imports |
+| `if TYPE_CHECKING:` block | Type-only imports go inside block |
+| Multiline `from X import (...)` | Preserve multiline format, add item |
+| `import X as Y` | Preserve alias when updating source |
+| `from X import Y as Z` | Preserve alias when updating source |
+| Trailing comma in multiline | Preserve trailing comma style |
+| Comments on import line | Preserve inline comments |
+| Comments above import | Keep comment attached to import |
+
+##### Alias Preservation {#alias-preservation}
+
+When moving a symbol that was imported with an alias:
+
+```python
+# Before move: main.py
+from old_module import Handler as H
+h = H()
+
+# After move (Handler moved to new_module):
+from new_module import Handler as H  # Alias preserved
+h = H()
+```
+
+##### TYPE_CHECKING Block Rules {#type-checking-rules}
+
+```python
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from expensive_module import ExpensiveClass  # Type-only import
+```
+
+**Rules:**
+
+1. If import is used ONLY in type annotations, place in `TYPE_CHECKING` block
+2. If import is used at runtime, place in normal import section
+3. When moving a class, check if importers only use it for typing
+4. Never move runtime imports into `TYPE_CHECKING` (breaks execution)
+
+##### Comment Preservation {#import-comment-preservation}
+
+```python
+# Database utilities
+from db import connect, query  # Core database functions
+
+# After removing 'query' from import:
+# Database utilities
+from db import connect  # Core database functions preserved
+```
+
+**Rules:**
+
+1. Comments on the same line as import: Preserve on remaining import
+2. Comments above import block: Keep attached
+3. Comments between imports: Preserve in relative position
+4. Empty import after removal: Delete line, preserve surrounding comments
 
 **Operations Enabled:**
 
 | Operation | Layer 3 Dependencies |
 |-----------|---------------------|
-| Move Function | Import insertion, import update |
-| Move Class | Import insertion, import update |
-| Safe Delete (with cleanup) | Import removal |
+| Move Function | Import insertion, import update, alias preservation |
+| Move Class | Import insertion, import update, TYPE_CHECKING handling |
+| Safe Delete (with cleanup) | Import removal, comment preservation |
 
 ---
 
@@ -669,6 +979,51 @@ def main():
 **CLI:**
 ```bash
 tug apply python safe-delete --at <file:line:col>
+tug apply python safe-delete --at <file:line:col> --force  # Override public API check
+```
+
+##### Public API Detection {#public-api-detection}
+
+Safe Delete refuses to delete symbols that appear to be public API unless `--force` is specified.
+
+**Table T12: Public API Indicators** {#t12-public-api}
+
+| Indicator | Detection Method | Confidence |
+|-----------|-----------------|------------|
+| Listed in `__all__` | Parse `__all__` assignment | High |
+| Re-exported in `__init__.py` | Check `from .module import symbol` | High |
+| Has `@public` decorator | Decorator name check | High |
+| Documented in stub file | Presence in `.pyi` | High |
+| Name does not start with `_` | Naming convention | Medium |
+
+**Behavior:**
+
+```bash
+# Refuses if symbol is in __all__:
+$ tug apply python safe-delete --at api.py:10:5
+Error: Cannot delete 'process_data' - symbol is public API (in __all__)
+
+Use --force to delete anyway (may break external consumers)
+
+# Force delete public symbol:
+$ tug apply python safe-delete --at api.py:10:5 --force
+Warning: Deleting public API symbol 'process_data'
+```
+
+**Error Output Schema:**
+
+```json
+{
+  "status": "error",
+  "code": 3,
+  "error": {
+    "kind": "public_api",
+    "symbol": "process_data",
+    "indicators": ["in_all", "has_stub"],
+    "message": "Cannot delete public API symbol",
+    "suggestion": "Use --force to delete anyway"
+  }
+}
 ```
 
 **Competitive Advantage:** Cross-file resolution catches imports that static analysis might miss.
@@ -796,7 +1151,7 @@ tug apply python inline-method --at <file:line:col>
 
 **Layer Requirements:** Layer 0 + Layer 4
 
-**Description:** Add, remove, or reorder function parameters.
+**Description:** Add, remove, reorder, or modify function parameters with automatic call site updates.
 
 ```python
 # Before
@@ -817,6 +1172,63 @@ connect("localhost", 8080)  # unchanged (default used)
 tug apply python change-signature --at <file:line:col> --add "timeout=30"
 tug apply python change-signature --at <file:line:col> --remove "debug"
 tug apply python change-signature --at <file:line:col> --reorder "port,host"
+tug apply python change-signature --at <file:line:col> --rename "old_name:new_name"
+```
+
+##### Signature Constraints (MVP) {#signature-constraints}
+
+**Table T13: Change Signature Support Matrix** {#t13-signature-support}
+
+| Feature | Supported | Notes |
+|---------|-----------|-------|
+| Positional parameters | Yes | Standard parameters |
+| Keyword parameters | Yes | With defaults |
+| Positional-only (`/`) | Yes | Preserved in reordering |
+| Keyword-only (`*`) | Yes | Preserved in reordering |
+| `*args` | **No** | Reject signature |
+| `**kwargs` | **No** | Reject signature |
+| Default values | Yes | Preserved or added |
+| Type annotations | Yes | Preserved |
+| Decorators | Yes | Not modified |
+
+**Table T14: Call Site Constraints (MVP)** {#t14-callsite-constraints}
+
+| Call Pattern | Supported | Notes |
+|--------------|-----------|-------|
+| Positional arguments | Yes | Reordered as needed |
+| Keyword arguments | Yes | Updated to new names |
+| Mixed positional/keyword | Yes | Conservative handling |
+| `*args` unpacking | **No** | Reject call site |
+| `**kwargs` unpacking | **No** | Reject call site |
+| `functools.partial` | **No** | Reject (cannot analyze) |
+| Lambda wrapper | **No** | Reject (cannot analyze) |
+
+**Rejection Behavior:**
+
+When a signature or call site uses unsupported patterns:
+
+```bash
+$ tug apply python change-signature --at api.py:10:5 --remove "debug"
+Error: Cannot change signature - function uses *args/**kwargs
+
+Affected definition:
+  api.py:10: def process(data, *args, **kwargs)
+
+Suggestion: Manually update the signature and its call sites
+```
+
+**Call Site Analysis:**
+
+```python
+# Supported call sites:
+connect("localhost", 8080)
+connect(host="localhost", port=8080)
+connect("localhost", port=8080)
+
+# Rejected call sites (operation fails):
+connect(*args)
+connect(**config)
+partial(connect, host="localhost")
 ```
 
 ---
@@ -1012,6 +1424,16 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 
 #### 13.5.1 New Files {#new-files}
 
+**Stage 0 Infrastructure:**
+
+| File | Purpose |
+|------|---------|
+| `crates/tugtool-python-cst/src/visitor/batch_edit.rs` | Edit primitives (Replace, Insert, Delete) |
+| `crates/tugtool-python-cst/src/visitor/position_lookup.rs` | Position-to-node lookup and parent context |
+| `crates/tugtool-python/src/stubs.rs` | Stub file discovery and update |
+
+**Operations:**
+
 | File | Purpose |
 |------|---------|
 | `crates/tugtool-python/src/ops/extract_variable.rs` | Extract Variable operation |
@@ -1029,6 +1451,21 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 | `crates/tugtool-python/src/layers/mod.rs` | Layer module exports |
 
 #### 13.5.2 New Components {#new-components}
+
+**Table T16: Stage 0 Infrastructure Components** {#t16-stage0-components}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `EditPrimitive` | enum | `visitor/batch_edit.rs` | Replace, InsertBefore, InsertAfter, Delete, InsertAt |
+| `BatchSpanEditor` | struct | `visitor/batch_edit.rs` | Collects and applies edit primitives |
+| `apply_edits` | fn | `visitor/batch_edit.rs` | Applies edits in reverse position order |
+| `PositionIndex` | struct | `visitor/position_lookup.rs` | Maps positions to node info |
+| `AncestorTracker` | struct | `visitor/position_lookup.rs` | Tracks parent context during traversal |
+| `find_expression_at_position` | fn | `visitor/position_lookup.rs` | Finds expression containing position |
+| `find_statement_at_position` | fn | `visitor/position_lookup.rs` | Finds statement containing position |
+| `StubDiscovery` | struct | `stubs.rs` | Finds stub files for modules |
+| `StubUpdater` | struct | `stubs.rs` | Applies edits to stub files |
+| `StringAnnotationParser` | struct | `stubs.rs` | Parses type expressions in string annotations |
 
 **Table T05: Layer 1 Components** {#t05-layer1-components}
 
@@ -1065,6 +1502,150 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 
 ### 13.6 Execution Steps {#execution-steps}
 
+#### Stage 0: Foundation Infrastructure {#stage-0}
+
+Stage 0 creates the foundational infrastructure required by all subsequent stages. This infrastructure does not exist in the current codebase and must be built before Stage 1 can proceed.
+
+---
+
+##### Step 0.1: Edit Primitive Infrastructure {#step-0-1}
+
+**Commit:** `feat(python-cst): add batch edit primitive infrastructure`
+
+**References:** [D07](#d07-edit-primitives)
+
+**Artifacts:**
+- New `crates/tugtool-python-cst/src/visitor/batch_edit.rs`
+- Updated `crates/tugtool-python-cst/src/visitor/mod.rs`
+
+**Tasks:**
+- [ ] Create `EditPrimitive` enum with variants: Replace, InsertBefore, InsertAfter, Delete, InsertAt
+- [ ] Create `BatchSpanEditor` struct that collects edit primitives
+- [ ] Implement `apply_edits()` that applies edits in reverse position order
+- [ ] Implement overlapping edit detection and rejection
+- [ ] Implement indentation detection and insertion for InsertBefore/InsertAfter
+- [ ] Handle Unicode/multi-byte character spans correctly
+- [ ] Add comprehensive documentation and examples
+
+**Tests:**
+- [ ] Unit: `test_replace_single_span`
+- [ ] Unit: `test_replace_multiple_spans`
+- [ ] Unit: `test_insert_before_statement`
+- [ ] Unit: `test_insert_after_expression`
+- [ ] Unit: `test_insert_at_position`
+- [ ] Unit: `test_delete_span`
+- [ ] Unit: `test_multiple_edits_non_overlapping`
+- [ ] Unit: `test_overlapping_edits_rejected`
+- [ ] Unit: `test_adjacent_edits_allowed`
+- [ ] Unit: `test_unicode_multibyte_spans`
+- [ ] Unit: `test_indentation_preservation`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python-cst batch_edit`
+- [ ] All edit primitive variants have tests
+
+**Rollback:** Revert commit
+
+---
+
+##### Step 0.2: Position Lookup Infrastructure {#step-0-2}
+
+**Commit:** `feat(python-cst): add position-to-node lookup and parent context`
+
+**References:** (#layer-1) - required for `ExpressionBoundaryDetector`
+
+**Artifacts:**
+- New `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
+- Updated `crates/tugtool-python-cst/src/visitor/mod.rs`
+
+**Tasks:**
+- [ ] Create `PositionIndex` struct that maps byte offsets to node information
+- [ ] Create `AncestorTracker` for maintaining parent context during traversal
+- [ ] Implement `find_node_at_position(position) -> Option<NodeInfo>`
+- [ ] Implement `find_expression_at_position(position) -> Option<ExpressionSpan>`
+- [ ] Implement `find_statement_at_position(position) -> Option<StatementSpan>`
+- [ ] Implement `find_enclosing_scope(position) -> Option<ScopeSpan>`
+- [ ] Handle positions at whitespace/comments (find nearest node)
+- [ ] Handle positions at statement boundaries
+
+**Tests:**
+- [ ] Unit: `test_find_node_simple_expression`
+- [ ] Unit: `test_find_node_nested_expression`
+- [ ] Unit: `test_find_expression_in_call`
+- [ ] Unit: `test_find_expression_parenthesized`
+- [ ] Unit: `test_find_enclosing_statement`
+- [ ] Unit: `test_find_enclosing_scope`
+- [ ] Unit: `test_position_at_whitespace`
+- [ ] Unit: `test_position_at_comment`
+- [ ] Unit: `test_position_between_statements`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python-cst position_lookup`
+- [ ] All lookup functions return correct spans
+
+**Rollback:** Revert commit
+
+---
+
+##### Step 0.3: Stub Discovery Infrastructure {#step-0-3}
+
+**Commit:** `feat(python): add type stub discovery and update infrastructure`
+
+**References:** [D08](#d08-stub-updates)
+
+**Artifacts:**
+- New `crates/tugtool-python/src/stubs.rs`
+- Updated `crates/tugtool-python/src/lib.rs`
+
+**Tasks:**
+- [ ] Create `StubDiscovery` struct for finding stub files
+- [ ] Implement `find_stub_for_module(module_path) -> Option<PathBuf>` (same-dir first, then stubs/)
+- [ ] Implement stub file parsing using existing CST parser
+- [ ] Create `StubUpdater` that applies rename/move edits to stub files
+- [ ] Handle stub files that don't parse (warn, don't fail)
+- [ ] Handle namespace packages (PEP 420)
+
+**String Annotation Parsing:**
+- [ ] Create `StringAnnotationParser` for parsing type expressions in string annotations
+- [ ] Handle simple names: `"ClassName"` → rename to `"NewName"`
+- [ ] Handle qualified names: `"module.ClassName"` → update appropriately
+- [ ] Handle forward references in function annotations: `def f(x: "Foo")`
+- [ ] Preserve quoting style (single vs double quotes)
+
+**Tests:**
+- [ ] Unit: `test_find_stub_same_directory`
+- [ ] Unit: `test_find_stub_stubs_folder`
+- [ ] Unit: `test_no_stub_exists`
+- [ ] Unit: `test_stub_parse_class`
+- [ ] Unit: `test_stub_parse_function`
+- [ ] Unit: `test_stub_update_rename`
+- [ ] Unit: `test_string_annotation_simple_name`
+- [ ] Unit: `test_string_annotation_qualified_name`
+- [ ] Unit: `test_string_annotation_preserves_quotes`
+
+**Checkpoint:**
+- [ ] `cargo nextest run -p tugtool-python stubs`
+- [ ] Stub discovery works for both locations
+- [ ] String annotation parsing handles common cases
+
+**Rollback:** Revert commit
+
+---
+
+#### Stage 0 Summary {#stage-0-summary}
+
+After completing Steps 0.1-0.3, you will have:
+- Edit primitive infrastructure supporting all D07 operations
+- Position-to-node lookup for expression/statement boundary detection
+- Stub file discovery and update infrastructure for D08 compliance
+
+**Final Stage 0 Checkpoint:**
+- [ ] `cargo nextest run --workspace`
+- [ ] All Stage 0 infrastructure has >80% test coverage
+- [ ] Infrastructure is ready for Stage 1 operations
+
+---
+
 #### Stage 1: Foundation Hardening + Layer 1 {#stage-1}
 
 ##### Step 1.1: Rename Hardening {#step-1-1}
@@ -1075,21 +1656,32 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/ops/rename.rs`
+- Updated `crates/tugtool-python-cst/src/visitor/rename.rs` (migrate to BatchSpanEditor)
 - New tests in `crates/tugtool-python/tests/`
 
 **Tasks:**
 - [ ] Address decorator argument renaming
 - [ ] Add comprehension scope edge case handling
+- [ ] Add type comment handling (`# type: Foo` comments)
 - [ ] Add `__init__.py` re-export detection
 - [ ] Add multi-inheritance rename tests
 - [ ] Add aliased import rename tests
 - [ ] Add property setter rename tests
+- [ ] Add nested class rename handling (class defined inside function)
+- [ ] Add walrus operator (`:=`) target renaming
+- [ ] Migrate rename to use `BatchSpanEditor` from [Step 0.1](#step-0-1)
+- [ ] Update rename to edit stubs and string annotations per [D08](#d08-stub-updates)
 
 **Tests:**
 - [ ] Unit: `test_rename_decorator_arg`
 - [ ] Unit: `test_rename_comprehension_scope`
+- [ ] Unit: `test_rename_type_comment`
+- [ ] Unit: `test_rename_nested_class`
+- [ ] Unit: `test_rename_walrus_operator`
 - [ ] Integration: `test_rename_init_reexport`
 - [ ] Integration: `test_rename_diamond_inheritance`
+- [ ] Integration: `test_rename_updates_stub`
+- [ ] Integration: `test_rename_updates_string_annotation`
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python rename`
@@ -1113,10 +1705,12 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 - [ ] Extract rename-param logic from general rename
 - [ ] Add parameter-specific validation
 - [ ] Update call sites with keyword arguments
+- [ ] Update parameter names in `.pyi` stubs when present (D08)
 
 **Tests:**
 - [ ] Integration: `test_rename_param_basic`
 - [ ] Integration: `test_rename_param_keyword_only`
+- [ ] Integration: `test_rename_param_updates_stub`
 - [ ] Golden: `rename_param_response.json`
 
 **Checkpoint:**
@@ -1132,15 +1726,19 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 
 **References:** (#layer-1), [Table T05](#t05-layer1-components)
 
+**Dependencies:** [Step 0.2](#step-0-2) (position lookup infrastructure)
+
 **Artifacts:**
 - New `crates/tugtool-python/src/layers/` module
 - New `crates/tugtool-python/src/layers/expression.rs`
+- Updated `crates/tugtool-python/src/lib.rs` (export layers module)
 
 **Tasks:**
 - [ ] Create `layers/mod.rs` with module structure
-- [ ] Implement `ExpressionBoundaryDetector`
+- [ ] Implement `ExpressionBoundaryDetector` (uses position lookup from Step 0.2)
 - [ ] Implement `UniqueNameGenerator`
 - [ ] Implement `SingleAssignmentChecker`
+- [ ] Handle comprehension/generator expression scopes
 - [ ] Add comprehensive unit tests
 
 **Tests:**
@@ -1169,17 +1767,34 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 - New `crates/tugtool-python/src/ops/extract_variable.rs`
 - CLI command: `tug apply python extract-variable`
 
+**Placement Rules:**
+
+The extracted variable assignment is inserted:
+1. **Statement context:** Immediately before the statement containing the expression
+2. **Expression context:** At the same indentation level as the enclosing statement
+3. **Multi-line expressions:** Before the first line of the enclosing statement
+
+**Rejection Cases (MVP):**
+- Expression inside comprehension (would change semantics - evaluated per-iteration vs once)
+- Expression inside lambda (cannot add statements)
+- Expression inside decorator arguments (complex evaluation order)
+
 **Tasks:**
 - [ ] Implement extract-variable operation
-- [ ] Validate expression boundary
+- [ ] Validate expression boundary using Layer 1 infrastructure
 - [ ] Generate unique name if not provided
-- [ ] Insert variable assignment at correct location
+- [ ] Detect insertion point (before enclosing statement)
+- [ ] Detect and preserve indentation
 - [ ] Replace expression with variable reference
+- [ ] Reject comprehension/lambda/decorator contexts with clear error
 
 **Tests:**
 - [ ] Integration: `test_extract_variable_basic`
 - [ ] Integration: `test_extract_variable_nested`
 - [ ] Integration: `test_extract_variable_in_function`
+- [ ] Integration: `test_extract_variable_multiline`
+- [ ] Integration: `test_extract_variable_reject_comprehension`
+- [ ] Integration: `test_extract_variable_reject_lambda`
 - [ ] Golden: `extract_variable_response.json`
 
 **Checkpoint:**
@@ -1200,11 +1815,27 @@ See Phase 12 documentation for base schemas. New operations follow the same enve
 - New `crates/tugtool-python/src/ops/extract_constant.rs`
 - CLI command: `tug apply python extract-constant`
 
+**Supported Literal Types:**
+- Integer literals (`42`, `0xFF`, `0b1010`)
+- Float literals (`3.14`, `1e-5`)
+- String literals (`"hello"`, `'world'`, `"""multiline"""`)
+- Bytes literals (`b"data"`)
+- Boolean literals (`True`, `False`)
+- None literal (`None`)
+- Complex numbers (`3+4j`) - deferred, low priority
+- Ellipsis (`...`) - deferred, rarely extracted
+
+**Placement Rules:**
+1. After all imports (including TYPE_CHECKING blocks)
+2. Before the first class or function definition
+3. If constants already exist, add after them (preserve grouping)
+
 **Tasks:**
 - [ ] Implement extract-constant operation
-- [ ] Detect literal expressions (numbers, strings)
-- [ ] Insert constant at module level (after imports)
-- [ ] Validate constant naming (UPPER_SNAKE_CASE)
+- [ ] Detect literal expressions (all supported types)
+- [ ] Insert constant at module level (after imports, before first definition)
+- [ ] Validate constant naming (UPPER_SNAKE_CASE warning if not)
+- [ ] Check for name conflicts with existing module-level names
 
 **Tests:**
 - [ ] Integration: `test_extract_constant_number`
@@ -1385,12 +2016,15 @@ After completing Steps 2.1-2.3, you will have:
 - [ ] Add necessary imports to target
 - [ ] Update all import statements in codebase
 - [ ] Check for circular imports
+- [ ] Update stub files and string annotations for moved functions (D08)
 
 **Tests:**
 - [ ] Integration: `test_move_function_basic`
 - [ ] Integration: `test_move_function_with_deps`
 - [ ] Integration: `test_move_function_update_imports`
 - [ ] Integration: `test_move_function_reject_circular`
+- [ ] Integration: `test_move_function_updates_stub`
+- [ ] Integration: `test_move_function_updates_string_annotations`
 - [ ] Golden: `move_function_response.json`
 
 **Checkpoint:**
@@ -1410,11 +2044,13 @@ After completing Steps 2.1-2.3, you will have:
 - [ ] Extend move operation for classes
 - [ ] Handle type annotation references
 - [ ] Handle inheritance chains
+- [ ] Update stub files and string annotations for moved classes (D08)
 
 **Tests:**
 - [ ] Integration: `test_move_class_basic`
 - [ ] Integration: `test_move_class_with_subclass`
 - [ ] Integration: `test_move_class_type_annotations`
+- [ ] Integration: `test_move_class_updates_stub`
 
 **Checkpoint:**
 - [ ] `tug apply python move --at models.py:15:1 --to entities`
@@ -1557,11 +2193,14 @@ After completing Steps 3.1-3.4, you will have:
 - [ ] Support --add, --remove, --reorder
 - [ ] Update all call sites
 - [ ] Handle default values
+- [ ] Update stub signatures and string annotations per [D08](#d08-stub-updates)
 
 **Tests:**
 - [ ] Integration: `test_change_sig_add_param`
 - [ ] Integration: `test_change_sig_remove_param`
 - [ ] Integration: `test_change_sig_reorder`
+- [ ] Integration: `test_change_sig_updates_stub`
+- [ ] Integration: `test_change_sig_updates_string_annotation`
 - [ ] Golden: `change_signature_response.json`
 
 **Checkpoint:**
@@ -1590,6 +2229,7 @@ After completing Steps 4.1-4.4, you will have:
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
+- [ ] **Stage 0 infrastructure complete:** Edit primitives, position lookup, stub discovery all implemented
 - [ ] **10+ operations implemented:** Rename, Rename Parameter, Extract Variable, Extract Constant, Inline Variable, Safe Delete, Move Function, Move Class, Extract Method, Inline Method, Change Signature
 - [ ] **Layers 0-4 complete:** All infrastructure components implemented and tested
 - [ ] **Rename hardened:** All [Table T02](#t02-rename-gaps) gaps addressed
@@ -1605,9 +2245,16 @@ After completing Steps 4.1-4.4, you will have:
 
 #### Milestones {#milestones}
 
+**Milestone M00: Stage 0 Complete** {#m00-stage0}
+- [ ] Edit primitive infrastructure complete (`BatchSpanEditor`)
+- [ ] Position lookup infrastructure complete
+- [ ] Stub discovery and update infrastructure complete
+- [ ] All Stage 0 tests pass with >80% coverage
+
 **Milestone M01: Stage 1 Complete** {#m01-stage1}
 - [ ] 4 operations: Rename, Rename Parameter, Extract Variable, Extract Constant
 - [ ] Layer 1 infrastructure complete
+- [ ] All T02 rename gaps addressed
 
 **Milestone M02: Stage 2 Complete** {#m02-stage2}
 - [ ] 6 operations (adding Inline Variable, Safe Delete)

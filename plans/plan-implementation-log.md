@@ -6,6 +6,73 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Phase 13 Critical Review: Stage 0 Infrastructure | COMPLETE | 2026-01-29
+
+**Completed:** 2026-01-29
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase 13 Python Refactoring Operations plan
+- Code-architect agent critical review of implementation feasibility
+- `crates/tugtool-python-cst/src/visitor/rename.rs` - Verified BatchSpanReplacer does not exist
+- `crates/tugtool-python-cst/src/visitor/` - Verified no position lookup infrastructure
+- `crates/tugtool-python/src/` - Verified no stub discovery infrastructure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add Stage 0: Foundation Infrastructure section | Done |
+| Add Step 0.1: Edit Primitive Infrastructure | Done |
+| Add Step 0.2: Position Lookup Infrastructure | Done |
+| Add Step 0.3: Stub Discovery Infrastructure | Done |
+| Fix BatchSpanReplacer references (doesn't exist) | Done |
+| Add missing Step 1.1 tasks (type comments, nested class, walrus) | Done |
+| Update Layer 1 complexity ratings | Done |
+| Add missing risks (R02, R03, R04) | Done |
+| Add milestone M00 for Stage 0 | Done |
+| Update Success Criteria, Scope, Exit Criteria | Done |
+| Add Table T16: Stage 0 Infrastructure Components | Done |
+| Enhance Step 1.3 with Stage 0 dependency | Done |
+| Enhance Step 1.4 with placement rules | Done |
+| Enhance Step 1.5 with literal type coverage | Done |
+| Verify all cross-references | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Major updates adding Stage 0 and addressing critical gaps
+
+**Key Changes:**
+
+| Change | Description |
+|--------|-------------|
+| Stage 0 Added | New foundation stage with Steps 0.1, 0.2, 0.3 before Stage 1 |
+| BatchSpanEditor | Replaced non-existent BatchSpanReplacer with new component to create |
+| Complexity Ratings | ExpressionBoundaryDetector: Medium→High, UniqueNameGenerator/SingleAssignmentChecker: Low→Medium |
+| Missing Risks | Added R02 (Edit Primitives), R03 (CST Lifetime), R04 (Fixture Coverage) |
+| Missing Tasks | Added type comments, nested class, walrus operator to Step 1.1 |
+| Table T16 | New table for Stage 0 infrastructure components (10 symbols) |
+
+**Critical Issues Identified and Addressed:**
+
+1. **BatchSpanReplacer does not exist** - Plan referenced "extending" a component that doesn't exist in the codebase. Fixed by creating Stage 0 Step 0.1 to build BatchSpanEditor.
+
+2. **No parent traversal infrastructure** - ExpressionBoundaryDetector requires position-to-node lookup that doesn't exist. Fixed by creating Stage 0 Step 0.2.
+
+3. **No stub discovery infrastructure** - D08 (stub updates) assumed inline implementation. Fixed by creating Stage 0 Step 0.3.
+
+4. **Underestimated complexity** - Layer 1 components rated too low. Fixed by updating complexity ratings.
+
+5. **Missing T02 tasks** - 3 gaps from Table T02 not in Step 1.1 tasks. Fixed by adding them.
+
+**New Milestone:**
+- M00: Stage 0 Complete (edit primitives, position lookup, stub discovery)
+
+**Checkpoints Verified:**
+- All anchor definitions present: PASS (90+ anchors)
+- All cross-references valid: PASS (Step 0.1, 0.2, 0.3 referenced correctly)
+- No remaining BatchSpanReplacer references: PASS (verified with grep)
+
+---
+
 ## [phase-13.md] Phase 13 Restructure: Infrastructure-First Plan | COMPLETE | 2026-01-29
 
 **Completed:** 2026-01-29
