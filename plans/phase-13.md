@@ -5497,61 +5497,324 @@ assert_eq!(result, "\"RequestHandler | None\"");
 
 ---
 
+###### 0.3.6 Execution Steps {#step-0-3-6}
+
+**References:** [Step 0.3](#step-0-3), Spec (#step-0-3-api), Internal Design (#step-0-3-internal), Edge Cases (#step-0-3-edge-cases), Integration (#step-0-3-integration), Examples (#step-0-3-examples)
+
+This section breaks the Stub Discovery Infrastructure implementation into discrete substeps with individual commits and checkpoints.
+
+**Total Substeps:** 6
+
+**Estimated Complexity:** Medium (well-specified API, reuses existing CST parser, clear algorithms)
+
+---
+
+###### Step 0.3.6.1: Stub Error and Result Types {#step-0-3-6-1}
+
+**Commit:** `feat(python): add stub error types and result alias`
+
+**References:** Spec (#step-0-3-api) - StubError enum, Edge Cases (#step-0-3-edge-cases) - Stub Parse Failure Policy
+
+**Artifacts:**
+- New `crates/tugtool-python/src/stubs.rs`
+- Modified `crates/tugtool-python/src/lib.rs` (add `pub mod stubs;`)
+
 **Tasks:**
-- [ ] Create `StubError` enum with ParseError, NotFound, IoError, InvalidAnnotation variants
-- [ ] Create `StubInfo`, `StubLocation` types for discovery results
-- [ ] Create `StubDiscoveryOptions` with workspace_root, extra_stub_dirs, check_typeshed_style
-- [ ] Create `StubDiscovery` struct with new(), for_workspace(), find_stub_for(), etc.
-- [ ] Implement inline stub discovery (`module.pyi` same directory)
-- [ ] Implement stubs folder discovery (`stubs/` at workspace root)
-- [ ] Implement typeshed-style discovery (`pkg-stubs/`)
-- [ ] Create `ParsedStub`, `StubFunction`, `StubClass`, `StubTypeAlias`, `StubVariable` types
-- [ ] Implement `ParsedStub::parse()` using existing CST parser
-- [ ] Implement symbol lookup methods (find_function, find_class, find_method)
-- [ ] Create `StubUpdater` for generating stub edits
-- [ ] Implement `rename_edits()` for symbol renames
-- [ ] Implement `move_edits()` for symbol moves
-- [ ] Create `StringAnnotationParser` for parsing type expressions in strings
-- [ ] Implement `parse()` to extract type references from string annotations
-- [ ] Implement `rename()` to transform string annotations
-- [ ] Handle quote style preservation (single vs double)
-- [ ] Handle generic types (`List[T]`, `Dict[K, V]`)
-- [ ] Handle union types (`A | B`, `Optional[T]`)
+- [ ] Create `stubs.rs` module file
+- [ ] Add `StubError` enum with variants: `ParseError`, `NotFound`, `IoError`, `InvalidAnnotation`
+- [ ] Implement `std::fmt::Display` for `StubError`
+- [ ] Implement `std::error::Error` for `StubError`
+- [ ] Add `StubResult<T>` type alias
+- [ ] Add `pub mod stubs;` to `lib.rs`
+- [ ] Add comprehensive documentation with error examples
 
 **Tests:**
-- [ ] Unit: `test_find_stub_same_directory` - inline stub exists
-- [ ] Unit: `test_find_stub_stubs_folder` - stubs/ folder stub
-- [ ] Unit: `test_find_stub_typeshed_style` - pkg-stubs pattern
-- [ ] Unit: `test_find_stub_extra_dirs` - custom stub directories
-- [ ] Unit: `test_no_stub_exists` - returns None
-- [ ] Unit: `test_stub_parse_class` - extract class info
-- [ ] Unit: `test_stub_parse_function` - extract function info
-- [ ] Unit: `test_stub_parse_methods` - extract methods from class
+- [ ] Unit: `test_stub_error_display_parse_error` - Verify Display impl for ParseError
+- [ ] Unit: `test_stub_error_display_not_found` - Verify Display impl for NotFound
+- [ ] Unit: `test_stub_error_display_io_error` - Verify Display impl for IoError
+- [ ] Unit: `test_stub_error_display_invalid_annotation` - Verify Display impl for InvalidAnnotation
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python stub_error` passes
+- [ ] `cargo clippy -p tugtool-python -- -D warnings` passes
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.2: Stub Discovery Types and Basic Discovery {#step-0-3-6-2}
+
+**Commit:** `feat(python): add StubDiscovery with inline stub detection`
+
+**References:** Spec (#step-0-3-api) - StubInfo, StubLocation, StubDiscoveryOptions, StubDiscovery structs, Internal Design (#step-0-3-internal) - Stub Discovery Algorithm, Examples (#step-0-3-examples) - Example 1
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**Tasks:**
+- [ ] Add `StubLocation` enum with variants: `Inline`, `StubsFolder`, `TypeshedStyle`
+- [ ] Add `StubInfo` struct with `stub_path`, `source_path`, `location` fields
+- [ ] Add `StubDiscoveryOptions` struct with `workspace_root`, `extra_stub_dirs`, `check_typeshed_style` fields
+- [ ] Implement `Default` for `StubDiscoveryOptions`
+- [ ] Add `StubDiscovery` struct with `options` field
+- [ ] Implement `StubDiscovery::new(options)` constructor
+- [ ] Implement `StubDiscovery::for_workspace(workspace_root)` convenience constructor
+- [ ] Implement `inline_stub_path(&self, source_path)` helper (`.py` -> `.pyi`)
+- [ ] Implement `find_stub_for(&self, source_path)` - inline stub detection only
+- [ ] Implement `has_stub(&self, source_path)` using `find_stub_for`
+- [ ] Implement `expected_stub_path(&self, source_path)` returning inline path
+- [ ] Add documentation with usage examples
+
+**Tests:**
+- [ ] Unit: `test_stub_location_variants` - Verify enum variants exist
+- [ ] Unit: `test_stub_info_construction` - Basic struct creation
+- [ ] Unit: `test_stub_discovery_options_default` - Default values correct
+- [ ] Unit: `test_stub_discovery_new` - Constructor works
+- [ ] Unit: `test_stub_discovery_for_workspace` - Convenience constructor works
+- [ ] Unit: `test_find_stub_same_directory` - Inline stub detection (Example 1)
+- [ ] Unit: `test_no_stub_exists` - Returns None when no stub present
+- [ ] Unit: `test_has_stub_true` - Returns true when stub exists
+- [ ] Unit: `test_has_stub_false` - Returns false when no stub
+- [ ] Unit: `test_expected_stub_path` - Returns .pyi path
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python stub_discovery` passes
+- [ ] Inline stub detection works per Example 1 in (#step-0-3-examples)
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.3: Stubs Folder and Typeshed-Style Discovery {#step-0-3-6-3}
+
+**Commit:** `feat(python): add stubs folder and typeshed-style stub discovery`
+
+**References:** Spec (#step-0-3-api) - discovery order, Internal Design (#step-0-3-internal) - find_typeshed_style_stub algorithm, Examples (#step-0-3-examples) - Example 2, Edge Cases (#step-0-3-edge-cases) - Package __init__.py, Nested packages
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**Tasks:**
+- [ ] Implement `module_path_from_source(&self, source_path)` helper
+- [ ] Extend `find_stub_for()` to check `stubs/` folder at workspace root
+- [ ] Implement `find_typeshed_style_stub(&self, source_path, module_path)` for `pkg-stubs/` pattern
+- [ ] Extend `find_stub_for()` to check typeshed-style locations (when `check_typeshed_style` is true)
+- [ ] Extend `find_stub_for()` to check `extra_stub_dirs`
+- [ ] Implement `find_stub_or_err(&self, source_path)` returning error with searched locations
+- [ ] Implement `search_locations(&self, source_path)` returning all searched paths
+- [ ] Handle `__init__.py` -> `__init__.pyi` mapping
+- [ ] Handle nested package paths (`pkg/sub/module.py` -> `pkg/sub/module.pyi`)
+
+**Tests:**
+- [ ] Unit: `test_find_stub_stubs_folder` - Stubs folder detection (Example 2)
+- [ ] Unit: `test_find_stub_typeshed_style` - pkg-stubs pattern detection
+- [ ] Unit: `test_find_stub_extra_dirs` - Custom stub directories
+- [ ] Unit: `test_find_stub_priority_inline_first` - Inline stub takes precedence
+- [ ] Unit: `test_find_stub_priority_stubs_folder_second` - Stubs folder before typeshed
+- [ ] Unit: `test_find_stub_init_py` - `__init__.py` to `__init__.pyi`
+- [ ] Unit: `test_find_stub_nested_package` - Deep package paths
+- [ ] Unit: `test_find_stub_or_err_not_found` - Error with searched locations
+- [ ] Unit: `test_search_locations_complete` - All paths returned
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python stub_discovery` passes
+- [ ] Stub discovery works for inline, stubs folder, and typeshed-style
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.4: Stub Parsing Types and Implementation {#step-0-3-6-4}
+
+**Commit:** `feat(python): add ParsedStub and stub symbol types`
+
+**References:** Spec (#step-0-3-api) - ParsedStub, StubFunction, StubClass, StubTypeAlias, StubVariable structs, Internal Design (#step-0-3-internal) - Stub Parsing algorithm, Examples (#step-0-3-examples) - Example 3, Integration (#step-0-3-integration) - parse_module_with_positions reuse
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**Tasks:**
+- [ ] Add `StubFunction` struct with `name`, `name_span`, `signature_span`, `def_span`, `is_async`, `decorators` fields
+- [ ] Add `StubClass` struct with `name`, `name_span`, `header_span`, `def_span`, `methods`, `attributes` fields
+- [ ] Add `StubTypeAlias` struct with `name`, `name_span`, `value_span` fields
+- [ ] Add `StubVariable` struct with `name`, `name_span`, `annotation_span` fields
+- [ ] Add `ParsedStub` struct with `path`, `functions`, `classes`, `type_aliases`, `variables`, `source` fields
+- [ ] Create `StubCollector` visitor struct for collecting stub symbols
+- [ ] Implement `Visitor` trait for `StubCollector` to extract functions, classes, type aliases, variables
+- [ ] Implement `ParsedStub::parse(stub_path)` reading file and calling `parse_str`
+- [ ] Implement `ParsedStub::parse_str(source, stub_path)` using CST parser
+- [ ] Implement `ParsedStub::find_function(&self, name)` lookup
+- [ ] Implement `ParsedStub::find_class(&self, name)` lookup
+- [ ] Implement `ParsedStub::find_method(&self, class_name, method_name)` lookup
+- [ ] Implement `ParsedStub::has_symbol(&self, name)` check
+
+**Tests:**
+- [ ] Unit: `test_stub_parse_function` - Extract function info
+- [ ] Unit: `test_stub_parse_async_function` - Async function detection
+- [ ] Unit: `test_stub_parse_function_with_decorators` - Decorator extraction
+- [ ] Unit: `test_stub_parse_class` - Extract class info (Example 3)
+- [ ] Unit: `test_stub_parse_methods` - Extract methods from class
+- [ ] Unit: `test_stub_parse_class_attributes` - Class-level variables
 - [ ] Unit: `test_stub_parse_type_alias` - TypeAlias support
-- [ ] Unit: `test_stub_parse_variable` - module-level variables
-- [ ] Unit: `test_stub_update_rename_function` - rename function in stub
-- [ ] Unit: `test_stub_update_rename_class` - rename class in stub
-- [ ] Unit: `test_stub_update_rename_method` - rename method in stub
-- [ ] Unit: `test_stub_parse_failure_returns_error` - invalid syntax
+- [ ] Unit: `test_stub_parse_variable` - Module-level annotated variables
+- [ ] Unit: `test_stub_find_function` - Lookup by name
+- [ ] Unit: `test_stub_find_class` - Lookup by name
+- [ ] Unit: `test_stub_find_method` - Lookup nested in class
+- [ ] Unit: `test_stub_has_symbol_true` - Symbol exists
+- [ ] Unit: `test_stub_has_symbol_false` - Symbol not found
+- [ ] Unit: `test_stub_parse_io_error` - File not found error
+- [ ] Unit: `test_stub_parse_failure_returns_error` - Invalid syntax returns ParseError
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python stub_parse` passes
+- [ ] Stub parsing extracts all symbol types per Example 3
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.5: String Annotation Parser {#step-0-3-6-5}
+
+**Commit:** `feat(python): add StringAnnotationParser for type expressions in strings`
+
+**References:** Spec (#step-0-3-api) - StringAnnotationParser, AnnotationRef, ParsedAnnotation types, Internal Design (#step-0-3-internal) - String Annotation Parsing algorithm and tokenizer, Examples (#step-0-3-examples) - Example 5, Edge Cases (#step-0-3-edge-cases) - String annotation edge cases
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**Tasks:**
+- [ ] Add `AnnotationRef` struct with `name`, `offset_in_string`, `length` fields
+- [ ] Add `ParsedAnnotation` struct with `content`, `quote_char`, `refs` fields
+- [ ] Add internal `AnnotationToken` enum with `Name` and `Punct` variants
+- [ ] Add `StringAnnotationParser` struct (unit struct)
+- [ ] Implement `extract_content(annotation)` helper to extract quote char and inner content
+- [ ] Implement `tokenize(content)` helper to produce token stream
+- [ ] Implement `extract_refs(tokens)` helper to collect name references
+- [ ] Implement `StringAnnotationParser::parse(annotation)` returning ParsedAnnotation
+- [ ] Implement `StringAnnotationParser::rename(annotation, old_name, new_name)` with reverse-order replacement
+- [ ] Implement `StringAnnotationParser::contains_name(annotation, name)` check
+- [ ] Handle single and double quote styles (preserve on output)
+- [ ] Handle whitespace in annotations
+- [ ] Handle nested brackets for generics
+- [ ] Return `InvalidAnnotation` error for invalid syntax
+
+**Tests:**
 - [ ] Unit: `test_string_annotation_simple_name` - `"ClassName"`
 - [ ] Unit: `test_string_annotation_qualified_name` - `"module.Class"`
 - [ ] Unit: `test_string_annotation_generic` - `"List[Item]"`
 - [ ] Unit: `test_string_annotation_union` - `"A | B"`
 - [ ] Unit: `test_string_annotation_optional` - `"Optional[T]"`
 - [ ] Unit: `test_string_annotation_callable` - `"Callable[[A], B]"`
-- [ ] Unit: `test_string_annotation_preserves_single_quotes` - `'Type'`
-- [ ] Unit: `test_string_annotation_preserves_double_quotes` - `"Type"`
+- [ ] Unit: `test_string_annotation_preserves_single_quotes` - `'Type'` stays single
+- [ ] Unit: `test_string_annotation_preserves_double_quotes` - `"Type"` stays double
 - [ ] Unit: `test_string_annotation_nested_generics` - `"Dict[str, List[int]]"`
-- [ ] Unit: `test_string_annotation_rename_multiple` - multiple refs to same name
+- [ ] Unit: `test_string_annotation_rename_simple` - Replace single name (Example 5)
+- [ ] Unit: `test_string_annotation_rename_qualified` - Replace in qualified name
+- [ ] Unit: `test_string_annotation_rename_generic` - Replace in generic type
+- [ ] Unit: `test_string_annotation_rename_multiple` - Multiple refs to same name
+- [ ] Unit: `test_string_annotation_rename_union` - Replace in union type
+- [ ] Unit: `test_string_annotation_contains_name_true` - Name found
+- [ ] Unit: `test_string_annotation_contains_name_false` - Name not found
+- [ ] Unit: `test_string_annotation_invalid_quotes` - Error for mismatched quotes
+- [ ] Unit: `test_string_annotation_invalid_char` - Error for unexpected character
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python stubs`
-- [ ] Stub discovery works for inline, stubs folder, and typeshed-style
-- [ ] Stub parsing extracts all symbol types
-- [ ] String annotation parsing handles common patterns
-- [ ] Rename edits are generated correctly for stubs
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python string_annotation` passes
+- [ ] String annotation parsing handles all common patterns per Example 5
 
 **Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.6: Stub Updater Integration {#step-0-3-6-6}
+
+**Commit:** `feat(python): add StubUpdater for generating stub edits`
+
+**References:** Spec (#step-0-3-api) - StubUpdater, StubEdits, StubEdit, MoveStubEdits types, Examples (#step-0-3-examples) - Example 4, Integration (#step-0-3-integration) - Usage in Rename Operation, [D08](#d08-stub-updates)
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**Tasks:**
+- [ ] Add `StubEdit` enum with variants: `Rename { span, new_name }`, `Delete { span }`, `Insert { position, text }`
+- [ ] Add `StubEdits` struct with `stub_path`, `edits` fields
+- [ ] Add `MoveStubEdits` struct with `source_edits`, `target_edits` fields
+- [ ] Add `StubUpdater` struct with `discovery` field
+- [ ] Implement `StubUpdater::new(discovery)` constructor
+- [ ] Implement `rename_edits(&self, source_path, old_name, new_name)`:
+  - [ ] Find stub for source path (return `Ok(None)` if no stub)
+  - [ ] Parse stub file (return error on parse failure)
+  - [ ] Find symbol by name in stub
+  - [ ] Generate `StubEdit::Rename` for symbol name span
+  - [ ] Find references to symbol in return types and annotations
+  - [ ] Generate rename edits for all references
+  - [ ] Return `StubEdits` with all edits
+- [ ] Implement `move_edits(&self, source_path, target_path, symbol_name)`:
+  - [ ] Find stubs for source and target paths
+  - [ ] Parse source stub and find symbol definition span
+  - [ ] Generate `StubEdit::Delete` for source
+  - [ ] Generate `StubEdit::Insert` for target with symbol definition text
+  - [ ] Return `MoveStubEdits` with both edit sets
+- [ ] Handle case where symbol exists in source but not stub (warn, no edit)
+- [ ] Handle string annotations in type hints using `StringAnnotationParser`
+
+**Tests:**
+- [ ] Unit: `test_stub_updater_rename_function` - Rename function in stub (Example 4)
+- [ ] Unit: `test_stub_updater_rename_class` - Rename class in stub
+- [ ] Unit: `test_stub_updater_rename_method` - Rename method in stub
+- [ ] Unit: `test_stub_updater_rename_with_return_type` - Updates return type annotation
+- [ ] Unit: `test_stub_updater_rename_with_param_type` - Updates parameter type annotation
+- [ ] Unit: `test_stub_updater_rename_string_annotation` - Updates string annotations
+- [ ] Unit: `test_stub_updater_no_stub_returns_none` - No stub file exists
+- [ ] Unit: `test_stub_updater_symbol_not_in_stub` - Source has symbol, stub doesn't
+- [ ] Unit: `test_stub_updater_move_between_modules` - Delete from source, insert to target
+- [ ] Unit: `test_stub_updater_move_no_source_stub` - Source has no stub
+- [ ] Unit: `test_stub_updater_move_no_target_stub` - Target has no stub
+- [ ] Integration: `test_stub_update_rename_full_workflow` - End-to-end rename with stub update
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python stub_updater` passes
+- [ ] `cargo nextest run -p tugtool-python stubs` passes (all stub tests)
+- [ ] Rename edits are generated correctly for stubs per Example 4
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6 Summary {#step-0-3-6-summary}
+
+After completing Steps 0.3.6.1 through 0.3.6.6, you will have:
+
+- `StubError` enum and `StubResult<T>` type alias for error handling
+- `StubLocation`, `StubInfo`, `StubDiscoveryOptions` types for discovery results
+- `StubDiscovery` struct with multi-location stub finding (inline, stubs folder, typeshed-style, extra dirs)
+- `ParsedStub`, `StubFunction`, `StubClass`, `StubTypeAlias`, `StubVariable` types for parsed stub content
+- `StubCollector` visitor for extracting symbols from stub CST
+- `StringAnnotationParser` for parsing and transforming type expressions in string annotations
+- `StubUpdater` for generating rename and move edits for stub files
+- `StubEdit`, `StubEdits`, `MoveStubEdits` types for edit representation
+
+**Final Step 0.3.6 Checkpoint:**
+
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python stubs` passes (all stub-related tests)
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [ ] Verify: Stub discovery works for inline, stubs folder, and typeshed-style locations
+- [ ] Verify: Stub parsing extracts all symbol types (functions, classes, type aliases, variables)
+- [ ] Verify: String annotation parsing handles common patterns (generics, unions, optionals)
+- [ ] Verify: Rename edits are generated correctly for stubs
+- [ ] Verify: All concrete examples from (#step-0-3-examples) produce expected results
+
+**Aggregate Test Command:**
+```bash
+cargo nextest run -p tugtool-python stubs
+```
 
 ---
 

@@ -1941,7 +1941,11 @@ mod tests {
 
         // Push three items
         tracker.push(NodeKind::Module, Span::new(0, 100), None);
-        tracker.push(NodeKind::FunctionDef, Span::new(10, 90), Some(NodeId::new(1)));
+        tracker.push(
+            NodeKind::FunctionDef,
+            Span::new(10, 90),
+            Some(NodeId::new(1)),
+        );
         tracker.push(NodeKind::Call, Span::new(20, 40), Some(NodeId::new(2)));
 
         assert_eq!(tracker.depth(), 3);
@@ -1983,7 +1987,11 @@ mod tests {
         assert_eq!(parent.unwrap().depth, 0);
 
         // Push FunctionDef - it becomes new parent
-        tracker.push(NodeKind::FunctionDef, Span::new(10, 90), Some(NodeId::new(5)));
+        tracker.push(
+            NodeKind::FunctionDef,
+            Span::new(10, 90),
+            Some(NodeId::new(5)),
+        );
         let parent = tracker.parent();
         assert!(parent.is_some());
         assert_eq!(parent.unwrap().kind, NodeKind::FunctionDef);
@@ -1998,7 +2006,11 @@ mod tests {
 
         tracker.push(NodeKind::Module, Span::new(0, 100), None);
         tracker.push(NodeKind::ClassDef, Span::new(10, 90), Some(NodeId::new(1)));
-        tracker.push(NodeKind::FunctionDef, Span::new(20, 80), Some(NodeId::new(2)));
+        tracker.push(
+            NodeKind::FunctionDef,
+            Span::new(20, 80),
+            Some(NodeId::new(2)),
+        );
         tracker.push(NodeKind::Call, Span::new(30, 50), Some(NodeId::new(3)));
 
         // Depth 0 = root (Module)
@@ -2357,7 +2369,11 @@ mod tests {
 
         // Should collect multiple expression types
         let expressions = index.expression_count();
-        assert!(expressions >= 5, "Expected at least 5 expressions, got {}", expressions);
+        assert!(
+            expressions >= 5,
+            "Expected at least 5 expressions, got {}",
+            expressions
+        );
 
         // Check specific expression types are found
         // - result (Name)
@@ -2410,7 +2426,11 @@ except:
 
         // Should collect many statement types
         let statements = index.statement_count();
-        assert!(statements >= 10, "Expected at least 10 statements, got {}", statements);
+        assert!(
+            statements >= 10,
+            "Expected at least 10 statements, got {}",
+            statements
+        );
 
         // Verify various statement types are found
         // Check for import statement
@@ -2464,7 +2484,11 @@ class MyClass:
 
         // Should include multiple nodes at this position
         // (Module, Call(foo), Call(bar), Call(baz) or Name(baz))
-        assert!(all_nodes.len() >= 2, "Expected at least 2 nodes at nested position, got {}", all_nodes.len());
+        assert!(
+            all_nodes.len() >= 2,
+            "Expected at least 2 nodes at nested position, got {}",
+            all_nodes.len()
+        );
 
         // First should be Module (outermost)
         assert_eq!(all_nodes[0].kind, NodeKind::Module);
@@ -2677,11 +2701,19 @@ class Calculator:
         // Expressions: x, y, z, x+y, 1, 2, a, b, a+b, a, b, result, a*b, a, b,
         //              self, x, y, x+y, os (from import)
         // At least 10 expressions
-        assert!(expr_count >= 10, "Expected at least 10 expressions, got {}", expr_count);
+        assert!(
+            expr_count >= 10,
+            "Expected at least 10 expressions, got {}",
+            expr_count
+        );
 
         // Statements: import, 3 assignments, 2 function defs, 1 class def, return statements
         // At least 7 statements
-        assert!(stmt_count >= 7, "Expected at least 7 statements, got {}", stmt_count);
+        assert!(
+            stmt_count >= 7,
+            "Expected at least 7 statements, got {}",
+            stmt_count
+        );
 
         // Scopes: Module + add + multiply + Calculator + compute = 5
         assert_eq!(scope_count, 5, "Expected 5 scopes, got {}", scope_count);

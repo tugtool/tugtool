@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6: Stub Discovery Execution Steps | PLANNING COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3 Stub Discovery Infrastructure (lines 4611-5498)
+- `plans/phase-13.md` - 0.3.1 API Specification (#step-0-3-api)
+- `plans/phase-13.md` - 0.3.2 Internal Design Notes (#step-0-3-internal)
+- `plans/phase-13.md` - 0.3.3 Edge Cases (#step-0-3-edge-cases)
+- `plans/phase-13.md` - 0.3.4 Integration Points (#step-0-3-integration)
+- `plans/phase-13.md` - 0.3.5 Concrete Examples (#step-0-3-examples)
+- `plans/plan-skeleton.md` - Execution step format specification
+
+**Summary:**
+
+Created properly-formatted Step 0.3.6 Execution Steps section for Stub Discovery Infrastructure. The existing Step 0.3 material (0.3.1-0.3.5) had API specs and design notes but lacked structured execution steps conforming to plan-skeleton.md. Used code-planner agent to produce 6 discrete substeps with proper commit boundaries, references, tasks, tests, and checkpoints.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Review existing 0.3.1-0.3.5 material | Done |
+| Review plan-skeleton.md format | Done |
+| Design 6 discrete substeps | Done |
+| Create Step 0.3.6.1: Stub Error and Result Types | Done |
+| Create Step 0.3.6.2: Stub Discovery Types and Basic Discovery | Done |
+| Create Step 0.3.6.3: Stubs Folder and Typeshed-Style Discovery | Done |
+| Create Step 0.3.6.4: Stub Parsing Types and Implementation | Done |
+| Create Step 0.3.6.5: String Annotation Parser | Done |
+| Create Step 0.3.6.6: Stub Updater Integration | Done |
+| Create Step 0.3.6 Summary | Done |
+| Replace old unformatted Tasks/Tests/Checkpoint block | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Replaced lines 5499-5556 (old flat Tasks/Tests/Checkpoint) with new Step 0.3.6 Execution Steps section (320+ lines)
+
+**Structure Added:**
+
+| Section | Line | Description |
+|---------|------|-------------|
+| 0.3.6 Execution Steps | 5500 | Main section with references |
+| Step 0.3.6.1 | 5512 | Stub Error and Result Types |
+| Step 0.3.6.2 | 5546 | Stub Discovery Types and Basic Discovery |
+| Step 0.3.6.3 | 5590 | Stubs Folder and Typeshed-Style Discovery |
+| Step 0.3.6.4 | 5630 | Stub Parsing Types and Implementation |
+| Step 0.3.6.5 | 5680 | String Annotation Parser |
+| Step 0.3.6.6 | 5734 | Stub Updater Integration |
+| Step 0.3.6 Summary | 5790 | Final checkpoint and deliverables |
+
+**Key Decisions/Notes:**
+- Each substep follows skeleton format: Commit, References, Artifacts, Tasks, Tests, Checkpoint, Rollback
+- Substeps build incrementally: types first → discovery → parsing → string annotations → integration
+- All substep references link back to existing 0.3.1-0.3.5 material (API spec, design, examples, edge cases)
+- Stage 0 Summary remains unchanged and correctly follows Step 0.3.6 Summary
+- This is a PLANNING step (no code written yet) - actual implementation will follow
+
+---
+
 ## [phase-13.md] Step 0.2.6 Summary: Position Lookup Infrastructure | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30
