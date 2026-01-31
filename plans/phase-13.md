@@ -4328,33 +4328,33 @@ This section breaks the Position Lookup Infrastructure implementation into discr
 - Modified `crates/tugtool-core/src/lib.rs` (exports)
 
 **Tasks:**
-- [ ] Add `LineCol` struct with `line: u32` and `col: u32` fields (1-indexed)
-- [ ] Implement `LineCol::new()` with minimum value clamping (max(1, value))
-- [ ] Add `PositionError` enum with variants: `LineOutOfRange`, `ColumnOutOfRange`, `OffsetOutOfRange`
-- [ ] Implement `std::fmt::Display` for `PositionError`
-- [ ] Implement `std::error::Error` for `PositionError`
-- [ ] Add `PositionResult<T>` type alias
-- [ ] Implement `line_col_to_byte_offset()` with Unicode scalar column counting (per algorithm in #step-0-2-internal)
-- [ ] Implement `byte_offset_to_line_col()` with validation
-- [ ] Export new types from `tugtool-core/src/lib.rs`
-- [ ] Add documentation with Unicode examples
+- [x] Add `LineCol` struct with `line: u32` and `col: u32` fields (1-indexed)
+- [x] Implement `LineCol::new()` with minimum value clamping (max(1, value))
+- [x] Add `PositionError` enum with variants: `LineOutOfRange`, `ColumnOutOfRange`, `OffsetOutOfRange`
+- [x] Implement `std::fmt::Display` for `PositionError`
+- [x] Implement `std::error::Error` for `PositionError`
+- [x] Add `PositionResult<T>` type alias
+- [x] Implement `line_col_to_byte_offset()` with Unicode scalar column counting (per algorithm in #step-0-2-internal)
+- [x] Implement `byte_offset_to_line_col()` with validation
+- [x] Export new types from `tugtool-core/src/lib.rs`
+- [x] Add documentation with Unicode examples
 
 **Tests:**
-- [ ] Unit: `test_line_col_new_clamps_minimum` - Verify line/col minimum is 1
-- [ ] Unit: `test_line_col_to_byte_offset_ascii` - Simple ASCII text conversion
-- [ ] Unit: `test_line_col_to_byte_offset_unicode` - Multi-byte Chinese characters
-- [ ] Unit: `test_line_col_to_byte_offset_multiline` - Multiple lines
-- [ ] Unit: `test_line_col_to_byte_offset_line_out_of_range` - Error case
-- [ ] Unit: `test_line_col_to_byte_offset_col_out_of_range` - Error case
-- [ ] Unit: `test_byte_offset_to_line_col_ascii` - Simple conversion
-- [ ] Unit: `test_byte_offset_to_line_col_unicode` - Multi-byte characters
-- [ ] Unit: `test_byte_offset_to_line_col_out_of_range` - Error case
-- [ ] Unit: `test_byte_offset_to_line_col_roundtrip` - Conversion symmetry
+- [x] Unit: `test_line_col_new_clamps_minimum` - Verify line/col minimum is 1
+- [x] Unit: `test_line_col_to_byte_offset_ascii` - Simple ASCII text conversion
+- [x] Unit: `test_line_col_to_byte_offset_unicode` - Multi-byte Chinese characters
+- [x] Unit: `test_line_col_to_byte_offset_multiline` - Multiple lines
+- [x] Unit: `test_line_col_to_byte_offset_line_out_of_range` - Error case
+- [x] Unit: `test_line_col_to_byte_offset_col_out_of_range` - Error case
+- [x] Unit: `test_byte_offset_to_line_col_ascii` - Simple conversion
+- [x] Unit: `test_byte_offset_to_line_col_unicode` - Multi-byte characters
+- [x] Unit: `test_byte_offset_to_line_col_out_of_range` - Error case
+- [x] Unit: `test_byte_offset_to_line_col_roundtrip` - Conversion symmetry
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-core` succeeds
-- [ ] `cargo nextest run -p tugtool-core text` passes
-- [ ] `cargo clippy -p tugtool-core -- -D warnings` passes
+- [x] `cargo build -p tugtool-core` succeeds
+- [x] `cargo nextest run -p tugtool-core text` passes
+- [x] `cargo clippy -p tugtool-core -- -D warnings` passes
 
 **Rollback:** Revert commit
 

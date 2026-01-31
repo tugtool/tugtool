@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.6.1: Position Conversion Types | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.6.1 specification (lines 4320-4359)
+- `crates/tugtool-core/src/text.rs` - Existing implementation
+- `crates/tugtool-core/src/lib.rs` - Module exports
+
+**Summary:**
+
+Verified and completed Step 0.2.6.1: Position Conversion Types. The core implementation was already present from previous work; this session added 4 missing tests to match the plan specification and checked off all items.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `LineCol` struct with `line: u32` and `col: u32` fields (1-indexed) | Done (pre-existing) |
+| Implement `LineCol::new()` with minimum value clamping | Done (pre-existing) |
+| Add `PositionError` enum with all variants | Done (pre-existing) |
+| Implement `std::fmt::Display` for `PositionError` | Done (pre-existing) |
+| Implement `std::error::Error` for `PositionError` | Done (pre-existing) |
+| Add `PositionResult<T>` type alias | Done (pre-existing) |
+| Implement `line_col_to_byte_offset()` with Unicode scalar column counting | Done (pre-existing) |
+| Implement `byte_offset_to_line_col()` with validation | Done (pre-existing) |
+| Export new types from `tugtool-core/src/lib.rs` | Done (pre-existing) |
+| Add documentation with Unicode examples | Done (pre-existing) |
+
+**Files Modified:**
+- `crates/tugtool-core/src/text.rs` - Added 4 missing tests
+- `plans/phase-13.md` - Checked off all Tasks, Tests, and Checkpoint items for Step 0.2.6.1
+
+**Tests Added:**
+- `test_line_col_new_clamps_minimum` - Comprehensive clamping verification
+- `test_line_col_to_byte_offset_multiline` - Multiple line conversion
+- `test_byte_offset_to_line_col_ascii` - ASCII text conversion
+- `test_byte_offset_to_line_col_unicode` - Multi-byte Chinese character handling
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core text`: 45 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-core`: PASS
+- `cargo nextest run -p tugtool-core text`: PASS (45 tests)
+- `cargo clippy -p tugtool-core -- -D warnings`: PASS
+
+**Key Notes:**
+- Implementation was already complete from Step 0.2.0 work
+- This session focused on adding missing spec-required tests
+- All 10 specified tests now exist and pass
+
+---
+
 ## [phase-13.md] Step 0.2.6: Execution Steps (Planning) | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

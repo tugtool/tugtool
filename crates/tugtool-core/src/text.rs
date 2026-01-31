@@ -698,6 +698,29 @@ mod tests {
         }
 
         #[test]
+        fn test_line_col_new_clamps_minimum() {
+            // Line 0 should clamp to 1
+            let pos1 = LineCol::new(0, 5);
+            assert_eq!(pos1.line, 1);
+            assert_eq!(pos1.col, 5);
+
+            // Column 0 should clamp to 1
+            let pos2 = LineCol::new(10, 0);
+            assert_eq!(pos2.line, 10);
+            assert_eq!(pos2.col, 1);
+
+            // Both 0 should clamp to 1
+            let pos3 = LineCol::new(0, 0);
+            assert_eq!(pos3.line, 1);
+            assert_eq!(pos3.col, 1);
+
+            // Valid values should pass through unchanged
+            let pos4 = LineCol::new(5, 10);
+            assert_eq!(pos4.line, 5);
+            assert_eq!(pos4.col, 10);
+        }
+
+        #[test]
         fn test_line_col_display() {
             let pos = LineCol::new(10, 5);
             assert_eq!(format!("{}", pos), "10:5");
@@ -722,6 +745,38 @@ mod tests {
                 line_col_to_byte_offset(source, LineCol::new(2, 3)).unwrap(),
                 8
             ); // 'r' in "world"
+        }
+
+        #[test]
+        fn test_line_col_to_byte_offset_multiline() {
+            let source = "line1\nline2\nline3\n";
+            // Line 1
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 1)).unwrap(),
+                0
+            );
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(1, 5)).unwrap(),
+                4
+            );
+            // Line 2
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(2, 1)).unwrap(),
+                6
+            );
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(2, 5)).unwrap(),
+                10
+            );
+            // Line 3
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(3, 1)).unwrap(),
+                12
+            );
+            assert_eq!(
+                line_col_to_byte_offset(source, LineCol::new(3, 5)).unwrap(),
+                16
+            );
         }
 
         #[test]
@@ -775,6 +830,64 @@ mod tests {
             assert_eq!(
                 byte_offset_to_line_col(source, 6).unwrap(),
                 LineCol::new(2, 1)
+            );
+        }
+
+        #[test]
+        fn test_byte_offset_to_line_col_ascii() {
+            let source = "def foo():\n    pass\n";
+            // Start of file
+            assert_eq!(
+                byte_offset_to_line_col(source, 0).unwrap(),
+                LineCol::new(1, 1)
+            );
+            // Middle of first line ('f' in foo)
+            assert_eq!(
+                byte_offset_to_line_col(source, 4).unwrap(),
+                LineCol::new(1, 5)
+            );
+            // Start of second line
+            assert_eq!(
+                byte_offset_to_line_col(source, 11).unwrap(),
+                LineCol::new(2, 1)
+            );
+            // 'p' in 'pass'
+            assert_eq!(
+                byte_offset_to_line_col(source, 15).unwrap(),
+                LineCol::new(2, 5)
+            );
+            // End of content
+            assert_eq!(
+                byte_offset_to_line_col(source, 20).unwrap(),
+                LineCol::new(3, 1)
+            );
+        }
+
+        #[test]
+        fn test_byte_offset_to_line_col_unicode() {
+            // '你' is 3 bytes, '好' is 3 bytes
+            let source = "x = '你好'\n";
+            // Byte layout: x=0, ' '=1, '='=2, ' '=3, '\'=4, 你=5..7, 好=8..10, \'=11, \n=12
+
+            // Start of file
+            assert_eq!(
+                byte_offset_to_line_col(source, 0).unwrap(),
+                LineCol::new(1, 1)
+            );
+            // At '你' (byte 5 = col 6)
+            assert_eq!(
+                byte_offset_to_line_col(source, 5).unwrap(),
+                LineCol::new(1, 6)
+            );
+            // At '好' (byte 8 = col 7)
+            assert_eq!(
+                byte_offset_to_line_col(source, 8).unwrap(),
+                LineCol::new(1, 7)
+            );
+            // At closing quote (byte 11 = col 8)
+            assert_eq!(
+                byte_offset_to_line_col(source, 11).unwrap(),
+                LineCol::new(1, 8)
             );
         }
 
