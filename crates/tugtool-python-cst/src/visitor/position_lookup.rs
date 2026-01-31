@@ -1918,6 +1918,114 @@ mod tests {
     // ========================================================================
 
     #[test]
+    fn test_ancestor_tracker_empty() {
+        // New tracker has depth 0
+        let tracker = AncestorTracker::new();
+
+        assert_eq!(tracker.depth(), 0);
+        assert!(tracker.parent().is_none());
+        assert!(tracker.ancestor_at(0).is_none());
+        assert!(tracker.enclosing_scope().is_none());
+        assert!(!tracker.in_expression());
+    }
+
+    #[test]
+    fn test_ancestor_tracker_push_pop() {
+        // Push/pop maintains LIFO order
+        let mut tracker = AncestorTracker::new();
+
+        // Push three items
+        tracker.push(NodeKind::Module, Span::new(0, 100), None);
+        tracker.push(NodeKind::FunctionDef, Span::new(10, 90), Some(NodeId::new(1)));
+        tracker.push(NodeKind::Call, Span::new(20, 40), Some(NodeId::new(2)));
+
+        assert_eq!(tracker.depth(), 3);
+
+        // Pop should return LIFO order
+        let popped1 = tracker.pop();
+        assert!(popped1.is_some());
+        assert_eq!(popped1.unwrap().kind, NodeKind::Call);
+        assert_eq!(tracker.depth(), 2);
+
+        let popped2 = tracker.pop();
+        assert!(popped2.is_some());
+        assert_eq!(popped2.unwrap().kind, NodeKind::FunctionDef);
+        assert_eq!(tracker.depth(), 1);
+
+        let popped3 = tracker.pop();
+        assert!(popped3.is_some());
+        assert_eq!(popped3.unwrap().kind, NodeKind::Module);
+        assert_eq!(tracker.depth(), 0);
+
+        // Pop from empty returns None
+        let popped4 = tracker.pop();
+        assert!(popped4.is_none());
+    }
+
+    #[test]
+    fn test_ancestor_tracker_parent() {
+        // Returns top of stack
+        let mut tracker = AncestorTracker::new();
+
+        // Empty stack has no parent
+        assert!(tracker.parent().is_none());
+
+        // Push Module - it becomes parent
+        tracker.push(NodeKind::Module, Span::new(0, 100), None);
+        let parent = tracker.parent();
+        assert!(parent.is_some());
+        assert_eq!(parent.unwrap().kind, NodeKind::Module);
+        assert_eq!(parent.unwrap().depth, 0);
+
+        // Push FunctionDef - it becomes new parent
+        tracker.push(NodeKind::FunctionDef, Span::new(10, 90), Some(NodeId::new(5)));
+        let parent = tracker.parent();
+        assert!(parent.is_some());
+        assert_eq!(parent.unwrap().kind, NodeKind::FunctionDef);
+        assert_eq!(parent.unwrap().depth, 1);
+        assert_eq!(parent.unwrap().node_id, Some(NodeId::new(5)));
+    }
+
+    #[test]
+    fn test_ancestor_tracker_ancestor_at() {
+        // Correct depth indexing
+        let mut tracker = AncestorTracker::new();
+
+        tracker.push(NodeKind::Module, Span::new(0, 100), None);
+        tracker.push(NodeKind::ClassDef, Span::new(10, 90), Some(NodeId::new(1)));
+        tracker.push(NodeKind::FunctionDef, Span::new(20, 80), Some(NodeId::new(2)));
+        tracker.push(NodeKind::Call, Span::new(30, 50), Some(NodeId::new(3)));
+
+        // Depth 0 = root (Module)
+        let at0 = tracker.ancestor_at(0);
+        assert!(at0.is_some());
+        assert_eq!(at0.unwrap().kind, NodeKind::Module);
+        assert_eq!(at0.unwrap().depth, 0);
+
+        // Depth 1 = ClassDef
+        let at1 = tracker.ancestor_at(1);
+        assert!(at1.is_some());
+        assert_eq!(at1.unwrap().kind, NodeKind::ClassDef);
+        assert_eq!(at1.unwrap().depth, 1);
+
+        // Depth 2 = FunctionDef
+        let at2 = tracker.ancestor_at(2);
+        assert!(at2.is_some());
+        assert_eq!(at2.unwrap().kind, NodeKind::FunctionDef);
+        assert_eq!(at2.unwrap().depth, 2);
+
+        // Depth 3 = Call (top of stack)
+        let at3 = tracker.ancestor_at(3);
+        assert!(at3.is_some());
+        assert_eq!(at3.unwrap().kind, NodeKind::Call);
+        assert_eq!(at3.unwrap().depth, 3);
+
+        // Depth 4 = out of bounds
+        let at4 = tracker.ancestor_at(4);
+        assert!(at4.is_none());
+    }
+
+    #[test]
     fn test_ancestor_tracker_basic() {
         let mut tracker = AncestorTracker::new();
 
@@ -1940,6 +2048,7 @@ mod tests {
 
     #[test]
     fn test_ancestor_tracker_in_expression() {
+        // Detects expression ancestors
         let mut tracker = AncestorTracker::new();
 
         assert!(!tracker.in_expression());
@@ -1956,6 +2065,44 @@ mod tests {
         tracker.pop();
         tracker.pop();
         assert!(!tracker.in_expression());
+    }
+
+    #[test]
+    fn test_ancestor_tracker_inside() {
+        // Detects specific kind
+        let mut tracker = AncestorTracker::new();
+
+        // Empty tracker is not inside anything
+        assert!(!tracker.inside(NodeKind::Module));
+        assert!(!tracker.inside(NodeKind::FunctionDef));
+
+        tracker.push(NodeKind::Module, Span::new(0, 100), None);
+        assert!(tracker.inside(NodeKind::Module));
+        assert!(!tracker.inside(NodeKind::FunctionDef));
+        assert!(!tracker.inside(NodeKind::ClassDef));
+
+        tracker.push(NodeKind::ClassDef, Span::new(10, 90), None);
+        assert!(tracker.inside(NodeKind::Module));
+        assert!(tracker.inside(NodeKind::ClassDef));
+        assert!(!tracker.inside(NodeKind::FunctionDef));
+
+        tracker.push(NodeKind::FunctionDef, Span::new(20, 80), None);
+        assert!(tracker.inside(NodeKind::Module));
+        assert!(tracker.inside(NodeKind::ClassDef));
+        assert!(tracker.inside(NodeKind::FunctionDef));
+
+        tracker.push(NodeKind::Call, Span::new(30, 50), None);
+        // Should still be inside all previous kinds
+        assert!(tracker.inside(NodeKind::Module));
+        assert!(tracker.inside(NodeKind::ClassDef));
+        assert!(tracker.inside(NodeKind::FunctionDef));
+        assert!(tracker.inside(NodeKind::Call));
+        assert!(!tracker.inside(NodeKind::Lambda));
+
+        // Pop Call
+        tracker.pop();
+        assert!(!tracker.inside(NodeKind::Call));
+        assert!(tracker.inside(NodeKind::FunctionDef));
     }
 
     #[test]

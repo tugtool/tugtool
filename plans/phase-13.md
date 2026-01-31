@@ -4410,30 +4410,30 @@ This section breaks the Position Lookup Infrastructure implementation into discr
 - Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
 
 **Tasks:**
-- [ ] Create `AncestorEntry` struct with `kind`, `span`, `node_id`, `depth` fields
-- [ ] Create `AncestorTracker` struct with `stack: Vec<AncestorEntry>` field
-- [ ] Implement `AncestorTracker::new()` returning empty tracker
-- [ ] Implement `push(&mut self, kind, span, node_id)` adding to stack
-- [ ] Implement `pop(&mut self)` removing from stack
-- [ ] Implement `parent(&self)` returning top of stack
-- [ ] Implement `depth(&self)` returning stack length
-- [ ] Implement `ancestor_at(&self, depth)` returning entry at index
-- [ ] Implement `in_expression(&self)` checking if any ancestor is expression kind
-- [ ] Implement `inside(&self, kind)` checking if any ancestor matches kind
-- [ ] Implement `enclosing_scope(&self)` finding nearest FunctionDef/ClassDef/Module/Lambda
+- [x] Create `AncestorEntry` struct with `kind`, `span`, `node_id`, `depth` fields
+- [x] Create `AncestorTracker` struct with `stack: Vec<AncestorEntry>` field
+- [x] Implement `AncestorTracker::new()` returning empty tracker
+- [x] Implement `push(&mut self, kind, span, node_id)` adding to stack
+- [x] Implement `pop(&mut self)` removing from stack
+- [x] Implement `parent(&self)` returning top of stack
+- [x] Implement `depth(&self)` returning stack length
+- [x] Implement `ancestor_at(&self, depth)` returning entry at index
+- [x] Implement `in_expression(&self)` checking if any ancestor is expression kind
+- [x] Implement `inside(&self, kind)` checking if any ancestor matches kind
+- [x] Implement `enclosing_scope(&self)` finding nearest FunctionDef/ClassDef/Module/Lambda
 
 **Tests:**
-- [ ] Unit: `test_ancestor_tracker_empty` - New tracker has depth 0
-- [ ] Unit: `test_ancestor_tracker_push_pop` - Push/pop maintains LIFO order
-- [ ] Unit: `test_ancestor_tracker_parent` - Returns top of stack
-- [ ] Unit: `test_ancestor_tracker_ancestor_at` - Correct depth indexing
-- [ ] Unit: `test_ancestor_tracker_in_expression` - Detects expression ancestors
-- [ ] Unit: `test_ancestor_tracker_inside` - Detects specific kind
-- [ ] Unit: `test_ancestor_tracker_enclosing_scope` - Finds function/class scope
+- [x] Unit: `test_ancestor_tracker_empty` - New tracker has depth 0
+- [x] Unit: `test_ancestor_tracker_push_pop` - Push/pop maintains LIFO order
+- [x] Unit: `test_ancestor_tracker_parent` - Returns top of stack
+- [x] Unit: `test_ancestor_tracker_ancestor_at` - Correct depth indexing
+- [x] Unit: `test_ancestor_tracker_in_expression` - Detects expression ancestors
+- [x] Unit: `test_ancestor_tracker_inside` - Detects specific kind
+- [x] Unit: `test_ancestor_tracker_enclosing_scope` - Finds function/class scope
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst ancestor_tracker` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst ancestor_tracker` passes
 
 **Rollback:** Revert commit
 

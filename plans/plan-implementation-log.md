@@ -6,6 +6,62 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.6.3: Ancestor Tracker | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.6.3 specification (lines 4403-4438)
+- `plans/phase-13.md` - API specification (#step-0-2-api) for AncestorTracker and AncestorEntry types
+- `plans/phase-13.md` - Internal Design (#step-0-2-internal) for Index Building Algorithm
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Existing implementation
+
+**Summary:**
+
+Verified and completed Step 0.2.6.3: Ancestor Tracker. The core implementation was already present from previous work; this session added 5 missing tests to match the plan specification and checked off all items.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `AncestorEntry` struct with `kind`, `span`, `node_id`, `depth` fields | Done (pre-existing) |
+| Create `AncestorTracker` struct with `stack: Vec<AncestorEntry>` field | Done (pre-existing) |
+| Implement `AncestorTracker::new()` | Done (pre-existing) |
+| Implement `push(&mut self, kind, span, node_id)` | Done (pre-existing) |
+| Implement `pop(&mut self)` | Done (pre-existing) |
+| Implement `parent(&self)` | Done (pre-existing) |
+| Implement `depth(&self)` | Done (pre-existing) |
+| Implement `ancestor_at(&self, depth)` | Done (pre-existing) |
+| Implement `in_expression(&self)` | Done (pre-existing) |
+| Implement `inside(&self, kind)` | Done (pre-existing) |
+| Implement `enclosing_scope(&self)` | Done (pre-existing) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Added 5 missing tests
+- `plans/phase-13.md` - Checked off all Tasks, Tests, and Checkpoint items for Step 0.2.6.3
+
+**Tests Added:**
+- `test_ancestor_tracker_empty` - New tracker has depth 0, no parent, no ancestors
+- `test_ancestor_tracker_push_pop` - Push/pop maintains LIFO order
+- `test_ancestor_tracker_parent` - Returns top of stack correctly
+- `test_ancestor_tracker_ancestor_at` - Correct depth indexing (0 = root)
+- `test_ancestor_tracker_inside` - Detects specific kind at any depth
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst ancestor_tracker`: 8 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst ancestor_tracker`: PASS (8 tests)
+
+**Key Notes:**
+- Implementation was already complete from previous Step 0.2 work
+- AncestorTracker no longer uses lifetime parameter (simplified from spec's `AncestorTracker<'a>`)
+- AncestorEntry derives Clone for convenience in pop() operations
+- All 7 specified tests now exist and pass (plus 1 pre-existing basic test)
+
+---
+
 ## [phase-13.md] Step 0.2.6.2: Node Kind and Info Types | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30
