@@ -6,6 +6,75 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6.6.6: CST-Based Annotation Span Collection | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6.6.6 specification (lines 5944-6296)
+- `plans/phase-13.md` - D08 Type Stub and Annotation Updates design decision
+- `plans/phase-13.md` - Step 0.3.6.6.5 (prior step with flawed implementation)
+- `crates/tugtool-python-cst/src/visitor/stub.rs` - Existing StubCollector implementation
+- `crates/tugtool-python/src/stubs.rs` - Existing StubUpdater implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `TypeNameSpan` struct with `name` and `span` fields | Done |
+| Add `collect_type_spans_from_expr` helper (handles Name, Subscript, Attribute, BinaryOperation, Tuple, List) | Done |
+| Add `collect_type_spans_from_subscript_element` helper for slice handling | Done |
+| Add `extract_all_type_spans` method for recursive annotation traversal | Done |
+| Rename `StubFunction.return_annotation_span` to `return_type_spans: Vec<TypeNameSpan>` | Done |
+| Rename `StubParam.annotation_span` to `type_spans: Vec<TypeNameSpan>` | Done |
+| Rename `StubVariable.annotation_span` to `type_spans: Vec<TypeNameSpan>` | Done |
+| Rename `StubAttribute.annotation_span` to `type_spans: Vec<TypeNameSpan>` | Done |
+| Update `extract_param` to call `extract_all_type_spans` | Done |
+| Update `process_function` to call `extract_all_type_spans` | Done |
+| Update `process_ann_assign` to call `extract_all_type_spans` | Done |
+| Remove deprecated `extract_annotation_span` method | Done |
+| Export `TypeNameSpan` from mod.rs and lib.rs | Done |
+| Add `TypeNameSpan` to re-exports in stubs.rs | Done |
+| Add `collect_type_span_edits` helper with exact name matching | Done |
+| Update `collect_function_annotation_edits` to use type_spans | Done |
+| Update `collect_annotation_rename_edits` for attributes and variables | Done |
+| Remove `collect_span_annotation_edits` method (replaced by CST-based approach) | Done |
+
+**Files Created:**
+- None (all additions to existing files)
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/stub.rs` - Added TypeNameSpan struct, extract_all_type_spans method, collection helpers, updated struct fields, updated existing tests, added 14 new unit tests
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Added TypeNameSpan to P3 exports
+- `crates/tugtool-python-cst/src/lib.rs` - Added TypeNameSpan to P3 visitor exports
+- `crates/tugtool-python/src/stubs.rs` - Added TypeNameSpan re-export, added collect_type_span_edits helper, updated annotation edit collection methods, added 7 regression tests
+- `plans/phase-13.md` - Checked off all tasks, tests, and checkpoints for Step 0.3.6.6.6
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst stub`: 39 tests passed
+- `cargo nextest run -p tugtool-python stub_updater`: 23 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst stub` passes: PASS (39 tests)
+- `cargo nextest run -p tugtool-python stub_updater` passes: PASS (23 tests)
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- **Critical:** Renaming `Handler` in `def f(h: MyHandler) -> Handler: ...` only renames return type (not `MyHandler`): PASS
+- **Critical:** Renaming `Handler` in `def f() -> List[Handler]: ...` produces edit for inner `Handler` span only: PASS
+- **Critical:** Renaming `Handler` in `def f() -> Dict[str, Optional[Handler]]: ...` produces single precise edit: PASS
+
+**Key Decisions/Notes:**
+- Replaced flawed string-based pattern matching (`.contains()`, `.replace()`) with CST-based exact name matching
+- TypeNameSpan uses flat vector structure (not tree) since rename operations only need "which names appear and where"
+- Module paths in Attribute expressions are excluded (e.g., `typing.List[Handler]` → only `List` and `Handler` extracted, not `typing`)
+- Expression::List handling added for Callable parameter lists (`Callable[[A, B], C]`)
+- Old `extract_annotation_span` method completely removed (not deprecated)
+- String annotation handling unchanged (already correct via StringAnnotationParser)
+
+---
+
 ## [phase-13.md] Step 0.3.6.5: String Annotation Parser | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31

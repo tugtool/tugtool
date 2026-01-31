@@ -128,6 +128,6 @@ pub use dynamic::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind
 
 // P3 exports (stub parsing)
 pub use stub::{
-    StubAttribute, StubClass, StubDecorator, StubFunction, StubSymbols, StubTypeAlias,
-    StubVariable,
+    StubAttribute, StubClass, StubDecorator, StubFunction, StubParam, StubSymbols, StubTypeAlias,
+    StubVariable, TypeNameSpan,
 };

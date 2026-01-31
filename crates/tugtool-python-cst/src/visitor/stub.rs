@@ -39,14 +39,32 @@ use super::traits::{VisitResult, Visitor};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::traits::NodeId;
 use crate::nodes::{
-    AnnAssign, AssignTargetExpression, ClassDef, Decorator, Expression, FunctionDef, Module,
-    TypeAlias,
+    AnnAssign, Annotation, AssignTargetExpression, BaseSlice, ClassDef, Decorator, Element,
+    Expression, FunctionDef, Module, Param, Parameters, StarArg, SubscriptElement, TypeAlias,
 };
 use tugtool_core::patch::Span;
 
 // ============================================================================
 // Stub Symbol Types
 // ============================================================================
+
+/// A type name and its span within an annotation.
+///
+/// Used for precise type reference tracking in stub file annotations.
+/// Each instance represents a single type name (not a composite type).
+///
+/// # Example
+///
+/// For the annotation `List[Handler]`, two `TypeNameSpan` instances are created:
+/// - `TypeNameSpan { name: "List", span: ... }`
+/// - `TypeNameSpan { name: "Handler", span: ... }`
+#[derive(Debug, Clone)]
+pub struct TypeNameSpan {
+    /// The exact type name as it appears in source (e.g., "Handler", "List", "str").
+    pub name: String,
+    /// Span of this specific type name.
+    pub span: Span,
+}
 
 /// Decorator information from a stub file.
 ///
@@ -79,6 +97,36 @@ pub struct StubFunction {
     pub is_async: bool,
     /// Decorators applied to this function.
     pub decorators: Vec<StubDecorator>,
+    /// All type name spans within the return annotation.
+    ///
+    /// For `-> Handler`, returns `[("Handler", span)]`.
+    /// For `-> List[Handler]`, returns `[("List", span1), ("Handler", span2)]`.
+    /// Empty if no return annotation.
+    pub return_type_spans: Vec<TypeNameSpan>,
+    /// Parameters with their type annotations.
+    pub params: Vec<StubParam>,
+}
+
+/// Information about a function parameter in a stub file.
+///
+/// Captures parameter name and type annotation information for functions
+/// and methods in stub files.
+#[derive(Debug, Clone)]
+pub struct StubParam {
+    /// The parameter name.
+    pub name: String,
+    /// Span of just the parameter name.
+    pub name_span: Option<Span>,
+    /// All type name spans within the parameter annotation.
+    ///
+    /// For `handler: Handler`, returns `[("Handler", span)]`.
+    /// For `items: List[Handler]`, returns `[("List", span1), ("Handler", span2)]`.
+    /// Empty if no annotation.
+    pub type_spans: Vec<TypeNameSpan>,
+    /// Whether this is a *args parameter.
+    pub is_star: bool,
+    /// Whether this is a **kwargs parameter.
+    pub is_star_star: bool,
 }
 
 /// Information about a class attribute in a stub file.
@@ -90,8 +138,12 @@ pub struct StubAttribute {
     pub name: String,
     /// Span of just the attribute name.
     pub name_span: Option<Span>,
-    /// Span of the type annotation (if present).
-    pub annotation_span: Option<Span>,
+    /// All type name spans within the attribute annotation.
+    ///
+    /// For `handler: Handler`, returns `[("Handler", span)]`.
+    /// For `items: List[Handler]`, returns `[("List", span1), ("Handler", span2)]`.
+    /// Empty if no annotation.
+    pub type_spans: Vec<TypeNameSpan>,
 }
 
 /// Information about a class in a stub file.
@@ -136,8 +188,12 @@ pub struct StubVariable {
     pub name: String,
     /// Span of just the variable name.
     pub name_span: Option<Span>,
-    /// Span of the type annotation (if present).
-    pub annotation_span: Option<Span>,
+    /// All type name spans within the variable annotation.
+    ///
+    /// For `handler: Handler`, returns `[("Handler", span)]`.
+    /// For `items: List[Handler]`, returns `[("List", span1), ("Handler", span2)]`.
+    /// Empty if no annotation.
+    pub type_spans: Vec<TypeNameSpan>,
 }
 
 /// Collected stub symbols from CST traversal.
@@ -289,6 +345,157 @@ impl<'pos> StubCollector<'pos> {
         StubDecorator { name, span }
     }
 
+    /// Extract all type name spans from an annotation expression.
+    ///
+    /// Recursively walks the expression tree and collects spans for every
+    /// type name encountered. This enables precise rename matching without
+    /// string-based pattern matching.
+    ///
+    /// # Handled Expression Types
+    ///
+    /// | Expression | Extracted Names |
+    /// |------------|-----------------|
+    /// | `Name("Handler")` | `[("Handler", span)]` |
+    /// | `Subscript(List, [Handler])` | `[("List", span1), ("Handler", span2)]` |
+    /// | `Attribute(module, Type)` | `[("Type", span)]` (attr only, not module) |
+    /// | `BinaryOperation(A, \|, B)` | Recurse both sides |
+    /// | `Tuple([A, B])` | Recurse all elements |
+    /// | `List([A, B])` | Recurse all elements (for Callable params) |
+    ///
+    /// # Returns
+    ///
+    /// Vector of `TypeNameSpan` for all type names in the annotation.
+    /// Empty vector if annotation contains no extractable type names.
+    fn extract_all_type_spans(&self, annotation: &Annotation<'_>) -> Vec<TypeNameSpan> {
+        let mut spans = Vec::new();
+        self.collect_type_spans_from_expr(&annotation.annotation, &mut spans);
+        spans
+    }
+
+    /// Recursive helper to collect type spans from an expression.
+    fn collect_type_spans_from_expr(&self, expr: &Expression<'_>, spans: &mut Vec<TypeNameSpan>) {
+        match expr {
+            Expression::Name(n) => {
+                if let Some(span) = self.get_ident_span(n.node_id) {
+                    spans.push(TypeNameSpan {
+                        name: n.value.to_string(),
+                        span,
+                    });
+                }
+            }
+            Expression::Subscript(sub) => {
+                // Collect the base type (e.g., "List" from List[T])
+                self.collect_type_spans_from_expr(&sub.value, spans);
+                // Collect all type arguments
+                for element in &sub.slice {
+                    self.collect_type_spans_from_subscript_element(element, spans);
+                }
+            }
+            Expression::Attribute(attr) => {
+                // For module.Type, only collect "Type" (the attribute)
+                // The module path is not a type reference
+                if let Some(span) = self.get_ident_span(attr.attr.node_id) {
+                    spans.push(TypeNameSpan {
+                        name: attr.attr.value.to_string(),
+                        span,
+                    });
+                }
+            }
+            Expression::BinaryOperation(binop) => {
+                // For union types (A | B), collect both sides
+                self.collect_type_spans_from_expr(&binop.left, spans);
+                self.collect_type_spans_from_expr(&binop.right, spans);
+            }
+            Expression::Tuple(tuple) => {
+                // For Callable[[A, B], C] the params are sometimes a tuple
+                for elem in &tuple.elements {
+                    if let Element::Simple { value, .. } = elem {
+                        self.collect_type_spans_from_expr(value, spans);
+                    }
+                }
+            }
+            Expression::List(list) => {
+                // Callable parameter lists: [[Handler, Request], Response]
+                for elem in &list.elements {
+                    if let Element::Simple { value, .. } = elem {
+                        self.collect_type_spans_from_expr(value, spans);
+                    }
+                }
+            }
+            // Other expression types don't contain type references
+            // (strings handled separately, literals ignored)
+            _ => {}
+        }
+    }
+
+    /// Helper for subscript slice elements.
+    fn collect_type_spans_from_subscript_element(
+        &self,
+        element: &SubscriptElement<'_>,
+        spans: &mut Vec<TypeNameSpan>,
+    ) {
+        match &element.slice {
+            BaseSlice::Index(idx) => {
+                self.collect_type_spans_from_expr(&idx.value, spans);
+            }
+            BaseSlice::Slice(_) => {
+                // Slice subscripts (a[1:2]) don't contain type references
+            }
+        }
+    }
+
+    /// Extract parameter information from a Param node.
+    fn extract_param(&self, param: &Param<'_>, is_star: bool, is_star_star: bool) -> StubParam {
+        let name = param.name.value.to_string();
+        let name_span = self.get_ident_span(param.name.node_id);
+
+        let type_spans = param
+            .annotation
+            .as_ref()
+            .map(|ann| self.extract_all_type_spans(ann))
+            .unwrap_or_default();
+
+        StubParam {
+            name,
+            name_span,
+            type_spans,
+            is_star,
+            is_star_star,
+        }
+    }
+
+    /// Extract all parameters from a Parameters node.
+    fn extract_params(&self, params: &Parameters<'_>) -> Vec<StubParam> {
+        let mut result = Vec::new();
+
+        // 1. Positional-only parameters
+        for param in &params.posonly_params {
+            result.push(self.extract_param(param, false, false));
+        }
+
+        // 2. Regular positional parameters
+        for param in &params.params {
+            result.push(self.extract_param(param, false, false));
+        }
+
+        // 3. *args parameter (if StarArg::Param variant)
+        if let Some(StarArg::Param(star_param)) = &params.star_arg {
+            result.push(self.extract_param(star_param, true, false));
+        }
+
+        // 4. Keyword-only parameters
+        for param in &params.kwonly_params {
+            result.push(self.extract_param(param, false, false));
+        }
+
+        // 5. **kwargs parameter
+        if let Some(kwargs) = &params.star_kwarg {
+            result.push(self.extract_param(kwargs, false, true));
+        }
+
+        result
+    }
+
     /// Process a function definition.
     fn process_function(&mut self, node: &FunctionDef<'_>) {
         let name = node.name.value.to_string();
@@ -312,6 +519,16 @@ impl<'pos> StubCollector<'pos> {
             .map(|d| self.extract_decorator(d))
             .collect();
 
+        // Extract all type name spans from return annotation
+        let return_type_spans = node
+            .returns
+            .as_ref()
+            .map(|ann| self.extract_all_type_spans(ann))
+            .unwrap_or_default();
+
+        // Extract parameter annotations
+        let params = self.extract_params(&node.params);
+
         let func = StubFunction {
             name,
             name_span,
@@ -319,6 +536,8 @@ impl<'pos> StubCollector<'pos> {
             def_span,
             is_async,
             decorators,
+            return_type_spans,
+            params,
         };
 
         // Add to current class if we're inside one, otherwise to module level
@@ -362,18 +581,15 @@ impl<'pos> StubCollector<'pos> {
             _ => return, // Only handle simple name targets
         };
 
-        // Get annotation span from the annotation expression
-        let annotation_span = match &node.annotation.annotation {
-            Expression::Name(n) => self.get_ident_span(n.node_id),
-            _ => None,
-        };
+        // Get all type spans from the annotation
+        let type_spans = self.extract_all_type_spans(&node.annotation);
 
         if self.current_class.is_some() {
             // Inside a class - this is a class attribute
             let attr = StubAttribute {
                 name,
                 name_span,
-                annotation_span,
+                type_spans,
             };
 
             if let Some(ref mut class) = self.current_class {
@@ -384,7 +600,7 @@ impl<'pos> StubCollector<'pos> {
             self.variables.push(StubVariable {
                 name,
                 name_span,
-                annotation_span,
+                type_spans,
             });
         }
     }
@@ -617,5 +833,437 @@ class Outer:
         // The collector should handle nested classes
         // Note: Current implementation treats nested classes simply
         assert!(!symbols.classes.is_empty());
+    }
+
+    // ========================================================================
+    // Tests for annotation span tracking (Step 0.3.6.6.5 → 0.3.6.6.6)
+    // Updated to use Vec<TypeNameSpan> for comprehensive type name tracking
+    // ========================================================================
+
+    #[test]
+    fn test_stub_function_return_type_spans_simple() {
+        let source = "def f() -> Handler: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        // Should have single return type span for simple type name
+        assert_eq!(func.return_type_spans.len(), 1);
+        let span = &func.return_type_spans[0];
+        assert_eq!(span.name, "Handler");
+        assert_eq!(&source[span.span.start..span.span.end], "Handler");
+    }
+
+    #[test]
+    fn test_stub_function_return_type_spans_generic() {
+        let source = "def f() -> List[Handler]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        // For List[Handler], should have both List AND Handler spans
+        assert_eq!(func.return_type_spans.len(), 2);
+        assert_eq!(func.return_type_spans[0].name, "List");
+        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "List");
+        assert_eq!(func.return_type_spans[1].name, "Handler");
+        assert_eq!(&source[func.return_type_spans[1].span.start..func.return_type_spans[1].span.end], "Handler");
+    }
+
+    #[test]
+    fn test_stub_function_return_type_spans_qualified() {
+        let source = "def f() -> module.Type: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        // For module.Type, get only 'Type' (the attribute part, not module)
+        assert_eq!(func.return_type_spans.len(), 1);
+        assert_eq!(func.return_type_spans[0].name, "Type");
+        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "Type");
+    }
+
+    #[test]
+    fn test_stub_function_return_type_spans_union() {
+        let source = "def f() -> Handler | None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        // For union types, capture both sides
+        assert_eq!(func.return_type_spans.len(), 2);
+        assert_eq!(func.return_type_spans[0].name, "Handler");
+        assert_eq!(func.return_type_spans[1].name, "None");
+    }
+
+    #[test]
+    fn test_stub_function_param_type_spans() {
+        let source = "def f(a: A, b: B) -> None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        // Should have 2 params
+        assert_eq!(func.params.len(), 2);
+
+        // First param: a: A
+        assert_eq!(func.params[0].name, "a");
+        assert_eq!(func.params[0].type_spans.len(), 1);
+        assert_eq!(func.params[0].type_spans[0].name, "A");
+        assert_eq!(&source[func.params[0].type_spans[0].span.start..func.params[0].type_spans[0].span.end], "A");
+
+        // Second param: b: B
+        assert_eq!(func.params[1].name, "b");
+        assert_eq!(func.params[1].type_spans.len(), 1);
+        assert_eq!(func.params[1].type_spans[0].name, "B");
+        assert_eq!(&source[func.params[1].type_spans[0].span.start..func.params[1].type_spans[0].span.end], "B");
+    }
+
+    #[test]
+    fn test_stub_function_param_self_no_annotation() {
+        let source = "def f(self, x: int) -> None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        assert_eq!(func.params.len(), 2);
+
+        // self has no annotation (empty type_spans)
+        assert_eq!(func.params[0].name, "self");
+        assert!(func.params[0].type_spans.is_empty());
+
+        // x has annotation
+        assert_eq!(func.params[1].name, "x");
+        assert_eq!(func.params[1].type_spans.len(), 1);
+        assert_eq!(func.params[1].type_spans[0].name, "int");
+    }
+
+    #[test]
+    fn test_stub_function_param_no_annotation() {
+        let source = "def f(x, y: int) -> None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        assert_eq!(func.params.len(), 2);
+
+        // x has no annotation (empty type_spans)
+        assert_eq!(func.params[0].name, "x");
+        assert!(func.params[0].type_spans.is_empty());
+
+        // y has annotation
+        assert_eq!(func.params[1].name, "y");
+        assert_eq!(func.params[1].type_spans.len(), 1);
+        assert_eq!(func.params[1].type_spans[0].name, "int");
+    }
+
+    #[test]
+    fn test_stub_function_param_star_args() {
+        let source = "def func(*args: str) -> None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        assert_eq!(func.params.len(), 1);
+
+        // *args
+        assert_eq!(func.params[0].name, "args");
+        assert!(func.params[0].is_star);
+        assert!(!func.params[0].is_star_star);
+        assert_eq!(func.params[0].type_spans.len(), 1);
+        let span = &func.params[0].type_spans[0];
+        assert_eq!(span.name, "str");
+        assert_eq!(&source[span.span.start..span.span.end], "str");
+    }
+
+    #[test]
+    fn test_stub_function_param_star_kwargs() {
+        let source = "def func(**kwargs: int) -> None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        assert_eq!(func.params.len(), 1);
+
+        // **kwargs
+        assert_eq!(func.params[0].name, "kwargs");
+        assert!(!func.params[0].is_star);
+        assert!(func.params[0].is_star_star);
+        assert_eq!(func.params[0].type_spans.len(), 1);
+        let span = &func.params[0].type_spans[0];
+        assert_eq!(span.name, "int");
+        assert_eq!(&source[span.span.start..span.span.end], "int");
+    }
+
+    #[test]
+    fn test_stub_function_param_all_kinds() {
+        let source = "def f(a, /, b, *args, c, **kwargs) -> T: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.functions.len(), 1);
+        let func = &symbols.functions[0];
+
+        // Should have: a (posonly), b (regular), args (*), c (kwonly), kwargs (**)
+        assert_eq!(func.params.len(), 5);
+
+        assert_eq!(func.params[0].name, "a"); // positional-only
+        assert_eq!(func.params[1].name, "b"); // regular
+        assert_eq!(func.params[2].name, "args"); // *args
+        assert!(func.params[2].is_star);
+        assert_eq!(func.params[3].name, "c"); // keyword-only
+        assert_eq!(func.params[4].name, "kwargs"); // **kwargs
+        assert!(func.params[4].is_star_star);
+
+        // Return type
+        assert_eq!(func.return_type_spans.len(), 1);
+        assert_eq!(func.return_type_spans[0].name, "T");
+        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "T");
+    }
+
+    #[test]
+    fn test_stub_method_annotations() {
+        let source = "class Service:\n    def process(self, handler: Handler) -> Result: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.classes.len(), 1);
+        let class = &symbols.classes[0];
+        assert_eq!(class.methods.len(), 1);
+
+        let method = &class.methods[0];
+        assert_eq!(method.name, "process");
+
+        // Check return type
+        assert_eq!(method.return_type_spans.len(), 1);
+        assert_eq!(method.return_type_spans[0].name, "Result");
+        assert_eq!(&source[method.return_type_spans[0].span.start..method.return_type_spans[0].span.end], "Result");
+
+        // Check parameters
+        assert_eq!(method.params.len(), 2);
+
+        // self has no annotation (empty type_spans)
+        assert_eq!(method.params[0].name, "self");
+        assert!(method.params[0].type_spans.is_empty());
+
+        // handler has Handler annotation
+        assert_eq!(method.params[1].name, "handler");
+        assert_eq!(method.params[1].type_spans.len(), 1);
+        assert_eq!(method.params[1].type_spans[0].name, "Handler");
+        assert_eq!(&source[method.params[1].type_spans[0].span.start..method.params[1].type_spans[0].span.end], "Handler");
+    }
+
+    // ========================================================================
+    // New tests for CST-based annotation span collection (Step 0.3.6.6.6)
+    // ========================================================================
+
+    #[test]
+    fn test_extract_type_spans_simple() {
+        // Handler → [("Handler", span)]
+        let source = "def f() -> Handler: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 1);
+        assert_eq!(func.return_type_spans[0].name, "Handler");
+    }
+
+    #[test]
+    fn test_extract_type_spans_generic() {
+        // List[Handler] → [("List", s1), ("Handler", s2)]
+        let source = "def f() -> List[Handler]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 2);
+        assert_eq!(func.return_type_spans[0].name, "List");
+        assert_eq!(func.return_type_spans[1].name, "Handler");
+    }
+
+    #[test]
+    fn test_extract_type_spans_nested_generic() {
+        // Dict[str, Handler] → [("Dict", s1), ("str", s2), ("Handler", s3)]
+        let source = "def f() -> Dict[str, Handler]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 3);
+        assert_eq!(func.return_type_spans[0].name, "Dict");
+        assert_eq!(func.return_type_spans[1].name, "str");
+        assert_eq!(func.return_type_spans[2].name, "Handler");
+    }
+
+    #[test]
+    fn test_extract_type_spans_deeply_nested() {
+        // Optional[List[Handler]] → [("Optional", s1), ("List", s2), ("Handler", s3)]
+        let source = "def f() -> Optional[List[Handler]]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 3);
+        assert_eq!(func.return_type_spans[0].name, "Optional");
+        assert_eq!(func.return_type_spans[1].name, "List");
+        assert_eq!(func.return_type_spans[2].name, "Handler");
+    }
+
+    #[test]
+    fn test_extract_type_spans_union() {
+        // Handler | None → [("Handler", s1), ("None", s2)]
+        let source = "def f() -> Handler | None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 2);
+        assert_eq!(func.return_type_spans[0].name, "Handler");
+        assert_eq!(func.return_type_spans[1].name, "None");
+    }
+
+    #[test]
+    fn test_extract_type_spans_union_generic() {
+        // List[Handler] | None → [("List", s1), ("Handler", s2), ("None", s3)]
+        let source = "def f() -> List[Handler] | None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 3);
+        assert_eq!(func.return_type_spans[0].name, "List");
+        assert_eq!(func.return_type_spans[1].name, "Handler");
+        assert_eq!(func.return_type_spans[2].name, "None");
+    }
+
+    #[test]
+    fn test_extract_type_spans_callable() {
+        // Callable[[Handler], Response] → [("Callable", s1), ("Handler", s2), ("Response", s3)]
+        let source = "def f() -> Callable[[Handler], Response]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 3);
+        assert_eq!(func.return_type_spans[0].name, "Callable");
+        assert_eq!(func.return_type_spans[1].name, "Handler");
+        assert_eq!(func.return_type_spans[2].name, "Response");
+    }
+
+    #[test]
+    fn test_extract_type_spans_callable_multi_param() {
+        // Callable[[A, B], C] → 4 spans
+        let source = "def f() -> Callable[[A, B], C]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 4);
+        assert_eq!(func.return_type_spans[0].name, "Callable");
+        assert_eq!(func.return_type_spans[1].name, "A");
+        assert_eq!(func.return_type_spans[2].name, "B");
+        assert_eq!(func.return_type_spans[3].name, "C");
+    }
+
+    #[test]
+    fn test_extract_type_spans_qualified() {
+        // typing.List[Handler] → [("List", s1), ("Handler", s2)] (no `typing`)
+        let source = "def f() -> typing.List[Handler]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 2);
+        assert_eq!(func.return_type_spans[0].name, "List");
+        assert_eq!(func.return_type_spans[1].name, "Handler");
+    }
+
+    #[test]
+    fn test_extract_type_spans_complex() {
+        // Dict[str, Optional[List[Handler]]] → 5 spans
+        let source = "def f() -> Dict[str, Optional[List[Handler]]]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 5);
+        assert_eq!(func.return_type_spans[0].name, "Dict");
+        assert_eq!(func.return_type_spans[1].name, "str");
+        assert_eq!(func.return_type_spans[2].name, "Optional");
+        assert_eq!(func.return_type_spans[3].name, "List");
+        assert_eq!(func.return_type_spans[4].name, "Handler");
+    }
+
+    #[test]
+    fn test_stub_function_return_type_spans_populated() {
+        // Verify return_type_spans populated correctly
+        let source = "def process() -> Optional[Handler]: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.return_type_spans.len(), 2);
+        // Verify spans are correct positions
+        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "Optional");
+        assert_eq!(&source[func.return_type_spans[1].span.start..func.return_type_spans[1].span.end], "Handler");
+    }
+
+    #[test]
+    fn test_stub_param_type_spans_populated() {
+        // Verify type_spans populated correctly
+        let source = "def process(x: List[Handler]) -> None: ...";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        let func = &symbols.functions[0];
+        assert_eq!(func.params.len(), 1);
+        assert_eq!(func.params[0].type_spans.len(), 2);
+        assert_eq!(func.params[0].type_spans[0].name, "List");
+        assert_eq!(func.params[0].type_spans[1].name, "Handler");
+    }
+
+    #[test]
+    fn test_stub_variable_type_spans_populated() {
+        // Verify type_spans populated correctly
+        let source = "handlers: List[Handler]";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.variables.len(), 1);
+        assert_eq!(symbols.variables[0].type_spans.len(), 2);
+        assert_eq!(symbols.variables[0].type_spans[0].name, "List");
+        assert_eq!(symbols.variables[0].type_spans[1].name, "Handler");
+    }
+
+    #[test]
+    fn test_stub_attribute_type_spans_populated() {
+        // Verify type_spans populated correctly for class attributes
+        let source = "class Foo:\n    handler: Optional[Handler]";
+        let parsed = parse_module_with_positions(source, None).expect("parse error");
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(symbols.classes.len(), 1);
+        assert_eq!(symbols.classes[0].attributes.len(), 1);
+        assert_eq!(symbols.classes[0].attributes[0].type_spans.len(), 2);
+        assert_eq!(symbols.classes[0].attributes[0].type_spans[0].name, "Optional");
+        assert_eq!(symbols.classes[0].attributes[0].type_spans[1].name, "Handler");
     }
 }

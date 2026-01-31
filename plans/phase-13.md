@@ -5763,47 +5763,533 @@ Following the established pattern of SignatureCollector, BindingCollector, etc.,
 - Modified `crates/tugtool-python/src/stubs.rs`
 
 **Tasks:**
-- [ ] Add `StubEdit` enum with variants: `Rename { span, new_name }`, `Delete { span }`, `Insert { position, text }`
-- [ ] Add `StubEdits` struct with `stub_path`, `edits` fields
-- [ ] Add `MoveStubEdits` struct with `source_edits`, `target_edits` fields
-- [ ] Add `StubUpdater` struct with `discovery` field
-- [ ] Implement `StubUpdater::new(discovery)` constructor
-- [ ] Implement `rename_edits(&self, source_path, old_name, new_name)`:
-  - [ ] Find stub for source path (return `Ok(None)` if no stub)
-  - [ ] Parse stub file (return error on parse failure)
-  - [ ] Find symbol by name in stub
-  - [ ] Generate `StubEdit::Rename` for symbol name span
-  - [ ] Find references to symbol in return types and annotations
-  - [ ] Generate rename edits for all references
-  - [ ] Return `StubEdits` with all edits
-- [ ] Implement `move_edits(&self, source_path, target_path, symbol_name)`:
-  - [ ] Find stubs for source and target paths
-  - [ ] Parse source stub and find symbol definition span
-  - [ ] Generate `StubEdit::Delete` for source
-  - [ ] Generate `StubEdit::Insert` for target with symbol definition text
-  - [ ] Return `MoveStubEdits` with both edit sets
-- [ ] Handle case where symbol exists in source but not stub (warn, no edit)
-- [ ] Handle string annotations in type hints using `StringAnnotationParser`
+- [x] Add `StubEdit` enum with variants: `Rename { span, new_name }`, `Delete { span }`, `Insert { position, text }`
+- [x] Add `StubEdits` struct with `stub_path`, `edits` fields
+- [x] Add `MoveStubEdits` struct with `source_edits`, `target_edits` fields
+- [x] Add `StubUpdater` struct with `discovery` field
+- [x] Implement `StubUpdater::new(discovery)` constructor
+- [x] Implement `rename_edits(&self, source_path, old_name, new_name)`:
+  - [x] Find stub for source path (return `Ok(None)` if no stub)
+  - [x] Parse stub file (return error on parse failure)
+  - [x] Find symbol by name in stub
+  - [x] Generate `StubEdit::Rename` for symbol name span
+  - [x] Find references to symbol in return types and annotations
+  - [x] Generate rename edits for all references
+  - [x] Return `StubEdits` with all edits
+- [x] Implement `move_edits(&self, source_path, target_path, symbol_name)`:
+  - [x] Find stubs for source and target paths
+  - [x] Parse source stub and find symbol definition span
+  - [x] Generate `StubEdit::Delete` for source
+  - [x] Generate `StubEdit::Insert` for target with symbol definition text
+  - [x] Return `MoveStubEdits` with both edit sets
+- [x] Handle case where symbol exists in source but not stub (warn, no edit)
+- [x] Handle string annotations in type hints using `StringAnnotationParser`
 
 **Tests:**
-- [ ] Unit: `test_stub_updater_rename_function` - Rename function in stub (Example 4)
-- [ ] Unit: `test_stub_updater_rename_class` - Rename class in stub
-- [ ] Unit: `test_stub_updater_rename_method` - Rename method in stub
-- [ ] Unit: `test_stub_updater_rename_with_return_type` - Updates return type annotation
-- [ ] Unit: `test_stub_updater_rename_with_param_type` - Updates parameter type annotation
-- [ ] Unit: `test_stub_updater_rename_string_annotation` - Updates string annotations
-- [ ] Unit: `test_stub_updater_no_stub_returns_none` - No stub file exists
-- [ ] Unit: `test_stub_updater_symbol_not_in_stub` - Source has symbol, stub doesn't
-- [ ] Unit: `test_stub_updater_move_between_modules` - Delete from source, insert to target
-- [ ] Unit: `test_stub_updater_move_no_source_stub` - Source has no stub
-- [ ] Unit: `test_stub_updater_move_no_target_stub` - Target has no stub
-- [ ] Integration: `test_stub_update_rename_full_workflow` - End-to-end rename with stub update
+- [x] Unit: `test_stub_updater_rename_function` - Rename function in stub (Example 4)
+- [x] Unit: `test_stub_updater_rename_class` - Rename class in stub
+- [x] Unit: `test_stub_updater_rename_method` - Rename method in stub
+- [x] Unit: `test_stub_updater_rename_with_return_type` - Updates return type annotation
+- [x] Unit: `test_stub_updater_rename_with_param_type` - Updates parameter type annotation
+- [x] Unit: `test_stub_updater_rename_string_annotation` - Updates string annotations
+- [x] Unit: `test_stub_updater_no_stub_returns_none` - No stub file exists
+- [x] Unit: `test_stub_updater_symbol_not_in_stub` - Source has symbol, stub doesn't
+- [x] Unit: `test_stub_updater_move_between_modules` - Delete from source, insert to target
+- [x] Unit: `test_stub_updater_move_no_source_stub` - Source has no stub
+- [x] Unit: `test_stub_updater_move_no_target_stub` - Target has no stub
+- [x] Integration: `test_stub_update_rename_full_workflow` - End-to-end rename with stub update
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python stub_updater` passes
-- [ ] `cargo nextest run -p tugtool-python stubs` passes (all stub tests)
-- [ ] Rename edits are generated correctly for stubs per Example 4
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python stub_updater` passes
+- [x] `cargo nextest run -p tugtool-python stubs` passes (all stub tests)
+- [x] Rename edits are generated correctly for stubs per Example 4
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.6.5: StubFunction Annotation Span Tracking {#step-0-3-6-6-5}
+
+**Commit:** `feat(python-cst): add proper annotation span tracking to StubFunction`
+
+**References:** [D08](#d08-stub-updates), Step 0.3.6.6, [Step 0.3 API](#step-0-3-api)
+
+**Problem Statement:**
+
+Step 0.3.6.6 implemented `StubUpdater` but with incomplete annotation renaming support. The `collect_annotation_rename_edits` method cannot properly rename types appearing in function signatures because `StubFunction` doesn't track:
+
+1. **Return type annotation spans** - e.g., `Handler` in `def process(self) -> Handler: ...`
+2. **Parameter type annotation spans** - e.g., `Handler` in `def process(self, handler: Handler) -> None: ...`
+
+This means the `StubUpdater` cannot rename type references in the most common location: function and method signatures.
+
+**Design Decision:**
+
+Use **simple span tracking** (consistent with `StubAttribute` pattern):
+- Track the span of the root type name only
+- For `Handler`, track the full name span
+- For `List[Handler]`, track only `List` (the root)
+- For complex annotations containing the target type, rely on `collect_span_annotation_edits` string replacement
+
+This handles the common case (simple type names) while maintaining consistency with existing code.
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/stub.rs`
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**New Types:**
+
+```rust
+/// Information about a function parameter in a stub file.
+#[derive(Debug, Clone)]
+pub struct StubParam {
+    /// The parameter name.
+    pub name: String,
+    /// Span of just the parameter name.
+    pub name_span: Option<Span>,
+    /// Span of the type annotation (if present).
+    /// For simple annotations like `handler: Handler`, this is the span of `Handler`.
+    /// For complex annotations like `items: List[Handler]`, this is the span of `List`.
+    pub annotation_span: Option<Span>,
+    /// Whether this is a *args parameter.
+    pub is_star: bool,
+    /// Whether this is a **kwargs parameter.
+    pub is_star_star: bool,
+}
+```
+
+**Modified StubFunction:**
+
+```rust
+pub struct StubFunction {
+    // ... existing fields ...
+
+    /// Span of the return type annotation (if present).
+    /// For `def process(self) -> Handler: ...`, this is the span of `Handler`.
+    pub return_annotation_span: Option<Span>,
+
+    /// Parameters with their type annotations.
+    pub params: Vec<StubParam>,
+}
+```
+
+**Tasks:**
+
+**Part A: Add StubParam type and update StubFunction (tugtool-python-cst)**
+
+- [x] Add `StubParam` struct to `crates/tugtool-python-cst/src/visitor/stub.rs` (after `StubAttribute`)
+- [x] Add `return_annotation_span: Option<Span>` field to `StubFunction`
+- [x] Add `params: Vec<StubParam>` field to `StubFunction`
+- [x] Add helper: `extract_annotation_span(&self, annotation: &Annotation) -> Option<Span>`
+  - [x] Handle `Expression::Name` - return name span
+  - [x] Handle `Expression::Subscript` - return root name span (e.g., `List` from `List[T]`)
+  - [x] Handle `Expression::Attribute` - return attribute name span (e.g., `Type` from `module.Type`)
+  - [x] Handle `Expression::BinaryOperation` - return left operand span for unions (`A | B`)
+  - [x] Return `None` for other expression types
+- [x] Add helper: `extract_param(&self, param: &Param, is_star, is_star_star) -> StubParam`
+- [x] Add helper: `extract_params(&self, params: &Parameters) -> Vec<StubParam>`
+  - [x] Handle positional-only parameters (`posonly_params`)
+  - [x] Handle regular positional parameters (`params`)
+  - [x] Handle `*args` parameter (`star_arg` with `StarArg::Param` variant)
+  - [x] Handle keyword-only parameters (`kwonly_params`)
+  - [x] Handle `**kwargs` parameter (`star_kwarg`)
+- [x] Update `process_function` to call new helpers and populate new fields
+- [x] Export `StubParam` from `mod.rs`
+
+**Part B: Update StubUpdater (tugtool-python)**
+
+- [x] Add `StubParam` to re-exports in `stubs.rs`
+- [x] Add helper: `collect_function_annotation_edits(&self, stub, func, old_name, new_name, edits)`
+  - [x] Check return type annotation span
+  - [x] Check all parameter annotation spans
+  - [x] Call `collect_span_annotation_edits` for each span
+- [x] Update `collect_annotation_rename_edits` to:
+  - [x] Call `collect_function_annotation_edits` for module-level functions
+  - [x] Call `collect_function_annotation_edits` for class methods
+
+**Tests (tugtool-python-cst):**
+
+- [x] Unit: `test_stub_function_return_annotation_span_simple` - `def f() -> Handler: ...`
+- [x] Unit: `test_stub_function_return_annotation_span_generic` - `def f() -> List[Handler]: ...` (captures `List`)
+- [x] Unit: `test_stub_function_return_annotation_span_qualified` - `def f() -> module.Type: ...`
+- [x] Unit: `test_stub_function_return_annotation_span_union` - `def f() -> Handler | None: ...`
+- [x] Unit: `test_stub_function_param_annotation_spans` - `def f(a: A, b: B) -> None: ...`
+- [x] Unit: `test_stub_function_param_self_no_annotation` - `def f(self, x: int) -> None: ...`
+- [x] Unit: `test_stub_function_param_no_annotation` - `def f(x, y: int) -> None: ...`
+- [x] Unit: `test_stub_function_param_star_args` - `def f(*args: str) -> None: ...`
+- [x] Unit: `test_stub_function_param_star_kwargs` - `def f(**kwargs: int) -> None: ...`
+- [x] Unit: `test_stub_function_param_all_kinds` - `def f(a, /, b, *args, c, **kwargs) -> T: ...`
+- [x] Unit: `test_stub_method_annotations` - method in class
+
+**Tests (tugtool-python):**
+
+- [x] Unit: `test_stub_updater_renames_return_type` - Rename type in return annotation
+- [x] Unit: `test_stub_updater_renames_param_type` - Rename type in parameter annotation
+- [x] Unit: `test_stub_updater_renames_multiple_function_annotations` - Function with type in return and params
+- [x] Unit: `test_stub_updater_renames_method_annotations` - Method annotations in class
+
+**Checkpoint:**
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst stub` passes (all stub tests)
+- [x] `cargo nextest run -p tugtool-python stub_updater` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] Verify: Renaming `Handler` to `RequestHandler` in stub `def process(self, h: Handler) -> Handler: ...` produces edits for both spans
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.3.6.6.6: CST-Based Annotation Span Collection {#step-0-3-6-6-6}
+
+**Commit:** `fix(python-cst): use CST-based annotation span collection instead of string matching`
+
+**References:** [D08](#d08-stub-updates), [Step 0.3.6.6.5](#step-0-3-6-6-5), [Step 0.3 API](#step-0-3-api)
+
+**Problem Statement:**
+
+Step 0.3.6.6.5 implemented annotation span tracking in `StubFunction`, `StubParam`, `StubVariable`, and `StubAttribute`, but the design is flawed:
+
+1. **`extract_annotation_span` returns only the ROOT type span:**
+   - `Handler` → span of `Handler` (correct)
+   - `List[Handler]` → span of `List` only (misses `Handler`)
+   - `Dict[str, Handler]` → span of `Dict` only (misses `str`, `Handler`)
+   - `Handler | None` → span of `Handler` only (misses `None`)
+   - `Optional[List[Handler]]` → span of `Optional` only (misses `List`, `Handler`)
+
+2. **`collect_span_annotation_edits` uses string matching:**
+   ```rust
+   // Flawed implementation
+   if ann_text.contains(old_name) {
+       let new_text = ann_text.replace(old_name, new_name);
+       edits.push(StubEdit::Rename { span, new_name: new_text });
+   }
+   ```
+
+   This causes incorrect matches:
+   - Renaming `Handler` matches `MyHandler`, `HandlerFactory`, `BaseHandler`
+   - Renaming `Foo` in `FooBar | None` incorrectly replaces to `BarBar | None`
+
+3. **We have full CST information available.** String matching is categorically wrong when we can perform exact name matching on CST nodes.
+
+**Solution:**
+
+Replace single-span tracking with multi-span collection that recursively walks the annotation expression and returns ALL type name spans with their exact text.
+
+---
+
+**0.3.6.6.6.1 API Specification** {#step-0-3-6-6-6-api}
+
+**New Type:**
+
+```rust
+/// A type name and its span within an annotation.
+///
+/// Used for precise type reference tracking in stub file annotations.
+/// Each instance represents a single type name (not a composite type).
+#[derive(Debug, Clone)]
+pub struct TypeNameSpan {
+    /// The exact type name as it appears in source (e.g., "Handler", "List", "str").
+    pub name: String,
+    /// Span of this specific type name.
+    pub span: Span,
+}
+```
+
+**Modified Stub Types:**
+
+Change from single optional span to vector of type name spans:
+
+```rust
+// StubFunction changes
+pub struct StubFunction {
+    // ... existing fields ...
+
+    // REMOVED: pub return_annotation_span: Option<Span>,
+    /// All type name spans within the return annotation.
+    /// For `-> Handler`, returns `[("Handler", span)]`.
+    /// For `-> List[Handler]`, returns `[("List", span1), ("Handler", span2)]`.
+    pub return_type_spans: Vec<TypeNameSpan>,
+
+    // ... params field unchanged, but StubParam changes ...
+}
+
+// StubParam changes
+pub struct StubParam {
+    // ... existing fields ...
+
+    // REMOVED: pub annotation_span: Option<Span>,
+    /// All type name spans within the parameter annotation.
+    pub type_spans: Vec<TypeNameSpan>,
+}
+
+// StubVariable changes
+pub struct StubVariable {
+    // ... existing fields ...
+
+    // REMOVED: pub annotation_span: Option<Span>,
+    /// All type name spans within the variable annotation.
+    pub type_spans: Vec<TypeNameSpan>,
+}
+
+// StubAttribute changes
+pub struct StubAttribute {
+    // ... existing fields ...
+
+    // REMOVED: pub annotation_span: Option<Span>,
+    /// All type name spans within the attribute annotation.
+    pub type_spans: Vec<TypeNameSpan>,
+}
+```
+
+**New Collection Methods:**
+
+```rust
+impl StubCollector<'_> {
+    /// Extract all type name spans from an annotation expression.
+    ///
+    /// Recursively walks the expression tree and collects spans for every
+    /// type name encountered. This enables precise rename matching without
+    /// string-based pattern matching.
+    ///
+    /// # Handled Expression Types
+    ///
+    /// | Expression | Extracted Names |
+    /// |------------|-----------------|
+    /// | `Name("Handler")` | `[("Handler", span)]` |
+    /// | `Subscript(List, [Handler])` | `[("List", span1), ("Handler", span2)]` |
+    /// | `Attribute(module, Type)` | `[("Type", span)]` (attr only, not module) |
+    /// | `BinaryOperation(A, \|, B)` | Recurse both sides |
+    /// | `Tuple([A, B])` | Recurse all elements |
+    /// | `List([A, B])` | Recurse all elements (for Callable params) |
+    ///
+    /// # Returns
+    ///
+    /// Vector of `TypeNameSpan` for all type names in the annotation.
+    /// Empty vector if annotation contains no extractable type names.
+    fn extract_all_type_spans(&self, annotation: &Annotation<'_>) -> Vec<TypeNameSpan> {
+        let mut spans = Vec::new();
+        self.collect_type_spans_from_expr(&annotation.annotation, &mut spans);
+        spans
+    }
+
+    /// Recursive helper to collect type spans from an expression.
+    fn collect_type_spans_from_expr(
+        &self,
+        expr: &Expression<'_>,
+        spans: &mut Vec<TypeNameSpan>
+    ) {
+        match expr {
+            Expression::Name(n) => {
+                if let Some(span) = self.get_ident_span(n.node_id) {
+                    spans.push(TypeNameSpan {
+                        name: n.value.to_string(),
+                        span,
+                    });
+                }
+            }
+            Expression::Subscript(sub) => {
+                // Collect the base type (e.g., "List" from List[T])
+                self.collect_type_spans_from_expr(&sub.value, spans);
+                // Collect all type arguments
+                for element in &sub.slice {
+                    self.collect_type_spans_from_subscript_element(element, spans);
+                }
+            }
+            Expression::Attribute(attr) => {
+                // For module.Type, only collect "Type" (the attribute)
+                // The module path is not a type reference
+                if let Some(span) = self.get_ident_span(attr.attr.node_id) {
+                    spans.push(TypeNameSpan {
+                        name: attr.attr.value.to_string(),
+                        span,
+                    });
+                }
+            }
+            Expression::BinaryOperation(binop) => {
+                // For union types (A | B), collect both sides
+                self.collect_type_spans_from_expr(&binop.left, spans);
+                self.collect_type_spans_from_expr(&binop.right, spans);
+            }
+            Expression::Tuple(tuple) => {
+                // For Callable[[A, B], C] the params are a tuple/list
+                for elem in &tuple.elements {
+                    if let Element::Simple { value, .. } = elem {
+                        self.collect_type_spans_from_expr(value, spans);
+                    }
+                }
+            }
+            Expression::List(list) => {
+                // Callable parameter lists: [[Handler, Request], Response]
+                for elem in &list.elements {
+                    if let Element::Simple { value, .. } = elem {
+                        self.collect_type_spans_from_expr(value, spans);
+                    }
+                }
+            }
+            // Other expression types don't contain type references
+            // (strings handled separately, literals ignored)
+            _ => {}
+        }
+    }
+
+    /// Helper for subscript slice elements.
+    fn collect_type_spans_from_subscript_element(
+        &self,
+        element: &SubscriptElement<'_>,
+        spans: &mut Vec<TypeNameSpan>
+    ) {
+        match &element.slice {
+            BaseSlice::Index(idx) => {
+                self.collect_type_spans_from_expr(&idx.value, spans);
+            }
+            BaseSlice::Slice(_) => {
+                // Slice subscripts (a[1:2]) don't contain type references
+            }
+        }
+    }
+}
+```
+
+**Updated StubUpdater Logic:**
+
+```rust
+impl StubUpdater {
+    /// Collect annotation edits for type spans (replaces collect_span_annotation_edits for non-strings).
+    fn collect_type_span_edits(
+        &self,
+        type_spans: &[TypeNameSpan],
+        old_name: &str,
+        new_name: &str,
+        edits: &mut Vec<StubEdit>,
+    ) {
+        for type_span in type_spans {
+            // Exact name match - no string contains() or replace()
+            if type_span.name == old_name {
+                edits.push(StubEdit::Rename {
+                    span: type_span.span,
+                    new_name: new_name.to_string(),
+                });
+            }
+        }
+    }
+}
+```
+
+---
+
+**0.3.6.6.6.2 Design Rationale** {#step-0-3-6-6-6-rationale}
+
+1. **Why collect all spans instead of just the root?**
+   - The root-only approach forced string matching for complex types
+   - String matching has fundamental correctness issues (substring matches, boundary detection)
+   - CST provides exact node boundaries - we should use them
+
+2. **Why `Vec<TypeNameSpan>` instead of a tree structure?**
+   - Rename operations only need to know "which names appear and where"
+   - Tree structure adds complexity without benefit for our use case
+   - Flat vector is simple to iterate and filter
+
+3. **Why exclude module paths in `Attribute` expressions?**
+   - `typing.List[Handler]` - renaming `typing` is not a type rename
+   - `module.Type` - we're renaming `Type`, not `module`
+   - Module path renaming is a different operation (move/rename module)
+
+4. **Why handle `List` expression type?**
+   - `Callable[[A, B], C]` parses the `[A, B]` part as a `List` expression
+   - Without this, we'd miss type arguments in Callable signatures
+
+5. **String annotation handling:**
+   - Unchanged - already uses `StringAnnotationParser` which does proper parsing
+   - Only non-string annotation handling is fixed
+
+---
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/stub.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/mod.rs` (export TypeNameSpan)
+- Modified `crates/tugtool-python-cst/src/lib.rs` (re-export TypeNameSpan)
+- Modified `crates/tugtool-python/src/stubs.rs`
+
+**Tasks:**
+
+**Part A: Add TypeNameSpan and update collection (tugtool-python-cst)**
+
+- [x] Add `TypeNameSpan` struct to `crates/tugtool-python-cst/src/visitor/stub.rs`
+- [x] Add `collect_type_spans_from_expr(&self, expr: &Expression, spans: &mut Vec<TypeNameSpan>)` helper
+  - [x] Handle `Expression::Name` - add name and span
+  - [x] Handle `Expression::Subscript` - recurse into value and all slice elements
+  - [x] Handle `Expression::Attribute` - add attr name span only
+  - [x] Handle `Expression::BinaryOperation` - recurse both left and right
+  - [x] Handle `Expression::Tuple` - recurse all elements
+  - [x] Handle `Expression::List` - recurse all elements (for Callable params)
+  - [x] Return empty for other expression types
+- [x] Add `collect_type_spans_from_subscript_element` helper for slice handling
+- [x] Add `extract_all_type_spans(&self, annotation: &Annotation) -> Vec<TypeNameSpan>` method
+- [x] Rename `StubFunction.return_annotation_span` to `return_type_spans: Vec<TypeNameSpan>`
+- [x] Rename `StubParam.annotation_span` to `type_spans: Vec<TypeNameSpan>`
+- [x] Rename `StubVariable.annotation_span` to `type_spans: Vec<TypeNameSpan>`
+- [x] Rename `StubAttribute.annotation_span` to `type_spans: Vec<TypeNameSpan>`
+- [x] Update `extract_param` to call `extract_all_type_spans` for param.annotation
+- [x] Update `process_function` to call `extract_all_type_spans` for return annotation
+- [x] Update `process_ann_assign` to call `extract_all_type_spans` for annotation
+- [x] Remove deprecated `extract_annotation_span` method
+- [x] Export `TypeNameSpan` from `mod.rs`
+- [x] Re-export `TypeNameSpan` from `lib.rs`
+
+**Part B: Update StubUpdater to use exact matching (tugtool-python)**
+
+- [x] Add `TypeNameSpan` to re-exports in `stubs.rs`
+- [x] Add `collect_type_span_edits(&self, type_spans: &[TypeNameSpan], old_name, new_name, edits)` helper
+  - [x] Iterate type_spans and check `type_span.name == old_name` exactly
+  - [x] Push `StubEdit::Rename` for exact matches
+- [x] Update `collect_function_annotation_edits`:
+  - [x] Replace span-based logic with `collect_type_span_edits(&func.return_type_spans, ...)`
+  - [x] Replace param annotation handling with `collect_type_span_edits(&param.type_spans, ...)`
+- [x] Update `collect_annotation_rename_edits`:
+  - [x] Replace `collect_span_annotation_edits` calls for attributes with `collect_type_span_edits`
+  - [x] Replace `collect_span_annotation_edits` calls for variables with `collect_type_span_edits`
+- [x] Remove or deprecate `collect_span_annotation_edits` method (only keep for string annotations if needed)
+- [x] Keep string annotation handling unchanged (already correct via `StringAnnotationParser`)
+
+**Tests (tugtool-python-cst):**
+
+- [x] Unit: `test_extract_type_spans_simple` - `Handler` → `[("Handler", span)]`
+- [x] Unit: `test_extract_type_spans_generic` - `List[Handler]` → `[("List", s1), ("Handler", s2)]`
+- [x] Unit: `test_extract_type_spans_nested_generic` - `Dict[str, Handler]` → `[("Dict", s1), ("str", s2), ("Handler", s3)]`
+- [x] Unit: `test_extract_type_spans_deeply_nested` - `Optional[List[Handler]]` → `[("Optional", s1), ("List", s2), ("Handler", s3)]`
+- [x] Unit: `test_extract_type_spans_union` - `Handler | None` → `[("Handler", s1), ("None", s2)]`
+- [x] Unit: `test_extract_type_spans_union_generic` - `List[Handler] | None` → `[("List", s1), ("Handler", s2), ("None", s3)]`
+- [x] Unit: `test_extract_type_spans_callable` - `Callable[[Handler], Response]` → `[("Callable", s1), ("Handler", s2), ("Response", s3)]`
+- [x] Unit: `test_extract_type_spans_callable_multi_param` - `Callable[[A, B], C]` → 4 spans
+- [x] Unit: `test_extract_type_spans_qualified` - `typing.List[Handler]` → `[("List", s1), ("Handler", s2)]` (no `typing`)
+- [x] Unit: `test_extract_type_spans_complex` - `Dict[str, Optional[List[Handler]]]` → 5 spans
+- [x] Unit: `test_stub_function_return_type_spans` - Verify `return_type_spans` populated correctly
+- [x] Unit: `test_stub_param_type_spans` - Verify `type_spans` populated correctly
+- [x] Unit: `test_stub_variable_type_spans` - Verify `type_spans` populated correctly
+- [x] Unit: `test_stub_attribute_type_spans` - Verify `type_spans` populated correctly
+
+**Tests (tugtool-python) - Regression Prevention:**
+
+- [x] Unit: `test_rename_does_not_match_substring` - Renaming `Handler` does NOT affect `MyHandler`
+- [x] Unit: `test_rename_in_generic` - Renaming `Handler` in `List[Handler]` produces correct edit span
+- [x] Unit: `test_rename_in_nested_generic` - Renaming `Handler` in `Dict[str, Handler]` only renames `Handler`
+- [x] Unit: `test_rename_in_union` - Renaming `Handler` in `Handler | None` only renames `Handler`
+- [x] Unit: `test_rename_multiple_occurrences` - `def f(a: Handler, b: Handler) -> Handler` produces 3 edits
+- [x] Unit: `test_rename_in_callable` - Renaming in `Callable[[Handler], Response]` works correctly
+- [x] Unit: `test_no_false_positive_rename` - `def f(x: MyHandler) -> None` does NOT rename when renaming `Handler`
+
+**Checkpoint:**
+
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst stub` passes (39 tests)
+- [x] `cargo nextest run -p tugtool-python stub_updater` passes (23 tests)
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] **Critical:** Renaming `Handler` in `def f(h: MyHandler) -> Handler: ...` only renames the return type (not `MyHandler`)
+- [x] **Critical:** Renaming `Handler` in `def f() -> List[Handler]: ...` produces edit for inner `Handler` span only
+- [x] **Critical:** Renaming `Handler` in `def f() -> Dict[str, Optional[Handler]]: ...` produces single precise edit for deeply nested `Handler`
 
 **Rollback:** Revert commit
 
@@ -5811,15 +6297,19 @@ Following the established pattern of SignatureCollector, BindingCollector, etc.,
 
 ###### Step 0.3.6 Summary {#step-0-3-6-summary}
 
-After completing Steps 0.3.6.1 through 0.3.6.6, you will have:
+After completing Steps 0.3.6.1 through 0.3.6.6.6, you will have:
 
 - `StubError` enum and `StubResult<T>` type alias for error handling
 - `StubLocation`, `StubInfo`, `StubDiscoveryOptions` types for discovery results
 - `StubDiscovery` struct with multi-location stub finding (inline, stubs folder, typeshed-style, extra dirs)
 - `ParsedStub`, `StubFunction`, `StubClass`, `StubTypeAlias`, `StubVariable` types for parsed stub content
-- `StubCollector` visitor for extracting symbols from stub CST
+- `StubParam` type for function parameter information with type name spans
+- `TypeNameSpan` type for precise type name tracking within annotations
+- `StubFunction` with `return_type_spans: Vec<TypeNameSpan>` for complete return type tracking
+- All stub types (`StubFunction`, `StubParam`, `StubVariable`, `StubAttribute`) with `type_spans: Vec<TypeNameSpan>` for CST-based annotation tracking
+- `StubCollector` visitor for extracting symbols and all type name spans from stub CST
 - `StringAnnotationParser` for parsing and transforming type expressions in string annotations
-- `StubUpdater` for generating rename and move edits for stub files
+- `StubUpdater` for generating rename and move edits for stub files with precise CST-based matching (no string pattern matching)
 - `StubEdit`, `StubEdits`, `MoveStubEdits` types for edit representation
 
 **Final Step 0.3.6 Checkpoint:**
@@ -5829,8 +6319,10 @@ After completing Steps 0.3.6.1 through 0.3.6.6, you will have:
 - [ ] `cargo clippy --workspace -- -D warnings` passes
 - [ ] Verify: Stub discovery works for inline, stubs folder, and typeshed-style locations
 - [ ] Verify: Stub parsing extracts all symbol types (functions, classes, type aliases, variables)
+- [ ] Verify: Stub parsing extracts ALL type name spans from annotations (not just root types)
 - [ ] Verify: String annotation parsing handles common patterns (generics, unions, optionals)
-- [ ] Verify: Rename edits are generated correctly for stubs
+- [ ] Verify: Rename edits use exact name matching (no substring false positives)
+- [ ] Verify: Renaming `Handler` in `def f(x: MyHandler) -> Handler` only affects return type
 - [ ] Verify: All concrete examples from (#step-0-3-examples) produce expected results
 
 **Aggregate Test Command:**

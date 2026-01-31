@@ -34,11 +34,13 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use tugtool_core::patch::Span;
 use tugtool_python_cst::{parse_module_with_positions, prettify_error, StubSymbols};
 
 // Re-export stub symbol types from tugtool-python-cst for convenience
 pub use tugtool_python_cst::{
-    StubAttribute, StubClass, StubDecorator, StubFunction, StubTypeAlias, StubVariable,
+    StubAttribute, StubClass, StubDecorator, StubFunction, StubParam, StubTypeAlias, StubVariable,
+    TypeNameSpan,
 };
 
 /// Error type for stub operations.
@@ -1117,6 +1119,533 @@ impl ParsedStub {
         names.extend(self.symbols.type_aliases.iter().map(|t| t.name.as_str()));
         names.extend(self.symbols.variables.iter().map(|v| v.name.as_str()));
         names
+    }
+}
+
+// ============================================================================
+// Stub Editing Types
+// ============================================================================
+
+/// A single edit operation in a stub file.
+///
+/// Represents an atomic change to be made in a stub file. Multiple edits
+/// are collected in a [`StubEdits`] struct and applied together.
+///
+/// # Variants
+///
+/// - [`Rename`](StubEdit::Rename): Replace a symbol name at a specific span
+/// - [`Delete`](StubEdit::Delete): Remove a symbol definition
+/// - [`Insert`](StubEdit::Insert): Add new content at a position
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StubEdit {
+    /// Rename a symbol at the given span.
+    ///
+    /// The span identifies the location of the symbol name in the stub file.
+    /// The entire span is replaced with `new_name`.
+    Rename {
+        /// The span of the symbol name to replace.
+        span: Span,
+        /// The new name for the symbol.
+        new_name: String,
+    },
+
+    /// Delete content at the given span.
+    ///
+    /// Used when moving a symbol out of a stub file.
+    Delete {
+        /// The span of content to remove.
+        span: Span,
+    },
+
+    /// Insert new content at a position.
+    ///
+    /// Used when moving a symbol into a stub file.
+    Insert {
+        /// The byte position where content should be inserted.
+        position: usize,
+        /// The text to insert.
+        text: String,
+    },
+}
+
+/// A collection of edits for a single stub file.
+///
+/// Contains the path to the stub file and all edits to be applied to it.
+/// Edits should be applied in reverse position order to avoid invalidating
+/// spans as content is modified.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::{StubEdits, StubEdit};
+/// use tugtool_core::patch::Span;
+/// use std::path::PathBuf;
+///
+/// let edits = StubEdits {
+///     stub_path: PathBuf::from("/project/src/utils.pyi"),
+///     edits: vec![
+///         StubEdit::Rename {
+///             span: Span::new(50, 60),
+///             new_name: "new_function".to_string(),
+///         },
+///     ],
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct StubEdits {
+    /// Path to the stub file.
+    pub stub_path: PathBuf,
+    /// List of edits to apply.
+    pub edits: Vec<StubEdit>,
+}
+
+/// Edits for moving a symbol between stub files.
+///
+/// When a symbol is moved from one module to another, both the source and
+/// target stub files may need to be updated. This struct contains the edits
+/// for both files.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::MoveStubEdits;
+///
+/// // Move a function from utils.pyi to helpers.pyi
+/// let move_edits = updater.move_edits(
+///     Path::new("/project/utils.py"),
+///     Path::new("/project/helpers.py"),
+///     "my_function"
+/// )?;
+///
+/// if let Some(source) = &move_edits.source_edits {
+///     // Delete from source stub
+///     for edit in &source.edits {
+///         // Apply deletion edit
+///     }
+/// }
+///
+/// if let Some(target) = &move_edits.target_edits {
+///     // Insert into target stub
+///     for edit in &target.edits {
+///         // Apply insertion edit
+///     }
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct MoveStubEdits {
+    /// Edits to apply to the source stub (deletions).
+    ///
+    /// `None` if no source stub exists.
+    pub source_edits: Option<StubEdits>,
+
+    /// Edits to apply to the target stub (insertions).
+    ///
+    /// `None` if no target stub exists.
+    pub target_edits: Option<StubEdits>,
+}
+
+// ============================================================================
+// Stub Updater
+// ============================================================================
+
+/// Generates edits for stub files when source code is refactored.
+///
+/// The `StubUpdater` coordinates between source file changes and stub file
+/// updates. When a symbol is renamed or moved in source code, the corresponding
+/// stub file must also be updated to maintain consistency.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::{StubDiscovery, StubUpdater};
+/// use std::path::Path;
+///
+/// let discovery = StubDiscovery::for_workspace("/project");
+/// let updater = StubUpdater::new(discovery);
+///
+/// // Rename Handler -> RequestHandler
+/// if let Some(edits) = updater.rename_edits(
+///     Path::new("/project/src/handlers.py"),
+///     "Handler",
+///     "RequestHandler"
+/// )? {
+///     // Apply edits to stub file
+///     for edit in &edits.edits {
+///         // Process each StubEdit...
+///     }
+/// }
+/// ```
+pub struct StubUpdater {
+    /// The discovery instance for finding stub files.
+    discovery: StubDiscovery,
+}
+
+impl StubUpdater {
+    /// Create a new StubUpdater with the given discovery instance.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tugtool_python::stubs::{StubDiscovery, StubUpdater};
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// let updater = StubUpdater::new(discovery);
+    /// ```
+    pub fn new(discovery: StubDiscovery) -> Self {
+        Self { discovery }
+    }
+
+    /// Get the underlying discovery instance.
+    pub fn discovery(&self) -> &StubDiscovery {
+        &self.discovery
+    }
+
+    /// Generate stub edits for a rename operation.
+    ///
+    /// Given a symbol rename in source, returns the corresponding edits
+    /// needed in the stub file (if one exists).
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Path to the source file being modified
+    /// * `old_name` - The old symbol name
+    /// * `new_name` - The new symbol name
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(edits))` - Stub exists and needs these edits
+    /// * `Ok(None)` - No stub file exists (no edits needed)
+    /// * `Err` - Stub exists but has parse errors
+    ///
+    /// # Edits Generated
+    ///
+    /// For a rename, edits are generated for:
+    /// - The symbol definition (function name, class name, etc.)
+    /// - References in return type annotations
+    /// - References in parameter type annotations
+    /// - References in attribute type annotations
+    /// - References in string annotations (forward references)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::stubs::{StubDiscovery, StubUpdater};
+    /// use std::path::Path;
+    ///
+    /// let updater = StubUpdater::new(StubDiscovery::for_workspace("/project"));
+    ///
+    /// // Rename Handler -> RequestHandler
+    /// let edits = updater.rename_edits(
+    ///     Path::new("/project/src/handlers.py"),
+    ///     "Handler",
+    ///     "RequestHandler"
+    /// )?;
+    ///
+    /// match edits {
+    ///     Some(stub_edits) => println!("Found {} edits", stub_edits.edits.len()),
+    ///     None => println!("No stub file exists"),
+    /// }
+    /// ```
+    pub fn rename_edits(
+        &self,
+        source_path: &Path,
+        old_name: &str,
+        new_name: &str,
+    ) -> StubResult<Option<StubEdits>> {
+        // 1. Find stub for source path
+        let stub_info = match self.discovery.find_stub_for(source_path) {
+            Some(info) => info,
+            None => return Ok(None), // No stub exists, no edits needed
+        };
+
+        // 2. Parse stub file
+        let stub = ParsedStub::parse(&stub_info.stub_path)?;
+
+        // 3. Collect edits
+        let mut edits = Vec::new();
+
+        // 4. Find symbol by name and generate rename edit for its name span
+        self.collect_symbol_rename_edits(&stub, old_name, new_name, &mut edits);
+
+        // 5. Find references in type annotations
+        self.collect_annotation_rename_edits(&stub, old_name, new_name, &mut edits);
+
+        // If no edits found, symbol may not exist in stub (warn case)
+        if edits.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(StubEdits {
+            stub_path: stub_info.stub_path,
+            edits,
+        }))
+    }
+
+    /// Collect rename edits for symbol definitions.
+    fn collect_symbol_rename_edits(
+        &self,
+        stub: &ParsedStub,
+        old_name: &str,
+        new_name: &str,
+        edits: &mut Vec<StubEdit>,
+    ) {
+        // Check functions
+        if let Some(func) = stub.find_function(old_name) {
+            if let Some(span) = func.name_span {
+                edits.push(StubEdit::Rename {
+                    span,
+                    new_name: new_name.to_string(),
+                });
+            }
+        }
+
+        // Check classes
+        if let Some(class) = stub.find_class(old_name) {
+            if let Some(span) = class.name_span {
+                edits.push(StubEdit::Rename {
+                    span,
+                    new_name: new_name.to_string(),
+                });
+            }
+        }
+
+        // Check type aliases
+        if let Some(alias) = stub.find_type_alias(old_name) {
+            if let Some(span) = alias.name_span {
+                edits.push(StubEdit::Rename {
+                    span,
+                    new_name: new_name.to_string(),
+                });
+            }
+        }
+
+        // Check variables
+        if let Some(var) = stub.find_variable(old_name) {
+            if let Some(span) = var.name_span {
+                edits.push(StubEdit::Rename {
+                    span,
+                    new_name: new_name.to_string(),
+                });
+            }
+        }
+    }
+
+    /// Collect rename edits for type annotation references.
+    ///
+    /// This method handles type references in:
+    /// - Module-level function signatures (return types and parameters)
+    /// - Class method signatures (return types and parameters)
+    /// - Class attributes
+    /// - Module-level variables
+    ///
+    /// Uses CST-based exact name matching (via TypeNameSpan) to avoid
+    /// false positives from string pattern matching.
+    fn collect_annotation_rename_edits(
+        &self,
+        stub: &ParsedStub,
+        old_name: &str,
+        new_name: &str,
+        edits: &mut Vec<StubEdit>,
+    ) {
+        // Check module-level functions
+        for func in &stub.symbols.functions {
+            self.collect_function_annotation_edits(func, old_name, new_name, edits);
+        }
+
+        // Check all classes for methods and attribute annotations
+        for class in &stub.symbols.classes {
+            // Check methods
+            for method in &class.methods {
+                self.collect_function_annotation_edits(method, old_name, new_name, edits);
+            }
+
+            // Check class attributes (using type_spans for exact matching)
+            for attr in &class.attributes {
+                Self::collect_type_span_edits(&attr.type_spans, old_name, new_name, edits);
+            }
+        }
+
+        // Check module-level variables (using type_spans for exact matching)
+        for var in &stub.symbols.variables {
+            Self::collect_type_span_edits(&var.type_spans, old_name, new_name, edits);
+        }
+    }
+
+    /// Collect annotation edits for a function (return type and parameters).
+    ///
+    /// Uses CST-based type_spans for exact name matching.
+    fn collect_function_annotation_edits(
+        &self,
+        func: &StubFunction,
+        old_name: &str,
+        new_name: &str,
+        edits: &mut Vec<StubEdit>,
+    ) {
+        // Check return type annotation (using return_type_spans for exact matching)
+        Self::collect_type_span_edits(&func.return_type_spans, old_name, new_name, edits);
+
+        // Check parameter annotations (using type_spans for exact matching)
+        for param in &func.params {
+            Self::collect_type_span_edits(&param.type_spans, old_name, new_name, edits);
+        }
+    }
+
+    /// Collect annotation edits for type spans using exact name matching.
+    ///
+    /// This replaces the old string-based pattern matching with precise
+    /// CST-derived spans. Each TypeNameSpan represents a single type name
+    /// at an exact location, so we can match exactly without false positives.
+    ///
+    /// # Arguments
+    ///
+    /// * `type_spans` - Vector of TypeNameSpan from the CST
+    /// * `old_name` - The name to match exactly
+    /// * `new_name` - The replacement name
+    /// * `edits` - Vector to accumulate edit operations
+    fn collect_type_span_edits(
+        type_spans: &[TypeNameSpan],
+        old_name: &str,
+        new_name: &str,
+        edits: &mut Vec<StubEdit>,
+    ) {
+        for type_span in type_spans {
+            // Exact name match - no string contains() or replace()
+            if type_span.name == old_name {
+                edits.push(StubEdit::Rename {
+                    span: type_span.span,
+                    new_name: new_name.to_string(),
+                });
+            }
+        }
+    }
+
+    /// Generate stub edits for moving a symbol to another module.
+    ///
+    /// Returns edits to remove from source stub and add to target stub.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Path to the source file (where symbol is being moved from)
+    /// * `target_path` - Path to the target file (where symbol is being moved to)
+    /// * `symbol_name` - Name of the symbol being moved
+    ///
+    /// # Returns
+    ///
+    /// [`MoveStubEdits`] containing:
+    /// - `source_edits`: Deletion edits for the source stub (if it exists)
+    /// - `target_edits`: Insertion edits for the target stub (if it exists)
+    ///
+    /// Both fields may be `None` if the corresponding stub doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::stubs::{StubDiscovery, StubUpdater};
+    /// use std::path::Path;
+    ///
+    /// let updater = StubUpdater::new(StubDiscovery::for_workspace("/project"));
+    ///
+    /// let move_edits = updater.move_edits(
+    ///     Path::new("/project/utils.py"),
+    ///     Path::new("/project/helpers.py"),
+    ///     "my_function"
+    /// )?;
+    ///
+    /// if move_edits.source_edits.is_some() {
+    ///     println!("Need to delete from source stub");
+    /// }
+    /// if move_edits.target_edits.is_some() {
+    ///     println!("Need to insert into target stub");
+    /// }
+    /// ```
+    pub fn move_edits(
+        &self,
+        source_path: &Path,
+        target_path: &Path,
+        symbol_name: &str,
+    ) -> StubResult<MoveStubEdits> {
+        let mut result = MoveStubEdits {
+            source_edits: None,
+            target_edits: None,
+        };
+
+        // 1. Handle source stub (deletion)
+        if let Some(source_stub_info) = self.discovery.find_stub_for(source_path) {
+            let source_stub = ParsedStub::parse(&source_stub_info.stub_path)?;
+
+            // Find the symbol and get its definition span
+            if let Some((def_span, def_text)) =
+                self.find_symbol_definition(&source_stub, symbol_name)
+            {
+                result.source_edits = Some(StubEdits {
+                    stub_path: source_stub_info.stub_path,
+                    edits: vec![StubEdit::Delete { span: def_span }],
+                });
+
+                // 2. Handle target stub (insertion)
+                if let Some(target_stub_info) = self.discovery.find_stub_for(target_path) {
+                    let target_stub = ParsedStub::parse(&target_stub_info.stub_path)?;
+
+                    // Find insertion position (end of file for simplicity)
+                    let insert_position = target_stub.source.len();
+
+                    result.target_edits = Some(StubEdits {
+                        stub_path: target_stub_info.stub_path,
+                        edits: vec![StubEdit::Insert {
+                            position: insert_position,
+                            text: format!("\n{}", def_text),
+                        }],
+                    });
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Find a symbol's definition span and text in a stub.
+    fn find_symbol_definition(&self, stub: &ParsedStub, name: &str) -> Option<(Span, String)> {
+        // Check functions
+        if let Some(func) = stub.find_function(name) {
+            if let Some(def_span) = func.def_span {
+                let text = stub.source[def_span.start..def_span.end].to_string();
+                return Some((def_span, text));
+            }
+        }
+
+        // Check classes
+        if let Some(class) = stub.find_class(name) {
+            if let Some(def_span) = class.def_span {
+                let text = stub.source[def_span.start..def_span.end].to_string();
+                return Some((def_span, text));
+            }
+        }
+
+        // Check type aliases - use def_span which covers the full definition
+        if let Some(alias) = stub.find_type_alias(name) {
+            if let Some(def_span) = alias.def_span {
+                let text = stub.source[def_span.start..def_span.end].to_string();
+                return Some((def_span, text));
+            }
+        }
+
+        // Check variables
+        if let Some(var) = stub.find_variable(name) {
+            if let Some(name_span) = var.name_span {
+                // For variables, include the annotation if present
+                // Use the last type_span's end position if type_spans exist
+                let end = var
+                    .type_spans
+                    .last()
+                    .map(|s| s.span.end)
+                    .unwrap_or(name_span.end);
+                let span = Span::new(name_span.start, end);
+                let text = stub.source[span.start..span.end].to_string();
+                return Some((span, text));
+            }
+        }
+
+        None
     }
 }
 
@@ -2480,6 +3009,773 @@ VAR: str
                 }
                 e => panic!("Expected InvalidAnnotation, got: {:?}", e),
             }
+        }
+    }
+
+    // ========================================================================
+    // StubUpdater Tests
+    // ========================================================================
+
+    mod stub_updater_tests {
+        use super::*;
+        use std::fs::{self, File};
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        fn create_temp_project() -> TempDir {
+            tempfile::tempdir().expect("Failed to create temp dir")
+        }
+
+        fn write_file(path: &Path, content: &str) {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("Failed to create parent dirs");
+            }
+            let mut file = File::create(path).expect("Failed to create file");
+            writeln!(file, "{}", content).expect("Failed to write file");
+        }
+
+        #[test]
+        fn test_stub_updater_rename_function() {
+            // Example 4 from the plan: Rename function in stub
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("handlers.py");
+            let stub_path = temp_dir.path().join("handlers.pyi");
+
+            write_file(&source_path, "def process(data: bytes) -> str: pass");
+            write_file(&stub_path, "def process(data: bytes) -> str: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "process", "handle")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits when stub exists");
+            let edits = edits.unwrap();
+            assert_eq!(edits.stub_path, stub_path);
+            assert!(!edits.edits.is_empty(), "Should have at least one edit");
+
+            // Check that the rename edit targets "process"
+            let rename_count = edits
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { new_name, .. } if new_name == "handle"))
+                .count();
+            assert!(rename_count > 0, "Should have rename edit for 'handle'");
+        }
+
+        #[test]
+        fn test_stub_updater_rename_class() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("models.py");
+            let stub_path = temp_dir.path().join("models.pyi");
+
+            write_file(&source_path, "class Handler: pass");
+            write_file(&stub_path, "class Handler:\n    def process(self) -> None: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits when stub exists");
+            let edits = edits.unwrap();
+
+            // Check that the rename edit targets class name
+            let has_class_rename = edits.edits.iter().any(
+                |e| matches!(e, StubEdit::Rename { new_name, .. } if new_name == "RequestHandler"),
+            );
+            assert!(has_class_rename, "Should rename class to RequestHandler");
+        }
+
+        #[test]
+        fn test_stub_updater_rename_method() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("service.py");
+            let stub_path = temp_dir.path().join("service.pyi");
+
+            write_file(&source_path, "class Service:\n    def fetch(self): pass");
+            write_file(
+                &stub_path,
+                "class Service:\n    def fetch(self) -> str: ...",
+            );
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            // Note: method rename at module level won't find "fetch" since it's
+            // inside a class. A full method rename would need class context.
+            // This test verifies the basic search doesn't find it at module level.
+            let edits = updater
+                .rename_edits(&source_path, "fetch", "retrieve")
+                .expect("rename_edits should succeed");
+
+            // At module level, "fetch" won't be found (it's a method)
+            assert!(
+                edits.is_none(),
+                "Method rename at module level should not find method"
+            );
+        }
+
+        #[test]
+        fn test_stub_updater_rename_with_return_type() {
+            // Test that return type annotations are updated
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("factory.py");
+            let stub_path = temp_dir.path().join("factory.pyi");
+
+            write_file(
+                &source_path,
+                "class Handler: pass\ndef create() -> Handler: pass",
+            );
+            write_file(&stub_path, "class Handler: ...\ndef create() -> Handler: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits for class rename");
+            let edits = edits.unwrap();
+            assert!(!edits.edits.is_empty(), "Should have rename edits");
+        }
+
+        #[test]
+        fn test_stub_updater_rename_with_param_type() {
+            // Test that parameter type annotations are updated
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("processor.py");
+            let stub_path = temp_dir.path().join("processor.pyi");
+
+            write_file(
+                &source_path,
+                "class Config: pass\ndef process(cfg: Config): pass",
+            );
+            write_file(&stub_path, "class Config: ...\ndef process(cfg: Config) -> None: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Config", "Settings")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits for class rename");
+        }
+
+        #[test]
+        fn test_stub_updater_rename_string_annotation() {
+            // Test that string annotations are updated
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("lazy.py");
+            let stub_path = temp_dir.path().join("lazy.pyi");
+
+            write_file(&source_path, "class Handler: pass\nx: 'Handler'");
+            write_file(&stub_path, "class Handler: ...\nx: \"Handler\"");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "NewHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits");
+            let edits = edits.unwrap();
+
+            // Should have edit for class name
+            let has_class_edit = edits.edits.iter().any(
+                |e| matches!(e, StubEdit::Rename { new_name, .. } if new_name == "NewHandler"),
+            );
+            assert!(has_class_edit, "Should have class rename edit");
+        }
+
+        #[test]
+        fn test_stub_updater_no_stub_returns_none() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("nostub.py");
+
+            // Create source file but no stub
+            write_file(&source_path, "def process(): pass");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "process", "handle")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_none(), "Should return None when no stub exists");
+        }
+
+        #[test]
+        fn test_stub_updater_symbol_not_in_stub() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("partial.py");
+            let stub_path = temp_dir.path().join("partial.pyi");
+
+            // Source has function, but stub doesn't include it
+            write_file(&source_path, "def private_func(): pass\ndef public_func(): pass");
+            write_file(&stub_path, "def public_func() -> None: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "private_func", "new_name")
+                .expect("rename_edits should succeed");
+
+            // Should return None since the symbol isn't in the stub
+            assert!(
+                edits.is_none(),
+                "Should return None when symbol not in stub"
+            );
+        }
+
+        #[test]
+        fn test_stub_updater_move_between_modules() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("utils.py");
+            let source_stub = temp_dir.path().join("utils.pyi");
+            let target_path = temp_dir.path().join("helpers.py");
+            let target_stub = temp_dir.path().join("helpers.pyi");
+
+            write_file(&source_path, "def helper(): pass");
+            write_file(&source_stub, "def helper() -> None: ...");
+            write_file(&target_path, "# target module");
+            write_file(&target_stub, "# target stub");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let move_edits = updater
+                .move_edits(&source_path, &target_path, "helper")
+                .expect("move_edits should succeed");
+
+            // Should have source edits (delete)
+            assert!(
+                move_edits.source_edits.is_some(),
+                "Should have source edits"
+            );
+            let source_edits = move_edits.source_edits.unwrap();
+            assert!(
+                source_edits.edits.iter().any(|e| matches!(e, StubEdit::Delete { .. })),
+                "Should have delete edit in source"
+            );
+
+            // Should have target edits (insert)
+            assert!(
+                move_edits.target_edits.is_some(),
+                "Should have target edits"
+            );
+            let target_edits = move_edits.target_edits.unwrap();
+            assert!(
+                target_edits.edits.iter().any(|e| matches!(e, StubEdit::Insert { .. })),
+                "Should have insert edit in target"
+            );
+        }
+
+        #[test]
+        fn test_stub_updater_move_no_source_stub() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("source_nostub.py");
+            let target_path = temp_dir.path().join("target.py");
+            let target_stub = temp_dir.path().join("target.pyi");
+
+            // Source has no stub
+            write_file(&source_path, "def helper(): pass");
+            write_file(&target_path, "# target");
+            write_file(&target_stub, "# target stub");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let move_edits = updater
+                .move_edits(&source_path, &target_path, "helper")
+                .expect("move_edits should succeed");
+
+            // Should have no source edits (no stub to delete from)
+            assert!(
+                move_edits.source_edits.is_none(),
+                "Should have no source edits when no source stub"
+            );
+
+            // Should also have no target edits (nothing to move)
+            assert!(
+                move_edits.target_edits.is_none(),
+                "Should have no target edits when source has no stub"
+            );
+        }
+
+        #[test]
+        fn test_stub_updater_move_no_target_stub() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("source.py");
+            let source_stub = temp_dir.path().join("source.pyi");
+            let target_path = temp_dir.path().join("target_nostub.py");
+
+            // Target has no stub
+            write_file(&source_path, "def helper(): pass");
+            write_file(&source_stub, "def helper() -> None: ...");
+            write_file(&target_path, "# target");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let move_edits = updater
+                .move_edits(&source_path, &target_path, "helper")
+                .expect("move_edits should succeed");
+
+            // Should have source edits (delete from source stub)
+            assert!(
+                move_edits.source_edits.is_some(),
+                "Should have source edits"
+            );
+
+            // Should have no target edits (no stub to insert into)
+            assert!(
+                move_edits.target_edits.is_none(),
+                "Should have no target edits when no target stub"
+            );
+        }
+
+        #[test]
+        fn test_stub_update_rename_full_workflow() {
+            // Integration test: end-to-end rename with stub update
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("api.py");
+            let stub_path = temp_dir.path().join("api.pyi");
+
+            // Create a more complete stub file
+            write_file(&source_path, "class Handler:\n    pass\n\ndef create_handler() -> Handler:\n    return Handler()");
+            write_file(&stub_path, "class Handler:\n    def process(self) -> None: ...\n\ndef create_handler() -> Handler: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            // Rename Handler -> RequestHandler
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits");
+            let edits = edits.unwrap();
+
+            // Verify we got the class name edit
+            let rename_edits: Vec<_> = edits
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { .. }))
+                .collect();
+
+            assert!(!rename_edits.is_empty(), "Should have rename edits");
+
+            // Verify the edit targets the correct span
+            if let Some(StubEdit::Rename { span, new_name }) = rename_edits.first() {
+                assert_eq!(new_name, "RequestHandler");
+                assert!(span.start < span.end, "Span should be valid");
+            }
+        }
+
+        // ========================================================================
+        // Tests for annotation span tracking (Step 0.3.6.6.5)
+        // ========================================================================
+
+        #[test]
+        fn test_stub_updater_renames_return_type() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("api.py");
+            let stub_path = temp_dir.path().join("api.pyi");
+
+            write_file(&source_path, "def create() -> Handler: pass");
+            write_file(&stub_path, "def create() -> Handler: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits for return type");
+            let edits = edits.unwrap();
+
+            // Should have an edit for the return type annotation
+            assert!(!edits.edits.is_empty(), "Should have edits");
+            let edit = &edits.edits[0];
+            if let StubEdit::Rename { new_name, .. } = edit {
+                assert!(
+                    new_name.contains("RequestHandler"),
+                    "Should rename to RequestHandler"
+                );
+            } else {
+                panic!("Expected a Rename edit");
+            }
+        }
+
+        #[test]
+        fn test_stub_updater_renames_param_type() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("api.py");
+            let stub_path = temp_dir.path().join("api.pyi");
+
+            write_file(&source_path, "def process(h: Handler) -> None: pass");
+            write_file(&stub_path, "def process(h: Handler) -> None: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits for param type");
+            let edits = edits.unwrap();
+
+            // Should have an edit for the parameter type annotation
+            assert!(!edits.edits.is_empty(), "Should have edits");
+            let edit = &edits.edits[0];
+            if let StubEdit::Rename { new_name, .. } = edit {
+                assert!(
+                    new_name.contains("RequestHandler"),
+                    "Should rename to RequestHandler"
+                );
+            } else {
+                panic!("Expected a Rename edit");
+            }
+        }
+
+        #[test]
+        fn test_stub_updater_renames_multiple_function_annotations() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("api.py");
+            let stub_path = temp_dir.path().join("api.pyi");
+
+            write_file(&source_path, "def process(h: Handler) -> Handler: pass");
+            write_file(&stub_path, "def process(h: Handler) -> Handler: ...");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits");
+            let edits = edits.unwrap();
+
+            // Should have 2 edits: one for param, one for return type
+            assert_eq!(
+                edits.edits.len(),
+                2,
+                "Should have 2 edits (param and return type)"
+            );
+
+            for edit in &edits.edits {
+                if let StubEdit::Rename { new_name, .. } = edit {
+                    assert!(
+                        new_name.contains("RequestHandler"),
+                        "All edits should rename to RequestHandler"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn test_stub_updater_renames_method_annotations() {
+            let temp_dir = create_temp_project();
+            let source_path = temp_dir.path().join("api.py");
+            let stub_path = temp_dir.path().join("api.pyi");
+
+            write_file(
+                &source_path,
+                "class Service:\n    def process(self, h: Handler) -> Handler: pass",
+            );
+            write_file(
+                &stub_path,
+                "class Service:\n    def process(self, h: Handler) -> Handler: ...",
+            );
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let edits = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .expect("rename_edits should succeed");
+
+            assert!(edits.is_some(), "Should return edits for method annotations");
+            let edits = edits.unwrap();
+
+            // Should have 2 edits for the method: one for param, one for return type
+            assert_eq!(
+                edits.edits.len(),
+                2,
+                "Should have 2 edits for method annotations"
+            );
+
+            for edit in &edits.edits {
+                if let StubEdit::Rename { new_name, .. } = edit {
+                    assert!(
+                        new_name.contains("RequestHandler"),
+                        "All edits should rename to RequestHandler"
+                    );
+                }
+            }
+        }
+
+        // ========================================================================
+        // Regression tests for CST-based exact name matching (Step 0.3.6.6.6)
+        // These tests verify that renaming uses exact matching, not substring matching
+        // ========================================================================
+
+        /// Renaming `Handler` should NOT affect `MyHandler`
+        #[test]
+        fn test_rename_does_not_match_substring() {
+            let temp_dir = TempDir::new().unwrap();
+
+            // Create source file
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Service: pass").unwrap();
+
+            // Create stub with MyHandler (not Handler)
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            let stub_content = r#"class Service:
+    def process(self, h: MyHandler) -> MyHandler: ...
+"#;
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            // Rename "Handler" to "RequestHandler" - should find nothing
+            let result = updater.rename_edits(&source_path, "Handler", "RequestHandler");
+            assert!(result.is_ok());
+
+            // Should be None because "Handler" doesn't appear as an exact type name
+            assert!(
+                result.unwrap().is_none(),
+                "Renaming 'Handler' should NOT match 'MyHandler'"
+            );
+        }
+
+        /// Renaming `Handler` in `List[Handler]` should produce edit for inner `Handler` only
+        #[test]
+        fn test_rename_in_generic() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Handler: pass").unwrap();
+
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            let stub_content = "def process() -> List[Handler]: ...\n";
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let result = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .unwrap()
+                .unwrap();
+
+            // Should have exactly 1 edit (for the inner Handler, not List)
+            let rename_edits: Vec<_> = result
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { .. }))
+                .collect();
+
+            assert_eq!(rename_edits.len(), 1, "Should have exactly 1 rename edit");
+
+            if let StubEdit::Rename { span, new_name } = &rename_edits[0] {
+                assert_eq!(new_name, "RequestHandler");
+                // Verify the span points to "Handler" not "List"
+                assert_eq!(&stub_content[span.start..span.end], "Handler");
+            } else {
+                panic!("Expected Rename edit");
+            }
+        }
+
+        /// Renaming `Handler` in `Dict[str, Handler]` only renames `Handler`
+        #[test]
+        fn test_rename_in_nested_generic() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Handler: pass").unwrap();
+
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            let stub_content = "def get() -> Dict[str, Handler]: ...\n";
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let result = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .unwrap()
+                .unwrap();
+
+            let rename_edits: Vec<_> = result
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { .. }))
+                .collect();
+
+            assert_eq!(rename_edits.len(), 1, "Should have exactly 1 rename edit");
+
+            if let StubEdit::Rename { span, new_name } = &rename_edits[0] {
+                assert_eq!(new_name, "RequestHandler");
+                assert_eq!(&stub_content[span.start..span.end], "Handler");
+            }
+        }
+
+        /// Renaming `Handler` in `Handler | None` only renames `Handler`
+        #[test]
+        fn test_rename_in_union() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Handler: pass").unwrap();
+
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            let stub_content = "def get() -> Handler | None: ...\n";
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let result = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .unwrap()
+                .unwrap();
+
+            let rename_edits: Vec<_> = result
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { .. }))
+                .collect();
+
+            assert_eq!(rename_edits.len(), 1, "Should have exactly 1 rename edit");
+
+            if let StubEdit::Rename { span, new_name } = &rename_edits[0] {
+                assert_eq!(new_name, "RequestHandler");
+                assert_eq!(&stub_content[span.start..span.end], "Handler");
+            }
+        }
+
+        /// `def f(a: Handler, b: Handler) -> Handler` produces 3 edits
+        #[test]
+        fn test_rename_multiple_occurrences() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Handler: pass").unwrap();
+
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            let stub_content = "def process(a: Handler, b: Handler) -> Handler: ...\n";
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let result = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .unwrap()
+                .unwrap();
+
+            let rename_edits: Vec<_> = result
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { .. }))
+                .collect();
+
+            assert_eq!(rename_edits.len(), 3, "Should have 3 rename edits (2 params + 1 return)");
+
+            for edit in &rename_edits {
+                if let StubEdit::Rename { span, new_name } = edit {
+                    assert_eq!(new_name, "RequestHandler");
+                    assert_eq!(&stub_content[span.start..span.end], "Handler");
+                }
+            }
+        }
+
+        /// Renaming in Callable[[Handler], Response] works correctly
+        #[test]
+        fn test_rename_in_callable() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Handler: pass").unwrap();
+
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            let stub_content = "def get_callback() -> Callable[[Handler], Response]: ...\n";
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            let result = updater
+                .rename_edits(&source_path, "Handler", "RequestHandler")
+                .unwrap()
+                .unwrap();
+
+            let rename_edits: Vec<_> = result
+                .edits
+                .iter()
+                .filter(|e| matches!(e, StubEdit::Rename { .. }))
+                .collect();
+
+            assert_eq!(rename_edits.len(), 1, "Should have 1 rename edit for Handler in Callable");
+
+            if let StubEdit::Rename { span, new_name } = &rename_edits[0] {
+                assert_eq!(new_name, "RequestHandler");
+                assert_eq!(&stub_content[span.start..span.end], "Handler");
+            }
+        }
+
+        /// `def f(x: MyHandler) -> None` does NOT rename when renaming `Handler`
+        #[test]
+        fn test_no_false_positive_rename() {
+            let temp_dir = TempDir::new().unwrap();
+
+            let source_path = temp_dir.path().join("src/service.py");
+            std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            std::fs::write(&source_path, "class Service: pass").unwrap();
+
+            let stub_path = temp_dir.path().join("src/service.pyi");
+            // Only MyHandler, HandlerFactory, BaseHandler - no exact "Handler"
+            let stub_content = r#"def process(x: MyHandler) -> HandlerFactory:
+    ...
+class Service:
+    handler: BaseHandler
+"#;
+            std::fs::write(&stub_path, stub_content).unwrap();
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let updater = StubUpdater::new(discovery);
+
+            // Rename "Handler" to "RequestHandler" - should find nothing
+            let result = updater.rename_edits(&source_path, "Handler", "RequestHandler");
+            assert!(result.is_ok());
+
+            // Should be None because "Handler" doesn't appear as an exact type name
+            // (MyHandler, HandlerFactory, BaseHandler are different names)
+            assert!(
+                result.unwrap().is_none(),
+                "Renaming 'Handler' should NOT match 'MyHandler', 'HandlerFactory', or 'BaseHandler'"
+            );
         }
     }
 }
