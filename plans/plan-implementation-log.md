@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6 Summary: Stub Discovery Infrastructure | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6 Summary (lines 6298-6332)
+- `plans/phase-13.md` - step-0-3-examples (lines 5400-5497)
+- `crates/tugtool-python/src/stubs.rs` - Full stub infrastructure implementation
+- `crates/tugtool-python-cst/src/visitor/stub.rs` - StubCollector and stub types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Verify `cargo build -p tugtool-python` succeeds | Done |
+| Verify `cargo nextest run -p tugtool-python stubs` passes | Done |
+| Verify `cargo clippy --workspace -- -D warnings` passes | Done |
+| Verify stub discovery for inline, stubs folder, typeshed-style | Done |
+| Verify stub parsing extracts all symbol types | Done |
+| Verify stub parsing extracts ALL type name spans from annotations | Done |
+| Verify string annotation parsing handles common patterns | Done |
+| Verify rename edits use exact name matching | Done |
+| Verify renaming Handler in `def f(x: MyHandler) -> Handler` only affects return type | Done |
+| Verify all concrete examples from step-0-3-examples produce expected results | Done |
+| Check off Final Step 0.3.6 Checkpoint in plan file | Done |
+
+**Files Created:**
+- None (verification step)
+
+**Files Modified:**
+- `plans/phase-13.md` - Checked off all Final Step 0.3.6 Checkpoint items
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python stubs`: 106 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python stubs` passes (all stub-related tests): PASS
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- Stub discovery works for inline, stubs folder, and typeshed-style locations: PASS
+- Stub parsing extracts all symbol types (functions, classes, type aliases, variables): PASS
+- Stub parsing extracts ALL type name spans from annotations (not just root types): PASS
+- String annotation parsing handles common patterns (generics, unions, optionals): PASS
+- Rename edits use exact name matching (no substring false positives): PASS
+- Renaming `Handler` in `def f(x: MyHandler) -> Handler` only affects return type: PASS
+- All concrete examples from step-0-3-examples produce expected results: PASS
+
+**Key Decisions/Notes:**
+This was a verification step confirming all Step 0.3.6 substeps (0.3.6.1 through 0.3.6.6.6) are complete. The final infrastructure includes:
+- `StubError` enum and `StubResult<T>` type alias for error handling
+- `StubLocation`, `StubInfo`, `StubDiscoveryOptions` types for discovery results
+- `StubDiscovery` struct with multi-location stub finding
+- `ParsedStub`, `StubFunction`, `StubClass`, `StubTypeAlias`, `StubVariable` types for parsed content
+- `StubParam` type for function parameter information with type name spans
+- `TypeNameSpan` type for precise type name tracking within annotations
+- `StubCollector` visitor for extracting symbols and all type name spans from stub CST
+- `StringAnnotationParser` for parsing and transforming type expressions in string annotations
+- `StubUpdater` for generating rename and move edits with precise CST-based matching
+
+---
+
 ## [phase-13.md] Step 0.3.6.6.6: CST-Based Annotation Span Collection | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31

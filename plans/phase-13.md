@@ -6314,16 +6314,16 @@ After completing Steps 0.3.6.1 through 0.3.6.6.6, you will have:
 
 **Final Step 0.3.6 Checkpoint:**
 
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python stubs` passes (all stub-related tests)
-- [ ] `cargo clippy --workspace -- -D warnings` passes
-- [ ] Verify: Stub discovery works for inline, stubs folder, and typeshed-style locations
-- [ ] Verify: Stub parsing extracts all symbol types (functions, classes, type aliases, variables)
-- [ ] Verify: Stub parsing extracts ALL type name spans from annotations (not just root types)
-- [ ] Verify: String annotation parsing handles common patterns (generics, unions, optionals)
-- [ ] Verify: Rename edits use exact name matching (no substring false positives)
-- [ ] Verify: Renaming `Handler` in `def f(x: MyHandler) -> Handler` only affects return type
-- [ ] Verify: All concrete examples from (#step-0-3-examples) produce expected results
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python stubs` passes (all stub-related tests)
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] Verify: Stub discovery works for inline, stubs folder, and typeshed-style locations
+- [x] Verify: Stub parsing extracts all symbol types (functions, classes, type aliases, variables)
+- [x] Verify: Stub parsing extracts ALL type name spans from annotations (not just root types)
+- [x] Verify: String annotation parsing handles common patterns (generics, unions, optionals)
+- [x] Verify: Rename edits use exact name matching (no substring false positives)
+- [x] Verify: Renaming `Handler` in `def f(x: MyHandler) -> Handler` only affects return type
+- [x] Verify: All concrete examples from (#step-0-3-examples) produce expected results
 
 **Aggregate Test Command:**
 ```bash

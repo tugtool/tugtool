@@ -537,7 +537,9 @@ impl StubDiscovery {
         // This requires knowing the Python source roots
 
         // For now, use relative path from workspace root
-        let relative = source_path.strip_prefix(&self.options.workspace_root).ok()?;
+        let relative = source_path
+            .strip_prefix(&self.options.workspace_root)
+            .ok()?;
         Some(relative.with_extension("pyi"))
     }
 
@@ -894,18 +896,17 @@ impl StringAnnotationParser {
         let mut result = parsed.content.clone();
 
         // Replace in reverse order to preserve offsets
-        let mut replacements: Vec<_> = parsed
-            .refs
-            .iter()
-            .filter(|r| r.name == old_name)
-            .collect();
+        let mut replacements: Vec<_> = parsed.refs.iter().filter(|r| r.name == old_name).collect();
         replacements.sort_by(|a, b| b.offset_in_string.cmp(&a.offset_in_string));
 
         for r in replacements {
             result.replace_range(r.offset_in_string..r.offset_in_string + r.length, new_name);
         }
 
-        Ok(format!("{}{}{}", parsed.quote_char, result, parsed.quote_char))
+        Ok(format!(
+            "{}{}{}",
+            parsed.quote_char, result, parsed.quote_char
+        ))
     }
 
     /// Check if an annotation contains a reference to a given name.
@@ -1048,12 +1049,11 @@ impl ParsedStub {
         let path = stub_path.into();
 
         // Parse the stub source using the CST parser
-        let parsed = parse_module_with_positions(source, None).map_err(|e| {
-            StubError::ParseError {
+        let parsed =
+            parse_module_with_positions(source, None).map_err(|e| StubError::ParseError {
                 stub_path: path.clone(),
                 message: prettify_error(e, source),
-            }
-        })?;
+            })?;
 
         // Collect symbols using the StubSymbols collector
         let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
@@ -1855,14 +1855,8 @@ mod tests {
             location: StubLocation::Inline,
         };
 
-        assert_eq!(
-            info.stub_path,
-            PathBuf::from("/project/src/utils.pyi")
-        );
-        assert_eq!(
-            info.source_path,
-            PathBuf::from("/project/src/utils.py")
-        );
+        assert_eq!(info.stub_path, PathBuf::from("/project/src/utils.pyi"));
+        assert_eq!(info.source_path, PathBuf::from("/project/src/utils.py"));
         assert_eq!(info.location, StubLocation::Inline);
     }
 
@@ -2401,7 +2395,10 @@ mod tests {
                     );
                     // First should be inline
                     assert!(
-                        searched_locations[0].to_str().unwrap().ends_with("module.pyi"),
+                        searched_locations[0]
+                            .to_str()
+                            .unwrap()
+                            .ends_with("module.pyi"),
                         "First location should be inline stub"
                     );
                 }
@@ -2468,7 +2465,10 @@ mod tests {
 
             // 2. Stubs folder
             assert!(
-                locations[1].to_str().unwrap().contains("stubs/pkg/module.pyi"),
+                locations[1]
+                    .to_str()
+                    .unwrap()
+                    .contains("stubs/pkg/module.pyi"),
                 "Second should be stubs folder: {:?}",
                 locations[1]
             );
@@ -2865,7 +2865,8 @@ VAR: str
         #[test]
         fn test_string_annotation_callable() {
             // Parse "Callable[[A], B]"
-            let parsed = StringAnnotationParser::parse("\"Callable[[A], B]\"").expect("parse failed");
+            let parsed =
+                StringAnnotationParser::parse("\"Callable[[A], B]\"").expect("parse failed");
 
             assert_eq!(parsed.refs.len(), 3);
             assert_eq!(parsed.refs[0].name, "Callable");
@@ -2885,8 +2886,8 @@ VAR: str
         #[test]
         fn test_string_annotation_preserves_double_quotes() {
             // Verify double quotes are preserved on output
-            let result =
-                StringAnnotationParser::rename("\"Type\"", "Type", "NewType").expect("rename failed");
+            let result = StringAnnotationParser::rename("\"Type\"", "Type", "NewType")
+                .expect("rename failed");
 
             assert_eq!(result, "\"NewType\"");
         }
@@ -2989,7 +2990,10 @@ VAR: str
             assert!(result.is_err());
 
             match result.unwrap_err() {
-                StubError::InvalidAnnotation { annotation, message } => {
+                StubError::InvalidAnnotation {
+                    annotation,
+                    message,
+                } => {
                     assert_eq!(annotation, "\"Handler'");
                     assert!(message.contains("Mismatched quotes"));
                 }
@@ -3072,7 +3076,10 @@ VAR: str
             let stub_path = temp_dir.path().join("models.pyi");
 
             write_file(&source_path, "class Handler: pass");
-            write_file(&stub_path, "class Handler:\n    def process(self) -> None: ...");
+            write_file(
+                &stub_path,
+                "class Handler:\n    def process(self) -> None: ...",
+            );
 
             let discovery = StubDiscovery::for_workspace(temp_dir.path());
             let updater = StubUpdater::new(discovery);
@@ -3131,7 +3138,10 @@ VAR: str
                 &source_path,
                 "class Handler: pass\ndef create() -> Handler: pass",
             );
-            write_file(&stub_path, "class Handler: ...\ndef create() -> Handler: ...");
+            write_file(
+                &stub_path,
+                "class Handler: ...\ndef create() -> Handler: ...",
+            );
 
             let discovery = StubDiscovery::for_workspace(temp_dir.path());
             let updater = StubUpdater::new(discovery);
@@ -3156,7 +3166,10 @@ VAR: str
                 &source_path,
                 "class Config: pass\ndef process(cfg: Config): pass",
             );
-            write_file(&stub_path, "class Config: ...\ndef process(cfg: Config) -> None: ...");
+            write_file(
+                &stub_path,
+                "class Config: ...\ndef process(cfg: Config) -> None: ...",
+            );
 
             let discovery = StubDiscovery::for_workspace(temp_dir.path());
             let updater = StubUpdater::new(discovery);
@@ -3220,7 +3233,10 @@ VAR: str
             let stub_path = temp_dir.path().join("partial.pyi");
 
             // Source has function, but stub doesn't include it
-            write_file(&source_path, "def private_func(): pass\ndef public_func(): pass");
+            write_file(
+                &source_path,
+                "def private_func(): pass\ndef public_func(): pass",
+            );
             write_file(&stub_path, "def public_func() -> None: ...");
 
             let discovery = StubDiscovery::for_workspace(temp_dir.path());
@@ -3264,7 +3280,10 @@ VAR: str
             );
             let source_edits = move_edits.source_edits.unwrap();
             assert!(
-                source_edits.edits.iter().any(|e| matches!(e, StubEdit::Delete { .. })),
+                source_edits
+                    .edits
+                    .iter()
+                    .any(|e| matches!(e, StubEdit::Delete { .. })),
                 "Should have delete edit in source"
             );
 
@@ -3275,7 +3294,10 @@ VAR: str
             );
             let target_edits = move_edits.target_edits.unwrap();
             assert!(
-                target_edits.edits.iter().any(|e| matches!(e, StubEdit::Insert { .. })),
+                target_edits
+                    .edits
+                    .iter()
+                    .any(|e| matches!(e, StubEdit::Insert { .. })),
                 "Should have insert edit in target"
             );
         }
@@ -3508,7 +3530,10 @@ VAR: str
                 .rename_edits(&source_path, "Handler", "RequestHandler")
                 .expect("rename_edits should succeed");
 
-            assert!(edits.is_some(), "Should return edits for method annotations");
+            assert!(
+                edits.is_some(),
+                "Should return edits for method annotations"
+            );
             let edits = edits.unwrap();
 
             // Should have 2 edits for the method: one for param, one for return type
@@ -3700,7 +3725,11 @@ VAR: str
                 .filter(|e| matches!(e, StubEdit::Rename { .. }))
                 .collect();
 
-            assert_eq!(rename_edits.len(), 3, "Should have 3 rename edits (2 params + 1 return)");
+            assert_eq!(
+                rename_edits.len(),
+                3,
+                "Should have 3 rename edits (2 params + 1 return)"
+            );
 
             for edit in &rename_edits {
                 if let StubEdit::Rename { span, new_name } = edit {
@@ -3737,7 +3766,11 @@ VAR: str
                 .filter(|e| matches!(e, StubEdit::Rename { .. }))
                 .collect();
 
-            assert_eq!(rename_edits.len(), 1, "Should have 1 rename edit for Handler in Callable");
+            assert_eq!(
+                rename_edits.len(),
+                1,
+                "Should have 1 rename edit for Handler in Callable"
+            );
 
             if let StubEdit::Rename { span, new_name } = &rename_edits[0] {
                 assert_eq!(new_name, "RequestHandler");

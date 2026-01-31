@@ -868,9 +868,15 @@ class Outer:
         // For List[Handler], should have both List AND Handler spans
         assert_eq!(func.return_type_spans.len(), 2);
         assert_eq!(func.return_type_spans[0].name, "List");
-        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "List");
+        assert_eq!(
+            &source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end],
+            "List"
+        );
         assert_eq!(func.return_type_spans[1].name, "Handler");
-        assert_eq!(&source[func.return_type_spans[1].span.start..func.return_type_spans[1].span.end], "Handler");
+        assert_eq!(
+            &source[func.return_type_spans[1].span.start..func.return_type_spans[1].span.end],
+            "Handler"
+        );
     }
 
     #[test]
@@ -885,7 +891,10 @@ class Outer:
         // For module.Type, get only 'Type' (the attribute part, not module)
         assert_eq!(func.return_type_spans.len(), 1);
         assert_eq!(func.return_type_spans[0].name, "Type");
-        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "Type");
+        assert_eq!(
+            &source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end],
+            "Type"
+        );
     }
 
     #[test]
@@ -919,13 +928,19 @@ class Outer:
         assert_eq!(func.params[0].name, "a");
         assert_eq!(func.params[0].type_spans.len(), 1);
         assert_eq!(func.params[0].type_spans[0].name, "A");
-        assert_eq!(&source[func.params[0].type_spans[0].span.start..func.params[0].type_spans[0].span.end], "A");
+        assert_eq!(
+            &source[func.params[0].type_spans[0].span.start..func.params[0].type_spans[0].span.end],
+            "A"
+        );
 
         // Second param: b: B
         assert_eq!(func.params[1].name, "b");
         assert_eq!(func.params[1].type_spans.len(), 1);
         assert_eq!(func.params[1].type_spans[0].name, "B");
-        assert_eq!(&source[func.params[1].type_spans[0].span.start..func.params[1].type_spans[0].span.end], "B");
+        assert_eq!(
+            &source[func.params[1].type_spans[0].span.start..func.params[1].type_spans[0].span.end],
+            "B"
+        );
     }
 
     #[test]
@@ -1035,7 +1050,10 @@ class Outer:
         // Return type
         assert_eq!(func.return_type_spans.len(), 1);
         assert_eq!(func.return_type_spans[0].name, "T");
-        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "T");
+        assert_eq!(
+            &source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end],
+            "T"
+        );
     }
 
     #[test]
@@ -1054,7 +1072,10 @@ class Outer:
         // Check return type
         assert_eq!(method.return_type_spans.len(), 1);
         assert_eq!(method.return_type_spans[0].name, "Result");
-        assert_eq!(&source[method.return_type_spans[0].span.start..method.return_type_spans[0].span.end], "Result");
+        assert_eq!(
+            &source[method.return_type_spans[0].span.start..method.return_type_spans[0].span.end],
+            "Result"
+        );
 
         // Check parameters
         assert_eq!(method.params.len(), 2);
@@ -1067,7 +1088,11 @@ class Outer:
         assert_eq!(method.params[1].name, "handler");
         assert_eq!(method.params[1].type_spans.len(), 1);
         assert_eq!(method.params[1].type_spans[0].name, "Handler");
-        assert_eq!(&source[method.params[1].type_spans[0].span.start..method.params[1].type_spans[0].span.end], "Handler");
+        assert_eq!(
+            &source[method.params[1].type_spans[0].span.start
+                ..method.params[1].type_spans[0].span.end],
+            "Handler"
+        );
     }
 
     // ========================================================================
@@ -1222,8 +1247,14 @@ class Outer:
         let func = &symbols.functions[0];
         assert_eq!(func.return_type_spans.len(), 2);
         // Verify spans are correct positions
-        assert_eq!(&source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end], "Optional");
-        assert_eq!(&source[func.return_type_spans[1].span.start..func.return_type_spans[1].span.end], "Handler");
+        assert_eq!(
+            &source[func.return_type_spans[0].span.start..func.return_type_spans[0].span.end],
+            "Optional"
+        );
+        assert_eq!(
+            &source[func.return_type_spans[1].span.start..func.return_type_spans[1].span.end],
+            "Handler"
+        );
     }
 
     #[test]
@@ -1263,7 +1294,13 @@ class Outer:
         assert_eq!(symbols.classes.len(), 1);
         assert_eq!(symbols.classes[0].attributes.len(), 1);
         assert_eq!(symbols.classes[0].attributes[0].type_spans.len(), 2);
-        assert_eq!(symbols.classes[0].attributes[0].type_spans[0].name, "Optional");
-        assert_eq!(symbols.classes[0].attributes[0].type_spans[1].name, "Handler");
+        assert_eq!(
+            symbols.classes[0].attributes[0].type_spans[0].name,
+            "Optional"
+        );
+        assert_eq!(
+            symbols.classes[0].attributes[0].type_spans[1].name,
+            "Handler"
+        );
     }
 }
