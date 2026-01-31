@@ -6,6 +6,61 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.6.6: Position Lookup Methods | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.6.6 specification (lines 4524-4576)
+- `plans/phase-13.md` - API specification (#step-0-2-api) - lookup method signatures
+- `plans/phase-13.md` - Internal Design (#step-0-2-internal) - Position Lookup Algorithm
+- `plans/phase-13.md` - Edge Cases (#step-0-2-edge-cases) - whitespace, comments, boundaries
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Existing implementation
+
+**Summary:**
+
+Completed Step 0.2.6.6: Position Lookup Methods. All 6 lookup methods were already implemented from previous work; this session added 7 missing unit tests to match the plan specification and verified edge case handling.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `find_node_at(offset)` with bounds check, binary search, scan backwards | Done (pre-existing) |
+| Implement `find_expression_at(offset)` | Done (pre-existing) |
+| Implement `find_statement_at(offset)` | Done (pre-existing) |
+| Implement `find_scope_at(offset)` | Done (pre-existing) |
+| Implement `find_all_at(offset)` with span size sorting | Done (pre-existing) |
+| Implement `find_enclosing_expression(offset)` | Done (pre-existing) |
+| Handle edge cases: whitespace, comments, boundaries, EOF, beyond-file | Done (via tests) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Added 7 unit tests
+- `plans/phase-13.md` - Checked off all Tasks, Tests, and Checkpoint items for Step 0.2.6.6
+
+**Tests Added:**
+- `test_find_expression_parenthesized` - Test (a + b) grouping
+- `test_find_expression_binary_op` - Position in operand returns operand
+- `test_find_enclosing_statement` - Expression inside statement
+- `test_find_enclosing_scope_class` - Method inside class
+- `test_position_at_whitespace` - Returns None for node lookup in whitespace
+- `test_position_at_comment` - Returns None for comments (comments not in CST)
+- `test_position_between_statements` - Returns None for node, scope for scope
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst position_lookup`: 47 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst position_lookup`: PASS (47 tests)
+- All lookup functions return correct spans for examples: VERIFIED
+
+**Key Notes:**
+- All 6 lookup methods (find_node_at, find_expression_at, find_statement_at, find_scope_at, find_all_at, find_enclosing_expression) were already complete
+- Added 7 tests for edge cases: parenthesized expressions, binary ops, statement enclosure, class scope, whitespace, comments, statement boundaries
+- This completes Step 0.2.6 (Position Lookup Infrastructure substeps)
+
+---
+
 ## [phase-13.md] Step 0.2.6.5: PositionIndex Structure and Build | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

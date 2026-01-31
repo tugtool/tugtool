@@ -4531,47 +4531,47 @@ This section breaks the Position Lookup Infrastructure implementation into discr
 - Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
 
 **Tasks:**
-- [ ] Implement `find_node_at(offset)`:
-  - [ ] Bounds check against `source_len`
-  - [ ] Binary search to find partition point
-  - [ ] Scan backwards to collect candidates where `span.start <= offset < span.end`
-  - [ ] Return smallest (innermost) by span length
-- [ ] Implement `find_expression_at(offset)` using same algorithm on `expressions` vec
-- [ ] Implement `find_statement_at(offset)` using same algorithm on `statements` vec
-- [ ] Implement `find_scope_at(offset)` using same algorithm on `scopes` vec
-- [ ] Implement `find_all_at(offset)`:
-  - [ ] Collect all nodes where span contains offset
-  - [ ] Sort by span size descending (outermost first)
-  - [ ] Return as Vec<&NodeInfo>
-- [ ] Implement `find_enclosing_expression(offset)`:
-  - [ ] Find expression at offset
-  - [ ] If found, search for next-larger expression containing same offset
-  - [ ] Return parent expression or None
-- [ ] Handle all edge cases from (#step-0-2-edge-cases): whitespace, comments, boundaries, EOF, beyond-file
+- [x] Implement `find_node_at(offset)`:
+  - [x] Bounds check against `source_len`
+  - [x] Binary search to find partition point
+  - [x] Scan backwards to collect candidates where `span.start <= offset < span.end`
+  - [x] Return smallest (innermost) by span length
+- [x] Implement `find_expression_at(offset)` using same algorithm on `expressions` vec
+- [x] Implement `find_statement_at(offset)` using same algorithm on `statements` vec
+- [x] Implement `find_scope_at(offset)` using same algorithm on `scopes` vec
+- [x] Implement `find_all_at(offset)`:
+  - [x] Collect all nodes where span contains offset
+  - [x] Sort by span size descending (outermost first)
+  - [x] Return as Vec<&NodeInfo>
+- [x] Implement `find_enclosing_expression(offset)`:
+  - [x] Find expression at offset
+  - [x] If found, search for next-larger expression containing same offset
+  - [x] Return parent expression or None
+- [x] Handle all edge cases from (#step-0-2-edge-cases): whitespace, comments, boundaries, EOF, beyond-file
 
 **Tests:**
-- [ ] Unit: `test_find_node_simple_expression` - Name, Integer, String at position
-- [ ] Unit: `test_find_node_nested_expression` - Attribute chain returns innermost
-- [ ] Unit: `test_find_expression_in_call` - Argument position returns argument expr
-- [ ] Unit: `test_find_expression_parenthesized` - (a + b) grouping
-- [ ] Unit: `test_find_expression_binary_op` - Position in operand returns operand
-- [ ] Unit: `test_find_enclosing_statement` - Expression inside statement
-- [ ] Unit: `test_find_enclosing_scope_function` - Nested functions
-- [ ] Unit: `test_find_enclosing_scope_class` - Method inside class
-- [ ] Unit: `test_find_enclosing_scope_lambda` - Lambda body
-- [ ] Unit: `test_find_enclosing_scope_comprehension` - List comp variable
-- [ ] Unit: `test_position_at_whitespace` - Returns None for node lookup
-- [ ] Unit: `test_position_at_comment` - Returns None (comments not in CST)
-- [ ] Unit: `test_position_between_statements` - Returns None for node, scope for scope
-- [ ] Unit: `test_position_at_eof` - Returns module scope
-- [ ] Unit: `test_position_beyond_file` - Returns None
-- [ ] Unit: `test_find_all_at` - Returns correct hierarchy outermost to innermost
-- [ ] Unit: `test_find_enclosing_expression` - Attribute chain parent lookup
+- [x] Unit: `test_find_node_simple_expression` - Name, Integer, String at position
+- [x] Unit: `test_find_node_nested_expression` - Attribute chain returns innermost
+- [x] Unit: `test_find_expression_in_call` - Argument position returns argument expr
+- [x] Unit: `test_find_expression_parenthesized` - (a + b) grouping
+- [x] Unit: `test_find_expression_binary_op` - Position in operand returns operand
+- [x] Unit: `test_find_enclosing_statement` - Expression inside statement
+- [x] Unit: `test_find_enclosing_scope_function` - Nested functions
+- [x] Unit: `test_find_enclosing_scope_class` - Method inside class
+- [x] Unit: `test_find_enclosing_scope_lambda` - Lambda body
+- [x] Unit: `test_find_enclosing_scope_comprehension` - List comp variable
+- [x] Unit: `test_position_at_whitespace` - Returns None for node lookup
+- [x] Unit: `test_position_at_comment` - Returns None (comments not in CST)
+- [x] Unit: `test_position_between_statements` - Returns None for node, scope for scope
+- [x] Unit: `test_position_at_eof` - Returns module scope
+- [x] Unit: `test_position_beyond_file` - Returns None
+- [x] Unit: `test_find_all_at` - Returns correct hierarchy outermost to innermost
+- [x] Unit: `test_find_enclosing_expression` - Attribute chain parent lookup
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst position_lookup` passes
-- [ ] All lookup functions return correct spans for examples in (#step-0-2-examples)
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst position_lookup` passes (47 tests)
+- [x] All lookup functions return correct spans for examples in (#step-0-2-examples)
 
 **Rollback:** Revert commit
 

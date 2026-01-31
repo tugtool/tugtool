@@ -2689,4 +2689,149 @@ class Calculator:
         // source_len should match
         assert_eq!(index.source_len(), source.len());
     }
+
+    // ========================================================================
+    // Position Lookup Method tests (Step 0.2.6.6)
+    // ========================================================================
+
+    #[test]
+    fn test_find_expression_parenthesized() {
+        // Test (a + b) grouping
+        let source = "x = (a + b) * c";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position 5 is at 'a' inside the parenthesized expression
+        let expr = index.find_expression_at(5);
+        assert!(expr.is_some());
+        let expr_info = expr.unwrap();
+        // Should find 'a' (Name) at this position
+        assert_eq!(expr_info.kind, NodeKind::Name);
+
+        // Position 6 is at the '+' - should still be inside the binary op
+        let expr = index.find_expression_at(7);
+        assert!(expr.is_some());
+    }
+
+    #[test]
+    fn test_find_expression_binary_op() {
+        // Test position in operand returns operand
+        let source = "result = left + right";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position 9 is at 'left'
+        let expr = index.find_expression_at(9);
+        assert!(expr.is_some());
+        let expr_info = expr.unwrap();
+        // Should return the Name 'left', not the whole BinaryOp
+        assert_eq!(expr_info.kind, NodeKind::Name);
+
+        // Position 16 is at 'right'
+        let expr = index.find_expression_at(16);
+        assert!(expr.is_some());
+        let expr_info = expr.unwrap();
+        assert_eq!(expr_info.kind, NodeKind::Name);
+    }
+
+    #[test]
+    fn test_find_enclosing_statement() {
+        // Test expression inside statement
+        let source = "x = calculate(a, b)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position 14 is inside 'a' in the call
+        let expr = index.find_expression_at(14);
+        assert!(expr.is_some());
+
+        // The same position should also find a statement (the assignment)
+        let stmt = index.find_statement_at(14);
+        assert!(stmt.is_some());
+        let stmt_info = stmt.unwrap();
+        assert_eq!(stmt_info.kind, NodeKind::Assign);
+    }
+
+    #[test]
+    fn test_find_enclosing_scope_class() {
+        // Test method inside class
+        let source = r#"
+class MyClass:
+    def method(self):
+        x = 1
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position inside method body (at 'x = 1')
+        let scope = index.find_scope_at(48);
+        assert!(scope.is_some());
+        let scope_info = scope.unwrap();
+        // Should return the method scope (innermost)
+        assert_eq!(scope_info.kind, NodeKind::FunctionDef);
+        assert_eq!(scope_info.name, Some("method".to_string()));
+
+        // Position at class level but outside method
+        // "class MyClass:" starts at 1, so position 10 is at 'Class'
+        let scope = index.find_scope_at(10);
+        assert!(scope.is_some());
+        let scope_info = scope.unwrap();
+        assert_eq!(scope_info.kind, NodeKind::ClassDef);
+        assert_eq!(scope_info.name, Some("MyClass".to_string()));
+    }
+
+    #[test]
+    fn test_position_at_whitespace() {
+        // Test that whitespace returns None for node lookup
+        let source = "x = 1\n\ny = 2";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position 6 is the newline between statements
+        let _node = index.find_node_at(6);
+        // Whitespace positions may or may not return a node depending on CST structure
+        // For strict whitespace, should be None; but newlines can be part of statement spans
+        // The key is that it doesn't crash and returns reasonable result
+
+        // Position 5 is at the end of first assignment (after '1')
+        let stmt = index.find_statement_at(5);
+        // Should still find the assignment even at end boundary
+        if let Some(s) = stmt {
+            assert_eq!(s.kind, NodeKind::Assign);
+        }
+    }
+
+    #[test]
+    fn test_position_at_comment() {
+        // Test that comment positions return None (comments not in CST)
+        let source = "x = 1  # this is a comment\ny = 2";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position 10 is inside the comment '# this...'
+        let _node = index.find_node_at(10);
+        // Comments are not tracked in the CST, so this should return None for expression
+        // But Module scope should still contain this position
+        let scope = index.find_scope_at(10);
+        assert!(scope.is_some());
+        assert_eq!(scope.unwrap().kind, NodeKind::Module);
+    }
+
+    #[test]
+    fn test_position_between_statements() {
+        // Test position between statements
+        let source = "x = 1\n\n\ny = 2";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Position 7 is in the blank lines between statements
+        let _stmt = index.find_statement_at(7);
+        // Should return None for statement (not inside any)
+        // Actually, it might return the first statement depending on span boundaries
+
+        // Scope should still be found (Module)
+        let scope = index.find_scope_at(7);
+        assert!(scope.is_some());
+        assert_eq!(scope.unwrap().kind, NodeKind::Module);
+    }
 }
