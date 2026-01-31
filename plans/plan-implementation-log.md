@@ -6,6 +6,69 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6.4: Stub Parsing Types and Implementation | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6.4 specification (lines 5630-5698)
+- `plans/phase-13.md` - 0.3.1 API Specification - ParsedStub, StubFunction, StubClass types (lines 4850-5050)
+- `plans/phase-13.md` - 0.3.5 Concrete Examples - Example 3: Parse Stub File (lines 5427-5470)
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - Pattern reference for CST visitors
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `crates/tugtool-python-cst/src/visitor/stub.rs` | Done |
+| Add `StubDecorator` struct with `name`, `span` fields | Done |
+| Add `StubFunction` struct with spans, is_async, decorators | Done |
+| Add `StubAttribute` struct with name, spans | Done |
+| Add `StubClass` struct with methods, attributes | Done |
+| Add `StubTypeAlias` struct with spans | Done |
+| Add `StubVariable` struct with spans | Done |
+| Add `StubSymbols` struct with collections and lookup methods | Done |
+| Create internal `StubCollector` visitor | Done |
+| Implement `Visitor` trait for `StubCollector` | Done |
+| Implement `StubSymbols::collect(module, positions)` | Done |
+| Export types from `visitor/mod.rs` and `lib.rs` | Done |
+| Remove duplicate type definitions from `stubs.rs` | Done |
+| Import and re-export types from tugtool-python-cst | Done |
+| Refactor `ParsedStub` to use `StubSymbols` | Done |
+| Implement lookup methods (find_function, find_class, etc.) | Done |
+
+**Files Created:**
+- `crates/tugtool-python-cst/src/visitor/stub.rs` - StubCollector visitor and all stub symbol types (StubDecorator, StubFunction, StubClass, StubTypeAlias, StubVariable, StubSymbols)
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Added P3 stub module and exports
+- `crates/tugtool-python-cst/src/lib.rs` - Re-exported stub types
+- `crates/tugtool-python/src/stubs.rs` - Removed duplicate types, imports from CST crate, ParsedStub uses StubSymbols
+- `plans/phase-13.md` - Added architecture note about node_id visibility, checked off all tasks
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst stub`: 14 tests passed
+- `cargo nextest run -p tugtool-python stubs`: 65 tests passed (including 16 new ParsedStub tests)
+- `cargo nextest run -p tugtool-python stub_parse`: 17 tests passed
+- `cargo nextest run -p tugtool-python -p tugtool-python-cst`: 1528 tests passed
+- `cargo clippy -p tugtool-python -p tugtool-python-cst -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python stub_parse` passes: PASS
+- Stub parsing extracts all symbol types per Example 3: PASS
+- Zero duplicate type hierarchies (verified by plan-step-reviewer): PASS
+
+**Key Decisions/Notes:**
+- **Critical Architecture:** `node_id` field on CST nodes is `pub(crate)` in tugtool-python-cst. Following established pattern (SignatureCollector, BindingCollector), StubCollector and all stub symbol types are defined in tugtool-python-cst. ParsedStub wrapper remains in tugtool-python.
+- Used code-architect agent to design proper architecture before implementation
+- StubCollector is internal (not `pub`), only `StubSymbols::collect()` is public API
+- Types re-exported from tugtool-python for consumer convenience
+- Spans use `Option<Span>` since position tracking may not always succeed
+- Added test `test_example_3_from_plan` to verify Example 3 from spec works correctly
+
+---
+
 ## [phase-13.md] Step 0.3.6.3: Stubs Folder and Typeshed-Style Discovery | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31

@@ -5629,49 +5629,71 @@ This section breaks the Stub Discovery Infrastructure implementation into discre
 
 ###### Step 0.3.6.4: Stub Parsing Types and Implementation {#step-0-3-6-4}
 
-**Commit:** `feat(python): add ParsedStub and stub symbol types`
+**Commit:** `feat(python-cst,python): add StubCollector and ParsedStub for stub parsing`
 
 **References:** Spec (#step-0-3-api) - ParsedStub, StubFunction, StubClass, StubTypeAlias, StubVariable structs, Internal Design (#step-0-3-internal) - Stub Parsing algorithm, Examples (#step-0-3-examples) - Example 3, Integration (#step-0-3-integration) - parse_module_with_positions reuse
 
-**Artifacts:**
-- Modified `crates/tugtool-python/src/stubs.rs`
+**Architecture Note:**
 
-**Tasks:**
-- [ ] Add `StubFunction` struct with `name`, `name_span`, `signature_span`, `def_span`, `is_async`, `decorators` fields
-- [ ] Add `StubClass` struct with `name`, `name_span`, `header_span`, `def_span`, `methods`, `attributes` fields
-- [ ] Add `StubTypeAlias` struct with `name`, `name_span`, `value_span` fields
-- [ ] Add `StubVariable` struct with `name`, `name_span`, `annotation_span` fields
-- [ ] Add `ParsedStub` struct with `path`, `functions`, `classes`, `type_aliases`, `variables`, `source` fields
-- [ ] Create `StubCollector` visitor struct for collecting stub symbols
-- [ ] Implement `Visitor` trait for `StubCollector` to extract functions, classes, type aliases, variables
-- [ ] Implement `ParsedStub::parse(stub_path)` reading file and calling `parse_str`
-- [ ] Implement `ParsedStub::parse_str(source, stub_path)` using CST parser
-- [ ] Implement `ParsedStub::find_function(&self, name)` lookup
-- [ ] Implement `ParsedStub::find_class(&self, name)` lookup
-- [ ] Implement `ParsedStub::find_method(&self, class_name, method_name)` lookup
-- [ ] Implement `ParsedStub::has_symbol(&self, name)` check
+The `node_id` field on CST nodes (Name, FunctionDef, ClassDef, etc.) is `pub(crate)` in tugtool-python-cst. This means:
+- Code in tugtool-python-cst CAN access `node.name.node_id` (same crate)
+- Code in tugtool-python CANNOT access `node.name.node_id` (different crate)
+
+Following the established pattern of SignatureCollector, BindingCollector, etc., the `StubCollector` visitor and stub symbol types (`StubFunction`, `StubClass`, etc.) must be defined in `tugtool-python-cst/src/visitor/stub.rs`. The `ParsedStub` wrapper that provides the high-level API remains in `tugtool-python/src/stubs.rs`.
+
+**Artifacts:**
+- New `crates/tugtool-python-cst/src/visitor/stub.rs` - StubCollector visitor and symbol types
+- Modified `crates/tugtool-python-cst/src/visitor/mod.rs` - Export stub module
+- Modified `crates/tugtool-python-cst/src/lib.rs` - Re-export stub types
+- Modified `crates/tugtool-python/src/stubs.rs` - ParsedStub wrapper
+
+**Tasks (tugtool-python-cst):**
+- [x] Create `crates/tugtool-python-cst/src/visitor/stub.rs`
+- [x] Add `StubDecorator` struct with `name`, `span` fields
+- [x] Add `StubFunction` struct with `name`, `name_span`, `signature_span`, `def_span`, `is_async`, `decorators` fields
+- [x] Add `StubAttribute` struct with `name`, `name_span`, `annotation_span` fields
+- [x] Add `StubClass` struct with `name`, `name_span`, `header_span`, `def_span`, `methods`, `attributes` fields
+- [x] Add `StubTypeAlias` struct with `name`, `name_span`, `def_span` fields
+- [x] Add `StubVariable` struct with `name`, `name_span`, `annotation_span` fields
+- [x] Add `StubSymbols` struct with `functions`, `classes`, `type_aliases`, `variables` fields
+- [x] Create internal `StubCollector` visitor struct for collecting stub symbols
+- [x] Implement `Visitor` trait for `StubCollector` to extract functions, classes, type aliases, variables
+- [x] Implement `StubSymbols::collect(module, positions)` static method
+- [x] Export types from `visitor/mod.rs` and `lib.rs`
+
+**Tasks (tugtool-python):**
+- [x] Remove duplicate type definitions from `stubs.rs` (replace with imports)
+- [x] Import `StubSymbols`, `StubFunction`, `StubClass`, etc. from tugtool-python-cst
+- [x] Re-export stub types for consumers of tugtool-python
+- [x] Add `ParsedStub` struct with `path`, `symbols: StubSymbols`, `source` fields
+- [x] Implement `ParsedStub::parse(stub_path)` reading file and calling `parse_str`
+- [x] Implement `ParsedStub::parse_str(source, stub_path)` using CST parser and `StubSymbols::collect()`
+- [x] Implement `ParsedStub::find_function(&self, name)` lookup
+- [x] Implement `ParsedStub::find_class(&self, name)` lookup
+- [x] Implement `ParsedStub::find_method(&self, class_name, method_name)` lookup
+- [x] Implement `ParsedStub::has_symbol(&self, name)` check
 
 **Tests:**
-- [ ] Unit: `test_stub_parse_function` - Extract function info
-- [ ] Unit: `test_stub_parse_async_function` - Async function detection
-- [ ] Unit: `test_stub_parse_function_with_decorators` - Decorator extraction
-- [ ] Unit: `test_stub_parse_class` - Extract class info (Example 3)
-- [ ] Unit: `test_stub_parse_methods` - Extract methods from class
-- [ ] Unit: `test_stub_parse_class_attributes` - Class-level variables
-- [ ] Unit: `test_stub_parse_type_alias` - TypeAlias support
-- [ ] Unit: `test_stub_parse_variable` - Module-level annotated variables
-- [ ] Unit: `test_stub_find_function` - Lookup by name
-- [ ] Unit: `test_stub_find_class` - Lookup by name
-- [ ] Unit: `test_stub_find_method` - Lookup nested in class
-- [ ] Unit: `test_stub_has_symbol_true` - Symbol exists
-- [ ] Unit: `test_stub_has_symbol_false` - Symbol not found
-- [ ] Unit: `test_stub_parse_io_error` - File not found error
-- [ ] Unit: `test_stub_parse_failure_returns_error` - Invalid syntax returns ParseError
+- [x] Unit: `test_stub_parse_function` - Extract function info
+- [x] Unit: `test_stub_parse_async_function` - Async function detection
+- [x] Unit: `test_stub_parse_function_with_decorators` - Decorator extraction
+- [x] Unit: `test_stub_parse_class` - Extract class info (Example 3)
+- [x] Unit: `test_stub_parse_methods` - Extract methods from class
+- [x] Unit: `test_stub_parse_class_attributes` - Class-level variables
+- [x] Unit: `test_stub_parse_type_alias` - TypeAlias support
+- [x] Unit: `test_stub_parse_variable` - Module-level annotated variables
+- [x] Unit: `test_stub_find_function` - Lookup by name
+- [x] Unit: `test_stub_find_class` - Lookup by name
+- [x] Unit: `test_stub_find_method` - Lookup nested in class
+- [x] Unit: `test_stub_has_symbol_true` - Symbol exists
+- [x] Unit: `test_stub_has_symbol_false` - Symbol not found
+- [x] Unit: `test_stub_parse_io_error` - File not found error
+- [x] Unit: `test_stub_parse_failure_returns_error` - Invalid syntax returns ParseError
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python stub_parse` passes
-- [ ] Stub parsing extracts all symbol types per Example 3
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python stub_parse` passes
+- [x] Stub parsing extracts all symbol types per Example 3
 
 **Rollback:** Revert commit
 

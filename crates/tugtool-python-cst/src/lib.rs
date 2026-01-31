@@ -80,6 +80,11 @@ pub use visitor::{
 };
 // P2 visitor exports
 pub use visitor::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};
+// P3 visitor exports (stub parsing)
+pub use visitor::{
+    StubAttribute, StubClass, StubDecorator, StubFunction, StubSymbols, StubTypeAlias,
+    StubVariable,
+};
 // Re-export walk functions for CST traversal
 pub use visitor::{
     walk_annotation, walk_arg, walk_as_name, walk_assert, walk_assign, walk_assign_target,

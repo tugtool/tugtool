@@ -34,6 +34,13 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use tugtool_python_cst::{parse_module_with_positions, prettify_error, StubSymbols};
+
+// Re-export stub symbol types from tugtool-python-cst for convenience
+pub use tugtool_python_cst::{
+    StubAttribute, StubClass, StubDecorator, StubFunction, StubTypeAlias, StubVariable,
+};
+
 /// Error type for stub operations.
 ///
 /// This enum covers all error cases that can occur during stub discovery,
@@ -654,6 +661,139 @@ impl StubDiscovery {
         }
 
         locations
+    }
+}
+
+// ============================================================================
+// Stub Parsing
+// ============================================================================
+
+/// A parsed stub file with extracted symbols.
+///
+/// Contains all the functions, classes, type aliases, and variables
+/// extracted from a .pyi file, with span information for each symbol.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::ParsedStub;
+/// use std::path::PathBuf;
+///
+/// let source = "def foo() -> int: ...";
+/// let stub = ParsedStub::parse_str(source, PathBuf::from("module.pyi"))?;
+///
+/// assert!(stub.has_symbol("foo"));
+/// let func = stub.find_function("foo").unwrap();
+/// println!("Function {} at {:?}", func.name, func.name_span);
+/// ```
+#[derive(Debug, Clone)]
+pub struct ParsedStub {
+    /// Path to the stub file.
+    pub path: PathBuf,
+    /// Collected symbols (functions, classes, type aliases, variables).
+    pub symbols: StubSymbols,
+    /// The original source code.
+    pub source: String,
+}
+
+impl ParsedStub {
+    /// Parse a stub file from disk.
+    ///
+    /// Reads the file and parses its contents.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StubError::IoError` if the file cannot be read.
+    /// Returns `StubError::ParseError` if the file has invalid Python syntax.
+    pub fn parse(stub_path: impl Into<PathBuf>) -> StubResult<Self> {
+        let path = stub_path.into();
+        let source = std::fs::read_to_string(&path).map_err(|e| StubError::IoError {
+            stub_path: path.clone(),
+            message: e.to_string(),
+        })?;
+        Self::parse_str(&source, path)
+    }
+
+    /// Parse a stub from a string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StubError::ParseError` if the source has invalid Python syntax.
+    pub fn parse_str(source: &str, stub_path: impl Into<PathBuf>) -> StubResult<Self> {
+        let path = stub_path.into();
+
+        // Parse the stub source using the CST parser
+        let parsed = parse_module_with_positions(source, None).map_err(|e| {
+            StubError::ParseError {
+                stub_path: path.clone(),
+                message: prettify_error(e, source),
+            }
+        })?;
+
+        // Collect symbols using the StubSymbols collector
+        let symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+        Ok(ParsedStub {
+            path,
+            symbols,
+            source: source.to_string(),
+        })
+    }
+
+    /// Find a function by name.
+    ///
+    /// Returns the first function with the given name, or `None` if not found.
+    pub fn find_function(&self, name: &str) -> Option<&StubFunction> {
+        self.symbols.find_function(name)
+    }
+
+    /// Find a class by name.
+    ///
+    /// Returns the first class with the given name, or `None` if not found.
+    pub fn find_class(&self, name: &str) -> Option<&StubClass> {
+        self.symbols.find_class(name)
+    }
+
+    /// Find a method within a class.
+    ///
+    /// Returns the method with the given name in the specified class,
+    /// or `None` if the class or method is not found.
+    pub fn find_method(&self, class_name: &str, method_name: &str) -> Option<&StubFunction> {
+        self.symbols.find_method(class_name, method_name)
+    }
+
+    /// Find a type alias by name.
+    ///
+    /// Returns the first type alias with the given name, or `None` if not found.
+    pub fn find_type_alias(&self, name: &str) -> Option<&StubTypeAlias> {
+        self.symbols.type_aliases.iter().find(|t| t.name == name)
+    }
+
+    /// Find a variable by name.
+    ///
+    /// Returns the first variable with the given name, or `None` if not found.
+    pub fn find_variable(&self, name: &str) -> Option<&StubVariable> {
+        self.symbols.variables.iter().find(|v| v.name == name)
+    }
+
+    /// Check if a symbol exists in the stub.
+    ///
+    /// Checks functions, classes, type aliases, and variables.
+    pub fn has_symbol(&self, name: &str) -> bool {
+        self.symbols.has_symbol(name)
+    }
+
+    /// Get all symbol names in the stub.
+    ///
+    /// Returns a list of all top-level symbol names (functions, classes,
+    /// type aliases, and variables).
+    pub fn symbol_names(&self) -> Vec<&str> {
+        let mut names = Vec::new();
+        names.extend(self.symbols.functions.iter().map(|f| f.name.as_str()));
+        names.extend(self.symbols.classes.iter().map(|c| c.name.as_str()));
+        names.extend(self.symbols.type_aliases.iter().map(|t| t.name.as_str()));
+        names.extend(self.symbols.variables.iter().map(|v| v.name.as_str()));
+        names
     }
 }
 
@@ -1567,6 +1707,245 @@ mod tests {
                 result.is_none(),
                 "Should not find typeshed-style stub when disabled"
             );
+        }
+
+        // ========================================================================
+        // ParsedStub Tests
+        // ========================================================================
+
+        #[test]
+        fn test_stub_parse_function() {
+            let source = "def foo(x: int) -> str: ...";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert_eq!(stub.symbols.functions.len(), 1);
+            let func = &stub.symbols.functions[0];
+            assert_eq!(func.name, "foo");
+            assert!(!func.is_async);
+            assert!(func.name_span.is_some());
+        }
+
+        #[test]
+        fn test_stub_parse_async_function() {
+            let source = "async def fetch(url: str) -> bytes: ...";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert_eq!(stub.symbols.functions.len(), 1);
+            let func = &stub.symbols.functions[0];
+            assert_eq!(func.name, "fetch");
+            assert!(func.is_async);
+        }
+
+        #[test]
+        fn test_stub_parse_function_with_decorators() {
+            let source = "@staticmethod\n@deprecated\ndef helper() -> None: ...";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert_eq!(stub.symbols.functions.len(), 1);
+            let func = &stub.symbols.functions[0];
+            assert_eq!(func.decorators.len(), 2);
+            assert_eq!(func.decorators[0].name, "staticmethod");
+            assert_eq!(func.decorators[1].name, "deprecated");
+        }
+
+        #[test]
+        fn test_stub_parse_class() {
+            // Example 3 from plan
+            let source = r#"
+from typing import Optional
+
+class Handler:
+    def process(self, data: bytes) -> Optional[str]: ...
+    def reset(self) -> None: ...
+
+def create_handler(config: dict) -> Handler: ...
+"#;
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            // Should have one class
+            assert_eq!(stub.symbols.classes.len(), 1);
+            let handler = &stub.symbols.classes[0];
+            assert_eq!(handler.name, "Handler");
+
+            // Class should have 2 methods
+            assert_eq!(handler.methods.len(), 2);
+            assert_eq!(handler.methods[0].name, "process");
+            assert_eq!(handler.methods[1].name, "reset");
+
+            // Module should have 1 function
+            assert_eq!(stub.symbols.functions.len(), 1);
+            assert_eq!(stub.symbols.functions[0].name, "create_handler");
+        }
+
+        #[test]
+        fn test_stub_parse_methods() {
+            let source = r#"
+class Service:
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    async def run(self) -> int: ...
+"#;
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            let service = stub.find_class("Service").expect("Service not found");
+            assert_eq!(service.methods.len(), 3);
+            assert_eq!(service.methods[0].name, "start");
+            assert_eq!(service.methods[1].name, "stop");
+            assert_eq!(service.methods[2].name, "run");
+            assert!(service.methods[2].is_async);
+        }
+
+        #[test]
+        fn test_stub_parse_class_attributes() {
+            let source = r#"
+class Config:
+    debug: bool
+    timeout: int
+    name: str
+"#;
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            let config = stub.find_class("Config").expect("Config not found");
+            assert_eq!(config.attributes.len(), 3);
+            assert_eq!(config.attributes[0].name, "debug");
+            assert_eq!(config.attributes[1].name, "timeout");
+            assert_eq!(config.attributes[2].name, "name");
+        }
+
+        #[test]
+        fn test_stub_parse_type_alias() {
+            let source = "type Handler = Callable[[bytes], str]";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert_eq!(stub.symbols.type_aliases.len(), 1);
+            assert_eq!(stub.symbols.type_aliases[0].name, "Handler");
+        }
+
+        #[test]
+        fn test_stub_parse_variable() {
+            let source = "VERSION: str\nDEBUG: bool";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert_eq!(stub.symbols.variables.len(), 2);
+            assert_eq!(stub.symbols.variables[0].name, "VERSION");
+            assert_eq!(stub.symbols.variables[1].name, "DEBUG");
+        }
+
+        #[test]
+        fn test_stub_find_function() {
+            let source = "def foo(): ...\ndef bar(): ...\ndef baz(): ...";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert!(stub.find_function("foo").is_some());
+            assert!(stub.find_function("bar").is_some());
+            assert!(stub.find_function("baz").is_some());
+            assert!(stub.find_function("qux").is_none());
+        }
+
+        #[test]
+        fn test_stub_find_class() {
+            let source = "class Alpha: ...\nclass Beta: ...";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert!(stub.find_class("Alpha").is_some());
+            assert!(stub.find_class("Beta").is_some());
+            assert!(stub.find_class("Gamma").is_none());
+        }
+
+        #[test]
+        fn test_stub_find_method() {
+            let source = r#"
+class Handler:
+    def process(self): ...
+    def reset(self): ...
+"#;
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert!(stub.find_method("Handler", "process").is_some());
+            assert!(stub.find_method("Handler", "reset").is_some());
+            assert!(stub.find_method("Handler", "unknown").is_none());
+            assert!(stub.find_method("Unknown", "process").is_none());
+        }
+
+        #[test]
+        fn test_stub_has_symbol_true() {
+            let source = "def func(): ...\nclass Klass: ...\nVAR: int";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert!(stub.has_symbol("func"));
+            assert!(stub.has_symbol("Klass"));
+            assert!(stub.has_symbol("VAR"));
+        }
+
+        #[test]
+        fn test_stub_has_symbol_false() {
+            let source = "def foo(): ...";
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            assert!(!stub.has_symbol("nonexistent"));
+            assert!(!stub.has_symbol("bar"));
+        }
+
+        #[test]
+        fn test_stub_parse_io_error() {
+            // Try to parse a file that doesn't exist
+            let result = ParsedStub::parse("/nonexistent/path/to/stub.pyi");
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                StubError::IoError { stub_path, message } => {
+                    assert!(stub_path.to_str().unwrap().contains("stub.pyi"));
+                    assert!(!message.is_empty());
+                }
+                e => panic!("Expected IoError, got: {:?}", e),
+            }
+        }
+
+        #[test]
+        fn test_stub_parse_failure_returns_error() {
+            // Invalid Python syntax
+            let source = "def broken(: ...";
+            let result = ParsedStub::parse_str(source, PathBuf::from("module.pyi"));
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                StubError::ParseError { stub_path, message } => {
+                    assert_eq!(stub_path, PathBuf::from("module.pyi"));
+                    assert!(!message.is_empty());
+                }
+                e => panic!("Expected ParseError, got: {:?}", e),
+            }
+        }
+
+        #[test]
+        fn test_parsed_stub_symbol_names() {
+            let source = r#"
+def func(): ...
+class Klass: ...
+type Alias = int
+VAR: str
+"#;
+            let stub =
+                ParsedStub::parse_str(source, PathBuf::from("module.pyi")).expect("parse failed");
+
+            let names = stub.symbol_names();
+            assert!(names.contains(&"func"));
+            assert!(names.contains(&"Klass"));
+            assert!(names.contains(&"Alias"));
+            assert!(names.contains(&"VAR"));
         }
     }
 }

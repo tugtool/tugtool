@@ -83,6 +83,9 @@ mod type_inference;
 // P2 visitors (dynamic pattern detection)
 mod dynamic;
 
+// P3 visitors (stub parsing)
+mod stub;
+
 // P0 exports
 pub use batch_edit::{
     apply_indentation, detect_indentation, detect_indentation_level, spans_overlap, BatchEditError,
@@ -122,3 +125,9 @@ pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};
 
 // P2 exports
 pub use dynamic::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind};
+
+// P3 exports (stub parsing)
+pub use stub::{
+    StubAttribute, StubClass, StubDecorator, StubFunction, StubSymbols, StubTypeAlias,
+    StubVariable,
+};
