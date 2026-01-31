@@ -4593,13 +4593,13 @@ After completing Steps 0.2.6.1 through 0.2.6.6, you will have:
 
 **Final Step 0.2.6 Checkpoint:**
 
-- [ ] `cargo build -p tugtool-core` succeeds
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-core text` passes
-- [ ] `cargo nextest run -p tugtool-python-cst position_lookup` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
-- [ ] Verify: `PositionIndex::build()` populates all node categories from parsed module
-- [ ] Verify: All concrete examples from (#step-0-2-examples) produce expected results
+- [x] `cargo build -p tugtool-core` succeeds
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-core text` passes (45 tests)
+- [x] `cargo nextest run -p tugtool-python-cst position_lookup` passes (47 tests)
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] Verify: `PositionIndex::build()` populates all node categories from parsed module
+- [x] Verify: All concrete examples from (#step-0-2-examples) produce expected results
 
 **Aggregate Test Command:**
 ```bash
