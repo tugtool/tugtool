@@ -4305,6 +4305,309 @@ let all = index.find_all_at(17);
 
 ---
 
+###### 0.2.6 Execution Steps {#step-0-2-6}
+
+**References:** [Step 0.2](#step-0-2), Spec (#step-0-2-api), Tables in (#step-0-2-internal), Edge Cases (#step-0-2-edge-cases), Integration (#step-0-2-integration), Examples (#step-0-2-examples)
+
+This section breaks the Position Lookup Infrastructure implementation into discrete substeps with individual commits and checkpoints.
+
+**Total Substeps:** 6
+
+**Estimated Complexity:** Medium (well-specified API, clear algorithms, established patterns from Step 0.2.0)
+
+---
+
+###### Step 0.2.6.1: Position Conversion Types {#step-0-2-6-1}
+
+**Commit:** `feat(core): add LineCol and PositionError types for position conversion`
+
+**References:** Spec (#step-0-2-api) - Position Conversion Types section, Edge Cases (#step-0-2-edge-cases) - Column Counting Convention
+
+**Artifacts:**
+- Modified `crates/tugtool-core/src/text.rs`
+- Modified `crates/tugtool-core/src/lib.rs` (exports)
+
+**Tasks:**
+- [ ] Add `LineCol` struct with `line: u32` and `col: u32` fields (1-indexed)
+- [ ] Implement `LineCol::new()` with minimum value clamping (max(1, value))
+- [ ] Add `PositionError` enum with variants: `LineOutOfRange`, `ColumnOutOfRange`, `OffsetOutOfRange`
+- [ ] Implement `std::fmt::Display` for `PositionError`
+- [ ] Implement `std::error::Error` for `PositionError`
+- [ ] Add `PositionResult<T>` type alias
+- [ ] Implement `line_col_to_byte_offset()` with Unicode scalar column counting (per algorithm in #step-0-2-internal)
+- [ ] Implement `byte_offset_to_line_col()` with validation
+- [ ] Export new types from `tugtool-core/src/lib.rs`
+- [ ] Add documentation with Unicode examples
+
+**Tests:**
+- [ ] Unit: `test_line_col_new_clamps_minimum` - Verify line/col minimum is 1
+- [ ] Unit: `test_line_col_to_byte_offset_ascii` - Simple ASCII text conversion
+- [ ] Unit: `test_line_col_to_byte_offset_unicode` - Multi-byte Chinese characters
+- [ ] Unit: `test_line_col_to_byte_offset_multiline` - Multiple lines
+- [ ] Unit: `test_line_col_to_byte_offset_line_out_of_range` - Error case
+- [ ] Unit: `test_line_col_to_byte_offset_col_out_of_range` - Error case
+- [ ] Unit: `test_byte_offset_to_line_col_ascii` - Simple conversion
+- [ ] Unit: `test_byte_offset_to_line_col_unicode` - Multi-byte characters
+- [ ] Unit: `test_byte_offset_to_line_col_out_of_range` - Error case
+- [ ] Unit: `test_byte_offset_to_line_col_roundtrip` - Conversion symmetry
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-core` succeeds
+- [ ] `cargo nextest run -p tugtool-core text` passes
+- [ ] `cargo clippy -p tugtool-core -- -D warnings` passes
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.2.6.2: Node Kind and Info Types {#step-0-2-6-2}
+
+**Commit:** `feat(python-cst): add NodeKind enum and position lookup info types`
+
+**References:** Spec (#step-0-2-api) - NodeKind enum and info structs
+
+**Artifacts:**
+- New `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
+- Modified `crates/tugtool-python-cst/src/visitor/mod.rs`
+
+**Tasks:**
+- [ ] Create `position_lookup.rs` module file
+- [ ] Add `NodeKind` enum with all expression variants (Name, Integer, Float, String, Attribute, Call, BinaryOp, UnaryOp, Compare, BooleanOp, IfExp, Lambda, List, Dict, Set, Tuple, Subscript, Slice, Starred, Await, Yield, NamedExpr, GeneratorExp, ListComp, DictComp, SetComp)
+- [ ] Add `NodeKind` enum with all statement variants (Assign, AugAssign, AnnAssign, Return, Delete, Pass, Break, Continue, Raise, Assert, Import, ImportFrom, Global, Nonlocal, Expr)
+- [ ] Add `NodeKind` enum with compound statement variants (FunctionDef, AsyncFunctionDef, ClassDef, If, For, AsyncFor, While, With, AsyncWith, Try, TryStar, Match)
+- [ ] Add `NodeKind` enum with other variants (Param, Arg, Keyword, Decorator, Alias, ExceptHandler, MatchCase, Comment, Module)
+- [ ] Create `NodeInfo` struct with `kind`, `span`, `node_id` fields
+- [ ] Create `ExpressionInfo` struct with `kind`, `span`, `inner_span`, `is_parenthesized`, `is_complete`, `node_id` fields
+- [ ] Create `StatementInfo` struct with `kind`, `span`, `is_compound`, `node_id` fields
+- [ ] Create `ScopeInfo` struct with `kind`, `lexical_span`, `def_span`, `name`, `node_id` fields
+- [ ] Add `pub mod position_lookup;` to `visitor/mod.rs`
+- [ ] Add `pub use position_lookup::*;` to `visitor/mod.rs`
+- [ ] Add comprehensive documentation for each type
+
+**Tests:**
+- [ ] Unit: `test_node_kind_debug_format` - Verify Debug impl works
+- [ ] Unit: `test_node_info_construction` - Basic struct creation
+- [ ] Unit: `test_expression_info_construction` - All fields populated correctly
+- [ ] Unit: `test_statement_info_construction` - All fields populated correctly
+- [ ] Unit: `test_scope_info_construction` - All fields populated correctly
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst position_lookup` passes
+- [ ] All info types are exported from crate
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.2.6.3: Ancestor Tracker {#step-0-2-6-3}
+
+**Commit:** `feat(python-cst): add AncestorTracker for traversal context`
+
+**References:** Spec (#step-0-2-api) - AncestorTracker and AncestorEntry types, Internal Design (#step-0-2-internal) - Index Building Algorithm
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
+
+**Tasks:**
+- [ ] Create `AncestorEntry` struct with `kind`, `span`, `node_id`, `depth` fields
+- [ ] Create `AncestorTracker` struct with `stack: Vec<AncestorEntry>` field
+- [ ] Implement `AncestorTracker::new()` returning empty tracker
+- [ ] Implement `push(&mut self, kind, span, node_id)` adding to stack
+- [ ] Implement `pop(&mut self)` removing from stack
+- [ ] Implement `parent(&self)` returning top of stack
+- [ ] Implement `depth(&self)` returning stack length
+- [ ] Implement `ancestor_at(&self, depth)` returning entry at index
+- [ ] Implement `in_expression(&self)` checking if any ancestor is expression kind
+- [ ] Implement `inside(&self, kind)` checking if any ancestor matches kind
+- [ ] Implement `enclosing_scope(&self)` finding nearest FunctionDef/ClassDef/Module/Lambda
+
+**Tests:**
+- [ ] Unit: `test_ancestor_tracker_empty` - New tracker has depth 0
+- [ ] Unit: `test_ancestor_tracker_push_pop` - Push/pop maintains LIFO order
+- [ ] Unit: `test_ancestor_tracker_parent` - Returns top of stack
+- [ ] Unit: `test_ancestor_tracker_ancestor_at` - Correct depth indexing
+- [ ] Unit: `test_ancestor_tracker_in_expression` - Detects expression ancestors
+- [ ] Unit: `test_ancestor_tracker_inside` - Detects specific kind
+- [ ] Unit: `test_ancestor_tracker_enclosing_scope` - Finds function/class scope
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst ancestor_tracker` passes
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.2.6.4: Index Builder (Visitor) {#step-0-2-6-4}
+
+**Commit:** `feat(python-cst): add IndexCollector visitor for building PositionIndex`
+
+**References:** Internal Design (#step-0-2-internal) - IndexCollector struct and Visitor impl, Integration (#step-0-2-integration) - Module Structure
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
+
+**Tasks:**
+- [ ] Create `IndexCollector` struct with `positions`, `nodes`, `expressions`, `statements`, `scopes`, `ancestors` fields
+- [ ] Implement `IndexCollector::new(positions: &PositionTable)` constructor
+- [ ] Implement `Visitor` trait for `IndexCollector`:
+  - [ ] `visit_name` - Record NodeInfo and ExpressionInfo
+  - [ ] `visit_integer`, `visit_float`, `visit_string` - Literal expressions
+  - [ ] `visit_attribute`, `visit_call`, `visit_subscript` - Access expressions
+  - [ ] `visit_binary_op`, `visit_unary_op`, `visit_boolean_op`, `visit_comparison` - Operation expressions
+  - [ ] `visit_list`, `visit_dict`, `visit_set`, `visit_tuple` - Container expressions
+  - [ ] `visit_lambda`, `visit_generator_exp`, `visit_list_comp`, `visit_dict_comp`, `visit_set_comp` - Scope-creating expressions
+  - [ ] `visit_if_exp`, `visit_await`, `visit_yield`, `visit_named_expr` - Other expressions
+  - [ ] `visit_assign`, `visit_aug_assign`, `visit_ann_assign` - Assignment statements
+  - [ ] `visit_return`, `visit_delete`, `visit_pass`, `visit_break`, `visit_continue` - Simple statements
+  - [ ] `visit_raise`, `visit_assert`, `visit_import`, `visit_import_from`, `visit_global`, `visit_nonlocal` - Other simple statements
+  - [ ] `visit_function_def`, `visit_async_function_def` - Function definitions (scope + statement)
+  - [ ] `visit_class_def` - Class definition (scope + statement)
+  - [ ] `visit_if`, `visit_for`, `visit_async_for`, `visit_while` - Compound statements
+  - [ ] `visit_with`, `visit_async_with`, `visit_try`, `visit_try_star`, `visit_match` - Other compound statements
+- [ ] Implement corresponding `leave_*` methods for scope/compound nodes to pop from ancestor stack
+- [ ] Handle `is_parenthesized` detection from CST lpar/rpar fields
+- [ ] Handle `is_complete` detection from ancestor tracker context
+
+**Tests:**
+- [ ] Unit: `test_collector_visits_all_expressions` - Parse complex expression, verify all collected
+- [ ] Unit: `test_collector_visits_all_statements` - Parse module with statements, verify all collected
+- [ ] Unit: `test_collector_tracks_scopes` - Nested functions collected as scopes
+- [ ] Unit: `test_collector_tracks_ancestors` - Parent-child relationship preserved
+- [ ] Unit: `test_collector_handles_parenthesized` - (a + b) marked as parenthesized
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst index_collector` passes
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.2.6.5: PositionIndex Structure and Build {#step-0-2-6-5}
+
+**Commit:** `feat(python-cst): add PositionIndex struct with build method`
+
+**References:** Spec (#step-0-2-api) - PositionIndex struct, Internal Design (#step-0-2-internal) - Index Building Algorithm
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
+
+**Tasks:**
+- [ ] Create `PositionIndex` struct with `nodes`, `expressions`, `statements`, `scopes`, `source_len` fields
+- [ ] Implement `PositionIndex::build(module, positions, source)`:
+  - [ ] Create `IndexCollector` with positions reference
+  - [ ] Call `walk_module(module, &mut collector)` for traversal
+  - [ ] Sort `nodes` by `span.start` for binary search
+  - [ ] Sort `expressions` by `span.start`
+  - [ ] Sort `statements` by `span.start`
+  - [ ] Sort `scopes` by `span.start`
+  - [ ] Return assembled `PositionIndex`
+- [ ] Add `source_len()` getter method
+- [ ] Add `node_count()`, `expression_count()`, `statement_count()`, `scope_count()` for introspection
+
+**Tests:**
+- [ ] Unit: `test_position_index_build_simple` - Build from simple module
+- [ ] Unit: `test_position_index_build_empty_module` - Empty source file
+- [ ] Unit: `test_position_index_nodes_sorted` - Verify sorted by span.start
+- [ ] Unit: `test_position_index_counts_accurate` - Count methods return correct values
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst position_index_build` passes
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.2.6.6: Position Lookup Methods {#step-0-2-6-6}
+
+**Commit:** `feat(python-cst): implement position lookup methods for PositionIndex`
+
+**References:** Spec (#step-0-2-api) - lookup method signatures, Internal Design (#step-0-2-internal) - Position Lookup Algorithm, Edge Cases (#step-0-2-edge-cases), Examples (#step-0-2-examples)
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
+
+**Tasks:**
+- [ ] Implement `find_node_at(offset)`:
+  - [ ] Bounds check against `source_len`
+  - [ ] Binary search to find partition point
+  - [ ] Scan backwards to collect candidates where `span.start <= offset < span.end`
+  - [ ] Return smallest (innermost) by span length
+- [ ] Implement `find_expression_at(offset)` using same algorithm on `expressions` vec
+- [ ] Implement `find_statement_at(offset)` using same algorithm on `statements` vec
+- [ ] Implement `find_scope_at(offset)` using same algorithm on `scopes` vec
+- [ ] Implement `find_all_at(offset)`:
+  - [ ] Collect all nodes where span contains offset
+  - [ ] Sort by span size descending (outermost first)
+  - [ ] Return as Vec<&NodeInfo>
+- [ ] Implement `find_enclosing_expression(offset)`:
+  - [ ] Find expression at offset
+  - [ ] If found, search for next-larger expression containing same offset
+  - [ ] Return parent expression or None
+- [ ] Handle all edge cases from (#step-0-2-edge-cases): whitespace, comments, boundaries, EOF, beyond-file
+
+**Tests:**
+- [ ] Unit: `test_find_node_simple_expression` - Name, Integer, String at position
+- [ ] Unit: `test_find_node_nested_expression` - Attribute chain returns innermost
+- [ ] Unit: `test_find_expression_in_call` - Argument position returns argument expr
+- [ ] Unit: `test_find_expression_parenthesized` - (a + b) grouping
+- [ ] Unit: `test_find_expression_binary_op` - Position in operand returns operand
+- [ ] Unit: `test_find_enclosing_statement` - Expression inside statement
+- [ ] Unit: `test_find_enclosing_scope_function` - Nested functions
+- [ ] Unit: `test_find_enclosing_scope_class` - Method inside class
+- [ ] Unit: `test_find_enclosing_scope_lambda` - Lambda body
+- [ ] Unit: `test_find_enclosing_scope_comprehension` - List comp variable
+- [ ] Unit: `test_position_at_whitespace` - Returns None for node lookup
+- [ ] Unit: `test_position_at_comment` - Returns None (comments not in CST)
+- [ ] Unit: `test_position_between_statements` - Returns None for node, scope for scope
+- [ ] Unit: `test_position_at_eof` - Returns module scope
+- [ ] Unit: `test_position_beyond_file` - Returns None
+- [ ] Unit: `test_find_all_at` - Returns correct hierarchy outermost to innermost
+- [ ] Unit: `test_find_enclosing_expression` - Attribute chain parent lookup
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst position_lookup` passes
+- [ ] All lookup functions return correct spans for examples in (#step-0-2-examples)
+
+**Rollback:** Revert commit
+
+---
+
+###### Step 0.2.6 Summary {#step-0-2-6-summary}
+
+After completing Steps 0.2.6.1 through 0.2.6.6, you will have:
+
+- `LineCol` struct and `PositionError` enum in `tugtool-core/src/text.rs`
+- `line_col_to_byte_offset()` and `byte_offset_to_line_col()` functions with Unicode support
+- `NodeKind` enum covering all Python CST node types
+- `NodeInfo`, `ExpressionInfo`, `StatementInfo`, `ScopeInfo` structs for lookup results
+- `AncestorTracker` for tracking parent-child relationships during traversal
+- `IndexCollector` visitor that builds index data during CST traversal
+- `PositionIndex` struct with efficient O(log n) lookup via binary search
+- Lookup methods: `find_node_at`, `find_expression_at`, `find_statement_at`, `find_scope_at`, `find_all_at`, `find_enclosing_expression`
+- Comprehensive edge case handling per (#step-0-2-edge-cases)
+
+**Final Step 0.2.6 Checkpoint:**
+
+- [ ] `cargo build -p tugtool-core` succeeds
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-core text` passes
+- [ ] `cargo nextest run -p tugtool-python-cst position_lookup` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [ ] Verify: `PositionIndex::build()` populates all node categories from parsed module
+- [ ] Verify: All concrete examples from (#step-0-2-examples) produce expected results
+
+**Aggregate Test Command:**
+```bash
+cargo nextest run -p tugtool-core text && cargo nextest run -p tugtool-python-cst position_lookup
+```
+
+---
+
 ##### Step 0.3: Stub Discovery Infrastructure {#step-0-3}
 
 **Commit:** `feat(python): add type stub discovery and update infrastructure`
