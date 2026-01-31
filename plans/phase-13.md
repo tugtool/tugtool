@@ -4449,37 +4449,37 @@ This section breaks the Position Lookup Infrastructure implementation into discr
 - Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
 
 **Tasks:**
-- [ ] Create `IndexCollector` struct with `positions`, `nodes`, `expressions`, `statements`, `scopes`, `ancestors` fields
-- [ ] Implement `IndexCollector::new(positions: &PositionTable)` constructor
-- [ ] Implement `Visitor` trait for `IndexCollector`:
-  - [ ] `visit_name` - Record NodeInfo and ExpressionInfo
-  - [ ] `visit_integer`, `visit_float`, `visit_string` - Literal expressions
-  - [ ] `visit_attribute`, `visit_call`, `visit_subscript` - Access expressions
-  - [ ] `visit_binary_op`, `visit_unary_op`, `visit_boolean_op`, `visit_comparison` - Operation expressions
-  - [ ] `visit_list`, `visit_dict`, `visit_set`, `visit_tuple` - Container expressions
-  - [ ] `visit_lambda`, `visit_generator_exp`, `visit_list_comp`, `visit_dict_comp`, `visit_set_comp` - Scope-creating expressions
-  - [ ] `visit_if_exp`, `visit_await`, `visit_yield`, `visit_named_expr` - Other expressions
-  - [ ] `visit_assign`, `visit_aug_assign`, `visit_ann_assign` - Assignment statements
-  - [ ] `visit_return`, `visit_delete`, `visit_pass`, `visit_break`, `visit_continue` - Simple statements
-  - [ ] `visit_raise`, `visit_assert`, `visit_import`, `visit_import_from`, `visit_global`, `visit_nonlocal` - Other simple statements
-  - [ ] `visit_function_def`, `visit_async_function_def` - Function definitions (scope + statement)
-  - [ ] `visit_class_def` - Class definition (scope + statement)
-  - [ ] `visit_if`, `visit_for`, `visit_async_for`, `visit_while` - Compound statements
-  - [ ] `visit_with`, `visit_async_with`, `visit_try`, `visit_try_star`, `visit_match` - Other compound statements
-- [ ] Implement corresponding `leave_*` methods for scope/compound nodes to pop from ancestor stack
-- [ ] Handle `is_parenthesized` detection from CST lpar/rpar fields
-- [ ] Handle `is_complete` detection from ancestor tracker context
+- [x] Create `IndexCollector` struct with `positions`, `nodes`, `expressions`, `statements`, `scopes`, `ancestors` fields
+- [x] Implement `IndexCollector::new(positions: &PositionTable)` constructor
+- [x] Implement `Visitor` trait for `IndexCollector`:
+  - [x] `visit_name` - Record NodeInfo and ExpressionInfo
+  - [x] `visit_integer`, `visit_float`, `visit_string` - Literal expressions
+  - [x] `visit_attribute`, `visit_call`, `visit_subscript` - Access expressions
+  - [x] `visit_binary_op`, `visit_unary_op`, `visit_boolean_op`, `visit_comparison` - Operation expressions
+  - [x] `visit_list`, `visit_dict`, `visit_set`, `visit_tuple` - Container expressions
+  - [x] `visit_lambda`, `visit_generator_exp`, `visit_list_comp`, `visit_dict_comp`, `visit_set_comp` - Scope-creating expressions
+  - [x] `visit_if_exp`, `visit_await`, `visit_yield`, `visit_named_expr` - Other expressions
+  - [x] `visit_assign`, `visit_aug_assign`, `visit_ann_assign` - Assignment statements
+  - [x] `visit_return`, `visit_delete`, `visit_pass`, `visit_break`, `visit_continue` - Simple statements
+  - [x] `visit_raise`, `visit_assert`, `visit_import`, `visit_import_from`, `visit_global`, `visit_nonlocal` - Other simple statements
+  - [x] `visit_function_def`, `visit_async_function_def` - Function definitions (scope + statement)
+  - [x] `visit_class_def` - Class definition (scope + statement)
+  - [x] `visit_if`, `visit_for`, `visit_async_for`, `visit_while` - Compound statements
+  - [x] `visit_with`, `visit_async_with`, `visit_try`, `visit_try_star`, `visit_match` - Other compound statements
+- [x] Implement corresponding `leave_*` methods for scope/compound nodes to pop from ancestor stack
+- [x] Handle `is_parenthesized` detection from CST lpar/rpar fields
+- [x] Handle `is_complete` detection from ancestor tracker context
 
 **Tests:**
-- [ ] Unit: `test_collector_visits_all_expressions` - Parse complex expression, verify all collected
-- [ ] Unit: `test_collector_visits_all_statements` - Parse module with statements, verify all collected
-- [ ] Unit: `test_collector_tracks_scopes` - Nested functions collected as scopes
-- [ ] Unit: `test_collector_tracks_ancestors` - Parent-child relationship preserved
-- [ ] Unit: `test_collector_handles_parenthesized` - (a + b) marked as parenthesized
+- [x] Unit: `test_collector_visits_all_expressions` - Parse complex expression, verify all collected
+- [x] Unit: `test_collector_visits_all_statements` - Parse module with statements, verify all collected
+- [x] Unit: `test_collector_tracks_scopes` - Nested functions collected as scopes
+- [x] Unit: `test_collector_tracks_ancestors` - Parent-child relationship preserved
+- [x] Unit: `test_collector_handles_parenthesized` - (a + b) marked as parenthesized
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst index_collector` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst test_collector` passes
 
 **Rollback:** Revert commit
 

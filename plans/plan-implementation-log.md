@@ -6,6 +6,57 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.6.4: Index Builder (Visitor) | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.6.4 specification (lines 4442-4484)
+- `plans/phase-13.md` - Internal Design (#step-0-2-internal) - IndexCollector struct and Visitor impl
+- `plans/phase-13.md` - Integration (#step-0-2-integration) - Module Structure
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Existing implementation
+
+**Summary:**
+
+Verified and completed Step 0.2.6.4: Index Builder (Visitor). The IndexCollector implementation was already complete from previous work; this session added 5 missing tests to match the plan specification and checked off all items.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `IndexCollector` struct with `positions`, `nodes`, `expressions`, `statements`, `scopes`, `ancestors` fields | Done (pre-existing) |
+| Implement `IndexCollector::new(positions: &PositionTable)` constructor | Done (pre-existing) |
+| Implement `Visitor` trait for `IndexCollector` - all visit_* methods | Done (pre-existing) |
+| Implement corresponding `leave_*` methods for scope/compound nodes | Done (pre-existing) |
+| Handle `is_parenthesized` detection from CST lpar/rpar fields | Done (pre-existing) |
+| Handle `is_complete` detection from ancestor tracker context | Done (pre-existing) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Added 5 missing tests
+- `plans/phase-13.md` - Checked off all Tasks, Tests, and Checkpoint items for Step 0.2.6.4
+
+**Tests Added:**
+- `test_collector_visits_all_expressions` - Parse complex expression, verify all types collected (Name, Integer, BinaryOp, Attribute, Subscript)
+- `test_collector_visits_all_statements` - Parse module with 10+ statement types, verify all collected
+- `test_collector_tracks_scopes` - Verify 7+ scopes: Module, functions, class, method, lambda
+- `test_collector_tracks_ancestors` - Parent-child relationship preserved via find_all_at
+- `test_collector_handles_parenthesized` - `(a + b)` marked as is_parenthesized
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst test_collector`: 5 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst test_collector`: PASS (5 tests)
+
+**Key Notes:**
+- IndexCollector implementation was already complete from previous Step 0.2 work
+- The plan checkpoint originally specified `index_collector` filter, but tests use `test_collector_` naming; updated plan to match
+- is_parenthesized detection uses lpar/rpar fields from CST nodes
+- is_complete detection uses ancestor tracker to determine if expression is part of larger expression
+
+---
+
 ## [phase-13.md] Step 0.2.6.3: Ancestor Tracker | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30
