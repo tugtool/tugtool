@@ -4495,27 +4495,27 @@ This section breaks the Position Lookup Infrastructure implementation into discr
 - Modified `crates/tugtool-python-cst/src/visitor/position_lookup.rs`
 
 **Tasks:**
-- [ ] Create `PositionIndex` struct with `nodes`, `expressions`, `statements`, `scopes`, `source_len` fields
-- [ ] Implement `PositionIndex::build(module, positions, source)`:
-  - [ ] Create `IndexCollector` with positions reference
-  - [ ] Call `walk_module(module, &mut collector)` for traversal
-  - [ ] Sort `nodes` by `span.start` for binary search
-  - [ ] Sort `expressions` by `span.start`
-  - [ ] Sort `statements` by `span.start`
-  - [ ] Sort `scopes` by `span.start`
-  - [ ] Return assembled `PositionIndex`
-- [ ] Add `source_len()` getter method
-- [ ] Add `node_count()`, `expression_count()`, `statement_count()`, `scope_count()` for introspection
+- [x] Create `PositionIndex` struct with `nodes`, `expressions`, `statements`, `scopes`, `source_len` fields
+- [x] Implement `PositionIndex::build(module, positions, source)`:
+  - [x] Create `IndexCollector` with positions reference
+  - [x] Call `walk_module(module, &mut collector)` for traversal
+  - [x] Sort `nodes` by `span.start` for binary search
+  - [x] Sort `expressions` by `span.start`
+  - [x] Sort `statements` by `span.start`
+  - [x] Sort `scopes` by `span.start`
+  - [x] Return assembled `PositionIndex`
+- [x] Add `source_len()` getter method
+- [x] Add `node_count()`, `expression_count()`, `statement_count()`, `scope_count()` for introspection
 
 **Tests:**
-- [ ] Unit: `test_position_index_build_simple` - Build from simple module
-- [ ] Unit: `test_position_index_build_empty_module` - Empty source file
-- [ ] Unit: `test_position_index_nodes_sorted` - Verify sorted by span.start
-- [ ] Unit: `test_position_index_counts_accurate` - Count methods return correct values
+- [x] Unit: `test_position_index_build_simple` - Build from simple module
+- [x] Unit: `test_position_index_build_empty_module` - Empty source file
+- [x] Unit: `test_position_index_nodes_sorted` - Verify sorted by span.start
+- [x] Unit: `test_position_index_counts_accurate` - Count methods return correct values
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst position_index_build` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst test_position_index` passes
 
 **Rollback:** Revert commit
 

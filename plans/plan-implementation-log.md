@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.6.5: PositionIndex Structure and Build | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.6.5 specification (lines 4488-4520)
+- `plans/phase-13.md` - API specification (#step-0-2-api) - PositionIndex struct
+- `plans/phase-13.md` - Internal Design (#step-0-2-internal) - Index Building Algorithm
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Existing implementation
+
+**Summary:**
+
+Verified and completed Step 0.2.6.5: PositionIndex Structure and Build. The PositionIndex struct and build method were already complete from previous work; this session added the missing `source_len()` getter method and 4 unit tests to match the plan specification.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `PositionIndex` struct with `nodes`, `expressions`, `statements`, `scopes`, `source_len` fields | Done (pre-existing) |
+| Implement `PositionIndex::build(module, positions, source)` | Done (pre-existing) |
+| - Create `IndexCollector` with positions reference | Done (pre-existing) |
+| - Call `walk_module(module, &mut collector)` for traversal | Done (pre-existing) |
+| - Sort `nodes` by `span.start` for binary search | Done (pre-existing) |
+| - Sort `expressions` by `span.start` | Done (pre-existing) |
+| - Sort `statements` by `span.start` | Done (pre-existing) |
+| - Sort `scopes` by `span.start` | Done (pre-existing) |
+| - Return assembled `PositionIndex` | Done (pre-existing) |
+| Add `source_len()` getter method | Done (added) |
+| Add `node_count()`, `expression_count()`, `statement_count()`, `scope_count()` for introspection | Done (pre-existing) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Added `source_len()` getter method and 4 unit tests
+- `plans/phase-13.md` - Checked off all Tasks, Tests, and Checkpoint items for Step 0.2.6.5
+
+**Tests Added:**
+- `test_position_index_build_simple` - Build from simple module with function and assignment
+- `test_position_index_build_empty_module` - Empty source file handling
+- `test_position_index_nodes_sorted` - Verify sorted by span.start for binary search
+- `test_position_index_counts_accurate` - Count methods return correct values
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst test_position_index`: 4 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst test_position_index`: PASS (4 tests)
+
+**Key Notes:**
+- Most of the PositionIndex implementation was already complete from previous Step 0.2 work
+- The only missing piece was the `source_len()` getter method, which was added
+- Updated the checkpoint filter in the plan from `position_index_build` to `test_position_index` to match actual test naming convention
+
+---
+
 ## [phase-13.md] Step 0.2.6.4: Index Builder (Visitor) | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

@@ -725,6 +725,11 @@ impl PositionIndex {
     pub fn scope_count(&self) -> usize {
         self.scopes.len()
     }
+
+    /// Returns the source length used for bounds checking.
+    pub fn source_len(&self) -> usize {
+        self.source_len
+    }
 }
 
 // ============================================================================
@@ -2533,5 +2538,155 @@ class Bar:
 
         // Module + foo + Bar + method = at least 4 scopes
         assert!(index.scope_count() >= 4);
+    }
+
+    // ========================================================================
+    // PositionIndex build tests (Step 0.2.6.5)
+    // ========================================================================
+
+    #[test]
+    fn test_position_index_build_simple() {
+        // Build from simple module with function and assignment
+        let source = r#"
+def greet(name):
+    message = "Hello, " + name
+    return message
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Index should be built successfully
+        assert!(index.node_count() > 0);
+        assert!(index.expression_count() > 0);
+        assert!(index.statement_count() > 0);
+        assert!(index.scope_count() > 0);
+
+        // Source length should be captured correctly
+        assert_eq!(index.source_len(), source.len());
+
+        // Should have at least 2 scopes: Module + greet function
+        assert!(index.scope_count() >= 2);
+
+        // Verify we can find the function scope
+        // "def greet" starts around byte offset 1
+        let scope = index.find_scope_at(5);
+        assert!(scope.is_some());
+        let scope_info = scope.unwrap();
+        assert_eq!(scope_info.kind, NodeKind::FunctionDef);
+        assert_eq!(scope_info.name, Some("greet".to_string()));
+    }
+
+    #[test]
+    fn test_position_index_build_empty_module() {
+        // Empty source file
+        let source = "";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Should have exactly 1 node (Module) and 1 scope (Module)
+        assert_eq!(index.node_count(), 1);
+        assert_eq!(index.expression_count(), 0);
+        assert_eq!(index.statement_count(), 0);
+        assert_eq!(index.scope_count(), 1);
+        assert_eq!(index.source_len(), 0);
+
+        // The only scope is the module itself
+        let scope = index.find_scope_at(0);
+        // Empty source has no position to find
+        // The module span is 0..0 which doesn't contain offset 0 with exclusive end
+        // So this returns None for empty file
+        assert!(scope.is_none());
+    }
+
+    #[test]
+    fn test_position_index_nodes_sorted() {
+        // Verify nodes are sorted by span.start for binary search
+        let source = r#"
+a = 1
+b = 2
+c = a + b
+def foo():
+    return c
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // We can't access internal nodes directly, but we can verify lookup works
+        // which requires sorted order. Test at various positions.
+
+        // Position in first assignment
+        let node1 = index.find_node_at(1);
+        assert!(node1.is_some());
+
+        // Position in second assignment
+        let node2 = index.find_node_at(7);
+        assert!(node2.is_some());
+
+        // Position in third assignment
+        let node3 = index.find_node_at(13);
+        assert!(node3.is_some());
+
+        // Position in function
+        let node4 = index.find_node_at(25);
+        assert!(node4.is_some());
+
+        // Also verify that find_all_at returns nodes in outermost-first order
+        // which implies proper sorting
+        let all_nodes = index.find_all_at(25);
+        assert!(!all_nodes.is_empty());
+        // First should be Module (largest span)
+        assert_eq!(all_nodes[0].kind, NodeKind::Module);
+    }
+
+    #[test]
+    fn test_position_index_counts_accurate() {
+        // Count methods return correct values
+        let source = r#"
+import os
+
+x = 1
+y = 2
+z = x + y
+
+def add(a, b):
+    return a + b
+
+def multiply(a, b):
+    result = a * b
+    return result
+
+class Calculator:
+    def compute(self, x, y):
+        return x + y
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let index = PositionIndex::build(&parsed.module, &parsed.positions, source);
+
+        // Verify counts are non-zero and reasonable
+        let node_count = index.node_count();
+        let expr_count = index.expression_count();
+        let stmt_count = index.statement_count();
+        let scope_count = index.scope_count();
+
+        // Node count should be >= sum of others (some overlap)
+        assert!(node_count > 0);
+        assert!(expr_count > 0);
+        assert!(stmt_count > 0);
+        assert!(scope_count > 0);
+
+        // Expressions: x, y, z, x+y, 1, 2, a, b, a+b, a, b, result, a*b, a, b,
+        //              self, x, y, x+y, os (from import)
+        // At least 10 expressions
+        assert!(expr_count >= 10, "Expected at least 10 expressions, got {}", expr_count);
+
+        // Statements: import, 3 assignments, 2 function defs, 1 class def, return statements
+        // At least 7 statements
+        assert!(stmt_count >= 7, "Expected at least 7 statements, got {}", stmt_count);
+
+        // Scopes: Module + add + multiply + Calculator + compute = 5
+        assert_eq!(scope_count, 5, "Expected 5 scopes, got {}", scope_count);
+
+        // source_len should match
+        assert_eq!(index.source_len(), source.len());
     }
 }
