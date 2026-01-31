@@ -4371,30 +4371,30 @@ This section breaks the Position Lookup Infrastructure implementation into discr
 - Modified `crates/tugtool-python-cst/src/visitor/mod.rs`
 
 **Tasks:**
-- [ ] Create `position_lookup.rs` module file
-- [ ] Add `NodeKind` enum with all expression variants (Name, Integer, Float, String, Attribute, Call, BinaryOp, UnaryOp, Compare, BooleanOp, IfExp, Lambda, List, Dict, Set, Tuple, Subscript, Slice, Starred, Await, Yield, NamedExpr, GeneratorExp, ListComp, DictComp, SetComp)
-- [ ] Add `NodeKind` enum with all statement variants (Assign, AugAssign, AnnAssign, Return, Delete, Pass, Break, Continue, Raise, Assert, Import, ImportFrom, Global, Nonlocal, Expr)
-- [ ] Add `NodeKind` enum with compound statement variants (FunctionDef, AsyncFunctionDef, ClassDef, If, For, AsyncFor, While, With, AsyncWith, Try, TryStar, Match)
-- [ ] Add `NodeKind` enum with other variants (Param, Arg, Keyword, Decorator, Alias, ExceptHandler, MatchCase, Comment, Module)
-- [ ] Create `NodeInfo` struct with `kind`, `span`, `node_id` fields
-- [ ] Create `ExpressionInfo` struct with `kind`, `span`, `inner_span`, `is_parenthesized`, `is_complete`, `node_id` fields
-- [ ] Create `StatementInfo` struct with `kind`, `span`, `is_compound`, `node_id` fields
-- [ ] Create `ScopeInfo` struct with `kind`, `lexical_span`, `def_span`, `name`, `node_id` fields
-- [ ] Add `pub mod position_lookup;` to `visitor/mod.rs`
-- [ ] Add `pub use position_lookup::*;` to `visitor/mod.rs`
-- [ ] Add comprehensive documentation for each type
+- [x] Create `position_lookup.rs` module file
+- [x] Add `NodeKind` enum with all expression variants (Name, Integer, Float, String, Attribute, Call, BinaryOp, UnaryOp, Compare, BooleanOp, IfExp, Lambda, List, Dict, Set, Tuple, Subscript, Slice, Starred, Await, Yield, NamedExpr, GeneratorExp, ListComp, DictComp, SetComp)
+- [x] Add `NodeKind` enum with all statement variants (Assign, AugAssign, AnnAssign, Return, Delete, Pass, Break, Continue, Raise, Assert, Import, ImportFrom, Global, Nonlocal, Expr)
+- [x] Add `NodeKind` enum with compound statement variants (FunctionDef, AsyncFunctionDef, ClassDef, If, For, AsyncFor, While, With, AsyncWith, Try, TryStar, Match)
+- [x] Add `NodeKind` enum with other variants (Param, Arg, Keyword, Decorator, Alias, ExceptHandler, MatchCase, Comment, Module)
+- [x] Create `NodeInfo` struct with `kind`, `span`, `node_id` fields
+- [x] Create `ExpressionInfo` struct with `kind`, `span`, `inner_span`, `is_parenthesized`, `is_complete`, `node_id` fields
+- [x] Create `StatementInfo` struct with `kind`, `span`, `is_compound`, `node_id` fields
+- [x] Create `ScopeInfo` struct with `kind`, `lexical_span`, `def_span`, `name`, `node_id` fields
+- [x] Add `pub mod position_lookup;` to `visitor/mod.rs`
+- [x] Add `pub use position_lookup::*;` to `visitor/mod.rs`
+- [x] Add comprehensive documentation for each type
 
 **Tests:**
-- [ ] Unit: `test_node_kind_debug_format` - Verify Debug impl works
-- [ ] Unit: `test_node_info_construction` - Basic struct creation
-- [ ] Unit: `test_expression_info_construction` - All fields populated correctly
-- [ ] Unit: `test_statement_info_construction` - All fields populated correctly
-- [ ] Unit: `test_scope_info_construction` - All fields populated correctly
+- [x] Unit: `test_node_kind_debug_format` - Verify Debug impl works
+- [x] Unit: `test_node_info_construction` - Basic struct creation
+- [x] Unit: `test_expression_info_construction` - All fields populated correctly
+- [x] Unit: `test_statement_info_construction` - All fields populated correctly
+- [x] Unit: `test_scope_info_construction` - All fields populated correctly
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst position_lookup` passes
-- [ ] All info types are exported from crate
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst position_lookup` passes
+- [x] All info types are exported from crate
 
 **Rollback:** Revert commit
 

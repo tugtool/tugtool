@@ -1987,6 +1987,165 @@ mod tests {
     // ========================================================================
 
     #[test]
+    fn test_node_kind_debug_format() {
+        // Verify Debug impl works for all variants
+        let kinds = [
+            NodeKind::Name,
+            NodeKind::Integer,
+            NodeKind::Float,
+            NodeKind::String,
+            NodeKind::Attribute,
+            NodeKind::Call,
+            NodeKind::BinaryOp,
+            NodeKind::FunctionDef,
+            NodeKind::ClassDef,
+            NodeKind::If,
+            NodeKind::Module,
+        ];
+
+        for kind in &kinds {
+            let debug_str = format!("{:?}", kind);
+            assert!(!debug_str.is_empty());
+        }
+
+        // Test specific format
+        assert_eq!(format!("{:?}", NodeKind::Name), "Name");
+        assert_eq!(format!("{:?}", NodeKind::FunctionDef), "FunctionDef");
+    }
+
+    #[test]
+    fn test_node_info_construction() {
+        // Test basic NodeInfo struct creation
+        let info = NodeInfo {
+            kind: NodeKind::Name,
+            span: Span::new(0, 5),
+            node_id: None,
+        };
+
+        assert_eq!(info.kind, NodeKind::Name);
+        assert_eq!(info.span.start, 0);
+        assert_eq!(info.span.end, 5);
+        assert!(info.node_id.is_none());
+
+        // With node_id
+        let info_with_id = NodeInfo {
+            kind: NodeKind::Call,
+            span: Span::new(10, 20),
+            node_id: Some(NodeId::new(42)),
+        };
+
+        assert_eq!(info_with_id.kind, NodeKind::Call);
+        assert_eq!(info_with_id.node_id, Some(NodeId::new(42)));
+    }
+
+    #[test]
+    fn test_expression_info_construction() {
+        // Test all fields of ExpressionInfo
+        let info = ExpressionInfo {
+            kind: NodeKind::BinaryOp,
+            span: Span::new(0, 10),
+            inner_span: Span::new(1, 9),
+            is_parenthesized: true,
+            is_complete: false,
+            node_id: Some(NodeId::new(7)),
+        };
+
+        assert_eq!(info.kind, NodeKind::BinaryOp);
+        assert_eq!(info.span.start, 0);
+        assert_eq!(info.span.end, 10);
+        assert_eq!(info.inner_span.start, 1);
+        assert_eq!(info.inner_span.end, 9);
+        assert!(info.is_parenthesized);
+        assert!(!info.is_complete);
+        assert_eq!(info.node_id, Some(NodeId::new(7)));
+
+        // Test non-parenthesized, complete expression
+        let complete_info = ExpressionInfo {
+            kind: NodeKind::Name,
+            span: Span::new(5, 8),
+            inner_span: Span::new(5, 8),
+            is_parenthesized: false,
+            is_complete: true,
+            node_id: None,
+        };
+
+        assert!(!complete_info.is_parenthesized);
+        assert!(complete_info.is_complete);
+        assert_eq!(complete_info.span, complete_info.inner_span);
+    }
+
+    #[test]
+    fn test_statement_info_construction() {
+        // Test simple statement
+        let simple_stmt = StatementInfo {
+            kind: NodeKind::Assign,
+            span: Span::new(0, 10),
+            is_compound: false,
+            node_id: Some(NodeId::new(1)),
+        };
+
+        assert_eq!(simple_stmt.kind, NodeKind::Assign);
+        assert!(!simple_stmt.is_compound);
+        assert_eq!(simple_stmt.span.start, 0);
+        assert_eq!(simple_stmt.span.end, 10);
+
+        // Test compound statement
+        let compound_stmt = StatementInfo {
+            kind: NodeKind::FunctionDef,
+            span: Span::new(0, 50),
+            is_compound: true,
+            node_id: Some(NodeId::new(2)),
+        };
+
+        assert_eq!(compound_stmt.kind, NodeKind::FunctionDef);
+        assert!(compound_stmt.is_compound);
+    }
+
+    #[test]
+    fn test_scope_info_construction() {
+        // Test named scope (function)
+        let func_scope = ScopeLookupInfo {
+            kind: NodeKind::FunctionDef,
+            lexical_span: Span::new(10, 100),
+            def_span: Some(Span::new(0, 100)),
+            name: Some("my_function".to_string()),
+            node_id: Some(NodeId::new(5)),
+        };
+
+        assert_eq!(func_scope.kind, NodeKind::FunctionDef);
+        assert_eq!(func_scope.lexical_span.start, 10);
+        assert_eq!(func_scope.lexical_span.end, 100);
+        assert!(func_scope.def_span.is_some());
+        assert_eq!(func_scope.def_span.unwrap().start, 0);
+        assert_eq!(func_scope.name, Some("my_function".to_string()));
+
+        // Test unnamed scope (lambda)
+        let lambda_scope = ScopeLookupInfo {
+            kind: NodeKind::Lambda,
+            lexical_span: Span::new(5, 20),
+            def_span: None,
+            name: None,
+            node_id: Some(NodeId::new(10)),
+        };
+
+        assert_eq!(lambda_scope.kind, NodeKind::Lambda);
+        assert!(lambda_scope.def_span.is_none());
+        assert!(lambda_scope.name.is_none());
+
+        // Test module scope
+        let module_scope = ScopeLookupInfo {
+            kind: NodeKind::Module,
+            lexical_span: Span::new(0, 500),
+            def_span: None,
+            name: None,
+            node_id: None,
+        };
+
+        assert_eq!(module_scope.kind, NodeKind::Module);
+        assert!(module_scope.node_id.is_none());
+    }
+
+    #[test]
     fn test_node_kind_is_expression() {
         assert!(NodeKind::Name.is_expression());
         assert!(NodeKind::Call.is_expression());

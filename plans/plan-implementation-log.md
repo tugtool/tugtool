@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.2.6.2: Node Kind and Info Types | COMPLETE | 2026-01-30
+
+**Completed:** 2026-01-30
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.2.6.2 specification (lines 4363-4401)
+- `plans/phase-13.md` - API specification (#step-0-2-api) for NodeKind and info structs
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Existing implementation
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Module exports
+
+**Summary:**
+
+Verified and completed Step 0.2.6.2: Node Kind and Info Types. The core implementation was already present from previous work; this session added 5 missing tests to match the plan specification and checked off all items.
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `position_lookup.rs` module file | Done (pre-existing) |
+| Add `NodeKind` enum with all expression variants | Done (pre-existing, plus additional variants) |
+| Add `NodeKind` enum with all statement variants | Done (pre-existing) |
+| Add `NodeKind` enum with compound statement variants | Done (pre-existing) |
+| Add `NodeKind` enum with other variants | Done (pre-existing) |
+| Create `NodeInfo` struct | Done (pre-existing) |
+| Create `ExpressionInfo` struct | Done (pre-existing) |
+| Create `StatementInfo` struct | Done (pre-existing) |
+| Create `ScopeInfo` struct | Done (as `ScopeLookupInfo` to avoid conflict) |
+| Add `pub mod position_lookup;` to `visitor/mod.rs` | Done (pre-existing) |
+| Add `pub use position_lookup::*;` to `visitor/mod.rs` | Done (pre-existing, selective exports) |
+| Add comprehensive documentation | Done (pre-existing) |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - Added 5 missing tests
+- `plans/phase-13.md` - Checked off all Tasks, Tests, and Checkpoint items for Step 0.2.6.2
+
+**Tests Added:**
+- `test_node_kind_debug_format` - Verify Debug impl works for various NodeKind variants
+- `test_node_info_construction` - Basic NodeInfo struct creation
+- `test_expression_info_construction` - ExpressionInfo with all fields populated
+- `test_statement_info_construction` - StatementInfo for simple and compound statements
+- `test_scope_info_construction` - ScopeLookupInfo for function scope
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst position_lookup`: 26 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst`: PASS
+- `cargo nextest run -p tugtool-python-cst position_lookup`: PASS (26 tests)
+- All info types exported from crate: PASS
+
+**Key Notes:**
+- Implementation was already complete from previous work
+- NodeKind has additional variants beyond spec: Imaginary, ConcatenatedString, FormattedString, TemplatedString, Ellipsis, TypeAlias
+- ScopeInfo was named `ScopeLookupInfo` to avoid conflict with existing `ScopeInfo` in scope module
+- All 5 specified tests now exist and pass
+
+---
+
 ## [phase-13.md] Step 0.2.6.1: Position Conversion Types | COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30
