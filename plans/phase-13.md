@@ -5597,31 +5597,31 @@ This section breaks the Stub Discovery Infrastructure implementation into discre
 - Modified `crates/tugtool-python/src/stubs.rs`
 
 **Tasks:**
-- [ ] Implement `module_path_from_source(&self, source_path)` helper
-- [ ] Extend `find_stub_for()` to check `stubs/` folder at workspace root
-- [ ] Implement `find_typeshed_style_stub(&self, source_path, module_path)` for `pkg-stubs/` pattern
-- [ ] Extend `find_stub_for()` to check typeshed-style locations (when `check_typeshed_style` is true)
-- [ ] Extend `find_stub_for()` to check `extra_stub_dirs`
-- [ ] Implement `find_stub_or_err(&self, source_path)` returning error with searched locations
-- [ ] Implement `search_locations(&self, source_path)` returning all searched paths
-- [ ] Handle `__init__.py` -> `__init__.pyi` mapping
-- [ ] Handle nested package paths (`pkg/sub/module.py` -> `pkg/sub/module.pyi`)
+- [x] Implement `module_path_from_source(&self, source_path)` helper
+- [x] Extend `find_stub_for()` to check `stubs/` folder at workspace root
+- [x] Implement `find_typeshed_style_stub(&self, source_path, module_path)` for `pkg-stubs/` pattern
+- [x] Extend `find_stub_for()` to check typeshed-style locations (when `check_typeshed_style` is true)
+- [x] Extend `find_stub_for()` to check `extra_stub_dirs`
+- [x] Implement `find_stub_or_err(&self, source_path)` returning error with searched locations
+- [x] Implement `search_locations(&self, source_path)` returning all searched paths
+- [x] Handle `__init__.py` -> `__init__.pyi` mapping
+- [x] Handle nested package paths (`pkg/sub/module.py` -> `pkg/sub/module.pyi`)
 
 **Tests:**
-- [ ] Unit: `test_find_stub_stubs_folder` - Stubs folder detection (Example 2)
-- [ ] Unit: `test_find_stub_typeshed_style` - pkg-stubs pattern detection
-- [ ] Unit: `test_find_stub_extra_dirs` - Custom stub directories
-- [ ] Unit: `test_find_stub_priority_inline_first` - Inline stub takes precedence
-- [ ] Unit: `test_find_stub_priority_stubs_folder_second` - Stubs folder before typeshed
-- [ ] Unit: `test_find_stub_init_py` - `__init__.py` to `__init__.pyi`
-- [ ] Unit: `test_find_stub_nested_package` - Deep package paths
-- [ ] Unit: `test_find_stub_or_err_not_found` - Error with searched locations
-- [ ] Unit: `test_search_locations_complete` - All paths returned
+- [x] Unit: `test_find_stub_stubs_folder` - Stubs folder detection (Example 2)
+- [x] Unit: `test_find_stub_typeshed_style` - pkg-stubs pattern detection
+- [x] Unit: `test_find_stub_extra_dirs` - Custom stub directories
+- [x] Unit: `test_find_stub_priority_inline_first` - Inline stub takes precedence
+- [x] Unit: `test_find_stub_priority_stubs_folder_second` - Stubs folder before typeshed
+- [x] Unit: `test_find_stub_init_py` - `__init__.py` to `__init__.pyi`
+- [x] Unit: `test_find_stub_nested_package` - Deep package paths
+- [x] Unit: `test_find_stub_or_err_not_found` - Error with searched locations
+- [x] Unit: `test_search_locations_complete` - All paths returned
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python stub_discovery` passes
-- [ ] Stub discovery works for inline, stubs folder, and typeshed-style
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python stub_discovery` passes
+- [x] Stub discovery works for inline, stubs folder, and typeshed-style
 
 **Rollback:** Revert commit
 

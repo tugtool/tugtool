@@ -403,10 +403,14 @@ impl StubDiscovery {
     ///
     /// Returns `Some(StubInfo)` if a stub exists, `None` if no stub found.
     ///
-    /// # Discovery Order (MVP - inline only)
+    /// # Discovery Order
     ///
-    /// Currently only checks for inline stubs (`module.pyi` in same directory).
-    /// Future steps will add stubs folder and typeshed-style discovery.
+    /// Stubs are searched in the following order (first match wins):
+    ///
+    /// 1. **Inline stub**: `module.pyi` in the same directory as `module.py`
+    /// 2. **Stubs folder**: `{workspace_root}/stubs/{module_path}.pyi`
+    /// 3. **Typeshed-style**: `{workspace_root}/stubs/{pkg}-stubs/{submodule}.pyi`
+    /// 4. **Extra directories**: Each path in `extra_stub_dirs`
     ///
     /// # Example
     ///
@@ -430,10 +434,38 @@ impl StubDiscovery {
             });
         }
 
-        // Future steps will add:
+        // Get the module path for stubs folder and typeshed-style lookups
+        let module_path = self.module_path_from_source(source_path)?;
+
         // 2. Check stubs/ folder at workspace root
-        // 3. Check typeshed-style package-stubs
-        // 4. Check extra_stub_dirs
+        let stubs_folder_path = self.options.workspace_root.join("stubs").join(&module_path);
+        if stubs_folder_path.exists() {
+            return Some(StubInfo {
+                stub_path: stubs_folder_path,
+                source_path: source_path.to_path_buf(),
+                location: StubLocation::StubsFolder,
+            });
+        }
+
+        // 3. Check typeshed-style package-stubs (if enabled)
+        if self.options.check_typeshed_style {
+            if let Some(stub) = self.find_typeshed_style_stub(source_path, &module_path) {
+                return Some(stub);
+            }
+        }
+
+        // 4. Check extra stub directories
+        for extra_dir in &self.options.extra_stub_dirs {
+            let extra_stub = extra_dir.join(&module_path);
+            if extra_stub.exists() {
+                return Some(StubInfo {
+                    stub_path: extra_stub,
+                    source_path: source_path.to_path_buf(),
+                    // Extra dirs are treated as stubs folder locations
+                    location: StubLocation::StubsFolder,
+                });
+            }
+        }
 
         None
     }
@@ -475,6 +507,153 @@ impl StubDiscovery {
     /// ```
     pub fn expected_stub_path(&self, source_path: &Path) -> PathBuf {
         self.inline_stub_path(source_path)
+    }
+
+    /// Compute the module path from a source file path.
+    ///
+    /// Converts a source path to a relative module path suitable for
+    /// stub lookups. The path is relative to the workspace root and
+    /// has `.pyi` extension.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // /project/src/pkg/module.py -> pkg/module.pyi (if src is workspace root)
+    /// // /project/pkg/module.py -> pkg/module.pyi (if project is workspace root)
+    /// ```
+    ///
+    /// Returns `None` if the path is not under the workspace root.
+    fn module_path_from_source(&self, source_path: &Path) -> Option<PathBuf> {
+        // Convert /project/src/pkg/module.py -> pkg/module.pyi
+        // This requires knowing the Python source roots
+
+        // For now, use relative path from workspace root
+        let relative = source_path.strip_prefix(&self.options.workspace_root).ok()?;
+        Some(relative.with_extension("pyi"))
+    }
+
+    /// Find a typeshed-style stub for the given source path.
+    ///
+    /// Typeshed-style stubs use the `pkg-stubs` convention, where
+    /// `pkg/module.py` maps to `stubs/pkg-stubs/module.pyi`.
+    ///
+    /// # Example
+    ///
+    /// For `pkg/sub/module.py`:
+    /// - Check `{workspace_root}/stubs/pkg-stubs/sub/module.pyi`
+    ///
+    /// Returns `None` if the module path is empty or no typeshed-style stub exists.
+    fn find_typeshed_style_stub(&self, source_path: &Path, module_path: &Path) -> Option<StubInfo> {
+        // For pkg/module.py, check stubs/pkg-stubs/module.pyi
+        let components: Vec<_> = module_path.components().collect();
+        if components.is_empty() {
+            return None;
+        }
+
+        // Get top-level package name
+        let top_level = components[0].as_os_str().to_string_lossy();
+        let stubs_pkg = format!("{}-stubs", top_level);
+
+        let mut typeshed_path = self.options.workspace_root.join("stubs").join(&stubs_pkg);
+        for component in &components[1..] {
+            typeshed_path = typeshed_path.join(component);
+        }
+
+        if typeshed_path.exists() {
+            Some(StubInfo {
+                stub_path: typeshed_path,
+                source_path: source_path.to_path_buf(),
+                location: StubLocation::TypeshedStyle,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Find stub file and return error with all searched locations if not found.
+    ///
+    /// Unlike `find_stub_for`, this method returns an error instead of `None`
+    /// when no stub is found. The error includes all locations that were searched,
+    /// which is useful for diagnostic messages.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::stubs::{StubDiscovery, StubError};
+    /// use std::path::Path;
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// match discovery.find_stub_or_err(Path::new("/project/src/utils.py")) {
+    ///     Ok(info) => println!("Found stub at: {:?}", info.stub_path),
+    ///     Err(StubError::NotFound { searched_locations, .. }) => {
+    ///         println!("Checked {} locations", searched_locations.len());
+    ///     }
+    ///     Err(e) => println!("Error: {}", e),
+    /// }
+    /// ```
+    pub fn find_stub_or_err(&self, source_path: &Path) -> StubResult<StubInfo> {
+        if let Some(info) = self.find_stub_for(source_path) {
+            return Ok(info);
+        }
+
+        Err(StubError::NotFound {
+            source_path: source_path.to_path_buf(),
+            searched_locations: self.search_locations(source_path),
+        })
+    }
+
+    /// Get all locations that would be searched for a stub.
+    ///
+    /// Returns a list of all paths that would be checked when searching
+    /// for a stub file, in order of priority. This is useful for debugging
+    /// and error messages.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tugtool_python::stubs::StubDiscovery;
+    /// use std::path::Path;
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// let locations = discovery.search_locations(Path::new("/project/pkg/module.py"));
+    ///
+    /// // First location is always the inline stub
+    /// assert!(locations[0].to_str().unwrap().ends_with("module.pyi"));
+    /// ```
+    pub fn search_locations(&self, source_path: &Path) -> Vec<PathBuf> {
+        let mut locations = Vec::new();
+
+        // 1. Inline stub (always checked first)
+        locations.push(self.inline_stub_path(source_path));
+
+        // 2. Stubs folder at workspace root
+        if let Some(module_path) = self.module_path_from_source(source_path) {
+            let stubs_folder_path = self.options.workspace_root.join("stubs").join(&module_path);
+            locations.push(stubs_folder_path);
+
+            // 3. Typeshed-style pkg-stubs (if enabled)
+            if self.options.check_typeshed_style {
+                let components: Vec<_> = module_path.components().collect();
+                if !components.is_empty() {
+                    let top_level = components[0].as_os_str().to_string_lossy();
+                    let stubs_pkg = format!("{}-stubs", top_level);
+
+                    let mut typeshed_path =
+                        self.options.workspace_root.join("stubs").join(&stubs_pkg);
+                    for component in &components[1..] {
+                        typeshed_path = typeshed_path.join(component);
+                    }
+                    locations.push(typeshed_path);
+                }
+            }
+
+            // 4. Extra stub directories
+            for extra_dir in &self.options.extra_stub_dirs {
+                locations.push(extra_dir.join(&module_path));
+            }
+        }
+
+        locations
     }
 }
 
@@ -976,6 +1155,418 @@ mod tests {
             let info = result.unwrap();
             assert_eq!(info.stub_path, stub_path);
             assert_eq!(info.location, StubLocation::Inline);
+        }
+
+        // ====================================================================
+        // Step 0.3.6.3: Stubs Folder and Typeshed-Style Discovery Tests
+        // ====================================================================
+
+        #[test]
+        fn test_find_stub_stubs_folder() {
+            // Example 2 from the plan: stubs folder detection
+            let temp_dir = create_temp_project();
+
+            // Create source directory structure (no inline stub)
+            let src_dir = temp_dir.path().join("src").join("mypackage");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("handlers.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create stubs folder with stub
+            let stubs_dir = temp_dir.path().join("stubs").join("src").join("mypackage");
+            fs::create_dir_all(&stubs_dir).expect("Failed to create stubs dir");
+            let stub_path = stubs_dir.join("handlers.pyi");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            // Test discovery
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some(), "Should find stub in stubs folder");
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.source_path, source_path);
+            assert_eq!(info.location, StubLocation::StubsFolder);
+        }
+
+        #[test]
+        fn test_find_stub_typeshed_style() {
+            // Test pkg-stubs pattern detection
+            let temp_dir = create_temp_project();
+
+            // Create source directory structure (no inline stub)
+            let src_dir = temp_dir.path().join("mypackage").join("submod");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("handlers.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create typeshed-style stub: stubs/mypackage-stubs/submod/handlers.pyi
+            let typeshed_dir = temp_dir
+                .path()
+                .join("stubs")
+                .join("mypackage-stubs")
+                .join("submod");
+            fs::create_dir_all(&typeshed_dir).expect("Failed to create typeshed dir");
+            let stub_path = typeshed_dir.join("handlers.pyi");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            // Test discovery
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some(), "Should find typeshed-style stub");
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.source_path, source_path);
+            assert_eq!(info.location, StubLocation::TypeshedStyle);
+        }
+
+        #[test]
+        fn test_find_stub_extra_dirs() {
+            // Test custom stub directories
+            let temp_dir = create_temp_project();
+
+            // Create source directory structure (no inline stub)
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create extra stubs directory with stub
+            let extra_dir = temp_dir.path().join("custom_stubs");
+            let extra_pkg_dir = extra_dir.join("pkg");
+            fs::create_dir_all(&extra_pkg_dir).expect("Failed to create extra dir");
+            let stub_path = extra_pkg_dir.join("module.pyi");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            // Test discovery with extra_stub_dirs
+            let discovery = StubDiscovery::new(StubDiscoveryOptions {
+                workspace_root: temp_dir.path().to_path_buf(),
+                extra_stub_dirs: vec![extra_dir.clone()],
+                check_typeshed_style: true,
+            });
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some(), "Should find stub in extra dir");
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.source_path, source_path);
+            // Extra dirs are classified as StubsFolder
+            assert_eq!(info.location, StubLocation::StubsFolder);
+        }
+
+        #[test]
+        fn test_find_stub_priority_inline_first() {
+            // Inline stub should take precedence over stubs folder
+            let temp_dir = create_temp_project();
+
+            // Create source with inline stub
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            let inline_stub = src_dir.join("module.pyi");
+            File::create(&source_path).expect("Failed to create source file");
+            File::create(&inline_stub).expect("Failed to create inline stub");
+
+            // Also create stubs folder stub
+            let stubs_dir = temp_dir.path().join("stubs").join("pkg");
+            fs::create_dir_all(&stubs_dir).expect("Failed to create stubs dir");
+            let stubs_folder_stub = stubs_dir.join("module.pyi");
+            File::create(&stubs_folder_stub).expect("Failed to create stubs folder stub");
+
+            // Test discovery - should find inline first
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some());
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, inline_stub, "Should prefer inline stub");
+            assert_eq!(info.location, StubLocation::Inline);
+        }
+
+        #[test]
+        fn test_find_stub_priority_stubs_folder_second() {
+            // Stubs folder should take precedence over typeshed-style
+            let temp_dir = create_temp_project();
+
+            // Create source (no inline stub)
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create stubs folder stub
+            let stubs_dir = temp_dir.path().join("stubs").join("pkg");
+            fs::create_dir_all(&stubs_dir).expect("Failed to create stubs dir");
+            let stubs_folder_stub = stubs_dir.join("module.pyi");
+            File::create(&stubs_folder_stub).expect("Failed to create stubs folder stub");
+
+            // Also create typeshed-style stub
+            let typeshed_dir = temp_dir.path().join("stubs").join("pkg-stubs");
+            fs::create_dir_all(&typeshed_dir).expect("Failed to create typeshed dir");
+            let typeshed_stub = typeshed_dir.join("module.pyi");
+            File::create(&typeshed_stub).expect("Failed to create typeshed stub");
+
+            // Test discovery - should find stubs folder first
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some());
+            let info = result.unwrap();
+            assert_eq!(
+                info.stub_path, stubs_folder_stub,
+                "Should prefer stubs folder over typeshed-style"
+            );
+            assert_eq!(info.location, StubLocation::StubsFolder);
+        }
+
+        #[test]
+        fn test_find_stub_init_py_in_stubs_folder() {
+            // Test __init__.py to __init__.pyi mapping in stubs folder
+            let temp_dir = create_temp_project();
+
+            // Create source package (no inline stub)
+            let src_dir = temp_dir.path().join("mypackage");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("__init__.py");
+            File::create(&source_path).expect("Failed to create __init__.py");
+
+            // Create stubs folder with __init__.pyi
+            let stubs_dir = temp_dir.path().join("stubs").join("mypackage");
+            fs::create_dir_all(&stubs_dir).expect("Failed to create stubs dir");
+            let stub_path = stubs_dir.join("__init__.pyi");
+            File::create(&stub_path).expect("Failed to create __init__.pyi stub");
+
+            // Test discovery
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some());
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.location, StubLocation::StubsFolder);
+        }
+
+        #[test]
+        fn test_find_stub_nested_package_in_stubs_folder() {
+            // Test deeply nested package paths in stubs folder
+            let temp_dir = create_temp_project();
+
+            // Create deeply nested source (no inline stub)
+            let src_dir = temp_dir.path().join("pkg").join("sub").join("deep");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create matching path in stubs folder
+            let stubs_dir = temp_dir
+                .path()
+                .join("stubs")
+                .join("pkg")
+                .join("sub")
+                .join("deep");
+            fs::create_dir_all(&stubs_dir).expect("Failed to create stubs dir");
+            let stub_path = stubs_dir.join("module.pyi");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            // Test discovery
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some());
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.location, StubLocation::StubsFolder);
+        }
+
+        #[test]
+        fn test_find_stub_or_err_not_found() {
+            // Test find_stub_or_err returns error with searched locations
+            let temp_dir = create_temp_project();
+
+            // Create source file only (no stubs anywhere)
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_or_err(&source_path);
+
+            assert!(result.is_err(), "Should return error when no stub found");
+
+            match result.unwrap_err() {
+                StubError::NotFound {
+                    source_path: sp,
+                    searched_locations,
+                } => {
+                    assert_eq!(sp, source_path);
+                    // Should have searched at least: inline, stubs folder, typeshed-style
+                    assert!(
+                        searched_locations.len() >= 3,
+                        "Expected at least 3 searched locations, got {}",
+                        searched_locations.len()
+                    );
+                    // First should be inline
+                    assert!(
+                        searched_locations[0].to_str().unwrap().ends_with("module.pyi"),
+                        "First location should be inline stub"
+                    );
+                }
+                e => panic!("Expected NotFound error, got: {:?}", e),
+            }
+        }
+
+        #[test]
+        fn test_find_stub_or_err_success() {
+            // Test find_stub_or_err returns Ok when stub found
+            let temp_dir = create_temp_project();
+
+            // Create source and inline stub
+            let source_path = temp_dir.path().join("module.py");
+            let stub_path = temp_dir.path().join("module.pyi");
+            File::create(&source_path).expect("Failed to create source file");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_or_err(&source_path);
+
+            assert!(result.is_ok(), "Should return Ok when stub found");
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+        }
+
+        #[test]
+        fn test_search_locations_complete() {
+            // Test search_locations returns all expected paths
+            let temp_dir = create_temp_project();
+
+            // Create source file
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create discovery with extra stub dirs
+            let extra_dir = temp_dir.path().join("extra_stubs");
+            fs::create_dir_all(&extra_dir).expect("Failed to create extra dir");
+
+            let discovery = StubDiscovery::new(StubDiscoveryOptions {
+                workspace_root: temp_dir.path().to_path_buf(),
+                extra_stub_dirs: vec![extra_dir.clone()],
+                check_typeshed_style: true,
+            });
+
+            let locations = discovery.search_locations(&source_path);
+
+            // Should have 4 locations: inline, stubs folder, typeshed-style, extra dir
+            assert_eq!(
+                locations.len(),
+                4,
+                "Expected 4 search locations, got: {:?}",
+                locations
+            );
+
+            // 1. Inline stub
+            assert!(
+                locations[0].ends_with("pkg/module.pyi"),
+                "First should be inline: {:?}",
+                locations[0]
+            );
+
+            // 2. Stubs folder
+            assert!(
+                locations[1].to_str().unwrap().contains("stubs/pkg/module.pyi"),
+                "Second should be stubs folder: {:?}",
+                locations[1]
+            );
+
+            // 3. Typeshed-style
+            assert!(
+                locations[2]
+                    .to_str()
+                    .unwrap()
+                    .contains("stubs/pkg-stubs/module.pyi"),
+                "Third should be typeshed-style: {:?}",
+                locations[2]
+            );
+
+            // 4. Extra dir
+            assert!(
+                locations[3]
+                    .to_str()
+                    .unwrap()
+                    .contains("extra_stubs/pkg/module.pyi"),
+                "Fourth should be extra dir: {:?}",
+                locations[3]
+            );
+        }
+
+        #[test]
+        fn test_search_locations_no_typeshed_when_disabled() {
+            // Test search_locations excludes typeshed when disabled
+            let temp_dir = create_temp_project();
+
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            let discovery = StubDiscovery::new(StubDiscoveryOptions {
+                workspace_root: temp_dir.path().to_path_buf(),
+                extra_stub_dirs: vec![],
+                check_typeshed_style: false, // Disabled
+            });
+
+            let locations = discovery.search_locations(&source_path);
+
+            // Should have 2 locations: inline, stubs folder (no typeshed)
+            assert_eq!(
+                locations.len(),
+                2,
+                "Expected 2 search locations when typeshed disabled, got: {:?}",
+                locations
+            );
+
+            // Verify no typeshed-style path
+            for loc in &locations {
+                assert!(
+                    !loc.to_str().unwrap().contains("-stubs"),
+                    "Should not contain typeshed-style path: {:?}",
+                    loc
+                );
+            }
+        }
+
+        #[test]
+        fn test_typeshed_style_disabled() {
+            // Test that typeshed-style discovery can be disabled
+            let temp_dir = create_temp_project();
+
+            // Create source (no inline stub)
+            let src_dir = temp_dir.path().join("pkg");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+            let source_path = src_dir.join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            // Create ONLY typeshed-style stub
+            let typeshed_dir = temp_dir.path().join("stubs").join("pkg-stubs");
+            fs::create_dir_all(&typeshed_dir).expect("Failed to create typeshed dir");
+            let stub_path = typeshed_dir.join("module.pyi");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            // Test with typeshed disabled
+            let discovery = StubDiscovery::new(StubDiscoveryOptions {
+                workspace_root: temp_dir.path().to_path_buf(),
+                extra_stub_dirs: vec![],
+                check_typeshed_style: false, // Disabled!
+            });
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(
+                result.is_none(),
+                "Should not find typeshed-style stub when disabled"
+            );
         }
     }
 }

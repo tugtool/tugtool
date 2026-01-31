@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6.3: Stubs Folder and Typeshed-Style Discovery | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6.3 specification (lines 5590-5626)
+- `plans/phase-13.md` - 0.3.2 Internal Design - find_typeshed_style_stub algorithm (lines 5050-5110)
+- `plans/phase-13.md` - 0.3.5 Concrete Examples - Example 2: Find Stub in stubs/ Folder (lines 5405-5426)
+- `plans/phase-13.md` - 0.3.3 Edge Cases - Package __init__.py, Nested packages (lines 5297-5333)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `module_path_from_source(&self, source_path)` helper | Done |
+| Extend `find_stub_for()` to check `stubs/` folder at workspace root | Done |
+| Implement `find_typeshed_style_stub(&self, source_path, module_path)` for `pkg-stubs/` pattern | Done |
+| Extend `find_stub_for()` to check typeshed-style locations (when enabled) | Done |
+| Extend `find_stub_for()` to check `extra_stub_dirs` | Done |
+| Implement `find_stub_or_err(&self, source_path)` returning error with searched locations | Done |
+| Implement `search_locations(&self, source_path)` returning all searched paths | Done |
+| Handle `__init__.py` -> `__init__.pyi` mapping | Done |
+| Handle nested package paths | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/stubs.rs` - Extended StubDiscovery with multi-location stub finding (inline, stubs folder, typeshed-style, extra dirs)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python stub_discovery`: 10 tests passed
+- `cargo nextest run -p tugtool-python stubs`: 49 tests passed
+- `cargo nextest run -p tugtool-python filesystem_tests`: 17 tests passed (including 13 new tests)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python stub_discovery` passes: PASS
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+- Stub discovery works for inline, stubs folder, and typeshed-style: PASS
+
+**Key Decisions/Notes:**
+- Discovery order: inline → stubs folder → typeshed-style (pkg-stubs) → extra dirs (first match wins)
+- Extra stub directories are classified as `StubLocation::StubsFolder` for simplicity
+- `module_path_from_source` uses strip_prefix from workspace root - assumes source is under workspace
+- `search_locations` returns all potential paths (useful for error messages)
+- Added bonus tests: typeshed disabled behavior, nested packages in stubs folder, __init__.pyi in stubs folder
+
+---
+
 ## [phase-13.md] Step 0.3.6.2: Stub Discovery Types and Basic Discovery | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31
