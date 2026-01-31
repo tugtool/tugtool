@@ -6,6 +6,62 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 1.0.2: Migrate Rename to BatchSpanEditor | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 1.0.2: Migrate Rename to BatchSpanEditor (line 6436)
+- `plans/phase-13.md` - D07 (Edit Primitives design decision)
+- `crates/tugtool-python-cst/src/visitor/batch_edit.rs` - BatchSpanEditor implementation from Step 0.1
+- `crates/tugtool-python-cst/src/visitor/rename.rs` - RenameTransformer (legacy implementation)
+- `crates/tugtool-python/src/ops/rename.rs` - Rename operation implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add bridge function `cst_bridge::apply_batch_edits(source, edits)` wrapping BatchSpanEditor | Done |
+| Update `rename_in_file()` to use `EditPrimitive::Replace` | Done |
+| Map each reference span to `EditPrimitive::Replace { span, new_text }` | Done |
+| Preserve existing span collection logic | Done |
+| Update `apply_renames()` to use `apply_batch_edits()` | Done |
+| Verify multi-file rename still works | Done |
+| Add `#[deprecated]` to RenameTransformer | Skipped (no external users) |
+| Verify all existing rename tests pass | Done |
+| Add migration validation tests | Done |
+| Update documentation | Skipped (no external users) |
+
+**Files Created:**
+- `crates/tugtool-python/tests/rename_batch_editor_migration.rs` - 12 migration validation tests comparing old vs new implementation
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/lib.rs` - Added exports for BatchSpanEditor, EditPrimitive, BatchEditError, BatchEditOptions, and related types
+- `crates/tugtool-python/src/cst_bridge.rs` - Added `apply_batch_edits()`, `rewrites_to_edit_primitives()`, and `BatchEditError` error variant
+- `crates/tugtool-python/src/ops/rename.rs` - Updated `rename_in_file()` and `apply_renames()` to use EditPrimitive::Replace and apply_batch_edits()
+- `plans/phase-13.md` - Checked off all tasks and checkpoints for Step 1.0.2
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python rename`: 69 tests passed (all existing)
+- `cargo nextest run -p tugtool-python --test rename_batch_editor_migration`: 12 tests passed
+- `cargo nextest run -p tugtool-python -p tugtool-python-cst`: 1643 tests passed (full suite)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python rename` passes: PASS (69 tests)
+- `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes: PASS (12 tests)
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- RenameTransformer deprecated: SKIPPED (no external users per user guidance)
+
+**Key Decisions/Notes:**
+- User explicitly instructed to skip deprecation warnings and migration documentation since this is a new library with zero external users
+- `apply_batch_edits()` configured with sensible defaults: `allow_empty: true`, `allow_adjacent: true`, `auto_indent: false`
+- Helper function `rewrites_to_edit_primitives()` added for clean migration path
+- Legacy `rewrite_batch()` function kept working for comparison tests
+- Plan-step-reviewer confirmed implementation as "exemplary" with clean abstraction and comprehensive validation
+
+---
+
 ## [phase-13.md] Step 1.0.1: Support Type Comments | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31

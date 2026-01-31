@@ -29,6 +29,9 @@ use tugtool_python_cst::{
     AttributeAccessCollector,
     AttributeAccessInfo as CstAttributeAccessInfo,
     // P0 visitors
+    BatchEditError,
+    BatchEditOptions,
+    BatchSpanEditor,
     BindingCollector,
     BindingInfo as CstBindingInfo,
     BindingKind as CstBindingKind,
@@ -38,6 +41,7 @@ use tugtool_python_cst::{
     // P2 visitors
     DynamicPatternDetector,
     DynamicPatternInfo as CstDynamicPatternInfo,
+    EditPrimitive,
     // Export collector for __all__ handling
     ExportCollector,
     ExportInfo as CstExportInfo,
@@ -50,6 +54,7 @@ use tugtool_python_cst::{
     ReferenceCollector,
     ReferenceInfo as CstReferenceInfo,
     ReferenceKind as CstReferenceKind,
+    // Legacy rename types (kept for rewrite_batch compatibility)
     RenameError,
     RenameRequest,
     RenameTransformer,
@@ -77,11 +82,21 @@ pub enum CstBridgeError {
     /// Rename error from tugtool-python-cst.
     #[error("rename error: {0}")]
     RenameError(String),
+
+    /// Batch edit error from BatchSpanEditor.
+    #[error("batch edit error: {0}")]
+    BatchEditError(String),
 }
 
 impl From<RenameError> for CstBridgeError {
     fn from(err: RenameError) -> Self {
         CstBridgeError::RenameError(err.to_string())
+    }
+}
+
+impl From<BatchEditError> for CstBridgeError {
+    fn from(err: BatchEditError) -> Self {
+        CstBridgeError::BatchEditError(err.to_string())
     }
 }
 
@@ -328,10 +343,13 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     })
 }
 
-/// Apply batch rename operations to source code using native Rust transformer.
+/// Apply batch rename operations to source code using RenameTransformer.
 ///
 /// This function takes a list of rename requests (spans + new names) and
 /// applies them to the source code, returning the modified source.
+///
+/// Note: New code should prefer `apply_batch_edits` which uses the more
+/// general `BatchSpanEditor` infrastructure.
 ///
 /// # Arguments
 ///
@@ -375,6 +393,96 @@ pub fn rewrite_batch(source: &str, rewrites: &[(Span, String)]) -> CstBridgeResu
     let result = transformer.apply()?;
 
     Ok(result)
+}
+
+/// Apply batch edit operations to source code using BatchSpanEditor.
+///
+/// This function provides a high-level API for applying edit primitives to source
+/// code. It wraps `BatchSpanEditor` with sensible defaults for rename operations:
+/// - `allow_empty: true` - returns source unchanged if no edits
+/// - `allow_adjacent: true` - allows adjacent edits (common in renames)
+/// - `auto_indent: false` - Replace edits don't need indentation handling
+///
+/// # Arguments
+///
+/// * `source` - The original Python source code
+/// * `edits` - List of `EditPrimitive` operations to apply
+///
+/// # Returns
+///
+/// The transformed source code with all edits applied, or an error if
+/// validation fails (overlapping spans, out of bounds, etc.).
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::cst_bridge::apply_batch_edits;
+/// use tugtool_python_cst::visitor::EditPrimitive;
+/// use tugtool_core::patch::Span;
+///
+/// let source = "def foo():\n    return foo";
+/// let edits = vec![
+///     EditPrimitive::Replace {
+///         span: Span::new(4, 7),
+///         new_text: "bar".to_string(),
+///     },
+///     EditPrimitive::Replace {
+///         span: Span::new(22, 25),
+///         new_text: "bar".to_string(),
+///     },
+/// ];
+///
+/// let result = apply_batch_edits(source, edits)?;
+/// assert_eq!(result, "def bar():\n    return bar");
+/// ```
+pub fn apply_batch_edits(
+    source: &str,
+    edits: Vec<EditPrimitive>,
+) -> CstBridgeResult<String> {
+    if edits.is_empty() {
+        // No changes needed - return source unchanged
+        return Ok(source.to_string());
+    }
+
+    // Configure BatchSpanEditor with options suitable for rename operations
+    let options = BatchEditOptions {
+        allow_empty: true,      // Empty edits return source unchanged
+        allow_adjacent: true,   // Adjacent edits are common in renames
+        auto_indent: false,     // Replace edits don't need indentation
+    };
+
+    let mut editor = BatchSpanEditor::with_options(source, options);
+    editor.add_all(edits);
+
+    let result = editor.apply()?;
+    Ok(result)
+}
+
+/// Convert a list of (span, new_text) tuples to EditPrimitive::Replace operations.
+///
+/// This is a convenience function for migrating from the old `rewrite_batch` API
+/// to the new `apply_batch_edits` API.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::cst_bridge::{rewrites_to_edit_primitives, apply_batch_edits};
+/// use tugtool_core::patch::Span;
+///
+/// let rewrites = vec![
+///     (Span::new(4, 7), "bar".to_string()),
+/// ];
+/// let edits = rewrites_to_edit_primitives(&rewrites);
+/// let result = apply_batch_edits(source, edits)?;
+/// ```
+pub fn rewrites_to_edit_primitives(rewrites: &[(Span, String)]) -> Vec<EditPrimitive> {
+    rewrites
+        .iter()
+        .map(|(span, new_text)| EditPrimitive::Replace {
+            span: *span,
+            new_text: new_text.clone(),
+        })
+        .collect()
 }
 
 // ============================================================================

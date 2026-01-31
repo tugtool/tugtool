@@ -6456,16 +6456,16 @@ This migration:
 - New `crates/tugtool-python/tests/rename_batch_editor_migration.rs` - Migration validation tests
 
 **Tasks:**
-- [ ] Add bridge function `cst_bridge::apply_batch_edits(source, edits) -> Result<String>` wrapping BatchSpanEditor
-- [ ] Update `rename::generate_edits()` to produce `Vec<EditPrimitive>` instead of `Vec<RenameRequest>`
-  - [ ] Map each reference span to `EditPrimitive::Replace { span, new_text: new_name }`
-  - [ ] Preserve existing span collection logic
-- [ ] Update `rename::apply_edits_to_file()` to use `cst_bridge::apply_batch_edits()`
-- [ ] Verify multi-file rename still works (each file gets its own BatchSpanEditor)
-- [ ] Add `#[deprecated]` attribute to `RenameTransformer` with migration note
-- [ ] Verify all existing rename tests pass without modification
-- [ ] Add migration validation tests comparing old vs new implementation
-- [ ] Update documentation to reference BatchSpanEditor
+- [x] Add bridge function `cst_bridge::apply_batch_edits(source, edits) -> Result<String>` wrapping BatchSpanEditor
+- [x] Update `rename::generate_edits()` to produce `Vec<EditPrimitive>` instead of `Vec<RenameRequest>`
+  - [x] Map each reference span to `EditPrimitive::Replace { span, new_text: new_name }`
+  - [x] Preserve existing span collection logic
+- [x] Update `rename::apply_edits_to_file()` to use `cst_bridge::apply_batch_edits()`
+- [x] Verify multi-file rename still works (each file gets its own BatchSpanEditor)
+- [x] ~~Add `#[deprecated]` attribute to `RenameTransformer` with migration note~~ (skipped - no external users)
+- [x] Verify all existing rename tests pass without modification
+- [x] Add migration validation tests comparing old vs new implementation
+- [x] ~~Update documentation to reference BatchSpanEditor~~ (skipped - no external users)
 
 **Migration Validation:**
 
@@ -6488,21 +6488,21 @@ Map `BatchEditError` variants to existing `RenameError`:
 | `IndentationDetectionFailed` | (not applicable for Replace-only edits) |
 
 **Tests:**
-- [ ] Unit: `test_batch_editor_single_rename` - Single span replacement
-- [ ] Unit: `test_batch_editor_multiple_renames` - Multiple spans in same file
-- [ ] Unit: `test_batch_editor_preserves_formatting` - Whitespace/comments preserved
-- [ ] Unit: `test_batch_editor_unicode_spans` - Multi-byte character handling
-- [ ] Integration: `test_rename_migration_simple` - Compare old vs new for simple case
-- [ ] Integration: `test_rename_migration_multifile` - Compare old vs new for multi-file
-- [ ] Integration: `test_rename_migration_complex` - Compare old vs new for complex case
-- [ ] Regression: All existing rename tests in `crates/tugtool-python/tests/` pass unchanged
+- [x] Unit: `test_batch_editor_single_rename` - Single span replacement
+- [x] Unit: `test_batch_editor_multiple_renames` - Multiple spans in same file
+- [x] Unit: `test_batch_editor_preserves_formatting` - Whitespace/comments preserved
+- [x] Unit: `test_batch_editor_unicode_spans` - Multi-byte character handling
+- [x] Integration: `test_rename_migration_simple` - Compare old vs new for simple case
+- [x] Integration: `test_rename_migration_multifile` - Compare old vs new for multi-file
+- [x] Integration: `test_rename_migration_complex` - Compare old vs new for complex case
+- [x] Regression: All existing rename tests in `crates/tugtool-python/tests/` pass unchanged
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python rename` passes (all existing tests)
-- [ ] `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
-- [ ] `RenameTransformer` has `#[deprecated]` attribute
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python rename` passes (all existing tests)
+- [x] `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] ~~`RenameTransformer` has `#[deprecated]` attribute~~ (skipped - no external users)
 
 **Rollback:** Revert commit
 

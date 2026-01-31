@@ -40,6 +40,7 @@ use crate::verification::{
 
 // Native CST bridge for rename
 use crate::cst_bridge;
+use tugtool_python_cst::visitor::EditPrimitive;
 
 // Native analyze_files for multi-file analysis
 use crate::analyzer::{analyze_files, FileAnalysis, FileAnalysisBundle, Scope, ScopeId};
@@ -229,8 +230,8 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
     // Parse and analyze the file
     let analysis = cst_bridge::parse_and_analyze(content)?;
 
-    // Collect all spans where the name appears
-    let mut rewrites: Vec<(Span, String)> = Vec::new();
+    // Collect all edit primitives for the renames
+    let mut edits: Vec<EditPrimitive> = Vec::new();
     // Track seen spans for O(1) duplicate detection instead of O(n) scan
     let mut seen_spans: HashSet<(usize, usize)> = HashSet::new();
 
@@ -240,7 +241,10 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
             if let Some(ref span_info) = binding.span {
                 let span = Span::new(span_info.start, span_info.end);
                 if seen_spans.insert((span.start, span.end)) {
-                    rewrites.push((span, new_name.to_string()));
+                    edits.push(EditPrimitive::Replace {
+                        span,
+                        new_text: new_name.to_string(),
+                    });
                 }
             }
         }
@@ -254,7 +258,10 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
                     let span = Span::new(span_info.start, span_info.end);
                     // O(1) duplicate check
                     if seen_spans.insert((span.start, span.end)) {
-                        rewrites.push((span, new_name.to_string()));
+                        edits.push(EditPrimitive::Replace {
+                            span,
+                            new_text: new_name.to_string(),
+                        });
                     }
                 }
             }
@@ -269,14 +276,17 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
                 let span = Span::new(content_span.start, content_span.end);
                 // O(1) duplicate check
                 if seen_spans.insert((span.start, span.end)) {
-                    rewrites.push((span, new_name.to_string()));
+                    edits.push(EditPrimitive::Replace {
+                        span,
+                        new_text: new_name.to_string(),
+                    });
                 }
             }
         }
     }
 
-    // Apply all renames using the native transformer
-    let result = cst_bridge::rewrite_batch(content, &rewrites)?;
+    // Apply all renames using BatchSpanEditor via the bridge
+    let result = cst_bridge::apply_batch_edits(content, edits)?;
 
     Ok(result)
 }
@@ -405,10 +415,10 @@ pub struct NativeRenameEdit {
     pub col: u32,
 }
 
-/// Apply batch renames to source code using native CST transformer.
+/// Apply batch renames to source code using BatchSpanEditor.
 ///
-/// This is a thin wrapper around `cst_bridge::rewrite_batch` for use
-/// in the rename operation.
+/// This function uses the `BatchSpanEditor` infrastructure via
+/// `cst_bridge::apply_batch_edits` to apply rename edits.
 ///
 /// # Arguments
 ///
@@ -419,7 +429,9 @@ pub struct NativeRenameEdit {
 ///
 /// The transformed source code with all renames applied.
 pub fn apply_renames(source: &str, rewrites: &[(Span, String)]) -> RenameResult<String> {
-    let result = cst_bridge::rewrite_batch(source, rewrites)?;
+    // Convert rewrites to EditPrimitive::Replace operations
+    let edits = cst_bridge::rewrites_to_edit_primitives(rewrites);
+    let result = cst_bridge::apply_batch_edits(source, edits)?;
     Ok(result)
 }
 
