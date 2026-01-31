@@ -86,6 +86,9 @@ mod dynamic;
 // P3 visitors (stub parsing)
 mod stub;
 
+// P4 visitors (type comment parsing)
+mod type_comment;
+
 // P0 exports
 pub use batch_edit::{
     apply_indentation, detect_indentation, detect_indentation_level, spans_overlap, BatchEditError,
@@ -130,4 +133,10 @@ pub use dynamic::{DynamicPatternDetector, DynamicPatternInfo, DynamicPatternKind
 pub use stub::{
     StubAttribute, StubClass, StubDecorator, StubFunction, StubParam, StubSymbols, StubTypeAlias,
     StubVariable, TypeNameSpan,
+};
+
+// P4 exports (type comment parsing)
+pub use type_comment::{
+    ParsedTypeComment, TypeComment, TypeCommentCollector, TypeCommentError, TypeCommentKind,
+    TypeCommentParser, TypeCommentResult, TypeNameRef,
 };

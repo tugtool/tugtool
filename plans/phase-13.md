@@ -6370,25 +6370,25 @@ This step adds infrastructure to parse and track type comments so that rename op
 - Modified `crates/tugtool-python/src/analyzer.rs` - Integrate type comments into analysis
 
 **Tasks:**
-- [ ] Create `type_comment.rs` module in tugtool-python-cst/src/visitor/
-- [ ] Add `TypeCommentKind` enum with variants: `Variable` (`# type: T`), `FunctionSignature` (`# type: (...) -> T`), `Ignore` (`# type: ignore`)
-- [ ] Add `TypeComment` struct with `kind`, `content`, `span`, `line` fields
-- [ ] Add `TypeNameRef` struct with `name`, `offset_in_comment`, `length` fields (similar to `AnnotationRef` in StringAnnotationParser)
-- [ ] Add `ParsedTypeComment` struct with `kind`, `content`, `refs: Vec<TypeNameRef>` fields
-- [ ] Implement `TypeCommentParser` to extract type names from comment content
-  - [ ] Handle simple types: `# type: Foo`
-  - [ ] Handle qualified types: `# type: module.Class`
-  - [ ] Handle generic types: `# type: List[Foo]`
-  - [ ] Handle union types: `# type: Union[A, B]` and `# type: A | B`
-  - [ ] Handle function signatures: `# type: (int, str) -> bool`
-  - [ ] Handle `# type: ignore` and `# type: ignore[code]` (skip parsing, mark as Ignore)
-- [ ] Implement `TypeCommentParser::rename(comment, old_name, new_name)` for transforming type comments
-- [ ] Implement `TypeCommentParser::contains_name(comment, name)` check
-- [ ] Create `TypeCommentCollector` visitor to collect type comments from CST
-  - [ ] Track comment position relative to statement (same line vs separate line)
-  - [ ] Associate type comments with their target bindings when possible
-- [ ] Export types from `visitor/mod.rs` and `lib.rs`
-- [ ] Integrate `TypeCommentCollector` into analyzer to populate binding/reference data with type comment info
+- [x] Create `type_comment.rs` module in tugtool-python-cst/src/visitor/
+- [x] Add `TypeCommentKind` enum with variants: `Variable` (`# type: T`), `FunctionSignature` (`# type: (...) -> T`), `Ignore` (`# type: ignore`)
+- [x] Add `TypeComment` struct with `kind`, `content`, `span`, `line` fields
+- [x] Add `TypeNameRef` struct with `name`, `offset_in_comment`, `length` fields (similar to `AnnotationRef` in StringAnnotationParser)
+- [x] Add `ParsedTypeComment` struct with `kind`, `content`, `refs: Vec<TypeNameRef>` fields
+- [x] Implement `TypeCommentParser` to extract type names from comment content
+  - [x] Handle simple types: `# type: Foo`
+  - [x] Handle qualified types: `# type: module.Class`
+  - [x] Handle generic types: `# type: List[Foo]`
+  - [x] Handle union types: `# type: Union[A, B]` and `# type: A | B`
+  - [x] Handle function signatures: `# type: (int, str) -> bool`
+  - [x] Handle `# type: ignore` and `# type: ignore[code]` (skip parsing, mark as Ignore)
+- [x] Implement `TypeCommentParser::rename(comment, old_name, new_name)` for transforming type comments
+- [x] Implement `TypeCommentParser::contains_name(comment, name)` check
+- [x] Create `TypeCommentCollector` visitor to collect type comments from CST
+  - [x] Track comment position relative to statement (same line vs separate line)
+  - [x] Associate type comments with their target bindings when possible
+- [x] Export types from `visitor/mod.rs` and `lib.rs`
+- [x] Integrate `TypeCommentCollector` into analyzer to populate binding/reference data with type comment info
 
 **Design Notes:**
 
@@ -6405,29 +6405,29 @@ The `TypeCommentCollector` visitor integrates with existing CST infrastructure:
 - Associate with adjacent bindings when on same line
 
 **Tests:**
-- [ ] Unit: `test_type_comment_parse_simple` - Parse `# type: Foo`
-- [ ] Unit: `test_type_comment_parse_qualified` - Parse `# type: module.Class`
-- [ ] Unit: `test_type_comment_parse_generic` - Parse `# type: List[Foo]`
-- [ ] Unit: `test_type_comment_parse_union` - Parse `# type: Union[A, B]`
-- [ ] Unit: `test_type_comment_parse_pipe_union` - Parse `# type: A | B`
-- [ ] Unit: `test_type_comment_parse_function_sig` - Parse `# type: (int) -> str`
-- [ ] Unit: `test_type_comment_parse_ignore` - Recognize `# type: ignore`
-- [ ] Unit: `test_type_comment_parse_ignore_code` - Recognize `# type: ignore[attr-defined]`
-- [ ] Unit: `test_type_comment_rename_simple` - Rename type in simple comment
-- [ ] Unit: `test_type_comment_rename_generic` - Rename type in generic comment
-- [ ] Unit: `test_type_comment_rename_multiple` - Rename multiple occurrences
-- [ ] Unit: `test_type_comment_contains_name_true` - Name found in comment
-- [ ] Unit: `test_type_comment_contains_name_false` - Name not found
-- [ ] Unit: `test_type_comment_collector_basic` - Collect type comments from source
-- [ ] Unit: `test_type_comment_collector_multiple` - Collect multiple type comments
-- [ ] Integration: `test_type_comment_binding_association` - Type comments linked to bindings
+- [x] Unit: `test_type_comment_parse_simple` - Parse `# type: Foo`
+- [x] Unit: `test_type_comment_parse_qualified` - Parse `# type: module.Class`
+- [x] Unit: `test_type_comment_parse_generic` - Parse `# type: List[Foo]`
+- [x] Unit: `test_type_comment_parse_union` - Parse `# type: Union[A, B]`
+- [x] Unit: `test_type_comment_parse_pipe_union` - Parse `# type: A | B`
+- [x] Unit: `test_type_comment_parse_function_sig` - Parse `# type: (int) -> str`
+- [x] Unit: `test_type_comment_parse_ignore` - Recognize `# type: ignore`
+- [x] Unit: `test_type_comment_parse_ignore_code` - Recognize `# type: ignore[attr-defined]`
+- [x] Unit: `test_type_comment_rename_simple` - Rename type in simple comment
+- [x] Unit: `test_type_comment_rename_generic` - Rename type in generic comment
+- [x] Unit: `test_type_comment_rename_multiple` - Rename multiple occurrences
+- [x] Unit: `test_type_comment_contains_name_true` - Name found in comment
+- [x] Unit: `test_type_comment_contains_name_false` - Name not found
+- [x] Unit: `test_type_comment_collector_basic` - Collect type comments from source
+- [x] Unit: `test_type_comment_collector_multiple` - Collect multiple type comments
+- [x] Integration: `test_type_comment_binding_association` - Type comments linked to bindings
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst type_comment` passes
-- [ ] `cargo nextest run -p tugtool-python type_comment` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst type_comment` passes
+- [x] `cargo nextest run -p tugtool-python type_comment` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
 
 **Rollback:** Revert commit
 

@@ -6,6 +6,68 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 1.0.1: Support Type Comments | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 1.0.1: Support Type Comments (line 6351)
+- `crates/tugtool-python-cst/src/visitor/string_annotation.rs` - Pattern reference for type parsing
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `type_comment.rs` module in tugtool-python-cst/src/visitor/ | Done |
+| Add `TypeCommentKind` enum with Variable, FunctionSignature, Ignore variants | Done |
+| Add `TypeComment` struct with kind, content, span, line fields | Done |
+| Add `TypeNameRef` struct with name, offset_in_content, length fields | Done |
+| Add `ParsedTypeComment` struct with kind, content, refs fields | Done |
+| Implement `TypeCommentParser` to extract type names from comment content | Done |
+| Handle simple types: `# type: Foo` | Done |
+| Handle qualified types: `# type: module.Class` | Done |
+| Handle generic types: `# type: List[Foo]` | Done |
+| Handle union types: `# type: Union[A, B]` and `# type: A \| B` | Done |
+| Handle function signatures: `# type: (int, str) -> bool` | Done |
+| Handle `# type: ignore` and `# type: ignore[code]` | Done |
+| Implement `TypeCommentParser::rename(comment, old_name, new_name)` | Done |
+| Implement `TypeCommentParser::contains_name(comment, name)` | Done |
+| Create `TypeCommentCollector` to collect type comments from source | Done |
+| Export types from `visitor/mod.rs` and `lib.rs` | Done |
+| Integrate `TypeCommentCollector` into analyzer FileAnalysis | Done |
+
+**Files Created:**
+- `crates/tugtool-python-cst/src/visitor/type_comment.rs` - TypeCommentParser, TypeCommentCollector, and related types (804 lines)
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Added P4 module declaration and exports
+- `crates/tugtool-python-cst/src/lib.rs` - Added P4 re-exports for type comment types
+- `crates/tugtool-python/src/analyzer.rs` - Integrated TypeCommentCollector into FileAnalysis, added 4 integration tests
+- `crates/tugtool-python/src/cross_file_types.rs` - Updated test fixtures with type_comments field
+- `crates/tugtool-python/src/ops/rename.rs` - Updated test fixtures with type_comments field
+- `plans/phase-13.md` - Checked off all tasks and checkpoints for Step 1.0.1
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst type_comment`: 33 tests passed
+- `cargo nextest run -p tugtool-python type_comment`: 4 tests passed
+- Total: 37 tests (15 required + 22 additional edge case tests)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst type_comment` passes: PASS (33 tests)
+- `cargo nextest run -p tugtool-python type_comment` passes: PASS (4 tests)
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+- TypeCommentParser follows same architecture as StringAnnotationParser: tokenize, extract refs, rename in reverse order
+- TypeCommentCollector scans source text line-by-line (not CST) since comments are tokens not nodes
+- Type comments are now collected during file analysis and stored in FileAnalysis.type_comments
+- The rename() method is implemented and ready for integration into rename operations in a future step
+- Test coverage exceeds requirements (147%) with edge cases for whitespace handling, error cases, and empty sources
+
+---
+
 ## [phase-13.md] Step 0.3.6 Summary: Stub Discovery Infrastructure | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31

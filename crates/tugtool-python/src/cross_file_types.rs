@@ -1940,6 +1940,7 @@ class Child(Parent):
             isinstance_checks: vec![],
             cst_assignments: vec![],
             cst_annotations: vec![],
+            type_comments: vec![],
         }
     }
 

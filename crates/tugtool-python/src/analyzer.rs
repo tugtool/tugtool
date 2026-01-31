@@ -86,7 +86,7 @@ use thiserror::Error;
 use crate::cst_bridge;
 
 // Receiver path types for dotted path resolution
-use tugtool_python_cst::{CallSiteInfo, ReceiverPath, ReceiverStep};
+use tugtool_python_cst::{CallSiteInfo, ReceiverPath, ReceiverStep, TypeComment, TypeCommentCollector};
 
 /// Maximum depth for chained attribute resolution.
 /// Deeper chains are uncommon and often involve external types.
@@ -367,6 +367,9 @@ pub struct FileAnalysis {
     /// Annotations collected during Pass 1 (for TypeTracker in Pass 4).
     /// Stored here to avoid re-parsing files in Pass 4a.
     pub cst_annotations: Vec<tugtool_python_cst::AnnotationInfo>,
+    /// Type comments (`# type: Foo`) found in the file.
+    /// These contain type references that may need updating during rename operations.
+    pub type_comments: Vec<TypeComment>,
 }
 
 /// An export entry from __all__ (for star import expansion and rename operations).
@@ -1839,6 +1842,9 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
     // Build AliasGraph from assignments and imports
     let alias_graph = AliasGraph::from_analysis(&types_assignments, &imported_names);
 
+    // Collect type comments from source
+    let type_comments = TypeCommentCollector::collect(content);
+
     Ok(FileAnalysis {
         file_id,
         path: path.to_string(),
@@ -1857,6 +1863,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         // Store P1 data for Pass 4a (avoids re-parsing files)
         cst_assignments: native_result.assignments,
         cst_annotations: native_result.annotations,
+        type_comments,
     })
 }
 
@@ -13114,6 +13121,83 @@ class Service:
             let tracker = TypeTracker::new();
             let _cloned = tracker.clone();
             // If this compiles, TypeTracker is Clone
+        }
+    }
+
+    // ========================================================================
+    // Type Comment Integration Tests
+    // ========================================================================
+    mod type_comment_tests {
+        use super::*;
+        use tugtool_python_cst::TypeCommentKind;
+
+        #[test]
+        fn test_type_comment_binding_association() {
+            // Test that type comments are collected during file analysis
+            let source = r#"
+x = 1  # type: int
+y = "hello"  # type: str
+handlers = []  # type: List[Handler]
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            assert_eq!(analysis.type_comments.len(), 3);
+
+            // Check first type comment
+            assert_eq!(analysis.type_comments[0].kind, TypeCommentKind::Variable);
+            assert_eq!(analysis.type_comments[0].content, "int");
+            assert_eq!(analysis.type_comments[0].line, 1);
+
+            // Check second type comment
+            assert_eq!(analysis.type_comments[1].kind, TypeCommentKind::Variable);
+            assert_eq!(analysis.type_comments[1].content, "str");
+            assert_eq!(analysis.type_comments[1].line, 2);
+
+            // Check third type comment (with Handler in generic)
+            assert_eq!(analysis.type_comments[2].kind, TypeCommentKind::Variable);
+            assert_eq!(analysis.type_comments[2].content, "List[Handler]");
+            assert_eq!(analysis.type_comments[2].line, 3);
+        }
+
+        #[test]
+        fn test_type_comment_function_signature() {
+            // Test function signature type comments
+            let source = r#"
+def foo(x):  # type: (int) -> str
+    return str(x)
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            assert_eq!(analysis.type_comments.len(), 1);
+            assert_eq!(analysis.type_comments[0].kind, TypeCommentKind::FunctionSignature);
+            assert_eq!(analysis.type_comments[0].content, "(int) -> str");
+        }
+
+        #[test]
+        fn test_type_comment_ignore() {
+            // Test type ignore comments
+            let source = r#"
+x = foo()  # type: ignore
+y = bar()  # type: ignore[attr-defined]
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            assert_eq!(analysis.type_comments.len(), 2);
+            assert_eq!(analysis.type_comments[0].kind, TypeCommentKind::Ignore);
+            assert_eq!(analysis.type_comments[1].kind, TypeCommentKind::Ignore);
+        }
+
+        #[test]
+        fn test_type_comment_no_comments() {
+            // Test file with no type comments
+            let source = r#"
+x = 1
+y = "hello"
+# just a regular comment
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            assert!(analysis.type_comments.is_empty());
         }
     }
 }

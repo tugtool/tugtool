@@ -1567,6 +1567,7 @@ def foo():
                 isinstance_checks: vec![],
                 cst_assignments: vec![],
                 cst_annotations: vec![],
+                type_comments: vec![],
             };
 
             let aliases =
@@ -1623,6 +1624,7 @@ def foo():
                 isinstance_checks: vec![],
                 cst_assignments: vec![],
                 cst_annotations: vec![],
+                type_comments: vec![],
             };
 
             let content = "bar\nb = bar\n";

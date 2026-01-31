@@ -85,6 +85,11 @@ pub use visitor::{
     StubAttribute, StubClass, StubDecorator, StubFunction, StubParam, StubSymbols, StubTypeAlias,
     StubVariable, TypeNameSpan,
 };
+// P4 visitor exports (type comment parsing)
+pub use visitor::{
+    ParsedTypeComment, TypeComment, TypeCommentCollector, TypeCommentError, TypeCommentKind,
+    TypeCommentParser, TypeCommentResult, TypeNameRef,
+};
 // Re-export walk functions for CST traversal
 pub use visitor::{
     walk_annotation, walk_arg, walk_as_name, walk_assert, walk_assign, walk_assign_target,
