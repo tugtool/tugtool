@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6.1: Stub Error and Result Types | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6.1 specification (lines 5512-5542)
+- `plans/phase-13.md` - 0.3.1 API Specification - StubError enum (lines 4633-4664)
+- `crates/tugtool-python/src/lib.rs` - Current module structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `stubs.rs` module file | Done |
+| Add `StubError` enum with variants: ParseError, NotFound, IoError, InvalidAnnotation | Done |
+| Implement `std::fmt::Display` for `StubError` | Done |
+| Implement `std::error::Error` for `StubError` | Done |
+| Add `StubResult<T>` type alias | Done |
+| Add `pub mod stubs;` to `lib.rs` | Done |
+| Add comprehensive documentation with error examples | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/stubs.rs` - Type stub discovery and update infrastructure module with StubError enum, Display/Error impls, StubResult type alias, and comprehensive documentation
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added `pub mod stubs;` and documentation entry
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python stub_error`: 7 tests passed
+- `cargo nextest run -p tugtool-python --filter-expr 'test(stub)'`: 25 tests passed (includes broader matches)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python stub_error` passes: PASS (7 tests)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+- StubError implements both `Clone` and `Debug` derives as per API spec
+- Added bonus tests beyond spec: `test_stub_result_ok`, `test_stub_result_err`, `test_stub_error_is_error_trait`, `test_stub_error_debug`, `test_stub_error_clone`
+- Display messages follow consistent format: action + path + details
+- This step provides the error foundation for all subsequent stub discovery steps (0.3.6.2-0.3.6.6)
+
+---
+
 ## [phase-13.md] Step 0.3.6: Stub Discovery Execution Steps | PLANNING COMPLETE | 2026-01-30
 
 **Completed:** 2026-01-30

@@ -22,6 +22,7 @@
 //! - [`verification`]: Python verification pipeline (compileall, pytest, mypy)
 //! - [`ops`]: Python refactoring operations (rename, etc.)
 //! - [`types`]: Shared data types for Python analysis
+//! - [`stubs`]: Type stub (.pyi) discovery and update infrastructure
 //!
 //! # Example
 //!
@@ -46,6 +47,7 @@ pub mod files;
 pub mod lookup;
 pub mod mro;
 pub mod ops;
+pub mod stubs;
 pub mod type_narrowing;
 pub mod type_tracker;
 pub mod types;

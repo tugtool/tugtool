@@ -5520,24 +5520,24 @@ This section breaks the Stub Discovery Infrastructure implementation into discre
 - Modified `crates/tugtool-python/src/lib.rs` (add `pub mod stubs;`)
 
 **Tasks:**
-- [ ] Create `stubs.rs` module file
-- [ ] Add `StubError` enum with variants: `ParseError`, `NotFound`, `IoError`, `InvalidAnnotation`
-- [ ] Implement `std::fmt::Display` for `StubError`
-- [ ] Implement `std::error::Error` for `StubError`
-- [ ] Add `StubResult<T>` type alias
-- [ ] Add `pub mod stubs;` to `lib.rs`
-- [ ] Add comprehensive documentation with error examples
+- [x] Create `stubs.rs` module file
+- [x] Add `StubError` enum with variants: `ParseError`, `NotFound`, `IoError`, `InvalidAnnotation`
+- [x] Implement `std::fmt::Display` for `StubError`
+- [x] Implement `std::error::Error` for `StubError`
+- [x] Add `StubResult<T>` type alias
+- [x] Add `pub mod stubs;` to `lib.rs`
+- [x] Add comprehensive documentation with error examples
 
 **Tests:**
-- [ ] Unit: `test_stub_error_display_parse_error` - Verify Display impl for ParseError
-- [ ] Unit: `test_stub_error_display_not_found` - Verify Display impl for NotFound
-- [ ] Unit: `test_stub_error_display_io_error` - Verify Display impl for IoError
-- [ ] Unit: `test_stub_error_display_invalid_annotation` - Verify Display impl for InvalidAnnotation
+- [x] Unit: `test_stub_error_display_parse_error` - Verify Display impl for ParseError
+- [x] Unit: `test_stub_error_display_not_found` - Verify Display impl for NotFound
+- [x] Unit: `test_stub_error_display_io_error` - Verify Display impl for IoError
+- [x] Unit: `test_stub_error_display_invalid_annotation` - Verify Display impl for InvalidAnnotation
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python stub_error` passes
-- [ ] `cargo clippy -p tugtool-python -- -D warnings` passes
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python stub_error` passes
+- [x] `cargo clippy -p tugtool-python -- -D warnings` passes
 
 **Rollback:** Revert commit
 
