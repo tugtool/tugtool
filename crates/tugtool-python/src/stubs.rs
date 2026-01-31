@@ -696,6 +696,329 @@ pub struct ParsedStub {
     pub source: String,
 }
 
+// ============================================================================
+// String Annotation Parser
+// ============================================================================
+
+/// A reference found in a string annotation.
+///
+/// Represents a type name or identifier found within a string annotation
+/// (forward reference). Each reference includes position information to
+/// enable precise renaming.
+///
+/// # Example
+///
+/// For the annotation `"List[Handler]"`, two refs would be extracted:
+/// - `AnnotationRef { name: "List", offset_in_string: 0, length: 4 }`
+/// - `AnnotationRef { name: "Handler", offset_in_string: 5, length: 7 }`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnotationRef {
+    /// The name referenced (e.g., "Handler", "List").
+    pub name: String,
+    /// Position within the annotation string content (not including outer quotes).
+    pub offset_in_string: usize,
+    /// Length of the name in bytes.
+    pub length: usize,
+}
+
+/// Information about a parsed string annotation.
+///
+/// Contains the extracted content, quote style, and all type references
+/// found within the annotation.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::StringAnnotationParser;
+///
+/// let parsed = StringAnnotationParser::parse("\"List[Handler]\"")?;
+/// assert_eq!(parsed.content, "List[Handler]");
+/// assert_eq!(parsed.quote_char, '"');
+/// assert_eq!(parsed.refs.len(), 2);
+/// ```
+#[derive(Debug, Clone)]
+pub struct ParsedAnnotation {
+    /// The annotation content (without outer quotes).
+    pub content: String,
+    /// The quote character used (' or ").
+    pub quote_char: char,
+    /// All type references found in the annotation.
+    pub refs: Vec<AnnotationRef>,
+}
+
+/// Internal token type for annotation parsing.
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Punct value is used structurally for parsing
+enum AnnotationToken {
+    /// An identifier (type name, module name).
+    Name { value: String, offset: usize },
+    /// A punctuation character ([, ], |, ., ,, (, )).
+    Punct(char),
+}
+
+/// Parses and transforms type expressions in string annotations.
+///
+/// String annotations are used for forward references and lazy imports:
+///
+/// ```python
+/// def process(handler: "Handler") -> "Result":
+///     items: "List[Item]" = []
+/// ```
+///
+/// This parser extracts type names from string content for renaming
+/// and can transform annotations to replace names.
+///
+/// # Supported Patterns
+///
+/// - Simple names: `"ClassName"` → refs `["ClassName"]`
+/// - Qualified names: `"module.Class"` → refs `["module", "Class"]`
+/// - Generic types: `"List[Item]"` → refs `["List", "Item"]`
+/// - Union types: `"A | B"` → refs `["A", "B"]`
+/// - Optional: `"Optional[T]"` → refs `["Optional", "T"]`
+/// - Callable: `"Callable[[A], B]"` → refs `["Callable", "A", "B"]`
+/// - Nested generics: `"Dict[str, List[int]]"` → refs `["Dict", "str", "List", "int"]`
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::StringAnnotationParser;
+///
+/// // Parse an annotation
+/// let parsed = StringAnnotationParser::parse("\"List[Handler]\"")?;
+/// assert_eq!(parsed.refs.len(), 2);
+///
+/// // Rename a type within an annotation
+/// let result = StringAnnotationParser::rename(
+///     "\"Handler\"",
+///     "Handler",
+///     "RequestHandler"
+/// )?;
+/// assert_eq!(result, "\"RequestHandler\"");
+///
+/// // Check if a name appears in an annotation
+/// let found = StringAnnotationParser::contains_name("\"List[Handler]\"", "Handler")?;
+/// assert!(found);
+/// ```
+pub struct StringAnnotationParser;
+
+impl StringAnnotationParser {
+    /// Parse a string annotation and extract type references.
+    ///
+    /// # Arguments
+    ///
+    /// * `annotation` - The annotation including quotes (e.g., `"Handler"` or `'Type'`)
+    ///
+    /// # Returns
+    ///
+    /// Parsed annotation info, or error if invalid syntax.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StubError::InvalidAnnotation` if:
+    /// - The string is too short (less than 2 characters)
+    /// - The string doesn't start/end with matching quotes
+    /// - The content contains invalid characters
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let parsed = StringAnnotationParser::parse("\"List[Item]\"")?;
+    /// assert_eq!(parsed.content, "List[Item]");
+    /// assert_eq!(parsed.refs.len(), 2);
+    /// ```
+    pub fn parse(annotation: &str) -> StubResult<ParsedAnnotation> {
+        // 1. Extract quote character and content
+        let (quote_char, content) = Self::extract_content(annotation)?;
+
+        // 2. Tokenize the content
+        let tokens = Self::tokenize(content)?;
+
+        // 3. Extract name references
+        let refs = Self::extract_refs(&tokens);
+
+        Ok(ParsedAnnotation {
+            content: content.to_string(),
+            quote_char,
+            refs,
+        })
+    }
+
+    /// Transform a string annotation by renaming a symbol.
+    ///
+    /// Replaces all occurrences of `old_name` with `new_name` in the annotation,
+    /// preserving the original quote style.
+    ///
+    /// # Arguments
+    ///
+    /// * `annotation` - Original annotation (including quotes)
+    /// * `old_name` - Name to replace
+    /// * `new_name` - Replacement name
+    ///
+    /// # Returns
+    ///
+    /// The transformed annotation string, preserving quote style.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Simple rename
+    /// let result = StringAnnotationParser::rename(
+    ///     "\"Handler\"",
+    ///     "Handler",
+    ///     "RequestHandler"
+    /// )?;
+    /// assert_eq!(result, "\"RequestHandler\"");
+    ///
+    /// // Preserves single quotes
+    /// let result = StringAnnotationParser::rename(
+    ///     "'List[Handler]'",
+    ///     "Handler",
+    ///     "RequestHandler"
+    /// )?;
+    /// assert_eq!(result, "'List[RequestHandler]'");
+    ///
+    /// // Multiple references
+    /// let result = StringAnnotationParser::rename(
+    ///     "\"Dict[Handler, Handler]\"",
+    ///     "Handler",
+    ///     "RequestHandler"
+    /// )?;
+    /// assert_eq!(result, "\"Dict[RequestHandler, RequestHandler]\"");
+    /// ```
+    pub fn rename(annotation: &str, old_name: &str, new_name: &str) -> StubResult<String> {
+        let parsed = Self::parse(annotation)?;
+
+        // Find all occurrences of old_name and replace
+        let mut result = parsed.content.clone();
+
+        // Replace in reverse order to preserve offsets
+        let mut replacements: Vec<_> = parsed
+            .refs
+            .iter()
+            .filter(|r| r.name == old_name)
+            .collect();
+        replacements.sort_by(|a, b| b.offset_in_string.cmp(&a.offset_in_string));
+
+        for r in replacements {
+            result.replace_range(r.offset_in_string..r.offset_in_string + r.length, new_name);
+        }
+
+        Ok(format!("{}{}{}", parsed.quote_char, result, parsed.quote_char))
+    }
+
+    /// Check if an annotation contains a reference to a given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `annotation` - The annotation including quotes
+    /// * `name` - The name to search for
+    ///
+    /// # Returns
+    ///
+    /// `true` if the annotation contains a reference to the name.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// assert!(StringAnnotationParser::contains_name("\"List[Handler]\"", "Handler")?);
+    /// assert!(StringAnnotationParser::contains_name("\"List[Handler]\"", "List")?);
+    /// assert!(!StringAnnotationParser::contains_name("\"List[Handler]\"", "Dict")?);
+    /// ```
+    pub fn contains_name(annotation: &str, name: &str) -> StubResult<bool> {
+        let parsed = Self::parse(annotation)?;
+        Ok(parsed.refs.iter().any(|r| r.name == name))
+    }
+
+    /// Extract the quote character and inner content from an annotation string.
+    fn extract_content(annotation: &str) -> StubResult<(char, &str)> {
+        let bytes = annotation.as_bytes();
+        if bytes.len() < 2 {
+            return Err(StubError::InvalidAnnotation {
+                annotation: annotation.to_string(),
+                message: "Annotation too short".to_string(),
+            });
+        }
+
+        let quote = bytes[0] as char;
+        if quote != '"' && quote != '\'' {
+            return Err(StubError::InvalidAnnotation {
+                annotation: annotation.to_string(),
+                message: format!("Invalid quote character: {}", quote),
+            });
+        }
+
+        let last = bytes[bytes.len() - 1] as char;
+        if last != quote {
+            return Err(StubError::InvalidAnnotation {
+                annotation: annotation.to_string(),
+                message: "Mismatched quotes".to_string(),
+            });
+        }
+
+        Ok((quote, &annotation[1..annotation.len() - 1]))
+    }
+
+    /// Tokenize annotation content into names and punctuation.
+    fn tokenize(content: &str) -> StubResult<Vec<AnnotationToken>> {
+        let mut tokens = Vec::new();
+        let mut chars = content.char_indices().peekable();
+
+        while let Some((i, ch)) = chars.next() {
+            match ch {
+                // Identifier start
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    let start = i;
+                    while let Some(&(_, c)) = chars.peek() {
+                        if c.is_alphanumeric() || c == '_' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    let end = chars.peek().map(|(idx, _)| *idx).unwrap_or(content.len());
+                    tokens.push(AnnotationToken::Name {
+                        value: content[start..end].to_string(),
+                        offset: start,
+                    });
+                }
+                // Operators and delimiters
+                '[' | ']' | ',' | '|' | '.' | '(' | ')' => {
+                    tokens.push(AnnotationToken::Punct(ch));
+                }
+                // Whitespace - skip
+                ' ' | '\t' | '\n' | '\r' => continue,
+                // Unknown character
+                _ => {
+                    return Err(StubError::InvalidAnnotation {
+                        annotation: content.to_string(),
+                        message: format!("Unexpected character: {}", ch),
+                    });
+                }
+            }
+        }
+
+        Ok(tokens)
+    }
+
+    /// Extract name references from tokens.
+    fn extract_refs(tokens: &[AnnotationToken]) -> Vec<AnnotationRef> {
+        tokens
+            .iter()
+            .filter_map(|t| {
+                if let AnnotationToken::Name { value, offset } = t {
+                    Some(AnnotationRef {
+                        name: value.clone(),
+                        offset_in_string: *offset,
+                        length: value.len(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
 impl ParsedStub {
     /// Parse a stub file from disk.
     ///
@@ -1946,6 +2269,217 @@ VAR: str
             assert!(names.contains(&"Klass"));
             assert!(names.contains(&"Alias"));
             assert!(names.contains(&"VAR"));
+        }
+
+        // ========================================================================
+        // StringAnnotationParser Tests
+        // ========================================================================
+
+        #[test]
+        fn test_string_annotation_simple_name() {
+            // Parse "ClassName"
+            let parsed = StringAnnotationParser::parse("\"ClassName\"").expect("parse failed");
+
+            assert_eq!(parsed.content, "ClassName");
+            assert_eq!(parsed.quote_char, '"');
+            assert_eq!(parsed.refs.len(), 1);
+            assert_eq!(parsed.refs[0].name, "ClassName");
+            assert_eq!(parsed.refs[0].offset_in_string, 0);
+            assert_eq!(parsed.refs[0].length, 9);
+        }
+
+        #[test]
+        fn test_string_annotation_qualified_name() {
+            // Parse "module.Class"
+            let parsed = StringAnnotationParser::parse("\"module.Class\"").expect("parse failed");
+
+            assert_eq!(parsed.content, "module.Class");
+            assert_eq!(parsed.refs.len(), 2);
+            assert_eq!(parsed.refs[0].name, "module");
+            assert_eq!(parsed.refs[0].offset_in_string, 0);
+            assert_eq!(parsed.refs[1].name, "Class");
+            assert_eq!(parsed.refs[1].offset_in_string, 7);
+        }
+
+        #[test]
+        fn test_string_annotation_generic() {
+            // Parse "List[Item]"
+            let parsed = StringAnnotationParser::parse("\"List[Item]\"").expect("parse failed");
+
+            assert_eq!(parsed.content, "List[Item]");
+            assert_eq!(parsed.refs.len(), 2);
+            assert_eq!(parsed.refs[0].name, "List");
+            assert_eq!(parsed.refs[1].name, "Item");
+        }
+
+        #[test]
+        fn test_string_annotation_union() {
+            // Parse "A | B"
+            let parsed = StringAnnotationParser::parse("\"A | B\"").expect("parse failed");
+
+            assert_eq!(parsed.content, "A | B");
+            assert_eq!(parsed.refs.len(), 2);
+            assert_eq!(parsed.refs[0].name, "A");
+            assert_eq!(parsed.refs[1].name, "B");
+        }
+
+        #[test]
+        fn test_string_annotation_optional() {
+            // Parse "Optional[T]"
+            let parsed = StringAnnotationParser::parse("\"Optional[T]\"").expect("parse failed");
+
+            assert_eq!(parsed.refs.len(), 2);
+            assert_eq!(parsed.refs[0].name, "Optional");
+            assert_eq!(parsed.refs[1].name, "T");
+        }
+
+        #[test]
+        fn test_string_annotation_callable() {
+            // Parse "Callable[[A], B]"
+            let parsed = StringAnnotationParser::parse("\"Callable[[A], B]\"").expect("parse failed");
+
+            assert_eq!(parsed.refs.len(), 3);
+            assert_eq!(parsed.refs[0].name, "Callable");
+            assert_eq!(parsed.refs[1].name, "A");
+            assert_eq!(parsed.refs[2].name, "B");
+        }
+
+        #[test]
+        fn test_string_annotation_preserves_single_quotes() {
+            // Verify single quotes are preserved on output
+            let result =
+                StringAnnotationParser::rename("'Type'", "Type", "NewType").expect("rename failed");
+
+            assert_eq!(result, "'NewType'");
+        }
+
+        #[test]
+        fn test_string_annotation_preserves_double_quotes() {
+            // Verify double quotes are preserved on output
+            let result =
+                StringAnnotationParser::rename("\"Type\"", "Type", "NewType").expect("rename failed");
+
+            assert_eq!(result, "\"NewType\"");
+        }
+
+        #[test]
+        fn test_string_annotation_nested_generics() {
+            // Parse "Dict[str, List[int]]"
+            let parsed =
+                StringAnnotationParser::parse("\"Dict[str, List[int]]\"").expect("parse failed");
+
+            assert_eq!(parsed.refs.len(), 4);
+            assert_eq!(parsed.refs[0].name, "Dict");
+            assert_eq!(parsed.refs[1].name, "str");
+            assert_eq!(parsed.refs[2].name, "List");
+            assert_eq!(parsed.refs[3].name, "int");
+        }
+
+        #[test]
+        fn test_string_annotation_rename_simple() {
+            // Replace single name (Example 5 from plan)
+            let result = StringAnnotationParser::rename("\"Handler\"", "Handler", "RequestHandler")
+                .expect("rename failed");
+
+            assert_eq!(result, "\"RequestHandler\"");
+        }
+
+        #[test]
+        fn test_string_annotation_rename_qualified() {
+            // Replace in qualified name (Example 5)
+            let result =
+                StringAnnotationParser::rename("\"pkg.Handler\"", "Handler", "RequestHandler")
+                    .expect("rename failed");
+
+            assert_eq!(result, "\"pkg.RequestHandler\"");
+        }
+
+        #[test]
+        fn test_string_annotation_rename_generic() {
+            // Replace in generic type (Example 5)
+            let result =
+                StringAnnotationParser::rename("'List[Handler]'", "Handler", "RequestHandler")
+                    .expect("rename failed");
+
+            assert_eq!(result, "'List[RequestHandler]'");
+        }
+
+        #[test]
+        fn test_string_annotation_rename_multiple() {
+            // Multiple refs to same name (Example 5)
+            let result = StringAnnotationParser::rename(
+                "\"Dict[Handler, Handler]\"",
+                "Handler",
+                "RequestHandler",
+            )
+            .expect("rename failed");
+
+            assert_eq!(result, "\"Dict[RequestHandler, RequestHandler]\"");
+        }
+
+        #[test]
+        fn test_string_annotation_rename_union() {
+            // Replace in union type (Example 5)
+            let result =
+                StringAnnotationParser::rename("\"Handler | None\"", "Handler", "RequestHandler")
+                    .expect("rename failed");
+
+            assert_eq!(result, "\"RequestHandler | None\"");
+        }
+
+        #[test]
+        fn test_string_annotation_contains_name_true() {
+            // Name found
+            assert!(
+                StringAnnotationParser::contains_name("\"List[Handler]\"", "Handler")
+                    .expect("parse failed")
+            );
+            assert!(
+                StringAnnotationParser::contains_name("\"List[Handler]\"", "List")
+                    .expect("parse failed")
+            );
+        }
+
+        #[test]
+        fn test_string_annotation_contains_name_false() {
+            // Name not found
+            assert!(
+                !StringAnnotationParser::contains_name("\"List[Handler]\"", "Dict")
+                    .expect("parse failed")
+            );
+            assert!(
+                !StringAnnotationParser::contains_name("\"Handler\"", "RequestHandler")
+                    .expect("parse failed")
+            );
+        }
+
+        #[test]
+        fn test_string_annotation_invalid_quotes() {
+            // Error for mismatched quotes
+            let result = StringAnnotationParser::parse("\"Handler'");
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                StubError::InvalidAnnotation { annotation, message } => {
+                    assert_eq!(annotation, "\"Handler'");
+                    assert!(message.contains("Mismatched quotes"));
+                }
+                e => panic!("Expected InvalidAnnotation, got: {:?}", e),
+            }
+        }
+
+        #[test]
+        fn test_string_annotation_invalid_char() {
+            // Error for unexpected character
+            let result = StringAnnotationParser::parse("\"Handler@Method\"");
+            assert!(result.is_err());
+
+            match result.unwrap_err() {
+                StubError::InvalidAnnotation { message, .. } => {
+                    assert!(message.contains("Unexpected character"));
+                }
+                e => panic!("Expected InvalidAnnotation, got: {:?}", e),
+            }
         }
     }
 }

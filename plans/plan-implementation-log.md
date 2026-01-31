@@ -6,6 +6,66 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6.5: String Annotation Parser | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6.5 specification (lines 5702-5752)
+- `plans/phase-13.md` - 0.3.1 API Specification - StringAnnotationParser, AnnotationRef, ParsedAnnotation types (lines 4929-5015)
+- `plans/phase-13.md` - 0.3.2 Internal Design Notes - String Annotation Parsing algorithm and tokenizer (lines 5157-5293)
+- `plans/phase-13.md` - 0.3.5 Concrete Examples - Example 5: String Annotation Parsing (lines 5470-5496)
+- `plans/phase-13.md` - 0.3.3 Edge Cases - String annotation edge cases (lines 5308-5314)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `AnnotationRef` struct with `name`, `offset_in_string`, `length` fields | Done |
+| Add `ParsedAnnotation` struct with `content`, `quote_char`, `refs` fields | Done |
+| Add internal `AnnotationToken` enum with `Name` and `Punct` variants | Done |
+| Add `StringAnnotationParser` struct (unit struct) | Done |
+| Implement `extract_content(annotation)` helper | Done |
+| Implement `tokenize(content)` helper | Done |
+| Implement `extract_refs(tokens)` helper | Done |
+| Implement `StringAnnotationParser::parse(annotation)` | Done |
+| Implement `StringAnnotationParser::rename(annotation, old_name, new_name)` | Done |
+| Implement `StringAnnotationParser::contains_name(annotation, name)` | Done |
+| Handle single and double quote styles (preserve on output) | Done |
+| Handle whitespace in annotations | Done |
+| Handle nested brackets for generics | Done |
+| Return `InvalidAnnotation` error for invalid syntax | Done |
+
+**Files Created:**
+- None (all additions to existing file)
+
+**Files Modified:**
+- `crates/tugtool-python/src/stubs.rs` - Added AnnotationRef, ParsedAnnotation, AnnotationToken, StringAnnotationParser types and implementation; added 18 unit tests
+- `plans/phase-13.md` - Checked off all 14 tasks, 18 tests, and 3 checkpoints for Step 0.3.6.5
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python string_annotation`: 18 tests passed
+- `cargo nextest run -p tugtool-python stubs`: 83 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python string_annotation` passes: PASS
+- String annotation parsing handles all common patterns per Example 5: PASS
+  - Simple names: `"Handler"` → `"RequestHandler"`
+  - Qualified names: `"pkg.Handler"` → `"pkg.RequestHandler"`
+  - Generic types: `'List[Handler]'` → `'List[RequestHandler]'`
+  - Multiple refs: `"Dict[Handler, Handler]"` → `"Dict[RequestHandler, RequestHandler]"`
+  - Union types: `"Handler | None"` → `"RequestHandler | None"`
+
+**Key Decisions/Notes:**
+- StringAnnotationParser uses a lightweight tokenizer that recognizes identifiers and punctuation
+- Whitespace is skipped during tokenization
+- Rename uses reverse-order offset replacement to preserve validity of remaining offsets
+- The `AnnotationToken::Punct` variant carries the character but the value isn't used directly (only structurally for parsing) - added `#[allow(dead_code)]` annotation
+
+---
+
 ## [phase-13.md] Step 0.3.6.4: Stub Parsing Types and Implementation | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31

@@ -5709,45 +5709,45 @@ Following the established pattern of SignatureCollector, BindingCollector, etc.,
 - Modified `crates/tugtool-python/src/stubs.rs`
 
 **Tasks:**
-- [ ] Add `AnnotationRef` struct with `name`, `offset_in_string`, `length` fields
-- [ ] Add `ParsedAnnotation` struct with `content`, `quote_char`, `refs` fields
-- [ ] Add internal `AnnotationToken` enum with `Name` and `Punct` variants
-- [ ] Add `StringAnnotationParser` struct (unit struct)
-- [ ] Implement `extract_content(annotation)` helper to extract quote char and inner content
-- [ ] Implement `tokenize(content)` helper to produce token stream
-- [ ] Implement `extract_refs(tokens)` helper to collect name references
-- [ ] Implement `StringAnnotationParser::parse(annotation)` returning ParsedAnnotation
-- [ ] Implement `StringAnnotationParser::rename(annotation, old_name, new_name)` with reverse-order replacement
-- [ ] Implement `StringAnnotationParser::contains_name(annotation, name)` check
-- [ ] Handle single and double quote styles (preserve on output)
-- [ ] Handle whitespace in annotations
-- [ ] Handle nested brackets for generics
-- [ ] Return `InvalidAnnotation` error for invalid syntax
+- [x] Add `AnnotationRef` struct with `name`, `offset_in_string`, `length` fields
+- [x] Add `ParsedAnnotation` struct with `content`, `quote_char`, `refs` fields
+- [x] Add internal `AnnotationToken` enum with `Name` and `Punct` variants
+- [x] Add `StringAnnotationParser` struct (unit struct)
+- [x] Implement `extract_content(annotation)` helper to extract quote char and inner content
+- [x] Implement `tokenize(content)` helper to produce token stream
+- [x] Implement `extract_refs(tokens)` helper to collect name references
+- [x] Implement `StringAnnotationParser::parse(annotation)` returning ParsedAnnotation
+- [x] Implement `StringAnnotationParser::rename(annotation, old_name, new_name)` with reverse-order replacement
+- [x] Implement `StringAnnotationParser::contains_name(annotation, name)` check
+- [x] Handle single and double quote styles (preserve on output)
+- [x] Handle whitespace in annotations
+- [x] Handle nested brackets for generics
+- [x] Return `InvalidAnnotation` error for invalid syntax
 
 **Tests:**
-- [ ] Unit: `test_string_annotation_simple_name` - `"ClassName"`
-- [ ] Unit: `test_string_annotation_qualified_name` - `"module.Class"`
-- [ ] Unit: `test_string_annotation_generic` - `"List[Item]"`
-- [ ] Unit: `test_string_annotation_union` - `"A | B"`
-- [ ] Unit: `test_string_annotation_optional` - `"Optional[T]"`
-- [ ] Unit: `test_string_annotation_callable` - `"Callable[[A], B]"`
-- [ ] Unit: `test_string_annotation_preserves_single_quotes` - `'Type'` stays single
-- [ ] Unit: `test_string_annotation_preserves_double_quotes` - `"Type"` stays double
-- [ ] Unit: `test_string_annotation_nested_generics` - `"Dict[str, List[int]]"`
-- [ ] Unit: `test_string_annotation_rename_simple` - Replace single name (Example 5)
-- [ ] Unit: `test_string_annotation_rename_qualified` - Replace in qualified name
-- [ ] Unit: `test_string_annotation_rename_generic` - Replace in generic type
-- [ ] Unit: `test_string_annotation_rename_multiple` - Multiple refs to same name
-- [ ] Unit: `test_string_annotation_rename_union` - Replace in union type
-- [ ] Unit: `test_string_annotation_contains_name_true` - Name found
-- [ ] Unit: `test_string_annotation_contains_name_false` - Name not found
-- [ ] Unit: `test_string_annotation_invalid_quotes` - Error for mismatched quotes
-- [ ] Unit: `test_string_annotation_invalid_char` - Error for unexpected character
+- [x] Unit: `test_string_annotation_simple_name` - `"ClassName"`
+- [x] Unit: `test_string_annotation_qualified_name` - `"module.Class"`
+- [x] Unit: `test_string_annotation_generic` - `"List[Item]"`
+- [x] Unit: `test_string_annotation_union` - `"A | B"`
+- [x] Unit: `test_string_annotation_optional` - `"Optional[T]"`
+- [x] Unit: `test_string_annotation_callable` - `"Callable[[A], B]"`
+- [x] Unit: `test_string_annotation_preserves_single_quotes` - `'Type'` stays single
+- [x] Unit: `test_string_annotation_preserves_double_quotes` - `"Type"` stays double
+- [x] Unit: `test_string_annotation_nested_generics` - `"Dict[str, List[int]]"`
+- [x] Unit: `test_string_annotation_rename_simple` - Replace single name (Example 5)
+- [x] Unit: `test_string_annotation_rename_qualified` - Replace in qualified name
+- [x] Unit: `test_string_annotation_rename_generic` - Replace in generic type
+- [x] Unit: `test_string_annotation_rename_multiple` - Multiple refs to same name
+- [x] Unit: `test_string_annotation_rename_union` - Replace in union type
+- [x] Unit: `test_string_annotation_contains_name_true` - Name found
+- [x] Unit: `test_string_annotation_contains_name_false` - Name not found
+- [x] Unit: `test_string_annotation_invalid_quotes` - Error for mismatched quotes
+- [x] Unit: `test_string_annotation_invalid_char` - Error for unexpected character
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python string_annotation` passes
-- [ ] String annotation parsing handles all common patterns per Example 5
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python string_annotation` passes
+- [x] String annotation parsing handles all common patterns per Example 5
 
 **Rollback:** Revert commit
 
