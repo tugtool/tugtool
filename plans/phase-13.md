@@ -5553,35 +5553,35 @@ This section breaks the Stub Discovery Infrastructure implementation into discre
 - Modified `crates/tugtool-python/src/stubs.rs`
 
 **Tasks:**
-- [ ] Add `StubLocation` enum with variants: `Inline`, `StubsFolder`, `TypeshedStyle`
-- [ ] Add `StubInfo` struct with `stub_path`, `source_path`, `location` fields
-- [ ] Add `StubDiscoveryOptions` struct with `workspace_root`, `extra_stub_dirs`, `check_typeshed_style` fields
-- [ ] Implement `Default` for `StubDiscoveryOptions`
-- [ ] Add `StubDiscovery` struct with `options` field
-- [ ] Implement `StubDiscovery::new(options)` constructor
-- [ ] Implement `StubDiscovery::for_workspace(workspace_root)` convenience constructor
-- [ ] Implement `inline_stub_path(&self, source_path)` helper (`.py` -> `.pyi`)
-- [ ] Implement `find_stub_for(&self, source_path)` - inline stub detection only
-- [ ] Implement `has_stub(&self, source_path)` using `find_stub_for`
-- [ ] Implement `expected_stub_path(&self, source_path)` returning inline path
-- [ ] Add documentation with usage examples
+- [x] Add `StubLocation` enum with variants: `Inline`, `StubsFolder`, `TypeshedStyle`
+- [x] Add `StubInfo` struct with `stub_path`, `source_path`, `location` fields
+- [x] Add `StubDiscoveryOptions` struct with `workspace_root`, `extra_stub_dirs`, `check_typeshed_style` fields
+- [x] Implement `Default` for `StubDiscoveryOptions`
+- [x] Add `StubDiscovery` struct with `options` field
+- [x] Implement `StubDiscovery::new(options)` constructor
+- [x] Implement `StubDiscovery::for_workspace(workspace_root)` convenience constructor
+- [x] Implement `inline_stub_path(&self, source_path)` helper (`.py` -> `.pyi`)
+- [x] Implement `find_stub_for(&self, source_path)` - inline stub detection only
+- [x] Implement `has_stub(&self, source_path)` using `find_stub_for`
+- [x] Implement `expected_stub_path(&self, source_path)` returning inline path
+- [x] Add documentation with usage examples
 
 **Tests:**
-- [ ] Unit: `test_stub_location_variants` - Verify enum variants exist
-- [ ] Unit: `test_stub_info_construction` - Basic struct creation
-- [ ] Unit: `test_stub_discovery_options_default` - Default values correct
-- [ ] Unit: `test_stub_discovery_new` - Constructor works
-- [ ] Unit: `test_stub_discovery_for_workspace` - Convenience constructor works
-- [ ] Unit: `test_find_stub_same_directory` - Inline stub detection (Example 1)
-- [ ] Unit: `test_no_stub_exists` - Returns None when no stub present
-- [ ] Unit: `test_has_stub_true` - Returns true when stub exists
-- [ ] Unit: `test_has_stub_false` - Returns false when no stub
-- [ ] Unit: `test_expected_stub_path` - Returns .pyi path
+- [x] Unit: `test_stub_location_variants` - Verify enum variants exist
+- [x] Unit: `test_stub_info_construction` - Basic struct creation
+- [x] Unit: `test_stub_discovery_options_default` - Default values correct
+- [x] Unit: `test_stub_discovery_new` - Constructor works
+- [x] Unit: `test_stub_discovery_for_workspace` - Convenience constructor works
+- [x] Unit: `test_find_stub_same_directory` - Inline stub detection (Example 1)
+- [x] Unit: `test_no_stub_exists` - Returns None when no stub present
+- [x] Unit: `test_has_stub_true` - Returns true when stub exists
+- [x] Unit: `test_has_stub_false` - Returns false when no stub
+- [x] Unit: `test_expected_stub_path` - Returns .pyi path
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python stub_discovery` passes
-- [ ] Inline stub detection works per Example 1 in (#step-0-3-examples)
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python stub_discovery` passes
+- [x] Inline stub detection works per Example 1 in (#step-0-3-examples)
 
 **Rollback:** Revert commit
 

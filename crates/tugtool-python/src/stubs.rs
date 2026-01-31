@@ -32,7 +32,7 @@
 //! ```
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Error type for stub operations.
 ///
@@ -207,6 +207,277 @@ impl std::error::Error for StubError {}
 /// ```
 pub type StubResult<T> = Result<T, StubError>;
 
+// ============================================================================
+// Stub Discovery Types
+// ============================================================================
+
+/// Where the stub file was found.
+///
+/// This enum indicates the location type of a discovered stub file,
+/// which can help determine its priority or origin.
+///
+/// # Variants
+///
+/// - [`Inline`](StubLocation::Inline): Stub in same directory as source
+/// - [`StubsFolder`](StubLocation::StubsFolder): Stub in `stubs/` directory
+/// - [`TypeshedStyle`](StubLocation::TypeshedStyle): Stub in `pkg-stubs/` directory
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StubLocation {
+    /// Stub is `module.pyi` in same directory as `module.py`.
+    ///
+    /// This is the highest priority location, as it's the most specific
+    /// to the source file.
+    Inline,
+
+    /// Stub is in `stubs/` directory at workspace root.
+    ///
+    /// The path within `stubs/` mirrors the module path structure.
+    /// For example, `pkg/module.py` would have stub at `stubs/pkg/module.pyi`.
+    StubsFolder,
+
+    /// Stub is in typeshed-style `stubs/package-stubs/` directory.
+    ///
+    /// This follows the convention used by typeshed and other stub packages.
+    /// For example, `pkg/module.py` would have stub at `stubs/pkg-stubs/module.pyi`.
+    TypeshedStyle,
+}
+
+/// Information about a discovered stub file.
+///
+/// This struct contains the paths and location type for a stub file
+/// that was found during discovery.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_python::stubs::{StubInfo, StubLocation};
+/// use std::path::PathBuf;
+///
+/// let info = StubInfo {
+///     stub_path: PathBuf::from("/project/src/utils.pyi"),
+///     source_path: PathBuf::from("/project/src/utils.py"),
+///     location: StubLocation::Inline,
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct StubInfo {
+    /// Path to the stub file.
+    pub stub_path: PathBuf,
+
+    /// Path to the corresponding source file.
+    pub source_path: PathBuf,
+
+    /// Where the stub was found (inline, stubs folder, or typeshed-style).
+    pub location: StubLocation,
+}
+
+/// Options for stub discovery.
+///
+/// Configure how [`StubDiscovery`] searches for stub files.
+///
+/// # Example
+///
+/// ```
+/// use tugtool_python::stubs::StubDiscoveryOptions;
+/// use std::path::PathBuf;
+///
+/// let options = StubDiscoveryOptions {
+///     workspace_root: PathBuf::from("/project"),
+///     extra_stub_dirs: vec![PathBuf::from("/custom/stubs")],
+///     check_typeshed_style: true,
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct StubDiscoveryOptions {
+    /// Workspace root for finding `stubs/` folder.
+    ///
+    /// This is the base directory from which relative stub paths are resolved.
+    pub workspace_root: PathBuf,
+
+    /// Additional directories to search for stubs.
+    ///
+    /// These are checked after inline and stubs folder locations.
+    pub extra_stub_dirs: Vec<PathBuf>,
+
+    /// Whether to check typeshed-style `package-stubs` directories.
+    ///
+    /// Default: `true`
+    pub check_typeshed_style: bool,
+}
+
+impl Default for StubDiscoveryOptions {
+    fn default() -> Self {
+        Self {
+            workspace_root: PathBuf::from("."),
+            extra_stub_dirs: Vec::new(),
+            check_typeshed_style: true,
+        }
+    }
+}
+
+/// Discovers type stub files (.pyi) for Python modules.
+///
+/// # Discovery Order
+///
+/// For a source file `pkg/module.py`, stubs are searched in this order:
+///
+/// 1. **Inline stub**: `pkg/module.pyi` (same directory)
+/// 2. **Stubs folder**: `{workspace_root}/stubs/pkg/module.pyi`
+/// 3. **Typeshed-style**: `{workspace_root}/stubs/pkg-stubs/module.pyi`
+/// 4. **Extra dirs**: Each directory in `extra_stub_dirs`
+///
+/// The first existing file is returned.
+///
+/// # Example
+///
+/// ```ignore
+/// use tugtool_python::stubs::{StubDiscovery, StubDiscoveryOptions};
+/// use std::path::PathBuf;
+///
+/// let discovery = StubDiscovery::new(StubDiscoveryOptions {
+///     workspace_root: PathBuf::from("/project"),
+///     ..Default::default()
+/// });
+///
+/// // Find stub for /project/src/mypackage/utils.py
+/// if let Some(stub) = discovery.find_stub_for(Path::new("/project/src/mypackage/utils.py")) {
+///     println!("Found stub at: {:?}", stub.stub_path);
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct StubDiscovery {
+    options: StubDiscoveryOptions,
+}
+
+impl StubDiscovery {
+    /// Create a new StubDiscovery with the given options.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tugtool_python::stubs::{StubDiscovery, StubDiscoveryOptions};
+    /// use std::path::PathBuf;
+    ///
+    /// let discovery = StubDiscovery::new(StubDiscoveryOptions {
+    ///     workspace_root: PathBuf::from("/project"),
+    ///     ..Default::default()
+    /// });
+    /// ```
+    pub fn new(options: StubDiscoveryOptions) -> Self {
+        Self { options }
+    }
+
+    /// Create a StubDiscovery with default options and given workspace root.
+    ///
+    /// This is a convenience constructor for the common case where you only
+    /// need to specify the workspace root.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tugtool_python::stubs::StubDiscovery;
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// ```
+    pub fn for_workspace(workspace_root: impl Into<PathBuf>) -> Self {
+        Self::new(StubDiscoveryOptions {
+            workspace_root: workspace_root.into(),
+            ..Default::default()
+        })
+    }
+
+    /// Get the options used by this discovery instance.
+    pub fn options(&self) -> &StubDiscoveryOptions {
+        &self.options
+    }
+
+    /// Get the inline stub path for a source file.
+    ///
+    /// This converts `.py` extension to `.pyi` in the same directory.
+    /// For example, `module.py` becomes `module.pyi`.
+    fn inline_stub_path(&self, source_path: &Path) -> PathBuf {
+        source_path.with_extension("pyi")
+    }
+
+    /// Find the stub file for a given Python source file.
+    ///
+    /// Returns `Some(StubInfo)` if a stub exists, `None` if no stub found.
+    ///
+    /// # Discovery Order (MVP - inline only)
+    ///
+    /// Currently only checks for inline stubs (`module.pyi` in same directory).
+    /// Future steps will add stubs folder and typeshed-style discovery.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::stubs::StubDiscovery;
+    /// use std::path::Path;
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// if let Some(info) = discovery.find_stub_for(Path::new("/project/src/utils.py")) {
+    ///     println!("Found stub at: {:?}", info.stub_path);
+    /// }
+    /// ```
+    pub fn find_stub_for(&self, source_path: &Path) -> Option<StubInfo> {
+        // 1. Check for inline stub (same directory)
+        let inline_stub = self.inline_stub_path(source_path);
+        if inline_stub.exists() {
+            return Some(StubInfo {
+                stub_path: inline_stub,
+                source_path: source_path.to_path_buf(),
+                location: StubLocation::Inline,
+            });
+        }
+
+        // Future steps will add:
+        // 2. Check stubs/ folder at workspace root
+        // 3. Check typeshed-style package-stubs
+        // 4. Check extra_stub_dirs
+
+        None
+    }
+
+    /// Check if a stub exists for the given source file.
+    ///
+    /// This is a convenience method that returns a boolean instead of
+    /// the full [`StubInfo`].
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tugtool_python::stubs::StubDiscovery;
+    /// use std::path::Path;
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// if discovery.has_stub(Path::new("/project/src/utils.py")) {
+    ///     println!("Stub exists!");
+    /// }
+    /// ```
+    pub fn has_stub(&self, source_path: &Path) -> bool {
+        self.find_stub_for(source_path).is_some()
+    }
+
+    /// Get the expected stub path (whether it exists or not).
+    ///
+    /// Returns the inline stub path (`module.pyi` in same directory).
+    /// This is useful for creating new stub files or error messages.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use tugtool_python::stubs::StubDiscovery;
+    /// use std::path::Path;
+    ///
+    /// let discovery = StubDiscovery::for_workspace("/project");
+    /// let expected = discovery.expected_stub_path(Path::new("/project/src/utils.py"));
+    /// assert_eq!(expected.to_str().unwrap(), "/project/src/utils.pyi");
+    /// ```
+    pub fn expected_stub_path(&self, source_path: &Path) -> PathBuf {
+        self.inline_stub_path(source_path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,5 +628,354 @@ mod tests {
         // Verify Clone is implemented
         let cloned = error.clone();
         assert_eq!(format!("{}", error), format!("{}", cloned));
+    }
+
+    // ========================================================================
+    // StubLocation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stub_location_variants() {
+        // Verify all enum variants exist and are distinct
+        let inline = StubLocation::Inline;
+        let stubs_folder = StubLocation::StubsFolder;
+        let typeshed_style = StubLocation::TypeshedStyle;
+
+        assert_eq!(inline, StubLocation::Inline);
+        assert_eq!(stubs_folder, StubLocation::StubsFolder);
+        assert_eq!(typeshed_style, StubLocation::TypeshedStyle);
+
+        // Verify they are different from each other
+        assert_ne!(inline, stubs_folder);
+        assert_ne!(inline, typeshed_style);
+        assert_ne!(stubs_folder, typeshed_style);
+    }
+
+    #[test]
+    fn test_stub_location_debug() {
+        let location = StubLocation::Inline;
+        let debug_str = format!("{:?}", location);
+        assert!(debug_str.contains("Inline"));
+    }
+
+    #[test]
+    fn test_stub_location_clone() {
+        let original = StubLocation::StubsFolder;
+        let cloned = original;
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_stub_location_copy() {
+        let location = StubLocation::TypeshedStyle;
+        let copied: StubLocation = location; // Copy happens here
+        assert_eq!(location, copied);
+    }
+
+    // ========================================================================
+    // StubInfo Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stub_info_construction() {
+        let info = StubInfo {
+            stub_path: PathBuf::from("/project/src/utils.pyi"),
+            source_path: PathBuf::from("/project/src/utils.py"),
+            location: StubLocation::Inline,
+        };
+
+        assert_eq!(
+            info.stub_path,
+            PathBuf::from("/project/src/utils.pyi")
+        );
+        assert_eq!(
+            info.source_path,
+            PathBuf::from("/project/src/utils.py")
+        );
+        assert_eq!(info.location, StubLocation::Inline);
+    }
+
+    #[test]
+    fn test_stub_info_debug() {
+        let info = StubInfo {
+            stub_path: PathBuf::from("test.pyi"),
+            source_path: PathBuf::from("test.py"),
+            location: StubLocation::Inline,
+        };
+
+        let debug_str = format!("{:?}", info);
+        assert!(debug_str.contains("StubInfo"));
+        assert!(debug_str.contains("test.pyi"));
+    }
+
+    #[test]
+    fn test_stub_info_clone() {
+        let info = StubInfo {
+            stub_path: PathBuf::from("/project/module.pyi"),
+            source_path: PathBuf::from("/project/module.py"),
+            location: StubLocation::StubsFolder,
+        };
+
+        let cloned = info.clone();
+        assert_eq!(cloned.stub_path, info.stub_path);
+        assert_eq!(cloned.source_path, info.source_path);
+        assert_eq!(cloned.location, info.location);
+    }
+
+    // ========================================================================
+    // StubDiscoveryOptions Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stub_discovery_options_default() {
+        let options = StubDiscoveryOptions::default();
+
+        assert_eq!(options.workspace_root, PathBuf::from("."));
+        assert!(options.extra_stub_dirs.is_empty());
+        assert!(options.check_typeshed_style);
+    }
+
+    #[test]
+    fn test_stub_discovery_options_custom() {
+        let options = StubDiscoveryOptions {
+            workspace_root: PathBuf::from("/my/project"),
+            extra_stub_dirs: vec![
+                PathBuf::from("/extra/stubs1"),
+                PathBuf::from("/extra/stubs2"),
+            ],
+            check_typeshed_style: false,
+        };
+
+        assert_eq!(options.workspace_root, PathBuf::from("/my/project"));
+        assert_eq!(options.extra_stub_dirs.len(), 2);
+        assert!(!options.check_typeshed_style);
+    }
+
+    #[test]
+    fn test_stub_discovery_options_debug() {
+        let options = StubDiscoveryOptions::default();
+        let debug_str = format!("{:?}", options);
+        assert!(debug_str.contains("StubDiscoveryOptions"));
+    }
+
+    #[test]
+    fn test_stub_discovery_options_clone() {
+        let options = StubDiscoveryOptions {
+            workspace_root: PathBuf::from("/project"),
+            extra_stub_dirs: vec![PathBuf::from("/stubs")],
+            check_typeshed_style: true,
+        };
+
+        let cloned = options.clone();
+        assert_eq!(cloned.workspace_root, options.workspace_root);
+        assert_eq!(cloned.extra_stub_dirs, options.extra_stub_dirs);
+        assert_eq!(cloned.check_typeshed_style, options.check_typeshed_style);
+    }
+
+    // ========================================================================
+    // StubDiscovery Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stub_discovery_new() {
+        let options = StubDiscoveryOptions {
+            workspace_root: PathBuf::from("/project"),
+            ..Default::default()
+        };
+
+        let discovery = StubDiscovery::new(options.clone());
+        assert_eq!(discovery.options().workspace_root, options.workspace_root);
+    }
+
+    #[test]
+    fn test_stub_discovery_for_workspace() {
+        let discovery = StubDiscovery::for_workspace("/my/project");
+        assert_eq!(
+            discovery.options().workspace_root,
+            PathBuf::from("/my/project")
+        );
+        assert!(discovery.options().extra_stub_dirs.is_empty());
+        assert!(discovery.options().check_typeshed_style);
+    }
+
+    #[test]
+    fn test_stub_discovery_for_workspace_string() {
+        let workspace = String::from("/another/project");
+        let discovery = StubDiscovery::for_workspace(workspace);
+        assert_eq!(
+            discovery.options().workspace_root,
+            PathBuf::from("/another/project")
+        );
+    }
+
+    #[test]
+    fn test_stub_discovery_for_workspace_pathbuf() {
+        let workspace = PathBuf::from("/pathbuf/project");
+        let discovery = StubDiscovery::for_workspace(workspace);
+        assert_eq!(
+            discovery.options().workspace_root,
+            PathBuf::from("/pathbuf/project")
+        );
+    }
+
+    #[test]
+    fn test_stub_discovery_debug() {
+        let discovery = StubDiscovery::for_workspace("/project");
+        let debug_str = format!("{:?}", discovery);
+        assert!(debug_str.contains("StubDiscovery"));
+    }
+
+    #[test]
+    fn test_stub_discovery_clone() {
+        let discovery = StubDiscovery::for_workspace("/project");
+        let cloned = discovery.clone();
+        assert_eq!(
+            cloned.options().workspace_root,
+            discovery.options().workspace_root
+        );
+    }
+
+    #[test]
+    fn test_expected_stub_path() {
+        let discovery = StubDiscovery::for_workspace("/project");
+
+        // Basic .py to .pyi conversion
+        let expected = discovery.expected_stub_path(Path::new("/project/src/utils.py"));
+        assert_eq!(expected, PathBuf::from("/project/src/utils.pyi"));
+
+        // Nested path
+        let expected = discovery.expected_stub_path(Path::new("/project/pkg/sub/module.py"));
+        assert_eq!(expected, PathBuf::from("/project/pkg/sub/module.pyi"));
+
+        // __init__.py
+        let expected = discovery.expected_stub_path(Path::new("/project/pkg/__init__.py"));
+        assert_eq!(expected, PathBuf::from("/project/pkg/__init__.pyi"));
+    }
+
+    #[test]
+    fn test_no_stub_exists() {
+        // Use a path that definitely doesn't have a stub
+        let discovery = StubDiscovery::for_workspace("/nonexistent/project");
+        let result = discovery.find_stub_for(Path::new("/nonexistent/project/src/utils.py"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_has_stub_false() {
+        let discovery = StubDiscovery::for_workspace("/nonexistent/project");
+        assert!(!discovery.has_stub(Path::new("/nonexistent/project/src/utils.py")));
+    }
+
+    // Tests that require actual filesystem interaction
+    mod filesystem_tests {
+        use super::*;
+        use std::fs::{self, File};
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        fn create_temp_project() -> TempDir {
+            tempfile::tempdir().expect("Failed to create temp dir")
+        }
+
+        #[test]
+        fn test_find_stub_same_directory() {
+            // Example 1 from the plan
+            let temp_dir = create_temp_project();
+            let src_dir = temp_dir.path().join("src").join("mypackage");
+            fs::create_dir_all(&src_dir).expect("Failed to create src dir");
+
+            // Create source file
+            let source_path = src_dir.join("handlers.py");
+            let mut source_file = File::create(&source_path).expect("Failed to create source file");
+            writeln!(source_file, "def handler(): pass").expect("Failed to write source");
+
+            // Create inline stub file
+            let stub_path = src_dir.join("handlers.pyi");
+            let mut stub_file = File::create(&stub_path).expect("Failed to create stub file");
+            writeln!(stub_file, "def handler() -> None: ...").expect("Failed to write stub");
+
+            // Test discovery
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some(), "Should find inline stub");
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.source_path, source_path);
+            assert_eq!(info.location, StubLocation::Inline);
+        }
+
+        #[test]
+        fn test_has_stub_true() {
+            let temp_dir = create_temp_project();
+
+            // Create source and stub files
+            let source_path = temp_dir.path().join("module.py");
+            let stub_path = temp_dir.path().join("module.pyi");
+
+            File::create(&source_path).expect("Failed to create source file");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            assert!(discovery.has_stub(&source_path));
+        }
+
+        #[test]
+        fn test_find_stub_no_stub_file() {
+            let temp_dir = create_temp_project();
+
+            // Create only source file, no stub
+            let source_path = temp_dir.path().join("module.py");
+            File::create(&source_path).expect("Failed to create source file");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_none(), "Should not find stub when none exists");
+        }
+
+        #[test]
+        fn test_find_stub_nested_package() {
+            let temp_dir = create_temp_project();
+            let nested_dir = temp_dir.path().join("pkg").join("sub").join("deep");
+            fs::create_dir_all(&nested_dir).expect("Failed to create nested dir");
+
+            // Create source and stub in nested location
+            let source_path = nested_dir.join("module.py");
+            let stub_path = nested_dir.join("module.pyi");
+
+            File::create(&source_path).expect("Failed to create source file");
+            File::create(&stub_path).expect("Failed to create stub file");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some());
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.location, StubLocation::Inline);
+        }
+
+        #[test]
+        fn test_find_stub_init_py() {
+            let temp_dir = create_temp_project();
+            let pkg_dir = temp_dir.path().join("mypackage");
+            fs::create_dir_all(&pkg_dir).expect("Failed to create package dir");
+
+            // Create __init__.py and __init__.pyi
+            let source_path = pkg_dir.join("__init__.py");
+            let stub_path = pkg_dir.join("__init__.pyi");
+
+            File::create(&source_path).expect("Failed to create __init__.py");
+            File::create(&stub_path).expect("Failed to create __init__.pyi");
+
+            let discovery = StubDiscovery::for_workspace(temp_dir.path());
+            let result = discovery.find_stub_for(&source_path);
+
+            assert!(result.is_some());
+            let info = result.unwrap();
+            assert_eq!(info.stub_path, stub_path);
+            assert_eq!(info.location, StubLocation::Inline);
+        }
     }
 }

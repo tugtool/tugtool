@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.3.6.2: Stub Discovery Types and Basic Discovery | COMPLETE | 2026-01-31
+
+**Completed:** 2026-01-31
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.3.6.2 specification (lines 5546-5586)
+- `plans/phase-13.md` - 0.3.1 API Specification - StubInfo, StubLocation, StubDiscoveryOptions, StubDiscovery (lines 4666-4770)
+- `plans/phase-13.md` - 0.3.5 Concrete Examples - Example 1: Find Inline Stub (lines 5384-5403)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `StubLocation` enum with variants: Inline, StubsFolder, TypeshedStyle | Done |
+| Add `StubInfo` struct with stub_path, source_path, location fields | Done |
+| Add `StubDiscoveryOptions` struct with workspace_root, extra_stub_dirs, check_typeshed_style | Done |
+| Implement `Default` for `StubDiscoveryOptions` | Done |
+| Add `StubDiscovery` struct with options field | Done |
+| Implement `StubDiscovery::new(options)` constructor | Done |
+| Implement `StubDiscovery::for_workspace(workspace_root)` convenience constructor | Done |
+| Implement `inline_stub_path(&self, source_path)` helper | Done |
+| Implement `find_stub_for(&self, source_path)` - inline stub detection only | Done |
+| Implement `has_stub(&self, source_path)` using find_stub_for | Done |
+| Implement `expected_stub_path(&self, source_path)` returning inline path | Done |
+| Add documentation with usage examples | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/stubs.rs` - Added StubLocation, StubInfo, StubDiscoveryOptions, StubDiscovery types with inline stub discovery
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python stub_discovery`: 10 tests passed
+- `cargo nextest run -p tugtool-python --filter-expr 'test(stub)'`: 50 tests passed (all stub tests)
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python stub_discovery` passes: PASS (10 tests)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+- Inline stub detection works per Example 1: PASS
+
+**Key Decisions/Notes:**
+- `find_stub_for()` currently only checks inline stubs (same directory) - Step 0.3.6.3 will add stubs folder and typeshed-style discovery
+- Added `options()` accessor method for convenience
+- Filesystem tests use tempfile crate for isolation
+- Added bonus tests: debug/clone for all types, nested package paths, __init__.py handling
+
+---
+
 ## [phase-13.md] Step 0.3.6.1: Stub Error and Result Types | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31
