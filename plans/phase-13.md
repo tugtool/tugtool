@@ -2278,7 +2278,7 @@ assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
 
 ---
 
-# Step 0.2.0: Node Span Recording Infrastructure {#step-0-2-0-restructured}
+###### Step 0.2.0: Node Span Recording Infrastructure {#step-0-2-0-restructured}
 
 **Parent Step:** [Step 0.2: Position Lookup Infrastructure](#step-0-2)
 
@@ -2286,7 +2286,7 @@ assert!(matches!(result, Err(BatchEditError::OverlappingEdits { .. })));
 
 ---
 
-## Overview
+####### Overview
 
 This document restructures Step 0.2.0 from phase-13.md into digestible substeps with clear commit boundaries, tests, and checkpoints. The implementation follows the recommended order from the original plan.
 
@@ -2296,7 +2296,7 @@ This document restructures Step 0.2.0 from phase-13.md into digestible substeps 
 
 ---
 
-## Problem Statement {#step-0-2-0-problem}
+####### Problem Statement {#step-0-2-0-problem}
 
 Position Lookup (Step 0.2) requires spans to be recorded for nodes in the `PositionTable` during CST inflation. Currently, only 10 node types record their spans:
 
@@ -2319,7 +2319,7 @@ Position Lookup (Step 0.2) requires spans to be recorded for nodes in the `Posit
 
 ---
 
-## Span Type Selection Criteria {#step-0-2-0-criteria}
+####### Span Type Selection Criteria {#step-0-2-0-criteria}
 
 **Table T20: Span Type Selection Criteria** {#t20-span-type-criteria}
 
@@ -2339,9 +2339,9 @@ Position Lookup (Step 0.2) requires spans to be recorded for nodes in the `Posit
 
 ---
 
-## Node Catalogs {#step-0-2-0-catalogs}
+####### Node Catalogs {#step-0-2-0-catalogs}
 
-### Expression Types Needing Span Recording {#step-0-2-0-expressions}
+######## Expression Types Needing Span Recording {#step-0-2-0-expressions}
 
 **Table T21: Expression Types Needing Span Recording** {#t21-expression-spans}
 
@@ -2404,7 +2404,7 @@ Nodes marked with [DONE] already record spans. All others need implementation.
 |------|-----------|------------------|
 | `Param` | `ident_span` | `star_tok` or `name.tok` start to default/annotation end or name end |
 
-### Statement Types Needing Span Recording {#step-0-2-0-statements}
+######## Statement Types Needing Span Recording {#step-0-2-0-statements}
 
 **Table T22: Statement Types Needing Span Recording** {#t22-statement-spans}
 
@@ -2466,7 +2466,7 @@ Nodes marked with [DONE] already record spans. All others need implementation.
 
 ---
 
-## Implementation Patterns {#step-0-2-0-patterns}
+####### Implementation Patterns {#step-0-2-0-patterns}
 
 **Pattern 1: Literal with Token**
 
@@ -2604,13 +2604,13 @@ impl<'r, 'a> Inflate<'a> for DeflatedElse<'r, 'a> {
 
 ---
 
-## Special Considerations {#step-0-2-0-special}
+####### Special Considerations {#step-0-2-0-special}
 
-### Parenthesized Expressions
+######## Parenthesized Expressions
 
 When an expression is parenthesized, the span should include the parentheses if they belong to the expression (outer `lpar`/`rpar`). The existing `deflated_expression_start_pos` and `deflated_expression_end_pos` functions already handle this correctly by checking `lpar.first()` and `rpar.last()`.
 
-### Performance
+######## Performance
 
 Recording spans adds a small overhead during inflation. However:
 1. This only occurs when `InflateCtx::with_positions()` is used
@@ -2621,11 +2621,11 @@ No performance regression is expected for normal parsing without position tracki
 
 ---
 
-## Execution Steps {#execution-steps}
+####### Execution Steps {#execution-steps}
 
 ---
 
-### Step 0.2.0.1: Add Token Fields to Pass/Break/Continue {#step-0-2-0-1}
+######## Step 0.2.0.1: Add Token Fields to Pass/Break/Continue {#step-0-2-0-1}
 
 **Commit:** `feat(python-cst): add tok field to Pass, Break, Continue for span recording`
 
@@ -2676,7 +2676,7 @@ This prerequisite must be completed before span recording can be added to these 
 
 ---
 
-### Step 0.2.0.2: Add deflated_suite_end_pos Helper {#step-0-2-0-2}
+######## Step 0.2.0.2: Add deflated_suite_end_pos Helper {#step-0-2-0-2}
 
 **Commit:** `feat(python-cst): add deflated_suite_end_pos helper for scope span computation`
 
@@ -2722,7 +2722,7 @@ fn deflated_suite_end_pos<'r, 'a>(suite: &DeflatedSuite<'r, 'a>) -> usize {
 
 ---
 
-### Step 0.2.0.3: Literal Span Recording {#step-0-2-0-3}
+######## Step 0.2.0.3: Literal Span Recording {#step-0-2-0-3}
 
 **Commit:** `feat(python-cst): record ident_span for literal expression nodes`
 
@@ -2760,7 +2760,7 @@ Literals have direct token access, making span recording straightforward. This i
 
 ---
 
-### Step 0.2.0.4: Container Span Recording {#step-0-2-0-4}
+######## Step 0.2.0.4: Container Span Recording {#step-0-2-0-4}
 
 **Commit:** `feat(python-cst): record ident_span for container expression nodes (List, Set, Dict)`
 
@@ -2795,7 +2795,7 @@ Container expressions have bracket tokens that define clear boundaries. The span
 
 ---
 
-### Step 0.2.0.5: Composite Expression Spans (Operations) {#step-0-2-0-5}
+######## Step 0.2.0.5: Composite Expression Spans (Operations) {#step-0-2-0-5}
 
 **Commit:** `feat(python-cst): record ident_span for operation expression nodes`
 
@@ -2833,7 +2833,7 @@ Operation expressions (binary, unary, boolean, comparison) require computing spa
 
 ---
 
-### Step 0.2.0.6: Call/Attribute/Subscript Spans {#step-0-2-0-6}
+######## Step 0.2.0.6: Call/Attribute/Subscript Spans {#step-0-2-0-6}
 
 **Commit:** `feat(python-cst): record ident_span for Call, Attribute, Subscript nodes`
 
@@ -2870,7 +2870,7 @@ These nodes represent member access and invocation patterns that are common in r
 
 ---
 
-### Step 0.2.0.7: Other Expression Spans {#step-0-2-0-7}
+######## Step 0.2.0.7: Other Expression Spans {#step-0-2-0-7}
 
 **Commit:** `feat(python-cst): record ident_span for remaining expression nodes`
 
@@ -2913,7 +2913,7 @@ This step covers the remaining expression types that don't fit neatly into the p
 
 ---
 
-### Step 0.2.0.8: String Type Spans {#step-0-2-0-8}
+######## Step 0.2.0.8: String Type Spans {#step-0-2-0-8}
 
 **Commit:** `feat(python-cst): record ident_span for string expression nodes`
 
@@ -2952,7 +2952,7 @@ String expressions have complex structure (concatenation, f-strings, template st
 
 ---
 
-### Step 0.2.0.9: Scope Statement Spans {#step-0-2-0-9}
+######## Step 0.2.0.9: Scope Statement Spans {#step-0-2-0-9}
 
 **Commit:** `feat(python-cst): record lexical_span for scope-creating statement nodes`
 
@@ -2992,7 +2992,7 @@ Scope-creating statements use `lexical_span` to define their scope boundaries. T
 
 ---
 
-### Step 0.2.0.10: Branch Statement Spans {#step-0-2-0-10}
+######## Step 0.2.0.10: Branch Statement Spans {#step-0-2-0-10}
 
 **Commit:** `feat(python-cst): record branch_span for branch statement nodes`
 
@@ -3029,7 +3029,7 @@ Branch statements use `branch_span` to define conditional branch boundaries. The
 
 ---
 
-### Step 0.2.0.11: Simple Statement Spans {#step-0-2-0-11}
+######## Step 0.2.0.11: Simple Statement Spans {#step-0-2-0-11}
 
 **Commit:** `feat(python-cst): record ident_span for simple statement nodes`
 
@@ -3087,7 +3087,7 @@ Simple statements have various starting tokens and ending expressions. This step
 
 ---
 
-### Step 0.2.0.11.5: Refactor Span Helpers with Traits and Macros {#step-0-2-0-11-5}
+######## Step 0.2.0.11.5: Refactor Span Helpers with Traits and Macros {#step-0-2-0-11-5}
 
 **Commit:** `refactor(python-cst): unify span position helpers with traits and macros`
 
@@ -3178,7 +3178,7 @@ This step eliminates the duplication using a trait-based approach with macro-gen
 
 ---
 
-### Step 0.2.0.11.6: Import Infrastructure Foundation {#step-0-2-0-11-6}
+######## Step 0.2.0.11.6: Import Infrastructure Foundation {#step-0-2-0-11-6}
 
 **Commit:** `feat(python-cst): add import infrastructure for span recording`
 
@@ -3261,7 +3261,7 @@ Step 0.2.0.12 (Import Statement Spans) requires several infrastructure component
 
 ---
 
-### Step 0.2.0.12: Import Statement Spans {#step-0-2-0-12}
+######## Step 0.2.0.12: Import Statement Spans {#step-0-2-0-12}
 
 **Commit:** `feat(python-cst): record ident_span for import statement nodes`
 
@@ -3319,7 +3319,7 @@ For `ImportAlias`, the end position is computed from:
 
 ---
 
-### Step 0.2.0.13: Special Spans (Decorator, Param) {#step-0-2-0-13}
+######## Step 0.2.0.13: Special Spans (Decorator, Param) {#step-0-2-0-13}
 
 **Commit:** `feat(python-cst): record ident_span for Decorator and Param nodes`
 
@@ -3375,7 +3375,7 @@ Both `Decorator` and `Param` can leverage the trait infrastructure from Step 0.2
 
 ---
 
-## Step 0.2.0 Summary {#step-0-2-0-summary}
+####### Step 0.2.0 Summary {#step-0-2-0-summary}
 
 After completing Steps 0.2.0.1 through 0.2.0.13 (including 0.2.0.11.5), you will have:
 
@@ -3411,7 +3411,7 @@ This command should run all span-related tests from all substeps.
 
 ---
 
-## Edge Case Tests {#edge-case-tests}
+####### Edge Case Tests {#edge-case-tests}
 
 After all substeps are complete, add these edge case tests to ensure robustness:
 
@@ -3425,7 +3425,7 @@ After all substeps are complete, add these edge case tests to ensure robustness:
 
 ---
 
-## Test File Organization {#test-file-org}
+####### Test File Organization {#test-file-org}
 
 Create a new test file `crates/tugtool-python-cst/tests/span_recording.rs` organized by substep:
 
@@ -3495,7 +3495,7 @@ mod edge_cases {
 
 ---
 
-## Notes for Implementer {#notes}
+####### Notes for Implementer {#notes}
 
 1. **Order matters:** Complete substeps in order. Later substeps depend on earlier ones (e.g., simple statement spans depend on token fields from Step 0.2.0.1).
 
@@ -6348,40 +6348,202 @@ After completing Steps 0.1-0.3, you will have:
 
 #### Stage 1: Foundation Hardening + Layer 1 {#stage-1}
 
+##### Step 1.0.1: Support Type Comments {#step-1-0-1}
+
+**Commit:** `feat(python): add type comment parsing and reference tracking`
+
+**References:** [Table T02](#t02-rename-gaps) (type comments gap), [D08](#d08-stub-updates), [Step 0.3.6.5](#step-0-3-6-5) (StringAnnotationParser for parsing inspiration)
+
+**Context:**
+
+Type comments (`# type: Foo`) are legacy PEP 484-style annotations used in Python 2/3 compatible code. While native annotations (`x: Foo`) are now preferred, type comments remain common in:
+- Codebases maintaining Python 2 compatibility
+- Assignment statements where inline annotations aren't possible (`x, y = 1, 2  # type: int, int`)
+- Function signatures for Python 2 (`def foo(x):  # type: (int) -> str`)
+
+This step adds infrastructure to parse and track type comments so that rename operations can update type references appearing in comments.
+
+**Artifacts:**
+- New `crates/tugtool-python-cst/src/visitor/type_comment.rs` - TypeCommentCollector visitor
+- Modified `crates/tugtool-python-cst/src/visitor/mod.rs` - Export type_comment module
+- Modified `crates/tugtool-python-cst/src/lib.rs` - Re-export type comment types
+- Modified `crates/tugtool-python/src/analyzer.rs` - Integrate type comments into analysis
+
+**Tasks:**
+- [ ] Create `type_comment.rs` module in tugtool-python-cst/src/visitor/
+- [ ] Add `TypeCommentKind` enum with variants: `Variable` (`# type: T`), `FunctionSignature` (`# type: (...) -> T`), `Ignore` (`# type: ignore`)
+- [ ] Add `TypeComment` struct with `kind`, `content`, `span`, `line` fields
+- [ ] Add `TypeNameRef` struct with `name`, `offset_in_comment`, `length` fields (similar to `AnnotationRef` in StringAnnotationParser)
+- [ ] Add `ParsedTypeComment` struct with `kind`, `content`, `refs: Vec<TypeNameRef>` fields
+- [ ] Implement `TypeCommentParser` to extract type names from comment content
+  - [ ] Handle simple types: `# type: Foo`
+  - [ ] Handle qualified types: `# type: module.Class`
+  - [ ] Handle generic types: `# type: List[Foo]`
+  - [ ] Handle union types: `# type: Union[A, B]` and `# type: A | B`
+  - [ ] Handle function signatures: `# type: (int, str) -> bool`
+  - [ ] Handle `# type: ignore` and `# type: ignore[code]` (skip parsing, mark as Ignore)
+- [ ] Implement `TypeCommentParser::rename(comment, old_name, new_name)` for transforming type comments
+- [ ] Implement `TypeCommentParser::contains_name(comment, name)` check
+- [ ] Create `TypeCommentCollector` visitor to collect type comments from CST
+  - [ ] Track comment position relative to statement (same line vs separate line)
+  - [ ] Associate type comments with their target bindings when possible
+- [ ] Export types from `visitor/mod.rs` and `lib.rs`
+- [ ] Integrate `TypeCommentCollector` into analyzer to populate binding/reference data with type comment info
+
+**Design Notes:**
+
+Type comment parsing follows the same pattern as `StringAnnotationParser` from [Step 0.3.6.5](#step-0-3-6-5):
+1. Extract the comment content after `# type:` prefix
+2. Tokenize into type names and punctuation
+3. Track spans relative to comment start for precise edits
+4. Apply renames in reverse order to preserve span validity
+
+The `TypeCommentCollector` visitor integrates with existing CST infrastructure:
+- Collect comments during CST traversal (comments are tokens, not nodes)
+- Filter for `# type:` prefix
+- Parse content using `TypeCommentParser`
+- Associate with adjacent bindings when on same line
+
+**Tests:**
+- [ ] Unit: `test_type_comment_parse_simple` - Parse `# type: Foo`
+- [ ] Unit: `test_type_comment_parse_qualified` - Parse `# type: module.Class`
+- [ ] Unit: `test_type_comment_parse_generic` - Parse `# type: List[Foo]`
+- [ ] Unit: `test_type_comment_parse_union` - Parse `# type: Union[A, B]`
+- [ ] Unit: `test_type_comment_parse_pipe_union` - Parse `# type: A | B`
+- [ ] Unit: `test_type_comment_parse_function_sig` - Parse `# type: (int) -> str`
+- [ ] Unit: `test_type_comment_parse_ignore` - Recognize `# type: ignore`
+- [ ] Unit: `test_type_comment_parse_ignore_code` - Recognize `# type: ignore[attr-defined]`
+- [ ] Unit: `test_type_comment_rename_simple` - Rename type in simple comment
+- [ ] Unit: `test_type_comment_rename_generic` - Rename type in generic comment
+- [ ] Unit: `test_type_comment_rename_multiple` - Rename multiple occurrences
+- [ ] Unit: `test_type_comment_contains_name_true` - Name found in comment
+- [ ] Unit: `test_type_comment_contains_name_false` - Name not found
+- [ ] Unit: `test_type_comment_collector_basic` - Collect type comments from source
+- [ ] Unit: `test_type_comment_collector_multiple` - Collect multiple type comments
+- [ ] Integration: `test_type_comment_binding_association` - Type comments linked to bindings
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst type_comment` passes
+- [ ] `cargo nextest run -p tugtool-python type_comment` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+
+**Rollback:** Revert commit
+
+---
+
+##### Step 1.0.2: Migrate Rename to BatchSpanEditor {#step-1-0-2}
+
+**Commit:** `refactor(python): migrate RenameTransformer to BatchSpanEditor`
+
+**References:** [D07](#d07-edit-primitives), [Step 0.1](#step-0-1) (BatchSpanEditor implementation), [D05](#d05-rename-reference)
+
+**Context:**
+
+The current rename implementation uses `RenameTransformer` in `tugtool-python-cst/src/visitor/rename.rs`. This step migrates the rename operation to use `BatchSpanEditor` from [Step 0.1](#step-0-1), which provides the generalized edit primitive infrastructure that all Phase 13 operations will share.
+
+This migration:
+1. Validates that `BatchSpanEditor` handles all rename use cases correctly
+2. Establishes the pattern for how other operations will use edit primitives
+3. Allows deprecation of `RenameTransformer` (keeping it temporarily for comparison)
+4. Enables future rename enhancements (e.g., type comment renames from [Step 1.0.1](#step-1-0-1))
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/ops/rename.rs` - Use BatchSpanEditor instead of RenameTransformer
+- Modified `crates/tugtool-python/src/cst_bridge.rs` - Add BatchSpanEditor bridge functions
+- Modified `crates/tugtool-python-cst/src/visitor/rename.rs` - Mark RenameTransformer as deprecated
+- New `crates/tugtool-python/tests/rename_batch_editor_migration.rs` - Migration validation tests
+
+**Tasks:**
+- [ ] Add bridge function `cst_bridge::apply_batch_edits(source, edits) -> Result<String>` wrapping BatchSpanEditor
+- [ ] Update `rename::generate_edits()` to produce `Vec<EditPrimitive>` instead of `Vec<RenameRequest>`
+  - [ ] Map each reference span to `EditPrimitive::Replace { span, new_text: new_name }`
+  - [ ] Preserve existing span collection logic
+- [ ] Update `rename::apply_edits_to_file()` to use `cst_bridge::apply_batch_edits()`
+- [ ] Verify multi-file rename still works (each file gets its own BatchSpanEditor)
+- [ ] Add `#[deprecated]` attribute to `RenameTransformer` with migration note
+- [ ] Verify all existing rename tests pass without modification
+- [ ] Add migration validation tests comparing old vs new implementation
+- [ ] Update documentation to reference BatchSpanEditor
+
+**Migration Validation:**
+
+Create parallel test cases that:
+1. Run rename with `RenameTransformer` (legacy)
+2. Run rename with `BatchSpanEditor` (new)
+3. Assert identical output
+
+This ensures no behavioral regression during migration.
+
+**Error Mapping:**
+
+Map `BatchEditError` variants to existing `RenameError`:
+
+| BatchEditError | RenameError |
+|---------------|-------------|
+| `OverlappingEdits` | (should not occur - indicates bug) |
+| `SpanOutOfBounds` | `AnalyzerError` with message |
+| `EmptyEdits` | Return success with empty edits |
+| `IndentationDetectionFailed` | (not applicable for Replace-only edits) |
+
+**Tests:**
+- [ ] Unit: `test_batch_editor_single_rename` - Single span replacement
+- [ ] Unit: `test_batch_editor_multiple_renames` - Multiple spans in same file
+- [ ] Unit: `test_batch_editor_preserves_formatting` - Whitespace/comments preserved
+- [ ] Unit: `test_batch_editor_unicode_spans` - Multi-byte character handling
+- [ ] Integration: `test_rename_migration_simple` - Compare old vs new for simple case
+- [ ] Integration: `test_rename_migration_multifile` - Compare old vs new for multi-file
+- [ ] Integration: `test_rename_migration_complex` - Compare old vs new for complex case
+- [ ] Regression: All existing rename tests in `crates/tugtool-python/tests/` pass unchanged
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python rename` passes (all existing tests)
+- [ ] `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [ ] `RenameTransformer` has `#[deprecated]` attribute
+
+**Rollback:** Revert commit
+
+---
+
 ##### Step 1.1: Rename Hardening {#step-1-1}
 
 **Commit:** `fix(python): address rename edge cases and add missing tests`
 
-**References:** [D05](#d05-rename-reference), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D07](#d07-edit-primitives), [D08](#d08-stub-updates), [Step 0.1](#step-0-1), [Step 0.3](#step-0-3)
+**References:** [D05](#d05-rename-reference), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 1.0.1](#step-1-0-1), [Step 1.0.2](#step-1-0-2)
+
+**Prerequisites:** [Step 1.0.1](#step-1-0-1) (type comment infrastructure), [Step 1.0.2](#step-1-0-2) (BatchSpanEditor migration)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/ops/rename.rs`
-- Updated `crates/tugtool-python-cst/src/visitor/rename.rs` (migrate to BatchSpanEditor)
 - New tests in `crates/tugtool-python/tests/`
 
 **Tasks:**
 - [ ] Address decorator argument renaming
 - [ ] Add comprehension scope edge case handling
-- [ ] Add type comment handling (`# type: Foo` comments)
+- [ ] Integrate type comment renaming using infrastructure from [Step 1.0.1](#step-1-0-1)
 - [ ] Add `__init__.py` re-export detection
 - [ ] Add multi-inheritance rename tests
 - [ ] Add aliased import rename tests
 - [ ] Add property setter rename tests
 - [ ] Add nested class rename handling (class defined inside function)
 - [ ] Add walrus operator (`:=`) target renaming
-- [ ] Migrate rename to use `BatchSpanEditor` from [Step 0.1](#step-0-1)
 - [ ] Update rename to edit stubs and string annotations per [D08](#d08-stub-updates)
 
 **Tests:**
 - [ ] Unit: `test_rename_decorator_arg`
 - [ ] Unit: `test_rename_comprehension_scope`
-- [ ] Unit: `test_rename_type_comment`
+- [ ] Unit: `test_rename_type_comment` - Uses type comment infrastructure from [Step 1.0.1](#step-1-0-1)
 - [ ] Unit: `test_rename_nested_class`
 - [ ] Unit: `test_rename_walrus_operator`
 - [ ] Integration: `test_rename_init_reexport`
 - [ ] Integration: `test_rename_diamond_inheritance`
 - [ ] Integration: `test_rename_updates_stub`
 - [ ] Integration: `test_rename_updates_string_annotation`
+- [ ] Integration: `test_rename_type_comment_in_function` - Rename updates `# type:` in function body
+- [ ] Integration: `test_rename_type_comment_multifile` - Type comments updated across files
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python rename`
