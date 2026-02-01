@@ -470,6 +470,32 @@ Operations emit a warning when generating code:
 
 ---
 
+#### Design Decision D09: Comprehension Scope Handling {#d09-comprehension-scope}
+
+**Decision:** Comprehension iteration variables are treated as References (not Definitions) for rename operations.
+
+**Background:**
+In Python 3, comprehension iteration variables are scoped to the comprehension expression and not visible outside. For example:
+```python
+items = [1, 2, 3]
+doubled = [x * 2 for x in items]
+# x is NOT defined here (Python 3 behavior)
+```
+
+**Rationale:**
+1. **ReferenceCollector**: Should NOT have a `visit_comp_for` handler. The default traversal visits Name nodes in the comprehension target and classifies them as References. This is correct for rename operations because we want to find ALL occurrences of a name.
+
+2. **BindingCollector**: Should NOT collect comprehension iteration variables as bindings because they are scoped to the comprehension and not visible at module/function level. For refactoring purposes, we only care about bindings that affect the broader scope.
+
+**Implications:**
+- Renaming `items` in the example above correctly renames both the assignment and the comprehension reference
+- Comprehension iteration variables (`x`) can only be renamed within the comprehension itself
+- This matches Python 3 scoping semantics
+
+**References:** [Table T02](#t02-rename-gaps), [Step 1.1](#step-1-1)
+
+---
+
 ### 13.1 Infrastructure Layers {#infrastructure-layers}
 
 **Table T01: Infrastructure Layer Summary** {#t01-layer-summary}
@@ -530,15 +556,15 @@ The existing rename infrastructure forms the foundation for all operations.
 
 | Gap | Description | Severity | Status |
 |-----|-------------|----------|--------|
-| Decorator arguments | `@decorator(foo)` where `foo` is renamed | Medium | TODO |
-| Comprehension scope | Variable in nested comprehension scope | Low | TODO |
-| Type comments | `# type: Foo` comments | Low | TODO |
-| `__init__.py` re-exports | Implicit re-exports not in `__all__` | Medium | TODO |
-| Multi-inheritance rename | Method rename in diamond hierarchy | Medium | TODO |
-| Aliased import rename | `from x import foo as bar; bar()` | Medium | TODO |
-| Property setter rename | Renaming property with getter/setter | Medium | TODO |
-| Nested class rename | Class defined inside function | Low | TODO |
-| Walrus operator | Rename target of `:=` | Low | TODO |
+| Decorator arguments | `@decorator(foo)` where `foo` is renamed | Medium | DONE |
+| Comprehension scope | Variable in nested comprehension scope (see [D09](#d09-comprehension-scope)) | Low | DONE |
+| Type comments | `# type: Foo` comments | Low | DONE |
+| `__init__.py` re-exports | Implicit re-exports not in `__all__` | Medium | DEFERRED ([Step 3.1](#step-3-1)) |
+| Multi-inheritance rename | Method rename in diamond hierarchy | Medium | DONE |
+| Aliased import rename | `from x import foo as bar; bar()` | Medium | DONE |
+| Property setter rename | Renaming property with getter/setter | Medium | DONE |
+| Nested class rename | Class defined inside function | Low | DONE |
+| Walrus operator | Rename target of `:=` | Low | DONE |
 
 ---
 
@@ -6512,42 +6538,43 @@ Map `BatchEditError` variants to existing `RenameError`:
 
 **Commit:** `fix(python): address rename edge cases and add missing tests`
 
-**References:** [D05](#d05-rename-reference), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 1.0.1](#step-1-0-1), [Step 1.0.2](#step-1-0-2)
+**References:** [D05](#d05-rename-reference), [D09](#d09-comprehension-scope), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 1.0.1](#step-1-0-1), [Step 1.0.2](#step-1-0-2)
 
 **Prerequisites:** [Step 1.0.1](#step-1-0-1) (type comment infrastructure), [Step 1.0.2](#step-1-0-2) (BatchSpanEditor migration)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/ops/rename.rs`
-- New tests in `crates/tugtool-python/tests/`
+- New tests in `crates/tugtool-python/tests/rename_hardening.rs`
+- New tests in `crates/tugtool-python/tests/rename_type_comments.rs`
 
 **Tasks:**
-- [ ] Address decorator argument renaming
-- [ ] Add comprehension scope edge case handling
-- [ ] Integrate type comment renaming using infrastructure from [Step 1.0.1](#step-1-0-1)
-- [ ] Add `__init__.py` re-export detection
-- [ ] Add multi-inheritance rename tests
-- [ ] Add aliased import rename tests
-- [ ] Add property setter rename tests
-- [ ] Add nested class rename handling (class defined inside function)
-- [ ] Add walrus operator (`:=`) target renaming
-- [ ] Update rename to edit stubs and string annotations per [D08](#d08-stub-updates)
+- [x] Address decorator argument renaming
+- [x] Add comprehension scope edge case handling (see [D09](#d09-comprehension-scope))
+- [x] Integrate type comment renaming using infrastructure from [Step 1.0.1](#step-1-0-1)
+- [ ] ~~Add `__init__.py` re-export detection~~ DEFERRED to [Step 3.1](#step-3-1) (requires Layer 3)
+- [x] Add multi-inheritance rename tests
+- [x] Add aliased import rename tests
+- [x] Add property setter rename tests
+- [x] Add nested class rename handling (class defined inside function)
+- [x] Add walrus operator (`:=`) target renaming
+- [ ] ~~Update rename to edit stubs and string annotations per [D08](#d08-stub-updates)~~ DEFERRED to [Step 1.2](#step-1-2)
 
 **Tests:**
-- [ ] Unit: `test_rename_decorator_arg`
-- [ ] Unit: `test_rename_comprehension_scope`
-- [ ] Unit: `test_rename_type_comment` - Uses type comment infrastructure from [Step 1.0.1](#step-1-0-1)
-- [ ] Unit: `test_rename_nested_class`
-- [ ] Unit: `test_rename_walrus_operator`
-- [ ] Integration: `test_rename_init_reexport`
-- [ ] Integration: `test_rename_diamond_inheritance`
-- [ ] Integration: `test_rename_updates_stub`
-- [ ] Integration: `test_rename_updates_string_annotation`
-- [ ] Integration: `test_rename_type_comment_in_function` - Rename updates `# type:` in function body
-- [ ] Integration: `test_rename_type_comment_multifile` - Type comments updated across files
+- [x] Unit: `test_rename_decorator_arg` (20 tests in `rename_hardening.rs`)
+- [x] Unit: `test_rename_comprehension_scope` (in `rename_hardening.rs`)
+- [x] Unit: `test_rename_type_comment` (13 tests in `rename_type_comments.rs`)
+- [x] Unit: `test_rename_nested_class` (in `rename_hardening.rs`)
+- [x] Unit: `test_rename_walrus_operator` (in `rename_hardening.rs`)
+- [ ] ~~Integration: `test_rename_init_reexport`~~ DEFERRED to [Step 3.1](#step-3-1)
+- [x] Integration: `test_rename_diamond_inheritance` (in `rename_hardening.rs`)
+- [ ] ~~Integration: `test_rename_updates_stub`~~ DEFERRED to [Step 1.2](#step-1-2)
+- [ ] ~~Integration: `test_rename_updates_string_annotation`~~ DEFERRED to [Step 1.2](#step-1-2)
+- [x] Integration: `test_rename_type_comment_in_function` (in `rename_type_comments.rs`)
+- [x] Integration: `test_rename_type_comment_multifile` (in `rename_type_comments.rs`)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python rename`
-- [ ] All [Table T02](#t02-rename-gaps) items addressed
+- [x] `cargo nextest run -p tugtool-python rename` (111 tests pass)
+- [x] 7 of 9 [Table T02](#t02-rename-gaps) items addressed (2 deferred)
 
 **Rollback:** Revert commit
 
@@ -6557,7 +6584,7 @@ Map `BatchEditError` variants to existing `RenameError`:
 
 **Commit:** `feat(python): add rename-param operation`
 
-**References:** [D05](#d05-rename-reference), [Operation 1: Rename Parameter](#op-rename-param), [D08](#d08-stub-updates)
+**References:** [D05](#d05-rename-reference), [Operation 1: Rename Parameter](#op-rename-param), [D08](#d08-stub-updates), [Step 1.1](#step-1-1)
 
 **Artifacts:**
 - Updated CLI in `crates/tugtool/src/cli.rs`
@@ -6568,11 +6595,15 @@ Map `BatchEditError` variants to existing `RenameError`:
 - [ ] Add parameter-specific validation
 - [ ] Update call sites with keyword arguments
 - [ ] Update parameter names in `.pyi` stubs when present (D08)
+- [ ] Update general rename to edit stubs per [D08](#d08-stub-updates) (deferred from [Step 1.1](#step-1-1))
+- [ ] Update general rename to edit string annotations per [D08](#d08-stub-updates) (deferred from [Step 1.1](#step-1-1))
 
 **Tests:**
 - [ ] Integration: `test_rename_param_basic`
 - [ ] Integration: `test_rename_param_keyword_only`
 - [ ] Integration: `test_rename_param_updates_stub`
+- [ ] Integration: `test_rename_updates_stub` (deferred from [Step 1.1](#step-1-1))
+- [ ] Integration: `test_rename_updates_string_annotation` (deferred from [Step 1.1](#step-1-1))
 - [ ] Golden: `rename_param_response.json`
 
 **Checkpoint:**
@@ -6836,7 +6867,7 @@ After completing Steps 2.1-2.3, you will have:
 
 **Commit:** `feat(python): add Layer 3 import manipulation infrastructure`
 
-**References:** [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [Table T07](#t07-layer3-components)
+**References:** [Layer 3](#layer-3), [Table T08](#t08-import-order), [Table T09](#t09-special-imports), [Table T07](#t07-layer3-components), [Table T02](#t02-rename-gaps), [Step 1.1](#step-1-1)
 
 **Artifacts:**
 - New `crates/tugtool-python/src/layers/imports.rs`
@@ -6846,6 +6877,7 @@ After completing Steps 2.1-2.3, you will have:
 - [ ] Implement `ImportRemover` (handles cleanup)
 - [ ] Implement `ImportUpdater` (changes source/target)
 - [ ] Add stdlib module list for grouping
+- [ ] Add `__init__.py` re-export detection (deferred from [Step 1.1](#step-1-1), [Table T02](#t02-rename-gaps))
 
 **Tests:**
 - [ ] Unit: `test_import_insert_after_docstring`
@@ -6853,6 +6885,7 @@ After completing Steps 2.1-2.3, you will have:
 - [ ] Unit: `test_import_remove_single`
 - [ ] Unit: `test_import_remove_from_group`
 - [ ] Unit: `test_import_update_source`
+- [ ] Integration: `test_rename_init_reexport` (deferred from [Step 1.1](#step-1-1))
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugtool-python imports`

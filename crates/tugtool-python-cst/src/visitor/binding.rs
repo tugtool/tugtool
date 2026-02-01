@@ -350,6 +350,11 @@ impl<'a, 'pos> Visitor<'a> for BindingCollector<'pos> {
         VisitResult::Continue
     }
 
+    // NOTE: No visit_comp_for handler. Comprehension iteration variables are NOT
+    // collected as bindings because they're scoped to the comprehension (Python 3)
+    // and not visible outside. For refactoring purposes, we only care about
+    // module/function-level bindings.
+
     fn visit_import_stmt(&mut self, node: &Import<'a>) -> VisitResult {
         // Handle `import a`, `import a.b.c`, `import a as b`
         for alias in &node.names {
@@ -933,5 +938,68 @@ mod tests {
         assert_eq!(a_binding.span.unwrap().start, 0);
         assert_eq!(b_binding.span.unwrap().start, 4);
         assert_eq!(c_binding.span.unwrap().start, 8);
+    }
+
+    // ========================================================================
+    // Comprehension iteration variable tests
+    // ========================================================================
+    // NOTE: Comprehension iteration variables are NOT collected as bindings
+    // because they're scoped to the comprehension (Python 3) and not visible
+    // outside. Only the outer assignment target is a binding.
+
+    #[test]
+    fn test_binding_list_comprehension() {
+        let source = "x = [i for i in items]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        // Only x is a binding, not the comprehension variable i
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "x");
+        assert_eq!(bindings[0].kind, BindingKind::Variable);
+    }
+
+    #[test]
+    fn test_binding_dict_comprehension() {
+        let source = "d = {k: v for k, v in items}";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        // Only d is a binding, not the comprehension variables k and v
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "d");
+    }
+
+    #[test]
+    fn test_binding_set_comprehension() {
+        let source = "s = {x for x in items}";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        // Only s is a binding
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "s");
+    }
+
+    #[test]
+    fn test_binding_generator_expression() {
+        let source = "gen = (x for x in items)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        // Only gen is a binding
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "gen");
+    }
+
+    #[test]
+    fn test_binding_nested_comprehensions() {
+        let source = "x = [[j for j in row] for row in matrix]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        // Only x is a binding, not comprehension variables j and row
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "x");
     }
 }

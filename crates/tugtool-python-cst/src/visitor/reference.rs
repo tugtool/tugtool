@@ -46,7 +46,7 @@ use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
     AnnAssign, Assign, AssignTargetExpression, Attribute, Call, ClassDef, Element, Expression,
     FunctionDef, Import, ImportAlias, ImportFrom, ImportNames, Module, Name, NameOrAttribute,
-    NodeId, Param, Span,
+    NamedExpr, NodeId, Param, Span,
 };
 
 /// The kind of reference in Python.
@@ -669,6 +669,36 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
             self.pop_assign_contexts(count);
         }
     }
+
+    // NOTE: No visit_comp_for handler needed. Comprehension iteration variables
+    // are treated as References (not Definitions) for rename purposes. The default
+    // traversal visits Name nodes in the target and classifies them as References.
+    // This is correct because for rename operations we want to find ALL occurrences.
+
+    fn visit_named_expr(&mut self, node: &NamedExpr<'a>) -> VisitResult {
+        // Walrus operator target is a definition: (x := 5)
+        // The target of a NamedExpr is an Expression (usually Name)
+        if let Expression::Name(name) = node.target.as_ref() {
+            self.add_reference_with_id(name.value, ReferenceKind::Definition, name.node_id);
+            // Push skip context so visit_name doesn't double-count
+            let name_str = name.value.to_string();
+            self.context_names.insert(name_str.clone());
+            self.context_stack.push(ContextEntry {
+                kind: ContextKind::SkipName,
+                name: Some(name_str),
+            });
+        }
+        VisitResult::Continue
+    }
+
+    fn leave_named_expr(&mut self, _node: &NamedExpr<'a>) {
+        // Pop the skip context if we pushed one
+        if let Some(entry) = self.context_stack.last() {
+            if entry.kind == ContextKind::SkipName {
+                self.context_stack.pop();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -942,5 +972,230 @@ result = processor.process()
         let span = x_refs[0].span.as_ref().unwrap();
         assert_eq!(span.start, 0);
         assert_eq!(span.end, 1);
+    }
+
+    // =========================================================================
+    // Decorator argument reference tests
+    // =========================================================================
+
+    #[test]
+    fn test_reference_decorator_argument() {
+        // Decorator arguments should be collected as references
+        let source = "@decorator(some_arg)\ndef func():\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // decorator is a call
+        let dec_refs = refs.get("decorator").unwrap();
+        assert_eq!(dec_refs.len(), 1);
+        assert_eq!(dec_refs[0].kind, ReferenceKind::Call);
+
+        // some_arg is a reference inside the decorator call
+        let arg_refs = refs.get("some_arg").unwrap();
+        assert_eq!(arg_refs.len(), 1);
+        assert_eq!(arg_refs[0].kind, ReferenceKind::Reference);
+    }
+
+    #[test]
+    fn test_reference_decorator_simple() {
+        // Simple decorators like @staticmethod should be collected
+        let source = "@staticmethod\ndef func():\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // staticmethod is a reference (used as decorator, not called)
+        let dec_refs = refs.get("staticmethod").unwrap();
+        assert_eq!(dec_refs.len(), 1);
+        assert_eq!(dec_refs[0].kind, ReferenceKind::Reference);
+    }
+
+    #[test]
+    fn test_reference_decorator_attribute() {
+        // Attribute decorators like @module.decorator
+        let source = "@module.decorator\ndef func():\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // module is a reference
+        let mod_refs = refs.get("module").unwrap();
+        assert_eq!(mod_refs.len(), 1);
+        assert_eq!(mod_refs[0].kind, ReferenceKind::Reference);
+
+        // decorator is an attribute
+        let dec_refs = refs.get("decorator").unwrap();
+        assert_eq!(dec_refs.len(), 1);
+        assert_eq!(dec_refs[0].kind, ReferenceKind::Attribute);
+    }
+
+    #[test]
+    fn test_reference_decorator_call_with_multiple_args() {
+        // Decorator with multiple arguments
+        let source = "@register(name, value)\ndef func():\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // register is a call
+        let reg_refs = refs.get("register").unwrap();
+        assert_eq!(reg_refs.len(), 1);
+        assert_eq!(reg_refs[0].kind, ReferenceKind::Call);
+
+        // name and value are references
+        let name_refs = refs.get("name").unwrap();
+        assert_eq!(name_refs.len(), 1);
+        assert_eq!(name_refs[0].kind, ReferenceKind::Reference);
+
+        let value_refs = refs.get("value").unwrap();
+        assert_eq!(value_refs.len(), 1);
+        assert_eq!(value_refs[0].kind, ReferenceKind::Reference);
+    }
+
+    #[test]
+    fn test_reference_class_decorator_argument() {
+        // Class decorators with arguments
+        let source = "@dataclass(frozen=True)\nclass MyClass:\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // dataclass is a call
+        let dc_refs = refs.get("dataclass").unwrap();
+        assert_eq!(dc_refs.len(), 1);
+        assert_eq!(dc_refs[0].kind, ReferenceKind::Call);
+
+        // MyClass is a definition
+        let cls_refs = refs.get("MyClass").unwrap();
+        assert_eq!(cls_refs.len(), 1);
+        assert_eq!(cls_refs[0].kind, ReferenceKind::Definition);
+    }
+
+    #[test]
+    fn test_reference_decorator_with_method_call() {
+        // Decorator using method call @obj.method()
+        let source = "@factory.create(config)\ndef func():\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // factory is a reference
+        let factory_refs = refs.get("factory").unwrap();
+        assert_eq!(factory_refs.len(), 1);
+        assert_eq!(factory_refs[0].kind, ReferenceKind::Reference);
+
+        // create is an attribute
+        let create_refs = refs.get("create").unwrap();
+        assert_eq!(create_refs.len(), 1);
+        assert_eq!(create_refs[0].kind, ReferenceKind::Attribute);
+
+        // config is a reference
+        let config_refs = refs.get("config").unwrap();
+        assert_eq!(config_refs.len(), 1);
+        assert_eq!(config_refs[0].kind, ReferenceKind::Reference);
+    }
+
+    // =========================================================================
+    // Comprehension iteration variable tests
+    // =========================================================================
+
+    #[test]
+    fn test_reference_list_comprehension_variable() {
+        let source = "[i * 2 for i in items]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // Comprehension iteration variables are all References (not Definitions).
+        // For rename purposes, we want to find ALL occurrences.
+        let i_refs = refs.get("i").unwrap();
+        assert_eq!(i_refs.len(), 2);
+        assert!(
+            i_refs.iter().all(|r| r.kind == ReferenceKind::Reference),
+            "all comprehension variable occurrences should be References"
+        );
+
+        // items is a reference
+        let items_refs = refs.get("items").unwrap();
+        assert_eq!(items_refs.len(), 1);
+        assert_eq!(items_refs[0].kind, ReferenceKind::Reference);
+    }
+
+    #[test]
+    fn test_reference_dict_comprehension_variable() {
+        let source = "{k: v for k, v in items}";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // k appears twice - both as References
+        let k_refs = refs.get("k").unwrap();
+        assert_eq!(k_refs.len(), 2);
+        assert!(k_refs.iter().all(|r| r.kind == ReferenceKind::Reference));
+
+        // v appears twice - both as References
+        let v_refs = refs.get("v").unwrap();
+        assert_eq!(v_refs.len(), 2);
+        assert!(v_refs.iter().all(|r| r.kind == ReferenceKind::Reference));
+
+        // items is a reference
+        let items_refs = refs.get("items").unwrap();
+        assert_eq!(items_refs.len(), 1);
+    }
+
+    #[test]
+    fn test_reference_comprehension_uses_outer_variable() {
+        // Comprehension references a variable from outer scope
+        let source = "x = [i + offset for i in items]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // offset is a reference (from outer scope)
+        let offset_refs = refs.get("offset").unwrap();
+        assert_eq!(offset_refs.len(), 1);
+        assert_eq!(offset_refs[0].kind, ReferenceKind::Reference);
+    }
+
+    #[test]
+    fn test_reference_for_loop_variable() {
+        // For-loop iteration variables are treated as References for rename purposes
+        let source = "for i in items:\n    print(i)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // i appears twice - both as References
+        let i_refs = refs.get("i").unwrap();
+        assert_eq!(i_refs.len(), 2, "i should have 2 references, got {:?}", i_refs);
+        assert!(
+            i_refs.iter().all(|r| r.kind == ReferenceKind::Reference),
+            "all for-loop variable occurrences should be References"
+        );
+    }
+
+    #[test]
+    fn test_reference_walrus_operator_simple() {
+        // Simple walrus operator test - walrus targets ARE Definitions
+        let source = "if (x := 5) > 0:\n    print(x)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is defined (via walrus) and referenced (in print call)
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+        assert!(x_refs.iter().any(|r| r.kind == ReferenceKind::Definition));
+        assert!(x_refs.iter().any(|r| r.kind == ReferenceKind::Reference));
+    }
+
+    #[test]
+    fn test_reference_walrus_in_comprehension() {
+        // Walrus operator inside comprehension
+        let source = "[y for x in items if (y := x * 2) > 0]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // y appears twice: Reference in output [y ...], Definition in walrus (y := ...)
+        let y_refs = refs.get("y").unwrap();
+        assert_eq!(y_refs.len(), 2, "y should have 2 references, got {:?}", y_refs);
+        assert!(y_refs.iter().any(|r| r.kind == ReferenceKind::Definition));
+        assert!(y_refs.iter().any(|r| r.kind == ReferenceKind::Reference));
+
+        // x appears twice: Reference in `for x` and Reference in `x * 2`
+        // (comprehension iteration variables are all References)
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+        assert!(x_refs.iter().all(|r| r.kind == ReferenceKind::Reference));
     }
 }

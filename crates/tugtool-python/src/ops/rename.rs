@@ -40,7 +40,7 @@ use crate::verification::{
 
 // Native CST bridge for rename
 use crate::cst_bridge;
-use tugtool_python_cst::visitor::EditPrimitive;
+use tugtool_python_cst::visitor::{EditPrimitive, TypeCommentCollector, TypeCommentParser};
 
 // Native analyze_files for multi-file analysis
 use crate::analyzer::{analyze_files, FileAnalysis, FileAnalysisBundle, Scope, ScopeId};
@@ -285,6 +285,27 @@ pub fn rename_in_file(content: &str, old_name: &str, new_name: &str) -> RenameRe
         }
     }
 
+    // Check type comments for the target name
+    // Type comments are PEP 484-style annotations like `# type: Handler`
+    for type_comment in TypeCommentCollector::collect(content) {
+        // Check if the type comment contains the old name
+        let comment_text = &content[type_comment.span.start..type_comment.span.end];
+        if TypeCommentParser::contains_name(comment_text, old_name).unwrap_or(false) {
+            // Rename the type in the comment
+            if let Ok(renamed_comment) = TypeCommentParser::rename(comment_text, old_name, new_name)
+            {
+                let span = Span::new(type_comment.span.start, type_comment.span.end);
+                // O(1) duplicate check
+                if seen_spans.insert((span.start, span.end)) {
+                    edits.push(EditPrimitive::Replace {
+                        span,
+                        new_text: renamed_comment,
+                    });
+                }
+            }
+        }
+    }
+
     // Apply all renames using BatchSpanEditor via the bridge
     let result = cst_bridge::apply_batch_edits(content, edits)?;
 
@@ -386,6 +407,31 @@ pub fn collect_rename_edits(
                         span,
                         old_text,
                         new_text: new_name.to_string(),
+                        line,
+                        col,
+                    });
+                }
+            }
+        }
+    }
+
+    // Collect edits from type comments
+    // Type comments are PEP 484-style annotations like `# type: Handler`
+    for type_comment in TypeCommentCollector::collect(content) {
+        // Check if the type comment contains the old name
+        let comment_text = &content[type_comment.span.start..type_comment.span.end];
+        if TypeCommentParser::contains_name(comment_text, old_name).unwrap_or(false) {
+            // Rename the type in the comment
+            if let Ok(renamed_comment) = TypeCommentParser::rename(comment_text, old_name, new_name)
+            {
+                let span = Span::new(type_comment.span.start, type_comment.span.end);
+                let key = (span.start, span.end);
+                if seen_spans.insert(key) {
+                    let (line, col) = byte_offset_to_position_str(content, span.start);
+                    edits.push(NativeRenameEdit {
+                        span,
+                        old_text: comment_text.to_string(),
+                        new_text: renamed_comment,
                         line,
                         col,
                     });

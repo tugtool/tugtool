@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 1.1: Rename Hardening | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 1.1: Rename Hardening (line 6537)
+- `plans/phase-13.md` - Table T02: Rename Operation Gaps
+- `plans/phase-13.md` - D08 (Stub Updates design decision)
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector implementation
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector implementation
+- `crates/tugtool-python/src/ops/rename.rs` - Rename operation implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Address decorator argument renaming | Done (tests verified existing functionality works) |
+| Add comprehension scope edge case handling | Done (via code-architect design; see D09) |
+| Integrate type comment renaming using Step 1.0.1 infrastructure | Done |
+| Add `__init__.py` re-export detection | Deferred to Step 3.1 (requires Layer 3) |
+| Add multi-inheritance rename tests | Done |
+| Add aliased import rename tests | Done |
+| Add property setter rename tests | Done |
+| Add nested class rename handling | Done |
+| Add walrus operator (`:=`) target renaming | Done |
+| Update rename to edit stubs and string annotations per D08 | Deferred to Step 1.2 |
+
+**Files Created:**
+- `crates/tugtool-python/tests/rename_hardening.rs` - 20 hardening tests for Table T02 gaps (decorators, comprehensions, inheritance, aliased imports, properties, nested classes, walrus operators)
+- `crates/tugtool-python/tests/rename_type_comments.rs` - 13 type comment rename tests using Step 1.0.1 infrastructure
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Removed incorrect `visit_comp_for` handler; added decorator and comprehension tests
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Removed incorrect `visit_comp_for` handler; updated comprehension tests
+- `crates/tugtool-python/src/ops/rename.rs` - Added type comment renaming support using TypeCommentCollector and TypeCommentParser
+- `plans/phase-13.md` - Added D09 design decision; updated Table T02 status; updated Steps 1.1, 1.2, and 3.1 with deferred tasks
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python rename`: 111 tests passed
+- `cargo nextest run --workspace`: 2435 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python rename` passes: PASS (111 tests)
+- 7 of 9 Table T02 items addressed: PASS (2 appropriately deferred)
+- Plan-step-reviewer validation: PASS WITH NOTES
+
+**Key Decisions/Notes:**
+- **D09 Design Decision Added:** Comprehension iteration variables are treated as References (not Definitions) for rename operations. This matches Python 3 scoping semantics where comprehension variables are scoped to the comprehension.
+- **Code-architect consultation:** Used for comprehension scope design after initial guessing/backtracking. Design rationale: ReferenceCollector and BindingCollector should NOT have `visit_comp_for` handlers.
+- **Deferred Items:** `__init__.py` re-export detection requires Layer 3 (import manipulation) infrastructure; stub/string annotation updates require stub infrastructure from Step 0.3.6.
+- **Table T02 Status:** 7 items marked DONE, 2 items marked DEFERRED with proper cross-references to future steps.
+
+---
+
 ## [phase-13.md] Step 1.0.2: Migrate Rename to BatchSpanEditor | COMPLETE | 2026-01-31
 
 **Completed:** 2026-01-31
