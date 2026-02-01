@@ -6597,16 +6597,16 @@ This phase implements the visit/leave methods that push and pop scope names. Aft
 
 **Tasks:**
 
-- [ ] Update `visit_function_def` to push function name: `self.scope_path.push(node.name.value.to_string())`
-- [ ] Update `leave_function_def` to pop: `self.scope_path.pop()`
-- [ ] Update `visit_class_def` to push class name: `self.scope_path.push(node.name.value.to_string())`
-- [ ] Update `leave_class_def` to pop: `self.scope_path.pop()`
-- [ ] Add `visit_lambda` to push: `self.scope_path.push(SCOPE_LAMBDA.to_string())`
-- [ ] Add `leave_lambda` to pop: `self.scope_path.pop()`
-- [ ] Add `visit_list_comp` / `leave_list_comp` using `SCOPE_LISTCOMP` (per [D09](#d09-comprehension-scope))
-- [ ] Add `visit_dict_comp` / `leave_dict_comp` using `SCOPE_DICTCOMP`
-- [ ] Add `visit_set_comp` / `leave_set_comp` using `SCOPE_SETCOMP`
-- [ ] Add `visit_generator_exp` / `leave_generator_exp` using `SCOPE_GENEXPR`
+- [x] Update `visit_function_def` to push function name: `self.scope_path.push(node.name.value.to_string())`
+- [x] Update `leave_function_def` to pop: `self.scope_path.pop()`
+- [x] Update `visit_class_def` to push class name: `self.scope_path.push(node.name.value.to_string())`
+- [x] Update `leave_class_def` to pop: `self.scope_path.pop()`
+- [x] Add `visit_lambda` to push: `self.scope_path.push(SCOPE_LAMBDA.to_string())`
+- [x] Add `leave_lambda` to pop: `self.scope_path.pop()`
+- [x] Add `visit_list_comp` / `leave_list_comp` using `SCOPE_LISTCOMP` (per [D09](#d09-comprehension-scope))
+- [x] Add `visit_dict_comp` / `leave_dict_comp` using `SCOPE_DICTCOMP`
+- [x] Add `visit_set_comp` / `leave_set_comp` using `SCOPE_SETCOMP`
+- [x] Add `visit_generator_exp` / `leave_generator_exp` using `SCOPE_GENEXPR`
 
 **Design Notes:**
 
@@ -6690,26 +6690,26 @@ use crate::visitor::{
 
 **Tests (Phase B):**
 
-- [ ] Unit: `test_reference_scope_function` - Reference inside function has `[SCOPE_MODULE, "func"]`
-- [ ] Unit: `test_reference_scope_method` - Reference inside method has `[SCOPE_MODULE, "Class", "method"]`
-- [ ] Unit: `test_reference_scope_nested_function` - Nested function has `[SCOPE_MODULE, "outer", "inner"]`
-- [ ] Unit: `test_reference_scope_lambda` - Lambda body reference has scope ending with `SCOPE_LAMBDA`
-- [ ] Unit: `test_reference_scope_lambda_in_function` - Lambda inside function: `[SCOPE_MODULE, "func", SCOPE_LAMBDA]`
-- [ ] Unit: `test_reference_scope_list_comprehension` - Comprehension variable has scope ending with `SCOPE_LISTCOMP`
-- [ ] Unit: `test_reference_scope_dict_comprehension` - Dict comprehension has `SCOPE_DICTCOMP` scope
-- [ ] Unit: `test_reference_scope_set_comprehension` - Set comprehension has `SCOPE_SETCOMP` scope
-- [ ] Unit: `test_reference_scope_generator_expression` - Generator has `SCOPE_GENEXPR` scope
-- [ ] Unit: `test_reference_scope_class_body` - Reference in class body (not method) has `[SCOPE_MODULE, "Class"]`
-- [ ] Unit: `test_reference_scope_nested_class` - Nested class has correct scope chain
-- [ ] Regression: All existing reference tests still pass
+- [x] Unit: `test_reference_scope_function` - Reference inside function has `[SCOPE_MODULE, "func"]`
+- [x] Unit: `test_reference_scope_method` - Reference inside method has `[SCOPE_MODULE, "Class", "method"]`
+- [x] Unit: `test_reference_scope_nested_function` - Nested function has `[SCOPE_MODULE, "outer", "inner"]`
+- [x] Unit: `test_reference_scope_lambda` - Lambda body reference has scope ending with `SCOPE_LAMBDA`
+- [x] Unit: `test_reference_scope_lambda_in_function` - Lambda inside function: `[SCOPE_MODULE, "func", SCOPE_LAMBDA]`
+- [x] Unit: `test_reference_scope_list_comprehension` - Comprehension variable has scope ending with `SCOPE_LISTCOMP`
+- [x] Unit: `test_reference_scope_dict_comprehension` - Dict comprehension has `SCOPE_DICTCOMP` scope
+- [x] Unit: `test_reference_scope_set_comprehension` - Set comprehension has `SCOPE_SETCOMP` scope
+- [x] Unit: `test_reference_scope_generator_expression` - Generator has `SCOPE_GENEXPR` scope
+- [x] Unit: `test_reference_scope_class_body` - Reference in class body (not method) has `[SCOPE_MODULE, "Class"]`
+- [x] Unit: `test_reference_scope_nested_class` - Nested class has correct scope chain
+- [x] Regression: All existing reference tests still pass
 
 **Checkpoint (Phase B):**
 
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst reference` passes
-- [ ] References inside functions have correct scope path (e.g., `[SCOPE_MODULE, "func"]`)
-- [ ] References inside methods have correct scope path (e.g., `[SCOPE_MODULE, "Class", "method"]`)
-- [ ] Lambda and comprehension references have appropriate scope entries using constants
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst reference` passes
+- [x] References inside functions have correct scope path (e.g., `[SCOPE_MODULE, "func"]`)
+- [x] References inside methods have correct scope path (e.g., `[SCOPE_MODULE, "Class", "method"]`)
+- [x] Lambda and comprehension references have appropriate scope entries using constants
 
 ---
 

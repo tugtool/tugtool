@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.4 Phase B: Scope Tracking Implementation | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` lines 6584-6713 - Phase B specification
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector implementation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Update `visit_function_def` to push function name | Done |
+| Update `leave_function_def` to pop scope | Done |
+| Update `visit_class_def` to push class name | Done |
+| Update `leave_class_def` to pop scope | Done |
+| Add `visit_lambda` / `leave_lambda` methods | Done |
+| Add `visit_list_comp` / `leave_list_comp` methods | Done |
+| Add `visit_dict_comp` / `leave_dict_comp` methods | Done |
+| Add `visit_set_comp` / `leave_set_comp` methods | Done |
+| Add `visit_generator_exp` / `leave_generator_exp` methods | Done |
+| Write 11 Phase B tests | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Added scope tracking to visit/leave methods for functions, classes, lambdas, and comprehensions; Added imports for new node types (Lambda, ListComp, etc.) and scope constants (SCOPE_LAMBDA, etc.); Added 11 Phase B tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst reference`: 54 tests passed
+- `cargo nextest run --workspace`: 2468 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst reference` passes: PASS
+- References inside functions have correct scope path: PASS
+- References inside methods have correct scope path: PASS
+- Lambda and comprehension references have appropriate scope entries: PASS
+
+**Key Decisions/Notes:**
+- Updated `leave_function_def` and `leave_class_def` to also remove names from `context_names` set when popping the skip context
+- All scope tracking uses the constants defined in Phase A (SCOPE_MODULE, SCOPE_LAMBDA, etc.)
+- Tests verify correct scope_path for all nesting scenarios: functions, methods, nested functions, lambdas, lambdas inside functions, all comprehension types, class bodies, and nested classes
+
+---
+
 ## [phase-13.md] Step 0.4 Phase A: CST Data Structures | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

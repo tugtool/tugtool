@@ -42,12 +42,14 @@ use std::collections::{HashMap, HashSet};
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
-use super::SCOPE_MODULE;
+use super::{
+    SCOPE_DICTCOMP, SCOPE_GENEXPR, SCOPE_LAMBDA, SCOPE_LISTCOMP, SCOPE_MODULE, SCOPE_SETCOMP,
+};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
-    AnnAssign, Assign, AssignTargetExpression, Attribute, Call, ClassDef, Element, Expression,
-    FunctionDef, Import, ImportAlias, ImportFrom, ImportNames, Module, Name, NameOrAttribute,
-    NamedExpr, NodeId, Param, Span,
+    AnnAssign, Assign, AssignTargetExpression, Attribute, Call, ClassDef, DictComp, Element,
+    Expression, FunctionDef, GeneratorExp, Import, ImportAlias, ImportFrom, ImportNames, Lambda,
+    ListComp, Module, Name, NameOrAttribute, NamedExpr, NodeId, Param, SetComp, Span,
 };
 
 /// The kind of reference in Python.
@@ -593,17 +595,24 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
         self.context_names.insert(name_str.clone());
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
-            name: Some(name_str),
+            name: Some(name_str.clone()),
         });
+        // Push scope for references inside the function body
+        self.scope_path.push(name_str);
         VisitResult::Continue
     }
 
     fn leave_function_def(&mut self, _node: &FunctionDef<'a>) {
         if let Some(entry) = self.context_stack.last() {
             if entry.kind == ContextKind::SkipName {
+                if let Some(ref name) = entry.name {
+                    self.context_names.remove(name);
+                }
                 self.context_stack.pop();
             }
         }
+        // Pop scope
+        self.scope_path.pop();
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
@@ -617,17 +626,24 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
         self.context_names.insert(name_str.clone());
         self.context_stack.push(ContextEntry {
             kind: ContextKind::SkipName,
-            name: Some(name_str),
+            name: Some(name_str.clone()),
         });
+        // Push scope for references inside the class body
+        self.scope_path.push(name_str);
         VisitResult::Continue
     }
 
     fn leave_class_def(&mut self, _node: &ClassDef<'a>) {
         if let Some(entry) = self.context_stack.last() {
             if entry.kind == ContextKind::SkipName {
+                if let Some(ref name) = entry.name {
+                    self.context_names.remove(name);
+                }
                 self.context_stack.pop();
             }
         }
+        // Pop scope
+        self.scope_path.pop();
     }
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
@@ -710,6 +726,55 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
                 self.context_stack.pop();
             }
         }
+    }
+
+    // =========================================================================
+    // Scope tracking for lambdas and comprehensions
+    // =========================================================================
+
+    fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
+        self.scope_path.push(SCOPE_LAMBDA.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_lambda(&mut self, _node: &Lambda<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_list_comp(&mut self, _node: &ListComp<'a>) -> VisitResult {
+        self.scope_path.push(SCOPE_LISTCOMP.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_list_comp(&mut self, _node: &ListComp<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_dict_comp(&mut self, _node: &DictComp<'a>) -> VisitResult {
+        self.scope_path.push(SCOPE_DICTCOMP.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_dict_comp(&mut self, _node: &DictComp<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_set_comp(&mut self, _node: &SetComp<'a>) -> VisitResult {
+        self.scope_path.push(SCOPE_SETCOMP.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_set_comp(&mut self, _node: &SetComp<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_generator_exp(&mut self, _node: &GeneratorExp<'a>) -> VisitResult {
+        self.scope_path.push(SCOPE_GENEXPR.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_generator_exp(&mut self, _node: &GeneratorExp<'a>) {
+        self.scope_path.pop();
     }
 }
 
@@ -1291,5 +1356,303 @@ result = processor.process()
         let print_refs = refs.get("print").unwrap();
         assert_eq!(print_refs.len(), 1);
         assert_eq!(print_refs[0].scope_path, vec![SCOPE_MODULE]);
+    }
+
+    // =========================================================================
+    // Phase B: Scope Tracking Tests
+    // =========================================================================
+
+    #[test]
+    fn test_reference_scope_function() {
+        use super::super::SCOPE_MODULE;
+
+        // Reference inside function has scope_path [SCOPE_MODULE, "func"]
+        let source = "def func():\n    x = 1\n    print(x)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is defined and referenced inside func
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+
+        // Both should have scope_path [SCOPE_MODULE, "func"]
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, "func"],
+                "Reference inside function should have scope_path [SCOPE_MODULE, \"func\"]"
+            );
+        }
+
+        // func definition itself is at module level
+        let func_refs = refs.get("func").unwrap();
+        assert_eq!(func_refs[0].scope_path, vec![SCOPE_MODULE]);
+    }
+
+    #[test]
+    fn test_reference_scope_method() {
+        use super::super::SCOPE_MODULE;
+
+        // Reference inside method has scope_path [SCOPE_MODULE, "Class", "method"]
+        let source = r#"
+class MyClass:
+    def method(self):
+        x = 1
+        return x
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is defined and referenced inside method
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+
+        // Both should have scope_path [SCOPE_MODULE, "MyClass", "method"]
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, "MyClass", "method"],
+                "Reference inside method should have correct scope path"
+            );
+        }
+
+        // self parameter is also inside method
+        let self_refs = refs.get("self").unwrap();
+        assert_eq!(self_refs.len(), 1);
+        assert_eq!(
+            self_refs[0].scope_path,
+            vec![SCOPE_MODULE, "MyClass", "method"]
+        );
+    }
+
+    #[test]
+    fn test_reference_scope_nested_function() {
+        use super::super::SCOPE_MODULE;
+
+        // Nested function has scope_path [SCOPE_MODULE, "outer", "inner"]
+        let source = r#"
+def outer():
+    def inner():
+        x = 1
+    return inner
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is inside inner
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 1);
+        assert_eq!(
+            x_refs[0].scope_path,
+            vec![SCOPE_MODULE, "outer", "inner"],
+            "Reference in nested function should have correct scope path"
+        );
+
+        // inner definition is inside outer
+        let inner_refs = refs.get("inner").unwrap();
+        // Definition is at outer level, reference (return inner) is also at outer level
+        for r in inner_refs {
+            assert_eq!(r.scope_path, vec![SCOPE_MODULE, "outer"]);
+        }
+    }
+
+    #[test]
+    fn test_reference_scope_lambda() {
+        use super::super::{SCOPE_LAMBDA, SCOPE_MODULE};
+
+        // Lambda body reference has scope ending with SCOPE_LAMBDA
+        let source = "f = lambda x: x + 1";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is defined (param) and referenced in lambda body
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+
+        // Both should have scope_path ending with SCOPE_LAMBDA
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, SCOPE_LAMBDA],
+                "Lambda reference should have scope ending with SCOPE_LAMBDA"
+            );
+        }
+
+        // f is defined at module level
+        let f_refs = refs.get("f").unwrap();
+        assert_eq!(f_refs[0].scope_path, vec![SCOPE_MODULE]);
+    }
+
+    #[test]
+    fn test_reference_scope_lambda_in_function() {
+        use super::super::{SCOPE_LAMBDA, SCOPE_MODULE};
+
+        // Lambda inside function: [SCOPE_MODULE, "func", SCOPE_LAMBDA]
+        let source = r#"
+def func():
+    f = lambda x: x + 1
+    return f
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is inside lambda which is inside func
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, "func", SCOPE_LAMBDA],
+                "Lambda inside function should have correct nested scope"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reference_scope_list_comprehension() {
+        use super::super::{SCOPE_LISTCOMP, SCOPE_MODULE};
+
+        // Comprehension variable has scope ending with SCOPE_LISTCOMP
+        let source = "result = [x * 2 for x in items]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is referenced in the comprehension (both for x and x * 2)
+        let x_refs = refs.get("x").unwrap();
+        assert!(x_refs.len() >= 2);
+
+        // All x references should be in listcomp scope
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, SCOPE_LISTCOMP],
+                "List comprehension reference should have SCOPE_LISTCOMP"
+            );
+        }
+
+        // result is at module level
+        let result_refs = refs.get("result").unwrap();
+        assert_eq!(result_refs[0].scope_path, vec![SCOPE_MODULE]);
+    }
+
+    #[test]
+    fn test_reference_scope_dict_comprehension() {
+        use super::super::{SCOPE_DICTCOMP, SCOPE_MODULE};
+
+        // Dict comprehension has SCOPE_DICTCOMP scope
+        let source = "result = {k: v for k, v in items}";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // k is referenced in the comprehension
+        let k_refs = refs.get("k").unwrap();
+        assert!(k_refs.len() >= 2);
+
+        for r in k_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, SCOPE_DICTCOMP],
+                "Dict comprehension reference should have SCOPE_DICTCOMP"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reference_scope_set_comprehension() {
+        use super::super::{SCOPE_MODULE, SCOPE_SETCOMP};
+
+        // Set comprehension has SCOPE_SETCOMP scope
+        let source = "result = {x * 2 for x in items}";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is referenced in the comprehension
+        let x_refs = refs.get("x").unwrap();
+        assert!(x_refs.len() >= 2);
+
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, SCOPE_SETCOMP],
+                "Set comprehension reference should have SCOPE_SETCOMP"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reference_scope_generator_expression() {
+        use super::super::{SCOPE_GENEXPR, SCOPE_MODULE};
+
+        // Generator expression has SCOPE_GENEXPR scope
+        let source = "result = (x * 2 for x in items)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is referenced in the generator
+        let x_refs = refs.get("x").unwrap();
+        assert!(x_refs.len() >= 2);
+
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, SCOPE_GENEXPR],
+                "Generator expression reference should have SCOPE_GENEXPR"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reference_scope_class_body() {
+        use super::super::SCOPE_MODULE;
+
+        // Reference in class body (not method) has [SCOPE_MODULE, "Class"]
+        let source = r#"
+class MyClass:
+    x = 1
+    y = x + 1
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is defined and referenced in class body
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+
+        // Both should be at class scope, not module scope
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE, "MyClass"],
+                "Class body reference should have scope [SCOPE_MODULE, \"MyClass\"]"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reference_scope_nested_class() {
+        use super::super::SCOPE_MODULE;
+
+        // Nested class has correct scope chain
+        let source = r#"
+class Outer:
+    class Inner:
+        x = 1
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is in nested class
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 1);
+        assert_eq!(
+            x_refs[0].scope_path,
+            vec![SCOPE_MODULE, "Outer", "Inner"],
+            "Nested class reference should have correct scope chain"
+        );
+
+        // Inner class definition is at Outer scope
+        let inner_refs = refs.get("Inner").unwrap();
+        assert_eq!(inner_refs[0].scope_path, vec![SCOPE_MODULE, "Outer"]);
     }
 }
