@@ -6,6 +6,72 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.4 Phase A: CST Data Structures | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` lines 6362-6582 - Phase A specification
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - scope constants location
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - CstReferenceRecord and ReferenceCollector
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector SCOPE_MODULE usage
+- `crates/tugtool-python/src/types.rs` - ParsedReferenceInfo adapter type
+- `crates/tugtool-python/src/cst_bridge.rs` - CST to adapter type conversion
+- `crates/tugtool-core/src/output.rs` - Output ReferenceInfo (kept unchanged)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| A1: Add scope name constants to visitor/mod.rs | Done |
+| A1: Update BindingCollector::new() to use SCOPE_MODULE | Done |
+| A1: Update BindingCollector::with_positions() to use SCOPE_MODULE | Done |
+| A2: Add scope_path field to CstReferenceRecord struct | Done |
+| A2: Update CstReferenceRecord::new() signature | Done |
+| A2: Add scope_path field to ReferenceCollector struct | Done |
+| A2: Initialize scope_path in constructors | Done |
+| A2: Update add_reference_with_id() method | Done |
+| A2: Verify all call sites updated | Done |
+| Write test_scope_constants_defined | Done |
+| Write test_cst_reference_record_has_scope_path | Done |
+| Write test_reference_collector_initializes_module_scope | Done |
+| Write test_reference_scope_path_module_level | Done |
+| Write test_binding_collector_uses_scope_constant | Done |
+| Disambiguate ReferenceInfo naming collision | Done |
+
+**Files Created:**
+- None
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Added SCOPE_MODULE, SCOPE_LAMBDA, SCOPE_LISTCOMP, SCOPE_DICTCOMP, SCOPE_SETCOMP, SCOPE_GENEXPR constants; Updated export to use CstReferenceRecord
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Renamed ReferenceInfo to CstReferenceRecord; Added scope_path field; Updated constructors and add_reference_with_id(); Added Phase A tests
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Updated to use SCOPE_MODULE constant; Added test_binding_collector_uses_scope_constant test
+- `crates/tugtool-python-cst/src/lib.rs` - Updated re-export from ReferenceInfo to CstReferenceRecord
+- `crates/tugtool-python/src/types.rs` - Renamed ReferenceInfo to ParsedReferenceInfo
+- `crates/tugtool-python/src/cst_bridge.rs` - Updated imports and From conversion for renamed types
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst reference`: 43 tests passed
+- `cargo nextest run -p tugtool-python-cst binding`: 47 tests passed
+- `cargo nextest run --workspace`: 2457 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst reference` passes: PASS
+- `cargo nextest run -p tugtool-python-cst binding` passes: PASS
+- All references have `scope_path` field (initialized to `[SCOPE_MODULE]`): PASS
+
+**Key Decisions/Notes:**
+- **Type Naming Disambiguation:** Three different structs were all named `ReferenceInfo`, causing confusion:
+  - `tugtool-core/src/output.rs::ReferenceInfo` - Kept as-is (public JSON output type)
+  - `tugtool-python-cst/src/visitor/reference.rs::ReferenceInfo` → Renamed to `CstReferenceRecord`
+  - `tugtool-python/src/types.rs::ReferenceInfo` → Renamed to `ParsedReferenceInfo`
+- This disambiguation eliminates the need for aliasing at import (`use X as CstX`)
+- All scope_path values are initialized to `vec![SCOPE_MODULE.to_string()]` - Phase B will implement the visit/leave methods that push/pop scope names
+- The Plan file has been updated to check off all Phase A tasks and checkpoints
+
+---
+
 ## [phase-13.md] Step 0.4: Reference Scope Infrastructure - Add Scope Name Constants | PLANNED | 2026-02-01
 
 **Completed:** 2026-02-01 (planning update - implementation pending)

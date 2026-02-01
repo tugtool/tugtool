@@ -101,7 +101,7 @@ pub use position_lookup::{
     AncestorEntry, AncestorTracker, ExpressionInfo, NodeInfo, NodeKind, PositionIndex,
     ScopeLookupInfo, StatementInfo,
 };
-pub use reference::{ReferenceCollector, ReferenceInfo, ReferenceKind};
+pub use reference::{CstReferenceRecord, ReferenceCollector, ReferenceKind};
 pub use rename::{
     sort_requests_by_start, sort_requests_by_start_reverse, RenameError, RenameRequest,
     RenameResult, RenameTransformer,
@@ -140,3 +140,23 @@ pub use type_comment::{
     ParsedTypeComment, TypeComment, TypeCommentCollector, TypeCommentError, TypeCommentKind,
     TypeCommentParser, TypeCommentResult, TypeNameRef,
 };
+
+// ============================================================================
+// Scope path constants
+// ============================================================================
+//
+// These constants define the standard names used in scope paths for anonymous
+// scopes. Named scopes (functions, classes) use their actual names.
+
+/// Scope path entry for the module-level scope.
+pub const SCOPE_MODULE: &str = "<module>";
+/// Scope path entry for lambda expressions.
+pub const SCOPE_LAMBDA: &str = "<lambda>";
+/// Scope path entry for list comprehensions.
+pub const SCOPE_LISTCOMP: &str = "<listcomp>";
+/// Scope path entry for dict comprehensions.
+pub const SCOPE_DICTCOMP: &str = "<dictcomp>";
+/// Scope path entry for set comprehensions.
+pub const SCOPE_SETCOMP: &str = "<setcomp>";
+/// Scope path entry for generator expressions.
+pub const SCOPE_GENEXPR: &str = "<genexpr>";

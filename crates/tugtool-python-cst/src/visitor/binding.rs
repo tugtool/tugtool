@@ -40,6 +40,7 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use super::SCOPE_MODULE;
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
     AnnAssign, Assign, AssignTargetExpression, ClassDef, Element, ExceptHandler, Expression, For,
@@ -152,7 +153,7 @@ impl<'pos> BindingCollector<'pos> {
         Self {
             positions: None,
             bindings: Vec::new(),
-            scope_path: vec!["<module>".to_string()],
+            scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -163,7 +164,7 @@ impl<'pos> BindingCollector<'pos> {
         Self {
             positions: Some(positions),
             bindings: Vec::new(),
-            scope_path: vec!["<module>".to_string()],
+            scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -1001,5 +1002,31 @@ mod tests {
         // Only x is a binding, not comprehension variables j and row
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].name, "x");
+    }
+
+    // =========================================================================
+    // Phase A: Scope Infrastructure Tests
+    // =========================================================================
+
+    #[test]
+    fn test_binding_collector_uses_scope_constant() {
+        // Verify BindingCollector uses SCOPE_MODULE constant for module-level scope
+        use super::SCOPE_MODULE;
+
+        let source = "x = 1";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "x");
+        // scope_path should contain SCOPE_MODULE value
+        assert_eq!(
+            bindings[0].scope_path,
+            vec![SCOPE_MODULE],
+            "Module-level binding should have scope_path [SCOPE_MODULE]"
+        );
+
+        // Verify SCOPE_MODULE has the expected value
+        assert_eq!(SCOPE_MODULE, "<module>");
     }
 }

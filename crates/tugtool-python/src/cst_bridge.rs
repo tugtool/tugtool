@@ -51,8 +51,8 @@ use tugtool_python_cst::{
     // isinstance type narrowing
     IsInstanceCheck as CstIsInstanceCheck,
     IsInstanceCollector,
+    CstReferenceRecord,
     ReferenceCollector,
-    ReferenceInfo as CstReferenceInfo,
     ReferenceKind as CstReferenceKind,
     // Legacy rename types (kept for rewrite_batch compatibility)
     RenameError,
@@ -66,7 +66,7 @@ use tugtool_python_cst::{
     TypeInferenceCollector,
 };
 
-use crate::types::{BindingInfo, ReferenceInfo, ScopeInfo, ScopeSpanInfo, SpanInfo};
+use crate::types::{BindingInfo, ParsedReferenceInfo, ScopeInfo, ScopeSpanInfo, SpanInfo};
 
 // ============================================================================
 // Error Types
@@ -119,7 +119,7 @@ pub struct NativeAnalysisResult {
     /// Bindings (name definitions) in the file.
     pub bindings: Vec<BindingInfo>,
     /// References organized by name.
-    pub references: Vec<(String, Vec<ReferenceInfo>)>,
+    pub references: Vec<(String, Vec<ParsedReferenceInfo>)>,
     /// String literals in __all__ exports.
     pub exports: Vec<CstExportInfo>,
 
@@ -223,9 +223,9 @@ impl From<CstBindingInfo> for BindingInfo {
     }
 }
 
-impl From<CstReferenceInfo> for ReferenceInfo {
-    fn from(cst_ref: CstReferenceInfo) -> Self {
-        ReferenceInfo {
+impl From<CstReferenceRecord> for ParsedReferenceInfo {
+    fn from(cst_ref: CstReferenceRecord) -> Self {
+        ParsedReferenceInfo {
             kind: reference_kind_to_string(cst_ref.kind),
             span: cst_ref.span.as_ref().map(span_to_span_info),
             line: None, // Line info not yet computed in native collector
@@ -284,10 +284,10 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
 
     // P0: Collect references
     let cst_refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
-    let references: Vec<(String, Vec<ReferenceInfo>)> = cst_refs
+    let references: Vec<(String, Vec<ParsedReferenceInfo>)> = cst_refs
         .into_iter()
         .map(|(name, refs)| {
-            let converted_refs: Vec<ReferenceInfo> = refs.into_iter().map(|r| r.into()).collect();
+            let converted_refs: Vec<ParsedReferenceInfo> = refs.into_iter().map(|r| r.into()).collect();
             (name, converted_refs)
         })
         .collect();

@@ -6432,7 +6432,7 @@ This phase adds the `scope_path` field to `ReferenceInfo` and the scope tracking
 
 **A1: Define Scope Name Constants**
 
-- [ ] Add scope name constants to `crates/tugtool-python-cst/src/visitor/mod.rs`:
+- [x] Add scope name constants to `crates/tugtool-python-cst/src/visitor/mod.rs`:
   ```rust
   /// Scope path entry for the module-level scope.
   pub const SCOPE_MODULE: &str = "<module>";
@@ -6447,17 +6447,17 @@ This phase adds the `scope_path` field to `ReferenceInfo` and the scope tracking
   /// Scope path entry for generator expressions.
   pub const SCOPE_GENEXPR: &str = "<genexpr>";
   ```
-- [ ] Update `BindingCollector::new()` in `binding.rs` to use `SCOPE_MODULE` constant
-- [ ] Update `BindingCollector::with_positions()` in `binding.rs` to use `SCOPE_MODULE` constant
+- [x] Update `BindingCollector::new()` in `binding.rs` to use `SCOPE_MODULE` constant
+- [x] Update `BindingCollector::with_positions()` in `binding.rs` to use `SCOPE_MODULE` constant
 
-**A2: Add scope_path to ReferenceInfo and ReferenceCollector**
+**A2: Add scope_path to CstReferenceRecord and ReferenceCollector**
 
-- [ ] Add `scope_path: Vec<String>` field to `ReferenceInfo` struct (after `span` field)
-- [ ] Update `ReferenceInfo::new()` signature to `fn new(kind: ReferenceKind, scope_path: Vec<String>) -> Self`
-- [ ] Add `scope_path: Vec<String>` field to `ReferenceCollector` struct
-- [ ] Initialize `scope_path` to `vec![SCOPE_MODULE.to_string()]` in `ReferenceCollector::new()` and `with_positions()`
-- [ ] Update `add_reference_with_id()` to pass `self.scope_path.clone()` to `ReferenceInfo::new()`
-- [ ] Verify all call sites of `ReferenceInfo::new()` are updated (search for `ReferenceInfo::new`)
+- [x] Add `scope_path: Vec<String>` field to `CstReferenceRecord` struct (after `span` field)
+- [x] Update `CstReferenceRecord::new()` signature to `fn new(kind: ReferenceKind, scope_path: Vec<String>) -> Self`
+- [x] Add `scope_path: Vec<String>` field to `ReferenceCollector` struct
+- [x] Initialize `scope_path` to `vec![SCOPE_MODULE.to_string()]` in `ReferenceCollector::new()` and `with_positions()`
+- [x] Update `add_reference_with_id()` to pass `self.scope_path.clone()` to `CstReferenceRecord::new()`
+- [x] Verify all call sites of `CstReferenceRecord::new()` are updated (search for `CstReferenceRecord::new`)
 
 **Design Notes:**
 
@@ -6565,19 +6565,19 @@ fn add_reference_with_id(&mut self, name: &str, kind: ReferenceKind, node_id: Op
 
 **Tests (Phase A):**
 
-- [ ] Unit: `test_scope_constants_defined` - Verify all `SCOPE_*` constants are accessible
-- [ ] Unit: `test_reference_info_has_scope_path` - Verify `ReferenceInfo` has `scope_path` field accessible
-- [ ] Unit: `test_reference_collector_initializes_module_scope` - New collector has `[SCOPE_MODULE]` scope
-- [ ] Unit: `test_reference_scope_path_module_level` - Module-level reference has `scope_path: [SCOPE_MODULE]`
-- [ ] Unit: `test_binding_collector_uses_scope_constant` - Verify `BindingCollector` uses `SCOPE_MODULE` constant
-- [ ] Regression: All existing reference tests pass (scope_path is `[SCOPE_MODULE]` for all, matching previous `ScopeId(0)` behavior)
+- [x] Unit: `test_scope_constants_defined` - Verify all `SCOPE_*` constants are accessible
+- [x] Unit: `test_cst_reference_record_has_scope_path` - Verify `CstReferenceRecord` has `scope_path` field accessible
+- [x] Unit: `test_reference_collector_initializes_module_scope` - New collector has `[SCOPE_MODULE]` scope
+- [x] Unit: `test_reference_scope_path_module_level` - Module-level reference has `scope_path: [SCOPE_MODULE]`
+- [x] Unit: `test_binding_collector_uses_scope_constant` - Verify `BindingCollector` uses `SCOPE_MODULE` constant
+- [x] Regression: All existing reference tests pass (scope_path is `[SCOPE_MODULE]` for all, matching previous `ScopeId(0)` behavior)
 
 **Checkpoint (Phase A):**
 
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst reference` passes
-- [ ] `cargo nextest run -p tugtool-python-cst binding` passes (BindingCollector still works with constant)
-- [ ] All references have `scope_path` field (initialized to `[SCOPE_MODULE]`)
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst reference` passes
+- [x] `cargo nextest run -p tugtool-python-cst binding` passes (BindingCollector still works with constant)
+- [x] All references have `scope_path` field (initialized to `[SCOPE_MODULE]`)
 
 ---
 

@@ -63,7 +63,7 @@ pub struct BindingInfo {
 ///
 /// Represents a name usage (read, call, attribute access).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReferenceInfo {
+pub struct ParsedReferenceInfo {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span: Option<SpanInfo>,
@@ -369,7 +369,7 @@ pub struct AnalysisResult {
     pub bindings: Vec<BindingInfo>,
     /// Name references grouped by name.
     #[serde(default)]
-    pub references: HashMap<String, Vec<ReferenceInfo>>,
+    pub references: HashMap<String, Vec<ParsedReferenceInfo>>,
     /// Import statements.
     #[serde(default)]
     pub imports: Vec<ImportInfo>,
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_reference_info_serialization() {
-        let reference = ReferenceInfo {
+        let reference = ParsedReferenceInfo {
             kind: "call".to_string(),
             span: Some(SpanInfo { start: 10, end: 13 }),
             line: Some(2),
@@ -437,7 +437,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&reference).unwrap();
-        let deserialized: ReferenceInfo = serde_json::from_str(&json).unwrap();
+        let deserialized: ParsedReferenceInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.kind, "call");
     }
 
@@ -473,7 +473,7 @@ mod tests {
             }],
             references: HashMap::from([(
                 "foo".to_string(),
-                vec![ReferenceInfo {
+                vec![ParsedReferenceInfo {
                     kind: "definition".to_string(),
                     span: None,
                     line: None,

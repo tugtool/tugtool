@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```ignore
-//! use tugtool_python_cst::{parse_module_with_positions, ReferenceCollector, ReferenceInfo, ReferenceKind};
+//! use tugtool_python_cst::{parse_module_with_positions, ReferenceCollector, CstReferenceRecord, ReferenceKind};
 //!
 //! let source = "x = 1\nprint(x)";
 //! let parsed = parse_module_with_positions(source, None)?;
@@ -42,6 +42,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
+use super::SCOPE_MODULE;
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
     AnnAssign, Assign, AssignTargetExpression, Attribute, Call, ClassDef, Element, Expression,
@@ -85,19 +86,26 @@ impl std::fmt::Display for ReferenceKind {
 
 /// Information about a single reference to a name.
 ///
-/// Each reference records the kind of reference and its source location.
+/// Each reference records the kind of reference, its source location, and
+/// the scope path where the reference occurs.
 #[derive(Debug, Clone)]
-pub struct ReferenceInfo {
+pub struct CstReferenceRecord {
     /// The kind of reference.
     pub kind: ReferenceKind,
     /// Source span for the reference (byte offsets).
     pub span: Option<Span>,
+    /// The scope path where this reference occurs (e.g., `["<module>", "MyClass", "my_method"]`).
+    pub scope_path: Vec<String>,
 }
 
-impl ReferenceInfo {
-    /// Create a new ReferenceInfo.
-    fn new(kind: ReferenceKind) -> Self {
-        Self { kind, span: None }
+impl CstReferenceRecord {
+    /// Create a new CstReferenceRecord with the given kind and scope path.
+    fn new(kind: ReferenceKind, scope_path: Vec<String>) -> Self {
+        Self {
+            kind,
+            span: None,
+            scope_path,
+        }
     }
 
     /// Set the span for this reference.
@@ -147,7 +155,7 @@ pub struct ReferenceCollector<'pos> {
     /// Reference to position table for span lookups.
     positions: Option<&'pos PositionTable>,
     /// Map of name -> list of references.
-    references: HashMap<String, Vec<ReferenceInfo>>,
+    references: HashMap<String, Vec<CstReferenceRecord>>,
     /// Context stack for determining reference kinds.
     context_stack: Vec<ContextEntry>,
     /// Stack tracking how many skip contexts were pushed by each assignment.
@@ -155,6 +163,8 @@ pub struct ReferenceCollector<'pos> {
     /// Set of names currently in context stack for O(1) membership check.
     /// This optimizes the common case where a name is not in the stack.
     context_names: HashSet<String>,
+    /// Current scope path for tracking where references occur.
+    scope_path: Vec<String>,
 }
 
 impl<'pos> ReferenceCollector<'pos> {
@@ -168,6 +178,7 @@ impl<'pos> ReferenceCollector<'pos> {
             context_stack: Vec::new(),
             assign_skip_counts: Vec::new(),
             context_names: HashSet::new(),
+            scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -181,6 +192,7 @@ impl<'pos> ReferenceCollector<'pos> {
             context_stack: Vec::new(),
             assign_skip_counts: Vec::new(),
             context_names: HashSet::new(),
+            scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -204,7 +216,7 @@ impl<'pos> ReferenceCollector<'pos> {
     pub fn collect(
         module: &Module<'_>,
         positions: &PositionTable,
-    ) -> HashMap<String, Vec<ReferenceInfo>> {
+    ) -> HashMap<String, Vec<CstReferenceRecord>> {
         let mut collector = ReferenceCollector::with_positions(positions);
         walk_module(&mut collector, module);
         collector.references
@@ -213,17 +225,17 @@ impl<'pos> ReferenceCollector<'pos> {
     /// Get all references for a specific name.
     ///
     /// Returns None if the name was never referenced.
-    pub fn references_for(&self, name: &str) -> Option<&Vec<ReferenceInfo>> {
+    pub fn references_for(&self, name: &str) -> Option<&Vec<CstReferenceRecord>> {
         self.references.get(name)
     }
 
     /// Get all references as a HashMap, consuming the collector.
-    pub fn into_references(self) -> HashMap<String, Vec<ReferenceInfo>> {
+    pub fn into_references(self) -> HashMap<String, Vec<CstReferenceRecord>> {
         self.references
     }
 
     /// Get a reference to the internal references map.
-    pub fn all_references(&self) -> &HashMap<String, Vec<ReferenceInfo>> {
+    pub fn all_references(&self) -> &HashMap<String, Vec<CstReferenceRecord>> {
         &self.references
     }
 
@@ -269,7 +281,7 @@ impl<'pos> ReferenceCollector<'pos> {
     /// Add a reference for a name with span looked up from PositionTable.
     fn add_reference_with_id(&mut self, name: &str, kind: ReferenceKind, node_id: Option<NodeId>) {
         let span = self.lookup_span(node_id);
-        let info = ReferenceInfo::new(kind).with_span(span);
+        let info = CstReferenceRecord::new(kind, self.scope_path.clone()).with_span(span);
 
         self.references
             .entry(name.to_string())
@@ -1197,5 +1209,87 @@ result = processor.process()
         let x_refs = refs.get("x").unwrap();
         assert_eq!(x_refs.len(), 2);
         assert!(x_refs.iter().all(|r| r.kind == ReferenceKind::Reference));
+    }
+
+    // =========================================================================
+    // Phase A: Scope Infrastructure Tests
+    // =========================================================================
+
+    #[test]
+    fn test_scope_constants_defined() {
+        // Verify all SCOPE_* constants are accessible and have expected values
+        use super::super::{
+            SCOPE_DICTCOMP, SCOPE_GENEXPR, SCOPE_LAMBDA, SCOPE_LISTCOMP, SCOPE_MODULE,
+            SCOPE_SETCOMP,
+        };
+
+        assert_eq!(SCOPE_MODULE, "<module>");
+        assert_eq!(SCOPE_LAMBDA, "<lambda>");
+        assert_eq!(SCOPE_LISTCOMP, "<listcomp>");
+        assert_eq!(SCOPE_DICTCOMP, "<dictcomp>");
+        assert_eq!(SCOPE_SETCOMP, "<setcomp>");
+        assert_eq!(SCOPE_GENEXPR, "<genexpr>");
+    }
+
+    #[test]
+    fn test_cst_reference_record_has_scope_path() {
+        // Verify CstReferenceRecord has scope_path field accessible
+        let record = CstReferenceRecord::new(
+            ReferenceKind::Reference,
+            vec!["<module>".to_string(), "MyClass".to_string()],
+        );
+
+        assert_eq!(record.kind, ReferenceKind::Reference);
+        assert_eq!(record.scope_path, vec!["<module>", "MyClass"]);
+        assert!(record.span.is_none());
+    }
+
+    #[test]
+    fn test_reference_collector_initializes_module_scope() {
+        use super::super::SCOPE_MODULE;
+
+        // New collector should have scope_path initialized to [SCOPE_MODULE]
+        let collector = ReferenceCollector::new();
+
+        // We can't directly access scope_path since it's private,
+        // but we can verify through collecting a reference
+        // For now, just verify the collector can be created
+        assert!(collector.all_references().is_empty());
+
+        // Collector with positions should also initialize to module scope
+        let positions = crate::inflate_ctx::PositionTable::new();
+        let collector_with_pos = ReferenceCollector::with_positions(&positions);
+        assert!(collector_with_pos.all_references().is_empty());
+
+        // The SCOPE_MODULE constant should be accessible
+        assert_eq!(SCOPE_MODULE, "<module>");
+    }
+
+    #[test]
+    fn test_reference_scope_path_module_level() {
+        use super::super::SCOPE_MODULE;
+
+        // Module-level reference should have scope_path: [SCOPE_MODULE]
+        let source = "x = 1\nprint(x)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let refs = ReferenceCollector::collect(&parsed.module, &parsed.positions);
+
+        // x is defined and referenced at module level
+        let x_refs = refs.get("x").unwrap();
+        assert_eq!(x_refs.len(), 2);
+
+        // Both references should have scope_path = [SCOPE_MODULE]
+        for r in x_refs {
+            assert_eq!(
+                r.scope_path,
+                vec![SCOPE_MODULE],
+                "Module-level reference should have scope_path [SCOPE_MODULE]"
+            );
+        }
+
+        // print is also referenced at module level
+        let print_refs = refs.get("print").unwrap();
+        assert_eq!(print_refs.len(), 1);
+        assert_eq!(print_refs[0].scope_path, vec![SCOPE_MODULE]);
     }
 }
