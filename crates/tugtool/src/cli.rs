@@ -155,6 +155,86 @@ pub fn do_rename(
 }
 
 // ============================================================================
+// Python Rename Parameter Operations (Feature-Gated)
+// ============================================================================
+
+/// Analyze a rename-param operation (preview without applying).
+///
+/// # Arguments
+///
+/// * `session` - Open session (provides workspace root, session directory)
+/// * `at` - Location string in "file:line:col" format
+/// * `to` - New name for the parameter
+/// * `filter` - CombinedFilter for file filtering
+///
+/// # Returns
+///
+/// JSON string containing the analysis result.
+#[cfg(feature = "python")]
+pub fn analyze_rename_param(
+    session: &Session,
+    at: &str,
+    to: &str,
+    filter: &mut CombinedFilter,
+) -> Result<String, TugError> {
+    use tugtool_python::ops::rename_param::analyze_param;
+
+    // Parse location
+    let location = Location::parse(at).ok_or_else(|| {
+        TugError::invalid_args(format!(
+            "invalid location format '{}', expected path:line:col",
+            at
+        ))
+    })?;
+
+    // Collect Python files in workspace using combined filter
+    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+
+    // Run native analysis
+    let analysis = analyze_param(session.workspace_root(), &files, &location, to)
+        .map_err(|e| TugError::internal(format!("rename-param analysis failed: {}", e)))?;
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&analysis)
+        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
+    Ok(json)
+}
+
+/// Execute a rename-param operation.
+///
+/// Note: This is a placeholder that currently only runs analysis.
+/// Full apply support will be added in a future iteration.
+///
+/// # Arguments
+///
+/// * `session` - Open session (provides workspace root, session directory)
+/// * `python_path` - Optional explicit Python path for verification
+/// * `at` - Location string in "file:line:col" format
+/// * `to` - New name for the parameter
+/// * `verify_mode` - Verification mode after rename
+/// * `apply` - Whether to apply changes to files
+/// * `filter` - CombinedFilter for file filtering
+///
+/// # Returns
+///
+/// JSON string containing the rename-param result.
+#[cfg(feature = "python")]
+pub fn do_rename_param(
+    session: &Session,
+    _python_path: Option<PathBuf>,
+    at: &str,
+    to: &str,
+    _verify_mode: VerificationMode,
+    _apply: bool,
+    filter: &mut CombinedFilter,
+) -> Result<String, TugError> {
+    // For now, just run the analysis
+    // Full apply support will be implemented in a future iteration
+    analyze_rename_param(session, at, to, filter)
+}
+
+// ============================================================================
 // Helper Functions (Feature-Gated)
 // ============================================================================
 

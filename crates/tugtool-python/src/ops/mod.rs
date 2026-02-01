@@ -3,6 +3,7 @@
 //! Provides common types and context for Python operations.
 
 pub mod rename;
+pub mod rename_param;
 
 use std::io;
 use std::path::PathBuf;

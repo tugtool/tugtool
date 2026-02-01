@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.4: Reference Scope Infrastructure | PLANNED | 2026-02-01
+
+**Completed:** 2026-02-01 (planning only - implementation pending)
+
+**References Reviewed:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector (lacks scope tracking)
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector (has scope_path - the pattern to follow)
+- `crates/tugtool-python/src/analyzer.rs` - Reference resolution (line 1779 hardcodes ScopeId(0))
+- `crates/tugtool-python/src/ops/rename_param.rs` - Blocked operation
+- `crates/tugtool-core/src/facts/mod.rs` - refs_of_symbol returns empty for parameters
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Conduct code-architect infrastructure audit | Done |
+| Identify root cause of parameter reference gap | Done |
+| Add Step 0.4 to phase-13.md | Done |
+| Update Table T02 with Critical gap | Done |
+| Update Step 1.1 dependencies | Done |
+| Update Step 1.2 dependencies | Done |
+| Implement scope tracking in ReferenceCollector | Pending |
+| Update analyzer to use scope_path | Pending |
+
+**Files Created:**
+- None (planning phase only)
+
+**Files Modified:**
+- `plans/phase-13.md` - Added Step 0.4: Reference Scope Infrastructure (lines 6362-6491); Updated Table T02 with "Local symbol references" Critical gap; Updated Stage 0 Summary; Updated Step 1.1 and Step 1.2 prerequisites
+
+**Test Results:**
+- N/A (planning phase - implementation not started)
+
+**Checkpoints Verified:**
+- Infrastructure gap documented: PASS
+- Step 0.4 added to plan: PASS
+- Table T02 updated: PASS
+- Dependency chain established: PASS
+
+**Key Decisions/Notes:**
+- **Root Cause Identified:** `ReferenceInfo` in CST lacks `scope_path`, and analyzer hardcodes `scope_id: ScopeId(0)` for ALL references. This breaks resolution for any symbol not at module scope.
+- **Impact Assessment:** The existing `rename` operation is silently broken for parameters and local variables - only the definition is renamed, body references are missed.
+- **Recommended Fix:** Follow the `BindingCollector` pattern - add `scope_path: Vec<String>` to `ReferenceInfo` and `ReferenceCollector`, then update analyzer to resolve scope_path to ScopeId.
+- **Blocked Operations:** `rename-param`, `rename` for local variables, and all future Layer 1-4 operations that depend on local reference tracking (Extract Variable, Inline Variable, Extract Method, etc.)
+- **Step 1.2 Status:** Partially implemented but blocked by this infrastructure gap. The `rename_param.rs` file exists but `refs_of_symbol(param_symbol_id)` returns empty.
+
+---
+
 ## [phase-13.md] Step 1.1: Rename Hardening | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

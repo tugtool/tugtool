@@ -556,6 +556,7 @@ The existing rename infrastructure forms the foundation for all operations.
 
 | Gap | Description | Severity | Status |
 |-----|-------------|----------|--------|
+| Local symbol references | References to parameters/locals not tracked (hardcoded `ScopeId(0)`) | **Critical** | OPEN ([Step 0.4](#step-0-4)) |
 | Decorator arguments | `@decorator(foo)` where `foo` is renamed | Medium | DONE |
 | Comprehension scope | Variable in nested comprehension scope (see [D09](#d09-comprehension-scope)) | Low | DONE |
 | Type comments | `# type: Foo` comments | Low | DONE |
@@ -6358,12 +6359,145 @@ cargo nextest run -p tugtool-python stubs
 
 ---
 
+##### Step 0.4: Reference Scope Infrastructure {#step-0-4}
+
+**Commit:** `feat(python-cst): add scope tracking to ReferenceCollector`
+
+**References:** [D05](#d05-rename-reference), [Layer 0](#layer-0), [Step 1.1](#step-1-1), [Step 1.2](#step-1-2)
+
+**Context:**
+
+A code-architect audit discovered a fundamental infrastructure gap that blocks the `rename-param` operation and affects local variable rename operations. The current `ReferenceCollector` collects references but does NOT track their scope, causing the analyzer to hardcode `scope_id: ScopeId(0)` for ALL references.
+
+**The Problem:**
+
+1. `ReferenceInfo` in `crates/tugtool-python-cst/src/visitor/reference.rs` only has `kind` and `span` - NO scope information
+2. The analyzer at `crates/tugtool-python/src/analyzer.rs:1779` hardcodes `scope_id: ScopeId(0)` for ALL references
+3. This means reference resolution fails for any symbol not at module scope (parameters, local variables)
+4. `refs_of_symbol(param_symbol_id)` returns empty for parameters - only the definition is tracked
+
+**What's Broken:**
+
+- **`rename-param`** - finds definition but misses body references to the parameter
+- **`rename` for local variables** - same problem (can rename definition but not uses)
+- The existing `rename` operation is silently broken for parameters and local variables
+
+**Why This Wasn't Caught Earlier:**
+
+- Module-level rename (functions, classes, global variables) works correctly because `ScopeId(0)` happens to be the module scope
+- Most tests focus on module-level symbols
+- Parameter references appear to work because the definition is found, but body uses are missed
+
+**The Fix:**
+
+Follow the existing `BindingCollector` pattern which successfully tracks `scope_path: Vec<String>` for all bindings:
+
+1. Add `scope_path: Vec<String>` to `ReferenceInfo` in `reference.rs`
+2. Add scope tracking state to `ReferenceCollector`:
+   - `scope_path: Vec<String>` field (initialized to `["<module>"]`)
+   - Update in `visit_function_def` / `leave_function_def`
+   - Update in `visit_class_def` / `leave_class_def`
+   - Update in `visit_lambda` / `leave_lambda`
+   - Update for comprehension scopes (see [D09](#d09-comprehension-scope))
+3. Update analyzer to resolve `scope_path` to `ScopeId` using existing `find_scope_for_path_indexed`
+
+**Artifacts:**
+
+- Modified `crates/tugtool-python-cst/src/visitor/reference.rs`:
+  - Add `scope_path: Vec<String>` to `ReferenceInfo`
+  - Add `scope_path: Vec<String>` to `ReferenceCollector`
+  - Implement scope tracking in `visit_*` / `leave_*` methods for FunctionDef, ClassDef, Lambda, comprehensions
+- Modified `crates/tugtool-python/src/analyzer.rs`:
+  - Update reference conversion loop (~line 1771) to use `native_ref.scope_path`
+  - Replace hardcoded `ScopeId(0)` with `find_scope_for_path_indexed(&native_ref.scope_path, &scope_index)`
+
+**Tasks:**
+
+- [ ] Add `scope_path: Vec<String>` field to `ReferenceInfo` struct
+- [ ] Add `scope_path: Vec<String>` field to `ReferenceCollector` struct (initialized to `["<module>"]`)
+- [ ] Update `ReferenceInfo::new()` to accept and store `scope_path`
+- [ ] Update `add_reference_with_id()` to pass `self.scope_path.clone()` to `ReferenceInfo::new()`
+- [ ] Implement `visit_function_def` / `leave_function_def` scope tracking (push/pop function name)
+- [ ] Implement `visit_class_def` / `leave_class_def` scope tracking (push/pop class name)
+- [ ] Implement lambda scope tracking (push/pop synthetic name like `"<lambda>"`)
+- [ ] Implement comprehension scope tracking per [D09](#d09-comprehension-scope) (push/pop `"<listcomp>"`, `"<dictcomp>"`, `"<setcomp>"`, `"<genexpr>"`)
+- [ ] Update `collect()` method signature if needed to ensure scope_path is accessible
+- [ ] Update analyzer reference conversion to use `find_scope_for_path_indexed()` instead of `ScopeId(0)`
+- [ ] Add unit tests for scope tracking
+- [ ] Add integration tests for parameter rename
+- [ ] Add integration tests for local variable rename
+
+**Design Notes:**
+
+The implementation follows the proven pattern from `BindingCollector`:
+
+```rust
+// ReferenceInfo with scope tracking
+pub struct ReferenceInfo {
+    pub kind: ReferenceKind,
+    pub span: Option<Span>,
+    pub scope_path: Vec<String>,  // NEW: e.g., ["<module>", "MyClass", "my_method"]
+}
+
+// ReferenceCollector with scope state
+pub struct ReferenceCollector<'pos> {
+    positions: Option<&'pos PositionTable>,
+    references: HashMap<String, Vec<ReferenceInfo>>,
+    context_stack: Vec<ContextEntry>,
+    assign_skip_counts: Vec<usize>,
+    context_names: HashSet<String>,
+    scope_path: Vec<String>,  // NEW: tracks current scope path
+}
+```
+
+**Scope Entry Names:**
+
+| Construct | Scope Entry Name |
+|-----------|-----------------|
+| Module | `"<module>"` |
+| Function `def foo` | `"foo"` |
+| Method `def bar` | `"bar"` |
+| Class `class MyClass` | `"MyClass"` |
+| Lambda | `"<lambda>"` |
+| List comprehension | `"<listcomp>"` |
+| Dict comprehension | `"<dictcomp>"` |
+| Set comprehension | `"<setcomp>"` |
+| Generator expression | `"<genexpr>"` |
+
+**Tests:**
+
+- [ ] Unit: `test_reference_scope_module_level` - Module-level reference has `["<module>"]`
+- [ ] Unit: `test_reference_scope_function` - Reference inside function has `["<module>", "func"]`
+- [ ] Unit: `test_reference_scope_method` - Reference inside method has `["<module>", "Class", "method"]`
+- [ ] Unit: `test_reference_scope_nested_function` - Nested function has correct scope chain
+- [ ] Unit: `test_reference_scope_lambda` - Lambda body reference has `["<module>", "<lambda>"]`
+- [ ] Unit: `test_reference_scope_comprehension` - Comprehension variable has `["<module>", "<listcomp>"]`
+- [ ] Unit: `test_reference_scope_class_body` - Reference in class body has `["<module>", "Class"]`
+- [ ] Integration: `test_rename_parameter_updates_body` - Renaming parameter updates all body uses
+- [ ] Integration: `test_rename_local_variable` - Renaming local variable updates all uses in function
+- [ ] Integration: `test_rename_method_parameter` - Renaming method parameter works correctly
+
+**Checkpoint:**
+
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst reference` passes (all reference-related tests)
+- [ ] `cargo nextest run -p tugtool-python rename` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [ ] Verify: `refs_of_symbol(param_symbol_id)` returns body references for parameters
+- [ ] Verify: Renaming a function parameter renames all uses in the function body
+
+**Rollback:** Revert commit
+
+---
+
 #### Stage 0 Summary {#stage-0-summary}
 
-After completing Steps 0.1-0.3, you will have:
+After completing Steps 0.1-0.4, you will have:
 - Edit primitive infrastructure supporting all [D07](#d07-edit-primitives) operations ([Step 0.1](#step-0-1))
 - Position-to-node lookup for expression/statement boundary detection ([Step 0.2](#step-0-2))
 - Stub file discovery and update infrastructure for [D08](#d08-stub-updates) compliance ([Step 0.3](#step-0-3))
+- Reference scope tracking enabling parameter and local variable operations ([Step 0.4](#step-0-4))
 
 **Final Stage 0 Checkpoint:**
 - [ ] `cargo nextest run --workspace`
@@ -6538,9 +6672,9 @@ Map `BatchEditError` variants to existing `RenameError`:
 
 **Commit:** `fix(python): address rename edge cases and add missing tests`
 
-**References:** [D05](#d05-rename-reference), [D09](#d09-comprehension-scope), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 1.0.1](#step-1-0-1), [Step 1.0.2](#step-1-0-2)
+**References:** [D05](#d05-rename-reference), [D09](#d09-comprehension-scope), [Layer 0](#layer-0), [Table T02](#t02-rename-gaps), [D08](#d08-stub-updates), [Step 0.3](#step-0-3), [Step 0.4](#step-0-4), [Step 1.0.1](#step-1-0-1), [Step 1.0.2](#step-1-0-2)
 
-**Prerequisites:** [Step 1.0.1](#step-1-0-1) (type comment infrastructure), [Step 1.0.2](#step-1-0-2) (BatchSpanEditor migration)
+**Prerequisites:** [Step 0.4](#step-0-4) (reference scope infrastructure), [Step 1.0.1](#step-1-0-1) (type comment infrastructure), [Step 1.0.2](#step-1-0-2) (BatchSpanEditor migration)
 
 **Artifacts:**
 - Updated `crates/tugtool-python/src/ops/rename.rs`
@@ -6574,7 +6708,7 @@ Map `BatchEditError` variants to existing `RenameError`:
 
 **Checkpoint:**
 - [x] `cargo nextest run -p tugtool-python rename` (111 tests pass)
-- [x] 7 of 9 [Table T02](#t02-rename-gaps) items addressed (2 deferred)
+- [x] 7 of 10 [Table T02](#t02-rename-gaps) items addressed (2 deferred, 1 requires [Step 0.4](#step-0-4))
 
 **Rollback:** Revert commit
 
@@ -6584,7 +6718,9 @@ Map `BatchEditError` variants to existing `RenameError`:
 
 **Commit:** `feat(python): add rename-param operation`
 
-**References:** [D05](#d05-rename-reference), [Operation 1: Rename Parameter](#op-rename-param), [D08](#d08-stub-updates), [Step 1.1](#step-1-1)
+**References:** [D05](#d05-rename-reference), [Operation 1: Rename Parameter](#op-rename-param), [D08](#d08-stub-updates), [Step 0.4](#step-0-4), [Step 1.1](#step-1-1)
+
+**Prerequisites:** [Step 0.4](#step-0-4) (reference scope infrastructure - required for parameter body references), [Step 1.1](#step-1-1) (rename hardening)
 
 **Artifacts:**
 - Updated CLI in `crates/tugtool/src/cli.rs`

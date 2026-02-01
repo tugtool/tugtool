@@ -1752,19 +1752,41 @@ pub struct CallArg {
     pub name: Option<String>,
     /// Byte span of the argument expression.
     pub span: Span,
+    /// Byte span of the keyword name (for keyword arguments only).
+    ///
+    /// This is the span of `key` in `func(key=value)`, which is needed for
+    /// rename-param operations to rename keyword argument names at call sites.
+    /// `None` for positional arguments or if the span is unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keyword_name_span: Option<Span>,
 }
 
 impl CallArg {
     /// Create a positional argument.
     pub fn positional(span: Span) -> Self {
-        CallArg { name: None, span }
+        CallArg {
+            name: None,
+            span,
+            keyword_name_span: None,
+        }
     }
 
     /// Create a keyword argument.
-    pub fn keyword(name: impl Into<String>, span: Span) -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The keyword argument name (e.g., "key" in `func(key=value)`)
+    /// * `span` - Byte span of the argument value expression
+    /// * `keyword_name_span` - Byte span of the keyword name (for rename-param)
+    pub fn keyword(
+        name: impl Into<String>,
+        span: Span,
+        keyword_name_span: Option<Span>,
+    ) -> Self {
         CallArg {
             name: Some(name.into()),
             span,
+            keyword_name_span,
         }
     }
 }
@@ -6472,9 +6494,16 @@ mod tests {
 
         #[test]
         fn call_arg_keyword() {
-            let arg = CallArg::keyword("value", Span::new(20, 30));
+            let arg = CallArg::keyword("value", Span::new(20, 30), Some(Span::new(14, 19)));
             assert_eq!(arg.name, Some("value".to_string()));
             assert_eq!(arg.span.start, 20);
+            assert_eq!(arg.keyword_name_span, Some(Span::new(14, 19)));
+        }
+
+        #[test]
+        fn call_arg_positional_has_no_keyword_name_span() {
+            let arg = CallArg::positional(Span::new(10, 15));
+            assert!(arg.keyword_name_span.is_none());
         }
 
         #[test]
@@ -6485,9 +6514,10 @@ mod tests {
             assert!(!json.contains("\"name\""));
             assert!(json.contains("\"span\""));
 
-            let keyword = CallArg::keyword("arg", Span::new(20, 25));
+            let keyword = CallArg::keyword("arg", Span::new(20, 25), Some(Span::new(15, 18)));
             let json = serde_json::to_string(&keyword).unwrap();
             assert!(json.contains("\"name\":\"arg\""));
+            assert!(json.contains("\"keyword_name_span\""));
         }
 
         #[test]
@@ -6508,7 +6538,7 @@ mod tests {
                 .with_callee(callee_symbol_id)
                 .with_args(vec![
                     CallArg::positional(Span::new(58, 59)),
-                    CallArg::keyword("value", Span::new(61, 69)),
+                    CallArg::keyword("value", Span::new(67, 69), Some(Span::new(61, 66))),
                 ]);
             store.insert_call_site(call);
 
@@ -6635,8 +6665,8 @@ mod tests {
                 .with_args(vec![
                     CallArg::positional(Span::new(15, 16)), // x
                     CallArg::positional(Span::new(18, 19)), // y
-                    CallArg::keyword("timeout", Span::new(21, 30)),
-                    CallArg::keyword("retries", Span::new(32, 41)),
+                    CallArg::keyword("timeout", Span::new(29, 30), Some(Span::new(21, 28))),
+                    CallArg::keyword("retries", Span::new(40, 41), Some(Span::new(32, 39))),
                 ]);
 
             assert_eq!(call.args.len(), 4);
@@ -6644,6 +6674,9 @@ mod tests {
             assert_eq!(call.args[1].name, None);
             assert_eq!(call.args[2].name, Some("timeout".to_string()));
             assert_eq!(call.args[3].name, Some("retries".to_string()));
+            // keyword args have keyword_name_span
+            assert!(call.args[2].keyword_name_span.is_some());
+            assert!(call.args[3].keyword_name_span.is_some());
         }
 
         #[test]

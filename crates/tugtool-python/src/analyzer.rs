@@ -5181,6 +5181,7 @@ impl PythonAdapter {
                 .map(|arg| CallArgData {
                     name: arg.name.clone(),
                     span: arg.span,
+                    keyword_name_span: arg.keyword_name_span,
                 })
                 .collect();
 

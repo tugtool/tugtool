@@ -41,21 +41,30 @@ use crate::nodes::{Arg, Attribute, Call, ClassDef, Expression, FunctionDef, Modu
 pub struct CallArgInfo {
     /// Argument name for keyword args, None for positional.
     pub name: Option<String>,
-    /// Byte span of the argument expression.
+    /// Byte span of the argument expression (the value part).
     pub span: Option<Span>,
+    /// Byte span of the keyword name (for keyword arguments only).
+    /// This is the span of just the keyword name in `key=value`, which is needed
+    /// for rename-param operations to rename keyword argument names at call sites.
+    pub keyword_name_span: Option<Span>,
 }
 
 impl CallArgInfo {
     /// Create a new positional argument.
     pub fn positional(span: Option<Span>) -> Self {
-        Self { name: None, span }
+        Self {
+            name: None,
+            span,
+            keyword_name_span: None,
+        }
     }
 
     /// Create a new keyword argument.
-    pub fn keyword(name: String, span: Option<Span>) -> Self {
+    pub fn keyword(name: String, value_span: Option<Span>, keyword_name_span: Option<Span>) -> Self {
         Self {
             name: Some(name),
-            span,
+            span: value_span,
+            keyword_name_span,
         }
     }
 }
@@ -218,9 +227,20 @@ impl<'pos> CallSiteCollector<'pos> {
             let name = arg.keyword.as_ref().map(|kw| kw.value.to_string());
 
             // Try to get the span of the value expression
-            let span = self.get_expression_span(&arg.value);
+            let value_span = self.get_expression_span(&arg.value);
 
-            result.push(CallArgInfo { name, span });
+            // For keyword arguments, get the span of the keyword name
+            // This is essential for rename-param to rename `key` in `func(key=value)`
+            let keyword_name_span = arg
+                .keyword
+                .as_ref()
+                .and_then(|kw| self.lookup_span(kw.node_id));
+
+            result.push(CallArgInfo {
+                name,
+                span: value_span,
+                keyword_name_span,
+            });
         }
 
         result

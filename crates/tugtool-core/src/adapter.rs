@@ -291,6 +291,12 @@ pub struct CallArgData {
     pub name: Option<String>,
     /// Byte span of the argument expression, or `None` if unavailable.
     pub span: Option<Span>,
+    /// Byte span of the keyword name (for keyword arguments only).
+    ///
+    /// This is the span of `key` in `func(key=value)`, which is needed for
+    /// rename-param operations to rename keyword argument names at call sites.
+    /// `None` for positional arguments or if the span is unavailable.
+    pub keyword_name_span: Option<Span>,
 }
 
 /// Call site from single-file analysis.
@@ -914,15 +920,18 @@ mod tests {
                 CallArgData {
                     name: None,
                     span: Some(Span::new(105, 108)),
+                    keyword_name_span: None, // positional arg has no keyword name
                 },
                 CallArgData {
                     name: Some("key".to_string()),
-                    span: Some(Span::new(110, 118)),
+                    span: Some(Span::new(114, 118)), // value span
+                    keyword_name_span: Some(Span::new(110, 113)), // keyword name span for "key"
                 },
             ],
         };
         assert_eq!(call.args.len(), 2);
         assert_eq!(call.args[1].name, Some("key".to_string()));
+        assert!(call.args[1].keyword_name_span.is_some());
     }
 
     #[test]
@@ -945,14 +954,29 @@ mod tests {
         let arg = CallArgData {
             name: Some("arg".to_string()),
             span: None,
+            keyword_name_span: None,
         };
         assert!(arg.span.is_none());
 
         let arg_with_span = CallArgData {
             name: None,
             span: Some(Span::new(10, 20)),
+            keyword_name_span: None, // positional arg
         };
         assert!(arg_with_span.span.is_some());
+    }
+
+    #[test]
+    fn call_arg_data_keyword_name_span() {
+        // For keyword arguments, keyword_name_span tracks the span of the keyword name
+        // e.g., for `func(key=value)`, keyword_name_span is the span of "key"
+        let keyword_arg = CallArgData {
+            name: Some("key".to_string()),
+            span: Some(Span::new(10, 20)),         // value span
+            keyword_name_span: Some(Span::new(5, 8)), // "key" span
+        };
+        assert!(keyword_arg.keyword_name_span.is_some());
+        assert_eq!(keyword_arg.keyword_name_span.unwrap(), Span::new(5, 8));
     }
 
     #[test]

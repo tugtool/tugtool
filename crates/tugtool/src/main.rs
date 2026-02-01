@@ -41,7 +41,7 @@ use tugtool_core::session::{Session, SessionOptions};
 
 // Python feature-gated imports
 #[cfg(feature = "python")]
-use tugtool::cli::{analyze_rename, do_rename};
+use tugtool::cli::{analyze_rename, analyze_rename_param, do_rename, do_rename_param};
 #[cfg(feature = "python")]
 use tugtool_core::filter::CombinedFilter;
 #[cfg(feature = "python")]
@@ -275,6 +275,29 @@ enum ApplyPythonCommand {
         #[arg(last = true)]
         filter: Vec<String>,
     },
+    /// Rename a function parameter and update keyword arguments at call sites.
+    RenameParam {
+        /// Location of the parameter to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the parameter.
+        #[arg(long)]
+        to: String,
+        /// Verification mode after applying changes.
+        #[arg(long, value_enum, default_value = "syntax")]
+        verify: VerifyMode,
+        /// Skip verification entirely.
+        #[arg(long)]
+        no_verify: bool,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
 }
 
 /// Rust commands for apply action (placeholder).
@@ -322,6 +345,26 @@ enum EmitPythonCommand {
         #[arg(long)]
         at: String,
         /// New name for the symbol.
+        #[arg(long)]
+        to: String,
+        /// Output JSON envelope instead of plain diff.
+        #[arg(long)]
+        json: bool,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+    /// Emit diff for a parameter rename operation.
+    RenameParam {
+        /// Location of the parameter to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the parameter.
         #[arg(long)]
         to: String,
         /// Output JSON envelope instead of plain diff.
@@ -391,6 +434,23 @@ enum AnalyzePythonCommand {
         /// Output format.
         #[arg(long, value_enum, default_value = "impact")]
         output: AnalyzeOutput,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+    /// Analyze a parameter rename operation.
+    RenameParam {
+        /// Location of the parameter to rename (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// New name for the parameter.
+        #[arg(long)]
+        to: String,
 
         /// Filter options.
         #[command(flatten)]
@@ -655,6 +715,52 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             println!("{}", json);
             Ok(())
         }
+        ApplyPythonCommand::RenameParam {
+            at,
+            to,
+            verify,
+            no_verify,
+            filter_opts,
+            filter,
+        } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
+
+            let mut session = open_session(global)?;
+            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
+
+            // Determine effective verification mode
+            // --no-verify takes precedence
+            let effective_verify = if no_verify {
+                VerificationMode::None
+            } else {
+                verify.into()
+            };
+
+            // Run the rename-param operation
+            let json = do_rename_param(
+                &session,
+                Some(python_path),
+                &at,
+                &to,
+                effective_verify,
+                true,
+                &mut combined_filter,
+            )?;
+
+            // Output JSON result
+            println!("{}", json);
+            Ok(())
+        }
     }
 }
 
@@ -756,6 +862,50 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
 
             Ok(())
         }
+        EmitPythonCommand::RenameParam {
+            at,
+            to,
+            json: emit_json,
+            filter_opts,
+            filter,
+        } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
+
+            let mut session = open_session(global)?;
+            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
+
+            // Run rename-param in dry-run mode (apply=false) with no verification
+            let json_result = do_rename_param(
+                &session,
+                Some(python_path),
+                &at,
+                &to,
+                VerificationMode::None,
+                false, // Never apply changes
+                &mut combined_filter,
+            )?;
+
+            if emit_json {
+                // Output JSON result directly (it's already analysis JSON)
+                println!("{}", json_result);
+            } else {
+                // For plain mode, just output analysis info
+                // (No diff since rename-param analyze doesn't generate unified diff yet)
+                println!("{}", json_result);
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -835,6 +985,34 @@ fn execute_analyze_python(
                     println!("{}", output);
                 }
             }
+
+            Ok(())
+        }
+        AnalyzePythonCommand::RenameParam {
+            at,
+            to,
+            filter_opts,
+            filter,
+        } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
+
+            let session = open_session(global)?;
+
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
+
+            // Run impact analysis (read-only) with combined filter
+            let json_result = analyze_rename_param(&session, &at, &to, &mut combined_filter)?;
+
+            // Output full JSON response
+            println!("{}", json_result);
 
             Ok(())
         }
