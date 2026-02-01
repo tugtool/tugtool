@@ -8409,6 +8409,386 @@ tracker.process_properties(&adapter_sigs);
 
 ---
 
+##### Step 0.8.5: Type Hierarchy & Name Cleanup {#step-0-8-5}
+
+**Commit:** `refactor(python-cst): align type names and consolidate duplicate enums`
+
+**References:** [docs/proposals/phase-0.8.5-type-hierarchy-audit.md](../docs/proposals/phase-0.8.5-type-hierarchy-audit.md), [Step 0.8](#step-0-8)
+
+**Context:**
+
+An architectural audit identified naming inconsistencies and type duplications across the CST, Core, and Python adapter layers. While the overall architecture is sound (CST types use `*Info` suffix, adapter types use `*Data` suffix, core types have no suffix), there are specific issues that reduce consistency and maintainability:
+
+1. **ReceiverStep Variant Naming (HIGH PRIORITY):** CST uses `ReceiverStep::Attr` but Core uses `ReceiverPathStep::Attribute`. This mismatch requires explicit conversion and creates cognitive overhead.
+
+2. **Duplicate Enum Definitions (MEDIUM PRIORITY):** `ParamKind`, `Modifier`, and `AttributeAccessKind` are defined identically in both CST and Core. Since CST already depends on Core (for `TypeNode`, `Span`), CST can import these from Core, eliminating duplication and conversion functions.
+
+3. **Field Name Misalignment (LOW PRIORITY):** `AttributeAccessInfo` uses `attr_name`/`attr_span` while adapter/core types use `name`/`span`. Aligning these reduces cognitive load when reading conversion code.
+
+**Artifacts:**
+- Modified `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - ReceiverStep rename, AttributeAccessKind removal, field renames
+- Modified `crates/tugtool-python-cst/src/visitor/signature.rs` - ParamKind/Modifier removal
+- Modified `crates/tugtool-python-cst/src/visitor/mod.rs` - Re-export updates
+- Modified `crates/tugtool-python-cst/src/lib.rs` - Re-export updates
+- Modified `crates/tugtool-python/src/analyzer.rs` - Remove conversion functions
+
+---
+
+###### Phase A: ReceiverStep Variant Rename (HIGH PRIORITY) {#step-0-8-5-phase-a}
+
+**Prerequisites:** None
+
+**Context:** The CST crate defines `ReceiverStep::Attr` while Core defines `ReceiverPathStep::Attribute`. This inconsistency forces explicit variant mapping in the `From` impl and creates confusion when reading code that crosses layer boundaries.
+
+**Tasks:**
+
+- [ ] Rename `ReceiverStep::Attr` to `ReceiverStep::Attribute` in CST:
+
+  **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
+
+  ```rust
+  // Before (around line 69)
+  pub enum ReceiverStep {
+      Name { value: String },
+      Attr { value: String },  // <-- INCONSISTENT
+      Call,
+      Subscript,
+  }
+
+  // After
+  pub enum ReceiverStep {
+      Name { value: String },
+      Attribute { value: String },  // <-- MATCHES CORE
+      Call,
+      Subscript,
+  }
+  ```
+
+- [ ] Update the `with_attr` method name to `with_attribute` for consistency:
+
+  **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
+
+  ```rust
+  // Before (around line 115)
+  pub fn with_attr(mut self, name: &str) -> Self {
+      self.steps.push(ReceiverStep::Attr { value: name.to_string() });
+      self
+  }
+
+  // After
+  pub fn with_attribute(mut self, name: &str) -> Self {
+      self.steps.push(ReceiverStep::Attribute { value: name.to_string() });
+      self
+  }
+  ```
+
+- [ ] Simplify the `From<ReceiverStep> for CoreReceiverPathStep` impl:
+
+  **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
+
+  ```rust
+  // Before (around line 156)
+  impl From<ReceiverStep> for CoreReceiverPathStep {
+      fn from(step: ReceiverStep) -> Self {
+          match step {
+              ReceiverStep::Name { value } => CoreReceiverPathStep::Name { value },
+              ReceiverStep::Attr { value } => CoreReceiverPathStep::Attribute { value },  // MISMATCH
+              ReceiverStep::Call => CoreReceiverPathStep::Call,
+              ReceiverStep::Subscript => CoreReceiverPathStep::Subscript,
+          }
+      }
+  }
+
+  // After
+  impl From<ReceiverStep> for CoreReceiverPathStep {
+      fn from(step: ReceiverStep) -> Self {
+          match step {
+              ReceiverStep::Name { value } => CoreReceiverPathStep::Name { value },
+              ReceiverStep::Attribute { value } => CoreReceiverPathStep::Attribute { value },  // ALIGNED
+              ReceiverStep::Call => CoreReceiverPathStep::Call,
+              ReceiverStep::Subscript => CoreReceiverPathStep::Subscript,
+          }
+      }
+  }
+  ```
+
+- [ ] Update all usages of `ReceiverStep::Attr` in CST crate:
+  - `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - pattern matches, builder calls
+  - `crates/tugtool-python-cst/src/visitor/call_site.rs` - if any usage exists
+
+- [ ] Update usages of `with_attr()` to `with_attribute()`:
+  - Search for `.with_attr(` across `crates/tugtool-python-cst/`
+  - Update all call sites
+
+**Code Location:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Primary changes
+- `crates/tugtool-python-cst/src/visitor/call_site.rs` - Potential usage
+
+**Tests:**
+
+- [ ] Unit: `test_receiver_step_attribute_variant` - Verify `ReceiverStep::Attribute` works correctly
+- [ ] Unit: `test_receiver_path_builder_with_attribute` - Verify `with_attribute()` method
+- [ ] Unit: `test_receiver_step_to_core_conversion` - Verify `From` impl still works
+- [ ] Integration: `test_attribute_access_collection_unchanged` - Existing attribute access tests pass
+
+**Checkpoint:**
+
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [ ] `cargo nextest run -p tugtool-python` passes all tests (no regressions)
+- [ ] No occurrences of `ReceiverStep::Attr` remain in codebase
+
+---
+
+###### Phase B: Enum Consolidation (MEDIUM PRIORITY) {#step-0-8-5-phase-b}
+
+**Prerequisites:** Phase A complete
+
+**Context:** The following enums are defined identically in both CST and Core:
+- `ParamKind` - CST at `signature.rs:57`, Core at `facts/mod.rs:569`
+- `Modifier` - CST at `signature.rs:93`, Core at `facts/mod.rs:711`
+- `AttributeAccessKind` - CST at `attribute_access.rs:263`, Core at `facts/mod.rs:684`
+
+The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it can import these enums from Core instead of defining duplicates. This eliminates the need for conversion functions in `analyzer.rs`.
+
+**Tasks:**
+
+- [ ] **Step B.1: Remove ParamKind from CST and import from Core**
+
+  **File:** `crates/tugtool-python-cst/src/visitor/signature.rs`
+
+  ```rust
+  // Before (around line 57-80)
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+  pub enum ParamKind {
+      Positional,
+      PositionalOnly,
+      KeywordOnly,
+      VarPositional,
+      VarKeyword,
+  }
+
+  // After - Remove the enum definition and add import at top of file
+  use tugtool_core::facts::ParamKind;
+  ```
+
+- [ ] **Step B.2: Remove Modifier from CST and import from Core**
+
+  **File:** `crates/tugtool-python-cst/src/visitor/signature.rs`
+
+  ```rust
+  // Before (around line 93-132)
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+  pub enum Modifier {
+      Async,
+      Static,
+      Class,
+      Property,
+      // ... other variants
+  }
+
+  // After - Remove the enum definition and add import at top of file
+  use tugtool_core::facts::Modifier;
+  ```
+
+- [ ] **Step B.3: Remove AttributeAccessKind from CST and import from Core**
+
+  **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
+
+  ```rust
+  // Before (around line 263-278)
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+  pub enum AttributeAccessKind {
+      #[default]
+      Read,
+      Write,
+      Call,
+  }
+
+  // After - Remove the enum definition and add import at top of file
+  use tugtool_core::facts::AttributeAccessKind;
+  ```
+
+- [ ] **Step B.4: Update CST mod.rs re-exports**
+
+  **File:** `crates/tugtool-python-cst/src/visitor/mod.rs`
+
+  ```rust
+  // Before - re-exports from signature.rs
+  pub use signature::{SignatureInfo, ParamInfo, ParamKind, Modifier, TypeParamInfo};
+
+  // After - re-export Core types instead
+  pub use signature::{SignatureInfo, ParamInfo, TypeParamInfo};
+  pub use tugtool_core::facts::{ParamKind, Modifier};
+
+  // Before - re-exports from attribute_access.rs
+  pub use attribute_access::{AttributeAccessInfo, AttributeAccessKind, ReceiverPath, ReceiverStep};
+
+  // After
+  pub use attribute_access::{AttributeAccessInfo, ReceiverPath, ReceiverStep};
+  pub use tugtool_core::facts::AttributeAccessKind;
+  ```
+
+- [ ] **Step B.5: Update CST lib.rs re-exports**
+
+  **File:** `crates/tugtool-python-cst/src/lib.rs`
+
+  Update any top-level re-exports to reflect the changes in `visitor/mod.rs`.
+
+- [ ] **Step B.6: Remove conversion functions from analyzer.rs**
+
+  **File:** `crates/tugtool-python/src/analyzer.rs`
+
+  ```rust
+  // Remove these functions (approximately):
+  // - convert_cst_param_kind (around line ~5900)
+  // - convert_cst_modifier (around line ~5920)
+  // - convert_cst_attribute_access_kind (around line 6023)
+
+  // And update call sites to use the types directly without conversion
+  ```
+
+- [ ] **Step B.7: Update any remaining conversion code**
+
+  Where CST types were previously converted to Core types via the removed functions, update to use the types directly since they are now the same type.
+
+**Code Locations:**
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - Remove ParamKind, Modifier
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Remove AttributeAccessKind
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Update re-exports
+- `crates/tugtool-python-cst/src/lib.rs` - Update re-exports
+- `crates/tugtool-python/src/analyzer.rs` - Remove conversion functions
+
+**Tests:**
+
+- [ ] Unit: `test_param_kind_from_core_in_signature_info` - SignatureInfo uses Core ParamKind
+- [ ] Unit: `test_modifier_from_core_in_signature_info` - SignatureInfo uses Core Modifier
+- [ ] Unit: `test_attribute_access_kind_from_core` - AttributeAccessInfo uses Core AttributeAccessKind
+- [ ] Integration: `test_signature_collection_unchanged` - Signature collection produces same results
+- [ ] Integration: `test_attribute_access_collection_unchanged` - Attribute access collection unchanged
+- [ ] Regression: `test_full_analysis_unchanged` - Full analysis produces identical FactsStore
+
+**Checkpoint:**
+
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [ ] `cargo nextest run -p tugtool-python` passes all tests
+- [ ] No `ParamKind` definition in `signature.rs`
+- [ ] No `Modifier` definition in `signature.rs`
+- [ ] No `AttributeAccessKind` definition in `attribute_access.rs`
+- [ ] No `convert_cst_param_kind` function in `analyzer.rs`
+- [ ] No `convert_cst_modifier` function in `analyzer.rs`
+- [ ] No `convert_cst_attribute_access_kind` function in `analyzer.rs`
+
+---
+
+###### Phase C: Field Name Alignment (LOW PRIORITY) {#step-0-8-5-phase-c}
+
+**Prerequisites:** Phase B complete
+
+**Context:** The CST type `AttributeAccessInfo` uses `attr_name` and `attr_span` fields, while adapter/core types use `name` and `span`. Aligning these field names improves consistency and reduces cognitive load when reading conversion code.
+
+**Tasks:**
+
+- [ ] **Step C.1: Rename `attr_name` to `name` in AttributeAccessInfo**
+
+  **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
+
+  ```rust
+  // Before
+  pub struct AttributeAccessInfo {
+      pub receiver: String,
+      pub receiver_path: Option<ReceiverPath>,
+      pub attr_name: String,      // <-- OLD
+      pub attr_span: Option<Span>, // <-- OLD
+      // ...
+  }
+
+  // After
+  pub struct AttributeAccessInfo {
+      pub receiver: String,
+      pub receiver_path: Option<ReceiverPath>,
+      pub name: String,           // <-- NEW (matches adapter/core)
+      pub span: Option<Span>,     // <-- NEW (matches adapter/core)
+      // ...
+  }
+  ```
+
+- [ ] **Step C.2: Update AttributeAccessInfo builder/constructors**
+
+  Update any builder patterns, `new()` methods, or struct initialization code to use the new field names.
+
+- [ ] **Step C.3: Update all usages in tugtool-python-cst**
+
+  Search for `.attr_name` and `.attr_span` across the crate and update to `.name` and `.span`.
+
+- [ ] **Step C.4: Update conversion functions in analyzer.rs**
+
+  **File:** `crates/tugtool-python/src/analyzer.rs`
+
+  ```rust
+  // Before (in convert_cst_attribute_access)
+  AttributeAccessData {
+      name: cst.attr_name.clone(),
+      span: cst.attr_span,
+      // ...
+  }
+
+  // After
+  AttributeAccessData {
+      name: cst.name.clone(),
+      span: cst.span,
+      // ...
+  }
+  ```
+
+- [ ] **Step C.5: Update any other consumers**
+
+  Search workspace for `.attr_name` and `.attr_span` to find any other code that accesses these fields.
+
+**Code Locations:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Field renames
+- `crates/tugtool-python/src/analyzer.rs` - Update conversion function
+
+**Tests:**
+
+- [ ] Unit: `test_attribute_access_info_field_names` - Verify new field names work
+- [ ] Integration: `test_attribute_access_data_conversion` - Conversion still produces correct output
+- [ ] Regression: `test_attribute_access_in_rename` - Rename operations still work correctly
+
+**Checkpoint:**
+
+- [ ] `cargo build --workspace` succeeds
+- [ ] `cargo nextest run --workspace` passes all tests
+- [ ] No occurrences of `attr_name` or `attr_span` in codebase (except comments/docs)
+- [ ] `AttributeAccessInfo` uses `name` and `span` fields
+
+---
+
+###### Step 0.8.5 Success Criteria {#step-0-8-5-success}
+
+- [ ] `ReceiverStep::Attribute` variant exists and `ReceiverStep::Attr` is removed
+- [ ] `with_attribute()` method exists and `with_attr()` is removed
+- [ ] `ParamKind` is imported from `tugtool_core::facts` in CST, not defined locally
+- [ ] `Modifier` is imported from `tugtool_core::facts` in CST, not defined locally
+- [ ] `AttributeAccessKind` is imported from `tugtool_core::facts` in CST, not defined locally
+- [ ] No `convert_cst_param_kind`, `convert_cst_modifier`, or `convert_cst_attribute_access_kind` functions exist
+- [ ] `AttributeAccessInfo` uses `name` and `span` fields (not `attr_name`/`attr_span`)
+- [ ] All existing tests pass
+- [ ] No regression in rename operation behavior
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugtool-python-cst` - All CST tests pass
+- [ ] `cargo nextest run -p tugtool-python` - All Python adapter tests pass
+- [ ] `cargo nextest run --workspace` - All workspace tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+
+**Rollback:** Revert commit
+
+---
+
 ##### Step 0.9: Import Manipulation Layer {#step-0-9}
 
 **Commit:** `feat(python): add import manipulation layer for move operations`
@@ -8769,12 +9149,13 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 ##### Steps 0.8-0.9 Summary {#step-0-8-0-9-summary}
 
-After completing Steps 0.8-0.9, you will have:
+After completing Steps 0.8-0.9 (including 0.8.5), you will have:
 
 - **CallSite persistence:** All call sites are inserted into FactsStore, enabling `call_sites_to_callee()` queries
 - **Type decoupling:** FileAnalysis uses adapter types, not CST types directly
 - **Scope-aware queries:** `refs_in_scope()` enables efficient parameter/local variable operations
 - **Clean architecture:** Python-specific types in `tugtool-python`, language-agnostic types in core
+- **Type hierarchy cleanup:** Consistent enum variant naming, consolidated enum definitions, aligned field names ([Step 0.8.5](#step-0-8-5))
 - **Import manipulation:** Full infrastructure for adding, removing, and updating imports
 - **TYPE_CHECKING awareness:** Imports in type checking blocks are tracked separately
 
@@ -8782,6 +9163,9 @@ After completing Steps 0.8-0.9, you will have:
 
 - [ ] `store.call_site_count() > 0` after analyzing code with calls
 - [ ] `store.refs_in_scope(file_id, scope_id)` returns scoped references
+- [ ] `ReceiverStep::Attribute` variant exists (not `Attr`)
+- [ ] `ParamKind`, `Modifier`, `AttributeAccessKind` imported from Core in CST (no duplicates)
+- [ ] `AttributeAccessInfo` uses `name`/`span` fields (not `attr_name`/`attr_span`)
 - [ ] `ImportInserter::insert()` generates correct edits
 - [ ] `ImportRemover::remove_name_from_import()` handles multi-name imports
 - [ ] `Import.is_type_checking` is populated correctly
@@ -8791,7 +9175,7 @@ After completing Steps 0.8-0.9, you will have:
 
 #### Stage 0 Summary {#stage-0-summary}
 
-After completing Steps 0.1-0.9, you will have:
+After completing Steps 0.1-0.9 (including 0.8.5), you will have:
 - Edit primitive infrastructure supporting all [D07](#d07-edit-primitives) operations ([Step 0.1](#step-0-1))
 - Position-to-node lookup for expression/statement boundary detection ([Step 0.2](#step-0-2))
 - Stub file discovery and update infrastructure for [D08](#d08-stub-updates) compliance ([Step 0.3](#step-0-3))
@@ -8800,6 +9184,7 @@ After completing Steps 0.1-0.9, you will have:
 - Signatures in FactsStore: function/method signatures with full parameter data ([Step 0.6](#step-0-6))
 - Accurate rename-param: parameter kind validation and precise edits ([Step 0.7](#step-0-7))
 - Implementation gap fixes: CallSite persistence, type decoupling, scope indexes ([Step 0.8](#step-0-8))
+- Type hierarchy cleanup: consistent naming, consolidated enums, aligned fields ([Step 0.8.5](#step-0-8-5))
 - Import manipulation layer: insert, remove, update imports with TYPE_CHECKING support ([Step 0.9](#step-0-9))
 
 **Final Stage 0 Checkpoint:**

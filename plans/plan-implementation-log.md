@@ -6,6 +6,58 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8.5: Type Hierarchy & Name Cleanup | PLANNED | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Existing Step 0.8 context
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - ReceiverStep, AttributeAccessKind definitions
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - ParamKind, Modifier definitions
+- `crates/tugtool-core/src/facts/mod.rs` - Core ParamKind, Modifier, AttributeAccessKind, ReceiverPathStep definitions
+- `crates/tugtool-python/src/analyzer.rs` - Conversion functions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Conduct architectural audit of type hierarchies | Done |
+| Document all conversion chains | Done |
+| Identify naming inconsistencies | Done |
+| Create comprehensive naming proposal | Done |
+| Write Step 0.8.5 plan in phase-13.md | Done |
+
+**Files Created:**
+- `docs/proposals/phase-0.8.5-type-hierarchy-audit.md` - Comprehensive audit document with:
+  - Complete type inventory across CST, Adapter, and Core layers
+  - All conversion chains with function names and line numbers
+  - Naming inconsistencies identified (ReceiverStep::Attr vs Attribute, duplicate enums)
+  - Proposed naming scheme with rationale
+  - Implementation plan with file-level changes
+
+**Files Modified:**
+- `plans/phase-13.md`:
+  - Added Step 0.8.5: Type Hierarchy & Name Cleanup (lines 8412-8790)
+  - Phase A: ReceiverStep Variant Rename (HIGH PRIORITY)
+  - Phase B: Enum Consolidation (MEDIUM PRIORITY)
+  - Phase C: Field Name Alignment (LOW PRIORITY)
+  - Updated "Steps 0.8-0.9 Summary" section
+  - Updated "Stage 0 Summary" section
+
+**Key Findings:**
+- Type hierarchy is well-designed (CST=*Info, Adapter=*Data, Core=no suffix)
+- HIGH: `ReceiverStep::Attr` vs `ReceiverPathStep::Attribute` variant mismatch
+- MEDIUM: Duplicate `ParamKind`, `Modifier`, `AttributeAccessKind` in CST and Core
+- LOW: Field name differences (`attr_name` vs `name`)
+
+**Key Decisions/Notes:**
+- Architecture is sound; issues are naming consistency, not structural
+- CST already depends on Core, so enum consolidation is feasible
+- Phase A→B→C sequential execution (each builds on prior)
+- Estimated ~150-200 lines removed by enum consolidation
+
+---
+
 ## [phase-13.md] Step 0.8 Phase B: FileAnalysis Type Decoupling | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01
