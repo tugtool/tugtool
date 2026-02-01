@@ -6,6 +6,92 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8 Phase B: FileAnalysis Type Decoupling | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.8 Phase B specification (lines 7849-8188)
+- `crates/tugtool-core/src/adapter.rs` - Existing adapter type definitions (SignatureData, AttributeAccessData, CallSiteData)
+- `crates/tugtool-python/src/analyzer.rs` - FileAnalysis struct, Pass 1, Pass 2d, Pass 5
+- `crates/tugtool-python/src/type_tracker.rs` - process_signatures, process_properties methods
+- `crates/tugtool-python/src/cross_file_types.rs` - TypeTracker usage in stub/file parsing
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - CST SignatureInfo, ParamInfo types
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - CST AttributeAccessInfo, ReceiverPath types
+- `crates/tugtool-python-cst/src/visitor/call_site.rs` - CST CallSiteInfo types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| B.1: Expand SignatureData with all consumer fields | Done |
+| B.2: Expand AttributeAccessData with pre-resolution fields | Done |
+| B.3: Expand CallSiteData with pre-resolution fields | Done |
+| B.4: Add ReceiverPath re-export in adapter.rs | Done |
+| B.5: Update FileAnalysis struct to use adapter types | Done |
+| B.6: Create CST-to-Adapter conversion functions | Done |
+| B.7: Update Pass 1 to convert CST types immediately | Done |
+| B.8: Update TypeTracker to accept adapter SignatureData | Done |
+| B.9: Update cross_file_types.rs with conversion calls | Done |
+| B.10: Update Pass 2d parameter/return handling | Done |
+| B.11: Update Pass 5 helper functions for CallSiteData | Done |
+| B.12: Simplify adapter conversion (already adapter types) | Done |
+| B.13: Remove/Update CST imports, use CoreReceiverPathStep | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/adapter.rs`:
+  - Expanded `SignatureData` with: `name`, `scope_path`, `is_method`, `symbol_index` (Option), `returns` (String), `returns_node`, `modifiers`, `type_params`, `span`
+  - Expanded `AttributeAccessData` with: `receiver`, `receiver_path`, `scope_path`
+  - Expanded `CallSiteData` with: `callee`, `receiver`, `receiver_path`; changed `span` to `Option<Span>`
+  - Added `pub use crate::facts::ReceiverPath;` re-export
+  - Updated all test helper constructions for new struct fields
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Changed `FileAnalysis.signatures` from `Vec<SignatureInfo>` to `Vec<SignatureData>`
+  - Changed `FileAnalysis.attribute_accesses` from `Vec<AttributeAccessInfo>` to `Vec<AttributeAccessData>`
+  - Changed `FileAnalysis.call_sites` from `Vec<CallSiteInfo>` to `Vec<CallSiteData>`
+  - Added `convert_cst_signature()`, `convert_cst_attribute_access()`, `convert_cst_call_site_to_adapter()` functions
+  - Updated Pass 1 to convert CST types to adapter types immediately
+  - Updated Pass 2d to use adapter `ParameterData` fields (`name_span`, `kind` directly, `annotation` as TypeNode)
+  - Updated `resolve_callee()`, `resolve_method_callee()`, `insert_method_call_reference()` to accept `&CallSiteData`
+  - Updated `resolve_receiver_path_via_tracker()`, `resolve_call_site_receiver_type()` to accept `&CoreReceiverPath`
+  - Updated `resolve_receiver_path()`, `resolve_receiver_path_with_cross_file()` to use `CoreReceiverPathStep`
+  - Changed all `ReceiverStep::` to `CoreReceiverPathStep::` throughout codebase
+  - Updated `build_type_tracker()` to convert signatures before TypeTracker calls
+  - Simplified adapter bundle conversion to clone and update resolution fields
+- `crates/tugtool-python/src/type_tracker.rs`:
+  - Changed `process_signatures()` to accept `&[SignatureData]`
+  - Changed `process_properties()` to accept `&[SignatureData]`
+  - Changed import from CST `SignatureInfo` to adapter `SignatureData`
+  - Updated test helpers `make_signature`, `make_property`, `make_method` to return `SignatureData`
+- `crates/tugtool-python/src/cross_file_types.rs`:
+  - Added signature conversion in `parse_stub_file()` and file context building
+  - Import `convert_cst_signature` from analyzer
+- `crates/tugtool-python/src/mro.rs`:
+  - Updated `build_type_tracker_from_source()` test helper to convert signatures
+- `plans/phase-13.md`:
+  - Checked off all tasks, tests, and checkpoints in Phase B section
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python`: 842 tests passed
+- `cargo nextest run --workspace`: 2465 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds without CST type references in FileAnalysis fields: PASS
+- `cargo nextest run -p tugtool-python` passes all existing tests: PASS
+- `FileAnalysis.signatures` type is `Vec<SignatureData>`: PASS
+- `FileAnalysis.attribute_accesses` type is `Vec<AttributeAccessData>`: PASS
+- `FileAnalysis.call_sites` type is `Vec<CallSiteData>`: PASS
+- `TypeTracker.process_signatures` accepts `&[SignatureData]`: PASS
+
+**Key Decisions/Notes:**
+- Chose "Expand Adapter Types" strategy over keeping CST types or creating two-stage types. This provides clean decoupling from CST crate with a single conversion point in Pass 1.
+- Adapter types now contain both pre-resolution fields (from CST) and post-resolution fields (populated later). `symbol_index`, `base_symbol_index`, `callee_symbol_index` are `None` after Pass 1 conversion and populated during adapter bundle conversion.
+- `class_hierarchies`, `isinstance_checks`, `cst_assignments`, `cst_annotations` intentionally remain CST types as they're internal-only.
+- Had to update many places using `ReceiverStep` enum to `CoreReceiverPathStep` since adapter types use the Core path representation.
+- The `convert_receiver_path()` function now converts CST `ReceiverPath` (with `ReceiverStep`) to Core `ReceiverPath` (with `ReceiverPathStep`).
+
+---
+
 ## [phase-13.md] Step 0.8 Phase A: CallSite Persistence | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

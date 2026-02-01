@@ -30,13 +30,13 @@
 //! Type stub files (`.pyi`) can provide types that override source-inferred types.
 //! Use [`TypeTracker::merge_from_stub`] to merge stub types, where stub types win.
 
-use tugtool_core::facts::{FactsStore, SymbolId, TypeInfo, TypeNode, TypeSource};
+use tugtool_core::adapter::SignatureData;
+use tugtool_core::facts::{FactsStore, Modifier, SymbolId, TypeInfo, TypeNode, TypeSource};
 use tugtool_core::patch::{FileId, Span};
 
 use crate::types::{AnnotationInfo, AssignmentInfo, AttributeTypeInfo, PropertyTypeInfo};
 use std::collections::HashMap;
 use thiserror::Error;
-use tugtool_python_cst::{Modifier, SignatureInfo};
 
 // ============================================================================
 // Error Types
@@ -362,14 +362,14 @@ impl TypeTracker {
     /// Only signatures where `is_method` is true are processed. Top-level function
     /// return types are already handled by `process_annotations` via `__return__`
     /// annotations and stored in `return_types`.
-    pub fn process_signatures(&mut self, signatures: &[SignatureInfo]) {
+    pub fn process_signatures(&mut self, signatures: &[SignatureData]) {
         for sig in signatures {
             // Only process methods (functions defined inside classes)
             if !sig.is_method {
                 continue;
             }
 
-            // Only process if there's a return type annotation
+            // Only process if there's a return type annotation (string form)
             let return_type = match &sig.returns {
                 Some(ret) => ret.clone(),
                 None => continue,
@@ -385,7 +385,7 @@ impl TypeTracker {
 
             let key = (class_name, sig.name.clone());
 
-            // Create AnnotatedType with both string and TypeNode from CST
+            // Create AnnotatedType with both string and TypeNode from adapter type
             let annotated = AnnotatedType {
                 type_str: return_type,
                 type_node: sig.returns_node.clone(),
@@ -410,7 +410,7 @@ impl TypeTracker {
     /// 1. Method has `@property` decorator (stored in Modifier::Property)
     /// 2. Method has return type annotation -> use annotation type
     /// 3. Otherwise -> no property type tracked
-    pub fn process_properties(&mut self, signatures: &[SignatureInfo]) {
+    pub fn process_properties(&mut self, signatures: &[SignatureData]) {
         for sig in signatures {
             // Only process methods (functions defined inside classes)
             if !sig.is_method {
@@ -422,7 +422,7 @@ impl TypeTracker {
                 continue;
             }
 
-            // Only process if there's a return type annotation
+            // Only process if there's a return type annotation (string form)
             let (return_type, return_node) = match &sig.returns {
                 Some(ret) => (ret.clone(), sig.returns_node.clone()),
                 None => continue,
@@ -2783,20 +2783,21 @@ mod tests {
 
     mod method_return_type_tests {
         use super::*;
-        use tugtool_python_cst::SignatureInfo;
+        use tugtool_core::adapter::SignatureData;
 
         fn make_signature(
             name: &str,
             scope_path: Vec<&str>,
             is_method: bool,
             returns: Option<&str>,
-        ) -> SignatureInfo {
-            SignatureInfo {
+        ) -> SignatureData {
+            SignatureData {
                 name: name.to_string(),
                 scope_path: scope_path.into_iter().map(String::from).collect(),
                 is_method,
-                returns: returns.map(String::from),
+                symbol_index: None,
                 params: vec![],
+                returns: returns.map(String::from),
                 returns_node: None,
                 modifiers: vec![],
                 type_params: vec![],
@@ -3153,45 +3154,47 @@ mod tests {
     /// - `attribute_type_of` falls back to `property_type_of`
     mod property_type_tests {
         use super::*;
+        use tugtool_core::adapter::SignatureData;
         use tugtool_core::facts::TypeNode;
-        use tugtool_python_cst::SignatureInfo;
 
-        /// Helper to create a property SignatureInfo.
+        /// Helper to create a property SignatureData.
         fn make_property(
             name: &str,
             scope_path: Vec<&str>,
             return_type: Option<&str>,
             return_node: Option<TypeNode>,
-        ) -> SignatureInfo {
-            SignatureInfo {
+        ) -> SignatureData {
+            SignatureData {
                 name: name.to_string(),
+                scope_path: scope_path.iter().map(|s| s.to_string()).collect(),
+                is_method: true,
+                symbol_index: None,
                 params: vec![],
                 returns: return_type.map(|s| s.to_string()),
                 returns_node: return_node,
                 modifiers: vec![Modifier::Property],
                 type_params: vec![],
-                scope_path: scope_path.iter().map(|s| s.to_string()).collect(),
                 span: None,
-                is_method: true,
             }
         }
 
-        /// Helper to create a regular method SignatureInfo (not a property).
+        /// Helper to create a regular method SignatureData (not a property).
         fn make_method(
             name: &str,
             scope_path: Vec<&str>,
             return_type: Option<&str>,
-        ) -> SignatureInfo {
-            SignatureInfo {
+        ) -> SignatureData {
+            SignatureData {
                 name: name.to_string(),
+                scope_path: scope_path.iter().map(|s| s.to_string()).collect(),
+                is_method: true,
+                symbol_index: None,
                 params: vec![],
                 returns: return_type.map(|s| s.to_string()),
                 returns_node: None,
                 modifiers: vec![],
                 type_params: vec![],
-                scope_path: scope_path.iter().map(|s| s.to_string()).collect(),
                 span: None,
-                is_method: true,
             }
         }
 

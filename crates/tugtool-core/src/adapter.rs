@@ -132,10 +132,13 @@
 
 use crate::facts::{
     AliasKind, AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget,
-    FactsStore, ImportKind, Language, Modifier, ParamKind, ReceiverPath, ScopeKind, SymbolKind,
+    FactsStore, ImportKind, Language, Modifier, ParamKind, ScopeKind, SymbolKind,
     TypeNode, TypeSource, Visibility,
 };
 use crate::patch::Span;
+
+// Re-export ReceiverPath for use in adapter types by external crates
+pub use crate::facts::ReceiverPath;
 
 // ============================================================================
 // Reference Kind (Adapter)
@@ -238,7 +241,8 @@ pub struct ReferenceData {
 
 /// Attribute access from single-file analysis.
 ///
-/// Represents attribute reads, writes, or calls (e.g., `obj.attr`, `obj.method()`).
+/// Contains both pre-resolution (receiver, receiver_path, scope_path) and
+/// post-resolution (base_symbol_index, base_symbol_qualified_name) fields.
 ///
 /// # Symbol Resolution
 ///
@@ -257,6 +261,12 @@ pub struct ReferenceData {
 /// - Analysis and informational operations can proceed with reduced precision
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeAccessData {
+    /// The receiver expression as a string (e.g., "obj" in "obj.attr").
+    pub receiver: String,
+    /// Structured receiver path for resolution.
+    pub receiver_path: Option<ReceiverPath>,
+    /// Scope path where the access occurs.
+    pub scope_path: Vec<String>,
     /// Index of base symbol in the file's symbol list (if resolved locally).
     ///
     /// This is set when the receiver's type is defined in the same file.
@@ -269,11 +279,11 @@ pub struct AttributeAccessData {
     /// used to look up the symbol in the FactsStore.
     /// Mutually exclusive with `base_symbol_index`.
     pub base_symbol_qualified_name: Option<String>,
-    /// Attribute name.
+    /// Attribute name being accessed.
     pub name: String,
     /// Byte span of the attribute name, or `None` if unavailable.
     pub span: Option<Span>,
-    /// Attribute access kind.
+    /// Attribute access kind (Read, Write, Call).
     pub kind: AttributeAccessKind,
 }
 
@@ -301,7 +311,8 @@ pub struct CallArgData {
 
 /// Call site from single-file analysis.
 ///
-/// Represents a function/method call with its arguments.
+/// Contains both pre-resolution (callee, receiver) and post-resolution
+/// (callee_symbol_index, callee_symbol_qualified_name) fields.
 ///
 /// # Symbol Resolution
 ///
@@ -313,6 +324,16 @@ pub struct CallArgData {
 /// be resolved (unknown function, complex expression, etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallSiteData {
+    /// The callee expression as a string (function/method name).
+    pub callee: String,
+    /// Whether this is a method call (has a receiver).
+    pub is_method_call: bool,
+    /// Receiver name for method calls (e.g., "obj" in "obj.method()").
+    pub receiver: Option<String>,
+    /// Receiver path for method calls.
+    pub receiver_path: Option<ReceiverPath>,
+    /// Scope path where the call occurs.
+    pub scope_path: Vec<String>,
     /// Index of callee symbol in the file's symbol list (if resolved locally).
     ///
     /// This is set when the callee is defined in the same file (for direct calls)
@@ -326,16 +347,10 @@ pub struct CallSiteData {
     /// used to look up the symbol in the FactsStore.
     /// Mutually exclusive with `callee_symbol_index`.
     pub callee_symbol_qualified_name: Option<String>,
-    /// Byte span of the call expression.
-    pub span: Span,
+    /// Byte span of the call expression (callee name). Now Option<Span>.
+    pub span: Option<Span>,
     /// Call arguments.
     pub args: Vec<CallArgData>,
-    /// Receiver path for method calls (e.g., `self.handler` in `self.handler.process()`).
-    pub receiver_path: Option<ReceiverPath>,
-    /// Scope path where the call occurs (e.g., `["<module>", "MyClass", "my_method"]`).
-    pub scope_path: Vec<String>,
-    /// Whether this is a method call (as opposed to a function call).
-    pub is_method_call: bool,
 }
 
 /// Alias edge from single-file analysis.
@@ -391,15 +406,35 @@ pub struct ParameterData {
 
 /// Signature from single-file analysis.
 ///
-/// Represents a function/method signature with parameters and return type.
+/// Contains all information needed for:
+/// - TypeTracker population (process_signatures, process_properties)
+/// - FactsStore signature insertion (Pass 2d)
+/// - Adapter bundle conversion
+///
+/// Note: `symbol_index` is `None` after Pass 1 conversion; populated during adapter conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignatureData {
-    /// Index of symbol in the file's symbol list.
-    pub symbol_index: usize,
-    /// Parameters.
+    /// Function/method name (e.g., "process", "__init__").
+    pub name: String,
+    /// Scope path where this function is defined.
+    /// For methods: `["<module>", "ClassName"]`
+    pub scope_path: Vec<String>,
+    /// Whether this function is defined inside a class (is a method).
+    pub is_method: bool,
+    /// Index of symbol in file's symbol list (populated during adapter conversion).
+    pub symbol_index: Option<usize>,
+    /// Parameters in declaration order.
     pub params: Vec<ParameterData>,
-    /// Optional return type.
-    pub returns: Option<TypeNode>,
+    /// Return type annotation string (if present). E.g., "int", "List[str]"
+    pub returns: Option<String>,
+    /// Structured return type representation (if available).
+    pub returns_node: Option<TypeNode>,
+    /// Modifiers (async, decorators like @staticmethod, @property, etc.).
+    pub modifiers: Vec<Modifier>,
+    /// Type parameters for generic functions (Python 3.12+).
+    pub type_params: Vec<TypeParamData>,
+    /// Source span for the function name.
+    pub span: Option<Span>,
 }
 
 /// Type parameter from single-file analysis.
@@ -900,7 +935,10 @@ mod tests {
     #[test]
     fn signature_data_can_be_constructed() {
         let sig = SignatureData {
-            symbol_index: 2,
+            name: "process".to_string(),
+            scope_path: vec!["<module>".to_string(), "MyClass".to_string()],
+            is_method: true,
+            symbol_index: Some(2),
             params: vec![ParameterData {
                 name: "x".to_string(),
                 kind: ParamKind::Regular,
@@ -911,22 +949,34 @@ mod tests {
                     args: vec![],
                 }),
             }],
-            returns: Some(TypeNode::Named {
+            returns: Some("str".to_string()),
+            returns_node: Some(TypeNode::Named {
                 name: "str".to_string(),
                 args: vec![],
             }),
+            modifiers: vec![],
+            type_params: vec![],
+            span: Some(Span::new(50, 57)),
         };
+        assert_eq!(sig.name, "process");
+        assert!(sig.is_method);
         assert_eq!(sig.params.len(), 1);
         assert!(sig.returns.is_some());
+        assert!(sig.returns_node.is_some());
         assert!(sig.params[0].name_span.is_some());
     }
 
     #[test]
     fn call_site_data_can_be_constructed() {
         let call = CallSiteData {
+            callee: "my_func".to_string(),
+            is_method_call: false,
+            receiver: None,
+            receiver_path: None,
+            scope_path: vec!["<module>".to_string()],
             callee_symbol_index: Some(5),
             callee_symbol_qualified_name: None,
-            span: Span::new(100, 120),
+            span: Some(Span::new(100, 120)),
             args: vec![
                 CallArgData {
                     name: None,
@@ -939,10 +989,8 @@ mod tests {
                     keyword_name_span: Some(Span::new(110, 113)), // keyword name span for "key"
                 },
             ],
-            receiver_path: None,
-            scope_path: vec!["<module>".to_string()],
-            is_method_call: false,
         };
+        assert_eq!(call.callee, "my_func");
         assert_eq!(call.args.len(), 2);
         assert_eq!(call.args[1].name, Some("key".to_string()));
         assert!(call.args[1].keyword_name_span.is_some());
@@ -952,13 +1000,15 @@ mod tests {
     fn call_site_data_with_cross_file_resolution() {
         // Cross-file resolution uses qualified_name instead of index
         let call = CallSiteData {
-            callee_symbol_index: None,
-            callee_symbol_qualified_name: Some("pkg.module.SomeClass".to_string()),
-            span: Span::new(100, 120),
-            args: vec![],
+            callee: "SomeClass".to_string(),
+            is_method_call: false,
+            receiver: None,
             receiver_path: None,
             scope_path: vec![],
-            is_method_call: false,
+            callee_symbol_index: None,
+            callee_symbol_qualified_name: Some("pkg.module.SomeClass".to_string()),
+            span: Some(Span::new(100, 120)),
+            args: vec![],
         };
         assert!(call.callee_symbol_index.is_none());
         assert!(call.callee_symbol_qualified_name.is_some());
@@ -999,12 +1049,16 @@ mod tests {
     #[test]
     fn attribute_access_data_can_be_constructed() {
         let attr = AttributeAccessData {
+            receiver: "obj".to_string(),
+            receiver_path: None,
+            scope_path: vec!["<module>".to_string()],
             base_symbol_index: Some(0),
             base_symbol_qualified_name: None,
             name: "method".to_string(),
             span: Some(Span::new(50, 56)),
             kind: AttributeAccessKind::Call,
         };
+        assert_eq!(attr.receiver, "obj");
         assert_eq!(attr.kind, AttributeAccessKind::Call);
         assert!(attr.span.is_some());
     }
@@ -1012,6 +1066,9 @@ mod tests {
     #[test]
     fn attribute_access_data_can_have_none_span() {
         let attr = AttributeAccessData {
+            receiver: "obj".to_string(),
+            receiver_path: None,
+            scope_path: vec![],
             base_symbol_index: None,
             base_symbol_qualified_name: None,
             name: "attr".to_string(),
@@ -1025,6 +1082,9 @@ mod tests {
     fn attribute_access_data_with_cross_file_resolution() {
         // Cross-file resolution uses qualified_name instead of index
         let attr = AttributeAccessData {
+            receiver: "obj".to_string(),
+            receiver_path: None,
+            scope_path: vec!["<module>".to_string()],
             base_symbol_index: None,
             base_symbol_qualified_name: Some("pkg.module.MyClass".to_string()),
             name: "method".to_string(),

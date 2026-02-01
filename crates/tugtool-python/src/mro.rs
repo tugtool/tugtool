@@ -1691,10 +1691,17 @@ mod tests {
             })
             .collect();
 
+        // Convert CST signatures to adapter SignatureData
+        let adapter_signatures: Vec<_> = analysis
+            .signatures
+            .iter()
+            .map(crate::analyzer::convert_cst_signature)
+            .collect();
+
         tracker.process_annotations(&annotations);
         tracker.process_instance_attributes(&assignments);
-        tracker.process_signatures(&analysis.signatures);
-        tracker.process_properties(&analysis.signatures);
+        tracker.process_signatures(&adapter_signatures);
+        tracker.process_properties(&adapter_signatures);
         tracker.process_assignments(&assignments);
         tracker.resolve_types();
 

@@ -87,10 +87,11 @@ use thiserror::Error;
 // Native CST bridge
 use crate::cst_bridge;
 
-// Receiver path types for dotted path resolution
+// Receiver path types and collector types for dotted path resolution
 use tugtool_python_cst::{
-    CallSiteInfo, DynamicPatternInfo, DynamicPatternKind as CstDynamicPatternKind, ReceiverPath,
-    ReceiverStep, TypeComment, TypeCommentCollector,
+    AttributeAccessInfo, CallSiteInfo, DynamicPatternInfo,
+    DynamicPatternKind as CstDynamicPatternKind, ReceiverPath as CstReceiverPath,
+    ReceiverStep, SignatureInfo, TypeComment, TypeCommentCollector,
 };
 
 /// Maximum depth for chained attribute resolution.
@@ -361,12 +362,12 @@ pub struct FileAnalysis {
     pub exports: Vec<LocalExport>,
     /// Value-level aliases in this file (e.g., `b = bar`).
     pub alias_graph: AliasGraph,
-    /// Function/method signatures in this file.
-    pub signatures: Vec<tugtool_python_cst::SignatureInfo>,
-    /// Attribute access patterns (obj.attr with Read/Write/Call context).
-    pub attribute_accesses: Vec<tugtool_python_cst::AttributeAccessInfo>,
-    /// Call sites with argument information.
-    pub call_sites: Vec<tugtool_python_cst::CallSiteInfo>,
+    /// Function/method signatures in this file (adapter type).
+    pub signatures: Vec<SignatureData>,
+    /// Attribute access patterns (adapter type).
+    pub attribute_accesses: Vec<AttributeAccessData>,
+    /// Call sites with argument information (adapter type).
+    pub call_sites: Vec<CallSiteData>,
     /// Class inheritance information (class name -> base class names).
     pub class_hierarchies: Vec<tugtool_python_cst::ClassInheritanceInfo>,
     /// isinstance checks for type narrowing.
@@ -742,7 +743,7 @@ fn extract_inner_type_if_optional(
 /// - Function-level imports (via scope-aware import_targets)
 #[allow(clippy::too_many_arguments)]
 fn resolve_call_site_receiver_type(
-    call_site: &CallSiteInfo,
+    call_site: &CallSiteData,
     tracker: &TypeTracker,
     narrowing: Option<&NarrowingContext>,
     site_span: Option<Span>,
@@ -807,7 +808,7 @@ fn resolve_call_site_receiver_type(
 /// - Subscripts: `handlers[0]` -> look up handlers TypeNode, extract element type
 /// - Attributes: `self.handler` -> look up handler attribute type on class
 fn resolve_receiver_path_via_tracker(
-    receiver_path: &ReceiverPath,
+    receiver_path: &CoreReceiverPath,
     scope_path: &[String],
     tracker: &TypeTracker,
 ) -> Option<String> {
@@ -825,13 +826,13 @@ fn resolve_receiver_path_via_tracker(
 
     for step in &receiver_path.steps {
         match step {
-            ReceiverStep::Name { value: name } => {
+            CoreReceiverPathStep::Name { value: name } => {
                 // Look up type of the name in scope
                 current_type = tracker.type_of(scope_path, name).map(|s| s.to_string());
                 current_type_node = tracker.type_of_node(scope_path, name).cloned();
                 last_name = Some(name.clone());
             }
-            ReceiverStep::Subscript => {
+            CoreReceiverPathStep::Subscript => {
                 // Extract element type from container (e.g., List[Handler] -> Handler)
                 // Try current_type_node first (from attr chain), then fall back to last_name lookup
                 let type_node_opt = if current_type_node.is_some() {
@@ -852,7 +853,7 @@ fn resolve_receiver_path_via_tracker(
                 }
                 last_name = None; // Clear after subscript
             }
-            ReceiverStep::Attr { value: attr_name } => {
+            CoreReceiverPathStep::Attribute { value: attr_name } => {
                 // Look up attribute type on current class
                 let class_type_str = current_type.take();
                 if let Some(class_type) = class_type_str {
@@ -867,7 +868,7 @@ fn resolve_receiver_path_via_tracker(
                 }
                 last_name = None; // Clear after attr
             }
-            ReceiverStep::Call => {
+            CoreReceiverPathStep::Call => {
                 // For call, the type should be the return type of the callable
                 // This requires method return type lookup which is more complex
                 // For now, keep current_type (works for constructors)
@@ -915,7 +916,7 @@ fn class_inherits_from(
 /// Uses MRO-based resolution: receiver_type can be a subclass of the method's class.
 #[allow(clippy::too_many_arguments)]
 fn insert_method_call_reference(
-    call_site: &CallSiteInfo,
+    call: &CallSiteData,
     receiver_type_name: &Option<String>,
     class_methods_by_name: &HashMap<String, Vec<(String, SymbolId, SymbolId)>>,
     class_name_to_id: &HashMap<String, SymbolId>,
@@ -924,10 +925,10 @@ fn insert_method_call_reference(
     store: &mut FactsStore,
 ) {
     // Check for self/cls calls within a class
-    let is_self_call = matches!(call_site.receiver.as_deref(), Some("self") | Some("cls"));
+    let is_self_call = matches!(call.receiver.as_deref(), Some("self") | Some("cls"));
 
     // Look up methods matching this callee name
-    let Some(methods) = class_methods_by_name.get(&call_site.callee) else {
+    let Some(methods) = class_methods_by_name.get(&call.callee) else {
         return;
     };
 
@@ -948,7 +949,7 @@ fn insert_method_call_reference(
             false
         };
 
-        let self_in_class = is_self_call && call_site.scope_path.iter().any(|s| s == class_name);
+        let self_in_class = is_self_call && call.scope_path.iter().any(|s| s == class_name);
 
         if type_matches || self_in_class {
             // Insert reference from call site to method symbol
@@ -1259,23 +1260,22 @@ pub fn analyze_files(
                 continue;
             };
 
-            // Convert CST ParamInfo to facts::Parameter
+            // Convert adapter ParameterData to facts::Parameter
             let params: Vec<Parameter> = sig
                 .params
                 .iter()
                 .map(|p| {
-                    let mut param = Parameter::new(&p.name, convert_cst_param_kind(p.kind));
-                    if let Some(span) = p.span {
+                    // kind is already ParamKind from adapter (no conversion needed)
+                    let mut param = Parameter::new(&p.name, p.kind);
+                    if let Some(span) = p.name_span {
                         param = param.with_name_span(span);
                     }
                     if let Some(span) = p.default_span {
                         param = param.with_default_span(span);
                     }
-                    if let Some(ref ann) = p.annotation_node {
+                    if let Some(ref ann) = p.annotation {
+                        // annotation is already TypeNode in adapter
                         param = param.with_annotation(ann.clone());
-                    } else if let Some(ref ann_str) = p.annotation {
-                        // Fall back to string annotation if no structured node
-                        param = param.with_annotation(TypeNode::named(ann_str));
                     }
                     param
                 })
@@ -1646,7 +1646,7 @@ pub fn analyze_files(
     let mut narrowing_contexts: HashMap<FileId, NarrowingContext> = HashMap::new();
 
     // Store call_sites per file for unified method call resolution
-    let mut all_call_sites: HashMap<FileId, Vec<tugtool_python_cst::CallSiteInfo>> = HashMap::new();
+    let mut all_call_sites: HashMap<FileId, Vec<CallSiteData>> = HashMap::new();
 
     // Collect all class inheritance info across files for building InheritanceInfo
     let mut all_class_inheritance: Vec<(FileId, tugtool_python_cst::ClassInheritanceInfo)> =
@@ -1901,12 +1901,12 @@ pub fn analyze_files(
         let tracker = type_trackers.get(&file_id);
         let narrowing = narrowing_contexts.get(&file_id);
 
-        for cst_call in &analysis.call_sites {
+        for call in &analysis.call_sites {
             // Resolve callee symbol
-            let resolved_callee = if cst_call.is_method_call {
+            let resolved_callee = if call.is_method_call {
                 // For method calls, resolve via receiver type and class method index
                 resolve_method_callee(
-                    cst_call,
+                    call,
                     tracker,
                     narrowing,
                     &class_methods_by_name,
@@ -1915,12 +1915,12 @@ pub fn analyze_files(
                 )
             } else {
                 // For function calls, look up in global symbol map
-                resolve_callee(cst_call, &global_symbols, None)
+                resolve_callee(call, &global_symbols, None)
             };
 
             // Convert and insert call site
             let call_id = store.next_call_site_id();
-            let call_site = convert_call_site(cst_call, file_id, call_id, resolved_callee);
+            let call_site = convert_call_site_data_to_core(call, file_id, call_id, resolved_callee);
             store.insert_call_site(call_site);
         }
     }
@@ -1964,7 +1964,7 @@ fn convert_type_comment_kind(cst_kind: tugtool_python_cst::TypeCommentKind) -> T
 ///
 /// Converts the CST representation of a receiver path (e.g., `self.handler.process`)
 /// to the language-agnostic FactsStore representation.
-fn convert_receiver_path(cst_path: &ReceiverPath) -> CoreReceiverPath {
+fn convert_receiver_path(cst_path: &CstReceiverPath) -> CoreReceiverPath {
     let steps = cst_path
         .steps
         .iter()
@@ -1982,50 +1982,153 @@ fn convert_receiver_path(cst_path: &ReceiverPath) -> CoreReceiverPath {
     CoreReceiverPath::new(steps)
 }
 
-/// Convert CST CallSiteInfo to Core CallSite.
+// ============================================================================
+// CST-to-Adapter Conversion Functions (Phase B)
+// ============================================================================
+
+/// Convert CST SignatureInfo to adapter SignatureData.
 ///
-/// Converts the CST representation of a call site to the FactsStore CallSite type.
+/// Copies all fields from the CST representation to the adapter type.
+/// `symbol_index` is set to `None` and will be populated during adapter conversion.
+pub(crate) fn convert_cst_signature(cst: &SignatureInfo) -> SignatureData {
+    // Convert parameters (CST ParamKind to Core ParamKind)
+    let params = cst
+        .params
+        .iter()
+        .map(|p| ParameterData {
+            name: p.name.clone(),
+            kind: convert_cst_param_kind(p.kind),
+            name_span: p.span.map(|s| Span::new(s.start, s.end)),
+            default_span: p.default_span.map(|s| Span::new(s.start, s.end)),
+            annotation: p.annotation_node.clone(),
+        })
+        .collect();
+
+    // Convert type parameters
+    let type_params = cst
+        .type_params
+        .iter()
+        .map(|tp| {
+            // Convert bound string to TypeNode if present
+            let bounds = tp
+                .bound
+                .as_ref()
+                .map(|b| vec![TypeNode::named(b)])
+                .unwrap_or_default();
+            // Convert default string to TypeNode if present
+            let default = tp.default.as_ref().map(|d| TypeNode::named(d));
+            TypeParamData {
+                name: tp.name.clone(),
+                bounds,
+                default,
+            }
+        })
+        .collect();
+
+    // Convert modifiers (CST Modifier to Core Modifier)
+    let modifiers: Vec<Modifier> = cst
+        .modifiers
+        .iter()
+        .filter_map(|m| convert_cst_modifier(*m))
+        .collect();
+
+    SignatureData {
+        name: cst.name.clone(),
+        scope_path: cst.scope_path.clone(),
+        is_method: cst.is_method,
+        symbol_index: None, // Will be populated during adapter conversion
+        params,
+        returns: cst.returns.clone(),
+        returns_node: cst.returns_node.clone(),
+        modifiers,
+        type_params,
+        span: cst.span.map(|s| Span::new(s.start, s.end)),
+    }
+}
+
+/// Convert CST AttributeAccessInfo to adapter AttributeAccessData.
+///
+/// Copies pre-resolution fields from the CST representation.
+/// Post-resolution fields (`base_symbol_index`, `base_symbol_qualified_name`) are set to `None`.
+pub(crate) fn convert_cst_attribute_access(cst: &AttributeAccessInfo) -> AttributeAccessData {
+    AttributeAccessData {
+        receiver: cst.receiver.clone(),
+        receiver_path: cst.receiver_path.as_ref().map(convert_receiver_path),
+        scope_path: cst.scope_path.clone(),
+        base_symbol_index: None,           // Will be populated during resolution
+        base_symbol_qualified_name: None,  // Will be populated during resolution
+        name: cst.attr_name.clone(),
+        span: cst.attr_span.map(|s| Span::new(s.start, s.end)),
+        kind: convert_cst_attribute_access_kind(cst.kind),
+    }
+}
+
+/// Convert CST CallSiteInfo to adapter CallSiteData.
+///
+/// Copies pre-resolution fields from the CST representation.
+/// Post-resolution fields (`callee_symbol_index`, `callee_symbol_qualified_name`) are set to `None`.
+pub(crate) fn convert_cst_call_site_to_adapter(cst: &CallSiteInfo) -> CallSiteData {
+    // Convert arguments
+    let args = cst
+        .args
+        .iter()
+        .map(|arg| CallArgData {
+            name: arg.name.clone(),
+            span: arg.span.map(|s| Span::new(s.start, s.end)),
+            keyword_name_span: arg.keyword_name_span.map(|s| Span::new(s.start, s.end)),
+        })
+        .collect();
+
+    CallSiteData {
+        callee: cst.callee.clone(),
+        is_method_call: cst.is_method_call,
+        receiver: cst.receiver.clone(),
+        receiver_path: cst.receiver_path.as_ref().map(convert_receiver_path),
+        scope_path: cst.scope_path.clone(),
+        callee_symbol_index: None,           // Will be populated during resolution
+        callee_symbol_qualified_name: None,  // Will be populated during resolution
+        span: cst.span.map(|s| Span::new(s.start, s.end)),
+        args,
+    }
+}
+
+// ============================================================================
+
+/// Convert adapter CallSiteData to Core CallSite.
+///
+/// Converts the adapter representation of a call site to the FactsStore CallSite type.
 /// The `resolved_callee` is provided by the caller after symbol resolution.
-fn convert_call_site(
-    cst_call: &CallSiteInfo,
+fn convert_call_site_data_to_core(
+    call: &CallSiteData,
     file_id: FileId,
     call_id: CallSiteId,
     resolved_callee: Option<SymbolId>,
 ) -> CallSite {
-    // Convert arguments
-    let args = cst_call
+    // Convert arguments (spans are already converted in adapter)
+    let args = call
         .args
         .iter()
         .map(|arg| {
-            let span = arg
-                .span
-                .map(|s| Span::new(s.start, s.end))
-                .unwrap_or_else(|| Span::new(0, 0));
-            let keyword_name_span = arg.keyword_name_span.map(|s| Span::new(s.start, s.end));
+            let span = arg.span.unwrap_or_else(|| Span::new(0, 0));
             if let Some(name) = &arg.name {
-                CallArg::keyword(name.clone(), span, keyword_name_span)
+                CallArg::keyword(name.clone(), span, arg.keyword_name_span)
             } else {
                 CallArg::positional(span)
             }
         })
         .collect();
 
-    // Convert receiver path
-    let receiver_path = cst_call.receiver_path.as_ref().map(convert_receiver_path);
-
-    // Build call site span
-    let span = cst_call
-        .span
-        .map(|s| Span::new(s.start, s.end))
-        .unwrap_or_else(|| Span::new(0, 0));
+    // Build call site span (already Option<Span> in adapter)
+    let span = call.span.unwrap_or_else(|| Span::new(0, 0));
 
     // Create call site with all fields
     let mut call_site = CallSite::new(call_id, file_id, span);
     call_site.args = args;
-    call_site.scope_path = cst_call.scope_path.clone();
-    call_site.is_method_call = cst_call.is_method_call;
+    call_site.scope_path = call.scope_path.clone();
+    call_site.is_method_call = call.is_method_call;
     call_site.callee_symbol_id = resolved_callee;
-    call_site.receiver_path = receiver_path;
+    // receiver_path is already CoreReceiverPath in adapter, just clone
+    call_site.receiver_path = call.receiver_path.clone();
 
     call_site
 }
@@ -2036,17 +2139,16 @@ fn convert_call_site(
 /// Tries function first, then class (for constructor calls).
 /// Returns None if the callee cannot be resolved.
 fn resolve_callee(
-    cst_call: &CallSiteInfo,
+    call: &CallSiteData,
     global_symbols: &GlobalSymbolMap,
     _method_symbol: Option<SymbolId>,
 ) -> Option<SymbolId> {
     // For simple function calls, look up in global symbol map
     // Try function first, then class (for constructor calls)
-    if let Some(entries) = global_symbols.get(&(cst_call.callee.clone(), SymbolKind::Function)) {
+    if let Some(entries) = global_symbols.get(&(call.callee.clone(), SymbolKind::Function)) {
         // Return the first definition (prefer original over imports)
         entries.first().map(|(_, symbol_id)| *symbol_id)
-    } else if let Some(entries) = global_symbols.get(&(cst_call.callee.clone(), SymbolKind::Class))
-    {
+    } else if let Some(entries) = global_symbols.get(&(call.callee.clone(), SymbolKind::Class)) {
         // Constructor call - resolve to the class symbol
         entries.first().map(|(_, symbol_id)| *symbol_id)
     } else {
@@ -2061,26 +2163,26 @@ fn resolve_callee(
 /// but returns the SymbolId instead of inserting a reference.
 #[allow(clippy::too_many_arguments)]
 fn resolve_method_callee(
-    call_site: &CallSiteInfo,
+    call: &CallSiteData,
     tracker: Option<&TypeTracker>,
     narrowing: Option<&NarrowingContext>,
     class_methods_by_name: &HashMap<String, Vec<(String, SymbolId, SymbolId)>>,
     class_name_to_id: &HashMap<String, SymbolId>,
     store: &FactsStore,
 ) -> Option<SymbolId> {
-    // Get method span for type resolution
-    let method_span = call_site.span.map(|s| Span::new(s.start, s.end))?;
+    // Get method span for type resolution (already Option<Span> in adapter)
+    let method_span = call.span?;
 
     // Resolve receiver type
     let tracker = tracker?;
     let receiver_type_name =
-        resolve_call_site_receiver_type(call_site, tracker, narrowing, Some(method_span));
+        resolve_call_site_receiver_type(call, tracker, narrowing, Some(method_span));
 
     // Check for self/cls calls within a class
-    let is_self_call = matches!(call_site.receiver.as_deref(), Some("self") | Some("cls"));
+    let is_self_call = matches!(call.receiver.as_deref(), Some("self") | Some("cls"));
 
     // Look up methods matching this callee name
-    let methods = class_methods_by_name.get(&call_site.callee)?;
+    let methods = class_methods_by_name.get(&call.callee)?;
 
     for (class_name, class_symbol_id, method_symbol_id) in methods {
         // Check if receiver type matches the class (including inheritance via MRO)
@@ -2099,7 +2201,7 @@ fn resolve_method_callee(
             false
         };
 
-        let self_in_class = is_self_call && call_site.scope_path.iter().any(|s| s == class_name);
+        let self_in_class = is_self_call && call.scope_path.iter().any(|s| s == class_name);
 
         if type_matches || self_in_class {
             return Some(*method_symbol_id);
@@ -2248,9 +2350,9 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         imports,
         exports,
         alias_graph,
-        signatures: native_result.signatures,
-        attribute_accesses: native_result.attribute_accesses,
-        call_sites: native_result.call_sites,
+        signatures: native_result.signatures.iter().map(convert_cst_signature).collect(),
+        attribute_accesses: native_result.attribute_accesses.iter().map(convert_cst_attribute_access).collect(),
+        call_sites: native_result.call_sites.iter().map(convert_cst_call_site_to_adapter).collect(),
         class_hierarchies: native_result.class_inheritance,
         isinstance_checks: native_result.isinstance_checks,
         dynamic_patterns: native_result.dynamic_patterns,
@@ -2283,6 +2385,12 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
     // Use the centralized conversion helpers
     let cst_assignments = convert_cst_assignments(native_result);
     let cst_annotations = convert_cst_annotations(native_result);
+    // Convert signatures from CST to adapter type
+    let adapter_signatures: Vec<SignatureData> = native_result
+        .signatures
+        .iter()
+        .map(convert_cst_signature)
+        .collect();
 
     // Process in correct order for type precedence:
     // 1. Annotations (highest priority - explicit type declarations)
@@ -2293,8 +2401,8 @@ fn build_type_tracker(native_result: &cst_bridge::NativeAnalysisResult) -> TypeT
     // 6. Resolve types (propagate through aliases)
     tracker.process_annotations(&cst_annotations);
     tracker.process_instance_attributes(&cst_assignments);
-    tracker.process_signatures(&native_result.signatures);
-    tracker.process_properties(&native_result.signatures);
+    tracker.process_signatures(&adapter_signatures);
+    tracker.process_properties(&adapter_signatures);
     tracker.process_assignments(&cst_assignments);
     tracker.resolve_types();
 
@@ -4308,7 +4416,7 @@ impl PythonAdapter {
     #[allow(clippy::too_many_arguments)]
     fn resolve_receiver_path(
         &self,
-        receiver_path: &ReceiverPath,
+        receiver_path: &CoreReceiverPath,
         scope_path: &[String],
         tracker: &TypeTracker,
         scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
@@ -4357,7 +4465,7 @@ impl PythonAdapter {
     #[allow(clippy::too_many_arguments)]
     fn resolve_receiver_path_with_cross_file(
         &self,
-        receiver_path: &ReceiverPath,
+        receiver_path: &CoreReceiverPath,
         scope_path: &[String],
         tracker: &TypeTracker,
         scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
@@ -4390,7 +4498,7 @@ impl PythonAdapter {
 
         for (step_idx, step) in receiver_path.steps.iter().enumerate() {
             match step {
-                ReceiverStep::Name { value: name } => {
+                CoreReceiverPathStep::Name { value: name } => {
                     // Try narrowing-aware type lookup if context and site_span are available
                     let type_str = match (narrowing, site_span) {
                         (Some(ctx), Some(span)) => {
@@ -4415,7 +4523,7 @@ impl PythonAdapter {
                     // Clear pending_callable_return - Name step starts fresh
                     pending_callable_return = None;
                 }
-                ReceiverStep::Attr { value: attr_name } => {
+                CoreReceiverPathStep::Attribute { value: attr_name } => {
                     if let Some(ref class_type) = current_type {
                         // Check if current_type is cross-file BEFORE continuing
                         let is_import =
@@ -4440,7 +4548,7 @@ impl PythonAdapter {
                                     &receiver_path.steps[receiver_path
                                         .steps
                                         .iter()
-                                        .position(|s| matches!(s, ReceiverStep::Attr { value } if value == attr_name))
+                                        .position(|s| matches!(s, CoreReceiverPathStep::Attribute { value } if value == attr_name))
                                         .unwrap_or(0)
                                         + 1..],
                                     scope_path,
@@ -4482,7 +4590,7 @@ impl PythonAdapter {
                         return None; // Can't resolve without known type
                     }
                 }
-                ReceiverStep::Call => {
+                CoreReceiverPathStep::Call => {
                     if let Some(ref class_type) = current_type {
                         // Handle callable attribute invocation first.
                         // When we have a pending_callable_return, we know the return type
@@ -4554,7 +4662,7 @@ impl PythonAdapter {
                         return None;
                     }
                 }
-                ReceiverStep::Subscript => {
+                CoreReceiverPathStep::Subscript => {
                     // Subscript resolution: extract element type from container
                     // For `items[0]` where `items: List[Handler]`, resolve to `Handler`
                     if current_type.is_some() {
@@ -4562,13 +4670,13 @@ impl PythonAdapter {
                         let element_type = if step_idx > 0 {
                             let prev_step = &receiver_path.steps[step_idx - 1];
                             match prev_step {
-                                ReceiverStep::Name { value: name } => {
+                                CoreReceiverPathStep::Name { value: name } => {
                                     // Try TypeNode-based extraction from the variable's annotation
                                     tracker.type_of_node(scope_path, name).and_then(|node| {
                                         tracker.extract_element_type_from_node(node)
                                     })
                                 }
-                                ReceiverStep::Attr { .. } => {
+                                CoreReceiverPathStep::Attribute { .. } => {
                                     // For attribute access like `self.items[0]`, we'd need to look up
                                     // the attribute's TypeNode. This requires knowing the class type
                                     // from even earlier - not yet supported.
@@ -4632,7 +4740,7 @@ impl PythonAdapter {
         &self,
         class_type: &str,
         attr_name: &str,
-        remaining_steps: &[ReceiverStep],
+        remaining_steps: &[CoreReceiverPathStep],
         scope_path: &[String],
         import_targets: &HashMap<(Vec<String>, String), crate::cross_file_types::ImportTarget>,
         cross_file_map: Option<&CrossFileSymbolMap>,
@@ -4712,7 +4820,7 @@ impl PythonAdapter {
         &self,
         class_name: &str,
         attr_name: &str,
-        remaining_steps: &[ReceiverStep],
+        remaining_steps: &[CoreReceiverPathStep],
         file_path: &Path,
         cross_file_map: Option<&CrossFileSymbolMap>,
         cache: &mut CrossFileTypeCache,
@@ -4788,7 +4896,7 @@ impl PythonAdapter {
             }
 
             // Continue resolution with remaining steps
-            let new_path = ReceiverPath {
+            let new_path = CoreReceiverPath {
                 steps: remaining_steps.to_vec(),
             };
             let module_scope = vec!["<module>".to_string()];
@@ -4812,7 +4920,7 @@ impl PythonAdapter {
         // Try method lookup if attribute not found
         if let Some(return_type) = method_return {
             // Check if next step is a Call
-            if let Some(ReceiverStep::Call) = remaining_steps.first() {
+            if let Some(CoreReceiverPathStep::Call) = remaining_steps.first() {
                 // Method call - use the return type for remaining resolution
                 let remaining = &remaining_steps[1..];
                 if remaining.is_empty() {
@@ -4825,11 +4933,11 @@ impl PythonAdapter {
                 }
 
                 // Build path for remaining steps with the return type
-                let mut new_steps = vec![ReceiverStep::Name {
+                let mut new_steps = vec![CoreReceiverPathStep::Name {
                     value: return_type.clone(),
                 }];
                 new_steps.extend_from_slice(remaining);
-                let new_path = ReceiverPath { steps: new_steps };
+                let new_path = CoreReceiverPath { steps: new_steps };
                 let module_scope = vec!["<module>".to_string()];
 
                 return self.resolve_receiver_path_with_cross_file(
@@ -4881,7 +4989,7 @@ impl PythonAdapter {
     fn resolve_module_attr(
         &self,
         attr_name: &str,
-        remaining_steps: &[ReceiverStep],
+        remaining_steps: &[CoreReceiverPathStep],
         file_path: &Path,
         cross_file_map: Option<&CrossFileSymbolMap>,
         cache: &mut CrossFileTypeCache,
@@ -4933,11 +5041,11 @@ impl PythonAdapter {
                 }
 
                 // Build path for remaining resolution
-                let mut new_steps = vec![ReceiverStep::Name {
+                let mut new_steps = vec![CoreReceiverPathStep::Name {
                     value: attr_name.to_string(),
                 }];
                 new_steps.extend_from_slice(remaining_steps);
-                let new_path = ReceiverPath { steps: new_steps };
+                let new_path = CoreReceiverPath { steps: new_steps };
 
                 return self.resolve_receiver_path_with_cross_file(
                     &new_path,
@@ -4956,7 +5064,7 @@ impl PythonAdapter {
             }
             Some(SymbolKind::Function) => {
                 // attr_name is a function - check if next step is Call
-                if let Some(ReceiverStep::Call) = remaining_steps.first() {
+                if let Some(CoreReceiverPathStep::Call) = remaining_steps.first() {
                     // Function call - get return type
                     if let Some(ret_type) = return_type {
                         let remaining = &remaining_steps[1..];
@@ -4969,9 +5077,9 @@ impl PythonAdapter {
                         }
 
                         // Continue resolution with return type
-                        let mut new_steps = vec![ReceiverStep::Name { value: ret_type }];
+                        let mut new_steps = vec![CoreReceiverPathStep::Name { value: ret_type }];
                         new_steps.extend_from_slice(remaining);
-                        let new_path = ReceiverPath { steps: new_steps };
+                        let new_path = CoreReceiverPath { steps: new_steps };
 
                         return self.resolve_receiver_path_with_cross_file(
                             &new_path,
@@ -5126,7 +5234,7 @@ impl PythonAdapter {
     fn resolve_receiver_to_symbol_with_path(
         &self,
         receiver: &str,
-        receiver_path: Option<&ReceiverPath>,
+        receiver_path: Option<&CoreReceiverPath>,
         scope_path: &[String],
         tracker: Option<&TypeTracker>,
         scoped_symbol_map: &HashMap<(Vec<String>, String), usize>,
@@ -5471,49 +5579,17 @@ impl PythonAdapter {
                 None => continue, // Skip if symbol not found
             };
 
-            // Convert parameters
-            // Use structured TypeNode if available, otherwise fall back to flat Named
-            let params: Vec<ParameterData> = sig
-                .params
-                .iter()
-                .map(|p| ParameterData {
-                    name: p.name.clone(),
-                    kind: convert_cst_param_kind(p.kind),
-                    name_span: p.span,
-                    default_span: p.default_span,
-                    annotation: p
-                        .annotation_node
-                        .clone()
-                        .or_else(|| p.annotation.as_ref().map(TypeNode::named)),
-                })
-                .collect();
+            // Clone the signature and set symbol_index (already converted to adapter type)
+            let mut sig_data = sig.clone();
+            sig_data.symbol_index = Some(symbol_index);
+            result.signatures.push(sig_data);
 
-            // Convert return type
-            // Use structured TypeNode if available, otherwise fall back to flat Named
-            let returns = sig
-                .returns_node
-                .clone()
-                .or_else(|| sig.returns.as_ref().map(TypeNode::named));
-
-            result.signatures.push(SignatureData {
-                symbol_index,
-                params,
-                returns,
-            });
-
-            // Extract modifiers
+            // Extract modifiers (already in adapter type)
             if !sig.modifiers.is_empty() {
-                let modifiers: Vec<Modifier> = sig
-                    .modifiers
-                    .iter()
-                    .filter_map(|m| convert_cst_modifier(*m))
-                    .collect();
-                if !modifiers.is_empty() {
-                    result.modifiers.push(ModifierData {
-                        symbol_index,
-                        modifiers,
-                    });
-                }
+                result.modifiers.push(ModifierData {
+                    symbol_index,
+                    modifiers: sig.modifiers.clone(),
+                });
             }
 
             // Compute qualified name
@@ -5523,29 +5599,13 @@ impl PythonAdapter {
                 path: qualified_name,
             });
 
-            // Convert type parameters
+            // Type parameters are already in adapter format, just clone
             for tp in &sig.type_params {
-                result.type_params.push(TypeParamData {
-                    name: tp.name.clone(),
-                    bounds: tp
-                        .bound
-                        .as_ref()
-                        .map(|b| {
-                            vec![TypeNode::Named {
-                                name: b.clone(),
-                                args: vec![],
-                            }]
-                        })
-                        .unwrap_or_default(),
-                    default: tp.default.as_ref().map(|d| TypeNode::Named {
-                        name: d.clone(),
-                        args: vec![],
-                    }),
-                });
+                result.type_params.push(tp.clone());
             }
         }
 
-        // Convert attribute accesses
+        // Convert attribute accesses (already adapter type, resolve and update fields)
         for attr in &analysis.attribute_accesses {
             // Try to resolve the receiver to a symbol via type inference.
             // Uses structured receiver_path when available for dotted path resolution,
@@ -5563,7 +5623,7 @@ impl PythonAdapter {
                 None, // cross_file_cache
                 None, // workspace_root
                 Some(&narrowing),
-                attr.attr_span,
+                attr.span, // adapter uses `span` not `attr_span`
             );
 
             // Split resolution into local index vs cross-file qualified name
@@ -5573,25 +5633,24 @@ impl PythonAdapter {
                 None => (None, None),
             };
 
-            result.attributes.push(AttributeAccessData {
-                base_symbol_index,
-                base_symbol_qualified_name,
-                name: attr.attr_name.clone(),
-                span: attr.attr_span,
-                kind: convert_cst_attribute_access_kind(attr.kind),
-            });
+            // Clone adapter type and update resolution fields
+            let mut attr_data = attr.clone();
+            attr_data.base_symbol_index = base_symbol_index;
+            attr_data.base_symbol_qualified_name = base_symbol_qualified_name;
+            result.attributes.push(attr_data);
         }
 
-        // Convert call sites (filter entries without spans per [D01])
+        // Convert call sites (already adapter type, resolve and update fields)
+        // Filter entries without spans per [D01]
         for call in &analysis.call_sites {
             // A call site without a span can't be an edit target - skip it
-            let Some(span) = call.span else {
+            if call.span.is_none() {
                 tracing::debug!(
                     callee = %call.callee,
                     "Skipping call site without span (cannot be edit target)"
                 );
                 continue;
-            };
+            }
 
             // Try to resolve the callee to a symbol
             // For function calls, look up the callee name in symbols (local only)
@@ -5630,29 +5689,11 @@ impl PythonAdapter {
                 }
             };
 
-            let args: Vec<CallArgData> = call
-                .args
-                .iter()
-                .map(|arg| CallArgData {
-                    name: arg.name.clone(),
-                    span: arg.span,
-                    keyword_name_span: arg.keyword_name_span,
-                })
-                .collect();
-
-            // Convert CST ReceiverPath to Core ReceiverPath
-            let receiver_path: Option<CoreReceiverPath> =
-                call.receiver_path.as_ref().map(|p| p.into());
-
-            result.calls.push(CallSiteData {
-                callee_symbol_index,
-                callee_symbol_qualified_name,
-                span,
-                args,
-                receiver_path,
-                scope_path: call.scope_path.clone(),
-                is_method_call: call.is_method_call,
-            });
+            // Clone adapter type and update resolution fields
+            let mut call_data = call.clone();
+            call_data.callee_symbol_index = callee_symbol_index;
+            call_data.callee_symbol_qualified_name = callee_symbol_qualified_name;
+            result.calls.push(call_data);
         }
 
         result
@@ -6770,8 +6811,11 @@ mod tests {
 
             assert!(!result.signatures.is_empty());
             let sig = &result.signatures[0];
+            // In the new SignatureData, returns is Option<String>, returns_node is Option<TypeNode>
             assert!(sig.returns.is_some());
-            match &sig.returns {
+            assert_eq!(sig.returns.as_deref(), Some("int"));
+            // Also verify returns_node for structured type
+            match &sig.returns_node {
                 Some(TypeNode::Named { name, .. }) => assert_eq!(name, "int"),
                 _ => panic!("Expected Named type node for return"),
             }
@@ -7922,7 +7966,7 @@ a.b.c.d.e.method()  # 5 levels deep - exceeds limit
             let symbol_kinds: HashMap<(Vec<String>, String), SymbolKind> = HashMap::new();
 
             // Empty path
-            let empty_path = ReceiverPath { steps: vec![] };
+            let empty_path = CoreReceiverPath { steps: vec![] };
             let result = adapter.resolve_receiver_path(
                 &empty_path,
                 &["<module>".to_string()],

@@ -623,14 +623,23 @@ impl CrossFileTypeCache {
     ///
     /// This is a helper method that handles the actual parsing of stub files.
     fn parse_stub_file(&self, stub_path: &Path) -> Option<TypeTracker> {
+        use crate::analyzer::convert_cst_signature;
+
         let source = std::fs::read_to_string(stub_path).ok()?;
         let analysis = cst_bridge::parse_and_analyze(&source).ok()?;
+
+        // Convert CST signatures to adapter type
+        let adapter_signatures: Vec<_> = analysis
+            .signatures
+            .iter()
+            .map(convert_cst_signature)
+            .collect();
 
         let mut tracker = TypeTracker::new();
         tracker.process_assignments(&convert_assignments(&analysis.assignments));
         tracker.process_annotations(&convert_annotations(&analysis.annotations));
-        tracker.process_signatures(&analysis.signatures);
-        tracker.process_properties(&analysis.signatures);
+        tracker.process_signatures(&adapter_signatures);
+        tracker.process_properties(&adapter_signatures);
 
         Some(tracker)
     }
@@ -707,11 +716,18 @@ impl CrossFileTypeCache {
         let class_hierarchies = build_class_hierarchies_from_cst(&analysis);
 
         // Build TypeTracker
+        // Convert CST signatures to adapter type
+        let adapter_signatures: Vec<_> = analysis
+            .signatures
+            .iter()
+            .map(crate::analyzer::convert_cst_signature)
+            .collect();
+
         let mut tracker = TypeTracker::new();
         tracker.process_assignments(&convert_assignments(&analysis.assignments));
         tracker.process_annotations(&convert_annotations(&analysis.annotations));
-        tracker.process_signatures(&analysis.signatures);
-        tracker.process_properties(&analysis.signatures);
+        tracker.process_signatures(&adapter_signatures);
+        tracker.process_properties(&adapter_signatures);
 
         // Compute workspace-relative path for context identity
         let relative_path = file_path
