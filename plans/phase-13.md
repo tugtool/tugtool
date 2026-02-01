@@ -7544,7 +7544,7 @@ let param_info = ParamInfo {
 
 **Tasks:**
 
-- [ ] Add helper function to get parameter info from signature:
+- [x] Add helper function to get parameter info from signature:
   ```rust
   /// Look up parameter kind and name_span from the function's signature.
   ///
@@ -7560,8 +7560,8 @@ let param_info = ParamInfo {
   }
   ```
 
-- [ ] Update `analyze_param()` to call `lookup_param_in_signature()` after finding the containing function
-- [ ] Replace hardcoded `"regular"` with actual kind from signature:
+- [x] Update `analyze_param()` to call `lookup_param_in_signature()` after finding the containing function
+- [x] Replace hardcoded `"regular"` with actual kind from signature:
   ```rust
   // Look up parameter kind from signature
   let (param_kind, param_name_span) = lookup_param_in_signature(&store, function_symbol.symbol_id, &symbol.name)
@@ -7590,7 +7590,7 @@ let param_info = ParamInfo {
 
 **Tasks:**
 
-- [ ] Add validation after looking up param kind:
+- [x] Add validation after looking up param kind:
   ```rust
   // Validate parameter can be renamed
   match param_kind {
@@ -7629,8 +7629,8 @@ let param_info = ParamInfo {
 
 **Tasks:**
 
-- [ ] Compare `symbol.decl_span` with `param_name_span` from signature
-- [ ] If `param_name_span` is available and differs, prefer it for the definition edit:
+- [x] Compare `symbol.decl_span` with `param_name_span` from signature
+- [x] If `param_name_span` is available and differs, prefer it for the definition edit:
   ```rust
   // Use name_span from signature if available (more precise)
   let definition_span = param_name_span.unwrap_or(symbol.decl_span);
@@ -7643,7 +7643,7 @@ let param_info = ParamInfo {
   });
   ```
 
-- [ ] Verify this doesn't break existing behavior (the spans should typically match)
+- [x] Verify this doesn't break existing behavior (the spans should typically match)
 
 **Code Location:** `crates/tugtool-python/src/ops/rename_param.rs`, around lines 300-305
 
@@ -7657,7 +7657,7 @@ let param_info = ParamInfo {
 
 **Tasks:**
 
-- [ ] Define consistent kind string mapping:
+- [x] Define consistent kind string mapping:
   ```rust
   fn param_kind_to_string(kind: ParamKind) -> &'static str {
       match kind {
@@ -7671,7 +7671,7 @@ let param_info = ParamInfo {
   }
   ```
 
-- [ ] Update `ParamInfo` construction to use this function
+- [x] Update `ParamInfo` construction to use this function
 
 **Code Location:** `crates/tugtool-python/src/ops/rename_param.rs`
 
@@ -7681,41 +7681,41 @@ let param_info = ParamInfo {
 
 **Unit Tests:**
 
-- [ ] `test_rename_param_regular_succeeds` - Regular parameters can be renamed
-- [ ] `test_rename_param_keyword_only_succeeds` - Keyword-only parameters can be renamed
-- [ ] `test_rename_param_positional_only_fails` - Error for positional-only params
-- [ ] `test_rename_param_varargs_fails` - Error for *args
-- [ ] `test_rename_param_kwargs_fails` - Error for **kwargs
-- [ ] `test_rename_param_kind_in_output` - JSON output shows correct kind
+- [x] `test_rename_param_regular_succeeds` - Regular parameters can be renamed
+- [x] `test_rename_param_keyword_only_succeeds` - Keyword-only parameters can be renamed
+- [x] `test_rename_param_positional_only_fails` - Error for positional-only params
+- [x] `test_rename_param_varargs_fails` - Error for *args
+- [x] `test_rename_param_kwargs_fails` - Error for **kwargs
+- [x] `test_rename_param_kind_in_output` - JSON output shows correct kind
 
 **Integration Tests:**
 
-- [ ] `test_analyze_param_complex_signature` - All param kinds correctly identified in output
-- [ ] `test_rename_param_mixed_signature` - Correct behavior with mixed param kinds
+- [x] `test_analyze_param_complex_signature` - All param kinds correctly identified in output
+- [x] `test_rename_param_mixed_signature` - Correct behavior with mixed param kinds
 
 **Error Message Tests:**
 
-- [ ] Verify error message for positional-only: `cannot rename positional-only parameter 'x' - keyword args not allowed`
-- [ ] Verify error message for varargs: `cannot rename *args parameter 'args'`
-- [ ] Verify error message for kwargs: `cannot rename **kwargs parameter 'kwargs'`
+- [x] Verify error message for positional-only: `cannot rename positional-only parameter 'x' - keyword args not allowed`
+- [x] Verify error message for varargs: `cannot rename *args parameter 'args'`
+- [x] Verify error message for kwargs: `cannot rename **kwargs parameter 'kwargs'`
 
 ---
 
 ###### Step 0.7 Success Criteria {#step-0-7-success}
 
-- [ ] `analyze_param()` returns correct `kind` field from FactsStore signature
-- [ ] Renaming positional-only parameters returns `RenameParamError::PositionalOnlyParameter`
-- [ ] Renaming `*args` parameters returns `RenameParamError::VarArgsParameter`
-- [ ] Renaming `**kwargs` parameters returns `RenameParamError::KwArgsParameter`
-- [ ] Renaming regular and keyword-only parameters succeeds
-- [ ] JSON output `parameter.kind` shows correct kind string
-- [ ] No changes to existing passing test behavior
+- [x] `analyze_param()` returns correct `kind` field from FactsStore signature
+- [x] Renaming positional-only parameters returns `RenameParamError::PositionalOnlyParameter`
+- [x] Renaming `*args` parameters returns `RenameParamError::VarArgsParameter`
+- [x] Renaming `**kwargs` parameters returns `RenameParamError::KwArgsParameter`
+- [x] Renaming regular and keyword-only parameters succeeds
+- [x] JSON output `parameter.kind` shows correct kind string
+- [x] No changes to existing passing test behavior
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugtool-python rename_param` - All rename_param tests pass
-- [ ] `cargo nextest run --workspace` - All existing tests pass
-- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+- [x] `cargo nextest run -p tugtool-python rename_param` - All rename_param tests pass
+- [x] `cargo nextest run --workspace` - All existing tests pass
+- [x] `cargo clippy --workspace -- -D warnings` - No warnings
 
 **Rollback:** Revert commit
 
@@ -7733,11 +7733,11 @@ After completing Steps 0.6-0.7, you will have:
 
 **Final Steps 0.6-0.7 Checkpoint:**
 
-- [ ] `store.signature_count() > 0` after analyzing any file with functions
-- [ ] `ParamInfo.kind` in rename-param output reflects actual parameter kind
-- [ ] Rename of positional-only/varargs/kwargs parameters is rejected with appropriate error
-- [ ] `cargo nextest run --workspace` - All tests pass
-- [ ] No TODO comments about "get from signature" remain in rename_param.rs
+- [x] `store.signature_count() > 0` after analyzing any file with functions
+- [x] `ParamInfo.kind` in rename-param output reflects actual parameter kind
+- [x] Rename of positional-only/varargs/kwargs parameters is rejected with appropriate error
+- [x] `cargo nextest run --workspace` - All tests pass
+- [x] No TODO comments about "get from signature" remain in rename_param.rs
 
 ---
 

@@ -6,6 +6,66 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.7: Update rename-param to Use FactsStore Signatures | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.7 specification (lines 7502-7722)
+- `crates/tugtool-python/src/ops/rename_param.rs` - Current implementation
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore, Signature, Parameter, ParamKind types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Phase A: Add `lookup_param_in_signature()` helper function | Done |
+| Phase A: Update `analyze_param()` to call helper after finding containing function | Done |
+| Phase A: Replace hardcoded `"regular"` with actual kind from signature | Done |
+| Phase B: Add validation to reject positional-only parameters | Done |
+| Phase B: Add validation to reject `*args` parameters | Done |
+| Phase B: Add validation to reject `**kwargs` parameters | Done |
+| Phase C: Use `name_span` from signature for precise parameter edits | Done |
+| Phase D: Add `param_kind_to_string()` helper for consistent JSON output | Done |
+| Write unit tests for Step 0.7 | Done |
+| Write integration tests for Step 0.7 | Done |
+| Write error message tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename_param.rs`:
+  - Added `ParamKind` import from `tugtool_core::facts`
+  - Added `lookup_param_in_signature()` helper function (lines 459-470)
+  - Added `param_kind_to_string()` helper function (lines 472-482)
+  - Added validation logic for non-renamable parameters (lines 254-277)
+  - Updated `analyze_param()` to use signature lookup (lines 249-252)
+  - Updated `ParamInfo` construction to use actual kind (line 303)
+  - Updated edit span selection to prefer `name_span` (lines 298, 336)
+  - Added comprehensive test module with 16 tests (lines 484-836)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python rename_param`: 16 tests passed
+- `cargo nextest run --workspace`: 2438 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `analyze_param()` returns correct `kind` field from FactsStore signature: PASS
+- Renaming positional-only parameters returns `PositionalOnlyParameter` error: PASS
+- Renaming `*args` parameters returns `VarArgsParameter` error: PASS
+- Renaming `**kwargs` parameters returns `KwArgsParameter` error: PASS
+- Renaming regular and keyword-only parameters succeeds: PASS
+- JSON output `parameter.kind` shows correct kind string: PASS
+- No changes to existing passing test behavior: PASS
+- No TODO comments about "get from signature" remain: PASS
+
+**Key Decisions/Notes:**
+- Used fallback `(ParamKind::Regular, None)` when signature lookup fails for edge cases
+- Added wildcard pattern `_ => "unknown"` in `param_kind_to_string()` to handle `#[non_exhaustive]` future variants
+- Tests use realistic Python code with careful column position verification
+- Error variants `PositionalOnlyParameter`, `VarArgsParameter`, and `KwArgsParameter` already existed but were never triggered - now properly used
+- Plan-step-reviewer gave implementation a PASS with no concerns or gaps
+
+---
+
 ## [phase-13.md] Step 0.6: Populate FactsStore Signatures from FileAnalysis | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01
