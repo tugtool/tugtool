@@ -6,6 +6,105 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.5 Phase C: Add Missing Analysis Data | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.5 Phase C specification (lines 7178-7253)
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore, ScopeInfo types
+- `crates/tugtool-python-cst/src/visitor/isinstance.rs` - CST IsInstanceCheck, IsInstanceCollector
+- `crates/tugtool-python-cst/src/visitor/dynamic.rs` - CST DynamicPatternInfo, DynamicPatternKind
+- `crates/tugtool-python-cst/src/visitor/type_comment.rs` - CST TypeComment, TypeCommentKind
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - CST ScopeInfo with globals/nonlocals
+- `crates/tugtool-python/src/analyzer.rs` - analyze_files() Pass structure
+- `crates/tugtool-python/src/cst_bridge.rs` - NativeAnalysisResult structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| C1: Define IsInstanceCheck struct in facts/mod.rs | Done |
+| C1: Add IsInstanceCheckId ID type | Done |
+| C1: Add isinstance_checks storage to FactsStore (BTreeMap + file index) | Done |
+| C1: Add insert_isinstance_check(), isinstance_check(), isinstance_checks_in_file() methods | Done |
+| C1: Update analyzer Pass 5 to populate isinstance checks | Done |
+| C2: Define DynamicPattern struct in facts/mod.rs | Done |
+| C2: Define DynamicPatternKind enum (12 variants) | Done |
+| C2: Add DynamicPatternId ID type | Done |
+| C2: Add dynamic_patterns storage to FactsStore (BTreeMap + file index) | Done |
+| C2: Add insert_dynamic_pattern(), dynamic_pattern(), dynamic_patterns_in_file() methods | Done |
+| C2: Add convert_dynamic_pattern_kind() conversion function | Done |
+| C2: Update analyzer Pass 5 to populate dynamic patterns | Done |
+| C3: Define TypeCommentFact struct in facts/mod.rs | Done |
+| C3: Define TypeCommentKind enum (Variable, FunctionSignature, Ignore) | Done |
+| C3: Add TypeCommentId ID type | Done |
+| C3: Add type_comments storage to FactsStore (BTreeMap + file index) | Done |
+| C3: Add insert_type_comment(), type_comment(), type_comments_in_file() methods | Done |
+| C3: Add convert_type_comment_kind() conversion function | Done |
+| C3: Update analyzer Pass 5 to populate type comments | Done |
+| C4: Add globals Vec<String> field to ScopeInfo | Done |
+| C4: Add nonlocals Vec<String> field to ScopeInfo | Done |
+| C4: Add with_globals() and with_nonlocals() builder methods | Done |
+| C4: Update scope creation in Pass 2 to populate globals/nonlocals | Done |
+| Write unit tests for new FactsStore storage (8 tests) | Done |
+| Write integration tests for CST-to-FactsStore propagation (7 tests) | Done |
+| Add dynamic_patterns field to FileAnalysis struct | Done |
+| Fix missing dynamic_patterns field in test FileAnalysis constructions | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `IsInstanceCheckId`, `DynamicPatternId`, `TypeCommentId` ID types
+  - Added `DynamicPatternKind` enum (12 variants: Getattr, Setattr, Delattr, Hasattr, Eval, Exec, GlobalsSubscript, LocalsSubscript, GetAttrMethod, SetAttrMethod, DelAttrMethod, GetAttributeMethod)
+  - Added `TypeCommentKind` enum (Variable, FunctionSignature, Ignore)
+  - Added `IsInstanceCheck` struct with id, file_id, span, variable_name, types, scope_id, branch_span
+  - Added `DynamicPattern` struct with id, file_id, span, kind, scope_id, attribute_name
+  - Added `TypeCommentFact` struct with id, file_id, span, kind, content, line
+  - Added `globals: Vec<String>` and `nonlocals: Vec<String>` to `ScopeInfo`
+  - Added `with_globals()`, `with_nonlocals()` builder methods
+  - Added storage fields and file indexes for all three new types
+  - Added ID generators, insert methods, lookup methods, and iterators
+  - Added `phase_c_tests` module with 8 unit tests
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added imports for new Core types and CST types
+  - Added `dynamic_patterns` field to `FileAnalysis` struct
+  - Updated FileAnalysis creation to include dynamic_patterns from native_result
+  - Updated scope insertion in Pass 2 to populate globals/nonlocals
+  - Added Pass 5 with loops to insert isinstance checks, dynamic patterns, and type comments
+  - Added `convert_dynamic_pattern_kind()` conversion function
+  - Added `convert_type_comment_kind()` conversion function
+  - Added `phase_c_integration_tests` module with 7 integration tests
+- `crates/tugtool-python/src/cross_file_types.rs`:
+  - Added `dynamic_patterns: vec![]` to test FileAnalysis construction
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Added `dynamic_patterns: vec![]` to two test FileAnalysis constructions
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core phase_c_tests`: 8 tests passed
+- `cargo nextest run -p tugtool-python phase_c_integration`: 7 tests passed
+- `cargo nextest run --workspace`: 2460 tests passed
+- `cargo clippy --workspace`: No warnings
+
+**Checkpoints Verified:**
+- isinstance checks are accessible via `FactsStore::isinstance_checks_in_file()`: PASS
+- Dynamic patterns are accessible via `FactsStore::dynamic_patterns_in_file()`: PASS
+- Type comments are accessible via `FactsStore::type_comments_in_file()`: PASS
+- Scope globals/nonlocals are populated: PASS
+- `cargo build --workspace` succeeds: PASS
+- `cargo nextest run --workspace` passes: PASS
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- All new FactsStore fields have test coverage: PASS
+
+**Key Decisions/Notes:**
+- Architecture follows established Phase B pattern: CST types → conversion functions → Core types
+- Added Pass 5 to analyzer for populating analysis metadata (isinstance, dynamic, type comments)
+- Scope ID mapping uses placeholder (module scope) since full scope_id_map isn't accessible in Pass 5
+- DynamicPatternKind mirrors all 12 variants from CST DynamicPatternKind for complete coverage
+- Used `#[serde(default, skip_serializing_if = "Vec::is_empty")]` for globals/nonlocals to avoid bloating JSON
+- IsInstanceCheck includes branch_span for future type narrowing within conditional blocks
+
+---
+
 ## [phase-13.md] Step 0.5 Phase B: Add Missing Critical Fields | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

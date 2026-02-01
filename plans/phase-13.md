@@ -7191,7 +7191,7 @@ This phase propagates remaining CST analysis data to FactsStore for future opera
 
 **C1: isinstance narrowing facts**
 
-- [ ] Define `IsInstanceCheck` struct in `facts/mod.rs`:
+- [x] Define `IsInstanceCheck` struct in `facts/mod.rs`:
   ```rust
   pub struct IsInstanceCheck {
       pub file_id: FileId,
@@ -7201,13 +7201,13 @@ This phase propagates remaining CST analysis data to FactsStore for future opera
       pub scope_id: ScopeId,
   }
   ```
-- [ ] Add `isinstance_checks: Vec<IsInstanceCheck>` storage to FactsStore
-- [ ] Add `add_isinstance_check()` and `isinstance_checks_in_file()` methods
-- [ ] Update analyzer to call `IsInstanceCollector` and populate FactsStore
+- [x] Add `isinstance_checks: Vec<IsInstanceCheck>` storage to FactsStore
+- [x] Add `add_isinstance_check()` and `isinstance_checks_in_file()` methods
+- [x] Update analyzer to call `IsInstanceCollector` and populate FactsStore
 
 **C2: Dynamic pattern detection facts**
 
-- [ ] Define `DynamicPattern` struct in `facts/mod.rs`:
+- [x] Define `DynamicPattern` struct in `facts/mod.rs`:
   ```rust
   pub struct DynamicPattern {
       pub file_id: FileId,
@@ -7216,13 +7216,13 @@ This phase propagates remaining CST analysis data to FactsStore for future opera
       pub scope_id: ScopeId,
   }
   ```
-- [ ] Add `dynamic_patterns: Vec<DynamicPattern>` storage to FactsStore
-- [ ] Add `add_dynamic_pattern()` and `dynamic_patterns_in_file()` methods
-- [ ] Update analyzer to call `DynamicPatternDetector` and populate FactsStore
+- [x] Add `dynamic_patterns: Vec<DynamicPattern>` storage to FactsStore
+- [x] Add `add_dynamic_pattern()` and `dynamic_patterns_in_file()` methods
+- [x] Update analyzer to call `DynamicPatternDetector` and populate FactsStore
 
 **C3: Type comment facts**
 
-- [ ] Define `TypeCommentFact` struct in `facts/mod.rs`:
+- [x] Define `TypeCommentFact` struct in `facts/mod.rs`:
   ```rust
   pub struct TypeCommentFact {
       pub file_id: FileId,
@@ -7232,24 +7232,24 @@ This phase propagates remaining CST analysis data to FactsStore for future opera
       pub line: u32,
   }
   ```
-- [ ] Add `type_comments: Vec<TypeCommentFact>` storage to FactsStore
-- [ ] Add `add_type_comment()` and `type_comments_in_file()` methods
-- [ ] Update analyzer to call `TypeCommentCollector` and populate FactsStore
+- [x] Add `type_comments: Vec<TypeCommentFact>` storage to FactsStore
+- [x] Add `add_type_comment()` and `type_comments_in_file()` methods
+- [x] Update analyzer to call `TypeCommentCollector` and populate FactsStore
 
 **C4: Scope globals/nonlocals**
 
-- [ ] Add `globals: Vec<String>` field to `Scope` struct
-- [ ] Add `nonlocals: Vec<String>` field to `Scope` struct
-- [ ] Update scope creation in analyzer to populate these fields from CST ScopeInfo
+- [x] Add `globals: Vec<String>` field to `Scope` struct
+- [x] Add `nonlocals: Vec<String>` field to `Scope` struct
+- [x] Update scope creation in analyzer to populate these fields from CST ScopeInfo
 
 **Tests (Phase C):**
 
-- [ ] Unit: `test_isinstance_check_storage` - isinstance checks stored and retrieved
-- [ ] Unit: `test_dynamic_pattern_storage` - dynamic patterns stored and retrieved
-- [ ] Unit: `test_type_comment_storage` - type comments stored and retrieved
-- [ ] Unit: `test_scope_globals_nonlocals` - scope global/nonlocal declarations stored
-- [ ] Integration: `test_isinstance_checks_propagated` - Checks flow from CST to FactsStore
-- [ ] Integration: `test_dynamic_patterns_propagated` - Patterns flow from CST to FactsStore
+- [x] Unit: `test_isinstance_check_storage` - isinstance checks stored and retrieved
+- [x] Unit: `test_dynamic_pattern_storage` - dynamic patterns stored and retrieved
+- [x] Unit: `test_type_comment_storage` - type comments stored and retrieved
+- [x] Unit: `test_scope_globals_nonlocals` - scope global/nonlocal declarations stored
+- [x] Integration: `test_isinstance_checks_propagated` - Checks flow from CST to FactsStore
+- [x] Integration: `test_dynamic_patterns_propagated` - Patterns flow from CST to FactsStore
 
 ---
 
@@ -7267,26 +7267,26 @@ This phase propagates remaining CST analysis data to FactsStore for future opera
 
 **Phase B Success (Critical Fields):**
 
-- [ ] `Parameter.name_span` is populated for all function parameters
-- [ ] `CallSite.receiver_path` is populated for method calls
-- [ ] `CallSite.scope_path` is populated for all call sites
-- [ ] `CallSite.is_method_call` correctly distinguishes function/method calls
-- [ ] Serialization round-trips preserve all new fields
+- [x] `Parameter.name_span` is populated for all function parameters
+- [x] `CallSite.receiver_path` is populated for method calls
+- [x] `CallSite.scope_path` is populated for all call sites
+- [x] `CallSite.is_method_call` correctly distinguishes function/method calls
+- [x] Serialization round-trips preserve all new fields
 
 **Phase C Success (Analysis Data):**
 
-- [ ] isinstance checks are accessible via `FactsStore::isinstance_checks_in_file()`
-- [ ] Dynamic patterns are accessible via `FactsStore::dynamic_patterns_in_file()`
-- [ ] Type comments are accessible via `FactsStore::type_comments_in_file()`
-- [ ] Scope globals/nonlocals are populated
+- [x] isinstance checks are accessible via `FactsStore::isinstance_checks_in_file()`
+- [x] Dynamic patterns are accessible via `FactsStore::dynamic_patterns_in_file()`
+- [x] Type comments are accessible via `FactsStore::type_comments_in_file()`
+- [x] Scope globals/nonlocals are populated
 
 **Final Checkpoint:**
 
-- [ ] `cargo build --workspace` succeeds
-- [ ] `cargo nextest run --workspace` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
-- [ ] No `cst_bridge::parse_and_analyze()` calls in `src/ops/` (verified via grep)
-- [ ] All new FactsStore fields have test coverage
+- [x] `cargo build --workspace` succeeds
+- [x] `cargo nextest run --workspace` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] No `cst_bridge::parse_and_analyze()` calls in `src/ops/` (verified via grep)
+- [x] All new FactsStore fields have test coverage
 
 **Rollback:** Revert commit
 

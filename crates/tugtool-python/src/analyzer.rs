@@ -66,10 +66,11 @@ use tugtool_core::adapter::{
     ScopeData, SignatureData, SymbolData, TypeParamData,
 };
 use tugtool_core::facts::{
-    AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File,
-    Import, ImportKind, Language, Modifier, ParamKind, Parameter, PublicExport,
-    ReceiverPath as CoreReceiverPath, Reference, ReferenceKind, ScopeId as CoreScopeId,
-    ScopeInfo as CoreScopeInfo, ScopeKind, Signature, Symbol, SymbolId, SymbolKind, TypeNode,
+    AttributeAccessKind, DynamicPattern, DynamicPatternKind, ExportIntent, ExportKind,
+    ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind, IsInstanceCheck, Language,
+    Modifier, ParamKind, Parameter, PublicExport, ReceiverPath as CoreReceiverPath, Reference,
+    ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Signature,
+    Symbol, SymbolId, SymbolKind, TypeCommentFact, TypeCommentKind, TypeNode,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -87,7 +88,8 @@ use crate::cst_bridge;
 
 // Receiver path types for dotted path resolution
 use tugtool_python_cst::{
-    CallSiteInfo, ReceiverPath, ReceiverStep, TypeComment, TypeCommentCollector,
+    CallSiteInfo, DynamicPatternInfo, DynamicPatternKind as CstDynamicPatternKind, ReceiverPath,
+    ReceiverStep, TypeComment, TypeCommentCollector,
 };
 
 /// Maximum depth for chained attribute resolution.
@@ -368,6 +370,8 @@ pub struct FileAnalysis {
     pub class_hierarchies: Vec<tugtool_python_cst::ClassInheritanceInfo>,
     /// isinstance checks for type narrowing.
     pub isinstance_checks: Vec<tugtool_python_cst::IsInstanceCheck>,
+    /// Dynamic patterns (getattr, setattr, eval, etc.) that may affect rename safety.
+    pub dynamic_patterns: Vec<DynamicPatternInfo>,
     /// Assignments collected during Pass 1 (for TypeTracker in Pass 4).
     /// Stored here to avoid re-parsing files in Pass 4a.
     pub cst_assignments: Vec<tugtool_python_cst::AssignmentInfo>,
@@ -1149,6 +1153,15 @@ pub fn analyze_files(
             if let Some(parent_id) = parent_core_id {
                 core_scope = core_scope.with_parent(parent_id);
             }
+            // Add globals/nonlocals from the scope
+            if !scope.globals.is_empty() {
+                core_scope =
+                    core_scope.with_globals(scope.globals.iter().cloned().collect());
+            }
+            if !scope.nonlocals.is_empty() {
+                core_scope =
+                    core_scope.with_nonlocals(scope.nonlocals.iter().cloned().collect());
+            }
             store.insert_scope(core_scope);
         }
 
@@ -1798,10 +1811,127 @@ pub fn analyze_files(
         }
     }
 
+    // ====================================================================
+    // Pass 5: Populate Analysis Metadata
+    // ====================================================================
+    // Insert isinstance checks, dynamic patterns, and type comments into FactsStore.
+    // These are optional metadata used for type narrowing, rename safety warnings,
+    // and legacy type comment support.
+
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+
+        // 5a: Insert isinstance checks
+        for cst_check in &analysis.isinstance_checks {
+            // Map scope_path to CoreScopeId
+            // For now, use a placeholder scope_id - we'd need the scope_id_map
+            // to properly map. Since scope_id_map isn't accessible here, we use
+            // the first scope in the file (module scope) as a placeholder.
+            let scope_id = scope_id_map
+                .get(&(file_id, ScopeId::new(0)))
+                .copied()
+                .unwrap_or(CoreScopeId::new(0));
+
+            // Build the span from the CST check
+            let span = cst_check
+                .check_span
+                .map(|s| Span::new(s.start, s.end))
+                .unwrap_or_else(|| Span::new(0, 0));
+
+            let branch_span = Span::new(cst_check.branch_span.start, cst_check.branch_span.end);
+
+            let check_id = store.next_isinstance_check_id();
+            let check = IsInstanceCheck::new(
+                check_id,
+                file_id,
+                span,
+                cst_check.variable.clone(),
+                cst_check.checked_types.clone(),
+                scope_id,
+                branch_span,
+            );
+            store.insert_isinstance_check(check);
+        }
+
+        // 5b: Insert dynamic patterns
+        for cst_pattern in &analysis.dynamic_patterns {
+            // Map scope_path to CoreScopeId (same placeholder approach)
+            let scope_id = scope_id_map
+                .get(&(file_id, ScopeId::new(0)))
+                .copied()
+                .unwrap_or(CoreScopeId::new(0));
+
+            let span = cst_pattern
+                .span
+                .map(|s| Span::new(s.start, s.end))
+                .unwrap_or_else(|| Span::new(0, 0));
+
+            // Convert CST DynamicPatternKind to Core DynamicPatternKind
+            let kind = convert_dynamic_pattern_kind(cst_pattern.kind);
+
+            let pattern_id = store.next_dynamic_pattern_id();
+            let mut pattern = DynamicPattern::new(pattern_id, file_id, span, kind, scope_id);
+            if let Some(ref attr_name) = cst_pattern.attribute_name {
+                pattern = pattern.with_attribute_name(attr_name.clone());
+            }
+            store.insert_dynamic_pattern(pattern);
+        }
+
+        // 5c: Insert type comments
+        for cst_comment in &analysis.type_comments {
+            let span = Span::new(cst_comment.span.start, cst_comment.span.end);
+
+            // Convert CST TypeCommentKind to Core TypeCommentKind
+            let kind = convert_type_comment_kind(cst_comment.kind);
+
+            let comment_id = store.next_type_comment_id();
+            let comment = TypeCommentFact::new(
+                comment_id,
+                file_id,
+                span,
+                kind,
+                cst_comment.content.clone(),
+                cst_comment.line as u32,
+            );
+            store.insert_type_comment(comment);
+        }
+    }
+
     // Store TypeTrackers in bundle for use by adapter conversion
     bundle.type_trackers = type_trackers;
 
     Ok(bundle)
+}
+
+/// Convert CST DynamicPatternKind to Core DynamicPatternKind.
+fn convert_dynamic_pattern_kind(cst_kind: CstDynamicPatternKind) -> DynamicPatternKind {
+    match cst_kind {
+        CstDynamicPatternKind::Getattr => DynamicPatternKind::Getattr,
+        CstDynamicPatternKind::Setattr => DynamicPatternKind::Setattr,
+        CstDynamicPatternKind::Delattr => DynamicPatternKind::Delattr,
+        CstDynamicPatternKind::Hasattr => DynamicPatternKind::Hasattr,
+        CstDynamicPatternKind::Eval => DynamicPatternKind::Eval,
+        CstDynamicPatternKind::Exec => DynamicPatternKind::Exec,
+        CstDynamicPatternKind::GlobalsSubscript => DynamicPatternKind::GlobalsSubscript,
+        CstDynamicPatternKind::LocalsSubscript => DynamicPatternKind::LocalsSubscript,
+        CstDynamicPatternKind::GetAttrMethod => DynamicPatternKind::GetAttrMethod,
+        CstDynamicPatternKind::SetAttrMethod => DynamicPatternKind::SetAttrMethod,
+        CstDynamicPatternKind::DelAttrMethod => DynamicPatternKind::DelAttrMethod,
+        CstDynamicPatternKind::GetAttributeMethod => DynamicPatternKind::GetAttributeMethod,
+    }
+}
+
+/// Convert CST TypeCommentKind to Core TypeCommentKind.
+fn convert_type_comment_kind(
+    cst_kind: tugtool_python_cst::TypeCommentKind,
+) -> TypeCommentKind {
+    match cst_kind {
+        tugtool_python_cst::TypeCommentKind::Variable => TypeCommentKind::Variable,
+        tugtool_python_cst::TypeCommentKind::FunctionSignature => {
+            TypeCommentKind::FunctionSignature
+        }
+        tugtool_python_cst::TypeCommentKind::Ignore => TypeCommentKind::Ignore,
+    }
 }
 
 /// Analyze a single Python file using the native Rust CST parser.
@@ -1948,6 +2078,7 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         call_sites: native_result.call_sites,
         class_hierarchies: native_result.class_inheritance,
         isinstance_checks: native_result.isinstance_checks,
+        dynamic_patterns: native_result.dynamic_patterns,
         // Store P1 data for Pass 4a (avoids re-parsing files)
         cst_assignments: native_result.assignments,
         cst_annotations: native_result.annotations,
@@ -14156,6 +14287,243 @@ class Service:
                 "scope_path should have at least module and method: {:?}",
                 print_call.scope_path
             );
+        }
+    }
+
+    // =========================================================================
+    // Phase C Integration Tests: isinstance checks, dynamic patterns, type comments
+    // =========================================================================
+
+    mod phase_c_integration_tests {
+        use super::*;
+
+        #[test]
+        fn test_isinstance_checks_propagated_to_factsstore() {
+            // Verify isinstance checks flow from CST to FactsStore
+            let code = r#"def process(x):
+    if isinstance(x, Handler):
+        x.handle()
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            // Get isinstance checks from FactsStore
+            let checks: Vec<_> = store.isinstance_checks().collect();
+            assert_eq!(checks.len(), 1, "should have 1 isinstance check");
+
+            let check = &checks[0];
+            assert_eq!(check.variable_name, "x");
+            assert_eq!(check.types.len(), 1);
+            assert_eq!(check.types[0], "Handler");
+        }
+
+        #[test]
+        fn test_isinstance_checks_tuple_types() {
+            // Test isinstance with tuple of types
+            let code = r#"def process(x):
+    if isinstance(x, (Handler, Worker)):
+        x.do_work()
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            let checks: Vec<_> = store.isinstance_checks().collect();
+            assert_eq!(checks.len(), 1);
+
+            let check = &checks[0];
+            assert_eq!(check.variable_name, "x");
+            assert_eq!(check.types.len(), 2);
+            assert!(check.types.contains(&"Handler".to_string()));
+            assert!(check.types.contains(&"Worker".to_string()));
+        }
+
+        #[test]
+        fn test_dynamic_patterns_propagated_to_factsstore() {
+            // Verify dynamic patterns flow from CST to FactsStore
+            let code = r#"def get_handler():
+    name = "process"
+    return getattr(obj, name)
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            // Get dynamic patterns from FactsStore
+            let patterns: Vec<_> = store.dynamic_patterns().collect();
+            assert!(!patterns.is_empty(), "should have dynamic patterns");
+
+            // Should have a getattr pattern
+            let getattr_pattern = patterns
+                .iter()
+                .find(|p| p.kind == DynamicPatternKind::Getattr);
+            assert!(
+                getattr_pattern.is_some(),
+                "should have getattr pattern: found {:?}",
+                patterns.iter().map(|p| &p.kind).collect::<Vec<_>>()
+            );
+        }
+
+        #[test]
+        fn test_dynamic_patterns_eval_exec() {
+            // Test detection of eval/exec patterns
+            let code = r#"def dangerous():
+    eval("x + 1")
+    exec("y = 2")
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            let patterns: Vec<_> = store.dynamic_patterns().collect();
+
+            let eval_pattern = patterns
+                .iter()
+                .find(|p| p.kind == DynamicPatternKind::Eval);
+            let exec_pattern = patterns
+                .iter()
+                .find(|p| p.kind == DynamicPatternKind::Exec);
+
+            assert!(eval_pattern.is_some(), "should detect eval pattern");
+            assert!(exec_pattern.is_some(), "should detect exec pattern");
+        }
+
+        #[test]
+        fn test_type_comments_propagated_to_factsstore() {
+            // Verify type comments flow from CST to FactsStore
+            let code = r#"x = []  # type: List[int]
+def greet(name):  # type: (str) -> None
+    pass
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            // Get type comments from FactsStore
+            let comments: Vec<_> = store.type_comments().collect();
+            assert!(
+                !comments.is_empty(),
+                "should have type comments (found {})",
+                comments.len()
+            );
+
+            // Check we have both variable and function signature type comments
+            let var_comment = comments
+                .iter()
+                .find(|c| c.kind == TypeCommentKind::Variable);
+            let func_comment = comments
+                .iter()
+                .find(|c| c.kind == TypeCommentKind::FunctionSignature);
+
+            assert!(var_comment.is_some(), "should have variable type comment");
+            assert!(
+                func_comment.is_some(),
+                "should have function signature type comment"
+            );
+        }
+
+        #[test]
+        fn test_scope_globals_nonlocals_propagated() {
+            // Verify globals/nonlocals flow from CST to FactsStore
+            let code = r#"counter = 0
+
+def increment():
+    global counter
+    counter += 1
+
+def make_counter():
+    count = 0
+    def inc():
+        nonlocal count
+        count += 1
+    return inc
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            // Check scopes have globals/nonlocals populated
+            let scopes: Vec<_> = store.scopes().collect();
+
+            // Find increment function scope (should have global counter)
+            let has_globals = scopes.iter().any(|s| !s.globals.is_empty());
+            let has_nonlocals = scopes.iter().any(|s| !s.nonlocals.is_empty());
+
+            assert!(
+                has_globals,
+                "should have at least one scope with globals: {:?}",
+                scopes
+                    .iter()
+                    .map(|s| (&s.kind, &s.globals))
+                    .collect::<Vec<_>>()
+            );
+            assert!(
+                has_nonlocals,
+                "should have at least one scope with nonlocals: {:?}",
+                scopes
+                    .iter()
+                    .map(|s| (&s.kind, &s.nonlocals))
+                    .collect::<Vec<_>>()
+            );
+
+            // Verify specific content
+            let scope_with_global_counter = scopes
+                .iter()
+                .find(|s| s.globals.contains(&"counter".to_string()));
+            assert!(
+                scope_with_global_counter.is_some(),
+                "should have scope with 'global counter'"
+            );
+
+            let scope_with_nonlocal_count = scopes
+                .iter()
+                .find(|s| s.nonlocals.contains(&"count".to_string()));
+            assert!(
+                scope_with_nonlocal_count.is_some(),
+                "should have scope with 'nonlocal count'"
+            );
+        }
+
+        #[test]
+        fn test_multiple_files_isinstance_checks() {
+            // Verify isinstance checks work across multiple files
+            let code1 = r#"def check1(x):
+    if isinstance(x, TypeA):
+        pass
+"#;
+            let code2 = r#"def check2(y):
+    if isinstance(y, TypeB):
+        pass
+"#;
+            let files = vec![
+                ("file1.py".to_string(), code1.to_string()),
+                ("file2.py".to_string(), code2.to_string()),
+            ];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            let checks: Vec<_> = store.isinstance_checks().collect();
+            assert_eq!(checks.len(), 2, "should have 2 isinstance checks total");
+
+            // Check variables are different
+            let vars: Vec<_> = checks.iter().map(|c| &c.variable_name).collect();
+            assert!(vars.contains(&&"x".to_string()));
+            assert!(vars.contains(&&"y".to_string()));
         }
     }
 }

@@ -239,6 +239,57 @@ impl std::fmt::Display for CallSiteId {
     }
 }
 
+/// Unique identifier for an isinstance check within a snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct IsInstanceCheckId(pub u32);
+
+impl IsInstanceCheckId {
+    /// Create a new isinstance check ID.
+    pub fn new(id: u32) -> Self {
+        IsInstanceCheckId(id)
+    }
+}
+
+impl std::fmt::Display for IsInstanceCheckId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "isinstance_{}", self.0)
+    }
+}
+
+/// Unique identifier for a dynamic pattern within a snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct DynamicPatternId(pub u32);
+
+impl DynamicPatternId {
+    /// Create a new dynamic pattern ID.
+    pub fn new(id: u32) -> Self {
+        DynamicPatternId(id)
+    }
+}
+
+impl std::fmt::Display for DynamicPatternId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "dynamic_{}", self.0)
+    }
+}
+
+/// Unique identifier for a type comment within a snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+pub struct TypeCommentId(pub u32);
+
+impl TypeCommentId {
+    /// Create a new type comment ID.
+    pub fn new(id: u32) -> Self {
+        TypeCommentId(id)
+    }
+}
+
+impl std::fmt::Display for TypeCommentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "type_comment_{}", self.0)
+    }
+}
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -437,6 +488,54 @@ pub enum ScopeKind {
     Unsafe,
     /// Rust match arm scope (pattern bindings create a new scope).
     MatchArm,
+}
+
+/// Kind of dynamic pattern detected in Python code.
+///
+/// Dynamic patterns indicate code that accesses or modifies attributes/names
+/// at runtime, which may affect rename safety.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DynamicPatternKind {
+    /// `getattr(obj, 'name')` call.
+    Getattr,
+    /// `setattr(obj, 'name', value)` call.
+    Setattr,
+    /// `delattr(obj, 'name')` call.
+    Delattr,
+    /// `hasattr(obj, 'name')` call.
+    Hasattr,
+    /// `eval(...)` call - dynamic code execution.
+    Eval,
+    /// `exec(...)` call - dynamic code execution.
+    Exec,
+    /// `globals()['name']` subscript access.
+    GlobalsSubscript,
+    /// `locals()['name']` subscript access.
+    LocalsSubscript,
+    /// `__getattr__` method definition.
+    GetAttrMethod,
+    /// `__setattr__` method definition.
+    SetAttrMethod,
+    /// `__delattr__` method definition.
+    DelAttrMethod,
+    /// `__getattribute__` method definition.
+    GetAttributeMethod,
+}
+
+/// Kind of type comment in Python code.
+///
+/// Type comments are legacy PEP 484-style annotations used in Python 2/3
+/// compatible code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TypeCommentKind {
+    /// A variable type annotation: `# type: T` or `# type: T, U` for tuple unpacking.
+    Variable,
+    /// A function signature annotation: `# type: (...) -> T`
+    FunctionSignature,
+    /// A type ignore directive: `# type: ignore` or `# type: ignore[code]`
+    Ignore,
 }
 
 /// Source of type information for a symbol.
@@ -1261,6 +1360,12 @@ pub struct ScopeInfo {
     pub kind: ScopeKind,
     /// Parent scope (None for module-level scope).
     pub parent: Option<ScopeId>,
+    /// Names declared as `global` in this scope (Python-specific).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub globals: Vec<String>,
+    /// Names declared as `nonlocal` in this scope (Python-specific).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nonlocals: Vec<String>,
 }
 
 impl ScopeInfo {
@@ -1272,6 +1377,8 @@ impl ScopeInfo {
             span,
             kind,
             parent: None,
+            globals: Vec::new(),
+            nonlocals: Vec::new(),
         }
     }
 
@@ -1281,9 +1388,156 @@ impl ScopeInfo {
         self
     }
 
+    /// Set the globals for this scope.
+    pub fn with_globals(mut self, globals: Vec<String>) -> Self {
+        self.globals = globals;
+        self
+    }
+
+    /// Set the nonlocals for this scope.
+    pub fn with_nonlocals(mut self, nonlocals: Vec<String>) -> Self {
+        self.nonlocals = nonlocals;
+        self
+    }
+
     /// Check if a byte position is within this scope.
     pub fn contains_position(&self, position: usize) -> bool {
         position >= self.span.start && position < self.span.end
+    }
+}
+
+/// An isinstance check detected in Python code.
+///
+/// isinstance checks are used for type narrowing within conditional branches.
+/// Tracking these allows the analyzer to understand type narrowing behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IsInstanceCheck {
+    /// Unique identifier for this isinstance check.
+    pub id: IsInstanceCheckId,
+    /// File containing this isinstance check.
+    pub file_id: FileId,
+    /// Span of the isinstance call (for diagnostics).
+    pub span: Span,
+    /// The variable name being checked.
+    pub variable_name: String,
+    /// The type name(s) being checked against.
+    /// For single type: `["Handler"]`
+    /// For tuple: `["Handler", "Worker"]` (narrows to Union)
+    pub types: Vec<String>,
+    /// The scope where this check occurs.
+    pub scope_id: ScopeId,
+    /// Span of the if-branch body where narrowing applies.
+    pub branch_span: Span,
+}
+
+impl IsInstanceCheck {
+    /// Create a new isinstance check entry.
+    pub fn new(
+        id: IsInstanceCheckId,
+        file_id: FileId,
+        span: Span,
+        variable_name: String,
+        types: Vec<String>,
+        scope_id: ScopeId,
+        branch_span: Span,
+    ) -> Self {
+        Self {
+            id,
+            file_id,
+            span,
+            variable_name,
+            types,
+            scope_id,
+            branch_span,
+        }
+    }
+}
+
+/// A dynamic pattern detected in Python code.
+///
+/// Dynamic patterns indicate code that accesses or modifies attributes/names
+/// at runtime, which may affect rename safety.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DynamicPattern {
+    /// Unique identifier for this dynamic pattern.
+    pub id: DynamicPatternId,
+    /// File containing this dynamic pattern.
+    pub file_id: FileId,
+    /// Span of the pattern (for diagnostics).
+    pub span: Span,
+    /// Kind of dynamic pattern.
+    pub kind: DynamicPatternKind,
+    /// The scope where this pattern occurs.
+    pub scope_id: ScopeId,
+    /// The attribute name if statically known (e.g., from string literal in getattr).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribute_name: Option<String>,
+}
+
+impl DynamicPattern {
+    /// Create a new dynamic pattern entry.
+    pub fn new(
+        id: DynamicPatternId,
+        file_id: FileId,
+        span: Span,
+        kind: DynamicPatternKind,
+        scope_id: ScopeId,
+    ) -> Self {
+        Self {
+            id,
+            file_id,
+            span,
+            kind,
+            scope_id,
+            attribute_name: None,
+        }
+    }
+
+    /// Set the attribute name for this pattern.
+    pub fn with_attribute_name(mut self, name: String) -> Self {
+        self.attribute_name = Some(name);
+        self
+    }
+}
+
+/// A type comment detected in Python code.
+///
+/// Type comments (`# type: Foo`) are legacy PEP 484-style annotations used in
+/// Python 2/3 compatible code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypeCommentFact {
+    /// Unique identifier for this type comment.
+    pub id: TypeCommentId,
+    /// File containing this type comment.
+    pub file_id: FileId,
+    /// Span of the type comment (for diagnostics).
+    pub span: Span,
+    /// Kind of type comment.
+    pub kind: TypeCommentKind,
+    /// The content after `# type:` (trimmed).
+    pub content: String,
+    /// The line number (0-indexed) where this comment appears.
+    pub line: u32,
+}
+
+impl TypeCommentFact {
+    /// Create a new type comment entry.
+    pub fn new(
+        id: TypeCommentId,
+        file_id: FileId,
+        span: Span,
+        kind: TypeCommentKind,
+        content: String,
+        line: u32,
+    ) -> Self {
+        Self {
+            id,
+            file_id,
+            span,
+            kind,
+            content,
+            line,
+        }
     }
 }
 
@@ -2140,6 +2394,24 @@ pub struct FactsStore {
     /// export_intent → public_export_ids[] (for filtering by declared vs effective).
     public_exports_by_intent: HashMap<ExportIntent, Vec<PublicExportId>>,
 
+    // isinstance check storage
+    /// Primary storage for isinstance checks.
+    isinstance_checks: BTreeMap<IsInstanceCheckId, IsInstanceCheck>,
+    /// file_id → isinstance_check_ids[] (isinstance checks in file).
+    isinstance_checks_by_file: HashMap<FileId, Vec<IsInstanceCheckId>>,
+
+    // Dynamic pattern storage
+    /// Primary storage for dynamic patterns.
+    dynamic_patterns: BTreeMap<DynamicPatternId, DynamicPattern>,
+    /// file_id → dynamic_pattern_ids[] (dynamic patterns in file).
+    dynamic_patterns_by_file: HashMap<FileId, Vec<DynamicPatternId>>,
+
+    // Type comment storage
+    /// Primary storage for type comments.
+    type_comments: BTreeMap<TypeCommentId, TypeCommentFact>,
+    /// file_id → type_comment_ids[] (type comments in file).
+    type_comments_by_file: HashMap<FileId, Vec<TypeCommentId>>,
+
     // ID generators
     next_file_id: u32,
     next_module_id: u32,
@@ -2151,6 +2423,9 @@ pub struct FactsStore {
     next_attribute_access_id: u32,
     next_call_site_id: u32,
     next_public_export_id: u32,
+    next_isinstance_check_id: u32,
+    next_dynamic_pattern_id: u32,
+    next_type_comment_id: u32,
 }
 
 impl Default for FactsStore {
@@ -2194,6 +2469,12 @@ impl Default for FactsStore {
             public_exports_by_file: HashMap::new(),
             public_exports_by_name: HashMap::new(),
             public_exports_by_intent: HashMap::new(),
+            isinstance_checks: BTreeMap::new(),
+            isinstance_checks_by_file: HashMap::new(),
+            dynamic_patterns: BTreeMap::new(),
+            dynamic_patterns_by_file: HashMap::new(),
+            type_comments: BTreeMap::new(),
+            type_comments_by_file: HashMap::new(),
             next_file_id: 0,
             next_module_id: 0,
             next_symbol_id: 0,
@@ -2204,6 +2485,9 @@ impl Default for FactsStore {
             next_attribute_access_id: 0,
             next_call_site_id: 0,
             next_public_export_id: 0,
+            next_isinstance_check_id: 0,
+            next_dynamic_pattern_id: 0,
+            next_type_comment_id: 0,
         }
     }
 }
@@ -2287,6 +2571,27 @@ impl FactsStore {
     pub fn next_public_export_id(&mut self) -> PublicExportId {
         let id = PublicExportId::new(self.next_public_export_id);
         self.next_public_export_id += 1;
+        id
+    }
+
+    /// Generate the next IsInstanceCheckId.
+    pub fn next_isinstance_check_id(&mut self) -> IsInstanceCheckId {
+        let id = IsInstanceCheckId::new(self.next_isinstance_check_id);
+        self.next_isinstance_check_id += 1;
+        id
+    }
+
+    /// Generate the next DynamicPatternId.
+    pub fn next_dynamic_pattern_id(&mut self) -> DynamicPatternId {
+        let id = DynamicPatternId::new(self.next_dynamic_pattern_id);
+        self.next_dynamic_pattern_id += 1;
+        id
+    }
+
+    /// Generate the next TypeCommentId.
+    pub fn next_type_comment_id(&mut self) -> TypeCommentId {
+        let id = TypeCommentId::new(self.next_type_comment_id);
+        self.next_type_comment_id += 1;
         id
     }
 
@@ -2536,6 +2841,42 @@ impl FactsStore {
         self.public_exports.insert(export.export_id, export);
     }
 
+    /// Insert an isinstance check.
+    pub fn insert_isinstance_check(&mut self, check: IsInstanceCheck) {
+        // Update file index
+        self.isinstance_checks_by_file
+            .entry(check.file_id)
+            .or_default()
+            .push(check.id);
+
+        // Insert into primary storage
+        self.isinstance_checks.insert(check.id, check);
+    }
+
+    /// Insert a dynamic pattern.
+    pub fn insert_dynamic_pattern(&mut self, pattern: DynamicPattern) {
+        // Update file index
+        self.dynamic_patterns_by_file
+            .entry(pattern.file_id)
+            .or_default()
+            .push(pattern.id);
+
+        // Insert into primary storage
+        self.dynamic_patterns.insert(pattern.id, pattern);
+    }
+
+    /// Insert a type comment.
+    pub fn insert_type_comment(&mut self, comment: TypeCommentFact) {
+        // Update file index
+        self.type_comments_by_file
+            .entry(comment.file_id)
+            .or_default()
+            .push(comment.id);
+
+        // Insert into primary storage
+        self.type_comments.insert(comment.id, comment);
+    }
+
     // ========================================================================
     // Lookup by ID
     // ========================================================================
@@ -2568,6 +2909,21 @@ impl FactsStore {
     /// Get a public export by ID.
     pub fn public_export(&self, id: PublicExportId) -> Option<&PublicExport> {
         self.public_exports.get(&id)
+    }
+
+    /// Get an isinstance check by ID.
+    pub fn isinstance_check(&self, id: IsInstanceCheckId) -> Option<&IsInstanceCheck> {
+        self.isinstance_checks.get(&id)
+    }
+
+    /// Get a dynamic pattern by ID.
+    pub fn dynamic_pattern(&self, id: DynamicPatternId) -> Option<&DynamicPattern> {
+        self.dynamic_patterns.get(&id)
+    }
+
+    /// Get a type comment by ID.
+    pub fn type_comment(&self, id: TypeCommentId) -> Option<&TypeCommentFact> {
+        self.type_comments.get(&id)
     }
 
     /// Get a scope by ID.
@@ -2715,6 +3071,48 @@ impl FactsStore {
             .map(|ids| {
                 ids.iter()
                     .filter_map(|id| self.public_exports.get(id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all isinstance checks in a file.
+    ///
+    /// Returns checks in deterministic order (by IsInstanceCheckId).
+    pub fn isinstance_checks_in_file(&self, file_id: FileId) -> Vec<&IsInstanceCheck> {
+        self.isinstance_checks_by_file
+            .get(&file_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.isinstance_checks.get(id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all dynamic patterns in a file.
+    ///
+    /// Returns patterns in deterministic order (by DynamicPatternId).
+    pub fn dynamic_patterns_in_file(&self, file_id: FileId) -> Vec<&DynamicPattern> {
+        self.dynamic_patterns_by_file
+            .get(&file_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.dynamic_patterns.get(id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all type comments in a file.
+    ///
+    /// Returns comments in deterministic order (by TypeCommentId).
+    pub fn type_comments_in_file(&self, file_id: FileId) -> Vec<&TypeCommentFact> {
+        self.type_comments_by_file
+            .get(&file_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.type_comments.get(id))
                     .collect()
             })
             .unwrap_or_default()
@@ -3128,6 +3526,21 @@ impl FactsStore {
     /// Iterate over all call sites in deterministic order.
     pub fn call_sites(&self) -> impl Iterator<Item = &CallSite> {
         self.call_sites.values()
+    }
+
+    /// Iterate over all isinstance checks in deterministic order.
+    pub fn isinstance_checks(&self) -> impl Iterator<Item = &IsInstanceCheck> {
+        self.isinstance_checks.values()
+    }
+
+    /// Iterate over all dynamic patterns in deterministic order.
+    pub fn dynamic_patterns(&self) -> impl Iterator<Item = &DynamicPattern> {
+        self.dynamic_patterns.values()
+    }
+
+    /// Iterate over all type comments in deterministic order.
+    pub fn type_comments(&self) -> impl Iterator<Item = &TypeCommentFact> {
+        self.type_comments.values()
     }
 
     /// Iterate over all qualified names in deterministic order.
@@ -8028,6 +8441,217 @@ mod tests {
             assert!(json.contains("\"type\":\"attribute\""));
             assert!(json.contains("\"type\":\"call\""));
             assert!(json.contains("\"type\":\"subscript\""));
+        }
+    }
+
+    // ========================================================================
+    // Phase C Tests: isinstance checks, dynamic patterns, type comments
+    // ========================================================================
+
+    mod phase_c_tests {
+        use super::*;
+
+        #[test]
+        fn isinstance_check_insert_and_lookup() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Function);
+            store.insert_scope(scope);
+
+            let check_id = store.next_isinstance_check_id();
+            let check = IsInstanceCheck::new(
+                check_id,
+                file_id,
+                Span::new(10, 30),
+                "x".to_string(),
+                vec!["Handler".to_string(), "Worker".to_string()],
+                scope_id,
+                Span::new(35, 80),
+            );
+            store.insert_isinstance_check(check);
+
+            // Lookup by ID
+            let retrieved = store.isinstance_check(check_id).unwrap();
+            assert_eq!(retrieved.variable_name, "x");
+            assert_eq!(retrieved.types.len(), 2);
+            assert_eq!(retrieved.types[0], "Handler");
+            assert_eq!(retrieved.types[1], "Worker");
+            assert_eq!(retrieved.branch_span, Span::new(35, 80));
+
+            // Lookup by file
+            let in_file = store.isinstance_checks_in_file(file_id);
+            assert_eq!(in_file.len(), 1);
+            assert_eq!(in_file[0].variable_name, "x");
+        }
+
+        #[test]
+        fn dynamic_pattern_insert_and_lookup() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Module);
+            store.insert_scope(scope);
+
+            // Insert a getattr pattern with attribute name
+            let pattern_id1 = store.next_dynamic_pattern_id();
+            let pattern1 = DynamicPattern::new(
+                pattern_id1,
+                file_id,
+                Span::new(10, 30),
+                DynamicPatternKind::Getattr,
+                scope_id,
+            )
+            .with_attribute_name("handler".to_string());
+            store.insert_dynamic_pattern(pattern1);
+
+            // Insert an eval pattern (no attribute name)
+            let pattern_id2 = store.next_dynamic_pattern_id();
+            let pattern2 = DynamicPattern::new(
+                pattern_id2,
+                file_id,
+                Span::new(50, 60),
+                DynamicPatternKind::Eval,
+                scope_id,
+            );
+            store.insert_dynamic_pattern(pattern2);
+
+            // Lookup by ID
+            let retrieved = store.dynamic_pattern(pattern_id1).unwrap();
+            assert_eq!(retrieved.kind, DynamicPatternKind::Getattr);
+            assert_eq!(retrieved.attribute_name, Some("handler".to_string()));
+
+            let retrieved2 = store.dynamic_pattern(pattern_id2).unwrap();
+            assert_eq!(retrieved2.kind, DynamicPatternKind::Eval);
+            assert_eq!(retrieved2.attribute_name, None);
+
+            // Lookup by file
+            let in_file = store.dynamic_patterns_in_file(file_id);
+            assert_eq!(in_file.len(), 2);
+        }
+
+        #[test]
+        fn type_comment_insert_and_lookup() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let comment_id = store.next_type_comment_id();
+            let comment = TypeCommentFact::new(
+                comment_id,
+                file_id,
+                Span::new(20, 40),
+                TypeCommentKind::Variable,
+                "List[int]".to_string(),
+                5,
+            );
+            store.insert_type_comment(comment);
+
+            // Lookup by ID
+            let retrieved = store.type_comment(comment_id).unwrap();
+            assert_eq!(retrieved.kind, TypeCommentKind::Variable);
+            assert_eq!(retrieved.content, "List[int]");
+            assert_eq!(retrieved.line, 5);
+
+            // Lookup by file
+            let in_file = store.type_comments_in_file(file_id);
+            assert_eq!(in_file.len(), 1);
+            assert_eq!(in_file[0].content, "List[int]");
+        }
+
+        #[test]
+        fn scope_with_globals_and_nonlocals() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Function)
+                .with_globals(vec!["config".to_string(), "logger".to_string()])
+                .with_nonlocals(vec!["counter".to_string()]);
+            store.insert_scope(scope);
+
+            let retrieved = store.scope(scope_id).unwrap();
+            assert_eq!(retrieved.globals.len(), 2);
+            assert!(retrieved.globals.contains(&"config".to_string()));
+            assert!(retrieved.globals.contains(&"logger".to_string()));
+            assert_eq!(retrieved.nonlocals.len(), 1);
+            assert!(retrieved.nonlocals.contains(&"counter".to_string()));
+        }
+
+        #[test]
+        fn isinstance_checks_empty_for_unknown_file() {
+            let store = FactsStore::new();
+            assert!(store.isinstance_checks_in_file(FileId::new(999)).is_empty());
+        }
+
+        #[test]
+        fn dynamic_patterns_empty_for_unknown_file() {
+            let store = FactsStore::new();
+            assert!(store.dynamic_patterns_in_file(FileId::new(999)).is_empty());
+        }
+
+        #[test]
+        fn type_comments_empty_for_unknown_file() {
+            let store = FactsStore::new();
+            assert!(store.type_comments_in_file(FileId::new(999)).is_empty());
+        }
+
+        #[test]
+        fn iteration_over_new_types() {
+            let mut store = FactsStore::new();
+
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Module);
+            store.insert_scope(scope);
+
+            // Add multiple items
+            for i in 0..3 {
+                let check_id = store.next_isinstance_check_id();
+                let check = IsInstanceCheck::new(
+                    check_id,
+                    file_id,
+                    Span::new(i * 10, i * 10 + 5),
+                    format!("var{}", i),
+                    vec!["Type".to_string()],
+                    scope_id,
+                    Span::new(100, 200),
+                );
+                store.insert_isinstance_check(check);
+            }
+
+            for i in 0..2 {
+                let pattern_id = store.next_dynamic_pattern_id();
+                let pattern = DynamicPattern::new(
+                    pattern_id,
+                    file_id,
+                    Span::new(i * 20, i * 20 + 10),
+                    DynamicPatternKind::Hasattr,
+                    scope_id,
+                );
+                store.insert_dynamic_pattern(pattern);
+            }
+
+            // Test iteration
+            assert_eq!(store.isinstance_checks().count(), 3);
+            assert_eq!(store.dynamic_patterns().count(), 2);
+            assert_eq!(store.type_comments().count(), 0);
         }
     }
 }

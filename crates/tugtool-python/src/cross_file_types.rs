@@ -1938,6 +1938,7 @@ class Child(Parent):
             call_sites: vec![],
             class_hierarchies: vec![],
             isinstance_checks: vec![],
+            dynamic_patterns: vec![],
             cst_assignments: vec![],
             cst_annotations: vec![],
             type_comments: vec![],
