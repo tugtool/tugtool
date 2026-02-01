@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.5: FactsStore Completeness Infrastructure | PLANNED | 2026-02-01
+
+**Completed:** 2026-02-01 (planning only - implementation pending)
+
+**References Reviewed:**
+- `crates/tugtool-python/src/ops/rename.rs` - `rename_in_file()`, `collect_rename_edits()` bypass FactsStore
+- `crates/tugtool-python/src/ops/rename_param.rs` - `rename_param_in_file()` bypasses FactsStore
+- `crates/tugtool-python/src/cst_bridge.rs` - `parse_and_analyze()` used for bypass
+- `crates/tugtool-python-cst/src/visitor/` - All collectors examined for CST→FactsStore gaps
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore entity definitions
+- `crates/tugtool-core/src/adapter.rs` - Bridge type definitions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Conduct code-architect FactsStore coverage audit | Done |
+| Identify all CST bypass patterns in operations | Done |
+| Identify missing CST→FactsStore field propagation | Done |
+| Add Step 0.5 to phase-13.md | Done |
+| Document Phase A: Eliminate Bypass tasks | Done |
+| Document Phase B: Add Missing Critical Fields tasks | Done |
+| Document Phase C: Add Missing Analysis Data tasks | Done |
+| Update Stage 0 Summary | Done |
+| Implement Phase A (eliminate bypass) | Pending |
+| Implement Phase B (missing fields) | Pending |
+| Implement Phase C (missing data) | Pending |
+
+**Files Created:**
+- None (planning phase only)
+
+**Files Modified:**
+- `plans/phase-13.md` - Added Step 0.5: FactsStore Completeness Infrastructure (lines 6494+); Updated Stage 0 Summary
+
+**Test Results:**
+- N/A (planning phase - implementation not started)
+
+**Checkpoints Verified:**
+- FactsStore bypass patterns documented: PASS
+- Missing CST→FactsStore fields documented: PASS
+- Step 0.5 added with three implementation phases: PASS
+- Dependencies established (Step 0.4 → Step 0.5 → Step 1.1): PASS
+
+**Key Decisions/Notes:**
+- **Critical Finding:** THREE operations bypass FactsStore by calling `cst_bridge::parse_and_analyze()` directly: `rename_in_file()`, `collect_rename_edits()`, `rename_param_in_file()`
+- **Dual Code Paths UNACCEPTABLE:** User mandated that ALL operations MUST use FactsStore, even single-file operations. No exceptions.
+- **Solution:** Create `analyze_single_file()` helper that builds FactsStore from single file, refactor all bypass functions to use it
+- **Missing Critical Fields:** Parameter `name_span`, `receiver_path` on CallSite/AttributeAccess
+- **Missing Analysis Data:** isinstance checks, dynamic patterns, type comments, globals/nonlocals, scope_path on CallSite
+- **Phase Order:** Phase A (eliminate bypass) MUST be completed before Phases B and C
+
+---
+
 ## [phase-13.md] Step 0.4: Reference Scope Infrastructure | PLANNED | 2026-02-01
 
 **Completed:** 2026-02-01 (planning only - implementation pending)

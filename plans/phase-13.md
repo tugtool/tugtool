@@ -54,7 +54,7 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - [ ] **10+ operations implemented** (up from 1): `tug analyze python <op> --help` lists operations
-- [ ] **Stage 0 infrastructure complete:** Edit primitives, position lookup, stub discovery (see [Stage 0](#stage-0))
+- [ ] **Stage 0 infrastructure complete:** Edit primitives, position lookup, stub discovery, FactsStore completeness (see [Stage 0](#stage-0))
 - [ ] **All Layer 0-4 infrastructure complete:** Each layer has dedicated tests
 - [ ] **Rename hardened:** All edge cases in [Table T02](#t02-rename-gaps) addressed
 - [ ] **Cross-layer integration tests:** 50+ integration tests across operations
@@ -62,7 +62,7 @@ However, rename is our only operation. Rope offers 15+ operations. To prove our 
 
 #### Scope {#scope}
 
-1. Build [Stage 0](#stage-0) infrastructure (edit primitives, position lookup, stub discovery; see [D07](#d07-edit-primitives) and [D08](#d08-stub-updates))
+1. Build [Stage 0](#stage-0) infrastructure (edit primitives, position lookup, stub discovery, FactsStore completeness; see [D07](#d07-edit-primitives), [D08](#d08-stub-updates), [Step 0.5](#step-0-5))
 2. Harden existing rename operation ([Layer 0](#layer-0), [Table T02](#t02-rename-gaps))
 3. Implement [Layers 1-4](#infrastructure-layers) infrastructure
 4. Ship operations: [Extract Variable](#op-extract-variable), [Inline Variable](#op-inline-variable), [Safe Delete](#op-safe-delete), [Move Function](#op-move-function), [Move Class](#op-move-class), [Extract Method](#op-extract-method), [Inline Method](#op-inline-method), [Change Signature](#op-change-signature)
@@ -6491,18 +6491,326 @@ pub struct ReferenceCollector<'pos> {
 
 ---
 
+##### Step 0.5: FactsStore Completeness Infrastructure {#step-0-5}
+
+**Commit:** `feat(python): eliminate FactsStore bypass and complete CST-to-FactsStore propagation`
+
+**Prerequisites:** [Step 0.4](#step-0-4) (Reference Scope Infrastructure)
+
+**References:** [D05](#d05-rename-reference), [D07](#d07-edit-primitives), [Step 1.1](#step-1-1), [Step 1.2](#step-1-2)
+
+**Context:**
+
+A code-architect audit revealed critical infrastructure gaps: multiple operations bypass FactsStore by calling `cst_bridge::parse_and_analyze()` directly. Additionally, valuable CST data is collected but never propagated to FactsStore. This step eliminates the dual code paths and ensures all CST analysis data flows through the canonical FactsStore model.
+
+**The Problem - Dual Code Paths (CRITICAL):**
+
+The codebase has TWO ways to perform analysis:
+
+1. **Full pipeline:** `analyze_files()` → `FactsStore` → operations
+2. **Bypass pattern:** `cst_bridge::parse_and_analyze()` → direct CST data → operations
+
+This is unacceptable because:
+
+- Maintenance burden: bug fixes must be applied in two places
+- Inconsistent behavior: FactsStore has cross-file resolution, bypass does not
+- Feature parity impossible: new FactsStore features don't benefit bypass callers
+- Testing overhead: both paths need separate test coverage
+
+**Functions Using Bypass Pattern (Must Be Refactored):**
+
+| Function | File | Current Pattern |
+|----------|------|-----------------|
+| `rename_in_file()` | `crates/tugtool-python/src/ops/rename.rs:229` | `cst_bridge::parse_and_analyze(content)` |
+| `collect_rename_edits()` | `crates/tugtool-python/src/ops/rename.rs:332` | `cst_bridge::parse_and_analyze(content)` |
+| `rename_param_in_file()` | `crates/tugtool-python/src/ops/rename_param.rs:402` | `cst_bridge::parse_and_analyze(content)` |
+
+**The Fix:** Refactor all single-file utilities to use FactsStore with a single-file workspace.
+
+**Missing CST→FactsStore Propagation (Priority 1 - Critical):**
+
+| CST Type | CST Field | FactsStore Type | Missing Field | Impact |
+|----------|-----------|-----------------|---------------|--------|
+| `ParamInfo` | `span: Option<Span>` | `Parameter` | `name_span: Option<Span>` | Cannot locate parameter name for rename |
+| `CallSiteInfo` | `receiver_path: Option<ReceiverPath>` | `CallSite` | `receiver_path` | Cannot resolve method call receivers |
+| `AttributeAccessInfo` | `receiver_path: Option<ReceiverPath>` | (not in FactsStore) | `receiver_path` | Cannot resolve attribute access receivers |
+
+**Missing CST→FactsStore Propagation (Priority 2 - Important):**
+
+| CST Collector/Type | Exists in CST? | FactsStore Status | Impact |
+|--------------------|----------------|-------------------|--------|
+| `IsInstanceCollector` | Yes (`isinstance_collector.rs`) | Not propagated | Cannot narrow types in branches |
+| `DynamicPatternDetector` | Yes (`dynamic_pattern.rs`) | Not propagated | Cannot detect getattr/setattr patterns |
+| `TypeCommentCollector` | Yes (`type_comment.rs`) | Not propagated | Cannot rename types in comments |
+| `ScopeInfo.globals` | Yes in CST | Not in FactsStore Scope | Cannot track global/nonlocal declarations |
+| `ScopeInfo.nonlocals` | Yes in CST | Not in FactsStore Scope | Cannot track global/nonlocal declarations |
+| `CallSiteInfo.scope_path` | Yes (`Vec<String>`) | Not in FactsStore CallSite | Cannot determine call site scope |
+| `CallSiteInfo.is_method_call` | Yes (`bool`) | Not in FactsStore CallSite | Cannot distinguish function/method calls |
+
+---
+
+###### Phase A: Eliminate Bypass (FIRST) {#step-0-5-phase-a}
+
+This phase MUST be completed before adding new fields. The bypass pattern is a fundamental architectural violation.
+
+**Artifacts:**
+
+- Modified `crates/tugtool-python/src/ops/rename.rs` - refactor `rename_in_file()` and `collect_rename_edits()`
+- Modified `crates/tugtool-python/src/ops/rename_param.rs` - refactor `rename_param_in_file()`
+- New helper in `crates/tugtool-python/src/analyzer.rs` - `analyze_single_file()` utility
+
+**Tasks:**
+
+- [ ] Create `analyze_single_file(content: &str) -> Result<FactsStore>` helper in analyzer.rs
+  - Creates synthetic file entry with path `"<single-file>"`
+  - Calls existing `analyze_files()` with single-element list
+  - Returns populated FactsStore
+- [ ] Refactor `rename_in_file()` to use `analyze_single_file()`
+  - Replace `cst_bridge::parse_and_analyze(content)` call
+  - Query FactsStore for bindings, references, exports via existing methods
+  - Keep TypeCommentCollector separate (it operates on raw content, not FactsStore)
+- [ ] Refactor `collect_rename_edits()` to use `analyze_single_file()`
+  - Same pattern as `rename_in_file()`
+- [ ] Refactor `rename_param_in_file()` to use `analyze_single_file()`
+  - Query FactsStore symbols with `kind == Parameter`
+  - Query references via `refs_of_symbol()`
+- [ ] Delete or deprecate `cst_bridge::parse_and_analyze()` if no longer used
+  - If still needed internally by adapter, mark as `pub(crate)` not `pub`
+- [ ] Update all tests to verify behavior unchanged
+
+**Design Notes:**
+
+The single-file analyze pattern:
+
+```rust
+/// Analyze a single file and return a populated FactsStore.
+///
+/// This is a convenience wrapper for single-file operations like `rename_in_file`.
+/// It creates a synthetic workspace with one file and runs the full analysis pipeline.
+pub fn analyze_single_file(content: &str) -> Result<FactsStore, AnalyzerError> {
+    let files = vec![("<single-file>".to_string(), content.to_string())];
+    let mut store = FactsStore::new();
+    analyze_files(&files, &mut store)?;
+    Ok(store)
+}
+```
+
+**Tests (Phase A):**
+
+- [ ] Unit: `test_analyze_single_file_basic` - Single file produces valid FactsStore
+- [ ] Unit: `test_analyze_single_file_symbols` - Symbols are correctly populated
+- [ ] Unit: `test_analyze_single_file_references` - References are correctly populated
+- [ ] Integration: `test_rename_in_file_uses_factsstore` - Verify behavior identical to previous
+- [ ] Integration: `test_rename_param_in_file_uses_factsstore` - Verify behavior identical to previous
+- [ ] Regression: All existing tests in `rename_tests` module pass
+
+---
+
+###### Phase B: Add Missing Critical Fields {#step-0-5-phase-b}
+
+**Prerequisites:** Phase A complete
+
+This phase adds the essential span fields needed for accurate refactoring.
+
+**Artifacts:**
+
+- Modified `crates/tugtool-core/src/facts/mod.rs` - add `name_span` to `Parameter`
+- Modified `crates/tugtool-core/src/facts/mod.rs` - add receiver fields to `CallSite`
+- Modified `crates/tugtool-core/src/adapter.rs` - update `ParameterData` and `CallSiteData`
+- Modified `crates/tugtool-python/src/cst_bridge.rs` - propagate spans from CST
+- Modified `crates/tugtool-python/src/analyzer.rs` - populate new fields
+
+**Tasks:**
+
+**B1: Parameter name_span**
+
+- [ ] Add `name_span: Option<Span>` field to `Parameter` struct in `facts/mod.rs`
+- [ ] Add `with_name_span(mut self, span: Span) -> Self` builder method
+- [ ] Update `ParameterData` in `adapter.rs` to include `name_span: Option<Span>`
+- [ ] Update `cst_bridge.rs` signature collection to propagate `ParamInfo.span`
+- [ ] Update analyzer to set `name_span` when creating `Parameter` facts
+- [ ] Update serialization tests for new field
+
+**B2: CallSite receiver_path**
+
+- [ ] Define `ReceiverPathStep` enum in `facts/mod.rs` (mirror CST's `ReceiverPathStep`)
+- [ ] Define `ReceiverPath` struct in `facts/mod.rs` (mirror CST's `ReceiverPath`)
+- [ ] Add `receiver_path: Option<ReceiverPath>` field to `CallSite` struct
+- [ ] Add `scope_path: Vec<String>` field to `CallSite` struct
+- [ ] Add `is_method_call: bool` field to `CallSite` struct
+- [ ] Add corresponding builder methods
+- [ ] Update `CallSiteData` in `adapter.rs` with new fields
+- [ ] Update `cst_bridge.rs` to propagate `CallSiteInfo.receiver_path`
+- [ ] Update `cst_bridge.rs` to propagate `CallSiteInfo.scope_path`
+- [ ] Update `cst_bridge.rs` to propagate `CallSiteInfo.is_method_call`
+- [ ] Update analyzer to set all new CallSite fields
+
+**ReceiverPath Design:**
+
+```rust
+/// A step in a receiver path for method call resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReceiverPathStep {
+    /// A simple name lookup (e.g., `obj` in `obj.method()`).
+    Name(String),
+    /// An attribute access (e.g., `.handler` in `self.handler.process()`).
+    Attribute(String),
+    /// A call expression (e.g., `()` in `factory().create()`).
+    Call,
+}
+
+/// Structured receiver path for method calls.
+///
+/// Represents the chain of accesses leading to a method call, enabling
+/// cross-file type resolution. For example:
+/// - `obj.method()` → `[Name("obj")]`
+/// - `self.handler.process()` → `[Name("self"), Attribute("handler")]`
+/// - `factory().create()` → `[Name("factory"), Call]`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiverPath {
+    pub steps: Vec<ReceiverPathStep>,
+}
+```
+
+**Tests (Phase B):**
+
+- [ ] Unit: `test_parameter_name_span` - Parameter with name_span serializes correctly
+- [ ] Unit: `test_callsite_receiver_path` - CallSite with receiver_path serializes correctly
+- [ ] Unit: `test_callsite_scope_path` - CallSite with scope_path serializes correctly
+- [ ] Integration: `test_signature_param_spans_propagated` - Spans flow from CST to FactsStore
+- [ ] Integration: `test_callsite_receiver_path_propagated` - ReceiverPath flows from CST to FactsStore
+- [ ] Golden: Update golden files if schema changes
+
+---
+
+###### Phase C: Add Missing Analysis Data {#step-0-5-phase-c}
+
+**Prerequisites:** Phase B complete
+
+This phase propagates remaining CST analysis data to FactsStore for future operations.
+
+**Artifacts:**
+
+- Modified `crates/tugtool-core/src/facts/mod.rs` - add isinstance, dynamic patterns, type comments
+- Modified `crates/tugtool-core/src/facts/mod.rs` - add globals/nonlocals to Scope
+- Modified `crates/tugtool-python/src/analyzer.rs` - integrate collectors
+
+**Tasks:**
+
+**C1: isinstance narrowing facts**
+
+- [ ] Define `IsInstanceCheck` struct in `facts/mod.rs`:
+  ```rust
+  pub struct IsInstanceCheck {
+      pub file_id: FileId,
+      pub span: Span,
+      pub variable_name: String,
+      pub types: Vec<String>,  // Type names being checked
+      pub scope_id: ScopeId,
+  }
+  ```
+- [ ] Add `isinstance_checks: Vec<IsInstanceCheck>` storage to FactsStore
+- [ ] Add `add_isinstance_check()` and `isinstance_checks_in_file()` methods
+- [ ] Update analyzer to call `IsInstanceCollector` and populate FactsStore
+
+**C2: Dynamic pattern detection facts**
+
+- [ ] Define `DynamicPattern` struct in `facts/mod.rs`:
+  ```rust
+  pub struct DynamicPattern {
+      pub file_id: FileId,
+      pub span: Span,
+      pub kind: DynamicPatternKind,  // Getattr, Setattr, Delattr, HasAttr, Eval, Exec
+      pub scope_id: ScopeId,
+  }
+  ```
+- [ ] Add `dynamic_patterns: Vec<DynamicPattern>` storage to FactsStore
+- [ ] Add `add_dynamic_pattern()` and `dynamic_patterns_in_file()` methods
+- [ ] Update analyzer to call `DynamicPatternDetector` and populate FactsStore
+
+**C3: Type comment facts**
+
+- [ ] Define `TypeCommentFact` struct in `facts/mod.rs`:
+  ```rust
+  pub struct TypeCommentFact {
+      pub file_id: FileId,
+      pub span: Span,
+      pub kind: TypeCommentKind,  // Variable, FunctionSignature, Ignore
+      pub content: String,
+      pub line: u32,
+  }
+  ```
+- [ ] Add `type_comments: Vec<TypeCommentFact>` storage to FactsStore
+- [ ] Add `add_type_comment()` and `type_comments_in_file()` methods
+- [ ] Update analyzer to call `TypeCommentCollector` and populate FactsStore
+
+**C4: Scope globals/nonlocals**
+
+- [ ] Add `globals: Vec<String>` field to `Scope` struct
+- [ ] Add `nonlocals: Vec<String>` field to `Scope` struct
+- [ ] Update scope creation in analyzer to populate these fields from CST ScopeInfo
+
+**Tests (Phase C):**
+
+- [ ] Unit: `test_isinstance_check_storage` - isinstance checks stored and retrieved
+- [ ] Unit: `test_dynamic_pattern_storage` - dynamic patterns stored and retrieved
+- [ ] Unit: `test_type_comment_storage` - type comments stored and retrieved
+- [ ] Unit: `test_scope_globals_nonlocals` - scope global/nonlocal declarations stored
+- [ ] Integration: `test_isinstance_checks_propagated` - Checks flow from CST to FactsStore
+- [ ] Integration: `test_dynamic_patterns_propagated` - Patterns flow from CST to FactsStore
+
+---
+
+###### Step 0.5 Success Criteria {#step-0-5-success}
+
+**Phase A Success (Bypass Elimination):**
+
+- [ ] `cst_bridge::parse_and_analyze()` is no longer called by any operation in `ops/`
+- [ ] All single-file utilities use `analyze_single_file()` → FactsStore
+- [ ] All existing tests pass with identical behavior
+- [ ] No duplicate analysis logic exists
+
+**Phase B Success (Critical Fields):**
+
+- [ ] `Parameter.name_span` is populated for all function parameters
+- [ ] `CallSite.receiver_path` is populated for method calls
+- [ ] `CallSite.scope_path` is populated for all call sites
+- [ ] `CallSite.is_method_call` correctly distinguishes function/method calls
+- [ ] Serialization round-trips preserve all new fields
+
+**Phase C Success (Analysis Data):**
+
+- [ ] isinstance checks are accessible via `FactsStore::isinstance_checks_in_file()`
+- [ ] Dynamic patterns are accessible via `FactsStore::dynamic_patterns_in_file()`
+- [ ] Type comments are accessible via `FactsStore::type_comments_in_file()`
+- [ ] Scope globals/nonlocals are populated
+
+**Final Checkpoint:**
+
+- [ ] `cargo build --workspace` succeeds
+- [ ] `cargo nextest run --workspace` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [ ] No `cst_bridge::parse_and_analyze()` calls in `src/ops/` (verified via grep)
+- [ ] All new FactsStore fields have test coverage
+
+**Rollback:** Revert commit
+
+---
+
 #### Stage 0 Summary {#stage-0-summary}
 
-After completing Steps 0.1-0.4, you will have:
+After completing Steps 0.1-0.5, you will have:
 - Edit primitive infrastructure supporting all [D07](#d07-edit-primitives) operations ([Step 0.1](#step-0-1))
 - Position-to-node lookup for expression/statement boundary detection ([Step 0.2](#step-0-2))
 - Stub file discovery and update infrastructure for [D08](#d08-stub-updates) compliance ([Step 0.3](#step-0-3))
 - Reference scope tracking enabling parameter and local variable operations ([Step 0.4](#step-0-4))
+- FactsStore completeness: single code path, all CST data propagated ([Step 0.5](#step-0-5))
 
 **Final Stage 0 Checkpoint:**
 - [ ] `cargo nextest run --workspace`
 - [ ] All Stage 0 infrastructure has >80% test coverage
 - [ ] Infrastructure is ready for Stage 1 operations
+- [ ] No FactsStore bypass patterns exist in `ops/` modules
 
 ---
 
