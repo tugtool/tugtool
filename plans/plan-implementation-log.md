@@ -6,6 +6,115 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.4: Reference Scope Infrastructure - Add Scope Name Constants | PLANNED | 2026-02-01
+
+**Completed:** 2026-02-01 (planning update - implementation pending)
+
+**References Reviewed:**
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector's `scope_path: Vec<String>` pattern
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - ScopeCollector's `ScopeKind` enum
+- `crates/tugtool-python/src/analyzer.rs` - `find_scope_for_path_indexed()` function
+- `crates/tugtool-core/src/facts/mod.rs` - Core `ScopeKind` enum
+- `plans/extras/step-9-alias-graph.md` - Existing scope path convention documentation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Investigate BindingCollector's `Vec<String>` scope_path design | Done |
+| Use code-architect to analyze typed enum vs string approach | Done |
+| Evaluate Option A (Vec<String>), Option B (typed enum), Option C (reuse ScopeKind) | Done |
+| Decide on approach: Keep Vec<String> with constants | Done |
+| Update Phase A to define `SCOPE_*` constants | Done |
+| Update Phase A to include BindingCollector constant migration | Done |
+| Update Phase B tasks to use constants | Done |
+| Update Phase B design notes code examples to use constants | Done |
+| Update Scope Entry Names table with constant column | Done |
+| Update tests and checkpoints to reference constants | Done |
+| Update Success Criteria to include constants | Done |
+
+**Files Created:**
+- None (planning update only)
+
+**Files Modified:**
+- `plans/phase-13.md` - Updated Step 0.4 Phase A to define scope name constants (`SCOPE_MODULE`, `SCOPE_LAMBDA`, `SCOPE_LISTCOMP`, `SCOPE_DICTCOMP`, `SCOPE_SETCOMP`, `SCOPE_GENEXPR`); Updated Phase B to use constants; Updated Scope Entry Names table; Updated all code examples, tests, and success criteria
+
+**Test Results:**
+- N/A (planning update - implementation not started)
+
+**Checkpoints Verified:**
+- Phase A tasks include constant definitions: PASS
+- Phase A tasks include BindingCollector migration: PASS
+- Phase B tasks reference constants: PASS
+- Success Criteria reference constants: PASS
+
+**Key Decisions/Notes:**
+- **Design Investigation:** User questioned whether `Vec<String>` was the right approach vs. a typed enum. Code-architect conducted thorough analysis of existing code.
+- **Key Finding:** Only one magic string (`"<module>"`) is special-cased in analyzer. The pattern is simpler than initially thought.
+- **Decision:** Keep `Vec<String>` representation but define constants to eliminate magic strings and provide compile-time safety.
+- **Rationale:** Typed enum would require coordinated changes across crates with minimal functional benefit. Constants provide safety without the complexity.
+- **Constants Location:** `crates/tugtool-python-cst/src/visitor/mod.rs` - exported for use across visitor modules
+- **BindingCollector Update:** Existing code will be updated to use `SCOPE_MODULE` constant as part of Phase A
+- **Future-proofing:** Lambda/comprehension scope tracking retained in Phase B for operations beyond rename (Extract Method, Inline Variable, etc.)
+
+---
+
+## [phase-13.md] Step 0.4: Reference Scope Infrastructure - Breakdown into Phases | PLANNED | 2026-02-01
+
+**Completed:** 2026-02-01 (planning only - implementation pending)
+
+**References Reviewed:**
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - `ReferenceInfo` and `ReferenceCollector` structures
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - `BindingCollector` with `scope_path` pattern to follow
+- `crates/tugtool-python/src/analyzer.rs:1779` - Hardcoded `ScopeId(0)` for all references
+- `plans/phase-13.md` - Step 0.4 original monolithic structure
+- `plans/phase-13.md` - Step 0.5 phases A/B/C pattern to follow
+- `plans/plan-skeleton.md` - Standard phase structure template
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Review current Step 0.4 structure | Done |
+| Review Step 0.5 phase pattern for template | Done |
+| Use code-architect to analyze breakdown strategy | Done |
+| Define Phase A: CST Data Structures | Done |
+| Define Phase B: Scope Tracking Implementation | Done |
+| Define Phase C: Analyzer Integration | Done |
+| Add per-phase tasks, design notes, tests, checkpoints | Done |
+| Add Step 0.4 Success Criteria section | Done |
+| Update phase-13.md with new structure | Done |
+| Update Last updated date | Done |
+| Implement Phase A (data structures) | Pending |
+| Implement Phase B (scope tracking) | Pending |
+| Implement Phase C (analyzer integration) | Pending |
+
+**Files Created:**
+- None (planning phase only)
+
+**Files Modified:**
+- `plans/phase-13.md` - Replaced monolithic Step 0.4 with three-phase structure (Phase A: CST Data Structures, Phase B: Scope Tracking Implementation, Phase C: Analyzer Integration); Updated Last updated date to 2026-02-01
+
+**Test Results:**
+- N/A (planning phase - implementation not started)
+
+**Checkpoints Verified:**
+- Phase A defined with Artifacts, Tasks, Design Notes, Tests, Checkpoint: PASS
+- Phase B defined with Artifacts, Tasks, Design Notes, Tests, Checkpoint: PASS
+- Phase C defined with Artifacts, Tasks, Design Notes, Tests, Checkpoint: PASS
+- Step 0.4 Success Criteria section added with per-phase and final checkpoint: PASS
+- Anchors follow convention (`{#step-0-4-phase-a}`, etc.): PASS
+
+**Key Decisions/Notes:**
+- **Breakdown Strategy:** Phase A is purely additive (no behavior change), Phase B adds scope tracking at CST level, Phase C completes the fix by updating analyzer
+- **Phase A:** Add `scope_path: Vec<String>` to `ReferenceInfo` and `ReferenceCollector`, initialize to `["<module>"]`
+- **Phase B:** Implement visit/leave methods for FunctionDef, ClassDef, Lambda, and comprehensions (ListComp, DictComp, SetComp, GeneratorExp)
+- **Phase C:** Update `NativeReferenceInfo` in cst_bridge.rs, replace `ScopeId(0)` hardcode with `find_scope_for_path_indexed()` lookup
+- **Test Progression:** Each phase has its own tests; regression tests ensure no breakage between phases
+- **Scope Entry Names:** Follow existing convention: `"<module>"`, function/class names, `"<lambda>"`, `"<listcomp>"`, `"<dictcomp>"`, `"<setcomp>"`, `"<genexpr>"`
+
+---
+
 ## [phase-13.md] Step 0.5: FactsStore Completeness Infrastructure | PLANNED | 2026-02-01
 
 **Completed:** 2026-02-01 (planning only - implementation pending)

@@ -25,7 +25,7 @@
 | Status | draft |
 | Target branch | main |
 | Tracking issue/PR | TBD |
-| Last updated | 2026-01-29 |
+| Last updated | 2026-02-01 |
 
 ---
 
@@ -6390,56 +6390,127 @@ A code-architect audit discovered a fundamental infrastructure gap that blocks t
 
 **The Fix:**
 
-Follow the existing `BindingCollector` pattern which successfully tracks `scope_path: Vec<String>` for all bindings:
+Follow the existing `BindingCollector` pattern which successfully tracks `scope_path: Vec<String>` for all bindings. Break implementation into three phases:
 
-1. Add `scope_path: Vec<String>` to `ReferenceInfo` in `reference.rs`
-2. Add scope tracking state to `ReferenceCollector`:
-   - `scope_path: Vec<String>` field (initialized to `["<module>"]`)
-   - Update in `visit_function_def` / `leave_function_def`
-   - Update in `visit_class_def` / `leave_class_def`
-   - Update in `visit_lambda` / `leave_lambda`
-   - Update for comprehension scopes (see [D09](#d09-comprehension-scope))
-3. Update analyzer to resolve `scope_path` to `ScopeId` using existing `find_scope_for_path_indexed`
+1. **Phase A:** Add data structure fields to `ReferenceInfo` and `ReferenceCollector`
+2. **Phase B:** Implement scope tracking visit/leave methods
+3. **Phase C:** Update analyzer to resolve scope_path to ScopeId
+
+**Scope Entry Names (Constants defined in Phase A):**
+
+| Construct | Constant | Value |
+|-----------|----------|-------|
+| Module | `SCOPE_MODULE` | `"<module>"` |
+| Function `def foo` | *(use name directly)* | `"foo"` |
+| Method `def bar` | *(use name directly)* | `"bar"` |
+| Class `class MyClass` | *(use name directly)* | `"MyClass"` |
+| Lambda | `SCOPE_LAMBDA` | `"<lambda>"` |
+| List comprehension | `SCOPE_LISTCOMP` | `"<listcomp>"` |
+| Dict comprehension | `SCOPE_DICTCOMP` | `"<dictcomp>"` |
+| Set comprehension | `SCOPE_SETCOMP` | `"<setcomp>"` |
+| Generator expression | `SCOPE_GENEXPR` | `"<genexpr>"` |
+
+---
+
+###### Phase A: CST Data Structures {#step-0-4-phase-a}
+
+This phase adds the `scope_path` field to `ReferenceInfo` and the scope tracking state to `ReferenceCollector`. It also defines scope name constants to eliminate magic strings. No behavioral changes yet - just data structure additions.
 
 **Artifacts:**
 
+- Modified `crates/tugtool-python-cst/src/visitor/mod.rs`:
+  - Add scope name constants (exported for use across visitor modules)
 - Modified `crates/tugtool-python-cst/src/visitor/reference.rs`:
-  - Add `scope_path: Vec<String>` to `ReferenceInfo`
-  - Add `scope_path: Vec<String>` to `ReferenceCollector`
-  - Implement scope tracking in `visit_*` / `leave_*` methods for FunctionDef, ClassDef, Lambda, comprehensions
-- Modified `crates/tugtool-python/src/analyzer.rs`:
-  - Update reference conversion loop (~line 1771) to use `native_ref.scope_path`
-  - Replace hardcoded `ScopeId(0)` with `find_scope_for_path_indexed(&native_ref.scope_path, &scope_index)`
+  - Add `scope_path: Vec<String>` field to `ReferenceInfo` struct
+  - Add `scope_path: Vec<String>` field to `ReferenceCollector` struct
+  - Update `ReferenceInfo::new()` to accept and store `scope_path`
+  - Update `add_reference_with_id()` to pass `self.scope_path.clone()`
+- Modified `crates/tugtool-python-cst/src/visitor/binding.rs`:
+  - Update to use scope name constants instead of string literals
 
 **Tasks:**
 
-- [ ] Add `scope_path: Vec<String>` field to `ReferenceInfo` struct
-- [ ] Add `scope_path: Vec<String>` field to `ReferenceCollector` struct (initialized to `["<module>"]`)
-- [ ] Update `ReferenceInfo::new()` to accept and store `scope_path`
+**A1: Define Scope Name Constants**
+
+- [ ] Add scope name constants to `crates/tugtool-python-cst/src/visitor/mod.rs`:
+  ```rust
+  /// Scope path entry for the module-level scope.
+  pub const SCOPE_MODULE: &str = "<module>";
+  /// Scope path entry for lambda expressions.
+  pub const SCOPE_LAMBDA: &str = "<lambda>";
+  /// Scope path entry for list comprehensions.
+  pub const SCOPE_LISTCOMP: &str = "<listcomp>";
+  /// Scope path entry for dict comprehensions.
+  pub const SCOPE_DICTCOMP: &str = "<dictcomp>";
+  /// Scope path entry for set comprehensions.
+  pub const SCOPE_SETCOMP: &str = "<setcomp>";
+  /// Scope path entry for generator expressions.
+  pub const SCOPE_GENEXPR: &str = "<genexpr>";
+  ```
+- [ ] Update `BindingCollector::new()` in `binding.rs` to use `SCOPE_MODULE` constant
+- [ ] Update `BindingCollector::with_positions()` in `binding.rs` to use `SCOPE_MODULE` constant
+
+**A2: Add scope_path to ReferenceInfo and ReferenceCollector**
+
+- [ ] Add `scope_path: Vec<String>` field to `ReferenceInfo` struct (after `span` field)
+- [ ] Update `ReferenceInfo::new()` signature to `fn new(kind: ReferenceKind, scope_path: Vec<String>) -> Self`
+- [ ] Add `scope_path: Vec<String>` field to `ReferenceCollector` struct
+- [ ] Initialize `scope_path` to `vec![SCOPE_MODULE.to_string()]` in `ReferenceCollector::new()` and `with_positions()`
 - [ ] Update `add_reference_with_id()` to pass `self.scope_path.clone()` to `ReferenceInfo::new()`
-- [ ] Implement `visit_function_def` / `leave_function_def` scope tracking (push/pop function name)
-- [ ] Implement `visit_class_def` / `leave_class_def` scope tracking (push/pop class name)
-- [ ] Implement lambda scope tracking (push/pop synthetic name like `"<lambda>"`)
-- [ ] Implement comprehension scope tracking per [D09](#d09-comprehension-scope) (push/pop `"<listcomp>"`, `"<dictcomp>"`, `"<setcomp>"`, `"<genexpr>"`)
-- [ ] Update `collect()` method signature if needed to ensure scope_path is accessible
-- [ ] Update analyzer reference conversion to use `find_scope_for_path_indexed()` instead of `ScopeId(0)`
-- [ ] Add unit tests for scope tracking
-- [ ] Add integration tests for parameter rename
-- [ ] Add integration tests for local variable rename
+- [ ] Verify all call sites of `ReferenceInfo::new()` are updated (search for `ReferenceInfo::new`)
 
 **Design Notes:**
 
-The implementation follows the proven pattern from `BindingCollector`:
+**Scope Name Constants:**
+
+The constants eliminate magic strings and provide a single source of truth:
 
 ```rust
-// ReferenceInfo with scope tracking
+// In crates/tugtool-python-cst/src/visitor/mod.rs
+pub const SCOPE_MODULE: &str = "<module>";
+pub const SCOPE_LAMBDA: &str = "<lambda>";
+pub const SCOPE_LISTCOMP: &str = "<listcomp>";
+pub const SCOPE_DICTCOMP: &str = "<dictcomp>";
+pub const SCOPE_SETCOMP: &str = "<setcomp>";
+pub const SCOPE_GENEXPR: &str = "<genexpr>";
+```
+
+Function and class names are used directly (not constants) since they vary per definition.
+
+**ReferenceInfo Structure:**
+
+The `ReferenceInfo` struct mirrors the `BindingInfo` pattern:
+
+```rust
+// Before (current)
 pub struct ReferenceInfo {
     pub kind: ReferenceKind,
     pub span: Option<Span>,
-    pub scope_path: Vec<String>,  // NEW: e.g., ["<module>", "MyClass", "my_method"]
 }
 
-// ReferenceCollector with scope state
+// After (Phase A)
+pub struct ReferenceInfo {
+    pub kind: ReferenceKind,
+    pub span: Option<Span>,
+    pub scope_path: Vec<String>,  // NEW: e.g., [SCOPE_MODULE, "MyClass", "my_method"]
+}
+```
+
+**ReferenceCollector Structure:**
+
+The `ReferenceCollector` struct adds scope tracking state:
+
+```rust
+// Before (current)
+pub struct ReferenceCollector<'pos> {
+    positions: Option<&'pos PositionTable>,
+    references: HashMap<String, Vec<ReferenceInfo>>,
+    context_stack: Vec<ContextEntry>,
+    assign_skip_counts: Vec<usize>,
+    context_names: HashSet<String>,
+}
+
+// After (Phase A)
 pub struct ReferenceCollector<'pos> {
     positions: Option<&'pos PositionTable>,
     references: HashMap<String, Vec<ReferenceInfo>>,
@@ -6450,34 +6521,353 @@ pub struct ReferenceCollector<'pos> {
 }
 ```
 
-**Scope Entry Names:**
+**Constructor Methods:**
 
-| Construct | Scope Entry Name |
-|-----------|-----------------|
-| Module | `"<module>"` |
-| Function `def foo` | `"foo"` |
-| Method `def bar` | `"bar"` |
-| Class `class MyClass` | `"MyClass"` |
-| Lambda | `"<lambda>"` |
-| List comprehension | `"<listcomp>"` |
-| Dict comprehension | `"<dictcomp>"` |
-| Set comprehension | `"<setcomp>"` |
-| Generator expression | `"<genexpr>"` |
+```rust
+use crate::visitor::SCOPE_MODULE;
 
-**Tests:**
+pub fn new() -> Self {
+    Self {
+        positions: None,
+        references: HashMap::new(),
+        context_stack: Vec::new(),
+        assign_skip_counts: Vec::new(),
+        context_names: HashSet::new(),
+        scope_path: vec![SCOPE_MODULE.to_string()],  // NEW: use constant
+    }
+}
 
-- [ ] Unit: `test_reference_scope_module_level` - Module-level reference has `["<module>"]`
-- [ ] Unit: `test_reference_scope_function` - Reference inside function has `["<module>", "func"]`
-- [ ] Unit: `test_reference_scope_method` - Reference inside method has `["<module>", "Class", "method"]`
-- [ ] Unit: `test_reference_scope_nested_function` - Nested function has correct scope chain
-- [ ] Unit: `test_reference_scope_lambda` - Lambda body reference has `["<module>", "<lambda>"]`
-- [ ] Unit: `test_reference_scope_comprehension` - Comprehension variable has `["<module>", "<listcomp>"]`
-- [ ] Unit: `test_reference_scope_class_body` - Reference in class body has `["<module>", "Class"]`
+pub fn with_positions(positions: &'pos PositionTable) -> Self {
+    Self {
+        positions: Some(positions),
+        references: HashMap::new(),
+        context_stack: Vec::new(),
+        assign_skip_counts: Vec::new(),
+        context_names: HashSet::new(),
+        scope_path: vec![SCOPE_MODULE.to_string()],  // NEW: use constant
+    }
+}
+```
+
+**add_reference_with_id Method:**
+
+```rust
+fn add_reference_with_id(&mut self, name: &str, kind: ReferenceKind, node_id: Option<NodeId>) {
+    let span = self.lookup_span(node_id);
+    let info = ReferenceInfo::new(kind, self.scope_path.clone()).with_span(span);  // CHANGED
+
+    self.references
+        .entry(name.to_string())
+        .or_default()
+        .push(info);
+}
+```
+
+**Tests (Phase A):**
+
+- [ ] Unit: `test_scope_constants_defined` - Verify all `SCOPE_*` constants are accessible
+- [ ] Unit: `test_reference_info_has_scope_path` - Verify `ReferenceInfo` has `scope_path` field accessible
+- [ ] Unit: `test_reference_collector_initializes_module_scope` - New collector has `[SCOPE_MODULE]` scope
+- [ ] Unit: `test_reference_scope_path_module_level` - Module-level reference has `scope_path: [SCOPE_MODULE]`
+- [ ] Unit: `test_binding_collector_uses_scope_constant` - Verify `BindingCollector` uses `SCOPE_MODULE` constant
+- [ ] Regression: All existing reference tests pass (scope_path is `[SCOPE_MODULE]` for all, matching previous `ScopeId(0)` behavior)
+
+**Checkpoint (Phase A):**
+
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst reference` passes
+- [ ] `cargo nextest run -p tugtool-python-cst binding` passes (BindingCollector still works with constant)
+- [ ] All references have `scope_path` field (initialized to `[SCOPE_MODULE]`)
+
+---
+
+###### Phase B: Scope Tracking Implementation {#step-0-4-phase-b}
+
+**Prerequisites:** Phase A complete
+
+This phase implements the visit/leave methods that push and pop scope names. After this phase, references inside functions, classes, lambdas, and comprehensions will have correct scope paths.
+
+**Artifacts:**
+
+- Modified `crates/tugtool-python-cst/src/visitor/reference.rs`:
+  - Update `visit_function_def` / `leave_function_def` to push/pop function name
+  - Update `visit_class_def` / `leave_class_def` to push/pop class name
+  - Add `visit_lambda` / `leave_lambda` using `SCOPE_LAMBDA` constant
+  - Add comprehension scope tracking using `SCOPE_LISTCOMP`, `SCOPE_DICTCOMP`, `SCOPE_SETCOMP`, `SCOPE_GENEXPR` constants
+
+**Tasks:**
+
+- [ ] Update `visit_function_def` to push function name: `self.scope_path.push(node.name.value.to_string())`
+- [ ] Update `leave_function_def` to pop: `self.scope_path.pop()`
+- [ ] Update `visit_class_def` to push class name: `self.scope_path.push(node.name.value.to_string())`
+- [ ] Update `leave_class_def` to pop: `self.scope_path.pop()`
+- [ ] Add `visit_lambda` to push: `self.scope_path.push(SCOPE_LAMBDA.to_string())`
+- [ ] Add `leave_lambda` to pop: `self.scope_path.pop()`
+- [ ] Add `visit_list_comp` / `leave_list_comp` using `SCOPE_LISTCOMP` (per [D09](#d09-comprehension-scope))
+- [ ] Add `visit_dict_comp` / `leave_dict_comp` using `SCOPE_DICTCOMP`
+- [ ] Add `visit_set_comp` / `leave_set_comp` using `SCOPE_SETCOMP`
+- [ ] Add `visit_generator_exp` / `leave_generator_exp` using `SCOPE_GENEXPR`
+
+**Design Notes:**
+
+The existing `visit_function_def` and `visit_class_def` already push skip contexts for the definition name. Add scope tracking alongside:
+
+```rust
+fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
+    // Existing: record definition
+    self.add_reference_with_id(
+        node.name.value,
+        ReferenceKind::Definition,
+        node.name.node_id,
+    );
+    // Existing: push skip context
+    let name_str = node.name.value.to_string();
+    self.context_names.insert(name_str.clone());
+    self.context_stack.push(ContextEntry {
+        kind: ContextKind::SkipName,
+        name: Some(name_str.clone()),
+    });
+    // NEW: push scope
+    self.scope_path.push(name_str);
+    VisitResult::Continue
+}
+
+fn leave_function_def(&mut self, _node: &FunctionDef<'a>) {
+    // Existing: pop skip context
+    if let Some(entry) = self.context_stack.last() {
+        if entry.kind == ContextKind::SkipName {
+            self.context_stack.pop();
+        }
+    }
+    // NEW: pop scope
+    self.scope_path.pop();
+}
+```
+
+Lambda scope tracking (new methods, using constant from Phase A):
+
+```rust
+use crate::visitor::SCOPE_LAMBDA;
+
+fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
+    self.scope_path.push(SCOPE_LAMBDA.to_string());
+    VisitResult::Continue
+}
+
+fn leave_lambda(&mut self, _node: &Lambda<'a>) {
+    self.scope_path.pop();
+}
+```
+
+Comprehension scope tracking (example for list comprehension, using constant from Phase A):
+
+```rust
+use crate::visitor::SCOPE_LISTCOMP;
+
+fn visit_list_comp(&mut self, _node: &ListComp<'a>) -> VisitResult {
+    self.scope_path.push(SCOPE_LISTCOMP.to_string());
+    VisitResult::Continue
+}
+
+fn leave_list_comp(&mut self, _node: &ListComp<'a>) {
+    self.scope_path.pop();
+}
+```
+
+**Node Type and Constant Imports:**
+
+Add to the imports at the top of `reference.rs`:
+
+```rust
+use crate::nodes::{
+    // ... existing imports ...
+    DictComp, GeneratorExp, Lambda, ListComp, SetComp,  // NEW node types
+};
+use crate::visitor::{
+    SCOPE_LAMBDA, SCOPE_LISTCOMP, SCOPE_DICTCOMP, SCOPE_SETCOMP, SCOPE_GENEXPR,  // NEW constants
+};
+```
+
+**Tests (Phase B):**
+
+- [ ] Unit: `test_reference_scope_function` - Reference inside function has `[SCOPE_MODULE, "func"]`
+- [ ] Unit: `test_reference_scope_method` - Reference inside method has `[SCOPE_MODULE, "Class", "method"]`
+- [ ] Unit: `test_reference_scope_nested_function` - Nested function has `[SCOPE_MODULE, "outer", "inner"]`
+- [ ] Unit: `test_reference_scope_lambda` - Lambda body reference has scope ending with `SCOPE_LAMBDA`
+- [ ] Unit: `test_reference_scope_lambda_in_function` - Lambda inside function: `[SCOPE_MODULE, "func", SCOPE_LAMBDA]`
+- [ ] Unit: `test_reference_scope_list_comprehension` - Comprehension variable has scope ending with `SCOPE_LISTCOMP`
+- [ ] Unit: `test_reference_scope_dict_comprehension` - Dict comprehension has `SCOPE_DICTCOMP` scope
+- [ ] Unit: `test_reference_scope_set_comprehension` - Set comprehension has `SCOPE_SETCOMP` scope
+- [ ] Unit: `test_reference_scope_generator_expression` - Generator has `SCOPE_GENEXPR` scope
+- [ ] Unit: `test_reference_scope_class_body` - Reference in class body (not method) has `[SCOPE_MODULE, "Class"]`
+- [ ] Unit: `test_reference_scope_nested_class` - Nested class has correct scope chain
+- [ ] Regression: All existing reference tests still pass
+
+**Checkpoint (Phase B):**
+
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst reference` passes
+- [ ] References inside functions have correct scope path (e.g., `[SCOPE_MODULE, "func"]`)
+- [ ] References inside methods have correct scope path (e.g., `[SCOPE_MODULE, "Class", "method"]`)
+- [ ] Lambda and comprehension references have appropriate scope entries using constants
+
+---
+
+###### Phase C: Analyzer Integration {#step-0-4-phase-c}
+
+**Prerequisites:** Phase B complete
+
+This phase updates the analyzer to use the new `scope_path` field instead of hardcoding `ScopeId(0)`. After this phase, reference resolution will work correctly for parameters and local variables.
+
+**Artifacts:**
+
+- Modified `crates/tugtool-python/src/analyzer.rs`:
+  - Update reference conversion loop (~line 1771) to use `native_ref.scope_path`
+  - Replace hardcoded `ScopeId(0)` with `find_scope_for_path_indexed(&native_ref.scope_path, &scope_index)`
+- Modified `crates/tugtool-python/src/cst_bridge.rs`:
+  - Update `NativeReferenceInfo` struct to include `scope_path: Vec<String>`
+  - Update conversion from CST `ReferenceInfo` to include scope_path
+
+**Tasks:**
+
+- [ ] Update `NativeReferenceInfo` in `cst_bridge.rs` to add `scope_path: Vec<String>` field
+- [ ] Update CST → `NativeReferenceInfo` conversion to copy `ref_info.scope_path.clone()`
+- [ ] Update analyzer reference loop to extract `scope_path` from `native_ref`
+- [ ] Replace `scope_id: ScopeId(0)` with scope lookup using `find_scope_for_path_indexed()`
+- [ ] Handle case where scope path doesn't match (fallback to `ScopeId(0)` with warning or use closest match)
+- [ ] Verify `refs_of_symbol(param_symbol_id)` returns body references for parameters
+- [ ] Verify `refs_of_symbol(local_var_symbol_id)` returns all uses in the function
+
+**Design Notes:**
+
+Update `NativeReferenceInfo` in `cst_bridge.rs`:
+
+```rust
+// Before
+pub struct NativeReferenceInfo {
+    pub kind: String,
+    pub span: Option<crate::nodes::Span>,
+    pub line: u32,
+    pub col: u32,
+}
+
+// After
+pub struct NativeReferenceInfo {
+    pub kind: String,
+    pub span: Option<crate::nodes::Span>,
+    pub line: u32,
+    pub col: u32,
+    pub scope_path: Vec<String>,  // NEW
+}
+```
+
+Update the conversion in `cst_bridge.rs`:
+
+```rust
+// In the loop that converts CST references to NativeReferenceInfo
+NativeReferenceInfo {
+    kind: ref_info.kind.as_str().to_string(),
+    span: ref_info.span,
+    line,
+    col,
+    scope_path: ref_info.scope_path.clone(),  // NEW
+}
+```
+
+Update the analyzer reference loop (around line 1771):
+
+```rust
+// Before
+for (name, native_refs) in &native_result.references {
+    for native_ref in native_refs {
+        references.push(LocalReference {
+            name: name.clone(),
+            kind: reference_kind_from_str(&native_ref.kind),
+            span: native_ref.span.as_ref().map(|s| Span::new(s.start, s.end)),
+            line: native_ref.line,
+            col: native_ref.col,
+            scope_id: ScopeId(0),  // HARDCODED - WRONG!
+            resolved_symbol: Some(name.clone()),
+        });
+    }
+}
+
+// After
+for (name, native_refs) in &native_result.references {
+    for native_ref in native_refs {
+        // Resolve scope_path to ScopeId using the scope index
+        let scope_id = find_scope_for_path_indexed(&native_ref.scope_path, &scope_index)
+            .unwrap_or(ScopeId(0));  // Fallback to module scope if path not found
+
+        references.push(LocalReference {
+            name: name.clone(),
+            kind: reference_kind_from_str(&native_ref.kind),
+            span: native_ref.span.as_ref().map(|s| Span::new(s.start, s.end)),
+            line: native_ref.line,
+            col: native_ref.col,
+            scope_id,  // RESOLVED from scope_path
+            resolved_symbol: Some(name.clone()),
+        });
+    }
+}
+```
+
+**Scope Index Construction:**
+
+Ensure `scope_index` (a `HashMap<Vec<String>, ScopeId>`) is built during scope construction. The existing `build_scopes()` function returns `_scope_map` which may already provide this, or needs to be enhanced to return a path-indexed map.
+
+**Tests (Phase C):**
+
+- [ ] Unit: `test_analyzer_reference_scope_resolution` - References get correct ScopeId based on scope_path
+- [ ] Unit: `test_analyzer_parameter_references_found` - `refs_of_symbol(param_id)` returns body uses
+- [ ] Unit: `test_analyzer_local_variable_references_found` - `refs_of_symbol(local_id)` returns all uses
 - [ ] Integration: `test_rename_parameter_updates_body` - Renaming parameter updates all body uses
 - [ ] Integration: `test_rename_local_variable` - Renaming local variable updates all uses in function
 - [ ] Integration: `test_rename_method_parameter` - Renaming method parameter works correctly
+- [ ] Integration: `test_rename_nested_function_param` - Parameter in nested function renamed correctly
+- [ ] Regression: All existing rename tests pass
 
-**Checkpoint:**
+**Checkpoint (Phase C):**
+
+- [ ] `cargo build -p tugtool-python` succeeds
+- [ ] `cargo nextest run -p tugtool-python rename` passes
+- [ ] `refs_of_symbol(param_symbol_id)` returns body references for parameters
+- [ ] `refs_of_symbol(local_var_symbol_id)` returns all uses in function
+- [ ] Renaming a function parameter renames all uses in the function body
+
+---
+
+###### Step 0.4 Success Criteria {#step-0-4-success}
+
+**Phase A Success (Data Structures):**
+
+- [ ] Scope name constants defined in `visitor/mod.rs` (`SCOPE_MODULE`, `SCOPE_LAMBDA`, etc.)
+- [ ] `ReferenceInfo` has `scope_path: Vec<String>` field
+- [ ] `ReferenceCollector` has `scope_path: Vec<String>` field initialized to `[SCOPE_MODULE]`
+- [ ] `BindingCollector` updated to use `SCOPE_MODULE` constant
+- [ ] All references created have `scope_path` (even if just `[SCOPE_MODULE]`)
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] All existing reference and binding tests pass
+
+**Phase B Success (Scope Tracking):**
+
+- [ ] References inside functions have correct scope path (e.g., `[SCOPE_MODULE, "func"]`)
+- [ ] References inside methods have correct scope path (e.g., `[SCOPE_MODULE, "Class", "method"]`)
+- [ ] Lambda references have `SCOPE_LAMBDA` in scope path
+- [ ] Comprehension references have appropriate scope (`SCOPE_LISTCOMP`, `SCOPE_DICTCOMP`, etc.)
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] All existing reference tests pass
+- [ ] New scope tracking tests pass
+
+**Phase C Success (Analyzer Integration):**
+
+- [ ] `NativeReferenceInfo` includes `scope_path`
+- [ ] Analyzer resolves `scope_path` to `ScopeId` instead of hardcoding `ScopeId(0)`
+- [ ] `refs_of_symbol(param_symbol_id)` returns body references for parameters
+- [ ] `refs_of_symbol(local_var_symbol_id)` returns all uses in function
+- [ ] Renaming a function parameter renames all uses in the function body
+
+**Final Checkpoint:**
 
 - [ ] `cargo build -p tugtool-python-cst` succeeds
 - [ ] `cargo build -p tugtool-python` succeeds
