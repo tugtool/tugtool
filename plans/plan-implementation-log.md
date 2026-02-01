@@ -6,6 +6,69 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8 Phase C: Add refs_by_scope Index | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase C specification (lines 8190-8263)
+- `crates/tugtool-core/src/facts/mod.rs` - Reference struct, FactsStore struct, insert_reference, clear methods
+- `crates/tugtool-python/src/analyzer.rs` - Pass 2/3 reference insertion, scope_id_map usage
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `refs_by_scope` index to `FactsStore` | Done |
+| Add `Reference.scope_id` field | Done |
+| Add `Reference.with_scope_id()` builder method | Done |
+| Update `insert_reference()` to populate index | Done |
+| Add `refs_in_scope()` query method | Done |
+| Update `clear()` method | Done |
+| Update `Default` impl for `refs_by_scope` | Done |
+| Update analyzer Pass 3 to populate scope_id | Done |
+| Update `insert_method_call_reference` in Pass 4 | Done |
+| Write unit tests (6 tests) | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `scope_id: Option<ScopeId>` field to `Reference` struct with serde skip_serializing_if
+  - Added `with_scope_id()` builder method to `Reference`
+  - Added `refs_by_scope: HashMap<(FileId, ScopeId), Vec<ReferenceId>>` to `FactsStore`
+  - Updated `insert_reference()` to populate scope index when scope_id is set
+  - Added `refs_in_scope()` query method returning sorted references
+  - Updated `clear()` to clear `refs_by_scope`
+  - Updated `Default` impl to initialize `refs_by_scope`
+  - Added 6 unit tests in `refs_by_scope_tests` module
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated Pass 3 reference insertion to set `scope_id` using `scope_id_map`
+  - Updated `insert_method_call_reference` in Pass 4 to set `scope_id` using `scope_at_position()`
+  - Fixed clippy warning (redundant closure in TypeNode::named conversion)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core refs_by_scope`: 6 tests passed
+- `cargo nextest run -p tugtool-core facts`: 222 tests passed
+- `cargo nextest run -p tugtool-python`: 842 tests passed
+- `cargo nextest run --workspace`: 2471 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `refs_by_scope` index added to FactsStore: PASS
+- `Reference.scope_id` field present with `Option<ScopeId>` type: PASS
+- `refs_in_scope()` query method works correctly: PASS
+- Index populated on `insert_reference()` when scope_id is set: PASS
+- Index cleared on `store.clear()`: PASS
+- All existing tests pass: PASS
+- No clippy warnings: PASS
+
+**Key Decisions/Notes:**
+- Used `scope_id_map` (built in Pass 2a) to map local scope IDs to core scope IDs in Pass 3
+- For method call references in Pass 4, used `scope_at_position()` since scope_id_map is not in scope
+- Added `test_insert_reference_without_scope_id` test (not in plan) to verify backwards compatibility
+- References without scope_id are still tracked in `refs_by_file` but not in `refs_by_scope`
+
+---
+
 ## [phase-13.md] Step 0.8.5: Type Hierarchy & Name Cleanup | PLANNED | 2026-02-01
 
 **Completed:** 2026-02-01

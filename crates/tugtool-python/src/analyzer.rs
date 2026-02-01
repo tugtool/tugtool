@@ -954,13 +954,17 @@ fn insert_method_call_reference(
         if type_matches || self_in_class {
             // Insert reference from call site to method symbol
             let ref_id = store.next_reference_id();
-            let reference = Reference::new(
+            let mut reference = Reference::new(
                 ref_id,
                 *method_symbol_id,
                 file_id,
                 method_span,
                 ReferenceKind::Call,
             );
+            // Set scope_id from position lookup
+            if let Some(scope) = store.scope_at_position(file_id, method_span.start) {
+                reference = reference.with_scope_id(scope.scope_id);
+            }
             store.insert_reference(reference);
             break; // Found a match, stop searching
         }
@@ -1607,8 +1611,12 @@ pub fn analyze_files(
             if let Some(symbol_id) = resolved_symbol_id {
                 // Create reference
                 let ref_id = store.next_reference_id();
-                let reference =
+                let mut reference =
                     Reference::new(ref_id, symbol_id, file_id, ref_span, local_ref.kind);
+                // Set scope_id for scope-aware queries
+                if let Some(&core_scope_id) = scope_id_map.get(&(file_id, local_ref.scope_id)) {
+                    reference = reference.with_scope_id(core_scope_id);
+                }
                 store.insert_reference(reference);
             }
             // Note: Unresolved references are silently dropped.
@@ -2016,7 +2024,7 @@ pub(crate) fn convert_cst_signature(cst: &SignatureInfo) -> SignatureData {
                 .map(|b| vec![TypeNode::named(b)])
                 .unwrap_or_default();
             // Convert default string to TypeNode if present
-            let default = tp.default.as_ref().map(|d| TypeNode::named(d));
+            let default = tp.default.as_ref().map(TypeNode::named);
             TypeParamData {
                 name: tp.name.clone(),
                 bounds,

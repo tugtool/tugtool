@@ -964,6 +964,9 @@ pub struct Reference {
     pub span: Span,
     /// Kind of reference.
     pub ref_kind: ReferenceKind,
+    /// Scope where this reference occurs (for scope-aware queries).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub scope_id: Option<ScopeId>,
 }
 
 impl Reference {
@@ -981,7 +984,14 @@ impl Reference {
             file_id,
             span,
             ref_kind,
+            scope_id: None,
         }
+    }
+
+    /// Set the scope ID for this reference.
+    pub fn with_scope_id(mut self, scope_id: ScopeId) -> Self {
+        self.scope_id = Some(scope_id);
+        self
     }
 }
 
@@ -2347,6 +2357,8 @@ pub struct FactsStore {
     refs_by_file: HashMap<FileId, Vec<ReferenceId>>,
     /// file_id → scope_ids[] (scopes in file, sorted by scope_id).
     scopes_by_file: HashMap<FileId, Vec<ScopeId>>,
+    /// (file_id, scope_id) → ref_ids[] for efficient scope-based queries.
+    refs_by_scope: HashMap<(FileId, ScopeId), Vec<ReferenceId>>,
 
     // Alias edge indexes
     /// file_id → alias_edge_ids[] (alias edges in file).
@@ -2452,6 +2464,7 @@ impl Default for FactsStore {
             symbols_by_file: HashMap::new(),
             refs_by_file: HashMap::new(),
             scopes_by_file: HashMap::new(),
+            refs_by_scope: HashMap::new(),
             alias_edges_by_file: HashMap::new(),
             alias_edges_by_alias: HashMap::new(),
             alias_edges_by_target: HashMap::new(),
@@ -2641,6 +2654,14 @@ impl FactsStore {
             .entry(reference.file_id)
             .or_default()
             .push(reference.ref_id);
+
+        // Update scope postings list
+        if let Some(scope_id) = reference.scope_id {
+            self.refs_by_scope
+                .entry((reference.file_id, scope_id))
+                .or_default()
+                .push(reference.ref_id);
+        }
 
         // Insert into primary storage
         self.references.insert(reference.ref_id, reference);
@@ -3219,6 +3240,23 @@ impl FactsStore {
             .unwrap_or_default()
     }
 
+    /// Get all references in a specific scope.
+    ///
+    /// Returns references in deterministic order (by ReferenceId).
+    pub fn refs_in_scope(&self, file_id: FileId, scope_id: ScopeId) -> Vec<&Reference> {
+        self.refs_by_scope
+            .get(&(file_id, scope_id))
+            .map(|ids| {
+                let mut refs: Vec<_> = ids
+                    .iter()
+                    .filter_map(|id| self.references.get(id))
+                    .collect();
+                refs.sort_by_key(|r| r.ref_id);
+                refs
+            })
+            .unwrap_or_default()
+    }
+
     /// Get type information for a symbol.
     pub fn type_of_symbol(&self, symbol_id: SymbolId) -> Option<&TypeInfo> {
         self.types.get(&symbol_id)
@@ -3678,6 +3716,7 @@ impl FactsStore {
         self.symbols_by_file.clear();
         self.refs_by_file.clear();
         self.scopes_by_file.clear();
+        self.refs_by_scope.clear();
 
         self.alias_edges.clear();
         self.alias_edges_by_file.clear();
@@ -8652,6 +8691,253 @@ mod tests {
             assert_eq!(store.isinstance_checks().count(), 3);
             assert_eq!(store.dynamic_patterns().count(), 2);
             assert_eq!(store.type_comments().count(), 0);
+        }
+    }
+
+    // ========================================================================
+    // refs_by_scope Tests
+    // ========================================================================
+
+    mod refs_by_scope_tests {
+        use super::*;
+
+        #[test]
+        fn test_refs_in_scope_returns_scoped_references() {
+            let mut store = FactsStore::new();
+
+            // Create a file
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Variable,
+                "x",
+                file_id,
+                Span::new(0, 1),
+            );
+            store.insert_symbol(symbol);
+
+            // Create two scopes
+            let scope1_id = store.next_scope_id();
+            let scope1 = ScopeInfo::new(scope1_id, file_id, Span::new(0, 50), ScopeKind::Function);
+            store.insert_scope(scope1);
+
+            let scope2_id = store.next_scope_id();
+            let scope2 = ScopeInfo::new(scope2_id, file_id, Span::new(60, 100), ScopeKind::Function);
+            store.insert_scope(scope2);
+
+            // Create references in different scopes
+            let ref1_id = store.next_reference_id();
+            let ref1 = Reference::new(ref1_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
+                .with_scope_id(scope1_id);
+            store.insert_reference(ref1);
+
+            let ref2_id = store.next_reference_id();
+            let ref2 = Reference::new(ref2_id, symbol_id, file_id, Span::new(20, 21), ReferenceKind::Reference)
+                .with_scope_id(scope1_id);
+            store.insert_reference(ref2);
+
+            let ref3_id = store.next_reference_id();
+            let ref3 = Reference::new(ref3_id, symbol_id, file_id, Span::new(70, 71), ReferenceKind::Reference)
+                .with_scope_id(scope2_id);
+            store.insert_reference(ref3);
+
+            // Query scope1 - should get ref1 and ref2
+            let refs_in_scope1 = store.refs_in_scope(file_id, scope1_id);
+            assert_eq!(refs_in_scope1.len(), 2);
+            assert!(refs_in_scope1.iter().any(|r| r.ref_id == ref1_id));
+            assert!(refs_in_scope1.iter().any(|r| r.ref_id == ref2_id));
+
+            // Query scope2 - should get ref3
+            let refs_in_scope2 = store.refs_in_scope(file_id, scope2_id);
+            assert_eq!(refs_in_scope2.len(), 1);
+            assert_eq!(refs_in_scope2[0].ref_id, ref3_id);
+        }
+
+        #[test]
+        fn test_refs_in_scope_empty_for_unknown_scope() {
+            let mut store = FactsStore::new();
+
+            // Create a file
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Query with non-existent scope
+            let unknown_scope_id = ScopeId::new(999);
+            let refs = store.refs_in_scope(file_id, unknown_scope_id);
+            assert!(refs.is_empty());
+        }
+
+        #[test]
+        fn test_refs_in_scope_deterministic_order() {
+            let mut store = FactsStore::new();
+
+            // Create a file
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Variable,
+                "x",
+                file_id,
+                Span::new(0, 1),
+            );
+            store.insert_symbol(symbol);
+
+            // Create a scope
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Function);
+            store.insert_scope(scope);
+
+            // Insert references (intentionally in reverse order to test sorting)
+            let ref3_id = store.next_reference_id();
+            let ref3 = Reference::new(ref3_id, symbol_id, file_id, Span::new(30, 31), ReferenceKind::Reference)
+                .with_scope_id(scope_id);
+
+            let ref1_id = store.next_reference_id();
+            let ref1 = Reference::new(ref1_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
+                .with_scope_id(scope_id);
+
+            let ref2_id = store.next_reference_id();
+            let ref2 = Reference::new(ref2_id, symbol_id, file_id, Span::new(20, 21), ReferenceKind::Reference)
+                .with_scope_id(scope_id);
+
+            // Insert in non-sorted order
+            store.insert_reference(ref3);
+            store.insert_reference(ref1);
+            store.insert_reference(ref2);
+
+            // Query - should be sorted by ref_id
+            let refs = store.refs_in_scope(file_id, scope_id);
+            assert_eq!(refs.len(), 3);
+            assert_eq!(refs[0].ref_id, ref3_id); // First ref_id generated
+            assert_eq!(refs[1].ref_id, ref1_id);
+            assert_eq!(refs[2].ref_id, ref2_id);
+        }
+
+        #[test]
+        fn test_insert_reference_updates_scope_index() {
+            let mut store = FactsStore::new();
+
+            // Create a file
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Variable,
+                "x",
+                file_id,
+                Span::new(0, 1),
+            );
+            store.insert_symbol(symbol);
+
+            // Create a scope
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Function);
+            store.insert_scope(scope);
+
+            // Initially empty
+            assert!(store.refs_in_scope(file_id, scope_id).is_empty());
+
+            // Insert a reference with scope_id
+            let ref_id = store.next_reference_id();
+            let reference = Reference::new(ref_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
+                .with_scope_id(scope_id);
+            store.insert_reference(reference);
+
+            // Index should be populated
+            let refs = store.refs_in_scope(file_id, scope_id);
+            assert_eq!(refs.len(), 1);
+            assert_eq!(refs[0].ref_id, ref_id);
+        }
+
+        #[test]
+        fn test_insert_reference_without_scope_id() {
+            let mut store = FactsStore::new();
+
+            // Create a file
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Variable,
+                "x",
+                file_id,
+                Span::new(0, 1),
+            );
+            store.insert_symbol(symbol);
+
+            // Insert a reference WITHOUT scope_id
+            let ref_id = store.next_reference_id();
+            let reference = Reference::new(ref_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference);
+            // Note: not calling .with_scope_id()
+            store.insert_reference(reference);
+
+            // Reference should still be in refs_by_file
+            let refs_in_file = store.refs_in_file(file_id);
+            assert_eq!(refs_in_file.len(), 1);
+
+            // But not in any scope index (no scope_id was set)
+            let unknown_scope_id = ScopeId::new(999);
+            assert!(store.refs_in_scope(file_id, unknown_scope_id).is_empty());
+        }
+
+        #[test]
+        fn test_scope_index_cleared_on_store_clear() {
+            let mut store = FactsStore::new();
+
+            // Create a file
+            let file = test_file(&mut store, "test.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Create a symbol
+            let symbol_id = store.next_symbol_id();
+            let symbol = Symbol::new(
+                symbol_id,
+                SymbolKind::Variable,
+                "x",
+                file_id,
+                Span::new(0, 1),
+            );
+            store.insert_symbol(symbol);
+
+            // Create a scope
+            let scope_id = store.next_scope_id();
+            let scope = ScopeInfo::new(scope_id, file_id, Span::new(0, 100), ScopeKind::Function);
+            store.insert_scope(scope);
+
+            // Insert a reference with scope_id
+            let ref_id = store.next_reference_id();
+            let reference = Reference::new(ref_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
+                .with_scope_id(scope_id);
+            store.insert_reference(reference);
+
+            // Verify index is populated
+            assert_eq!(store.refs_in_scope(file_id, scope_id).len(), 1);
+
+            // Clear the store
+            store.clear();
+
+            // Index should be empty now
+            assert!(store.refs_in_scope(file_id, scope_id).is_empty());
         }
     }
 }

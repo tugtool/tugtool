@@ -8195,14 +8195,14 @@ tracker.process_properties(&adapter_sigs);
 
 **Tasks:**
 
-- [ ] Add `refs_by_scope` index to `FactsStore`:
+- [x] Add `refs_by_scope` index to `FactsStore`:
   ```rust
   // In FactsStore struct
   /// (file_id, scope_id) -> ref_ids[] for efficient scope-based queries.
   refs_by_scope: HashMap<(FileId, ScopeId), Vec<ReferenceId>>,
   ```
 
-- [ ] Update `insert_reference()` to populate the index:
+- [x] Update `insert_reference()` to populate the index:
   ```rust
   pub fn insert_reference(&mut self, reference: Reference) {
       // ... existing code ...
@@ -8217,7 +8217,7 @@ tracker.process_properties(&adapter_sigs);
   }
   ```
 
-- [ ] Add `Reference.scope_id` field if not present:
+- [x] Add `Reference.scope_id` field if not present:
   ```rust
   pub struct Reference {
       // ... existing fields ...
@@ -8226,7 +8226,7 @@ tracker.process_properties(&adapter_sigs);
   }
   ```
 
-- [ ] Add `refs_in_scope()` query method:
+- [x] Add `refs_in_scope()` query method:
   ```rust
   /// Get all references in a specific scope.
   ///
@@ -8246,19 +8246,20 @@ tracker.process_properties(&adapter_sigs);
   }
   ```
 
-- [ ] Update `clear()` method to clear the new index
+- [x] Update `clear()` method to clear the new index
 
-- [ ] Update analyzer Pass 2 to populate `scope_id` on references
+- [x] Update analyzer Pass 2 to populate `scope_id` on references
 
 **Code Location:** `crates/tugtool-core/src/facts/mod.rs`
 
 **Tests:**
 
-- [ ] Unit: `test_refs_in_scope_returns_scoped_references` - Only refs in specified scope returned
-- [ ] Unit: `test_refs_in_scope_empty_for_unknown_scope` - Unknown scope returns empty
-- [ ] Unit: `test_refs_in_scope_deterministic_order` - Results are deterministic
-- [ ] Unit: `test_insert_reference_updates_scope_index` - Index populated on insert
-- [ ] Unit: `test_scope_index_cleared_on_store_clear` - Index cleared properly
+- [x] Unit: `test_refs_in_scope_returns_scoped_references` - Only refs in specified scope returned
+- [x] Unit: `test_refs_in_scope_empty_for_unknown_scope` - Unknown scope returns empty
+- [x] Unit: `test_refs_in_scope_deterministic_order` - Results are deterministic
+- [x] Unit: `test_insert_reference_updates_scope_index` - Index populated on insert
+- [x] Unit: `test_scope_index_cleared_on_store_clear` - Index cleared properly
+- [x] Unit: `test_insert_reference_without_scope_id` - Reference without scope_id still works
 
 ---
 
