@@ -1599,7 +1599,7 @@ def foo():
 
             let alias_graph =
                 crate::alias::AliasGraph::from_analysis(&assignments, &HashSet::new());
-            let scopes = vec![Scope::new(ScopeId(0), ScopeKind::Module, None, None)];
+            let scopes = vec![Scope::new(ScopeId(0), ScopeKind::Module, None, None, 0)];
             let file_analysis = FileAnalysis {
                 file_id: FileId(0),
                 path: "test.py".to_string(),
@@ -1656,7 +1656,7 @@ def foo():
 
             let alias_graph =
                 crate::alias::AliasGraph::from_analysis(&assignments, &HashSet::new());
-            let scopes = vec![Scope::new(ScopeId(0), ScopeKind::Module, None, None)];
+            let scopes = vec![Scope::new(ScopeId(0), ScopeKind::Module, None, None, 0)];
             let file_analysis = FileAnalysis {
                 file_id: FileId(0),
                 path: "test.py".to_string(),

@@ -60,7 +60,11 @@ impl CallArgInfo {
     }
 
     /// Create a new keyword argument.
-    pub fn keyword(name: String, value_span: Option<Span>, keyword_name_span: Option<Span>) -> Self {
+    pub fn keyword(
+        name: String,
+        value_span: Option<Span>,
+        keyword_name_span: Option<Span>,
+    ) -> Self {
         Self {
             name: Some(name),
             span: value_span,

@@ -250,19 +250,20 @@ pub fn analyze_param(
     let function_symbol = find_containing_function(&store, symbol.symbol_id)?;
 
     // Get function file content for line/col computation
-    let function_file = store
-        .file(function_symbol.decl_file_id)
-        .ok_or_else(|| RenameParamError::AnalyzerError {
+    let function_file = store.file(function_symbol.decl_file_id).ok_or_else(|| {
+        RenameParamError::AnalyzerError {
             message: "function file not found".to_string(),
-        })?;
+        }
+    })?;
     let function_content = read_file(workspace_root, &function_file.path)?;
 
     // Get parameter file content
-    let param_file = store
-        .file(symbol.decl_file_id)
-        .ok_or_else(|| RenameParamError::AnalyzerError {
-            message: "parameter file not found".to_string(),
-        })?;
+    let param_file =
+        store
+            .file(symbol.decl_file_id)
+            .ok_or_else(|| RenameParamError::AnalyzerError {
+                message: "parameter file not found".to_string(),
+            })?;
     let param_content = read_file(workspace_root, &param_file.path)?;
 
     // Build parameter info
@@ -308,11 +309,12 @@ pub fn analyze_param(
 
     // Collect references
     for reference in store.refs_of_symbol(symbol.symbol_id) {
-        let ref_file = store.file(reference.file_id).ok_or_else(|| {
-            RenameParamError::AnalyzerError {
-                message: "reference file not found".to_string(),
-            }
-        })?;
+        let ref_file =
+            store
+                .file(reference.file_id)
+                .ok_or_else(|| RenameParamError::AnalyzerError {
+                    message: "reference file not found".to_string(),
+                })?;
         let ref_content = read_file(workspace_root, &ref_file.path)?;
         let (ref_line, ref_col) = byte_offset_to_position_str(&ref_content, reference.span.start);
 

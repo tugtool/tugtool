@@ -98,7 +98,11 @@ pub struct TypeCommentError {
 
 impl std::fmt::Display for TypeCommentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Invalid type comment '{}': {}", self.comment, self.message)
+        write!(
+            f,
+            "Invalid type comment '{}': {}",
+            self.comment, self.message
+        )
     }
 }
 
@@ -149,7 +153,6 @@ enum CommentToken {
 pub struct TypeCommentParser;
 
 impl TypeCommentParser {
-
     /// Parse a type comment and extract type references.
     ///
     /// # Arguments
@@ -237,7 +240,10 @@ impl TypeCommentParser {
         replacements.sort_by(|a, b| b.offset_in_content.cmp(&a.offset_in_content));
 
         for r in replacements {
-            result.replace_range(r.offset_in_content..r.offset_in_content + r.length, new_name);
+            result.replace_range(
+                r.offset_in_content..r.offset_in_content + r.length,
+                new_name,
+            );
         }
 
         // Reconstruct the full comment
@@ -626,13 +632,16 @@ mod tests {
 
     #[test]
     fn test_type_comment_rename_simple() {
-        let result = TypeCommentParser::rename("# type: Handler", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("# type: Handler", "Handler", "RequestHandler").unwrap();
         assert_eq!(result, "# type: RequestHandler");
     }
 
     #[test]
     fn test_type_comment_rename_generic() {
-        let result = TypeCommentParser::rename("# type: List[Handler]", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("# type: List[Handler]", "Handler", "RequestHandler")
+                .unwrap();
         assert_eq!(result, "# type: List[RequestHandler]");
     }
 
@@ -641,38 +650,46 @@ mod tests {
         let result = TypeCommentParser::rename(
             "# type: Dict[Handler, Handler]",
             "Handler",
-            "RequestHandler"
-        ).unwrap();
+            "RequestHandler",
+        )
+        .unwrap();
         assert_eq!(result, "# type: Dict[RequestHandler, RequestHandler]");
     }
 
     #[test]
     fn test_type_comment_rename_qualified() {
-        let result = TypeCommentParser::rename("# type: module.Handler", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("# type: module.Handler", "Handler", "RequestHandler")
+                .unwrap();
         assert_eq!(result, "# type: module.RequestHandler");
     }
 
     #[test]
     fn test_type_comment_rename_function_sig() {
-        let result = TypeCommentParser::rename("# type: (Handler) -> Handler", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("# type: (Handler) -> Handler", "Handler", "RequestHandler")
+                .unwrap();
         assert_eq!(result, "# type: (RequestHandler) -> RequestHandler");
     }
 
     #[test]
     fn test_type_comment_rename_ignore_unchanged() {
-        let result = TypeCommentParser::rename("# type: ignore", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("# type: ignore", "Handler", "RequestHandler").unwrap();
         assert_eq!(result, "# type: ignore");
     }
 
     #[test]
     fn test_type_comment_rename_not_found() {
-        let result = TypeCommentParser::rename("# type: List[int]", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("# type: List[int]", "Handler", "RequestHandler").unwrap();
         assert_eq!(result, "# type: List[int]");
     }
 
     #[test]
     fn test_type_comment_rename_preserves_spacing() {
-        let result = TypeCommentParser::rename("#type:Handler", "Handler", "RequestHandler").unwrap();
+        let result =
+            TypeCommentParser::rename("#type:Handler", "Handler", "RequestHandler").unwrap();
         assert_eq!(result, "#type:RequestHandler");
     }
 

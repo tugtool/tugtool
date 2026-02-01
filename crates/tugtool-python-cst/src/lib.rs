@@ -65,8 +65,8 @@ pub mod visitor;
 pub use visitor::{
     apply_indentation, detect_indentation, detect_indentation_level, spans_overlap, BatchEditError,
     BatchEditOptions, BatchEditResult, BatchSpanEditor, BindingCollector, BindingInfo, BindingKind,
-    EditPrimitive, ExportCollector, ExportInfo, ExportKind, IndentInfo, ReferenceCollector,
-    CstReferenceRecord, ReferenceKind, RenameError, RenameRequest, RenameResult, RenameTransformer,
+    CstReferenceRecord, EditPrimitive, ExportCollector, ExportInfo, ExportKind, IndentInfo,
+    ReferenceCollector, ReferenceKind, RenameError, RenameRequest, RenameResult, RenameTransformer,
     ScopeCollector, ScopeInfo, ScopeKind, Transform, Transformer, VisitResult, Visitor,
 };
 // P1 visitor exports

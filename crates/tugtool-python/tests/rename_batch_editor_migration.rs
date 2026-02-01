@@ -62,7 +62,10 @@ fn test_batch_editor_preserves_formatting() {
 
     let result = apply_batch_edits(source, edits).expect("apply should succeed");
     assert!(result.contains("# Comment"), "comment should be preserved");
-    assert!(result.contains("def   bar   ()"), "spacing should be preserved");
+    assert!(
+        result.contains("def   bar   ()"),
+        "spacing should be preserved"
+    );
     assert!(result.contains("return bar"), "return should be renamed");
 }
 
@@ -103,7 +106,6 @@ fn test_rename_migration_simple() {
         (Span::new(22, 25), "bar".to_string()),
     ];
 
-    
     let legacy_result = rewrite_batch(source, &rewrites).expect("legacy should succeed");
     let edits = rewrites_to_edit_primitives(&rewrites);
     let new_result = apply_batch_edits(source, edits).expect("new should succeed");
@@ -124,11 +126,10 @@ fn test_rename_migration_multifile_simulation() {
     //             0   4          15
     let source_a = "def foo():\n    foo()";
     let edits_a = vec![
-        (Span::new(4, 7), "bar".to_string()),  // "foo" in def
+        (Span::new(4, 7), "bar".to_string()),   // "foo" in def
         (Span::new(15, 18), "bar".to_string()), // "foo" in call
     ];
 
-    
     let legacy_a = rewrite_batch(source_a, &edits_a).expect("legacy should succeed");
     let new_a = apply_batch_edits(source_a, rewrites_to_edit_primitives(&edits_a))
         .expect("new should succeed");
@@ -141,7 +142,6 @@ fn test_rename_migration_multifile_simulation() {
     let source_b = "x = foo";
     let edits_b = vec![(Span::new(4, 7), "bar".to_string())];
 
-    
     let legacy_b = rewrite_batch(source_b, &edits_b).expect("legacy should succeed");
     let new_b = apply_batch_edits(source_b, rewrites_to_edit_primitives(&edits_b))
         .expect("new should succeed");
@@ -157,7 +157,6 @@ fn test_rename_migration_multifile_simulation() {
         (Span::new(6, 9), "bar".to_string()),
     ];
 
-    
     let legacy_c = rewrite_batch(source_c, &edits_c).expect("legacy should succeed");
     let new_c = apply_batch_edits(source_c, rewrites_to_edit_primitives(&edits_c))
         .expect("new should succeed");
@@ -174,7 +173,7 @@ fn test_rename_migration_complex() {
     let source = "class Foo:\n    x = Foo()\n    y = Foo";
 
     // Verify byte positions before defining edits
-    assert_eq!(&source[6..9], "Foo");   // class Foo
+    assert_eq!(&source[6..9], "Foo"); // class Foo
     assert_eq!(&source[19..22], "Foo"); // x = Foo()
     assert_eq!(&source[33..36], "Foo"); // y = Foo
 
@@ -205,7 +204,6 @@ fn test_rename_migration_adjacent_spans() {
         (Span::new(3, 6), "BAR".to_string()),
     ];
 
-    
     let legacy_result = rewrite_batch(source, &rewrites).expect("legacy should succeed");
     let edits = rewrites_to_edit_primitives(&rewrites);
     let new_result = apply_batch_edits(source, edits).expect("new should succeed");
@@ -226,7 +224,6 @@ fn test_rename_migration_varying_lengths() {
         (Span::new(10, 11), "very_long_variable_name".to_string()),
     ];
 
-    
     let legacy_result = rewrite_batch(source, &rewrites).expect("legacy should succeed");
     let edits = rewrites_to_edit_primitives(&rewrites);
     let new_result = apply_batch_edits(source, edits).expect("new should succeed");
@@ -250,7 +247,6 @@ fn test_migration_out_of_bounds_error() {
     let source = "short";
     let rewrites = vec![(Span::new(0, 100), "x".to_string())];
 
-    
     let legacy_result = rewrite_batch(source, &rewrites);
     let edits = rewrites_to_edit_primitives(&rewrites);
     let new_result = apply_batch_edits(source, edits);
@@ -268,7 +264,6 @@ fn test_migration_overlapping_spans_error() {
         (Span::new(5, 11), "there".to_string()), // " world" - overlaps!
     ];
 
-    
     let legacy_result = rewrite_batch(source, &rewrites);
     let edits = rewrites_to_edit_primitives(&rewrites);
     let new_result = apply_batch_edits(source, edits);

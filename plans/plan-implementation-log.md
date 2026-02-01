@@ -6,6 +6,74 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.4 Phase C: Analyzer Integration | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` lines 6716-7008 - Phase C specification (redesigned approach)
+- `plans/step-0.4-phase-c-remediation.md` - Remediation report documenting design flaw and solution
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - ScopeCollector implementation
+- `crates/tugtool-python/src/analyzer.rs` - SpanScopeIndex and reference resolution
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| C1: Add `scope_path` to `ParsedReferenceInfo` | Done (from earlier work) |
+| C1: Update CST → ParsedReferenceInfo conversion | Done (from earlier work) |
+| C2: Add `depth: u32` to `ScopeInfo` (CST layer) | Done |
+| C2: Add `depth: u32` to `ScopeInfo` (adapter layer) | Done |
+| C2: Add `depth: u32` to `Scope` (analyzer) | Done |
+| C2: Create `SpanScopeIndex` structure | Done |
+| C2: Implement `find_containing_scope()` with depth tie-breaking | Done |
+| C3: Update reference resolution to use span-based lookup | Done |
+| Fix test `Scope::new` calls to include depth parameter | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/scope.rs` - Added `depth` field to `ScopeInfo`, computed from stack length
+- `crates/tugtool-python/src/types.rs` - Added `depth` field to `ScopeInfo`
+- `crates/tugtool-python/src/cst_bridge.rs` - Copy depth in CstScopeInfo → ScopeInfo conversion
+- `crates/tugtool-python/src/analyzer.rs` - Added `depth` to `Scope`, created `SpanScopeIndex` with depth tie-breaking, updated reference resolution loop
+- `crates/tugtool-python/src/ops/rename.rs` - Updated test `Scope::new` calls with depth parameter
+
+**Files Created:**
+- `plans/step-0.4-phase-c-remediation.md` - Remediation report documenting the design flaw and solution
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python reference_scope`: 7 tests passed
+- `cargo nextest run -p tugtool-python`: 864 tests passed
+- `cargo nextest run --workspace`: 2475 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python rename` passes: PASS
+- `SpanScopeIndex` finds tightest containing scope: PASS
+- References in lambdas resolve to lambda scope: PASS
+- References in comprehensions resolve to comprehension scope: PASS
+- Multiple sibling anonymous scopes resolve independently: PASS
+- Renaming function parameter renames all body uses: PASS
+
+**Key Decisions/Notes:**
+
+**Design Flaw Discovery:** The original name-based scope path lookup approach failed for two reasons:
+1. **Mismatch:** ReferenceCollector pushed synthetic names like `"<lambda>"` but ScopeCollector created scopes with `name: None`
+2. **Ambiguity:** Multiple sibling lambdas at the same level would have identical scope_paths, making them indistinguishable
+
+**Solution:** Span-based scope lookup with depth tie-breaking:
+- Instead of matching by name, find the tightest scope that contains the reference's span
+- When spans are identical (e.g., module and function both span entire file), use scope depth as tie-breaker
+- Deeper scopes (children) are preferred over shallower ones (parents)
+- This is explicit and robust - doesn't rely on traversal order side effects
+
+**Depth Implementation:** Added `depth: u32` field throughout the scope hierarchy:
+- Computed from scope stack length during collection (module = 0, children = parent + 1)
+- Stored in CST `ScopeInfo`, adapter `ScopeInfo`, and analyzer `Scope`
+- Used in `SpanScopeIndex::find_containing_scope()` via `min_by_key(|(span, depth, _)| (span.len(), Reverse(*depth)))`
+
+---
+
 ## [phase-13.md] Step 0.4 Phase B: Scope Tracking Implementation | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

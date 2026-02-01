@@ -1778,11 +1778,7 @@ impl CallArg {
     /// * `name` - The keyword argument name (e.g., "key" in `func(key=value)`)
     /// * `span` - Byte span of the argument value expression
     /// * `keyword_name_span` - Byte span of the keyword name (for rename-param)
-    pub fn keyword(
-        name: impl Into<String>,
-        span: Span,
-        keyword_name_span: Option<Span>,
-    ) -> Self {
+    pub fn keyword(name: impl Into<String>, span: Span, keyword_name_span: Option<Span>) -> Self {
         CallArg {
             name: Some(name.into()),
             span,

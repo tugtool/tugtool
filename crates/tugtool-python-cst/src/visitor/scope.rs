@@ -106,6 +106,9 @@ pub struct ScopeInfo {
     pub parent: Option<String>,
     /// Source span for the scope (byte offsets).
     pub span: Option<Span>,
+    /// Depth of this scope in the scope tree (module = 0, children = parent + 1).
+    /// Used to resolve tie-breaks when scopes have identical spans.
+    pub depth: u32,
     /// Names declared as `global` in this scope.
     pub globals: Vec<String>,
     /// Names declared as `nonlocal` in this scope.
@@ -114,13 +117,20 @@ pub struct ScopeInfo {
 
 impl ScopeInfo {
     /// Create a new ScopeInfo.
-    fn new(id: String, kind: ScopeKind, name: Option<String>, parent: Option<String>) -> Self {
+    fn new(
+        id: String,
+        kind: ScopeKind,
+        name: Option<String>,
+        parent: Option<String>,
+        depth: u32,
+    ) -> Self {
         Self {
             id,
             kind,
             name,
             parent,
             span: None,
+            depth,
             globals: Vec::new(),
             nonlocals: Vec::new(),
         }
@@ -251,12 +261,20 @@ impl<'pos> ScopeCollector<'pos> {
     ) {
         let scope_id = self.generate_scope_id();
         let parent = self.current_parent();
+        // Depth is the current stack size (0 for module, 1 for top-level functions, etc.)
+        let depth = self.scope_stack.len() as u32;
 
         // Look up the lexical span from the PositionTable
         let span = self.lookup_lexical_span(node_id);
 
-        let scope = ScopeInfo::new(scope_id.clone(), kind, name.map(|s| s.to_string()), parent)
-            .with_span(span);
+        let scope = ScopeInfo::new(
+            scope_id.clone(),
+            kind,
+            name.map(|s| s.to_string()),
+            parent,
+            depth,
+        )
+        .with_span(span);
 
         self.scopes.push(scope);
         self.scope_stack.push(scope_id);
@@ -270,9 +288,10 @@ impl<'pos> ScopeCollector<'pos> {
 
 impl<'a, 'pos> Visitor<'a> for ScopeCollector<'pos> {
     fn visit_module(&mut self, _node: &Module<'a>) -> VisitResult {
-        // Module scope - spans from byte 0 to end of source
+        // Module scope - spans from byte 0 to end of source, depth = 0
         let scope_id = self.generate_scope_id();
-        let scope = ScopeInfo::new(scope_id.clone(), ScopeKind::Module, None, None)
+        let depth = 0; // Module is always at depth 0
+        let scope = ScopeInfo::new(scope_id.clone(), ScopeKind::Module, None, None, depth)
             .with_span(Some(Span::new(0, self.source_len)));
 
         self.scopes.push(scope);

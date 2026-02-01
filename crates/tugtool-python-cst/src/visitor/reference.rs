@@ -1235,7 +1235,12 @@ result = processor.process()
 
         // i appears twice - both as References
         let i_refs = refs.get("i").unwrap();
-        assert_eq!(i_refs.len(), 2, "i should have 2 references, got {:?}", i_refs);
+        assert_eq!(
+            i_refs.len(),
+            2,
+            "i should have 2 references, got {:?}",
+            i_refs
+        );
         assert!(
             i_refs.iter().all(|r| r.kind == ReferenceKind::Reference),
             "all for-loop variable occurrences should be References"
@@ -1265,7 +1270,12 @@ result = processor.process()
 
         // y appears twice: Reference in output [y ...], Definition in walrus (y := ...)
         let y_refs = refs.get("y").unwrap();
-        assert_eq!(y_refs.len(), 2, "y should have 2 references, got {:?}", y_refs);
+        assert_eq!(
+            y_refs.len(),
+            2,
+            "y should have 2 references, got {:?}",
+            y_refs
+        );
         assert!(y_refs.iter().any(|r| r.kind == ReferenceKind::Definition));
         assert!(y_refs.iter().any(|r| r.kind == ReferenceKind::Reference));
 

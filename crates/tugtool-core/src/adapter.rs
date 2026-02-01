@@ -972,7 +972,7 @@ mod tests {
         // e.g., for `func(key=value)`, keyword_name_span is the span of "key"
         let keyword_arg = CallArgData {
             name: Some("key".to_string()),
-            span: Some(Span::new(10, 20)),         // value span
+            span: Some(Span::new(10, 20)),            // value span
             keyword_name_span: Some(Span::new(5, 8)), // "key" span
         };
         assert!(keyword_arg.keyword_name_span.is_some());

@@ -71,6 +71,9 @@ pub struct ParsedReferenceInfo {
     pub line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub col: Option<u32>,
+    /// Scope path where this reference occurs (e.g., `["<module>", "MyClass", "method"]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope_path: Vec<String>,
 }
 
 // ============================================================================
@@ -94,6 +97,10 @@ pub struct ScopeInfo {
     /// Used internally for CoreScopeInfo construction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub byte_span: Option<SpanInfo>,
+    /// Depth of this scope in the scope tree (module = 0, children = parent + 1).
+    /// Used to resolve tie-breaks when scopes have identical spans.
+    #[serde(default)]
+    pub depth: u32,
     /// Names declared as `global` in this scope.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub globals: Vec<String>,
@@ -434,11 +441,16 @@ mod tests {
             span: Some(SpanInfo { start: 10, end: 13 }),
             line: Some(2),
             col: Some(1),
+            scope_path: vec!["<module>".to_string(), "foo".to_string()],
         };
 
         let json = serde_json::to_string(&reference).unwrap();
         let deserialized: ParsedReferenceInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.kind, "call");
+        assert_eq!(
+            deserialized.scope_path,
+            vec!["<module>".to_string(), "foo".to_string()]
+        );
     }
 
     #[test]
@@ -450,6 +462,7 @@ mod tests {
             parent: None,
             span: None,
             byte_span: None,
+            depth: 0,
             globals: vec!["x".to_string()],
             nonlocals: vec![],
         };
@@ -478,6 +491,7 @@ mod tests {
                     span: None,
                     line: None,
                     col: None,
+                    scope_path: vec!["<module>".to_string()],
                 }],
             )]),
             imports: vec![],

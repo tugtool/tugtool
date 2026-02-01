@@ -76,10 +76,7 @@ fn test_rename_type_comment_preserves_other_types() {
     // Other types should not be affected
     let source = "mapping = {}  # type: Dict[str, Handler]\n";
     let result = rename_in_file(source, "Handler", "RequestHandler").unwrap();
-    assert_eq!(
-        result,
-        "mapping = {}  # type: Dict[str, RequestHandler]\n"
-    );
+    assert_eq!(result, "mapping = {}  # type: Dict[str, RequestHandler]\n");
 }
 
 #[test]
@@ -143,10 +140,7 @@ fn test_collect_rename_edits_binding_and_type_comment() {
 fn test_rename_type_comment_optional() {
     let source = "handler = None  # type: Optional[Handler]\n";
     let result = rename_in_file(source, "Handler", "RequestHandler").unwrap();
-    assert_eq!(
-        result,
-        "handler = None  # type: Optional[RequestHandler]\n"
-    );
+    assert_eq!(result, "handler = None  # type: Optional[RequestHandler]\n");
 }
 
 #[test]

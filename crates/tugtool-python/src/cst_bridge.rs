@@ -38,6 +38,7 @@ use tugtool_python_cst::{
     CallSiteCollector,
     CallSiteInfo as CstCallSiteInfo,
     ClassInheritanceInfo as CstClassInheritanceInfo,
+    CstReferenceRecord,
     // P2 visitors
     DynamicPatternDetector,
     DynamicPatternInfo as CstDynamicPatternInfo,
@@ -51,7 +52,6 @@ use tugtool_python_cst::{
     // isinstance type narrowing
     IsInstanceCheck as CstIsInstanceCheck,
     IsInstanceCollector,
-    CstReferenceRecord,
     ReferenceCollector,
     ReferenceKind as CstReferenceKind,
     // Legacy rename types (kept for rewrite_batch compatibility)
@@ -204,6 +204,7 @@ impl From<CstScopeInfo> for ScopeInfo {
             parent: cst_scope.parent,
             span,
             byte_span,
+            depth: cst_scope.depth,
             globals: cst_scope.globals,
             nonlocals: cst_scope.nonlocals,
         }
@@ -230,6 +231,7 @@ impl From<CstReferenceRecord> for ParsedReferenceInfo {
             span: cst_ref.span.as_ref().map(span_to_span_info),
             line: None, // Line info not yet computed in native collector
             col: None,
+            scope_path: cst_ref.scope_path, // Preserve scope path for ScopeId resolution
         }
     }
 }
@@ -287,7 +289,8 @@ pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> 
     let references: Vec<(String, Vec<ParsedReferenceInfo>)> = cst_refs
         .into_iter()
         .map(|(name, refs)| {
-            let converted_refs: Vec<ParsedReferenceInfo> = refs.into_iter().map(|r| r.into()).collect();
+            let converted_refs: Vec<ParsedReferenceInfo> =
+                refs.into_iter().map(|r| r.into()).collect();
             (name, converted_refs)
         })
         .collect();
@@ -435,10 +438,7 @@ pub fn rewrite_batch(source: &str, rewrites: &[(Span, String)]) -> CstBridgeResu
 /// let result = apply_batch_edits(source, edits)?;
 /// assert_eq!(result, "def bar():\n    return bar");
 /// ```
-pub fn apply_batch_edits(
-    source: &str,
-    edits: Vec<EditPrimitive>,
-) -> CstBridgeResult<String> {
+pub fn apply_batch_edits(source: &str, edits: Vec<EditPrimitive>) -> CstBridgeResult<String> {
     if edits.is_empty() {
         // No changes needed - return source unchanged
         return Ok(source.to_string());
@@ -446,9 +446,9 @@ pub fn apply_batch_edits(
 
     // Configure BatchSpanEditor with options suitable for rename operations
     let options = BatchEditOptions {
-        allow_empty: true,      // Empty edits return source unchanged
-        allow_adjacent: true,   // Adjacent edits are common in renames
-        auto_indent: false,     // Replace edits don't need indentation
+        allow_empty: true,    // Empty edits return source unchanged
+        allow_adjacent: true, // Adjacent edits are common in renames
+        auto_indent: false,   // Replace edits don't need indentation
     };
 
     let mut editor = BatchSpanEditor::with_options(source, options);

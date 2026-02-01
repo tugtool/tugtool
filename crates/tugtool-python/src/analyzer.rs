@@ -86,7 +86,9 @@ use thiserror::Error;
 use crate::cst_bridge;
 
 // Receiver path types for dotted path resolution
-use tugtool_python_cst::{CallSiteInfo, ReceiverPath, ReceiverStep, TypeComment, TypeCommentCollector};
+use tugtool_python_cst::{
+    CallSiteInfo, ReceiverPath, ReceiverStep, TypeComment, TypeCommentCollector,
+};
 
 /// Maximum depth for chained attribute resolution.
 /// Deeper chains are uncommon and often involve external types.
@@ -281,6 +283,9 @@ pub struct Scope {
     pub parent_id: Option<ScopeId>,
     /// Byte span of the scope (start, end offsets).
     pub span: Option<Span>,
+    /// Depth of this scope in the scope tree (module = 0, children = parent + 1).
+    /// Used to resolve tie-breaks when scopes have identical spans.
+    pub depth: u32,
     /// Bindings in this scope: name → SymbolId.
     pub bindings: HashMap<String, SymbolId>,
     /// Names declared as `global` in this scope.
@@ -296,6 +301,7 @@ impl Scope {
         kind: ScopeKind,
         name: Option<String>,
         parent_id: Option<ScopeId>,
+        depth: u32,
     ) -> Self {
         Scope {
             id,
@@ -303,6 +309,7 @@ impl Scope {
             name,
             parent_id,
             span: None,
+            depth,
             bindings: HashMap::new(),
             globals: HashSet::new(),
             nonlocals: HashSet::new(),
@@ -1763,20 +1770,33 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
     // Build scope structure from native scopes
     let (scopes, _scope_map) = build_scopes(&native_result.scopes);
 
+    // Build span-based scope index for efficient containment lookups.
+    // This approach correctly handles anonymous scopes (lambdas, comprehensions)
+    // where name-based lookup fails due to ambiguity.
+    let span_index = SpanScopeIndex::new(&scopes);
+
     // Convert bindings to local symbols
     let symbols = collect_symbols(&native_result.bindings, &scopes);
 
-    // Convert references (borrow to avoid moving native_result)
+    // Convert references using span-based scope resolution.
+    // For each reference, find the tightest (smallest) scope that contains it.
     let mut references = Vec::new();
     for (name, native_refs) in &native_result.references {
         for native_ref in native_refs {
+            // Resolve scope using span containment (handles lambdas/comprehensions correctly)
+            let scope_id = native_ref
+                .span
+                .as_ref()
+                .and_then(|s| span_index.find_containing_scope(Span::new(s.start, s.end)))
+                .unwrap_or(ScopeId(0)); // Fallback for refs without span
+
             references.push(LocalReference {
                 name: name.clone(),
                 kind: reference_kind_from_str(&native_ref.kind),
                 span: native_ref.span.as_ref().map(|s| Span::new(s.start, s.end)),
                 line: native_ref.line,
                 col: native_ref.col,
-                scope_id: ScopeId(0), // Will be resolved during scope analysis
+                scope_id,                            // Resolved from span containment
                 resolved_symbol: Some(name.clone()), // Same-name reference
             });
         }
@@ -1955,6 +1975,7 @@ fn build_scopes(native_scopes: &[ScopeInfo]) -> (Vec<Scope>, HashMap<String, Sco
                 scope_kind_from_str(ns.kind.as_str()),
                 ns.name.clone(),
                 parent_id,
+                ns.depth, // Copy depth for span tie-breaking
             )
             .with_span(span);
             // Populate globals and nonlocals from native scope info
@@ -2068,6 +2089,65 @@ fn find_scope_for_path_indexed(scope_path: &[String], index: &ScopeIndex<'_>) ->
     }
 
     current_parent
+}
+
+// ========================================================================
+// Span-Based Scope Index (Phase C - Step 0.4)
+// ========================================================================
+
+/// Index for finding scopes by span containment.
+///
+/// Used to resolve references to their containing scope. This approach is more
+/// robust than name-based matching because:
+/// 1. Spans are unique - no two scopes have the same span
+/// 2. Works for any number of nested/sibling anonymous scopes (lambdas, comprehensions)
+/// 3. Conceptually clean: "which scope contains this reference?"
+struct SpanScopeIndex {
+    /// (scope_span, depth, scope_id) tuples for scope lookup.
+    /// Depth is used to break ties when scopes have identical spans.
+    sorted_scopes: Vec<(Span, u32, ScopeId)>,
+}
+
+impl SpanScopeIndex {
+    /// Create a new span-based scope index from a list of scopes.
+    ///
+    /// Scopes are sorted by start position, then by size (smallest first).
+    /// Depth is stored to break ties when spans are identical.
+    fn new(scopes: &[Scope]) -> Self {
+        let mut sorted_scopes: Vec<(Span, u32, ScopeId)> = scopes
+            .iter()
+            .filter_map(|scope| scope.span.map(|span| (span, scope.depth, scope.id)))
+            .collect();
+
+        // Sort by start position, then by size (smallest first for tiebreaker)
+        sorted_scopes.sort_by(|a, b| {
+            a.0.start
+                .cmp(&b.0.start)
+                .then_with(|| a.0.len().cmp(&b.0.len()))
+        });
+
+        Self { sorted_scopes }
+    }
+
+    /// Find the tightest (deepest) scope that contains the given reference span.
+    ///
+    /// When multiple scopes have identical spans (e.g., module and function both
+    /// span the entire file), prefers the deeper (more specific) scope.
+    ///
+    /// Returns `None` if no scope contains the reference span.
+    fn find_containing_scope(&self, ref_span: Span) -> Option<ScopeId> {
+        // Find the tightest scope that contains ref_span.
+        // Primary key: smallest span length (tightest fit)
+        // Secondary key: highest depth (most specific scope when spans are equal)
+        self.sorted_scopes
+            .iter()
+            .filter(|(scope_span, _, _)| scope_span.contains(&ref_span))
+            .min_by_key(|(scope_span, depth, _)| {
+                // Negate depth so higher depth = lower key = preferred
+                (scope_span.len(), std::cmp::Reverse(*depth))
+            })
+            .map(|(_, _, scope_id)| *scope_id)
+    }
 }
 
 // ========================================================================
@@ -8483,7 +8563,7 @@ obj.method_d()
 
         #[test]
         fn scope_creation() {
-            let scope = Scope::new(ScopeId(0), ScopeKind::Module, None, None);
+            let scope = Scope::new(ScopeId(0), ScopeKind::Module, None, None, 0);
             assert_eq!(scope.id, ScopeId(0));
             assert_eq!(scope.kind, ScopeKind::Module);
             assert!(scope.parent_id.is_none());
@@ -8492,12 +8572,13 @@ obj.method_d()
 
         #[test]
         fn scope_with_parent() {
-            let _parent = Scope::new(ScopeId(0), ScopeKind::Module, None, None);
+            let _parent = Scope::new(ScopeId(0), ScopeKind::Module, None, None, 0);
             let child = Scope::new(
                 ScopeId(1),
                 ScopeKind::Function,
                 Some("foo".to_string()),
                 Some(ScopeId(0)),
+                1,
             );
 
             assert_eq!(child.parent_id, Some(ScopeId(0)));
@@ -8511,6 +8592,7 @@ obj.method_d()
                 ScopeKind::Function,
                 Some("foo".to_string()),
                 Some(ScopeId(0)),
+                1,
             );
             scope.globals.insert("counter".to_string());
 
@@ -8525,6 +8607,7 @@ obj.method_d()
                 ScopeKind::Function,
                 Some("inner".to_string()),
                 Some(ScopeId(1)),
+                2,
             );
             scope.nonlocals.insert("value".to_string());
 
@@ -8643,25 +8726,27 @@ obj.method_d()
         use super::*;
 
         fn setup_scopes() -> Vec<Scope> {
-            // Module scope (0)
-            let mut module = Scope::new(ScopeId(0), ScopeKind::Module, None, None);
+            // Module scope (0) at depth 0
+            let mut module = Scope::new(ScopeId(0), ScopeKind::Module, None, None, 0);
             module.bindings.insert("global_x".to_string(), SymbolId(0));
 
-            // Function scope (1)
+            // Function scope (1) at depth 1
             let mut func = Scope::new(
                 ScopeId(1),
                 ScopeKind::Function,
                 Some("outer".to_string()),
                 Some(ScopeId(0)),
+                1,
             );
             func.bindings.insert("local_x".to_string(), SymbolId(1));
 
-            // Nested function scope (2)
+            // Nested function scope (2) at depth 2
             let mut nested = Scope::new(
                 ScopeId(2),
                 ScopeKind::Function,
                 Some("inner".to_string()),
                 Some(ScopeId(1)),
+                2,
             );
             nested.bindings.insert("inner_x".to_string(), SymbolId(2));
 
@@ -8765,29 +8850,31 @@ obj.method_d()
 
         #[test]
         fn class_scope_does_not_form_closure() {
-            // Module scope (0)
-            let mut module = Scope::new(ScopeId(0), ScopeKind::Module, None, None);
+            // Module scope (0) at depth 0
+            let mut module = Scope::new(ScopeId(0), ScopeKind::Module, None, None, 0);
             module
                 .bindings
                 .insert("module_var".to_string(), SymbolId(0));
 
-            // Class scope (1) - with a binding
+            // Class scope (1) at depth 1 - with a binding
             let mut class_scope = Scope::new(
                 ScopeId(1),
                 ScopeKind::Class,
                 Some("MyClass".to_string()),
                 Some(ScopeId(0)),
+                1,
             );
             class_scope
                 .bindings
                 .insert("class_var".to_string(), SymbolId(1));
 
-            // Method scope (2)
+            // Method scope (2) at depth 2
             let method = Scope::new(
                 ScopeId(2),
                 ScopeKind::Function,
                 Some("method".to_string()),
                 Some(ScopeId(1)),
+                2,
             );
 
             let scopes = vec![module, class_scope, method];
@@ -13170,7 +13257,10 @@ def foo(x):  # type: (int) -> str
             let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
 
             assert_eq!(analysis.type_comments.len(), 1);
-            assert_eq!(analysis.type_comments[0].kind, TypeCommentKind::FunctionSignature);
+            assert_eq!(
+                analysis.type_comments[0].kind,
+                TypeCommentKind::FunctionSignature
+            );
             assert_eq!(analysis.type_comments[0].content, "(int) -> str");
         }
 
@@ -13199,6 +13289,276 @@ y = "hello"
             let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
 
             assert!(analysis.type_comments.is_empty());
+        }
+    }
+
+    // ========================================================================
+    // Phase C: Reference Scope Resolution Tests
+    // ========================================================================
+
+    mod reference_scope_tests {
+        use super::*;
+
+        /// Test that references get correct ScopeId based on scope_path.
+        /// Phase C Task: test_analyzer_reference_scope_resolution
+        #[test]
+        fn test_analyzer_reference_scope_resolution() {
+            let source = r#"def process(data):
+    x = data
+    return x
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the function scope
+            let fn_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.name.as_deref() == Some("process"))
+                .expect("should have function scope");
+
+            // Find references to 'data' and 'x' - they should be in the function scope
+            let data_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "data")
+                .collect();
+            let x_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "x")
+                .collect();
+
+            // References inside the function should have the function's scope_id
+            for r in &data_refs {
+                assert_eq!(
+                    r.scope_id, fn_scope.id,
+                    "data reference should be in function scope"
+                );
+            }
+            for r in &x_refs {
+                assert_eq!(
+                    r.scope_id, fn_scope.id,
+                    "x reference should be in function scope"
+                );
+            }
+        }
+
+        /// Test that method parameter references are in the correct method scope.
+        /// Phase C Task: test_rename_method_parameter
+        #[test]
+        fn test_analyzer_method_reference_scope() {
+            let source = r#"class Handler:
+    def process(self, data):
+        return data.upper()
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the method scope
+            let method_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.name.as_deref() == Some("process"))
+                .expect("should have method scope");
+
+            // Find references to 'data'
+            let data_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "data")
+                .collect();
+
+            assert!(
+                !data_refs.is_empty(),
+                "should have references to data parameter"
+            );
+
+            // All 'data' references in the method body should have the method's scope_id
+            for r in &data_refs {
+                assert_eq!(
+                    r.scope_id, method_scope.id,
+                    "data reference should be in method scope, got {:?}",
+                    r.scope_id
+                );
+            }
+        }
+
+        /// Test that nested function parameter references are correctly scoped.
+        /// Phase C Task: test_rename_nested_function_param
+        #[test]
+        fn test_analyzer_nested_function_scope() {
+            let source = r#"def outer(x):
+    def inner(y):
+        return x + y
+    return inner(x)
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the outer and inner function scopes
+            let outer_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.name.as_deref() == Some("outer"))
+                .expect("should have outer function scope");
+            let inner_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.name.as_deref() == Some("inner"))
+                .expect("should have inner function scope");
+
+            // 'y' should only be referenced inside inner
+            let y_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "y")
+                .collect();
+
+            assert!(!y_refs.is_empty(), "should have reference to y parameter");
+            for r in &y_refs {
+                assert_eq!(
+                    r.scope_id, inner_scope.id,
+                    "y reference should be in inner function scope"
+                );
+            }
+
+            // 'x' references in outer should be in outer scope
+            // 'x' references in inner should be in inner scope (closure reference)
+            let x_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "x")
+                .collect();
+
+            assert!(!x_refs.is_empty(), "should have references to x parameter");
+            // At least one x reference should be in outer scope
+            let x_in_outer = x_refs.iter().any(|r| r.scope_id == outer_scope.id);
+            assert!(x_in_outer, "should have x reference in outer scope");
+        }
+
+        /// Test that local variable references are correctly scoped.
+        /// Phase C Task: test_analyzer_local_variable_references_found
+        #[test]
+        fn test_analyzer_local_variable_references() {
+            let source = r#"def func():
+    result = []
+    result.append(1)
+    return result
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the function scope
+            let fn_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.name.as_deref() == Some("func"))
+                .expect("should have function scope");
+
+            // All 'result' references should be in the function scope
+            let result_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "result")
+                .collect();
+
+            assert!(
+                !result_refs.is_empty(),
+                "should have references to local variable"
+            );
+
+            for r in &result_refs {
+                assert_eq!(
+                    r.scope_id, fn_scope.id,
+                    "result reference should be in function scope"
+                );
+            }
+        }
+
+        /// Test module-level references have module scope.
+        #[test]
+        fn test_analyzer_module_level_reference_scope() {
+            let source = r#"x = 1
+y = x + 1
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the module scope (should be ScopeId(0) or have kind Module)
+            let module_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.kind == ScopeKind::Module)
+                .expect("should have module scope");
+
+            // All references should be in module scope
+            for r in &analysis.references {
+                assert_eq!(
+                    r.scope_id, module_scope.id,
+                    "module-level reference should be in module scope"
+                );
+            }
+        }
+
+        /// Test lambda references are correctly scoped.
+        #[test]
+        fn test_analyzer_lambda_reference_scope() {
+            let source = r#"f = lambda x: x + 1
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the lambda scope
+            let lambda_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.kind == ScopeKind::Lambda)
+                .expect("should have lambda scope");
+
+            // 'x' references inside lambda should be in lambda scope
+            let x_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "x")
+                .collect();
+
+            assert!(!x_refs.is_empty(), "should have x references in lambda");
+
+            for r in &x_refs {
+                assert_eq!(
+                    r.scope_id, lambda_scope.id,
+                    "x reference should be in lambda scope"
+                );
+            }
+        }
+
+        /// Test comprehension references are correctly scoped.
+        #[test]
+        fn test_analyzer_comprehension_reference_scope() {
+            let source = r#"result = [x * 2 for x in items]
+"#;
+            let analysis = analyze_file(FileId::new(0), "test.py", source).unwrap();
+
+            // Find the comprehension scope
+            let comp_scope = analysis
+                .scopes
+                .iter()
+                .find(|s| s.kind == ScopeKind::Comprehension)
+                .expect("should have comprehension scope");
+
+            // 'x' references inside comprehension should be in comprehension scope
+            let x_refs: Vec<_> = analysis
+                .references
+                .iter()
+                .filter(|r| r.name == "x")
+                .collect();
+
+            assert!(
+                !x_refs.is_empty(),
+                "should have x references in comprehension"
+            );
+
+            for r in &x_refs {
+                assert_eq!(
+                    r.scope_id, comp_scope.id,
+                    "x reference in comprehension should be in comprehension scope"
+                );
+            }
         }
     }
 }
