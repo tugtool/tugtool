@@ -1155,12 +1155,10 @@ pub fn analyze_files(
             }
             // Add globals/nonlocals from the scope
             if !scope.globals.is_empty() {
-                core_scope =
-                    core_scope.with_globals(scope.globals.iter().cloned().collect());
+                core_scope = core_scope.with_globals(scope.globals.iter().cloned().collect());
             }
             if !scope.nonlocals.is_empty() {
-                core_scope =
-                    core_scope.with_nonlocals(scope.nonlocals.iter().cloned().collect());
+                core_scope = core_scope.with_nonlocals(scope.nonlocals.iter().cloned().collect());
             }
             store.insert_scope(core_scope);
         }
@@ -1922,9 +1920,7 @@ fn convert_dynamic_pattern_kind(cst_kind: CstDynamicPatternKind) -> DynamicPatte
 }
 
 /// Convert CST TypeCommentKind to Core TypeCommentKind.
-fn convert_type_comment_kind(
-    cst_kind: tugtool_python_cst::TypeCommentKind,
-) -> TypeCommentKind {
+fn convert_type_comment_kind(cst_kind: tugtool_python_cst::TypeCommentKind) -> TypeCommentKind {
     match cst_kind {
         tugtool_python_cst::TypeCommentKind::Variable => TypeCommentKind::Variable,
         tugtool_python_cst::TypeCommentKind::FunctionSignature => {
@@ -12462,7 +12458,11 @@ class Calculator:
 
             let sig = signature.unwrap();
             // self, a, b = 3 params
-            assert_eq!(sig.params.len(), 3, "add should have 3 parameters (self, a, b)");
+            assert_eq!(
+                sig.params.len(),
+                3,
+                "add should have 3 parameters (self, a, b)"
+            );
             assert_eq!(sig.params[0].name, "self");
             assert_eq!(sig.params[1].name, "a");
             assert_eq!(sig.params[2].name, "b");
@@ -12527,10 +12527,7 @@ def all_param_kinds(
         fn test_signature_param_name_span_populated() {
             // Test: Parameter name_span is populated in signatures
             let mut store = FactsStore::new();
-            let files = vec![(
-                "test.py".to_string(),
-                "def func(x, y): pass".to_string(),
-            )];
+            let files = vec![("test.py".to_string(), "def func(x, y): pass".to_string())];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
@@ -12551,14 +12548,8 @@ def all_param_kinds(
             assert_eq!(sig.params.len(), 2);
 
             // Verify name_span is populated
-            assert!(
-                sig.params[0].name_span.is_some(),
-                "x should have name_span"
-            );
-            assert!(
-                sig.params[1].name_span.is_some(),
-                "y should have name_span"
-            );
+            assert!(sig.params[0].name_span.is_some(), "x should have name_span");
+            assert!(sig.params[1].name_span.is_some(), "y should have name_span");
         }
 
         #[test]
@@ -12569,10 +12560,7 @@ def all_param_kinds(
             // This test verifies the field is None (as expected from current CST behavior).
             // When CST expression spans are implemented, update this test.
             let mut store = FactsStore::new();
-            let files = vec![(
-                "test.py".to_string(),
-                "def func(x, y=10): pass".to_string(),
-            )];
+            let files = vec![("test.py".to_string(), "def func(x, y=10): pass".to_string())];
 
             let _bundle = analyze_files(&files, &mut store).expect("should succeed");
 
@@ -12742,9 +12730,9 @@ class MyClass:
 
             // Find helper symbol and verify its signature
             let symbols: Vec<_> = store.symbols().collect();
-            let helper_sym = symbols.iter().find(|s| {
-                s.name == "helper" && s.kind == SymbolKind::Function
-            });
+            let helper_sym = symbols
+                .iter()
+                .find(|s| s.name == "helper" && s.kind == SymbolKind::Function);
 
             assert!(helper_sym.is_some(), "should have helper function");
             let helper_sig = store.signature(helper_sym.unwrap().symbol_id);
@@ -14254,7 +14242,10 @@ class Service:
             );
 
             // Verify is_method_call flag
-            assert!(method_call.is_method_call, "should be marked as method call");
+            assert!(
+                method_call.is_method_call,
+                "should be marked as method call"
+            );
         }
 
         #[test]
@@ -14386,12 +14377,8 @@ class Service:
 
             let patterns: Vec<_> = store.dynamic_patterns().collect();
 
-            let eval_pattern = patterns
-                .iter()
-                .find(|p| p.kind == DynamicPatternKind::Eval);
-            let exec_pattern = patterns
-                .iter()
-                .find(|p| p.kind == DynamicPatternKind::Exec);
+            let eval_pattern = patterns.iter().find(|p| p.kind == DynamicPatternKind::Eval);
+            let exec_pattern = patterns.iter().find(|p| p.kind == DynamicPatternKind::Exec);
 
             assert!(eval_pattern.is_some(), "should detect eval pattern");
             assert!(exec_pattern.is_some(), "should detect exec pattern");

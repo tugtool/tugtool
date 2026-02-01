@@ -8406,8 +8406,8 @@ mod tests {
             let call_id = store.next_call_site_id();
             let file_id = store.next_file_id();
 
-            let call_site = CallSite::new(call_id, file_id, Span::new(0, 20))
-                .with_scope_path(vec![
+            let call_site =
+                CallSite::new(call_id, file_id, Span::new(0, 20)).with_scope_path(vec![
                     "<module>".to_string(),
                     "MyClass".to_string(),
                     "my_method".to_string(),
