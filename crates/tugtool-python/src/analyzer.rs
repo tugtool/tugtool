@@ -67,9 +67,9 @@ use tugtool_core::adapter::{
 };
 use tugtool_core::facts::{
     AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File,
-    Import, ImportKind, Language, Modifier, ParamKind, PublicExport, Reference, ReferenceKind,
-    ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Symbol, SymbolId, SymbolKind,
-    TypeNode,
+    Import, ImportKind, Language, Modifier, ParamKind, Parameter, PublicExport, Reference,
+    ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Signature,
+    Symbol, SymbolId, SymbolKind, TypeNode,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -1110,6 +1110,11 @@ pub fn analyze_files(
     // Key: (FileId, class_name) -> SymbolId
     let mut class_symbols: HashMap<(FileId, String), SymbolId> = HashMap::new();
 
+    // Track function/method symbols for signature registration (Pass 2d)
+    // Key: (FileId, name, scope_path) -> SymbolId
+    // This allows matching SignatureInfo (which has name + scope_path) to SymbolId
+    let mut func_to_symbol_id: HashMap<(FileId, String, Vec<String>), SymbolId> = HashMap::new();
+
     for analysis in &bundle.file_analyses {
         let file_id = analysis.file_id;
         let content = file_contents.get(&file_id).unwrap_or(&"");
@@ -1210,6 +1215,69 @@ pub fn analyze_files(
             if symbol.kind == SymbolKind::Import {
                 import_bindings.insert((file_id, symbol.name.clone()));
             }
+
+            // Track function/method symbols for signature matching (Pass 2d)
+            if symbol.kind == SymbolKind::Function {
+                let scope_path = build_scope_path(analysis, symbol);
+                func_to_symbol_id.insert((file_id, symbol.name.clone(), scope_path), symbol_id);
+            }
+        }
+    }
+
+    // ====================================================================
+    // Pass 2d: Signature Registration
+    // ====================================================================
+    // For each FileAnalysis:
+    //   - Look up SymbolId from func_to_symbol_id using (file_id, name, scope_path)
+    //   - Convert CST ParamInfo to facts::Parameter
+    //   - Create facts::Signature and call store.insert_signature()
+    //
+    // This pass links function signatures to their symbol definitions,
+    // enabling accurate parameter kind detection in rename-param operations.
+
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+
+        for sig in &analysis.signatures {
+            // Look up the SymbolId for this signature's function/method
+            let Some(&symbol_id) =
+                func_to_symbol_id.get(&(file_id, sig.name.clone(), sig.scope_path.clone()))
+            else {
+                // Symbol was skipped (no span) or not found - skip its signature too
+                continue;
+            };
+
+            // Convert CST ParamInfo to facts::Parameter
+            let params: Vec<Parameter> = sig
+                .params
+                .iter()
+                .map(|p| {
+                    let mut param = Parameter::new(&p.name, convert_cst_param_kind(p.kind));
+                    if let Some(span) = p.span {
+                        param = param.with_name_span(span);
+                    }
+                    if let Some(span) = p.default_span {
+                        param = param.with_default_span(span);
+                    }
+                    if let Some(ref ann) = p.annotation_node {
+                        param = param.with_annotation(ann.clone());
+                    } else if let Some(ref ann_str) = p.annotation {
+                        // Fall back to string annotation if no structured node
+                        param = param.with_annotation(TypeNode::named(ann_str));
+                    }
+                    param
+                })
+                .collect();
+
+            // Create and insert signature
+            let mut signature = Signature::new(symbol_id).with_params(params);
+            if let Some(ref returns) = sig.returns_node {
+                signature = signature.with_returns(returns.clone());
+            } else if let Some(ref returns_str) = sig.returns {
+                // Fall back to string return type if no structured node
+                signature = signature.with_returns(TypeNode::named(returns_str));
+            }
+            store.insert_signature(signature);
         }
     }
 
@@ -5105,6 +5173,7 @@ impl PythonAdapter {
                 .map(|p| ParameterData {
                     name: p.name.clone(),
                     kind: convert_cst_param_kind(p.kind),
+                    name_span: p.span,
                     default_span: p.default_span,
                     annotation: p
                         .annotation_node
@@ -5605,6 +5674,32 @@ fn convert_cst_attribute_access_kind(
         tugtool_python_cst::AttributeAccessKind::Write => AttributeAccessKind::Write,
         tugtool_python_cst::AttributeAccessKind::Call => AttributeAccessKind::Call,
     }
+}
+
+/// Build the scope path for a symbol by walking up the scope hierarchy.
+///
+/// This reconstructs the scope path from the symbol's containing scope
+/// to the module root. Used for matching signatures to symbols.
+fn build_scope_path(analysis: &FileAnalysis, symbol: &LocalSymbol) -> Vec<String> {
+    let mut scope_path = Vec::new();
+    let mut current_scope_id = Some(symbol.scope_id);
+
+    while let Some(scope_id) = current_scope_id {
+        if let Some(scope) = analysis.scopes.iter().find(|s| s.id == scope_id) {
+            if let Some(name) = &scope.name {
+                scope_path.push(name.clone());
+            } else {
+                scope_path.push("<module>".to_string());
+            }
+            current_scope_id = scope.parent_id;
+        } else {
+            break;
+        }
+    }
+
+    // Reverse since we built from leaf to root
+    scope_path.reverse();
+    scope_path
 }
 
 /// Compute the module path from a file path.
@@ -12155,6 +12250,373 @@ def call_handler(h: Handler):
                 refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
                 "should have Call reference to process method from annotated parameter"
             );
+        }
+
+        // ====================================================================
+        // Pass 2d: Signature Registration Tests (Step 0.6)
+        // ====================================================================
+
+        #[test]
+        fn test_signature_inserted_for_function() {
+            // Test: analyze_files inserts signatures into FactsStore for functions
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+def greet(name: str, greeting: str = "Hello") -> str:
+    return f"{greeting}, {name}!"
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the greet function symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let greet_sym = symbols
+                .iter()
+                .find(|s| s.name == "greet" && s.kind == SymbolKind::Function);
+
+            assert!(greet_sym.is_some(), "should have greet function");
+            let greet_id = greet_sym.unwrap().symbol_id;
+
+            // Verify signature was inserted
+            let signature = store.signature(greet_id);
+            assert!(signature.is_some(), "should have signature for greet");
+
+            let sig = signature.unwrap();
+            assert_eq!(sig.params.len(), 2, "greet should have 2 parameters");
+            assert_eq!(sig.params[0].name, "name");
+            assert_eq!(sig.params[1].name, "greeting");
+
+            // Verify return type
+            assert!(sig.returns.is_some(), "greet should have return type");
+        }
+
+        #[test]
+        fn test_signature_inserted_for_method() {
+            // Test: analyze_files inserts signatures for methods
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Calculator:
+    def add(self, a: int, b: int) -> int:
+        return a + b
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the add method symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let add_sym = symbols
+                .iter()
+                .find(|s| s.name == "add" && s.kind == SymbolKind::Function);
+
+            assert!(add_sym.is_some(), "should have add method");
+            let add_id = add_sym.unwrap().symbol_id;
+
+            // Verify signature was inserted
+            let signature = store.signature(add_id);
+            assert!(signature.is_some(), "should have signature for add method");
+
+            let sig = signature.unwrap();
+            // self, a, b = 3 params
+            assert_eq!(sig.params.len(), 3, "add should have 3 parameters (self, a, b)");
+            assert_eq!(sig.params[0].name, "self");
+            assert_eq!(sig.params[1].name, "a");
+            assert_eq!(sig.params[2].name, "b");
+        }
+
+        #[test]
+        fn test_signature_param_kinds_preserved() {
+            // Test: All parameter kinds are correctly stored in FactsStore
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+def all_param_kinds(
+    pos_only,
+    /,
+    regular,
+    *args,
+    kw_only,
+    **kwargs
+):
+    pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the function symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let func_sym = symbols
+                .iter()
+                .find(|s| s.name == "all_param_kinds" && s.kind == SymbolKind::Function);
+
+            assert!(func_sym.is_some(), "should have all_param_kinds function");
+            let func_id = func_sym.unwrap().symbol_id;
+
+            // Verify signature was inserted
+            let signature = store.signature(func_id);
+            assert!(signature.is_some(), "should have signature");
+
+            let sig = signature.unwrap();
+            assert_eq!(sig.params.len(), 5, "should have 5 parameters");
+
+            // Verify each param kind
+            assert_eq!(sig.params[0].name, "pos_only");
+            assert_eq!(sig.params[0].kind, ParamKind::PositionalOnly);
+
+            assert_eq!(sig.params[1].name, "regular");
+            assert_eq!(sig.params[1].kind, ParamKind::Regular);
+
+            assert_eq!(sig.params[2].name, "args");
+            assert_eq!(sig.params[2].kind, ParamKind::VarArgs);
+
+            assert_eq!(sig.params[3].name, "kw_only");
+            assert_eq!(sig.params[3].kind, ParamKind::KeywordOnly);
+
+            assert_eq!(sig.params[4].name, "kwargs");
+            assert_eq!(sig.params[4].kind, ParamKind::KwArgs);
+        }
+
+        #[test]
+        fn test_signature_param_name_span_populated() {
+            // Test: Parameter name_span is populated in signatures
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def func(x, y): pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the function symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let func_sym = symbols
+                .iter()
+                .find(|s| s.name == "func" && s.kind == SymbolKind::Function);
+
+            assert!(func_sym.is_some(), "should have func");
+            let func_id = func_sym.unwrap().symbol_id;
+
+            // Verify signature was inserted
+            let signature = store.signature(func_id);
+            assert!(signature.is_some(), "should have signature");
+
+            let sig = signature.unwrap();
+            assert_eq!(sig.params.len(), 2);
+
+            // Verify name_span is populated
+            assert!(
+                sig.params[0].name_span.is_some(),
+                "x should have name_span"
+            );
+            assert!(
+                sig.params[1].name_span.is_some(),
+                "y should have name_span"
+            );
+        }
+
+        #[test]
+        fn test_signature_param_default_span_populated() {
+            // Test: Parameter default_span field is propagated if available
+            // NOTE: Currently, expression_span() in the CST layer returns None
+            // because expressions don't have direct spans in this CST representation.
+            // This test verifies the field is None (as expected from current CST behavior).
+            // When CST expression spans are implemented, update this test.
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def func(x, y=10): pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the function symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let func_sym = symbols
+                .iter()
+                .find(|s| s.name == "func" && s.kind == SymbolKind::Function);
+
+            assert!(func_sym.is_some(), "should have func");
+            let func_id = func_sym.unwrap().symbol_id;
+
+            let signature = store.signature(func_id);
+            assert!(signature.is_some(), "should have signature");
+
+            let sig = signature.unwrap();
+            assert_eq!(sig.params.len(), 2);
+
+            // Both params have no default_span due to CST limitation
+            // (expression_span() not implemented yet)
+            assert!(
+                sig.params[0].default_span.is_none(),
+                "x should not have default_span"
+            );
+            // NOTE: When expression_span is implemented, this should become is_some()
+            assert!(
+                sig.params[1].default_span.is_none(),
+                "y default_span is None (CST limitation - expression_span not implemented)"
+            );
+        }
+
+        #[test]
+        fn test_signature_param_annotation_populated() {
+            // Test: Parameter annotation is populated for typed params
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def func(x: int, y): pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the function symbol
+            let symbols: Vec<_> = store.symbols().collect();
+            let func_sym = symbols
+                .iter()
+                .find(|s| s.name == "func" && s.kind == SymbolKind::Function);
+
+            assert!(func_sym.is_some(), "should have func");
+            let func_id = func_sym.unwrap().symbol_id;
+
+            let signature = store.signature(func_id);
+            assert!(signature.is_some(), "should have signature");
+
+            let sig = signature.unwrap();
+            assert_eq!(sig.params.len(), 2);
+
+            // x has annotation
+            assert!(
+                sig.params[0].annotation.is_some(),
+                "x should have annotation"
+            );
+            // y has no annotation
+            assert!(
+                sig.params[1].annotation.is_none(),
+                "y should not have annotation"
+            );
+        }
+
+        #[test]
+        fn test_signature_returns_populated() {
+            // Test: Signature.returns is populated for functions with return type
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                "def typed() -> str: pass\ndef untyped(): pass".to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the function symbols
+            let symbols: Vec<_> = store.symbols().collect();
+            let typed_sym = symbols
+                .iter()
+                .find(|s| s.name == "typed" && s.kind == SymbolKind::Function);
+            let untyped_sym = symbols
+                .iter()
+                .find(|s| s.name == "untyped" && s.kind == SymbolKind::Function);
+
+            assert!(typed_sym.is_some(), "should have typed");
+            assert!(untyped_sym.is_some(), "should have untyped");
+
+            let typed_sig = store.signature(typed_sym.unwrap().symbol_id);
+            let untyped_sig = store.signature(untyped_sym.unwrap().symbol_id);
+
+            assert!(typed_sig.is_some(), "should have typed signature");
+            assert!(untyped_sig.is_some(), "should have untyped signature");
+
+            assert!(
+                typed_sig.unwrap().returns.is_some(),
+                "typed should have return type"
+            );
+            assert!(
+                untyped_sig.unwrap().returns.is_none(),
+                "untyped should not have return type"
+            );
+        }
+
+        #[test]
+        fn test_signature_count_matches_functions() {
+            // Test: signature_count() equals number of functions/methods
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+def func1(): pass
+def func2(): pass
+
+class MyClass:
+    def method1(self): pass
+    def method2(self): pass
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have 4 function/method symbols
+            let func_count = store
+                .symbols()
+                .filter(|s| s.kind == SymbolKind::Function)
+                .count();
+
+            assert_eq!(func_count, 4, "should have 4 function/method symbols");
+
+            // Signature count should match
+            assert_eq!(
+                store.signature_count(),
+                4,
+                "signature_count should equal function count"
+            );
+        }
+
+        #[test]
+        fn test_multi_file_signatures() {
+            // Test: Signatures work correctly across multiple files
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "utils.py".to_string(),
+                    "def helper(x: int) -> int: return x".to_string(),
+                ),
+                (
+                    "main.py".to_string(),
+                    "from utils import helper\ndef main(): helper(1)".to_string(),
+                ),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Should have 2 signatures (helper in utils.py, main in main.py)
+            assert_eq!(
+                store.signature_count(),
+                2,
+                "should have 2 signatures across files"
+            );
+
+            // Find helper symbol and verify its signature
+            let symbols: Vec<_> = store.symbols().collect();
+            let helper_sym = symbols.iter().find(|s| {
+                s.name == "helper" && s.kind == SymbolKind::Function
+            });
+
+            assert!(helper_sym.is_some(), "should have helper function");
+            let helper_sig = store.signature(helper_sym.unwrap().symbol_id);
+            assert!(helper_sig.is_some(), "helper should have signature");
+
+            let sig = helper_sig.unwrap();
+            assert_eq!(sig.params.len(), 1);
+            assert_eq!(sig.params[0].name, "x");
+            assert!(sig.params[0].annotation.is_some());
+            assert!(sig.returns.is_some());
         }
     }
 

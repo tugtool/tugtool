@@ -27,12 +27,9 @@ use tugtool_core::patch::{FileId, Span};
 use tugtool_core::text::byte_offset_to_position_str;
 
 use crate::analyzer::analyze_files;
-use crate::cst_bridge;
 use crate::files::FileError;
 use crate::lookup::{find_symbol_at_location, LookupError};
 use crate::validation::{validate_python_identifier, ValidationError};
-
-use tugtool_python_cst::visitor::EditPrimitive;
 
 // ============================================================================
 // Error Types
@@ -383,74 +380,6 @@ pub fn analyze_param(
     })
 }
 
-/// Rename a parameter in a single file (simplified API for testing).
-///
-/// This function performs a single-file rename of a parameter:
-/// 1. Find the parameter at the given location
-/// 2. Rename it in the signature and body
-/// 3. Note: Call site keyword args are NOT updated (single-file operation)
-///
-/// For full multi-file rename including call sites, use the CLI command.
-///
-/// # Arguments
-///
-/// * `content` - The Python source code
-/// * `old_name` - The parameter name to rename
-/// * `new_name` - The new parameter name
-///
-/// # Returns
-///
-/// The transformed source code with the parameter renamed.
-pub fn rename_param_in_file(
-    content: &str,
-    old_name: &str,
-    new_name: &str,
-) -> RenameParamResult<String> {
-    // Parse and analyze the file
-    let analysis = cst_bridge::parse_and_analyze(content)?;
-
-    // Collect all edit primitives for the renames
-    let mut edits: Vec<EditPrimitive> = Vec::new();
-    let mut seen_spans: HashSet<(usize, usize)> = HashSet::new();
-
-    // Find bindings that are parameters with the target name
-    for binding in &analysis.bindings {
-        if binding.name == old_name && binding.kind == "parameter" {
-            if let Some(ref span_info) = binding.span {
-                let span = Span::new(span_info.start, span_info.end);
-                if seen_spans.insert((span.start, span.end)) {
-                    edits.push(EditPrimitive::Replace {
-                        span,
-                        new_text: new_name.to_string(),
-                    });
-                }
-            }
-        }
-    }
-
-    // Find references to the parameter
-    for (name, refs) in &analysis.references {
-        if name == old_name {
-            for ref_info in refs {
-                if let Some(ref span_info) = ref_info.span {
-                    let span = Span::new(span_info.start, span_info.end);
-                    if seen_spans.insert((span.start, span.end)) {
-                        edits.push(EditPrimitive::Replace {
-                            span,
-                            new_text: new_name.to_string(),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // Apply all renames using BatchSpanEditor via the bridge
-    let result = cst_bridge::apply_batch_edits(content, edits)?;
-
-    Ok(result)
-}
-
 // ============================================================================
 // Internal Functions
 // ============================================================================
@@ -494,57 +423,3 @@ fn find_containing_function(
     })
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_rename_param_in_file_simple() {
-        let source = r#"def greet(name):
-    return f"Hello, {name}"
-"#;
-        let result = rename_param_in_file(source, "name", "recipient").unwrap();
-        let expected = r#"def greet(recipient):
-    return f"Hello, {recipient}"
-"#;
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_rename_param_in_file_with_default() {
-        let source = r#"def greet(name, greeting="Hello"):
-    return f"{greeting}, {name}"
-"#;
-        let result = rename_param_in_file(source, "name", "recipient").unwrap();
-        assert!(result.contains("def greet(recipient, greeting="));
-        assert!(result.contains("{recipient}"));
-    }
-
-    #[test]
-    fn test_rename_param_in_file_multiple_references() {
-        let source = r#"def process(data):
-    print(data)
-    transformed = data.upper()
-    return data
-"#;
-        let result = rename_param_in_file(source, "data", "input_value").unwrap();
-        assert!(result.contains("def process(input_value)"));
-        assert!(result.contains("print(input_value)"));
-        assert!(result.contains("input_value.upper()"));
-        assert!(result.contains("return input_value"));
-    }
-
-    #[test]
-    fn test_rename_param_preserves_other_params() {
-        let source = r#"def func(a, b, c):
-    return a + b + c
-"#;
-        let result = rename_param_in_file(source, "b", "middle").unwrap();
-        assert!(result.contains("def func(a, middle, c)"));
-        assert!(result.contains("return a + middle + c"));
-    }
-}

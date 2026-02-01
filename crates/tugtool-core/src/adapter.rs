@@ -374,6 +374,9 @@ pub struct ParameterData {
     pub name: String,
     /// Parameter kind (Regular, VarArgs, KwArgs, etc.)
     pub kind: ParamKind,
+    /// Byte span of the parameter name.
+    /// Used for rename-param operations to locate the parameter name.
+    pub name_span: Option<Span>,
     /// Byte span of default value (if present).
     pub default_span: Option<Span>,
     /// Type annotation (if present).
@@ -895,6 +898,7 @@ mod tests {
             params: vec![ParameterData {
                 name: "x".to_string(),
                 kind: ParamKind::Regular,
+                name_span: Some(Span::new(10, 11)),
                 default_span: None,
                 annotation: Some(TypeNode::Named {
                     name: "int".to_string(),
@@ -908,6 +912,7 @@ mod tests {
         };
         assert_eq!(sig.params.len(), 1);
         assert!(sig.returns.is_some());
+        assert!(sig.params[0].name_span.is_some());
     }
 
     #[test]

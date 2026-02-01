@@ -268,7 +268,7 @@ impl From<CstReferenceRecord> for ParsedReferenceInfo {
 /// assert!(!result.scopes.is_empty());
 /// assert!(!result.bindings.is_empty());
 /// ```
-pub fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> {
+pub(crate) fn parse_and_analyze(source: &str) -> CstBridgeResult<NativeAnalysisResult> {
     // Parse the source into a CST with position information
     // This provides accurate token-derived spans for all tracked nodes
     let parsed =

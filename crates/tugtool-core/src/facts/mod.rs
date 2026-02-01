@@ -1565,6 +1565,10 @@ pub struct Parameter {
     pub name: String,
     /// Kind of parameter.
     pub kind: ParamKind,
+    /// Span of the parameter name in source.
+    /// Used for rename-param operations to locate the parameter name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_span: Option<Span>,
     /// Span of the default value expression (if present).
     /// Used for refactoring operations that need to modify defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1580,6 +1584,7 @@ impl Parameter {
         Parameter {
             name: name.into(),
             kind,
+            name_span: None,
             default_span: None,
             annotation: None,
         }
@@ -1588,6 +1593,12 @@ impl Parameter {
     /// Create a regular parameter (most common case).
     pub fn regular(name: impl Into<String>) -> Self {
         Self::new(name, ParamKind::Regular)
+    }
+
+    /// Set the name span (location of parameter name in source).
+    pub fn with_name_span(mut self, span: Span) -> Self {
+        self.name_span = Some(span);
+        self
     }
 
     /// Set the default value span.

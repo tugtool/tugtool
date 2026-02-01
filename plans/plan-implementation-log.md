@@ -6,6 +6,117 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.6: Populate FactsStore Signatures from FileAnalysis | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.6 specification
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore, Signature, Parameter types
+- `crates/tugtool-python/src/analyzer.rs` - analyze_files() Pass 2 structure
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - SignatureInfo, ParamInfo from CST
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Phase A: Add `func_to_symbol_id` map for signature linkage | Done |
+| Phase A: Add `build_scope_path()` helper function | Done |
+| Phase A: Populate map during Pass 2c for Function symbols | Done |
+| Phase B: Add Pass 2d comment block after Pass 2c | Done |
+| Phase B: Add Pass 2d signature registration loop | Done |
+| Phase B: Convert CST ParamInfo to facts::Parameter | Done |
+| Phase B: Call store.insert_signature() for each function/method | Done |
+| Phase C: Verify Parameter builder methods exist | Done |
+| Write unit tests for signature registration | Done |
+| Run tests and verify all pass | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added import for `Parameter` and `Signature` from facts
+  - Added `func_to_symbol_id` map declaration in Pass 2
+  - Added tracking code in Pass 2c for Function symbols
+  - Added `build_scope_path()` helper function
+  - Added Pass 2d: Signature Registration loop
+  - Added 8 new unit tests for signature registration
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python test_signature`: 8 tests passed
+- `cargo nextest run --workspace`: 2422 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `store.signature(function_symbol_id)` returns `Some(Signature)` for analyzed functions: PASS
+- `store.signature(method_symbol_id)` returns `Some(Signature)` for analyzed methods: PASS
+- `Signature.params` contains correct `ParamKind` for each parameter: PASS
+- `Parameter.name_span` is populated for all parameters: PASS
+- `store.signature_count()` equals total function + method count: PASS
+- No changes to existing test behavior (2422 tests pass): PASS
+
+**Key Decisions/Notes:**
+- Used `(FileId, name, scope_path)` as map key instead of plan's `(FileId, symbol_index)` for better signature-to-symbol matching
+- `default_span` is currently `None` for all parameters due to CST limitation (`expression_span()` not implemented)
+- Fall back to string annotation/returns when structured TypeNode not available
+- This fixes the critical architectural flaw where signatures were bypassing FactsStore entirely
+
+---
+
+## [phase-13.md] Steps 0.6-0.7: Signature Registration Infrastructure | PLANNED | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Main plan file for Phase 13
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore, Signature, Parameter types
+- `crates/tugtool-core/src/adapter.rs` - SignatureData, ParameterData adapter types
+- `crates/tugtool-python/src/analyzer.rs` - analyze_files() with Pass 2 symbol registration
+- `crates/tugtool-python/src/ops/rename_param.rs` - analyze_param(), ParamInfo struct
+
+**Summary:**
+
+A code-architect audit revealed a **CRITICAL architectural flaw**: signatures are bypassing FactsStore entirely. The Python analyzer produces signature data but NEVER inserts it into FactsStore. This means:
+- Parameter kinds are lost (Regular, PositionalOnly, KeywordOnly, VarArgs, KwArgs)
+- Parameter name spans are lost (needed for precise rename-param edits)
+- `rename_param.rs` has hardcoded `kind: "regular"` with a TODO comment
+- Cannot validate positional-only params (which cannot be renamed as keyword args)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Investigate signature bypass issue with code-architect | Done |
+| Plan Steps 0.6-0.7 with code-planner | Done |
+| Merge Steps 0.6-0.7 into phase-13.md | Done |
+| Update Stage 0 Summary to include Steps 0.6-0.7 | Done |
+| Delete separate plan file (phase-13-step-0.6-0.7.md) | Done |
+
+**Files Modified:**
+- `plans/phase-13.md` - Added Step 0.6 (Populate FactsStore Signatures) and Step 0.7 (Update rename-param to Use Signatures)
+
+**Files Deleted:**
+- `plans/phase-13-step-0.6-0.7.md` - Content merged into main plan
+
+**New Plan Steps Added:**
+
+**Step 0.6: Populate FactsStore Signatures from FileAnalysis**
+- Phase A: Build Symbol Index for Signature Linkage
+- Phase B: Add Pass 2d - Signature Registration
+- Phase C: Verify Parameter Builder Methods
+
+**Step 0.7: Update rename-param to Use FactsStore Signatures**
+- Phase A: Look Up Parameter Kind from Signature
+- Phase B: Add Validation for Non-Renamable Parameters
+- Phase C: Use name_span for Precise Parameter Edits
+- Phase D: Update ParamInfo Output Format
+
+**Key Decisions/Notes:**
+- This is a **planning** entry, not an implementation entry - the actual implementation work is pending
+- The gap was discovered during Phase B of Step 0.5 when investigating `name_span` propagation
+- The existing `RenameParamError::PositionalOnlyParameter`, `VarArgsParameter`, and `KwArgsParameter` error variants already exist but are NEVER triggered because the kind lookup was missing
+- This fix must be completed before continuing with other Step 0.5 Phase B work
+
+---
+
 ## [phase-13.md] Step 0.4 Phase C: Analyzer Integration | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01
