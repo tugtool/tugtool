@@ -7741,9 +7741,789 @@ After completing Steps 0.6-0.7, you will have:
 
 ---
 
+##### Step 0.8: Fill Implementation Gaps {#step-0-8}
+
+**Commit:** `fix(python): fill implementation gaps in facts persistence and type organization`
+
+**References:** [D07](#d07-edit-primitives), [Step 0.5](#step-0-5), [Step 0.6](#step-0-6)
+
+**Context:**
+
+An architectural audit identified several implementation gaps in the Stage 0 foundation:
+
+1. **CallSite Persistence (CRITICAL):** The analyzer collects `CallSiteInfo` from CST but never calls `store.insert_call_site()`. The data is used for method resolution during Pass 4 but not persisted, causing `store.call_sites_to_callee()` to return empty results.
+
+2. **FileAnalysis Uses CST Types Directly (CRITICAL):** The `FileAnalysis` struct stores CST types directly (`tugtool_python_cst::SignatureInfo`, `tugtool_python_cst::AttributeAccessInfo`, `tugtool_python_cst::CallSiteInfo`), creating tight coupling and preventing FactsStore from being the single source of truth.
+
+3. **No refs_by_scope Index (IMPORTANT):** Scope-aware queries require filtering `refs_in_file()` by checking `scope_at_position()` for each reference, which is inefficient.
+
+4. **Python-Specific Types in tugtool-core (IMPORTANT):** `DynamicPatternKind` and `TypeCommentKind` are entirely Python-specific but live in `tugtool-core/src/facts/mod.rs`.
+
+5. **Query Methods Return Vec Instead of Iterator (OPTIMIZATION):** Methods like `children_of_class()`, `refs_of_symbol()` return `Vec`, causing unnecessary allocations.
+
+**Artifacts:**
+- Modified `crates/tugtool-python/src/analyzer.rs` - CallSite persistence, FileAnalysis type conversion
+- Modified `crates/tugtool-core/src/facts/mod.rs` - refs_by_scope index, iterator returns
+- New `crates/tugtool-python/src/facts_types.rs` - Python-specific types moved from core
+- Modified `crates/tugtool-core/src/adapter.rs` - Intermediate types for CST-to-FactsStore conversion
+
+---
+
+###### Phase A: CallSite Persistence {#step-0-8-phase-a}
+
+**Prerequisites:** None
+
+**Context:** `CallSiteInfo` is collected during Pass 1 and stored in `FileAnalysis.call_sites`, but Pass 4 (or subsequent code) never inserts these into FactsStore. The `insert_call_site()` method exists and is tested, but no production code calls it.
+
+**Tasks:**
+
+- [x] Identify the correct pass for CallSite insertion (likely Pass 4b after receiver resolution, or a new Pass 4c)
+- [x] Create conversion function `CallSiteInfo` (CST) -> `CallSite` (FactsStore):
+  ```rust
+  fn convert_call_site(
+      cst_call: &tugtool_python_cst::CallSiteInfo,
+      file_id: FileId,
+      call_id: CallSiteId,
+      resolved_callee: Option<SymbolId>,
+  ) -> facts::CallSite {
+      let args = cst_call.args.iter().map(|arg| {
+          if let Some(name) = &arg.name {
+              CallArg::keyword(name.clone(), arg.span, arg.keyword_name_span)
+          } else {
+              CallArg::positional(arg.span.unwrap_or(Span::new(0, 0)))
+          }
+      }).collect();
+
+      let receiver_path = cst_call.receiver_path.as_ref().map(convert_receiver_path);
+
+      facts::CallSite::new(call_id, file_id, cst_call.span.unwrap_or(Span::new(0, 0)))
+          .with_args(args)
+          .with_scope_path(cst_call.scope_path.clone())
+          .with_is_method_call(cst_call.is_method_call)
+          .with_callee_opt(resolved_callee)
+          .with_receiver_path_opt(receiver_path)
+  }
+  ```
+
+- [x] Create conversion function for `ReceiverPath` (CST) -> `ReceiverPath` (FactsStore):
+  ```rust
+  fn convert_receiver_path(cst_path: &tugtool_python_cst::ReceiverPath) -> facts::ReceiverPath {
+      let steps = cst_path.steps.iter().map(|step| match step {
+          ReceiverStep::Name(n) => facts::ReceiverPathStep::Name(n.clone()),
+          ReceiverStep::Attribute(a) => facts::ReceiverPathStep::Attribute(a.clone()),
+          ReceiverStep::Call => facts::ReceiverPathStep::Call,
+          ReceiverStep::Subscript => facts::ReceiverPathStep::Subscript,
+      }).collect();
+      facts::ReceiverPath::new(steps)
+  }
+  ```
+
+- [x] Add callee resolution logic in Pass 4 to resolve `CallSiteInfo.callee` string to `SymbolId`:
+  - For simple function calls: look up `callee` in scope-aware symbol map
+  - For method calls: use receiver resolution result to find method symbol
+
+- [x] Insert CallSites into FactsStore after resolution:
+  ```rust
+  // In Pass 4b or new Pass 4c
+  for file_analysis in &bundle.file_analyses {
+      for cst_call in &file_analysis.call_sites {
+          let call_id = store.next_call_site_id();
+          let resolved_callee = resolve_callee(&cst_call, file_analysis, store);
+          let call_site = convert_call_site(&cst_call, file_analysis.file_id, call_id, resolved_callee);
+          store.insert_call_site(call_site);
+      }
+  }
+  ```
+
+**Code Location:** `crates/tugtool-python/src/analyzer.rs`
+
+**Tests:**
+
+- [x] Unit: `test_call_sites_inserted_into_facts_store` - Verify call sites appear in store after analysis
+- [x] Unit: `test_call_site_callee_resolution_simple_function` - Simple function call resolves to symbol
+- [x] Unit: `test_call_site_callee_resolution_method_call` - Method call resolves via receiver
+- [x] Unit: `test_call_sites_to_callee_returns_results` - `store.call_sites_to_callee()` returns non-empty
+- [x] Integration: `test_call_site_persistence_multi_file` - Cross-file call sites work correctly
+
+---
+
+###### Phase B: FileAnalysis Type Decoupling {#step-0-8-phase-b}
+
+**Prerequisites:** Phase A complete
+
+**Context:** `FileAnalysis` currently stores CST types directly:
+```rust
+pub signatures: Vec<tugtool_python_cst::SignatureInfo>,
+pub attribute_accesses: Vec<tugtool_python_cst::AttributeAccessInfo>,
+pub call_sites: Vec<tugtool_python_cst::CallSiteInfo>,
+```
+
+This creates tight coupling between the analyzer and CST crate. The proper architecture is:
+1. CST types -> Adapter types (during Pass 1)
+2. Adapter types -> FactsStore types (during Pass 2/4)
+
+**Tasks:**
+
+- [ ] Add intermediate types to `adapter.rs` if not already present:
+  - `SignatureData` already exists
+  - `AttributeAccessData` already exists
+  - `CallSiteData` already exists
+
+- [ ] Update `FileAnalysis` to use adapter types:
+  ```rust
+  pub struct FileAnalysis {
+      // ... existing fields ...
+      /// Function/method signatures in this file.
+      pub signatures: Vec<SignatureData>,  // Changed from tugtool_python_cst::SignatureInfo
+      /// Attribute access patterns.
+      pub attribute_accesses: Vec<AttributeAccessData>,  // Changed from tugtool_python_cst::AttributeAccessInfo
+      /// Call sites with argument information.
+      pub call_sites: Vec<CallSiteData>,  // Changed from tugtool_python_cst::CallSiteInfo
+      // Note: class_hierarchies, isinstance_checks, cst_assignments, cst_annotations
+      // may still use CST types as they are only used internally during analysis
+  }
+  ```
+
+- [ ] Create conversion functions in `cst_bridge.rs` or `analyzer.rs`:
+  ```rust
+  fn convert_signature_info(cst: &tugtool_python_cst::SignatureInfo) -> SignatureData { ... }
+  fn convert_attribute_access_info(cst: &tugtool_python_cst::AttributeAccessInfo) -> AttributeAccessData { ... }
+  fn convert_call_site_info(cst: &tugtool_python_cst::CallSiteInfo) -> CallSiteData { ... }
+  ```
+
+- [ ] Update Pass 1 to convert CST types to adapter types immediately after collection
+
+- [ ] Update all consumers of `FileAnalysis` fields to use adapter types:
+  - `ops/rename.rs`
+  - `ops/rename_param.rs`
+  - Any other modules accessing these fields
+
+- [ ] Consider which fields can remain CST types (internal-only use):
+  - `cst_assignments` - Only used in Pass 4a for TypeTracker, can remain CST type
+  - `cst_annotations` - Only used in Pass 4a for TypeTracker, can remain CST type
+  - `isinstance_checks` - Used for type narrowing, evaluate if conversion needed
+  - `class_hierarchies` - Used for MRO, evaluate if conversion needed
+
+**Code Location:**
+- `crates/tugtool-python/src/analyzer.rs`
+- `crates/tugtool-core/src/adapter.rs`
+- `crates/tugtool-python/src/cst_bridge.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_file_analysis_uses_adapter_types` - Verify field types are adapter types
+- [ ] Unit: `test_cst_to_adapter_signature_conversion` - SignatureInfo converts correctly
+- [ ] Unit: `test_cst_to_adapter_attribute_access_conversion` - AttributeAccessInfo converts correctly
+- [ ] Unit: `test_cst_to_adapter_call_site_conversion` - CallSiteInfo converts correctly
+- [ ] Integration: `test_rename_works_with_adapter_types` - Existing rename still works
+
+---
+
+###### Phase C: Add refs_by_scope Index {#step-0-8-phase-c}
+
+**Prerequisites:** None (can run in parallel with Phases A-B)
+
+**Context:** Current scope-aware queries require filtering `refs_in_file()` and checking `scope_at_position()` for each reference. A dedicated index improves efficiency for parameter/local variable operations.
+
+**Tasks:**
+
+- [ ] Add `refs_by_scope` index to `FactsStore`:
+  ```rust
+  // In FactsStore struct
+  /// (file_id, scope_id) -> ref_ids[] for efficient scope-based queries.
+  refs_by_scope: HashMap<(FileId, ScopeId), Vec<ReferenceId>>,
+  ```
+
+- [ ] Update `insert_reference()` to populate the index:
+  ```rust
+  pub fn insert_reference(&mut self, reference: Reference) {
+      // ... existing code ...
+
+      // Update scope postings list
+      if let Some(scope_id) = reference.scope_id {
+          self.refs_by_scope
+              .entry((reference.file_id, scope_id))
+              .or_default()
+              .push(reference.ref_id);
+      }
+  }
+  ```
+
+- [ ] Add `Reference.scope_id` field if not present:
+  ```rust
+  pub struct Reference {
+      // ... existing fields ...
+      /// Scope where this reference occurs (for scope-aware queries).
+      pub scope_id: Option<ScopeId>,
+  }
+  ```
+
+- [ ] Add `refs_in_scope()` query method:
+  ```rust
+  /// Get all references in a specific scope.
+  ///
+  /// Returns references in deterministic order (by ReferenceId).
+  pub fn refs_in_scope(&self, file_id: FileId, scope_id: ScopeId) -> Vec<&Reference> {
+      self.refs_by_scope
+          .get(&(file_id, scope_id))
+          .map(|ids| {
+              let mut refs: Vec<_> = ids
+                  .iter()
+                  .filter_map(|id| self.references.get(id))
+                  .collect();
+              refs.sort_by_key(|r| r.ref_id);
+              refs
+          })
+          .unwrap_or_default()
+  }
+  ```
+
+- [ ] Update `clear()` method to clear the new index
+
+- [ ] Update analyzer Pass 2 to populate `scope_id` on references
+
+**Code Location:** `crates/tugtool-core/src/facts/mod.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_refs_in_scope_returns_scoped_references` - Only refs in specified scope returned
+- [ ] Unit: `test_refs_in_scope_empty_for_unknown_scope` - Unknown scope returns empty
+- [ ] Unit: `test_refs_in_scope_deterministic_order` - Results are deterministic
+- [ ] Unit: `test_insert_reference_updates_scope_index` - Index populated on insert
+- [ ] Unit: `test_scope_index_cleared_on_store_clear` - Index cleared properly
+
+---
+
+###### Phase D: Move Python-Specific Types {#step-0-8-phase-d}
+
+**Prerequisites:** None (can run in parallel with Phases A-C)
+
+**Context:** `DynamicPatternKind` and `TypeCommentKind` are entirely Python-specific but live in `tugtool-core/src/facts/mod.rs`. These should be in the Python crate.
+
+**Tasks:**
+
+- [ ] Create `crates/tugtool-python/src/facts_types.rs` for Python-specific types:
+  ```rust
+  //! Python-specific types that extend the core FactsStore model.
+  //!
+  //! These types are used by the Python analyzer but are not part of the
+  //! language-agnostic core facts model.
+
+  use serde::{Deserialize, Serialize};
+
+  /// Kind of dynamic pattern detected in Python code.
+  ///
+  /// Dynamic patterns indicate code that accesses or modifies attributes/names
+  /// at runtime, which may affect rename safety.
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+  #[serde(rename_all = "snake_case")]
+  pub enum DynamicPatternKind {
+      /// `getattr(obj, 'name')` call.
+      Getattr,
+      /// `setattr(obj, 'name', value)` call.
+      Setattr,
+      // ... rest of variants ...
+  }
+
+  /// Kind of type comment in Python code.
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+  #[serde(rename_all = "snake_case")]
+  pub enum TypeCommentKind {
+      /// A variable type annotation: `# type: T`
+      Variable,
+      /// A function signature annotation: `# type: (...) -> T`
+      FunctionSignature,
+      /// A type ignore directive: `# type: ignore`
+      Ignore,
+  }
+  ```
+
+- [ ] Update `crates/tugtool-python/src/lib.rs` to export the new module:
+  ```rust
+  pub mod facts_types;
+  pub use facts_types::{DynamicPatternKind, TypeCommentKind};
+  ```
+
+- [ ] Remove `DynamicPatternKind` and `TypeCommentKind` from `tugtool-core/src/facts/mod.rs`
+
+- [ ] Update all imports in `tugtool-python` to use the new location
+
+- [ ] Update any imports in `tugtool-core` that reference these types (should be none, but verify)
+
+- [ ] Keep the generic `DynamicPattern` and `TypeCommentFact` structs in core, but parameterize them or use associated types if needed
+
+**Code Location:**
+- New: `crates/tugtool-python/src/facts_types.rs`
+- Modified: `crates/tugtool-core/src/facts/mod.rs`
+- Modified: `crates/tugtool-python/src/lib.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_dynamic_pattern_kind_serialization` - Verify JSON serialization unchanged
+- [ ] Unit: `test_type_comment_kind_serialization` - Verify JSON serialization unchanged
+- [ ] Integration: `test_analyzer_uses_python_specific_types` - Analyzer still works
+
+---
+
+###### Phase E: Iterator Returns for Query Methods {#step-0-8-phase-e}
+
+**Prerequisites:** None (can run in parallel with other phases)
+
+**Context:** Methods like `children_of_class()`, `refs_of_symbol()` return `Vec`, causing unnecessary allocations when callers only need to iterate.
+
+**Tasks:**
+
+- [ ] Identify query methods that return `Vec` but could return iterators:
+  - `refs_of_symbol()` -> `impl Iterator<Item = &Reference>`
+  - `children_of_class()` -> `impl Iterator<Item = &Symbol>`
+  - `symbols_in_file()` -> `impl Iterator<Item = &Symbol>`
+  - `imports_in_file()` -> `impl Iterator<Item = &Import>`
+  - `scopes_in_file()` -> `impl Iterator<Item = &ScopeInfo>`
+  - `call_sites_in_file()` -> `impl Iterator<Item = &CallSite>`
+  - `call_sites_to_callee()` -> `impl Iterator<Item = &CallSite>`
+
+- [ ] For each method, evaluate if callers need:
+  - Random access (keep `Vec`)
+  - Sorting (keep `Vec` or sort in iterator)
+  - Just iteration (convert to `impl Iterator`)
+
+- [ ] Update methods where iterator is sufficient:
+  ```rust
+  /// Get all references to a symbol.
+  ///
+  /// Returns references in deterministic order (by ReferenceId).
+  pub fn refs_of_symbol(&self, symbol_id: SymbolId) -> impl Iterator<Item = &Reference> + '_ {
+      self.refs_by_symbol
+          .get(&symbol_id)
+          .into_iter()
+          .flat_map(|ids| ids.iter())
+          .filter_map(move |id| self.references.get(id))
+  }
+  ```
+
+- [ ] Update callers that depend on `Vec` to use `.collect()` where needed
+
+- [ ] Add `*_vec()` variants for methods where both patterns are common:
+  ```rust
+  pub fn refs_of_symbol_vec(&self, symbol_id: SymbolId) -> Vec<&Reference> {
+      self.refs_of_symbol(symbol_id).collect()
+  }
+  ```
+
+**Code Location:** `crates/tugtool-core/src/facts/mod.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_refs_of_symbol_iterator_deterministic` - Iterator order is stable
+- [ ] Unit: `test_iterator_collect_equals_vec_return` - Collected iterator matches old behavior
+- [ ] Integration: `test_rename_with_iterator_queries` - Rename still works with iterator API
+
+---
+
+###### Step 0.8 Success Criteria {#step-0-8-success}
+
+- [ ] `store.call_sites_to_callee(symbol_id)` returns non-empty results after analyzing code with function calls
+- [ ] `store.call_site_count() > 0` after analyzing files with function/method calls
+- [ ] `FileAnalysis` uses adapter types for `signatures`, `attribute_accesses`, `call_sites`
+- [ ] `store.refs_in_scope(file_id, scope_id)` returns references in the specified scope
+- [ ] `DynamicPatternKind` and `TypeCommentKind` are defined in `tugtool-python`, not `tugtool-core`
+- [ ] All existing tests pass
+- [ ] No regression in rename operation behavior
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugtool-python call_site` - CallSite persistence tests pass
+- [ ] `cargo nextest run -p tugtool-core facts` - FactsStore tests pass including refs_by_scope
+- [ ] `cargo nextest run --workspace` - All existing tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+
+**Rollback:** Revert commit
+
+---
+
+##### Step 0.9: Import Manipulation Layer {#step-0-9}
+
+**Commit:** `feat(python): add import manipulation layer for move operations`
+
+**References:** [D07](#d07-edit-primitives), [Step 0.1](#step-0-1) (BatchSpanEditor)
+
+**Context:**
+
+Move operations (Move Function, Move Class, Move Module) require sophisticated import manipulation:
+- Adding imports to destination files
+- Removing imports from source files when symbols are moved
+- Updating import paths when modules are renamed/moved
+
+This step builds the import manipulation infrastructure that Layer 3 (Import Graph) operations depend on.
+
+**Artifacts:**
+- New `crates/tugtool-python/src/layers/mod.rs` - Layers module root
+- New `crates/tugtool-python/src/layers/imports.rs` - Import manipulation layer
+- Modified `crates/tugtool-python/src/lib.rs` - Export layers module
+- Modified `crates/tugtool-python-cst/src/visitor/imports.rs` - TYPE_CHECKING tracking
+- Modified `crates/tugtool-core/src/facts/mod.rs` - is_type_checking field on Import
+
+---
+
+###### Phase A: Import Infrastructure Types {#step-0-9-phase-a}
+
+**Prerequisites:** Step 0.8 complete (or at least Phase A for CallSite patterns to follow)
+
+**Context:** Define the core types for import manipulation before implementing the operations.
+
+**Tasks:**
+
+- [ ] Create `crates/tugtool-python/src/layers/mod.rs`:
+  ```rust
+  //! Infrastructure layers for Python refactoring operations.
+  //!
+  //! This module provides the building blocks for complex refactoring operations
+  //! that require coordinated changes across multiple files.
+
+  pub mod imports;
+
+  pub use imports::{
+      ImportInserter, ImportRemover, ImportUpdater, ImportManipulationError,
+      ImportGroupKind, ImportInsertMode,
+  };
+  ```
+
+- [ ] Create `crates/tugtool-python/src/layers/imports.rs` with core types:
+  ```rust
+  //! Import manipulation layer for Python refactoring.
+
+  use tugtool_core::patch::Span;
+
+  /// Classification of import groups for organization.
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+  pub enum ImportGroupKind {
+      /// Future imports (`from __future__ import ...`)
+      Future,
+      /// Standard library imports
+      Stdlib,
+      /// Third-party package imports
+      ThirdParty,
+      /// Local/project imports
+      Local,
+  }
+
+  /// Mode for import insertion.
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+  pub enum ImportInsertMode {
+      /// Minimal diff mode: insert at the first reasonable location
+      #[default]
+      Preserve,
+      /// Full organization mode: sort imports into groups
+      Organize,
+  }
+
+  /// Error type for import manipulation operations.
+  #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+  pub enum ImportManipulationError {
+      #[error("import already exists: {0}")]
+      AlreadyExists(String),
+      #[error("import not found: {0}")]
+      NotFound(String),
+      #[error("invalid import syntax: {0}")]
+      InvalidSyntax(String),
+      #[error("cannot classify import: {0}")]
+      UnknownClassification(String),
+      #[error("no suitable insertion point found")]
+      NoInsertionPoint,
+  }
+
+  pub type ImportManipulationResult<T> = Result<T, ImportManipulationError>;
+  ```
+
+- [ ] Add `ImportStatement` type for rendering imports:
+  ```rust
+  /// A Python import statement to insert.
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub enum ImportStatement {
+      Import { module: String, alias: Option<String> },
+      FromImport { module: String, names: Vec<ImportedName> },
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct ImportedName {
+      pub name: String,
+      pub alias: Option<String>,
+  }
+
+  impl ImportStatement {
+      pub fn import(module: impl Into<String>) -> Self { ... }
+      pub fn from_import(module: impl Into<String>, name: impl Into<String>) -> Self { ... }
+      pub fn render(&self) -> String { ... }
+  }
+  ```
+
+**Code Location:** `crates/tugtool-python/src/layers/imports.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_import_statement_render_simple` - `import os` renders correctly
+- [ ] Unit: `test_import_statement_render_alias` - `import numpy as np` renders correctly
+- [ ] Unit: `test_import_statement_render_from` - `from os import path` renders correctly
+- [ ] Unit: `test_import_statement_render_from_alias` - `from os import path as p` renders correctly
+- [ ] Unit: `test_import_statement_render_from_multiple` - `from os import path, getcwd` renders correctly
+
+---
+
+###### Phase B: Import Group Classification {#step-0-9-phase-b}
+
+**Prerequisites:** Phase A complete
+
+**Context:** To insert imports in the correct location, we need to classify them by group (future, stdlib, third-party, local).
+
+**Tasks:**
+
+- [ ] Create stdlib module list (based on Python 3.x):
+  ```rust
+  const STDLIB_MODULES: &[&str] = &[
+      "abc", "argparse", "ast", "asyncio", "base64", "collections",
+      "contextlib", "copy", "csv", "dataclasses", "datetime", "decimal",
+      "enum", "functools", "glob", "hashlib", "heapq", "http", "io",
+      "itertools", "json", "logging", "math", "os", "pathlib", "pickle",
+      "queue", "random", "re", "shutil", "socket", "sqlite3", "ssl",
+      "string", "subprocess", "sys", "tempfile", "threading", "time",
+      "typing", "unittest", "urllib", "uuid", "warnings", "weakref", "xml",
+      "zipfile", "zlib",
+      // ... complete list
+  ];
+  ```
+
+- [ ] Implement `classify_import()` function:
+  ```rust
+  pub fn classify_import(
+      module_path: &str,
+      local_packages: &HashSet<String>,
+  ) -> ImportGroupKind {
+      if module_path == "__future__" { return ImportGroupKind::Future; }
+      let top_level = module_path.split('.').next().unwrap_or(module_path);
+      if local_packages.contains(top_level) { return ImportGroupKind::Local; }
+      if module_path.starts_with('.') { return ImportGroupKind::Local; }
+      if STDLIB_MODULES.contains(&top_level) { return ImportGroupKind::Stdlib; }
+      ImportGroupKind::ThirdParty
+  }
+  ```
+
+- [ ] Add `detect_local_packages()` helper for workspace analysis
+
+**Code Location:** `crates/tugtool-python/src/layers/imports.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_classify_future_import` - `__future__` classified as Future
+- [ ] Unit: `test_classify_stdlib_import` - `os`, `sys`, `collections` classified as Stdlib
+- [ ] Unit: `test_classify_stdlib_submodule` - `os.path`, `collections.abc` classified as Stdlib
+- [ ] Unit: `test_classify_third_party_import` - `numpy`, `requests` classified as ThirdParty
+- [ ] Unit: `test_classify_local_import` - Project packages classified as Local
+- [ ] Unit: `test_classify_relative_import` - `.module` classified as Local
+- [ ] Unit: `test_detect_local_packages` - Workspace packages detected correctly
+
+---
+
+###### Phase C: ImportInserter Implementation {#step-0-9-phase-c}
+
+**Prerequisites:** Phase A and B complete
+
+**Context:** `ImportInserter` adds new import statements at the correct location in a file, respecting import groups and existing organization.
+
+**Tasks:**
+
+- [ ] Implement `ImportInserter` struct with builder pattern
+- [ ] Implement `analyze_existing_imports()` to scan file for import locations
+- [ ] Implement `find_insertion_point()` for `Preserve` mode:
+  - If imports of same group exist, insert after last one in group
+  - If no imports of same group, insert at appropriate boundary
+  - Handle TYPE_CHECKING blocks specially
+- [ ] Implement `find_insertion_point()` for `Organize` mode:
+  - Sort all imports by group then alphabetically
+  - Insert in correct sorted position
+- [ ] Handle edge cases:
+  - File with no existing imports
+  - File with only docstring (insert after docstring)
+  - File with `__future__` imports (never insert before)
+  - Multiline imports with parentheses
+
+**Code Location:** `crates/tugtool-python/src/layers/imports.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_insert_into_empty_file` - Insert into file with no imports
+- [ ] Unit: `test_insert_stdlib_after_stdlib` - Insert os.path after existing os import
+- [ ] Unit: `test_insert_third_party_after_stdlib` - numpy goes after os
+- [ ] Unit: `test_insert_local_after_third_party` - Local import goes last
+- [ ] Unit: `test_insert_preserves_blank_lines` - Blank lines between groups preserved
+- [ ] Unit: `test_insert_duplicate_rejected` - Duplicate import returns error
+- [ ] Unit: `test_insert_after_docstring` - Import placed after module docstring
+- [ ] Unit: `test_insert_after_future` - Never insert before __future__
+- [ ] Integration: `test_insert_roundtrip` - Insert, apply edit, parse result
+
+---
+
+###### Phase D: ImportRemover Implementation {#step-0-9-phase-d}
+
+**Prerequisites:** Phase A complete
+
+**Context:** `ImportRemover` removes import statements with proper cleanup (trailing commas, empty lines, entire statements when last name removed).
+
+**Tasks:**
+
+- [ ] Implement `ImportRemover` struct
+- [ ] Implement `remove_import()` for entire statement removal
+- [ ] Implement `remove_name_from_import()` for single name removal:
+  - If this is the only name, remove the entire import statement
+  - Otherwise, remove just this name with proper comma handling
+- [ ] Implement `calculate_name_removal_span()` for comma handling
+- [ ] Handle multiline imports (parenthesized imports)
+
+**Code Location:** `crates/tugtool-python/src/layers/imports.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_remove_single_name_import` - `from os import path` -> removes entire statement
+- [ ] Unit: `test_remove_first_from_multi` - `from os import path, getcwd` -> `from os import getcwd`
+- [ ] Unit: `test_remove_last_from_multi` - `from os import path, getcwd` -> `from os import path`
+- [ ] Unit: `test_remove_middle_from_multi` - `from os import a, b, c` -> `from os import a, c`
+- [ ] Unit: `test_remove_with_alias` - `from os import path as p` removes correctly
+- [ ] Unit: `test_remove_multiline_single` - Removes line from parenthesized import
+- [ ] Unit: `test_remove_last_makes_single_line` - Multi-line with one remaining becomes single-line
+- [ ] Unit: `test_remove_trailing_comma_cleanup` - Trailing commas handled
+
+---
+
+###### Phase E: ImportUpdater Implementation {#step-0-9-phase-e}
+
+**Prerequisites:** Phase A complete
+
+**Context:** `ImportUpdater` modifies existing import statements to change module paths or preserve aliases during moves.
+
+**Tasks:**
+
+- [ ] Implement `ImportUpdater` struct
+- [ ] Implement `update_module_path()` for changing module path:
+  - `from old.module import foo` -> `from new.module import foo`
+- [ ] Implement `update_imported_name()` for changing imported name:
+  - `from module import old_name` -> `from module import new_name`
+  - Preserves any existing alias
+- [ ] Implement `convert_to_from_import()` for style conversion:
+  - `import module.sub` -> `from module import sub`
+
+**Code Location:** `crates/tugtool-python/src/layers/imports.rs`
+
+**Tests:**
+
+- [ ] Unit: `test_update_module_path_simple` - `from a import x` -> `from b import x`
+- [ ] Unit: `test_update_module_path_dotted` - `from a.b import x` -> `from c.d import x`
+- [ ] Unit: `test_update_name_simple` - `from m import old` -> `from m import new`
+- [ ] Unit: `test_update_name_preserves_alias` - `from m import old as o` -> `from m import new as o`
+- [ ] Unit: `test_convert_to_from_import` - `import m.sub` -> `from m import sub`
+
+---
+
+###### Phase F: TYPE_CHECKING Import Tracking {#step-0-9-phase-f}
+
+**Prerequisites:** None (can run in parallel with Phases A-E)
+
+**Context:** Imports inside `if TYPE_CHECKING:` blocks are for type hints only and need special handling during moves. Currently, these are not explicitly tracked.
+
+**Tasks:**
+
+- [ ] Add `is_type_checking` field to `Import` in FactsStore:
+  ```rust
+  pub struct Import {
+      // ... existing fields ...
+      /// True if this import is inside an `if TYPE_CHECKING:` block.
+      #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+      pub is_type_checking: bool,
+  }
+  ```
+
+- [ ] Update `Import::new()` and add builder method:
+  ```rust
+  pub fn with_type_checking(mut self, is_type_checking: bool) -> Self {
+      self.is_type_checking = is_type_checking;
+      self
+  }
+  ```
+
+- [ ] Update CST `ImportCollector` to detect TYPE_CHECKING context:
+  - Track `type_checking_depth: usize` during visitation
+  - Detect `if TYPE_CHECKING:` and `if typing.TYPE_CHECKING:`
+  - Set flag on imports collected within those blocks
+
+- [ ] Update `ImportInfo` (CST output) to include `is_type_checking` flag
+
+- [ ] Update analyzer Pass 2 to propagate `is_type_checking` to FactsStore
+
+- [ ] Add query methods to filter TYPE_CHECKING imports:
+  ```rust
+  pub fn type_checking_imports_in_file(&self, file_id: FileId) -> Vec<&Import> { ... }
+  pub fn runtime_imports_in_file(&self, file_id: FileId) -> Vec<&Import> { ... }
+  ```
+
+**Code Location:**
+- `crates/tugtool-core/src/facts/mod.rs` - Import struct, query methods
+- `crates/tugtool-python-cst/src/visitor/imports.rs` - ImportCollector
+- `crates/tugtool-python/src/analyzer.rs` - Propagation
+
+**Tests:**
+
+- [ ] Unit: `test_type_checking_import_detected` - `if TYPE_CHECKING: import x` flagged
+- [ ] Unit: `test_typing_type_checking_detected` - `if typing.TYPE_CHECKING:` flagged
+- [ ] Unit: `test_regular_import_not_flagged` - Normal imports have `is_type_checking=false`
+- [ ] Unit: `test_nested_type_checking` - Nested if inside TYPE_CHECKING handled
+- [ ] Unit: `test_type_checking_query_filters` - Query methods return correct subsets
+- [ ] Integration: `test_type_checking_preserved_in_facts_store` - Roundtrip preservation
+
+---
+
+###### Step 0.9 Success Criteria {#step-0-9-success}
+
+- [ ] `ImportInserter` can add imports at correct locations with proper grouping
+- [ ] `ImportRemover` can remove single names from multi-name imports with proper cleanup
+- [ ] `ImportUpdater` can update module paths and names while preserving aliases
+- [ ] `Import.is_type_checking` correctly identifies imports in TYPE_CHECKING blocks
+- [ ] All existing tests pass
+- [ ] Import manipulation tests cover edge cases (multiline, aliases, empty results)
+
+**Checkpoint:**
+
+- [ ] `cargo nextest run -p tugtool-python layers::imports` - All import layer tests pass
+- [ ] `cargo nextest run -p tugtool-python-cst imports` - CST import tests pass including TYPE_CHECKING
+- [ ] `cargo nextest run --workspace` - All existing tests pass
+- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+
+**Rollback:** Revert commit
+
+---
+
+##### Steps 0.8-0.9 Summary {#step-0-8-0-9-summary}
+
+After completing Steps 0.8-0.9, you will have:
+
+- **CallSite persistence:** All call sites are inserted into FactsStore, enabling `call_sites_to_callee()` queries
+- **Type decoupling:** FileAnalysis uses adapter types, not CST types directly
+- **Scope-aware queries:** `refs_in_scope()` enables efficient parameter/local variable operations
+- **Clean architecture:** Python-specific types in `tugtool-python`, language-agnostic types in core
+- **Import manipulation:** Full infrastructure for adding, removing, and updating imports
+- **TYPE_CHECKING awareness:** Imports in type checking blocks are tracked separately
+
+**Final Steps 0.8-0.9 Checkpoint:**
+
+- [ ] `store.call_site_count() > 0` after analyzing code with calls
+- [ ] `store.refs_in_scope(file_id, scope_id)` returns scoped references
+- [ ] `ImportInserter::insert()` generates correct edits
+- [ ] `ImportRemover::remove_name_from_import()` handles multi-name imports
+- [ ] `Import.is_type_checking` is populated correctly
+- [ ] `cargo nextest run --workspace` - All tests pass
+
+---
+
 #### Stage 0 Summary {#stage-0-summary}
 
-After completing Steps 0.1-0.7, you will have:
+After completing Steps 0.1-0.9, you will have:
 - Edit primitive infrastructure supporting all [D07](#d07-edit-primitives) operations ([Step 0.1](#step-0-1))
 - Position-to-node lookup for expression/statement boundary detection ([Step 0.2](#step-0-2))
 - Stub file discovery and update infrastructure for [D08](#d08-stub-updates) compliance ([Step 0.3](#step-0-3))
@@ -7751,6 +8531,8 @@ After completing Steps 0.1-0.7, you will have:
 - FactsStore completeness: single code path, all CST data propagated ([Step 0.5](#step-0-5))
 - Signatures in FactsStore: function/method signatures with full parameter data ([Step 0.6](#step-0-6))
 - Accurate rename-param: parameter kind validation and precise edits ([Step 0.7](#step-0-7))
+- Implementation gap fixes: CallSite persistence, type decoupling, scope indexes ([Step 0.8](#step-0-8))
+- Import manipulation layer: insert, remove, update imports with TYPE_CHECKING support ([Step 0.9](#step-0-9))
 
 **Final Stage 0 Checkpoint:**
 - [ ] `cargo nextest run --workspace`
@@ -7758,6 +8540,9 @@ After completing Steps 0.1-0.7, you will have:
 - [ ] Infrastructure is ready for Stage 1 operations
 - [ ] No FactsStore bypass patterns exist in `ops/` modules
 - [ ] `store.signature_count() > 0` after analyzing files with functions
+- [ ] `store.call_site_count() > 0` after analyzing files with calls
+- [ ] `store.refs_in_scope()` returns scoped references
+- [ ] Import manipulation layer fully tested
 - [ ] No TODO comments about "get from signature" remain in rename_param.rs
 
 ---

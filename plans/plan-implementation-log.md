@@ -6,6 +6,67 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8 Phase A: CallSite Persistence | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.8 Phase A specification (lines 7772-7847)
+- `crates/tugtool-python/src/analyzer.rs` - Main analyzer with pass structure
+- `crates/tugtool-python-cst/src/visitor/call_site.rs` - CST CallSiteInfo, CallArgInfo types
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - CST ReceiverPath, ReceiverStep types
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore CallSite, CallArg, ReceiverPath, ReceiverPathStep types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Identify the correct pass for CallSite insertion (Pass 5d) | Done |
+| Create `convert_receiver_path` function (CST -> Core ReceiverPath) | Done |
+| Create `convert_call_site` function (CST -> Core CallSite) | Done |
+| Add `resolve_callee` function for simple function calls | Done |
+| Add `resolve_method_callee` function for method calls | Done |
+| Insert CallSites into FactsStore in Pass 5d | Done |
+| Write `test_call_sites_inserted_into_facts_store` | Done |
+| Write `test_call_site_callee_resolution_simple_function` | Done |
+| Write `test_call_site_callee_resolution_method_call` | Done |
+| Write `test_call_sites_to_callee_returns_results` | Done |
+| Write `test_call_site_persistence_multi_file` | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added imports for `CallArg`, `CallSite`, `CallSiteId`, `ReceiverPathStep as CoreReceiverPathStep`
+  - Added `convert_receiver_path()` function to convert CST ReceiverStep variants to Core ReceiverPathStep
+  - Added `convert_call_site()` function to convert CST CallSiteInfo to Core CallSite
+  - Added `resolve_callee()` function for simple function call resolution via GlobalSymbolMap
+  - Added `resolve_method_callee()` function for method call resolution via receiver type
+  - Added Pass 5d section in `analyze_files()` to insert call sites into FactsStore
+  - Added 5 unit tests for call site persistence (lines ~12567-12728)
+- `plans/phase-13.md`:
+  - Checked off all tasks and tests in Phase A section
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python "test_call_site"`: 5 tests passed
+- `cargo nextest run --workspace`: 2465 tests passed
+
+**Checkpoints Verified:**
+- Call sites are inserted into FactsStore after analysis: PASS
+- Simple function calls resolve to function symbol via GlobalSymbolMap: PASS
+- Method calls resolve to method symbol via receiver type resolution: PASS
+- `store.call_sites_to_callee()` returns non-empty results: PASS
+- Cross-file call sites work correctly: PASS
+
+**Key Decisions/Notes:**
+- Implemented as Pass 5d (after metadata insertion in 5a-5c) rather than Pass 4c, because:
+  - Pass 4d already resolves receiver types for method calls
+  - Pass 5 iterates through file_analyses, matching the pattern for other metadata
+  - All type resolution context is available after Pass 4d completes
+- For method calls, reused `resolve_call_site_receiver_type()` from Pass 4d to maintain consistency
+- For function calls, used GlobalSymbolMap lookup, trying Function first then Class (for constructors)
+- The `resolve_method_callee()` function mirrors `insert_method_call_reference()` but returns SymbolId instead of inserting a Reference
+
+---
+
 ## [phase-13.md] Step 0.5 Phase C: Add Missing Analysis Data | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

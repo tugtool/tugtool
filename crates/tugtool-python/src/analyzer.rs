@@ -66,9 +66,10 @@ use tugtool_core::adapter::{
     ScopeData, SignatureData, SymbolData, TypeParamData,
 };
 use tugtool_core::facts::{
-    AttributeAccessKind, DynamicPattern, DynamicPatternKind, ExportIntent, ExportKind,
-    ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind, IsInstanceCheck, Language,
-    Modifier, ParamKind, Parameter, PublicExport, ReceiverPath as CoreReceiverPath, Reference,
+    AttributeAccessKind, CallArg, CallSite, CallSiteId, DynamicPattern, DynamicPatternKind,
+    ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind,
+    IsInstanceCheck, Language, Modifier, ParamKind, Parameter, PublicExport,
+    ReceiverPath as CoreReceiverPath, ReceiverPathStep as CoreReceiverPathStep, Reference,
     ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Signature,
     Symbol, SymbolId, SymbolKind, TypeCommentFact, TypeCommentKind, TypeNode,
 };
@@ -1893,6 +1894,35 @@ pub fn analyze_files(
             );
             store.insert_type_comment(comment);
         }
+
+        // 5d: Insert call sites into FactsStore
+        // This persists call site information for parameter rename operations
+        // and call graph queries.
+        let tracker = type_trackers.get(&file_id);
+        let narrowing = narrowing_contexts.get(&file_id);
+
+        for cst_call in &analysis.call_sites {
+            // Resolve callee symbol
+            let resolved_callee = if cst_call.is_method_call {
+                // For method calls, resolve via receiver type and class method index
+                resolve_method_callee(
+                    cst_call,
+                    tracker,
+                    narrowing,
+                    &class_methods_by_name,
+                    &class_name_to_id,
+                    store,
+                )
+            } else {
+                // For function calls, look up in global symbol map
+                resolve_callee(cst_call, &global_symbols, None)
+            };
+
+            // Convert and insert call site
+            let call_id = store.next_call_site_id();
+            let call_site = convert_call_site(cst_call, file_id, call_id, resolved_callee);
+            store.insert_call_site(call_site);
+        }
     }
 
     // Store TypeTrackers in bundle for use by adapter conversion
@@ -1928,6 +1958,155 @@ fn convert_type_comment_kind(cst_kind: tugtool_python_cst::TypeCommentKind) -> T
         }
         tugtool_python_cst::TypeCommentKind::Ignore => TypeCommentKind::Ignore,
     }
+}
+
+/// Convert CST ReceiverPath to Core ReceiverPath.
+///
+/// Converts the CST representation of a receiver path (e.g., `self.handler.process`)
+/// to the language-agnostic FactsStore representation.
+fn convert_receiver_path(cst_path: &ReceiverPath) -> CoreReceiverPath {
+    let steps = cst_path
+        .steps
+        .iter()
+        .map(|step| match step {
+            ReceiverStep::Name { value } => CoreReceiverPathStep::Name {
+                value: value.clone(),
+            },
+            ReceiverStep::Attr { value } => CoreReceiverPathStep::Attribute {
+                value: value.clone(),
+            },
+            ReceiverStep::Call => CoreReceiverPathStep::Call,
+            ReceiverStep::Subscript => CoreReceiverPathStep::Subscript,
+        })
+        .collect();
+    CoreReceiverPath::new(steps)
+}
+
+/// Convert CST CallSiteInfo to Core CallSite.
+///
+/// Converts the CST representation of a call site to the FactsStore CallSite type.
+/// The `resolved_callee` is provided by the caller after symbol resolution.
+fn convert_call_site(
+    cst_call: &CallSiteInfo,
+    file_id: FileId,
+    call_id: CallSiteId,
+    resolved_callee: Option<SymbolId>,
+) -> CallSite {
+    // Convert arguments
+    let args = cst_call
+        .args
+        .iter()
+        .map(|arg| {
+            let span = arg
+                .span
+                .map(|s| Span::new(s.start, s.end))
+                .unwrap_or_else(|| Span::new(0, 0));
+            let keyword_name_span = arg.keyword_name_span.map(|s| Span::new(s.start, s.end));
+            if let Some(name) = &arg.name {
+                CallArg::keyword(name.clone(), span, keyword_name_span)
+            } else {
+                CallArg::positional(span)
+            }
+        })
+        .collect();
+
+    // Convert receiver path
+    let receiver_path = cst_call.receiver_path.as_ref().map(convert_receiver_path);
+
+    // Build call site span
+    let span = cst_call
+        .span
+        .map(|s| Span::new(s.start, s.end))
+        .unwrap_or_else(|| Span::new(0, 0));
+
+    // Create call site with all fields
+    let mut call_site = CallSite::new(call_id, file_id, span);
+    call_site.args = args;
+    call_site.scope_path = cst_call.scope_path.clone();
+    call_site.is_method_call = cst_call.is_method_call;
+    call_site.callee_symbol_id = resolved_callee;
+    call_site.receiver_path = receiver_path;
+
+    call_site
+}
+
+/// Resolve a callee to its SymbolId for simple function calls.
+///
+/// Looks up the callee name in the global symbol map.
+/// Tries function first, then class (for constructor calls).
+/// Returns None if the callee cannot be resolved.
+fn resolve_callee(
+    cst_call: &CallSiteInfo,
+    global_symbols: &GlobalSymbolMap,
+    _method_symbol: Option<SymbolId>,
+) -> Option<SymbolId> {
+    // For simple function calls, look up in global symbol map
+    // Try function first, then class (for constructor calls)
+    if let Some(entries) = global_symbols.get(&(cst_call.callee.clone(), SymbolKind::Function)) {
+        // Return the first definition (prefer original over imports)
+        entries.first().map(|(_, symbol_id)| *symbol_id)
+    } else if let Some(entries) = global_symbols.get(&(cst_call.callee.clone(), SymbolKind::Class))
+    {
+        // Constructor call - resolve to the class symbol
+        entries.first().map(|(_, symbol_id)| *symbol_id)
+    } else {
+        None
+    }
+}
+
+/// Resolve a method call to its callee SymbolId.
+///
+/// Uses receiver type resolution and the class method index to find the
+/// method symbol. This mirrors the logic in `insert_method_call_reference`
+/// but returns the SymbolId instead of inserting a reference.
+#[allow(clippy::too_many_arguments)]
+fn resolve_method_callee(
+    call_site: &CallSiteInfo,
+    tracker: Option<&TypeTracker>,
+    narrowing: Option<&NarrowingContext>,
+    class_methods_by_name: &HashMap<String, Vec<(String, SymbolId, SymbolId)>>,
+    class_name_to_id: &HashMap<String, SymbolId>,
+    store: &FactsStore,
+) -> Option<SymbolId> {
+    // Get method span for type resolution
+    let method_span = call_site.span.map(|s| Span::new(s.start, s.end))?;
+
+    // Resolve receiver type
+    let tracker = tracker?;
+    let receiver_type_name =
+        resolve_call_site_receiver_type(call_site, tracker, narrowing, Some(method_span));
+
+    // Check for self/cls calls within a class
+    let is_self_call = matches!(call_site.receiver.as_deref(), Some("self") | Some("cls"));
+
+    // Look up methods matching this callee name
+    let methods = class_methods_by_name.get(&call_site.callee)?;
+
+    for (class_name, class_symbol_id, method_symbol_id) in methods {
+        // Check if receiver type matches the class (including inheritance via MRO)
+        let type_matches = if let Some(receiver_type) = receiver_type_name.as_deref() {
+            if receiver_type == class_name {
+                // Direct match
+                true
+            } else if let Some(&receiver_class_id) = class_name_to_id.get(receiver_type) {
+                // Check if receiver_type inherits from class_name
+                let mut visited = HashSet::new();
+                class_inherits_from(receiver_class_id, *class_symbol_id, store, &mut visited)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let self_in_class = is_self_call && call_site.scope_path.iter().any(|s| s == class_name);
+
+        if type_matches || self_in_class {
+            return Some(*method_symbol_id);
+        }
+    }
+
+    None
 }
 
 /// Analyze a single Python file using the native Rust CST parser.
@@ -12383,6 +12562,180 @@ def call_handler(h: Handler):
             assert!(
                 refs.iter().any(|r| r.ref_kind == ReferenceKind::Call),
                 "should have Call reference to process method from annotated parameter"
+            );
+        }
+
+        // ====================================================================
+        // Pass 5d: CallSite Persistence Tests (Step 0.8 Phase A)
+        // ====================================================================
+
+        #[test]
+        fn test_call_sites_inserted_into_facts_store() {
+            // Test: Call sites are inserted into FactsStore after analysis
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+def greet(name):
+    return f"Hello, {name}!"
+
+result = greet("World")
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify call sites were inserted
+            let call_sites: Vec<_> = store.call_sites().collect();
+            assert!(
+                !call_sites.is_empty(),
+                "should have inserted call sites into FactsStore"
+            );
+
+            // Verify the greet() call is present
+            let greet_call = call_sites.iter().find(|c| !c.is_method_call);
+            assert!(greet_call.is_some(), "should have the function call greet()");
+        }
+
+        #[test]
+        fn test_call_site_callee_resolution_simple_function() {
+            // Test: Simple function call resolves to symbol
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+def foo():
+    pass
+
+foo()
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the foo function symbol
+            let foo_sym = store
+                .symbols()
+                .find(|s| s.name == "foo" && s.kind == SymbolKind::Function);
+            assert!(foo_sym.is_some(), "should have foo function");
+            let foo_id = foo_sym.unwrap().symbol_id;
+
+            // Verify the call site has the resolved callee
+            let call_sites: Vec<_> = store.call_sites().collect();
+            let foo_call = call_sites.iter().find(|c| c.callee_symbol_id == Some(foo_id));
+            assert!(foo_call.is_some(), "call site should resolve to foo symbol");
+        }
+
+        #[test]
+        fn test_call_site_callee_resolution_method_call() {
+            // Test: Method call resolves via receiver
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+class Handler:
+    def process(self):
+        pass
+
+h: Handler = Handler()
+h.process()
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the process method symbol
+            let process_sym = store
+                .symbols()
+                .find(|s| s.name == "process" && s.kind == SymbolKind::Function);
+            assert!(process_sym.is_some(), "should have process method");
+            let process_id = process_sym.unwrap().symbol_id;
+
+            // Verify method call is in call_sites with resolved callee
+            let call_sites: Vec<_> = store.call_sites().collect();
+            let process_call = call_sites
+                .iter()
+                .find(|c| c.is_method_call && c.callee_symbol_id == Some(process_id));
+            assert!(
+                process_call.is_some(),
+                "method call should resolve to process symbol"
+            );
+        }
+
+        #[test]
+        fn test_call_sites_to_callee_returns_results() {
+            // Test: store.call_sites_to_callee() returns non-empty results
+            let mut store = FactsStore::new();
+            let files = vec![(
+                "test.py".to_string(),
+                r#"
+def compute(x):
+    return x * 2
+
+a = compute(1)
+b = compute(2)
+c = compute(3)
+"#
+                .to_string(),
+            )];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Find the compute function symbol
+            let compute_sym = store
+                .symbols()
+                .find(|s| s.name == "compute" && s.kind == SymbolKind::Function);
+            assert!(compute_sym.is_some(), "should have compute function");
+            let compute_id = compute_sym.unwrap().symbol_id;
+
+            // Verify call_sites_to_callee returns the 3 calls
+            let calls_to_compute = store.call_sites_to_callee(compute_id);
+            assert_eq!(
+                calls_to_compute.len(),
+                3,
+                "call_sites_to_callee should return 3 calls to compute"
+            );
+        }
+
+        #[test]
+        fn test_call_site_persistence_multi_file() {
+            // Test: Cross-file call sites work correctly
+            let mut store = FactsStore::new();
+            let files = vec![
+                (
+                    "utils.py".to_string(),
+                    r#"
+def helper():
+    return 42
+"#
+                    .to_string(),
+                ),
+                (
+                    "main.py".to_string(),
+                    r#"
+from utils import helper
+
+result = helper()
+"#
+                    .to_string(),
+                ),
+            ];
+
+            let _bundle = analyze_files(&files, &mut store).expect("should succeed");
+
+            // Verify call sites were inserted for both files
+            let call_sites: Vec<_> = store.call_sites().collect();
+            assert!(!call_sites.is_empty(), "should have call sites");
+
+            // The helper() call in main.py should be present
+            let main_file_id = store.files().find(|f| f.path == "main.py").unwrap().file_id;
+            let call_in_main = call_sites.iter().find(|c| c.file_id == main_file_id);
+            assert!(
+                call_in_main.is_some(),
+                "should have call site in main.py for helper()"
             );
         }
 
