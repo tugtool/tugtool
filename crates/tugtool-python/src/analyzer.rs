@@ -67,9 +67,9 @@ use tugtool_core::adapter::{
 };
 use tugtool_core::facts::{
     AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File,
-    Import, ImportKind, Language, Modifier, ParamKind, Parameter, PublicExport, Reference,
-    ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Signature,
-    Symbol, SymbolId, SymbolKind, TypeNode,
+    Import, ImportKind, Language, Modifier, ParamKind, Parameter, PublicExport,
+    ReceiverPath as CoreReceiverPath, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    ScopeInfo as CoreScopeInfo, ScopeKind, Signature, Symbol, SymbolId, SymbolKind, TypeNode,
 };
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
@@ -5334,11 +5334,18 @@ impl PythonAdapter {
                 })
                 .collect();
 
+            // Convert CST ReceiverPath to Core ReceiverPath
+            let receiver_path: Option<CoreReceiverPath> =
+                call.receiver_path.as_ref().map(|p| p.into());
+
             result.calls.push(CallSiteData {
                 callee_symbol_index,
                 callee_symbol_qualified_name,
                 span,
                 args,
+                receiver_path,
+                scope_path: call.scope_path.clone(),
+                is_method_call: call.is_method_call,
             });
         }
 
@@ -14021,6 +14028,134 @@ y = x + 1
                     "x reference in comprehension should be in comprehension scope"
                 );
             }
+        }
+    }
+
+    mod phase_b_integration_tests {
+        use super::*;
+
+        #[test]
+        fn test_signature_param_spans_propagated() {
+            // Verify that parameter name_spans flow from CST to FactsStore
+            let code = r#"def greet(name: str, count: int = 1):
+    pass
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let mut store = FactsStore::new();
+
+            let bundle = analyze_files(&files, &mut store).unwrap();
+            assert!(bundle.is_complete());
+
+            // Find the function symbol
+            let func_symbol = store
+                .symbols()
+                .find(|s| s.name == "greet" && s.kind == SymbolKind::Function)
+                .expect("should find greet function");
+
+            // Get signature from FactsStore
+            let signature = store
+                .signature(func_symbol.symbol_id)
+                .expect("greet should have a signature");
+
+            // Check parameters have name_spans
+            assert_eq!(signature.params.len(), 2);
+
+            let name_param = &signature.params[0];
+            assert_eq!(name_param.name, "name");
+            assert!(
+                name_param.name_span.is_some(),
+                "name param should have name_span"
+            );
+
+            let count_param = &signature.params[1];
+            assert_eq!(count_param.name, "count");
+            assert!(
+                count_param.name_span.is_some(),
+                "count param should have name_span"
+            );
+        }
+
+        #[test]
+        fn test_callsite_receiver_path_propagated() {
+            // Verify that ReceiverPath flows from CST to adapter output
+            // Use the PythonAdapter to get the AnalysisBundle which has file_results
+            let code = r#"class Handler:
+    def process(self):
+        pass
+
+class Service:
+    def __init__(self):
+        self.handler = Handler()
+
+    def run(self):
+        self.handler.process()
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let store = FactsStore::new();
+
+            let adapter = PythonAdapter::new();
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+            assert!(bundle.failed_files.is_empty(), "all files should parse");
+            assert_eq!(bundle.file_results.len(), 1);
+
+            let file_result = &bundle.file_results[0];
+
+            // Find the call to self.handler.process()
+            let method_call = file_result
+                .calls
+                .iter()
+                .find(|c| c.is_method_call)
+                .expect("should have a method call");
+
+            // Verify receiver_path was propagated
+            assert!(
+                method_call.receiver_path.is_some(),
+                "method call should have receiver_path"
+            );
+
+            let path = method_call.receiver_path.as_ref().unwrap();
+            assert!(!path.steps.is_empty(), "receiver_path should have steps");
+
+            // Check scope_path was propagated
+            assert!(
+                !method_call.scope_path.is_empty(),
+                "method call should have scope_path"
+            );
+
+            // Verify is_method_call flag
+            assert!(method_call.is_method_call, "should be marked as method call");
+        }
+
+        #[test]
+        fn test_callsite_scope_path_contains_class_and_method() {
+            // Verify scope_path includes class and method names
+            // Use the PythonAdapter to get the AnalysisBundle which has file_results
+            let code = r#"class MyClass:
+    def my_method(self):
+        print("hello")
+"#;
+            let files = vec![("main.py".to_string(), code.to_string())];
+            let store = FactsStore::new();
+
+            let adapter = PythonAdapter::new();
+            let bundle = adapter.analyze_files(&files, &store).unwrap();
+            assert!(bundle.failed_files.is_empty(), "all files should parse");
+
+            let file_result = &bundle.file_results[0];
+
+            // Find the call to print
+            let print_call = file_result
+                .calls
+                .iter()
+                .find(|c| !c.is_method_call)
+                .expect("should have a function call (print)");
+
+            // scope_path should include the class and method
+            assert!(
+                print_call.scope_path.len() >= 2,
+                "scope_path should have at least module and method: {:?}",
+                print_call.scope_path
+            );
         }
     }
 }

@@ -6,6 +6,81 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.5 Phase B: Add Missing Critical Fields | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.5 Phase B specification (lines 7101-7175)
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore, CallSite types
+- `crates/tugtool-core/src/adapter.rs` - CallSiteData adapter type
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - CST ReceiverPath types
+- `crates/tugtool-python/src/analyzer.rs` - analyze_files() and CallSiteData construction
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| B1: Add name_span to Parameter (already done in Step 0.6) | Done |
+| B1: Add with_name_span builder method (already done in Step 0.6) | Done |
+| B1: Update ParameterData in adapter.rs (already done in Step 0.6) | Done |
+| B2: Define ReceiverPathStep enum in facts/mod.rs | Done |
+| B2: Define ReceiverPath struct in facts/mod.rs | Done |
+| B2: Add receiver_path, scope_path, is_method_call to CallSite | Done |
+| B2: Add corresponding builder methods | Done |
+| B2: Update CallSiteData in adapter.rs with new fields | Done |
+| B2: Add From impls in CST for conversion to Core types | Done |
+| B2: Update analyzer to convert and set all new CallSite fields | Done |
+| Write unit tests (test_parameter_name_span, test_callsite_receiver_path, etc.) | Done |
+| Write integration tests (test_signature_param_spans_propagated, etc.) | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added `ReceiverPathStep` enum with `Name`, `Attribute`, `Call`, `Subscript` variants
+  - Added `ReceiverPath` struct with `steps: Vec<ReceiverPathStep>`
+  - Added `receiver_path`, `scope_path`, `is_method_call` fields to `CallSite`
+  - Added builder methods `with_receiver_path()`, `with_scope_path()`, `with_is_method_call()`
+  - Added `phase_b_tests` module with 4 unit tests
+- `crates/tugtool-core/src/adapter.rs`:
+  - Added `ReceiverPath` import
+  - Added `receiver_path`, `scope_path`, `is_method_call` fields to `CallSiteData`
+  - Updated existing tests to include new fields
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`:
+  - Added `From<&ReceiverStep> for CoreReceiverPathStep` impl
+  - Added `From<ReceiverStep> for CoreReceiverPathStep` impl
+  - Added `From<&ReceiverPath> for CoreReceiverPath` impl
+  - Added `From<ReceiverPath> for CoreReceiverPath` impl
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `CoreReceiverPath` import
+  - Updated `CallSiteData` construction to convert and include new fields
+  - Added `phase_b_integration_tests` module with 3 integration tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool-core phase_b`: 4 tests passed
+- `cargo nextest run -p tugtool-python phase_b`: 3 tests passed
+- `cargo nextest run --workspace`: 2445 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- ReceiverPathStep enum defined with all variants (Name, Attribute, Call, Subscript): PASS
+- ReceiverPath struct defined with steps field: PASS
+- CallSite has receiver_path, scope_path, is_method_call fields: PASS
+- CallSiteData in adapter has corresponding fields: PASS
+- From impls enable CST → Core conversion: PASS
+- Analyzer propagates all fields with conversion: PASS
+- All unit and integration tests pass: PASS
+
+**Key Decisions/Notes:**
+- **Architecture improvement**: Instead of duplicating types, established clean conversion layer
+  - CST types (`ReceiverStep`, `ReceiverPath`) remain in `tugtool-python-cst` for Python-specific extraction
+  - Core types (`ReceiverPathStep`, `ReceiverPath`) remain in `tugtool-core` for language-agnostic storage
+  - `From` impls in CST crate handle conversion at the boundary
+- Added `Subscript` variant to Core `ReceiverPathStep` (was missing from plan)
+- Used `#[serde(tag = "type")]` for Core types to match CST serde format
+- B1 tasks were already complete from Step 0.6 signature registration work
+
+---
+
 ## [phase-13.md] Step 0.7: Update rename-param to Use FactsStore Signatures | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

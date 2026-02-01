@@ -139,6 +139,47 @@ impl ReceiverPath {
     }
 }
 
+// ============================================================================
+// Conversion to Core types
+// ============================================================================
+
+use tugtool_core::facts::{
+    ReceiverPath as CoreReceiverPath, ReceiverPathStep as CoreReceiverPathStep,
+};
+
+impl From<&ReceiverStep> for CoreReceiverPathStep {
+    fn from(step: &ReceiverStep) -> Self {
+        match step {
+            ReceiverStep::Name { value } => CoreReceiverPathStep::Name {
+                value: value.clone(),
+            },
+            ReceiverStep::Attr { value } => CoreReceiverPathStep::Attribute {
+                value: value.clone(),
+            },
+            ReceiverStep::Call => CoreReceiverPathStep::Call,
+            ReceiverStep::Subscript => CoreReceiverPathStep::Subscript,
+        }
+    }
+}
+
+impl From<ReceiverStep> for CoreReceiverPathStep {
+    fn from(step: ReceiverStep) -> Self {
+        (&step).into()
+    }
+}
+
+impl From<&ReceiverPath> for CoreReceiverPath {
+    fn from(path: &ReceiverPath) -> Self {
+        CoreReceiverPath::new(path.steps.iter().map(Into::into).collect())
+    }
+}
+
+impl From<ReceiverPath> for CoreReceiverPath {
+    fn from(path: ReceiverPath) -> Self {
+        (&path).into()
+    }
+}
+
 /// Extract a structured receiver path from an expression.
 ///
 /// This function recursively traverses the expression tree and builds a

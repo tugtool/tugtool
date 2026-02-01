@@ -1798,6 +1798,60 @@ impl CallArg {
     }
 }
 
+/// A step in a receiver path for method call resolution.
+///
+/// Represents one step in the chain of accesses leading to a method call,
+/// enabling cross-file type resolution.
+///
+/// This is the language-agnostic representation stored in FactsStore.
+/// Language-specific CST types convert to this via `From` implementations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ReceiverPathStep {
+    /// A simple name lookup (e.g., `obj` in `obj.method()`).
+    Name { value: String },
+    /// An attribute access (e.g., `.handler` in `self.handler.process()`).
+    Attribute { value: String },
+    /// A call expression (e.g., `()` in `factory().create()`).
+    Call,
+    /// A subscript access (e.g., `[0]` in `items[0].method()`).
+    Subscript,
+}
+
+/// Structured receiver path for method calls.
+///
+/// Represents the chain of accesses leading to a method call, enabling
+/// cross-file type resolution. For example:
+/// - `obj.method()` → `[Name("obj")]`
+/// - `self.handler.process()` → `[Name("self"), Attribute("handler")]`
+/// - `factory().create()` → `[Name("factory"), Call]`
+/// - `items[0].method()` → `[Name("items"), Subscript]`
+///
+/// This is the language-agnostic representation stored in FactsStore.
+/// Language-specific CST types convert to this via `From` implementations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiverPath {
+    /// Steps in the receiver path.
+    pub steps: Vec<ReceiverPathStep>,
+}
+
+impl ReceiverPath {
+    /// Create a new receiver path with the given steps.
+    pub fn new(steps: Vec<ReceiverPathStep>) -> Self {
+        ReceiverPath { steps }
+    }
+
+    /// Create an empty receiver path.
+    pub fn empty() -> Self {
+        ReceiverPath { steps: vec![] }
+    }
+
+    /// Returns true if the receiver path is empty.
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+}
+
 /// A call site in the code.
 ///
 /// Represents a function/method call, including the callee and arguments.
@@ -1822,6 +1876,16 @@ pub struct CallSite {
     pub callee_symbol_id: Option<SymbolId>,
     /// Arguments in call order.
     pub args: Vec<CallArg>,
+    /// Receiver path for method calls (e.g., `self.handler` in `self.handler.process()`).
+    /// None for simple function calls like `foo()`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receiver_path: Option<ReceiverPath>,
+    /// Scope path where this call site occurs (e.g., `["<module>", "MyClass", "my_method"]`).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub scope_path: Vec<String>,
+    /// Whether this is a method call (as opposed to a function call).
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub is_method_call: bool,
 }
 
 impl CallSite {
@@ -1833,12 +1897,33 @@ impl CallSite {
             span,
             callee_symbol_id: None,
             args: vec![],
+            receiver_path: None,
+            scope_path: vec![],
+            is_method_call: false,
         }
     }
 
     /// Set the callee symbol.
     pub fn with_callee(mut self, symbol_id: SymbolId) -> Self {
         self.callee_symbol_id = Some(symbol_id);
+        self
+    }
+
+    /// Set the receiver path.
+    pub fn with_receiver_path(mut self, path: ReceiverPath) -> Self {
+        self.receiver_path = Some(path);
+        self
+    }
+
+    /// Set the scope path.
+    pub fn with_scope_path(mut self, scope_path: Vec<String>) -> Self {
+        self.scope_path = scope_path;
+        self
+    }
+
+    /// Set whether this is a method call.
+    pub fn with_is_method_call(mut self, is_method: bool) -> Self {
+        self.is_method_call = is_method;
         self
     }
 
@@ -7854,6 +7939,95 @@ mod tests {
             assert!(json.contains("\"name\": \"str\""));
             assert!(json.contains("\"name\": \"List\""));
             assert!(json.contains("\"name\": \"int\""));
+        }
+    }
+
+    mod phase_b_tests {
+        use super::*;
+
+        #[test]
+        fn test_parameter_name_span() {
+            // Parameter with name_span serializes correctly
+            let param = Parameter::new("arg", ParamKind::Regular).with_name_span(Span::new(10, 13));
+
+            let json = serde_json::to_string(&param).unwrap();
+            assert!(json.contains("\"name\":\"arg\""));
+            assert!(json.contains("\"name_span\""));
+            assert!(json.contains("\"start\":10"));
+            assert!(json.contains("\"end\":13"));
+        }
+
+        #[test]
+        fn test_callsite_receiver_path() {
+            // CallSite with receiver_path serializes correctly
+            let mut store = FactsStore::new();
+            let call_id = store.next_call_site_id();
+            let file_id = store.next_file_id();
+
+            let receiver_path = ReceiverPath::new(vec![
+                ReceiverPathStep::Name {
+                    value: "self".to_string(),
+                },
+                ReceiverPathStep::Attribute {
+                    value: "handler".to_string(),
+                },
+            ]);
+
+            let call_site = CallSite::new(call_id, file_id, Span::new(0, 20))
+                .with_receiver_path(receiver_path)
+                .with_is_method_call(true);
+
+            let json = serde_json::to_string(&call_site).unwrap();
+            assert!(json.contains("\"receiver_path\""));
+            assert!(json.contains("\"type\":\"name\""));
+            assert!(json.contains("\"value\":\"self\""));
+            assert!(json.contains("\"type\":\"attribute\""));
+            assert!(json.contains("\"value\":\"handler\""));
+            assert!(json.contains("\"is_method_call\":true"));
+        }
+
+        #[test]
+        fn test_callsite_scope_path() {
+            // CallSite with scope_path serializes correctly
+            let mut store = FactsStore::new();
+            let call_id = store.next_call_site_id();
+            let file_id = store.next_file_id();
+
+            let call_site = CallSite::new(call_id, file_id, Span::new(0, 20))
+                .with_scope_path(vec![
+                    "<module>".to_string(),
+                    "MyClass".to_string(),
+                    "my_method".to_string(),
+                ]);
+
+            let json = serde_json::to_string(&call_site).unwrap();
+            assert!(json.contains("\"scope_path\""));
+            assert!(json.contains("\"<module>\""));
+            assert!(json.contains("\"MyClass\""));
+            assert!(json.contains("\"my_method\""));
+        }
+
+        #[test]
+        fn test_receiver_path_step_variants() {
+            // All ReceiverPathStep variants serialize correctly
+            let steps = vec![
+                ReceiverPathStep::Name {
+                    value: "obj".to_string(),
+                },
+                ReceiverPathStep::Attribute {
+                    value: "attr".to_string(),
+                },
+                ReceiverPathStep::Call,
+                ReceiverPathStep::Subscript,
+            ];
+
+            let path = ReceiverPath::new(steps);
+            let json = serde_json::to_string(&path).unwrap();
+
+            assert!(json.contains("\"type\":\"name\""));
+            assert!(json.contains("\"type\":\"attribute\""));
+            assert!(json.contains("\"type\":\"call\""));
+            assert!(json.contains("\"type\":\"subscript\""));
         }
     }
 }

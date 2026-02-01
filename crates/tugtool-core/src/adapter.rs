@@ -132,8 +132,8 @@
 
 use crate::facts::{
     AliasKind, AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget,
-    FactsStore, ImportKind, Language, Modifier, ParamKind, ScopeKind, SymbolKind, TypeNode,
-    TypeSource, Visibility,
+    FactsStore, ImportKind, Language, Modifier, ParamKind, ReceiverPath, ScopeKind, SymbolKind,
+    TypeNode, TypeSource, Visibility,
 };
 use crate::patch::Span;
 
@@ -330,6 +330,12 @@ pub struct CallSiteData {
     pub span: Span,
     /// Call arguments.
     pub args: Vec<CallArgData>,
+    /// Receiver path for method calls (e.g., `self.handler` in `self.handler.process()`).
+    pub receiver_path: Option<ReceiverPath>,
+    /// Scope path where the call occurs (e.g., `["<module>", "MyClass", "my_method"]`).
+    pub scope_path: Vec<String>,
+    /// Whether this is a method call (as opposed to a function call).
+    pub is_method_call: bool,
 }
 
 /// Alias edge from single-file analysis.
@@ -933,6 +939,9 @@ mod tests {
                     keyword_name_span: Some(Span::new(110, 113)), // keyword name span for "key"
                 },
             ],
+            receiver_path: None,
+            scope_path: vec!["<module>".to_string()],
+            is_method_call: false,
         };
         assert_eq!(call.args.len(), 2);
         assert_eq!(call.args[1].name, Some("key".to_string()));
@@ -947,6 +956,9 @@ mod tests {
             callee_symbol_qualified_name: Some("pkg.module.SomeClass".to_string()),
             span: Span::new(100, 120),
             args: vec![],
+            receiver_path: None,
+            scope_path: vec![],
+            is_method_call: false,
         };
         assert!(call.callee_symbol_index.is_none());
         assert!(call.callee_symbol_qualified_name.is_some());

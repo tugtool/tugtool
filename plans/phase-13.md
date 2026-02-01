@@ -7116,26 +7116,26 @@ This phase adds the essential span fields needed for accurate refactoring.
 
 **B1: Parameter name_span**
 
-- [ ] Add `name_span: Option<Span>` field to `Parameter` struct in `facts/mod.rs`
-- [ ] Add `with_name_span(mut self, span: Span) -> Self` builder method
-- [ ] Update `ParameterData` in `adapter.rs` to include `name_span: Option<Span>`
-- [ ] Update `cst_bridge.rs` signature collection to propagate `ParamInfo.span`
-- [ ] Update analyzer to set `name_span` when creating `Parameter` facts
-- [ ] Update serialization tests for new field
+- [x] Add `name_span: Option<Span>` field to `Parameter` struct in `facts/mod.rs`
+- [x] Add `with_name_span(mut self, span: Span) -> Self` builder method
+- [x] Update `ParameterData` in `adapter.rs` to include `name_span: Option<Span>`
+- [x] Update `cst_bridge.rs` signature collection to propagate `ParamInfo.span`
+- [x] Update analyzer to set `name_span` when creating `Parameter` facts
+- [x] Update serialization tests for new field
 
 **B2: CallSite receiver_path**
 
-- [ ] Define `ReceiverPathStep` enum in `facts/mod.rs` (mirror CST's `ReceiverPathStep`)
-- [ ] Define `ReceiverPath` struct in `facts/mod.rs` (mirror CST's `ReceiverPath`)
-- [ ] Add `receiver_path: Option<ReceiverPath>` field to `CallSite` struct
-- [ ] Add `scope_path: Vec<String>` field to `CallSite` struct
-- [ ] Add `is_method_call: bool` field to `CallSite` struct
-- [ ] Add corresponding builder methods
-- [ ] Update `CallSiteData` in `adapter.rs` with new fields
-- [ ] Update `cst_bridge.rs` to propagate `CallSiteInfo.receiver_path`
-- [ ] Update `cst_bridge.rs` to propagate `CallSiteInfo.scope_path`
-- [ ] Update `cst_bridge.rs` to propagate `CallSiteInfo.is_method_call`
-- [ ] Update analyzer to set all new CallSite fields
+- [x] Define `ReceiverPathStep` enum in `facts/mod.rs` (mirror CST's `ReceiverPathStep`)
+- [x] Define `ReceiverPath` struct in `facts/mod.rs` (mirror CST's `ReceiverPath`)
+- [x] Add `receiver_path: Option<ReceiverPath>` field to `CallSite` struct
+- [x] Add `scope_path: Vec<String>` field to `CallSite` struct
+- [x] Add `is_method_call: bool` field to `CallSite` struct
+- [x] Add corresponding builder methods
+- [x] Update `CallSiteData` in `adapter.rs` with new fields
+- [x] Update `cst_bridge.rs` to propagate `CallSiteInfo.receiver_path`
+- [x] Update `cst_bridge.rs` to propagate `CallSiteInfo.scope_path`
+- [x] Update `cst_bridge.rs` to propagate `CallSiteInfo.is_method_call`
+- [x] Update analyzer to set all new CallSite fields
 
 **ReceiverPath Design:**
 
@@ -7166,12 +7166,12 @@ pub struct ReceiverPath {
 
 **Tests (Phase B):**
 
-- [ ] Unit: `test_parameter_name_span` - Parameter with name_span serializes correctly
-- [ ] Unit: `test_callsite_receiver_path` - CallSite with receiver_path serializes correctly
-- [ ] Unit: `test_callsite_scope_path` - CallSite with scope_path serializes correctly
-- [ ] Integration: `test_signature_param_spans_propagated` - Spans flow from CST to FactsStore
-- [ ] Integration: `test_callsite_receiver_path_propagated` - ReceiverPath flows from CST to FactsStore
-- [ ] Golden: Update golden files if schema changes
+- [x] Unit: `test_parameter_name_span` - Parameter with name_span serializes correctly
+- [x] Unit: `test_callsite_receiver_path` - CallSite with receiver_path serializes correctly
+- [x] Unit: `test_callsite_scope_path` - CallSite with scope_path serializes correctly
+- [x] Integration: `test_signature_param_spans_propagated` - Spans flow from CST to FactsStore
+- [x] Integration: `test_callsite_receiver_path_propagated` - ReceiverPath flows from CST to FactsStore
+- [x] Golden: Update golden files if schema changes (N/A - no schema changes)
 
 ---
 
