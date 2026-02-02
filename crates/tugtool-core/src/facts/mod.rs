@@ -1017,6 +1017,8 @@ pub struct Import {
     pub alias: Option<String>,
     /// Kind of import statement.
     pub kind: ImportKind,
+    /// True if this import is inside an `if TYPE_CHECKING:` block.
+    pub is_type_checking: bool,
 }
 
 impl Import {
@@ -1037,6 +1039,7 @@ impl Import {
             imported_name: None,
             alias: None,
             kind: ImportKind::Module,
+            is_type_checking: false,
         }
     }
 
@@ -1073,6 +1076,14 @@ impl Import {
     /// This overrides any auto-derived kinds from `with_imported_name` or `with_alias`.
     pub fn with_kind(mut self, kind: ImportKind) -> Self {
         self.kind = kind;
+        self
+    }
+
+    /// Mark this import as inside an `if TYPE_CHECKING:` block.
+    ///
+    /// Example: `if TYPE_CHECKING: from foo import Bar` → `Import::new(...).with_type_checking(true)`
+    pub fn with_type_checking(mut self, is_type_checking: bool) -> Self {
+        self.is_type_checking = is_type_checking;
         self
     }
 
@@ -3106,6 +3117,26 @@ impl FactsStore {
         self.imports_in_file(file_id).collect()
     }
 
+    /// Get all TYPE_CHECKING imports in a file.
+    ///
+    /// Returns imports that are inside `if TYPE_CHECKING:` blocks.
+    /// These imports are for type hints only and are not executed at runtime.
+    pub fn type_checking_imports_in_file(&self, file_id: FileId) -> Vec<&Import> {
+        self.imports_in_file(file_id)
+            .filter(|import| import.is_type_checking)
+            .collect()
+    }
+
+    /// Get all runtime imports in a file.
+    ///
+    /// Returns imports that are NOT inside `if TYPE_CHECKING:` blocks.
+    /// These imports are executed at runtime.
+    pub fn runtime_imports_in_file(&self, file_id: FileId) -> Vec<&Import> {
+        self.imports_in_file(file_id)
+            .filter(|import| !import.is_type_checking)
+            .collect()
+    }
+
     /// Get all public exports in a file.
     ///
     /// Returns exports in deterministic order (by PublicExportId).
@@ -3999,6 +4030,46 @@ mod tests {
         fn imports_in_file_returns_empty_for_unknown_file() {
             let store = FactsStore::new();
             assert_eq!(store.imports_in_file(FileId::new(999)).count(), 0);
+        }
+
+        #[test]
+        fn type_checking_query_filters_imports() {
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            // Add runtime import
+            let import1 = test_import(&mut store, file_id, "os");
+            store.insert_import(import1);
+
+            // Add TYPE_CHECKING import
+            let mut import2 = test_import(&mut store, file_id, "typing_extensions");
+            import2 = import2.with_type_checking(true);
+            store.insert_import(import2);
+
+            // Add another runtime import
+            let import3 = test_import(&mut store, file_id, "sys");
+            store.insert_import(import3);
+
+            // Add another TYPE_CHECKING import
+            let mut import4 = test_import(&mut store, file_id, "mypy_extensions");
+            import4 = import4.with_type_checking(true);
+            store.insert_import(import4);
+
+            // Test type_checking_imports_in_file
+            let tc_imports = store.type_checking_imports_in_file(file_id);
+            assert_eq!(tc_imports.len(), 2);
+            assert!(tc_imports.iter().all(|i| i.is_type_checking));
+            assert!(tc_imports.iter().any(|i| i.module_path == "typing_extensions"));
+            assert!(tc_imports.iter().any(|i| i.module_path == "mypy_extensions"));
+
+            // Test runtime_imports_in_file
+            let runtime_imports = store.runtime_imports_in_file(file_id);
+            assert_eq!(runtime_imports.len(), 2);
+            assert!(runtime_imports.iter().all(|i| !i.is_type_checking));
+            assert!(runtime_imports.iter().any(|i| i.module_path == "os"));
+            assert!(runtime_imports.iter().any(|i| i.module_path == "sys"));
         }
 
         #[test]

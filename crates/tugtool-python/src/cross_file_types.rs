@@ -1989,6 +1989,7 @@ class Child(Parent):
                 "MyClass".to_string(),
                 "process".to_string(),
             ],
+            is_type_checking: false,
         }];
 
         let analysis = make_test_file_analysis(imports);
@@ -2046,6 +2047,7 @@ class Child(Parent):
                 "MyClass".to_string(),
                 "process".to_string(),
             ],
+            is_type_checking: false,
         }];
 
         let analysis = make_test_file_analysis(imports);
@@ -2095,6 +2097,7 @@ class Child(Parent):
                 "MyClass".to_string(),
                 "process".to_string(),
             ],
+            is_type_checking: false,
         }];
 
         let analysis = make_test_file_analysis(imports);
@@ -2160,6 +2163,7 @@ class Child(Parent):
             resolved_file: Some("handler.py".to_string()),
             relative_level: 0,
             scope_path: vec!["<module>".to_string()],
+            is_type_checking: false,
         }];
 
         let analysis = make_test_file_analysis(imports);

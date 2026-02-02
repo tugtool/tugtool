@@ -29,11 +29,11 @@
 //! }
 //! ```
 
-use super::dispatch::walk_module;
+use super::dispatch::{walk_expression, walk_module, walk_or_else, walk_suite};
 use super::traits::{VisitResult, Visitor};
 use crate::nodes::{
-    ClassDef, Expression, FunctionDef, Import, ImportFrom, ImportNames, Module, NameOrAttribute,
-    Span,
+    ClassDef, Expression, FunctionDef, If, Import, ImportFrom, ImportNames, Module,
+    NameOrAttribute, Span,
 };
 
 /// The kind of import statement.
@@ -93,11 +93,18 @@ pub struct ImportInfo {
     /// For module-level imports: `["<module>"]`
     /// For function-level: `["<module>", "MyClass", "my_method"]`
     pub scope_path: Vec<String>,
+    /// True if this import is inside an `if TYPE_CHECKING:` block.
+    pub is_type_checking: bool,
 }
 
 impl ImportInfo {
     /// Create a new ImportInfo for a regular import.
-    fn new_import(module: String, alias: Option<String>, scope_path: Vec<String>) -> Self {
+    fn new_import(
+        module: String,
+        alias: Option<String>,
+        scope_path: Vec<String>,
+        is_type_checking: bool,
+    ) -> Self {
         Self {
             kind: ImportKind::Import,
             module,
@@ -108,6 +115,7 @@ impl ImportInfo {
             span: None,
             line: None,
             scope_path,
+            is_type_checking,
         }
     }
 
@@ -117,6 +125,7 @@ impl ImportInfo {
         names: Vec<ImportedName>,
         relative_level: usize,
         scope_path: Vec<String>,
+        is_type_checking: bool,
     ) -> Self {
         Self {
             kind: ImportKind::From,
@@ -128,11 +137,17 @@ impl ImportInfo {
             span: None,
             line: None,
             scope_path,
+            is_type_checking,
         }
     }
 
     /// Create a new ImportInfo for a star import.
-    fn new_star(module: String, relative_level: usize, scope_path: Vec<String>) -> Self {
+    fn new_star(
+        module: String,
+        relative_level: usize,
+        scope_path: Vec<String>,
+        is_type_checking: bool,
+    ) -> Self {
         Self {
             kind: ImportKind::From,
             module,
@@ -143,6 +158,7 @@ impl ImportInfo {
             span: None,
             line: None,
             scope_path,
+            is_type_checking,
         }
     }
 
@@ -181,6 +197,9 @@ pub struct ImportCollector {
     /// Current scope path (class/function nesting).
     /// Initialized with `["<module>"]` for module-level imports.
     scope_path: Vec<String>,
+    /// Depth of nested `if TYPE_CHECKING:` blocks.
+    /// When > 0, imports are inside a TYPE_CHECKING block.
+    type_checking_depth: usize,
 }
 
 impl Default for ImportCollector {
@@ -197,7 +216,34 @@ impl ImportCollector {
         Self {
             imports: Vec::new(),
             scope_path: vec!["<module>".to_string()],
+            type_checking_depth: 0,
         }
+    }
+
+    /// Check if the given expression is a TYPE_CHECKING condition.
+    ///
+    /// Matches:
+    /// - `TYPE_CHECKING` (bare name)
+    /// - `typing.TYPE_CHECKING`
+    fn is_type_checking_condition(expr: &Expression<'_>) -> bool {
+        match expr {
+            Expression::Name(name) => name.value == "TYPE_CHECKING",
+            Expression::Attribute(attr) => {
+                // Check for `typing.TYPE_CHECKING`
+                if attr.attr.value == "TYPE_CHECKING" {
+                    if let Expression::Name(base) = &*attr.value {
+                        return base.value == "typing";
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns true if currently inside a TYPE_CHECKING block.
+    fn is_in_type_checking(&self) -> bool {
+        self.type_checking_depth > 0
     }
 
     /// Collect imports from a parsed module.
@@ -266,6 +312,40 @@ impl<'a> Visitor<'a> for ImportCollector {
         self.scope_path.pop();
     }
 
+    // TYPE_CHECKING block tracking: manually walk to ensure TYPE_CHECKING depth
+    // is only active for the if-body, not the else branch
+    fn visit_if_stmt(&mut self, node: &If<'a>) -> VisitResult {
+        let is_type_checking_block = Self::is_type_checking_condition(&node.test);
+
+        // Walk test expression (not inside TYPE_CHECKING scope)
+        walk_expression(self, &node.test);
+
+        // If this is a TYPE_CHECKING block, increment depth before walking body
+        if is_type_checking_block {
+            self.type_checking_depth += 1;
+        }
+
+        // Walk body (imports here are inside TYPE_CHECKING if applicable)
+        walk_suite(self, &node.body);
+
+        // Decrement depth before walking orelse (else/elif is NOT inside TYPE_CHECKING)
+        if is_type_checking_block {
+            self.type_checking_depth = self.type_checking_depth.saturating_sub(1);
+        }
+
+        // Walk orelse (elif or else) - NOT inside this TYPE_CHECKING block
+        if let Some(orelse) = &node.orelse {
+            walk_or_else(self, orelse);
+        }
+
+        // Skip automatic child traversal since we handled it manually
+        VisitResult::SkipChildren
+    }
+
+    fn leave_if_stmt(&mut self, _node: &If<'a>) {
+        // No-op: depth management is handled in visit_if_stmt
+    }
+
     fn visit_import_stmt(&mut self, node: &Import<'a>) -> VisitResult {
         // Note: Import statement spans are not currently tracked via PositionTable.
         // The import_tok field is internal to the CST. For rename operations,
@@ -281,8 +361,13 @@ impl<'a> Visitor<'a> for ImportCollector {
                 _ => None,
             });
 
-            let import = ImportInfo::new_import(module, import_alias, self.scope_path.clone())
-                .with_span(span);
+            let import = ImportInfo::new_import(
+                module,
+                import_alias,
+                self.scope_path.clone(),
+                self.is_in_type_checking(),
+            )
+            .with_span(span);
             self.imports.push(import);
         }
 
@@ -306,8 +391,13 @@ impl<'a> Visitor<'a> for ImportCollector {
 
         match &node.names {
             ImportNames::Star(_) => {
-                let import = ImportInfo::new_star(module, relative_level, self.scope_path.clone())
-                    .with_span(span);
+                let import = ImportInfo::new_star(
+                    module,
+                    relative_level,
+                    self.scope_path.clone(),
+                    self.is_in_type_checking(),
+                )
+                .with_span(span);
                 self.imports.push(import);
             }
             ImportNames::Aliases(aliases) => {
@@ -329,9 +419,14 @@ impl<'a> Visitor<'a> for ImportCollector {
                     })
                     .collect();
 
-                let import =
-                    ImportInfo::new_from(module, names, relative_level, self.scope_path.clone())
-                        .with_span(span);
+                let import = ImportInfo::new_from(
+                    module,
+                    names,
+                    relative_level,
+                    self.scope_path.clone(),
+                    self.is_in_type_checking(),
+                )
+                .with_span(span);
                 self.imports.push(import);
             }
         }
@@ -645,5 +740,154 @@ def func_b():
         assert_eq!(imports.len(), 2);
         assert_eq!(imports[0].scope_path, vec!["<module>", "func_a"]);
         assert_eq!(imports[1].scope_path, vec!["<module>", "func_b"]);
+    }
+
+    // =========================================================================
+    // TYPE_CHECKING Block Tests (Phase 13 Step 0.9 Phase G)
+    // =========================================================================
+
+    #[test]
+    fn test_type_checking_import_detected() {
+        // Import inside `if TYPE_CHECKING:` should be flagged
+        let source = r#"
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from foo import Bar
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 2);
+        // First import: from typing import TYPE_CHECKING (not inside TYPE_CHECKING)
+        assert_eq!(imports[0].module, "typing");
+        assert!(!imports[0].is_type_checking);
+        // Second import: from foo import Bar (inside TYPE_CHECKING)
+        assert_eq!(imports[1].module, "foo");
+        assert!(imports[1].is_type_checking);
+    }
+
+    #[test]
+    fn test_typing_type_checking_detected() {
+        // Import inside `if typing.TYPE_CHECKING:` should be flagged
+        let source = r#"
+import typing
+
+if typing.TYPE_CHECKING:
+    from foo import Bar
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 2);
+        // First import: import typing (not inside TYPE_CHECKING)
+        assert_eq!(imports[0].module, "typing");
+        assert!(!imports[0].is_type_checking);
+        // Second import: from foo import Bar (inside TYPE_CHECKING)
+        assert_eq!(imports[1].module, "foo");
+        assert!(imports[1].is_type_checking);
+    }
+
+    #[test]
+    fn test_regular_import_not_flagged() {
+        // Normal imports should have is_type_checking=false
+        let source = r#"
+import os
+from sys import path
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 2);
+        assert!(!imports[0].is_type_checking);
+        assert!(!imports[1].is_type_checking);
+    }
+
+    #[test]
+    fn test_nested_type_checking() {
+        // Nested if inside TYPE_CHECKING block - imports should still be flagged
+        let source = r#"
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import sys
+    if True:
+        from foo import Bar
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 3);
+        // First import: from typing import TYPE_CHECKING
+        assert!(!imports[0].is_type_checking);
+        // Second import: import sys (inside TYPE_CHECKING)
+        assert!(imports[1].is_type_checking);
+        // Third import: from foo import Bar (nested inside TYPE_CHECKING)
+        assert!(imports[2].is_type_checking);
+    }
+
+    #[test]
+    fn test_type_checking_with_else() {
+        // Only the if branch should be flagged, not the else
+        let source = r#"
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from type_stubs import Stub
+else:
+    from runtime import Impl
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 3);
+        // First import: from typing import TYPE_CHECKING
+        assert!(!imports[0].is_type_checking);
+        // Second import: from type_stubs import Stub (inside TYPE_CHECKING)
+        assert!(imports[1].is_type_checking);
+        // Third import: from runtime import Impl (inside else, NOT TYPE_CHECKING)
+        assert!(!imports[2].is_type_checking);
+    }
+
+    #[test]
+    fn test_multiple_type_checking_blocks() {
+        // Multiple TYPE_CHECKING blocks should all be detected
+        let source = r#"
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from foo import A
+
+import os
+
+if TYPE_CHECKING:
+    from bar import B
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 4);
+        assert!(!imports[0].is_type_checking); // from typing import TYPE_CHECKING
+        assert!(imports[1].is_type_checking); // from foo import A
+        assert!(!imports[2].is_type_checking); // import os
+        assert!(imports[3].is_type_checking); // from bar import B
+    }
+
+    #[test]
+    fn test_type_checking_star_import() {
+        // Star imports inside TYPE_CHECKING should be flagged
+        let source = r#"
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from foo import *
+"#;
+        let module = parse_module(source, None).unwrap();
+        let imports = ImportCollector::collect(&module);
+
+        assert_eq!(imports.len(), 2);
+        assert!(!imports[0].is_type_checking);
+        assert!(imports[1].is_type_checking);
+        assert!(imports[1].is_star);
     }
 }

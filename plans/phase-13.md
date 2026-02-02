@@ -9634,17 +9634,16 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Add `is_type_checking` field to `Import` in FactsStore:
+- [x] Add `is_type_checking` field to `Import` in FactsStore:
   ```rust
   pub struct Import {
       // ... existing fields ...
       /// True if this import is inside an `if TYPE_CHECKING:` block.
-      #[serde(skip_serializing_if = "std::ops::Not::not", default)]
       pub is_type_checking: bool,
   }
   ```
 
-- [ ] Update `Import::new()` and add builder method:
+- [x] Update `Import::new()` and add builder method:
   ```rust
   pub fn with_type_checking(mut self, is_type_checking: bool) -> Self {
       self.is_type_checking = is_type_checking;
@@ -9652,16 +9651,16 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Update CST `ImportCollector` to detect TYPE_CHECKING context:
+- [x] Update CST `ImportCollector` to detect TYPE_CHECKING context:
   - Track `type_checking_depth: usize` during visitation
   - Detect `if TYPE_CHECKING:` and `if typing.TYPE_CHECKING:`
   - Set flag on imports collected within those blocks
 
-- [ ] Update `ImportInfo` (CST output) to include `is_type_checking` flag
+- [x] Update `ImportInfo` (CST output) to include `is_type_checking` flag
 
-- [ ] Update analyzer Pass 2 to propagate `is_type_checking` to FactsStore
+- [x] Update analyzer Pass 2 to propagate `is_type_checking` to FactsStore
 
-- [ ] Add query methods to filter TYPE_CHECKING imports:
+- [x] Add query methods to filter TYPE_CHECKING imports:
   ```rust
   pub fn type_checking_imports_in_file(&self, file_id: FileId) -> Vec<&Import> { ... }
   pub fn runtime_imports_in_file(&self, file_id: FileId) -> Vec<&Import> { ... }
@@ -9674,30 +9673,30 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tests:**
 
-- [ ] Unit: `test_type_checking_import_detected` - `if TYPE_CHECKING: import x` flagged
-- [ ] Unit: `test_typing_type_checking_detected` - `if typing.TYPE_CHECKING:` flagged
-- [ ] Unit: `test_regular_import_not_flagged` - Normal imports have `is_type_checking=false`
-- [ ] Unit: `test_nested_type_checking` - Nested if inside TYPE_CHECKING handled
-- [ ] Unit: `test_type_checking_query_filters` - Query methods return correct subsets
-- [ ] Integration: `test_type_checking_preserved_in_facts_store` - Roundtrip preservation
+- [x] Unit: `test_type_checking_import_detected` - `if TYPE_CHECKING: import x` flagged
+- [x] Unit: `test_typing_type_checking_detected` - `if typing.TYPE_CHECKING:` flagged
+- [x] Unit: `test_regular_import_not_flagged` - Normal imports have `is_type_checking=false`
+- [x] Unit: `test_nested_type_checking` - Nested if inside TYPE_CHECKING handled
+- [x] Unit: `test_type_checking_query_filters` - Query methods return correct subsets
+- [x] Integration: `test_type_checking_preserved_in_facts_store` - Roundtrip preservation
 
 ---
 
 ###### Step 0.9 Success Criteria {#step-0-9-success}
 
-- [ ] `ImportInserter` can add imports at correct locations with proper grouping
-- [ ] `ImportRemover` can remove single names from multi-name imports with proper cleanup
-- [ ] `ImportUpdater` can update module paths and names while preserving aliases
-- [ ] `Import.is_type_checking` correctly identifies imports in TYPE_CHECKING blocks
-- [ ] All existing tests pass
-- [ ] Import manipulation tests cover edge cases (multiline, aliases, empty results)
+- [x] `ImportInserter` can add imports at correct locations with proper grouping
+- [x] `ImportRemover` can remove single names from multi-name imports with proper cleanup
+- [x] `ImportUpdater` can update module paths and names while preserving aliases
+- [x] `Import.is_type_checking` correctly identifies imports in TYPE_CHECKING blocks
+- [x] All existing tests pass
+- [x] Import manipulation tests cover edge cases (multiline, aliases, empty results)
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugtool-python layers::imports` - All import layer tests pass
-- [ ] `cargo nextest run -p tugtool-python-cst imports` - CST import tests pass including TYPE_CHECKING
-- [ ] `cargo nextest run --workspace` - All existing tests pass
-- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+- [x] `cargo nextest run -p tugtool-python layers::imports` - All import layer tests pass
+- [x] `cargo nextest run -p tugtool-python-cst imports` - CST import tests pass including TYPE_CHECKING
+- [x] `cargo nextest run --workspace` - All existing tests pass
+- [x] `cargo clippy --workspace -- -D warnings` - No warnings
 
 **Rollback:** Revert commit
 

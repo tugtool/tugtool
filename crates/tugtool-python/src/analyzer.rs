@@ -462,6 +462,8 @@ pub struct LocalImport {
     /// For module-level imports: `["<module>"]`
     /// For function-level: `["<module>", "MyClass", "my_method"]`
     pub scope_path: Vec<String>,
+    /// True if this import is inside an `if TYPE_CHECKING:` block.
+    pub is_type_checking: bool,
 }
 
 /// An imported name.
@@ -1494,7 +1496,8 @@ pub fn analyze_files(
                     // from foo import bar as baz → Alias
                     let import =
                         Import::new(name_import_id, file_id, span, &local_import.module_path)
-                            .with_imported_name(&imported_name.name);
+                            .with_imported_name(&imported_name.name)
+                            .with_type_checking(local_import.is_type_checking);
                     let import = if let Some(alias) = &imported_name.alias {
                         import.with_alias(alias)
                     } else {
@@ -1505,12 +1508,15 @@ pub fn analyze_files(
             } else if local_import.is_star {
                 // from foo import * → Glob
                 let import =
-                    Import::new(import_id, file_id, span, &local_import.module_path).with_glob();
+                    Import::new(import_id, file_id, span, &local_import.module_path)
+                        .with_glob()
+                        .with_type_checking(local_import.is_type_checking);
                 store.insert_import(import);
             } else {
                 // import foo → Module
                 // import foo as bar → Alias (module import with alias)
-                let mut import = Import::new(import_id, file_id, span, &local_import.module_path);
+                let mut import = Import::new(import_id, file_id, span, &local_import.module_path)
+                    .with_type_checking(local_import.is_type_checking);
                 if let Some(alias) = &local_import.alias {
                     import = import.with_alias(alias);
                 }
@@ -3967,6 +3973,7 @@ fn convert_imports(
             resolved_file,
             relative_level,
             scope_path: import.scope_path.clone(),
+            is_type_checking: import.is_type_checking,
         });
     }
 
@@ -6310,6 +6317,7 @@ mod tests {
                 resolved_file: None,
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Module);
@@ -6332,6 +6340,7 @@ mod tests {
                 resolved_file: None,
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Named);
@@ -6354,6 +6363,7 @@ mod tests {
                 resolved_file: None,
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Alias);
@@ -6373,6 +6383,7 @@ mod tests {
                 resolved_file: None,
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             };
             let data = convert_local_import_to_import_data(&import);
             assert_eq!(data.kind, ImportKind::Glob);
@@ -9415,6 +9426,7 @@ obj.method_d()
                 resolved_file: None,
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             };
 
             assert_eq!(imp.module_path, "os.path");
@@ -10613,6 +10625,7 @@ obj.method_d()
                     line: Some(1),
                     relative_level: 0,
                     scope_path: vec!["<module>".to_string()],
+                    is_type_checking: false,
                 },
                 // Single-level relative: from .utils import foo
                 ImportInfo {
@@ -10628,6 +10641,7 @@ obj.method_d()
                     line: Some(2),
                     relative_level: 1,
                     scope_path: vec!["<module>".to_string()],
+                    is_type_checking: false,
                 },
                 // Double-level relative: from ..parent import bar
                 ImportInfo {
@@ -10643,6 +10657,7 @@ obj.method_d()
                     line: Some(3),
                     relative_level: 2,
                     scope_path: vec!["<module>".to_string()],
+                    is_type_checking: false,
                 },
             ];
 
@@ -10694,6 +10709,7 @@ obj.method_d()
                 line: Some(1),
                 relative_level: 1, // from .utils import *
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }];
 
             // Pass a dummy file path for relative import context
@@ -10743,6 +10759,7 @@ obj.method_d()
                 resolved_file: resolved_file.map(String::from),
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }
         }
 
@@ -10762,6 +10779,7 @@ obj.method_d()
                 resolved_file: resolved_file.map(String::from),
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }
         }
 
@@ -10777,6 +10795,7 @@ obj.method_d()
                 resolved_file: resolved_file.map(String::from),
                 relative_level: 0,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }
         }
 
@@ -11030,6 +11049,7 @@ obj.method_d()
                 resolved_file: None,
                 relative_level: 1, // from .utils
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();
@@ -11082,6 +11102,7 @@ obj.method_d()
                 resolved_file: None,
                 relative_level: 1,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();
@@ -11119,6 +11140,7 @@ obj.method_d()
                 resolved_file: None,
                 relative_level: 1,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();
@@ -11161,6 +11183,7 @@ obj.method_d()
                 resolved_file: None,
                 relative_level: 1,
                 scope_path: vec!["<module>".to_string()],
+                is_type_checking: false,
             }];
 
             let namespace_packages: HashSet<String> = HashSet::new();

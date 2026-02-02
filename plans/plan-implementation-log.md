@@ -6,6 +6,81 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase G: TYPE_CHECKING Import Tracking | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase G specification (lines 9629-9683)
+- `crates/tugtool-core/src/facts/mod.rs` - Import struct and query methods
+- `crates/tugtool-python-cst/src/visitor/import.rs` - ImportCollector visitor
+- `crates/tugtool-python/src/analyzer.rs` - LocalImport struct and Pass 2 import propagation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `is_type_checking` field to `Import` in FactsStore | Done |
+| Update `Import::new()` and add `with_type_checking()` builder method | Done |
+| Update CST `ImportCollector` to detect TYPE_CHECKING context | Done |
+| Update `ImportInfo` (CST output) to include `is_type_checking` flag | Done |
+| Update analyzer Pass 2 to propagate `is_type_checking` to FactsStore | Done |
+| Add query methods to filter TYPE_CHECKING imports | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs` - Added `is_type_checking` field to Import struct, builder method, and 2 query methods
+- `crates/tugtool-python-cst/src/visitor/import.rs` - Added TYPE_CHECKING detection to ImportCollector, added `is_type_checking` field to ImportInfo, added 8 unit tests
+- `crates/tugtool-python/src/analyzer.rs` - Added `is_type_checking` field to LocalImport, updated convert_imports() and Pass 2 import insertion
+- `crates/tugtool-python/src/cross_file_types.rs` - Updated test fixtures with `is_type_checking` field
+
+**Key Components Added:**
+
+FactsStore (`crates/tugtool-core/src/facts/mod.rs`):
+- `Import.is_type_checking: bool` - Field to track TYPE_CHECKING context
+- `Import::with_type_checking(is_type_checking: bool)` - Builder method
+- `FactsStore::type_checking_imports_in_file(file_id)` - Query method for TYPE_CHECKING imports
+- `FactsStore::runtime_imports_in_file(file_id)` - Query method for non-TYPE_CHECKING imports
+
+ImportCollector (`crates/tugtool-python-cst/src/visitor/import.rs`):
+- `type_checking_depth: usize` - Field to track nesting depth in TYPE_CHECKING blocks
+- `is_type_checking_condition(expr)` - Helper to detect `TYPE_CHECKING` and `typing.TYPE_CHECKING`
+- `is_in_type_checking()` - Helper to check if currently inside TYPE_CHECKING block
+- Custom `visit_if_stmt()` - Manually walks if-body with depth incremented, decrements before walking else
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst import`: 52 tests passed
+- `cargo nextest run -p tugtool-python layers::imports`: 70 tests passed
+- `cargo nextest run -p tugtool-core type_checking`: 1 test passed
+- `cargo nextest run --workspace`: 2576 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Tests Added (9 total):**
+
+CST import tests (8):
+- `test_type_checking_import_detected` - `if TYPE_CHECKING:` import flagged
+- `test_typing_type_checking_detected` - `if typing.TYPE_CHECKING:` import flagged
+- `test_regular_import_not_flagged` - Normal imports have `is_type_checking=false`
+- `test_nested_type_checking` - Nested if inside TYPE_CHECKING handled
+- `test_type_checking_with_else` - Else branch NOT flagged as TYPE_CHECKING
+- `test_multiple_type_checking_blocks` - Multiple TYPE_CHECKING blocks detected
+- `test_type_checking_star_import` - Star imports in TYPE_CHECKING flagged
+
+FactsStore test (1):
+- `test_type_checking_query_filters` - Query methods filter correctly
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python layers::imports` passes: PASS (70 tests)
+- `cargo nextest run -p tugtool-python-cst imports` passes: PASS (52 tests)
+- `cargo nextest run --workspace` passes: PASS (2576 tests)
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- Plan checkboxes updated: PASS (all Phase G tasks, tests, and Step 0.9 checkpoints)
+
+**Key Decisions/Notes:**
+- Implemented custom `visit_if_stmt()` with manual child traversal to ensure TYPE_CHECKING depth is only active for the if-body, not the else branch. The default walker would walk orelse as a child while depth is still incremented.
+- Used `saturating_sub(1)` when decrementing depth to prevent underflow in edge cases.
+
+---
+
 ## [phase-13.md] Step 0.9 Phase F: ImportUpdater Implementation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
