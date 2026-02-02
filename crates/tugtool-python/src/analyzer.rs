@@ -679,6 +679,12 @@ fn convert_cst_annotations_slice(
             col: a.col,
             // Pass through the structured TypeNode built at CST collection time
             type_node: a.type_node.clone(),
+            // Pass through the string annotation span (enables renaming type references
+            // inside forward reference strings like "Handler" - see Phase 14 Step 1.0)
+            annotation_span: a.annotation_span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
         })
         .collect()
 }

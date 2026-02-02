@@ -431,6 +431,15 @@ pub struct AnnotationInfo {
     /// - `typing.Annotated`, `typing.Literal`, `typing.TypeVar`
     /// - Complex expressions
     pub type_node: Option<TypeNode>,
+    /// Source span for the annotation expression itself (for string annotations).
+    ///
+    /// For string annotations like `"Handler"` or `'List[Item]'`, this span covers
+    /// the entire string literal including quotes. This enables rename operations
+    /// to update type references inside string annotations.
+    ///
+    /// This is `Some(...)` when `annotation_kind == AnnotationKind::String`.
+    /// For other annotation kinds, this is `None`.
+    pub annotation_span: Option<Span>,
 }
 
 impl AnnotationInfo {
@@ -453,12 +462,19 @@ impl AnnotationInfo {
             line: None,
             col: None,
             type_node,
+            annotation_span: None,
         }
     }
 
     /// Set the span for this annotation.
     fn with_span(mut self, span: Option<Span>) -> Self {
         self.span = span;
+        self
+    }
+
+    /// Set the annotation span for string annotations.
+    fn with_annotation_span(mut self, annotation_span: Option<Span>) -> Self {
+        self.annotation_span = annotation_span;
         self
     }
 }
@@ -642,6 +658,19 @@ impl<'pos> AnnotationCollector<'pos> {
         }
     }
 
+    /// Get the span for a string annotation expression.
+    ///
+    /// For string annotations like `"Handler"` or `'List[Item]'`, returns the span
+    /// of the entire string literal including quotes. Returns `None` for non-string
+    /// annotations.
+    fn get_string_annotation_span(&self, expr: &Expression<'_>) -> Option<Span> {
+        match expr {
+            Expression::SimpleString(s) => self.lookup_span(s.node_id),
+            Expression::ConcatenatedString(cs) => self.lookup_span(cs.node_id),
+            _ => None,
+        }
+    }
+
     /// Process an annotation and add it to the collection.
     fn add_annotation(
         &mut self,
@@ -656,6 +685,8 @@ impl<'pos> AnnotationCollector<'pos> {
         let type_node = build_typenode_from_cst_annotation(&annotation.annotation);
         // Look up span from the PositionTable using the node_id
         let span = self.lookup_span(node_id);
+        // For string annotations, also capture the string literal span
+        let annotation_span = self.get_string_annotation_span(&annotation.annotation);
 
         let info = AnnotationInfo::new(
             name.to_string(),
@@ -665,7 +696,8 @@ impl<'pos> AnnotationCollector<'pos> {
             self.scope_path.clone(),
             type_node,
         )
-        .with_span(span);
+        .with_span(span)
+        .with_annotation_span(annotation_span);
 
         self.annotations.push(info);
     }
@@ -689,6 +721,8 @@ impl<'a, 'pos> Visitor<'a> for AnnotationCollector<'pos> {
             // The span would be for "->" which is not tracked in PositionTable.
             // We leave span as None for return type annotations.
             let span = None;
+            // For string annotations, capture the string literal span
+            let annotation_span = self.get_string_annotation_span(&returns.annotation);
 
             let info = AnnotationInfo::new(
                 "__return__".to_string(),
@@ -698,7 +732,8 @@ impl<'a, 'pos> Visitor<'a> for AnnotationCollector<'pos> {
                 self.scope_path.clone(),
                 type_node,
             )
-            .with_span(span);
+            .with_span(span)
+            .with_annotation_span(annotation_span);
 
             self.annotations.push(info);
         }
@@ -1196,5 +1231,108 @@ mod tests {
             },
             _ => panic!("Expected TypeNode::Optional, got {:?}", type_node),
         }
+    }
+
+    // ========================================================================
+    // Annotation span tests (string annotation infrastructure)
+    // ========================================================================
+
+    #[test]
+    fn test_annotation_span_string_literal() {
+        // Test that string annotation spans are captured correctly
+        let source = "def foo(x: \"Handler\"):\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::String);
+        assert_eq!(annotations[0].type_str, "Handler");
+
+        // Should have annotation_span set for string annotations
+        let annotation_span = annotations[0]
+            .annotation_span
+            .as_ref()
+            .expect("string annotation should have annotation_span");
+
+        // Verify the source text at this span includes quotes
+        let text_at_span = &source[annotation_span.start..annotation_span.end];
+        assert_eq!(text_at_span, "\"Handler\"");
+    }
+
+    #[test]
+    fn test_annotation_span_return_type_string() {
+        // Test that return type string annotations also have spans
+        let source = "def foo() -> \"Handler\":\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].name, "__return__");
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::String);
+
+        let annotation_span = annotations[0]
+            .annotation_span
+            .as_ref()
+            .expect("string annotation should have annotation_span");
+
+        let text_at_span = &source[annotation_span.start..annotation_span.end];
+        assert_eq!(text_at_span, "\"Handler\"");
+    }
+
+    #[test]
+    fn test_annotation_span_non_string_is_none() {
+        // Test that non-string annotations have annotation_span = None
+        let source = "def foo(x: int):\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::Simple);
+        assert!(
+            annotations[0].annotation_span.is_none(),
+            "non-string annotation should not have annotation_span"
+        );
+    }
+
+    #[test]
+    fn test_annotation_span_variable_annotation() {
+        // Test variable annotations with string types
+        let source = "handler: \"Handler\" = None";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].name, "handler");
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::String);
+        assert_eq!(annotations[0].source_kind, AnnotationSourceKind::Variable);
+
+        let annotation_span = annotations[0]
+            .annotation_span
+            .as_ref()
+            .expect("string annotation should have annotation_span");
+
+        let text_at_span = &source[annotation_span.start..annotation_span.end];
+        assert_eq!(text_at_span, "\"Handler\"");
+    }
+
+    #[test]
+    fn test_annotation_span_concatenated_string() {
+        // Test concatenated string annotations
+        let source = "def foo(x: \"Foo\" \"Bar\"):\n    pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let annotations = AnnotationCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].annotation_kind, AnnotationKind::String);
+
+        // Concatenated strings should also have annotation_span
+        let annotation_span = annotations[0]
+            .annotation_span
+            .as_ref()
+            .expect("concatenated string annotation should have annotation_span");
+
+        // The span should be valid within the source
+        assert!(annotation_span.start < annotation_span.end);
+        assert!(annotation_span.end <= source.len());
     }
 }

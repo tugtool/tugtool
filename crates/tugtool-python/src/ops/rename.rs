@@ -47,6 +47,9 @@ use crate::analyzer::{analyze_files, FileAnalysis, FileAnalysisBundle, Scope, Sc
 // Type comment infrastructure for renaming type references in comments
 use tugtool_python_cst::TypeCommentParser;
 
+// String annotation infrastructure for renaming type references in string annotations
+use crate::stubs::StringAnnotationParser;
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -823,6 +826,52 @@ pub fn rename(
                                         && s.end == type_comment.span.end
                                 }) {
                                     file_edits.push((type_comment.span, renamed_comment));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Collect string annotation edits - rename type references in `"Handler"` annotations
+    // String annotations (forward references) may reference the symbol being renamed
+    for file_analysis in &bundle.file_analyses {
+        for annotation in &file_analysis.cst_annotations {
+            // Only process string annotations with a span
+            if annotation.annotation_kind != tugtool_python_cst::AnnotationKind::String {
+                continue;
+            }
+            let annotation_span = match &annotation.annotation_span {
+                Some(span) => span,
+                None => continue,
+            };
+
+            if let Some(content) = file_contents.get(&file_analysis.path) {
+                let start = annotation_span.start;
+                let end = annotation_span.end;
+                if end <= content.len() {
+                    let annotation_text = &content[start..end];
+
+                    if let Ok(contains) =
+                        StringAnnotationParser::contains_name(annotation_text, old_name)
+                    {
+                        if contains {
+                            if let Ok(renamed_annotation) =
+                                StringAnnotationParser::rename(annotation_text, old_name, new_name)
+                            {
+                                if renamed_annotation != annotation_text {
+                                    let file_edits = edits_by_file
+                                        .entry(file_analysis.path.clone())
+                                        .or_default();
+                                    if !file_edits
+                                        .iter()
+                                        .any(|(s, _)| s.start == start && s.end == end)
+                                    {
+                                        file_edits
+                                            .push((Span::new(start, end), renamed_annotation));
+                                    }
                                 }
                             }
                         }

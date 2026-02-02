@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-14.md] Step 1.0: String Annotation Infrastructure | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-14.md` - Step 1.0 definition and infrastructure gaps
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - CST annotation collection
+- `crates/tugtool-python/src/types.rs` - AnnotationInfo struct definition
+- `crates/tugtool-python/src/ops/rename.rs` - Type comment pattern (template for string annotations)
+- `crates/tugtool-python/src/analyzer.rs` - Annotation conversion functions
+- `crates/tugtool-python/src/cross_file_types.rs` - Cross-file annotation conversion
+- `crates/tugtool-python/src/mro.rs` - MRO annotation conversion
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `annotation_span: Option<Span>` to `AnnotationInfo` in annotation.rs | Done |
+| Capture string literal span (including quotes) during annotation collection | Done |
+| Propagate annotation_span through `FileAnalysis.cst_annotations` | Done |
+| Add `string_annotations()` access via FileAnalysis.cst_annotations | Done |
+| Integrate string annotation handling into rename.rs (follow type comment pattern) | Done |
+| Add unit tests for annotation span extraction | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/annotation.rs` - Added `annotation_span` field, `with_annotation_span()` method, `get_string_annotation_span()` helper, 5 unit tests
+- `crates/tugtool-python/src/types.rs` - Added `annotation_span: Option<SpanInfo>` field with documentation
+- `crates/tugtool-python/src/analyzer.rs` - Updated `convert_cst_annotations_slice()` to propagate annotation_span
+- `crates/tugtool-python/src/cross_file_types.rs` - Updated `convert_annotations()` to propagate annotation_span
+- `crates/tugtool-python/src/mro.rs` - Updated annotation conversion to propagate annotation_span
+- `crates/tugtool-python/src/ops/rename.rs` - Added string annotation rename handling (lines 838-882)
+- `crates/tugtool-python/src/type_tracker.rs` - Updated test helper to include annotation_span
+- `plans/phase-14.md` - Added Step 1.0 section with completed checkboxes
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst annotation_span`: 6 tests passed
+- `cargo nextest run --workspace`: 2630 tests passed
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst annotation_span`: PASS (6 tests)
+- `cargo nextest run --workspace`: PASS (2630 tests)
+- String annotations renamed correctly in basic cases: PASS
+
+**Key Decisions/Notes:**
+- Implementation was chaotic (multiple failed sed/perl attempts) but final code is clean
+- Plan-step-reviewer confirmed implementation is correct and complete
+- Default derive on AnnotationInfo was kept (IS used in test code with `..Default::default()`)
+- Added explanatory comments to all conversion sites referencing Phase 14 Step 1.0
+- Pattern follows existing type comment handling in rename.rs (lines 787-833)
+- String annotation spans include quotes to enable StringAnnotationParser to work correctly
+
+---
+
 ## [phase-14.md] Phase 14 Creation: Reorganize Operations Content | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

@@ -80,13 +80,67 @@ Phase 14 is organized into four stages, each building a layer of infrastructure 
 
 #### Stage 1: Layer 1 + Initial Operations {#stage-14-1}
 
+##### Step 1.0: String Annotation Infrastructure {#step-14-1-0}
+
+**Commit:** `feat(python): add string annotation span tracking and rename support`
+
+**References:** [Phase 13 D08](phase-13.md#d08-stub-updates)
+
+**Rationale:** Investigation revealed that string annotation support (renaming symbols inside forward references like `x: "Handler"`) requires foundational infrastructure that does not yet exist. This step adds that infrastructure before Step 1.1.
+
+**Infrastructure Gaps Identified:**
+
+| Gap | Description | Status |
+|-----|-------------|--------|
+| Gap 1 | `AnnotationInfo.span` tracks parameter/variable name, not the string literal span | ✓ Fixed |
+| Gap 2 | No annotation-to-symbol resolution for string annotations | ✓ Fixed |
+| Gap 3 | No FactsStore integration for string annotation spans | ✓ Fixed |
+| Gap 4 | Rename operation doesn't query string annotations | ✓ Fixed |
+
+**Existing Infrastructure:**
+- Detection: `AnnotationCollector` detects `AnnotationKind::String` ✓
+- Transformation: `StringAnnotationParser.rename()` handles all patterns ✓
+- Pattern: Type comment handling in rename.rs (lines 787-833) provides template
+
+**Artifacts:**
+- Updated `crates/tugtool-python-cst/src/visitor/annotation.rs` (add `annotation_span`)
+- Updated `crates/tugtool-python/src/types.rs` (add span to `AnnotationInfo`)
+- Updated `crates/tugtool-python/src/ops/rename.rs` (integrate string annotation edits)
+
+**Tasks:**
+- [x] Add `annotation_span: Option<Span>` to `AnnotationInfo` in annotation.rs
+- [x] Capture string literal span (including quotes) during annotation collection
+- [x] Propagate annotation_span through `FileAnalysis.cst_annotations`
+- [x] Add `string_annotations()` access via FileAnalysis.cst_annotations
+- [x] Integrate string annotation handling into rename.rs (follow type comment pattern)
+- [x] Add unit tests for annotation span extraction
+
+**Tests:**
+- [x] Unit: `test_annotation_span_string_literal`
+- [x] Unit: `test_annotation_span_concatenated_string`
+- [x] Unit: `test_annotation_span_return_type_string`
+- [x] Unit: `test_annotation_span_non_string_is_none`
+- [x] Unit: `test_annotation_span_variable_annotation`
+
+**Checkpoint:**
+- [x] `cargo nextest run -p tugtool-python-cst annotation_span` - 6 tests pass
+- [x] `cargo nextest run --workspace` - 2630 tests pass
+- [x] String annotations renamed correctly in basic cases
+
+**Rollback:** Revert commit
+
+---
+
 ##### Step 1.1: Rename Parameter Operation {#step-14-1-1}
 
 **Commit:** `feat(python): add rename-param operation`
 
 **References:** [Phase 13 D05](phase-13.md#d05-rename-reference), [Phase 13 Operation 1](phase-13.md#op-rename-param), [Phase 13 D08](phase-13.md#d08-stub-updates), [Phase 13 Step 0.4](phase-13.md#step-0-4), [Phase 13 Step 1.1](phase-13.md#step-1-1)
 
-**Prerequisites:** [Phase 13 Step 0.4](phase-13.md#step-0-4) (reference scope infrastructure), [Phase 13 Step 1.1](phase-13.md#step-1-1) (rename hardening)
+**Prerequisites:**
+- [Phase 13 Step 0.4](phase-13.md#step-0-4) (reference scope infrastructure)
+- [Phase 13 Step 1.1](phase-13.md#step-1-1) (rename hardening)
+- [Step 1.0](#step-14-1-0) (string annotation infrastructure)
 
 **Artifacts:**
 - Updated CLI in `crates/tugtool/src/cli.rs`
@@ -247,17 +301,20 @@ The extracted variable assignment is inserted:
 
 #### Stage 1 Summary {#stage-14-1-summary}
 
-After completing Phase 14 Stage 1 (Steps 1.1-1.4), you will have:
+After completing Phase 14 Stage 1 (Steps 1.0-1.4), you will have:
+- String annotation infrastructure for rename operations (Step 1.0) ✓
 - Rename Parameter operation (building on Phase 13's rename hardening)
 - Layer 1 infrastructure for expression analysis
 - Extract Variable and Extract Constant operations
 - **New operations added in Stage 1:** 3 (Rename Parameter, Extract Variable, Extract Constant)
 - **Total operations after Stage 1:** 4 (Rename Symbol from Phase 13 + 3 new)
+- **Infrastructure enhanced:** General rename now supports string annotations
 
 **Stage 1 Checkpoint:**
-- [ ] `cargo nextest run --workspace`
+- [x] `cargo nextest run --workspace` - 2630 tests pass (Step 1.0)
 - [ ] `tug analyze python --help` shows all 4 operations
 - [ ] Temporale fixture tests pass for all operations
+- [x] String annotations renamed correctly in rename operations (Step 1.0)
 
 ---
 

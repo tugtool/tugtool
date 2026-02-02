@@ -955,6 +955,12 @@ fn convert_annotations(
             line: a.line,
             col: a.col,
             type_node: a.type_node.clone(),
+            // Pass through the string annotation span (enables renaming type references
+            // inside forward reference strings like "Handler" - see Phase 14 Step 1.0)
+            annotation_span: a.annotation_span.as_ref().map(|s| crate::types::SpanInfo {
+                start: s.start,
+                end: s.end,
+            }),
         })
         .collect()
 }
@@ -1797,6 +1803,7 @@ class Child(Parent):
             line: None,
             col: None,
             type_node: None,
+                ..Default::default()
         }];
         source_tracker.process_annotations(&source_annotations);
 
@@ -1812,6 +1819,7 @@ class Child(Parent):
             line: None,
             col: None,
             type_node: None,
+                ..Default::default()
         }];
         stub_tracker.process_annotations(&stub_annotations);
 
@@ -1842,6 +1850,7 @@ class Child(Parent):
                 line: None,
                 col: None,
                 type_node: None,
+                ..Default::default()
             },
             AnnotationInfo {
                 name: "attr2".to_string(),
@@ -1853,6 +1862,7 @@ class Child(Parent):
                 line: None,
                 col: None,
                 type_node: None,
+                ..Default::default()
             },
         ];
         source_tracker.process_annotations(&source_annotations);
@@ -1869,6 +1879,7 @@ class Child(Parent):
             line: None,
             col: None,
             type_node: None,
+                ..Default::default()
         }];
         stub_tracker.process_annotations(&stub_annotations);
 

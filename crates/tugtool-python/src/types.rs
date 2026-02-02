@@ -224,7 +224,7 @@ pub struct ClassInheritanceInfo {
 /// - Return types: `def foo() -> int`
 /// - Variable annotations: `x: int = 5`
 /// - Class attributes: `class Foo: x: int`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AnnotationInfo {
     /// The annotated name (parameter, variable, or "__return__" for return types).
     pub name: String,
@@ -252,6 +252,16 @@ pub struct AnnotationInfo {
     /// for use in FactsStore and type-aware operations.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub type_node: Option<TypeNode>,
+    /// Byte span of the annotation expression for string annotations.
+    ///
+    /// For string annotations like `"Handler"` or `'List[Item]'`, this span
+    /// covers the entire string literal including quotes. This enables rename
+    /// operations to update type references inside string annotations.
+    ///
+    /// This is `Some(...)` when `annotation_kind == "string"`.
+    /// For other annotation kinds, this is `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotation_span: Option<SpanInfo>,
 }
 
 // ============================================================================
@@ -580,6 +590,7 @@ mod tests {
             line: Some(1),
             col: Some(10),
             type_node: None,
+                ..Default::default()
         };
 
         let json = serde_json::to_string(&annotation).unwrap();

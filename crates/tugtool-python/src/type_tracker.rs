@@ -1716,6 +1716,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
                 type_node: None,
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -1756,6 +1757,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
                 type_node: None,
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -1796,6 +1798,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
                 type_node: None,
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -1841,6 +1844,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
                 type_node: None,
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -1882,6 +1886,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
                 type_node: None,
+                annotation_span: None,
             }
         }
 
@@ -2273,6 +2278,7 @@ mod tests {
                 line: Some(2),
                 col: Some(5),
                 type_node: None,
+                ..Default::default()
             }];
 
             tracker.process_annotations(&annotations);
@@ -2313,6 +2319,7 @@ mod tests {
                 line: Some(2),
                 col: Some(5),
                 type_node: None,
+                ..Default::default()
             }];
 
             tracker.process_annotations(&annotations);
@@ -2349,6 +2356,7 @@ mod tests {
                     name: "Handler".to_string(),
                     args: vec![],
                 }),
+                ..Default::default()
             }];
 
             tracker.process_annotations(&annotations);
@@ -2464,6 +2472,7 @@ mod tests {
                 line: Some(2),
                 col: Some(5),
                 type_node: None,
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -2508,6 +2517,7 @@ mod tests {
                 line: Some(3),
                 col: Some(5),
                 type_node: None,
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -2711,6 +2721,7 @@ mod tests {
                     line: Some(5),
                     col: Some(5),
                     type_node: None,
+                ..Default::default()
                 },
                 // Parameter annotation for logger (to test propagation)
                 AnnotationInfo {
@@ -2727,6 +2738,7 @@ mod tests {
                     line: Some(7),
                     col: Some(20),
                     type_node: None,
+                ..Default::default()
                 },
             ];
 
@@ -3623,6 +3635,7 @@ mod tests {
                         args: vec![],
                     }],
                 }),
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -3651,6 +3664,7 @@ mod tests {
                 line: Some(1),
                 col: Some(1),
                 type_node: None, // No TypeNode
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
@@ -3679,6 +3693,7 @@ mod tests {
                         args: vec![],
                     }],
                 }),
+                ..Default::default()
             }];
             tracker.process_annotations(&annotations);
 
