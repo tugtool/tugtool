@@ -112,7 +112,8 @@ impl ReceiverPath {
 
     /// Add an attribute access step.
     pub fn with_attribute(mut self, attr: impl Into<String>) -> Self {
-        self.steps.push(ReceiverStep::Attribute { value: attr.into() });
+        self.steps
+            .push(ReceiverStep::Attribute { value: attr.into() });
         self
     }
 
@@ -445,14 +446,9 @@ impl<'pos> AttributeAccessCollector<'pos> {
             }
         }
 
-        let info = AttributeAccessInfo::new(
-            receiver,
-            name,
-            kind,
-            self.scope_path.clone(),
-            receiver_path,
-        )
-        .with_span(span);
+        let info =
+            AttributeAccessInfo::new(receiver, name, kind, self.scope_path.clone(), receiver_path)
+                .with_span(span);
 
         self.accesses.push(info);
     }
@@ -1324,7 +1320,10 @@ class MyClass:
         assert_eq!(process_call.kind, AttributeAccessKind::Call);
 
         // Verify receiver_path uses Attribute variant (not Attr)
-        let path = process_call.receiver_path.as_ref().expect("should have path");
+        let path = process_call
+            .receiver_path
+            .as_ref()
+            .expect("should have path");
         assert_eq!(path.steps.len(), 2);
         assert!(matches!(
             &path.steps[1],

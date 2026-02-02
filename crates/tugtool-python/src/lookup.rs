@@ -144,11 +144,13 @@ fn resolve_import_to_original<'a>(
     // Import symbols have the imported name as their name (e.g., "foo" for "from x import foo")
     // We need to find the module path from the imports table
     // Find the import that matches this symbol's span
-    let matching_import = store.imports_in_file(import_symbol.decl_file_id).find(|imp| {
-        // The import statement span should contain the symbol's declaration span
-        // and the imported name should match
-        imp.imported_name.as_deref() == Some(&import_symbol.name)
-    })?;
+    let matching_import = store
+        .imports_in_file(import_symbol.decl_file_id)
+        .find(|imp| {
+            // The import statement span should contain the symbol's declaration span
+            // and the imported name should match
+            imp.imported_name.as_deref() == Some(&import_symbol.name)
+        })?;
 
     // Look up the module's file in the FactsStore
     // e.g., "x" -> "x.py" or "pkg.mod" -> "pkg/mod.py"

@@ -70,8 +70,8 @@ use tugtool_core::facts::{
     ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind, IsInstanceCheck, Language,
     Modifier, Parameter, PublicExport, ReceiverPath as CoreReceiverPath,
     ReceiverPathStep as CoreReceiverPathStep, Reference, ReferenceKind, ScopeId as CoreScopeId,
-    ScopeInfo as CoreScopeInfo, ScopeKind, Signature, Symbol, SymbolId, SymbolKind, TypeCommentFact,
-    TypeCommentKind, TypeNode,
+    ScopeInfo as CoreScopeInfo, ScopeKind, Signature, Symbol, SymbolId, SymbolKind,
+    TypeCommentFact, TypeCommentKind, TypeNode,
 };
 // Re-export types used in tests (CST now uses these from Core directly)
 #[cfg(test)]
@@ -93,8 +93,8 @@ use crate::cst_bridge;
 // Receiver path types and collector types for dotted path resolution
 use tugtool_python_cst::{
     AttributeAccessInfo, CallSiteInfo, DynamicPatternInfo,
-    DynamicPatternKind as CstDynamicPatternKind, ReceiverPath as CstReceiverPath,
-    ReceiverStep, SignatureInfo, TypeComment, TypeCommentCollector,
+    DynamicPatternKind as CstDynamicPatternKind, ReceiverPath as CstReceiverPath, ReceiverStep,
+    SignatureInfo, TypeComment, TypeCommentCollector,
 };
 
 /// Maximum depth for chained attribute resolution.
@@ -1507,10 +1507,9 @@ pub fn analyze_files(
                 }
             } else if local_import.is_star {
                 // from foo import * → Glob
-                let import =
-                    Import::new(import_id, file_id, span, &local_import.module_path)
-                        .with_glob()
-                        .with_type_checking(local_import.is_type_checking);
+                let import = Import::new(import_id, file_id, span, &local_import.module_path)
+                    .with_glob()
+                    .with_type_checking(local_import.is_type_checking);
                 store.insert_import(import);
             } else {
                 // import foo → Module
@@ -2068,8 +2067,8 @@ pub(crate) fn convert_cst_attribute_access(cst: &AttributeAccessInfo) -> Attribu
         receiver: cst.receiver.clone(),
         receiver_path: cst.receiver_path.as_ref().map(convert_receiver_path),
         scope_path: cst.scope_path.clone(),
-        base_symbol_index: None,           // Will be populated during resolution
-        base_symbol_qualified_name: None,  // Will be populated during resolution
+        base_symbol_index: None, // Will be populated during resolution
+        base_symbol_qualified_name: None, // Will be populated during resolution
         name: cst.name.clone(),
         span: cst.span.map(|s| Span::new(s.start, s.end)),
         kind: cst.kind,
@@ -2098,8 +2097,8 @@ pub(crate) fn convert_cst_call_site_to_adapter(cst: &CallSiteInfo) -> CallSiteDa
         receiver: cst.receiver.clone(),
         receiver_path: cst.receiver_path.as_ref().map(convert_receiver_path),
         scope_path: cst.scope_path.clone(),
-        callee_symbol_index: None,           // Will be populated during resolution
-        callee_symbol_qualified_name: None,  // Will be populated during resolution
+        callee_symbol_index: None, // Will be populated during resolution
+        callee_symbol_qualified_name: None, // Will be populated during resolution
         span: cst.span.map(|s| Span::new(s.start, s.end)),
         args,
     }
@@ -2363,9 +2362,21 @@ pub fn analyze_file(file_id: FileId, path: &str, content: &str) -> AnalyzerResul
         imports,
         exports,
         alias_graph,
-        signatures: native_result.signatures.iter().map(convert_cst_signature).collect(),
-        attribute_accesses: native_result.attribute_accesses.iter().map(convert_cst_attribute_access).collect(),
-        call_sites: native_result.call_sites.iter().map(convert_cst_call_site_to_adapter).collect(),
+        signatures: native_result
+            .signatures
+            .iter()
+            .map(convert_cst_signature)
+            .collect(),
+        attribute_accesses: native_result
+            .attribute_accesses
+            .iter()
+            .map(convert_cst_attribute_access)
+            .collect(),
+        call_sites: native_result
+            .call_sites
+            .iter()
+            .map(convert_cst_call_site_to_adapter)
+            .collect(),
         class_hierarchies: native_result.class_inheritance,
         isinstance_checks: native_result.isinstance_checks,
         dynamic_patterns: native_result.dynamic_patterns,
@@ -12637,7 +12648,10 @@ result = greet("World")
 
             // Verify the greet() call is present
             let greet_call = call_sites.iter().find(|c| !c.is_method_call);
-            assert!(greet_call.is_some(), "should have the function call greet()");
+            assert!(
+                greet_call.is_some(),
+                "should have the function call greet()"
+            );
         }
 
         #[test]
@@ -12666,7 +12680,9 @@ foo()
 
             // Verify the call site has the resolved callee
             let call_sites: Vec<_> = store.call_sites().collect();
-            let foo_call = call_sites.iter().find(|c| c.callee_symbol_id == Some(foo_id));
+            let foo_call = call_sites
+                .iter()
+                .find(|c| c.callee_symbol_id == Some(foo_id));
             assert!(foo_call.is_some(), "call site should resolve to foo symbol");
         }
 
@@ -15003,9 +15019,18 @@ obj.call_attr()
             assert_eq!(attr_accesses.len(), 3);
 
             // Find each access by name
-            let read = attr_accesses.iter().find(|a| a.name == "read_attr").unwrap();
-            let write = attr_accesses.iter().find(|a| a.name == "write_attr").unwrap();
-            let call = attr_accesses.iter().find(|a| a.name == "call_attr").unwrap();
+            let read = attr_accesses
+                .iter()
+                .find(|a| a.name == "read_attr")
+                .unwrap();
+            let write = attr_accesses
+                .iter()
+                .find(|a| a.name == "write_attr")
+                .unwrap();
+            let call = attr_accesses
+                .iter()
+                .find(|a| a.name == "call_attr")
+                .unwrap();
 
             // Verify names
             assert_eq!(read.name, "read_attr");

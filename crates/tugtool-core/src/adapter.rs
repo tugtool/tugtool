@@ -132,8 +132,8 @@
 
 use crate::facts::{
     AliasKind, AttributeAccessKind, ExportIntent, ExportKind, ExportOrigin, ExportTarget,
-    FactsStore, ImportKind, Language, Modifier, ParamKind, ScopeKind, SymbolKind,
-    TypeNode, TypeSource, Visibility,
+    FactsStore, ImportKind, Language, Modifier, ParamKind, ScopeKind, SymbolKind, TypeNode,
+    TypeSource, Visibility,
 };
 use crate::patch::Span;
 

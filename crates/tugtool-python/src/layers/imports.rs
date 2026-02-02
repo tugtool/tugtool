@@ -33,11 +33,7 @@ use super::stdlib_modules::{is_stdlib_module, PythonVersion};
 const BACKPORT_PACKAGES: &[(&str, &str, PythonVersion)] = &[
     ("dataclasses", "dataclasses", PythonVersion::new(3, 7)),
     ("tomli", "tomllib", PythonVersion::new(3, 11)),
-    (
-        "backports.zoneinfo",
-        "zoneinfo",
-        PythonVersion::new(3, 9),
-    ),
+    ("backports.zoneinfo", "zoneinfo", PythonVersion::new(3, 9)),
     (
         "importlib_metadata",
         "importlib.metadata",
@@ -223,7 +219,9 @@ impl ImportStatement {
     /// Check if this statement imports the given name (for duplicate detection).
     pub fn imports_name(&self, name: &str) -> bool {
         match self {
-            Self::Import { module, .. } => module == name || module.starts_with(&format!("{}.", name)),
+            Self::Import { module, .. } => {
+                module == name || module.starts_with(&format!("{}.", name))
+            }
             Self::FromImport { names, .. } => names.iter().any(|n| n.name == name),
         }
     }
@@ -736,8 +734,11 @@ impl ImportInserter {
                 // Check for opening paren indicating multiline
                 if trimmed.contains('(') && !trimmed.contains(')') {
                     in_parenthesized_import = true;
-                    paren_import_start =
-                        Some((line_start, line_num, import_info.statement.module_path().to_string()));
+                    paren_import_start = Some((
+                        line_start,
+                        line_num,
+                        import_info.statement.module_path().to_string(),
+                    ));
                     continue;
                 }
 
@@ -860,12 +861,8 @@ impl ImportInserter {
     ) -> ImportManipulationResult<(usize, bool, bool)> {
         // (offset, blank_line_before, blank_line_after)
         match self.mode {
-            ImportInsertMode::Preserve => {
-                self.find_insertion_point_preserve(group, analysis)
-            }
-            ImportInsertMode::Organize => {
-                self.find_insertion_point_organize(group, analysis)
-            }
+            ImportInsertMode::Preserve => self.find_insertion_point_preserve(group, analysis),
+            ImportInsertMode::Organize => self.find_insertion_point_organize(group, analysis),
         }
     }
 
@@ -1038,7 +1035,10 @@ impl ImportRemover {
         // (if this is the last import in a group)
         let delete_end = line_end;
 
-        Ok(TextEdit::delete(import_info.start_offset, delete_end - import_info.start_offset))
+        Ok(TextEdit::delete(
+            import_info.start_offset,
+            delete_end - import_info.start_offset,
+        ))
     }
 
     /// Remove a specific name from a from-import statement.
@@ -1096,9 +1096,9 @@ impl ImportRemover {
         let is_last = name_index == names.len() - 1;
 
         // Find "import " to locate where names start
-        let import_keyword_pos = import_text
-            .find(" import ")
-            .ok_or_else(|| ImportManipulationError::InvalidSyntax("no 'import' keyword found".to_string()))?;
+        let import_keyword_pos = import_text.find(" import ").ok_or_else(|| {
+            ImportManipulationError::InvalidSyntax("no 'import' keyword found".to_string())
+        })?;
         let names_start = import_keyword_pos + " import ".len();
 
         // Handle parenthesized imports
@@ -1120,7 +1120,8 @@ impl ImportRemover {
             let trimmed = part.trim();
             if idx == name_index {
                 // Find where this part starts in the original names_section
-                let part_start = names_section[current_pos..].find(trimmed).unwrap_or(0) + current_pos;
+                let part_start =
+                    names_section[current_pos..].find(trimmed).unwrap_or(0) + current_pos;
                 found_pos = Some(part_start);
                 break;
             }
@@ -1130,8 +1131,8 @@ impl ImportRemover {
             }
         }
 
-        let name_start_in_section = found_pos
-            .ok_or_else(|| ImportManipulationError::NotFound(name.name.clone()))?;
+        let name_start_in_section =
+            found_pos.ok_or_else(|| ImportManipulationError::NotFound(name.name.clone()))?;
 
         // Calculate what to remove based on position
         let (start_offset, end_offset) = if is_first && !is_last {
@@ -1152,19 +1153,13 @@ impl ImportRemover {
             // Find how far back to go to include the comma
             let before_name = &names_section[..name_start_in_section];
             let comma_pos = before_name.trim_end().rfind(',').unwrap_or(0);
-            (
-                names_start + comma_pos,
-                names_start + name_end,
-            )
+            (names_start + comma_pos, names_start + name_end)
         } else {
             // Middle name: remove leading comma/space and name
             let name_end = name_start_in_section + name_pattern.len();
             let before_name = &names_section[..name_start_in_section];
             let comma_pos = before_name.rfind(',').unwrap_or(0);
-            (
-                names_start + comma_pos,
-                names_start + name_end,
-            )
+            (names_start + comma_pos, names_start + name_end)
         };
 
         Ok(ImportedNameSpan {
@@ -1240,11 +1235,12 @@ impl ImportRemover {
                 let line_trimmed = line.trim().trim_end_matches(',').trim();
                 if line_trimmed == name_pattern || line_trimmed == format!("{},", name_pattern) {
                     // Remove the entire line including newline
-                    let actual_line_end = if line_end < source.len() && source.as_bytes()[line_end] == b'\n' {
-                        line_end + 1
-                    } else {
-                        line_end
-                    };
+                    let actual_line_end =
+                        if line_end < source.len() && source.as_bytes()[line_end] == b'\n' {
+                            line_end + 1
+                        } else {
+                            line_end
+                        };
                     return Ok(TextEdit::delete(line_start, actual_line_end - line_start));
                 }
                 break;
@@ -1389,9 +1385,10 @@ impl ImportUpdater {
         // Split the module path to get parent and name
         let parts: Vec<&str> = module.rsplitn(2, '.').collect();
         if parts.len() != 2 {
-            return Err(ImportManipulationError::InvalidSyntax(
-                format!("module path '{}' has no submodule to extract", module),
-            ));
+            return Err(ImportManipulationError::InvalidSyntax(format!(
+                "module path '{}' has no submodule to extract",
+                module
+            )));
         }
 
         let submodule = parts[0]; // Last component
@@ -1440,10 +1437,8 @@ mod tests {
 
     #[test]
     fn test_import_statement_render_from_alias() {
-        let stmt = ImportStatement::from_import_names(
-            "os",
-            vec![ImportedName::with_alias("path", "p")],
-        );
+        let stmt =
+            ImportStatement::from_import_names("os", vec![ImportedName::with_alias("path", "p")]);
         assert_eq!(stmt.render(), "from os import path as p");
     }
 
@@ -1515,14 +1510,17 @@ mod tests {
         let classifier = ImportClassifier::with_defaults();
         assert_eq!(classifier.classify(".module"), ImportGroupKind::Local);
         assert_eq!(classifier.classify("..parent"), ImportGroupKind::Local);
-        assert_eq!(classifier.classify("...grandparent"), ImportGroupKind::Local);
+        assert_eq!(
+            classifier.classify("...grandparent"),
+            ImportGroupKind::Local
+        );
     }
 
     #[test]
     fn test_classify_explicit_first_party() {
         // known_first_party should override stdlib classification
-        let config = ImportClassifierConfig::default()
-            .with_known_first_party(vec!["os".to_string()]);
+        let config =
+            ImportClassifierConfig::default().with_known_first_party(vec!["os".to_string()]);
         let classifier = ImportClassifier::new(config);
         // os is normally stdlib, but we've marked it as first-party
         assert_eq!(classifier.classify("os"), ImportGroupKind::Local);
@@ -1543,14 +1541,17 @@ mod tests {
         let classifier = ImportClassifier::new(config);
 
         // Explicit third-party wins over filesystem detection
-        assert_eq!(classifier.classify("mypackage"), ImportGroupKind::ThirdParty);
+        assert_eq!(
+            classifier.classify("mypackage"),
+            ImportGroupKind::ThirdParty
+        );
     }
 
     #[test]
     fn test_classify_explicit_stdlib() {
         // known_stdlib should override the default classification
-        let config = ImportClassifierConfig::default()
-            .with_known_stdlib(vec!["customstdlib".to_string()]);
+        let config =
+            ImportClassifierConfig::default().with_known_stdlib(vec!["customstdlib".to_string()]);
         let classifier = ImportClassifier::new(config);
         assert_eq!(classifier.classify("customstdlib"), ImportGroupKind::Stdlib);
     }
@@ -1604,7 +1605,10 @@ mod tests {
         let classifier = ImportClassifier::with_defaults();
         // Submodules should be classified by their top-level package
         assert_eq!(classifier.classify("os.path"), ImportGroupKind::Stdlib);
-        assert_eq!(classifier.classify("collections.abc"), ImportGroupKind::Stdlib);
+        assert_eq!(
+            classifier.classify("collections.abc"),
+            ImportGroupKind::Stdlib
+        );
         assert_eq!(classifier.classify("urllib.parse"), ImportGroupKind::Stdlib);
     }
 
@@ -1683,11 +1687,17 @@ mod tests {
 
         let config = ImportClassifierConfig::default().with_target_version(PythonVersion::PY312);
         let classifier = ImportClassifier::new(config);
-        assert_eq!(classifier.classify("distutils"), ImportGroupKind::ThirdParty);
+        assert_eq!(
+            classifier.classify("distutils"),
+            ImportGroupKind::ThirdParty
+        );
 
         let config = ImportClassifierConfig::default().with_target_version(PythonVersion::PY313);
         let classifier = ImportClassifier::new(config);
-        assert_eq!(classifier.classify("distutils"), ImportGroupKind::ThirdParty);
+        assert_eq!(
+            classifier.classify("distutils"),
+            ImportGroupKind::ThirdParty
+        );
     }
 
     #[test]
@@ -1716,14 +1726,20 @@ mod tests {
     fn test_classify_third_party_numpy() {
         let classifier = ImportClassifier::with_defaults();
         assert_eq!(classifier.classify("numpy"), ImportGroupKind::ThirdParty);
-        assert_eq!(classifier.classify("numpy.linalg"), ImportGroupKind::ThirdParty);
+        assert_eq!(
+            classifier.classify("numpy.linalg"),
+            ImportGroupKind::ThirdParty
+        );
     }
 
     #[test]
     fn test_classify_third_party_requests() {
         let classifier = ImportClassifier::with_defaults();
         assert_eq!(classifier.classify("requests"), ImportGroupKind::ThirdParty);
-        assert_eq!(classifier.classify("requests.auth"), ImportGroupKind::ThirdParty);
+        assert_eq!(
+            classifier.classify("requests.auth"),
+            ImportGroupKind::ThirdParty
+        );
     }
 
     #[test]
@@ -1737,7 +1753,10 @@ mod tests {
         let classifier = ImportClassifier::new(config);
 
         assert_eq!(classifier.classify("mypackage"), ImportGroupKind::Local);
-        assert_eq!(classifier.classify("mypackage.submodule"), ImportGroupKind::Local);
+        assert_eq!(
+            classifier.classify("mypackage.submodule"),
+            ImportGroupKind::Local
+        );
     }
 
     #[test]
@@ -1850,8 +1869,14 @@ mod tests {
         assert_eq!(classifier.classify("numpy"), ImportGroupKind::ThirdParty);
         assert_eq!(classifier.classify("requests"), ImportGroupKind::ThirdParty);
         assert_eq!(classifier.classify("myproject"), ImportGroupKind::Local);
-        assert_eq!(classifier.classify("myproject.core"), ImportGroupKind::Local);
-        assert_eq!(classifier.classify("myproject.utils"), ImportGroupKind::Local);
+        assert_eq!(
+            classifier.classify("myproject.core"),
+            ImportGroupKind::Local
+        );
+        assert_eq!(
+            classifier.classify("myproject.utils"),
+            ImportGroupKind::Local
+        );
         assert_eq!(classifier.classify(".relative"), ImportGroupKind::Local);
     }
 
@@ -1895,7 +1920,8 @@ mod tests {
         assert!(result.contains("\"\"\"Module docstring.\"\"\""));
         assert!(result.contains("import os\n"));
         // Import should be after docstring
-        let docstring_end = result.find("\"\"\"").unwrap() + 3 + result[3..].find("\"\"\"").unwrap() + 3;
+        let docstring_end =
+            result.find("\"\"\"").unwrap() + 3 + result[3..].find("\"\"\"").unwrap() + 3;
         let import_pos = result.find("import os").unwrap();
         assert!(import_pos > docstring_end);
     }
@@ -2187,7 +2213,9 @@ import os
             line: 1,
         };
 
-        let edit = remover.remove_name_from_import(source, &info, "path").unwrap();
+        let edit = remover
+            .remove_name_from_import(source, &info, "path")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "");
     }
@@ -2208,7 +2236,9 @@ import os
             line: 1,
         };
 
-        let edit = remover.remove_name_from_import(source, &info, "path").unwrap();
+        let edit = remover
+            .remove_name_from_import(source, &info, "path")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "from os import getcwd\n");
     }
@@ -2229,7 +2259,9 @@ import os
             line: 1,
         };
 
-        let edit = remover.remove_name_from_import(source, &info, "getcwd").unwrap();
+        let edit = remover
+            .remove_name_from_import(source, &info, "getcwd")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "from os import path\n");
     }
@@ -2263,10 +2295,8 @@ import os
     fn test_remove_with_alias() {
         let remover = ImportRemover::new();
         let source = "from os import path as p\n";
-        let stmt = ImportStatement::from_import_names(
-            "os",
-            vec![ImportedName::with_alias("path", "p")],
-        );
+        let stmt =
+            ImportStatement::from_import_names("os", vec![ImportedName::with_alias("path", "p")]);
         let info = ImportInfo {
             statement: stmt,
             group: ImportGroupKind::Stdlib,
@@ -2275,7 +2305,9 @@ import os
             line: 1,
         };
 
-        let edit = remover.remove_name_from_import(source, &info, "path").unwrap();
+        let edit = remover
+            .remove_name_from_import(source, &info, "path")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "");
     }
@@ -2296,7 +2328,9 @@ import os
             line: 1,
         };
 
-        let edit = remover.remove_name_from_multiline_import(source, &info, "path").unwrap();
+        let edit = remover
+            .remove_name_from_multiline_import(source, &info, "path")
+            .unwrap();
         let result = edit.apply(source);
         // Should remove the "    path,\n" line
         assert!(result.contains("getcwd"));
@@ -2321,7 +2355,9 @@ import os
         };
 
         // Remove one, should leave a valid single-name import
-        let edit = remover.remove_name_from_import(source, &info, "getcwd").unwrap();
+        let edit = remover
+            .remove_name_from_import(source, &info, "getcwd")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "from os import path\n");
 
@@ -2347,7 +2383,9 @@ import os
         };
 
         // Remove last name, should handle trailing comma
-        let edit = remover.remove_name_from_import(source, &info, "getcwd").unwrap();
+        let edit = remover
+            .remove_name_from_import(source, &info, "getcwd")
+            .unwrap();
         let result = edit.apply(source);
         // Result should not have "getcwd" and should be valid
         assert!(!result.contains("getcwd"));
@@ -2442,7 +2480,9 @@ import os
             line: 1,
         };
 
-        let edit = updater.update_imported_name(source, &info, "old", "new").unwrap();
+        let edit = updater
+            .update_imported_name(source, &info, "old", "new")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "from m import new\n");
     }
@@ -2451,10 +2491,8 @@ import os
     fn test_update_name_preserves_alias() {
         let updater = ImportUpdater::new();
         let source = "from m import old as o\n";
-        let stmt = ImportStatement::from_import_names(
-            "m",
-            vec![ImportedName::with_alias("old", "o")],
-        );
+        let stmt =
+            ImportStatement::from_import_names("m", vec![ImportedName::with_alias("old", "o")]);
         let info = ImportInfo {
             statement: stmt,
             group: ImportGroupKind::ThirdParty,
@@ -2463,7 +2501,9 @@ import os
             line: 1,
         };
 
-        let edit = updater.update_imported_name(source, &info, "old", "new").unwrap();
+        let edit = updater
+            .update_imported_name(source, &info, "old", "new")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "from m import new as o\n");
     }
@@ -2517,7 +2557,9 @@ import os
             line: 1,
         };
 
-        let edit = updater.update_module_path(source, &info, "new.module").unwrap();
+        let edit = updater
+            .update_module_path(source, &info, "new.module")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "import new.module\n");
     }
@@ -2542,7 +2584,9 @@ import os
             line: 1,
         };
 
-        let edit = updater.update_imported_name(source, &info, "old", "new").unwrap();
+        let edit = updater
+            .update_imported_name(source, &info, "old", "new")
+            .unwrap();
         let result = edit.apply(source);
         assert_eq!(result, "from m import foo, new, bar\n");
     }

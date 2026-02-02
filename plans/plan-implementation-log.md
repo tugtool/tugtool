@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Stage 0: Foundation Infrastructure Summary | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Steps 0.8-0.9 Summary (lines 9706-9728) and Stage 0 Summary (lines 9731-9755)
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore query methods
+- `crates/tugtool-python/src/ops/rename_param.rs` - Parameter rename operations
+- `crates/tugtool-python/src/layers/imports.rs` - Import manipulation layer
+
+**Verification Progress:**
+
+| Checkpoint | Status |
+|------------|--------|
+| `store.call_site_count() > 0` after analyzing code with calls | Verified |
+| `store.refs_in_scope(file_id, scope_id)` returns scoped references | Verified |
+| `ReceiverStep::Attribute` variant exists (not `Attr`) | Verified |
+| `ParamKind`, `Modifier`, `AttributeAccessKind` imported from Core in CST | Verified |
+| `AttributeAccessInfo` uses `name`/`span` fields | Verified |
+| `ImportInserter::insert()` generates correct edits | Verified |
+| `ImportRemover::remove_name_from_import()` handles multi-name imports | Verified |
+| `Import.is_type_checking` is populated correctly | Verified |
+| All Stage 0 infrastructure has >80% test coverage | Verified |
+| Infrastructure is ready for Stage 1 operations | Verified |
+| No FactsStore bypass patterns exist in `ops/` modules | Verified |
+| `store.signature_count() > 0` after analyzing files with functions | Verified |
+| Import manipulation layer fully tested | Verified |
+| No TODO comments about "get from signature" in rename_param.rs | Verified |
+
+**Files Modified:**
+- `plans/phase-13.md` - Checked off all Steps 0.8-0.9 and Stage 0 checkpoint items
+
+**Test Results:**
+- `cargo nextest run --workspace`: 2576 tests passed
+- `cargo nextest run -p tugtool-python layers::imports`: 70 tests passed
+- `cargo nextest run -p tugtool-python-cst import`: 52 tests passed
+
+**Checkpoints Verified:**
+- Final Steps 0.8-0.9 Checkpoint: PASS (9/9 items)
+- Final Stage 0 Checkpoint: PASS (9/9 items)
+
+**Key Decisions/Notes:**
+- Stage 0: Foundation Infrastructure is now COMPLETE
+- All infrastructure is in place for Stage 1: Foundation Hardening + Layer 1
+- Next step: Step 1.0.1: Support Type Comments
+
+---
+
 ## [phase-13.md] Step 0.9 Phase G: TYPE_CHECKING Import Tracking | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

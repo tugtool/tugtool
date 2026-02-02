@@ -4061,8 +4061,12 @@ mod tests {
             let tc_imports = store.type_checking_imports_in_file(file_id);
             assert_eq!(tc_imports.len(), 2);
             assert!(tc_imports.iter().all(|i| i.is_type_checking));
-            assert!(tc_imports.iter().any(|i| i.module_path == "typing_extensions"));
-            assert!(tc_imports.iter().any(|i| i.module_path == "mypy_extensions"));
+            assert!(tc_imports
+                .iter()
+                .any(|i| i.module_path == "typing_extensions"));
+            assert!(tc_imports
+                .iter()
+                .any(|i| i.module_path == "mypy_extensions"));
 
             // Test runtime_imports_in_file
             let runtime_imports = store.runtime_imports_in_file(file_id);
@@ -4127,7 +4131,11 @@ mod tests {
             assert_eq!(first_call.len(), second_call.len());
             assert_eq!(second_call.len(), third_call.len());
 
-            for ((a, b), c) in first_call.iter().zip(second_call.iter()).zip(third_call.iter()) {
+            for ((a, b), c) in first_call
+                .iter()
+                .zip(second_call.iter())
+                .zip(third_call.iter())
+            {
                 assert_eq!(a.ref_id, b.ref_id);
                 assert_eq!(b.ref_id, c.ref_id);
             }
@@ -8896,23 +8904,42 @@ mod tests {
             store.insert_scope(scope1);
 
             let scope2_id = store.next_scope_id();
-            let scope2 = ScopeInfo::new(scope2_id, file_id, Span::new(60, 100), ScopeKind::Function);
+            let scope2 =
+                ScopeInfo::new(scope2_id, file_id, Span::new(60, 100), ScopeKind::Function);
             store.insert_scope(scope2);
 
             // Create references in different scopes
             let ref1_id = store.next_reference_id();
-            let ref1 = Reference::new(ref1_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
-                .with_scope_id(scope1_id);
+            let ref1 = Reference::new(
+                ref1_id,
+                symbol_id,
+                file_id,
+                Span::new(10, 11),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope1_id);
             store.insert_reference(ref1);
 
             let ref2_id = store.next_reference_id();
-            let ref2 = Reference::new(ref2_id, symbol_id, file_id, Span::new(20, 21), ReferenceKind::Reference)
-                .with_scope_id(scope1_id);
+            let ref2 = Reference::new(
+                ref2_id,
+                symbol_id,
+                file_id,
+                Span::new(20, 21),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope1_id);
             store.insert_reference(ref2);
 
             let ref3_id = store.next_reference_id();
-            let ref3 = Reference::new(ref3_id, symbol_id, file_id, Span::new(70, 71), ReferenceKind::Reference)
-                .with_scope_id(scope2_id);
+            let ref3 = Reference::new(
+                ref3_id,
+                symbol_id,
+                file_id,
+                Span::new(70, 71),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope2_id);
             store.insert_reference(ref3);
 
             // Query scope1 - should get ref1 and ref2
@@ -8969,16 +8996,34 @@ mod tests {
 
             // Insert references (intentionally in reverse order to test sorting)
             let ref3_id = store.next_reference_id();
-            let ref3 = Reference::new(ref3_id, symbol_id, file_id, Span::new(30, 31), ReferenceKind::Reference)
-                .with_scope_id(scope_id);
+            let ref3 = Reference::new(
+                ref3_id,
+                symbol_id,
+                file_id,
+                Span::new(30, 31),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope_id);
 
             let ref1_id = store.next_reference_id();
-            let ref1 = Reference::new(ref1_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
-                .with_scope_id(scope_id);
+            let ref1 = Reference::new(
+                ref1_id,
+                symbol_id,
+                file_id,
+                Span::new(10, 11),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope_id);
 
             let ref2_id = store.next_reference_id();
-            let ref2 = Reference::new(ref2_id, symbol_id, file_id, Span::new(20, 21), ReferenceKind::Reference)
-                .with_scope_id(scope_id);
+            let ref2 = Reference::new(
+                ref2_id,
+                symbol_id,
+                file_id,
+                Span::new(20, 21),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope_id);
 
             // Insert in non-sorted order
             store.insert_reference(ref3);
@@ -9023,8 +9068,14 @@ mod tests {
 
             // Insert a reference with scope_id
             let ref_id = store.next_reference_id();
-            let reference = Reference::new(ref_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
-                .with_scope_id(scope_id);
+            let reference = Reference::new(
+                ref_id,
+                symbol_id,
+                file_id,
+                Span::new(10, 11),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope_id);
             store.insert_reference(reference);
 
             // Index should be populated
@@ -9055,7 +9106,13 @@ mod tests {
 
             // Insert a reference WITHOUT scope_id
             let ref_id = store.next_reference_id();
-            let reference = Reference::new(ref_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference);
+            let reference = Reference::new(
+                ref_id,
+                symbol_id,
+                file_id,
+                Span::new(10, 11),
+                ReferenceKind::Reference,
+            );
             // Note: not calling .with_scope_id()
             store.insert_reference(reference);
 
@@ -9095,8 +9152,14 @@ mod tests {
 
             // Insert a reference with scope_id
             let ref_id = store.next_reference_id();
-            let reference = Reference::new(ref_id, symbol_id, file_id, Span::new(10, 11), ReferenceKind::Reference)
-                .with_scope_id(scope_id);
+            let reference = Reference::new(
+                ref_id,
+                symbol_id,
+                file_id,
+                Span::new(10, 11),
+                ReferenceKind::Reference,
+            )
+            .with_scope_id(scope_id);
             store.insert_reference(reference);
 
             // Verify index is populated

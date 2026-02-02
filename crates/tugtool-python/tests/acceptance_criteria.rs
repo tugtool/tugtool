@@ -876,7 +876,9 @@ mod ac4_import_resolution {
 
         // PHASE 8 REQUIREMENT: References should exist from files that import process_data
         // Get all references to this symbol
-        let refs: Vec<_> = store.refs_of_symbol(process_data_symbol.symbol_id).collect();
+        let refs: Vec<_> = store
+            .refs_of_symbol(process_data_symbol.symbol_id)
+            .collect();
 
         // We expect at least 2 references:
         // 1. from lib/__init__.py (import site)

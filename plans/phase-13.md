@@ -9716,15 +9716,15 @@ After completing Steps 0.8-0.9 (including 0.8.5), you will have:
 
 **Final Steps 0.8-0.9 Checkpoint:**
 
-- [ ] `store.call_site_count() > 0` after analyzing code with calls
-- [ ] `store.refs_in_scope(file_id, scope_id)` returns scoped references
-- [ ] `ReceiverStep::Attribute` variant exists (not `Attr`)
-- [ ] `ParamKind`, `Modifier`, `AttributeAccessKind` imported from Core in CST (no duplicates)
-- [ ] `AttributeAccessInfo` uses `name`/`span` fields (not `attr_name`/`attr_span`)
-- [ ] `ImportInserter::insert()` generates correct edits
-- [ ] `ImportRemover::remove_name_from_import()` handles multi-name imports
-- [ ] `Import.is_type_checking` is populated correctly
-- [ ] `cargo nextest run --workspace` - All tests pass
+- [x] `store.call_site_count() > 0` after analyzing code with calls
+- [x] `store.refs_in_scope(file_id, scope_id)` returns scoped references
+- [x] `ReceiverStep::Attribute` variant exists (not `Attr`)
+- [x] `ParamKind`, `Modifier`, `AttributeAccessKind` imported from Core in CST (no duplicates)
+- [x] `AttributeAccessInfo` uses `name`/`span` fields (not `attr_name`/`attr_span`)
+- [x] `ImportInserter::insert()` generates correct edits
+- [x] `ImportRemover::remove_name_from_import()` handles multi-name imports
+- [x] `Import.is_type_checking` is populated correctly
+- [x] `cargo nextest run --workspace` - All tests pass
 
 ---
 
@@ -9743,15 +9743,15 @@ After completing Steps 0.1-0.9 (including 0.8.5), you will have:
 - Import manipulation layer: insert, remove, update imports with TYPE_CHECKING support ([Step 0.9](#step-0-9))
 
 **Final Stage 0 Checkpoint:**
-- [ ] `cargo nextest run --workspace`
-- [ ] All Stage 0 infrastructure has >80% test coverage
-- [ ] Infrastructure is ready for Stage 1 operations
-- [ ] No FactsStore bypass patterns exist in `ops/` modules
-- [ ] `store.signature_count() > 0` after analyzing files with functions
-- [ ] `store.call_site_count() > 0` after analyzing files with calls
-- [ ] `store.refs_in_scope()` returns scoped references
-- [ ] Import manipulation layer fully tested
-- [ ] No TODO comments about "get from signature" remain in rename_param.rs
+- [x] `cargo nextest run --workspace`
+- [x] All Stage 0 infrastructure has >80% test coverage
+- [x] Infrastructure is ready for Stage 1 operations
+- [x] No FactsStore bypass patterns exist in `ops/` modules
+- [x] `store.signature_count() > 0` after analyzing files with functions
+- [x] `store.call_site_count() > 0` after analyzing files with calls
+- [x] `store.refs_in_scope()` returns scoped references
+- [x] Import manipulation layer fully tested
+- [x] No TODO comments about "get from signature" remain in rename_param.rs
 
 ---
 

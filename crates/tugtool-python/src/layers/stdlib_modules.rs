@@ -10,8 +10,8 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with the script above.
 
-use std::collections::HashSet;
 use once_cell::sync::Lazy;
+use std::collections::HashSet;
 
 /// Python version for stdlib lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

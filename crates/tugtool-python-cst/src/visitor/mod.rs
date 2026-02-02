@@ -117,13 +117,13 @@ pub use attribute_access::{
     ReceiverStep,
 };
 // Re-export AttributeAccessKind from tugtool_core
-pub use tugtool_core::facts::AttributeAccessKind;
 pub use call_site::{CallArgInfo, CallSiteCollector, CallSiteInfo};
 pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
 pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
 pub use isinstance::{IsInstanceCheck, IsInstanceCollector};
 pub use method_call::{MethodCallCollector, MethodCallInfo};
 pub use signature::{ParamInfo, SignatureCollector, SignatureInfo, TypeParamInfo};
+pub use tugtool_core::facts::AttributeAccessKind;
 // Re-export ParamKind and Modifier from tugtool_core
 pub use tugtool_core::facts::{Modifier, ParamKind};
 pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};

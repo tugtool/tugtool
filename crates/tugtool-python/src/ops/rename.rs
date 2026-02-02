@@ -1614,9 +1614,8 @@ def use_handler():
 "#;
 
             let result = analyze_single_file_for_rename(
-                source,
-                2,  // line (pointing to "process" in "def process")
-                9,  // col
+                source, 2, // line (pointing to "process" in "def process")
+                9, // col
                 "handle",
             );
 
@@ -1651,8 +1650,7 @@ s.execute()
 "#;
 
             let result = analyze_single_file_for_rename(
-                source,
-                2, // line (pointing to "execute" in "def execute")
+                source, 2, // line (pointing to "execute" in "def execute")
                 9, // col
                 "run",
             );
