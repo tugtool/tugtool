@@ -6,6 +6,67 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase A: Import Infrastructure Types | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase A specification (lines 8876-8985)
+- `crates/tugtool-python/src/lib.rs` - Existing module structure
+- `crates/tugtool-core/src/patch.rs` - Span type reference
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `layers/mod.rs` module root | Done |
+| Create `layers/imports.rs` with core types (enums, error type) | Done |
+| Add `ImportStatement` and `ImportedName` types | Done |
+| Implement `ImportStatement` methods (import, from_import, render) | Done |
+| Update `lib.rs` to export layers module | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/layers/mod.rs` - Module root with re-exports
+- `crates/tugtool-python/src/layers/imports.rs` - Core import manipulation types
+
+**Files Modified:**
+- `crates/tugtool-python/src/lib.rs` - Added `layers` module and documentation
+
+**Types Implemented:**
+- `ImportGroupKind` enum (Future, Stdlib, ThirdParty, Local) with ordering
+- `ImportInsertMode` enum (Preserve, Organize) with Default
+- `ImportManipulationError` error type (5 variants with thiserror)
+- `ImportManipulationResult<T>` type alias
+- `ImportedName` struct with `new()`, `with_alias()`, `render()`
+- `ImportStatement` enum with `import()`, `import_as()`, `from_import()`, `from_import_names()`, `render()`
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python layers`: 10 new tests passed
+- `cargo nextest run -p tugtool-python`: 858 tests passed (up from 848)
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Tests Added:**
+- `test_import_statement_render_simple` - `import os` renders correctly
+- `test_import_statement_render_alias` - `import numpy as np` renders correctly
+- `test_import_statement_render_from` - `from os import path` renders correctly
+- `test_import_statement_render_from_alias` - `from os import path as p` renders correctly
+- `test_import_statement_render_from_multiple` - `from os import path, getcwd` renders correctly
+- `test_imported_name_simple` - simple name rendering
+- `test_imported_name_with_alias` - aliased name rendering
+- `test_import_group_kind_ordering` - Future < Stdlib < ThirdParty < Local
+- `test_import_insert_mode_default` - Default is Preserve
+- `test_import_manipulation_error_display` - Error message formatting
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python` passes: PASS (858)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+Phase A establishes the foundational types for the import manipulation layer. The implementation follows the plan specification closely, with additional helper methods (`import_as()`, `from_import_names()`) for ergonomic API usage. The `ImportGroupKind` enum implements `Ord` to enable sorting imports by group priority. Additional tests beyond the plan specification were added for comprehensive coverage (error display, ordering, ImportedName helpers).
+
+---
+
 ## [phase-13.md] Step 0.8.5 Success Criteria | VERIFIED | 2026-02-02
 
 **Completed:** 2026-02-02

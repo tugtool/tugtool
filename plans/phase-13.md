@@ -8883,7 +8883,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Create `crates/tugtool-python/src/layers/mod.rs`:
+- [x] Create `crates/tugtool-python/src/layers/mod.rs`:
   ```rust
   //! Infrastructure layers for Python refactoring operations.
   //!
@@ -8898,7 +8898,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   };
   ```
 
-- [ ] Create `crates/tugtool-python/src/layers/imports.rs` with core types:
+- [x] Create `crates/tugtool-python/src/layers/imports.rs` with core types:
   ```rust
   //! Import manipulation layer for Python refactoring.
 
@@ -8945,7 +8945,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   pub type ImportManipulationResult<T> = Result<T, ImportManipulationError>;
   ```
 
-- [ ] Add `ImportStatement` type for rendering imports:
+- [x] Add `ImportStatement` type for rendering imports:
   ```rust
   /// A Python import statement to insert.
   #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8971,11 +8971,11 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tests:**
 
-- [ ] Unit: `test_import_statement_render_simple` - `import os` renders correctly
-- [ ] Unit: `test_import_statement_render_alias` - `import numpy as np` renders correctly
-- [ ] Unit: `test_import_statement_render_from` - `from os import path` renders correctly
-- [ ] Unit: `test_import_statement_render_from_alias` - `from os import path as p` renders correctly
-- [ ] Unit: `test_import_statement_render_from_multiple` - `from os import path, getcwd` renders correctly
+- [x] Unit: `test_import_statement_render_simple` - `import os` renders correctly
+- [x] Unit: `test_import_statement_render_alias` - `import numpy as np` renders correctly
+- [x] Unit: `test_import_statement_render_from` - `from os import path` renders correctly
+- [x] Unit: `test_import_statement_render_from_alias` - `from os import path as p` renders correctly
+- [x] Unit: `test_import_statement_render_from_multiple` - `from os import path, getcwd` renders correctly
 
 ---
 

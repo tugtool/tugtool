@@ -23,6 +23,7 @@
 //! - [`ops`]: Python refactoring operations (rename, etc.)
 //! - [`types`]: Shared data types for Python analysis
 //! - [`stubs`]: Type stub (.pyi) discovery and update infrastructure
+//! - [`layers`]: Infrastructure layers for complex refactoring operations
 //!
 //! # Example
 //!
@@ -44,6 +45,7 @@ pub mod cst_bridge;
 pub mod dynamic;
 mod error_bridges;
 pub mod files;
+pub mod layers;
 pub mod lookup;
 pub mod mro;
 pub mod ops;
