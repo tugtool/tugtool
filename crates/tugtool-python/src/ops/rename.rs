@@ -50,6 +50,9 @@ use tugtool_python_cst::TypeCommentParser;
 // String annotation infrastructure for renaming type references in string annotations
 use crate::stubs::StringAnnotationParser;
 
+// Stub discovery infrastructure for finding and updating .pyi files (D08)
+use crate::stubs::{StubDiscovery, StubDiscoveryOptions};
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -881,6 +884,53 @@ pub fn rename(
         }
     }
 
+    // Collect stub file edits - update symbol names in .pyi files (per D08)
+    // For module-level symbols (functions, classes), find and update corresponding stubs
+    if symbol.kind == SymbolKind::Function
+        || symbol.kind == SymbolKind::Class
+        || symbol.kind == SymbolKind::Method
+    {
+        let stub_discovery = StubDiscovery::new(StubDiscoveryOptions {
+            workspace_root: workspace_root.to_path_buf(),
+            ..Default::default()
+        });
+
+        // Find stub for the symbol's file
+        let symbol_file =
+            store
+                .file(symbol.decl_file_id)
+                .ok_or_else(|| RenameError::AnalyzerError {
+                    message: "symbol file not found".to_string(),
+                })?;
+        let symbol_file_path = workspace_root.join(&symbol_file.path);
+
+        if let Some(stub_info) = stub_discovery.find_stub_for(&symbol_file_path) {
+            // Read and parse the stub file
+            if let Ok(stub_content) = fs::read_to_string(&stub_info.stub_path) {
+                // Find the symbol in the stub and get its span
+                if let Ok(stub_edits) =
+                    find_symbol_in_stub(&stub_content, old_name, new_name, symbol.kind)
+                {
+                    let stub_rel_path = stub_info
+                        .stub_path
+                        .strip_prefix(workspace_root)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| stub_info.stub_path.to_string_lossy().to_string());
+
+                    for (span, replacement) in stub_edits {
+                        let file_edits = edits_by_file.entry(stub_rel_path.clone()).or_default();
+                        if !file_edits
+                            .iter()
+                            .any(|(s, _)| s.start == span.start && s.end == span.end)
+                        {
+                            file_edits.push((span, replacement));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Create sandbox
     let sandbox = TempDir::new()?;
 
@@ -892,6 +942,20 @@ pub fn rename(
             fs::create_dir_all(parent)?;
         }
         fs::copy(&src, &dst)?;
+    }
+
+    // Also copy stub files to sandbox if they have edits
+    for path in edits_by_file.keys() {
+        if path.ends_with(".pyi") {
+            let src = workspace_root.join(path);
+            let dst = sandbox.path().join(path);
+            if src.exists() && !dst.exists() {
+                if let Some(parent) = dst.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(&src, &dst)?;
+            }
+        }
     }
 
     // Apply edits in sandbox
@@ -1060,6 +1124,69 @@ fn find_override_methods(
     }
 
     overrides
+}
+
+/// Find a symbol's name span in a stub file for rename operations (D08).
+///
+/// This function parses the stub content and finds the span of the symbol name
+/// to be renamed. It handles functions, classes, and methods.
+fn find_symbol_in_stub(
+    stub_content: &str,
+    old_name: &str,
+    new_name: &str,
+    symbol_kind: SymbolKind,
+) -> RenameResult<Vec<(Span, String)>> {
+    use tugtool_python_cst::{parse_module_with_positions, StubSymbols};
+
+    let parsed = parse_module_with_positions(stub_content, None).map_err(|e| {
+        RenameError::AnalyzerError {
+            message: format!("failed to parse stub: {}", e),
+        }
+    })?;
+
+    let stub_symbols = StubSymbols::collect(&parsed.module, &parsed.positions);
+
+    let mut edits = Vec::new();
+
+    match symbol_kind {
+        SymbolKind::Function => {
+            // Find function at module level
+            for func in &stub_symbols.functions {
+                if func.name == old_name {
+                    if let Some(name_span) = func.name_span {
+                        edits.push((name_span, new_name.to_string()));
+                    }
+                }
+            }
+        }
+        SymbolKind::Class => {
+            // Find class
+            for class in &stub_symbols.classes {
+                if class.name == old_name {
+                    if let Some(name_span) = class.name_span {
+                        edits.push((name_span, new_name.to_string()));
+                    }
+                }
+            }
+        }
+        SymbolKind::Method => {
+            // Find method inside any class
+            for class in &stub_symbols.classes {
+                for method in &class.methods {
+                    if method.name == old_name {
+                        if let Some(name_span) = method.name_span {
+                            edits.push((name_span, new_name.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Other kinds (variables, parameters) not typically in stubs for rename
+        }
+    }
+
+    Ok(edits)
 }
 
 // ============================================================================
@@ -1764,6 +1891,118 @@ s.execute()
                 !result.references.is_empty(),
                 "should track attribute access as reference: found {} refs",
                 result.references.len()
+            );
+        }
+    }
+
+    // ========================================================================
+    // Stub Update Tests (D08)
+    // ========================================================================
+
+    mod stub_update_tests {
+        use super::*;
+        use std::fs;
+        use std::path::PathBuf;
+        use tempfile::TempDir;
+
+        /// Helper to create a workspace with given files.
+        fn create_test_workspace(files: &[(&str, &str)]) -> (TempDir, PathBuf) {
+            let temp_dir = TempDir::new().unwrap();
+            let workspace = temp_dir.path().to_path_buf();
+            for (path, content) in files {
+                let file_path = workspace.join(path);
+                if let Some(parent) = file_path.parent() {
+                    fs::create_dir_all(parent).unwrap();
+                }
+                fs::write(&file_path, content).unwrap();
+            }
+            (temp_dir, workspace)
+        }
+
+        #[test]
+        fn test_rename_updates_stub() {
+            // Test that renaming a function updates its .pyi stub
+            let code = r#"def process(data):
+    return data
+"#;
+            let stub = r#"def process(data: dict) -> dict: ...
+"#;
+            let (_temp, workspace) =
+                create_test_workspace(&[("module.py", code), ("module.pyi", stub)]);
+            let files = vec![("module.py".to_string(), code.to_string())];
+            let location = Location {
+                file: "module.py".to_string(),
+                line: 1,
+                col: 5, // 'process' function name
+                byte_start: None,
+                byte_end: None,
+            };
+
+            let python_path = PathBuf::from("/usr/bin/python3");
+            let result = rename(
+                &workspace,
+                &files,
+                &location,
+                "handle",
+                &python_path,
+                VerificationMode::None,
+                false,
+            );
+
+            assert!(
+                result.is_ok(),
+                "rename with stub should succeed: {:?}",
+                result
+            );
+            let output = result.unwrap();
+
+            // Check that stub file was included in edits
+            let has_stub_edit = output.patch.edits.iter().any(|e| e.file.ends_with(".pyi"));
+            assert!(has_stub_edit, "should have edit in .pyi stub file");
+
+            // Check that the diff contains the stub update
+            let diff = &output.patch.unified_diff;
+            assert!(diff.contains("module.pyi"), "diff should mention stub file");
+        }
+
+        #[test]
+        fn test_rename_updates_string_annotation() {
+            // Test that renaming updates string annotations (forward references)
+            let code = r#"class Handler:
+    pass
+
+def process(x: "Handler") -> "Handler":
+    return x
+"#;
+            let (_temp, workspace) = create_test_workspace(&[("module.py", code)]);
+            let files = vec![("module.py".to_string(), code.to_string())];
+            let location = Location {
+                file: "module.py".to_string(),
+                line: 1,
+                col: 7, // 'Handler' class name
+                byte_start: None,
+                byte_end: None,
+            };
+
+            let python_path = PathBuf::from("/usr/bin/python3");
+            let result = rename(
+                &workspace,
+                &files,
+                &location,
+                "RequestHandler",
+                &python_path,
+                VerificationMode::None,
+                false,
+            );
+
+            assert!(result.is_ok(), "rename should succeed: {:?}", result);
+            let output = result.unwrap();
+
+            // Check that string annotations were updated
+            let diff = &output.patch.unified_diff;
+            assert!(
+                diff.contains("RequestHandler"),
+                "diff should contain new name in string annotation"
             );
         }
     }

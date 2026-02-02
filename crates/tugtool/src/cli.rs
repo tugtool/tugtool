@@ -203,9 +203,6 @@ pub fn analyze_rename_param(
 
 /// Execute a rename-param operation.
 ///
-/// Note: This is a placeholder that currently only runs analysis.
-/// Full apply support will be added in a future iteration.
-///
 /// # Arguments
 ///
 /// * `session` - Open session (provides workspace root, session directory)
@@ -222,16 +219,46 @@ pub fn analyze_rename_param(
 #[cfg(feature = "python")]
 pub fn do_rename_param(
     session: &Session,
-    _python_path: Option<PathBuf>,
+    python_path: Option<PathBuf>,
     at: &str,
     to: &str,
-    _verify_mode: VerificationMode,
-    _apply: bool,
+    verify_mode: VerificationMode,
+    apply: bool,
     filter: &mut CombinedFilter,
 ) -> Result<String, TugError> {
-    // For now, just run the analysis
-    // Full apply support will be implemented in a future iteration
-    analyze_rename_param(session, at, to, filter)
+    use tugtool_python::ops::rename_param::rename_param;
+
+    // Parse location
+    let location = Location::parse(at).ok_or_else(|| {
+        TugError::invalid_args(format!(
+            "invalid location format '{}', expected path:line:col",
+            at
+        ))
+    })?;
+
+    // Resolve Python interpreter for verification
+    let python = resolve_python_path(python_path)?;
+
+    // Collect Python files in workspace using combined filter
+    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+
+    // Execute rename-param operation
+    let result = rename_param(
+        session.workspace_root(),
+        &files,
+        &location,
+        to,
+        &python,
+        verify_mode,
+        apply,
+    )
+    .map_err(|e| TugError::internal(format!("rename-param failed: {}", e)))?;
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&result)
+        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
+    Ok(json)
 }
 
 // ============================================================================

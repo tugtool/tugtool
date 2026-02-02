@@ -590,7 +590,7 @@ mod tests {
             line: Some(1),
             col: Some(10),
             type_node: None,
-                ..Default::default()
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&annotation).unwrap();

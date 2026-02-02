@@ -1803,7 +1803,7 @@ class Child(Parent):
             line: None,
             col: None,
             type_node: None,
-                ..Default::default()
+            ..Default::default()
         }];
         source_tracker.process_annotations(&source_annotations);
 
@@ -1819,7 +1819,7 @@ class Child(Parent):
             line: None,
             col: None,
             type_node: None,
-                ..Default::default()
+            ..Default::default()
         }];
         stub_tracker.process_annotations(&stub_annotations);
 
@@ -1879,7 +1879,7 @@ class Child(Parent):
             line: None,
             col: None,
             type_node: None,
-                ..Default::default()
+            ..Default::default()
         }];
         stub_tracker.process_annotations(&stub_annotations);
 

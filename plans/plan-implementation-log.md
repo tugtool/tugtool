@@ -6,6 +6,59 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-14.md] Step 1.1: Rename Parameter Operation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-14.md` - Step 1.1 definition and task list
+- `plans/phase-13.md` - D05 (Rename as Reference Implementation), D08 (Stub Updates), Operation 1 (Rename Parameter)
+- `crates/tugtool-python/src/ops/rename_param.rs` - Existing analyze_param implementation
+- `crates/tugtool-python/src/ops/rename.rs` - General rename implementation pattern
+- `crates/tugtool-python/src/stubs.rs` - StubDiscovery infrastructure
+- `crates/tugtool/src/cli.rs` - CLI integration
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Extract rename-param logic from general rename | Done |
+| Add parameter-specific validation | Done (already existed) |
+| Update call sites with keyword arguments | Done |
+| Update parameter names in `.pyi` stubs (D08) | Done |
+| Update general rename to edit stubs (D08 deferred) | Done |
+| Update general rename to edit string annotations (D08 deferred) | Done (Step 1.0) |
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/rename_param.rs` - Added `rename_param()` function (lines 520-907), output types `RenameParamOutput` and `RenameParamSummary`, `find_param_in_stub()` helper, integration tests
+- `crates/tugtool-python/src/ops/rename.rs` - Added stub update support via `StubDiscovery` integration and `find_symbol_in_stub()` helper function, added stub update tests
+- `crates/tugtool/src/cli.rs` - Updated `do_rename_param()` to call actual `rename_param()` function instead of just analysis
+- `plans/phase-14.md` - Checked off completed tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run --workspace`: 2635 tests passed (5 new tests added)
+
+**Tests Added:**
+- `test_rename_param_basic` - Basic parameter rename with body references
+- `test_rename_param_keyword_only` - Keyword-only parameter rename
+- `test_rename_param_updates_stub` - .pyi stub updates for rename-param
+- `test_rename_updates_stub` - General rename updates stubs (D08)
+- `test_rename_updates_string_annotation` - String annotation updates (D08)
+
+**Checkpoints Verified:**
+- `tug apply python rename-param --at test.py:1:11 --to recipient`: PASS
+  - Parameter definition renamed: `name` → `recipient`
+  - Body references updated: `{name}` → `{recipient}`
+  - Keyword arguments updated: `name=` → `recipient=`
+
+**Key Decisions/Notes:**
+- Used same pattern as general rename for sandbox verification and edit application
+- Parameter validation rejects positional-only parameters, *args, and **kwargs (cannot use as keyword arguments)
+- Stub discovery follows D08 rules: inline stub (same directory) then stubs/ folder
+- `RenameParamSummary` includes `body_references` and `keyword_args` counts for detailed reporting
+
+---
+
 ## [phase-14.md] Step 1.0: String Annotation Infrastructure | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

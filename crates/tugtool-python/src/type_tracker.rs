@@ -2721,7 +2721,7 @@ mod tests {
                     line: Some(5),
                     col: Some(5),
                     type_node: None,
-                ..Default::default()
+                    ..Default::default()
                 },
                 // Parameter annotation for logger (to test propagation)
                 AnnotationInfo {
@@ -2738,7 +2738,7 @@ mod tests {
                     line: Some(7),
                     col: Some(20),
                     type_node: None,
-                ..Default::default()
+                    ..Default::default()
                 },
             ];
 

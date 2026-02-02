@@ -147,23 +147,23 @@ Phase 14 is organized into four stages, each building a layer of infrastructure 
 - New command: `tug apply python rename-param`
 
 **Tasks:**
-- [ ] Extract rename-param logic from general rename
-- [ ] Add parameter-specific validation
-- [ ] Update call sites with keyword arguments
-- [ ] Update parameter names in `.pyi` stubs when present ([Phase 13 D08](phase-13.md#d08-stub-updates))
-- [ ] Update general rename to edit stubs per [Phase 13 D08](phase-13.md#d08-stub-updates) (deferred from Phase 13 Step 1.1)
-- [ ] Update general rename to edit string annotations per [Phase 13 D08](phase-13.md#d08-stub-updates) (deferred from Phase 13 Step 1.1)
+- [x] Extract rename-param logic from general rename
+- [x] Add parameter-specific validation
+- [x] Update call sites with keyword arguments
+- [x] Update parameter names in `.pyi` stubs when present ([Phase 13 D08](phase-13.md#d08-stub-updates))
+- [x] Update general rename to edit stubs per [Phase 13 D08](phase-13.md#d08-stub-updates) (deferred from Phase 13 Step 1.1)
+- [x] Update general rename to edit string annotations per [Phase 13 D08](phase-13.md#d08-stub-updates) (deferred from Phase 13 Step 1.1)
 
 **Tests:**
-- [ ] Integration: `test_rename_param_basic`
-- [ ] Integration: `test_rename_param_keyword_only`
-- [ ] Integration: `test_rename_param_updates_stub`
-- [ ] Integration: `test_rename_updates_stub` (deferred from Phase 13 Step 1.1)
-- [ ] Integration: `test_rename_updates_string_annotation` (deferred from Phase 13 Step 1.1)
+- [x] Integration: `test_rename_param_basic`
+- [x] Integration: `test_rename_param_keyword_only`
+- [x] Integration: `test_rename_param_updates_stub`
+- [x] Integration: `test_rename_updates_stub` (deferred from Phase 13 Step 1.1)
+- [x] Integration: `test_rename_updates_string_annotation` (deferred from Phase 13 Step 1.1)
 - [ ] Golden: `rename_param_response.json`
 
 **Checkpoint:**
-- [ ] `tug apply python rename-param --at test.py:5:10 --to new_name`
+- [x] `tug apply python rename-param --at test.py:1:11 --to recipient` - Verified with test file
 
 **Rollback:** Revert commit
 
@@ -303,18 +303,19 @@ The extracted variable assignment is inserted:
 
 After completing Phase 14 Stage 1 (Steps 1.0-1.4), you will have:
 - String annotation infrastructure for rename operations (Step 1.0) ✓
-- Rename Parameter operation (building on Phase 13's rename hardening)
+- Rename Parameter operation (building on Phase 13's rename hardening) ✓
 - Layer 1 infrastructure for expression analysis
 - Extract Variable and Extract Constant operations
 - **New operations added in Stage 1:** 3 (Rename Parameter, Extract Variable, Extract Constant)
 - **Total operations after Stage 1:** 4 (Rename Symbol from Phase 13 + 3 new)
-- **Infrastructure enhanced:** General rename now supports string annotations
+- **Infrastructure enhanced:** General rename now supports string annotations and .pyi stubs (D08)
 
 **Stage 1 Checkpoint:**
-- [x] `cargo nextest run --workspace` - 2630 tests pass (Step 1.0)
+- [x] `cargo nextest run --workspace` - 2635 tests pass (Step 1.0 + Step 1.1)
 - [ ] `tug analyze python --help` shows all 4 operations
 - [ ] Temporale fixture tests pass for all operations
 - [x] String annotations renamed correctly in rename operations (Step 1.0)
+- [x] `tug apply python rename-param` works correctly (Step 1.1)
 
 ---
 
