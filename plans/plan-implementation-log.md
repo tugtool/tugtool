@@ -6,6 +6,52 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8 Phase E: Iterator Returns for Query Methods | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase E specification (lines 8398-8451)
+- `crates/tugtool-core/src/facts/mod.rs` - refs_of_symbol, imports_in_file, and other query methods
+- `crates/tugtool-python/src/lookup.rs` - imports_in_file caller
+- `crates/tugtool-python/tests/acceptance_criteria.rs` - refs_of_symbol callers
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Identify query methods that return Vec but could return iterators | Done |
+| Evaluate caller needs (random access, sorting, iteration) | Done |
+| Update methods where iterator is sufficient | Done |
+| Update callers to use .collect() where needed | Done |
+| Add *_vec() variants for common patterns | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Changed `refs_of_symbol()` to return `impl Iterator<Item = &Reference>`
+  - Changed `imports_in_file()` to return `impl Iterator<Item = &Import>`
+  - Added `refs_of_symbol_vec()` convenience method
+  - Added `imports_in_file_vec()` convenience method
+  - Added 2 new unit tests
+- `crates/tugtool-python/src/lookup.rs`:
+  - Updated `imports_in_file` call to use iterator directly (removed `.iter()`)
+- `crates/tugtool-python/tests/acceptance_criteria.rs`:
+  - Updated ~15 test usages to collect iterators or use iterator methods
+
+**Test Results:**
+- `cargo nextest run --workspace`: 2475 tests passed (2 new tests added)
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- Iterator order is stable across multiple calls: PASS
+- Collected iterator matches _vec method return: PASS
+- All existing tests pass with iterator API: PASS
+
+**Key Decisions/Notes:**
+Analysis showed that some methods (`symbols_in_file`, `scopes_in_file`, `call_sites_in_file`, `call_sites_to_callee`) require sorting and were kept as Vec returns. Only `refs_of_symbol()` and `imports_in_file()` were converted to iterators as they don't require sorting and callers only need iteration. Added `*_vec()` convenience methods for callers that need collected results.
+
+---
+
 ## [phase-13.md] Step 0.8 Phase D: Document and Organize Python-Specific Types | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

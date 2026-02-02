@@ -143,10 +143,8 @@ fn resolve_import_to_original<'a>(
 ) -> Option<&'a FactsSymbol> {
     // Import symbols have the imported name as their name (e.g., "foo" for "from x import foo")
     // We need to find the module path from the imports table
-    let imports_in_file = store.imports_in_file(import_symbol.decl_file_id);
-
     // Find the import that matches this symbol's span
-    let matching_import = imports_in_file.iter().find(|imp| {
+    let matching_import = store.imports_in_file(import_symbol.decl_file_id).find(|imp| {
         // The import statement span should contain the symbol's declaration span
         // and the imported name should match
         imp.imported_name.as_deref() == Some(&import_symbol.name)

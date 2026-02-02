@@ -8403,7 +8403,7 @@ architectural risk.
 
 **Tasks:**
 
-- [ ] Identify query methods that return `Vec` but could return iterators:
+- [x] Identify query methods that return `Vec` but could return iterators:
   - `refs_of_symbol()` -> `impl Iterator<Item = &Reference>`
   - `children_of_class()` -> `impl Iterator<Item = &Symbol>`
   - `symbols_in_file()` -> `impl Iterator<Item = &Symbol>`
@@ -8412,12 +8412,12 @@ architectural risk.
   - `call_sites_in_file()` -> `impl Iterator<Item = &CallSite>`
   - `call_sites_to_callee()` -> `impl Iterator<Item = &CallSite>`
 
-- [ ] For each method, evaluate if callers need:
+- [x] For each method, evaluate if callers need:
   - Random access (keep `Vec`)
   - Sorting (keep `Vec` or sort in iterator)
   - Just iteration (convert to `impl Iterator`)
 
-- [ ] Update methods where iterator is sufficient:
+- [x] Update methods where iterator is sufficient:
   ```rust
   /// Get all references to a symbol.
   ///
@@ -8431,9 +8431,9 @@ architectural risk.
   }
   ```
 
-- [ ] Update callers that depend on `Vec` to use `.collect()` where needed
+- [x] Update callers that depend on `Vec` to use `.collect()` where needed
 
-- [ ] Add `*_vec()` variants for methods where both patterns are common:
+- [x] Add `*_vec()` variants for methods where both patterns are common:
   ```rust
   pub fn refs_of_symbol_vec(&self, symbol_id: SymbolId) -> Vec<&Reference> {
       self.refs_of_symbol(symbol_id).collect()
@@ -8444,9 +8444,9 @@ architectural risk.
 
 **Tests:**
 
-- [ ] Unit: `test_refs_of_symbol_iterator_deterministic` - Iterator order is stable
-- [ ] Unit: `test_iterator_collect_equals_vec_return` - Collected iterator matches old behavior
-- [ ] Integration: `test_rename_with_iterator_queries` - Rename still works with iterator API
+- [x] Unit: `test_refs_of_symbol_iterator_deterministic` - Iterator order is stable
+- [x] Unit: `test_iterator_collect_equals_vec_return` - Collected iterator matches old behavior
+- [x] Integration: `test_rename_with_iterator_queries` - Rename still works with iterator API (verified via existing rename tests)
 
 ---
 

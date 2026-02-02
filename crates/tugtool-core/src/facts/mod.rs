@@ -3071,25 +3071,39 @@ impl FactsStore {
     /// Get all references to a symbol.
     ///
     /// Returns references in deterministic order (by ReferenceId).
-    pub fn refs_of_symbol(&self, symbol_id: SymbolId) -> Vec<&Reference> {
+    pub fn refs_of_symbol(&self, symbol_id: SymbolId) -> impl Iterator<Item = &Reference> + '_ {
         self.refs_by_symbol
             .get(&symbol_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.references.get(id))
-                    .collect()
-            })
-            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(move |id| self.references.get(id))
+    }
+
+    /// Get all references to a symbol as a Vec.
+    ///
+    /// Convenience method for callers that need a collected Vec.
+    /// Prefer `refs_of_symbol()` for iteration to avoid allocation.
+    pub fn refs_of_symbol_vec(&self, symbol_id: SymbolId) -> Vec<&Reference> {
+        self.refs_of_symbol(symbol_id).collect()
     }
 
     /// Get all imports in a file.
     ///
     /// Returns imports in deterministic order (by ImportId).
-    pub fn imports_in_file(&self, file_id: FileId) -> Vec<&Import> {
+    pub fn imports_in_file(&self, file_id: FileId) -> impl Iterator<Item = &Import> + '_ {
         self.imports_by_file
             .get(&file_id)
-            .map(|ids| ids.iter().filter_map(|id| self.imports.get(id)).collect())
-            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(move |id| self.imports.get(id))
+    }
+
+    /// Get all imports in a file as a Vec.
+    ///
+    /// Convenience method for callers that need a collected Vec.
+    /// Prefer `imports_in_file()` for iteration to avoid allocation.
+    pub fn imports_in_file_vec(&self, file_id: FileId) -> Vec<&Import> {
+        self.imports_in_file(file_id).collect()
     }
 
     /// Get all public exports in a file.
@@ -3944,7 +3958,7 @@ mod tests {
             store.insert_reference(ref2);
             store.insert_reference(ref3);
 
-            let refs = store.refs_of_symbol(symbol_id);
+            let refs: Vec<_> = store.refs_of_symbol(symbol_id).collect();
             assert_eq!(refs.len(), 3);
 
             // Verify deterministic ordering (by ReferenceId)
@@ -3955,8 +3969,7 @@ mod tests {
         #[test]
         fn refs_of_symbol_returns_empty_for_unknown_symbol() {
             let store = FactsStore::new();
-            let refs = store.refs_of_symbol(SymbolId::new(999));
-            assert!(refs.is_empty());
+            assert_eq!(store.refs_of_symbol(SymbolId::new(999)).count(), 0);
         }
 
         #[test]
@@ -3974,7 +3987,7 @@ mod tests {
             store.insert_import(import2);
             store.insert_import(import3);
 
-            let imports = store.imports_in_file(file_id);
+            let imports: Vec<_> = store.imports_in_file(file_id).collect();
             assert_eq!(imports.len(), 3);
 
             // Verify deterministic ordering (by ImportId)
@@ -3985,8 +3998,7 @@ mod tests {
         #[test]
         fn imports_in_file_returns_empty_for_unknown_file() {
             let store = FactsStore::new();
-            let imports = store.imports_in_file(FileId::new(999));
-            assert!(imports.is_empty());
+            assert_eq!(store.imports_in_file(FileId::new(999)).count(), 0);
         }
 
         #[test]
@@ -4009,12 +4021,89 @@ mod tests {
             store.insert_reference(ref3);
 
             // Multiple queries should return same order
-            let refs1 = store.refs_of_symbol(symbol_id);
-            let refs2 = store.refs_of_symbol(symbol_id);
+            let refs1: Vec<_> = store.refs_of_symbol(symbol_id).collect();
+            let refs2: Vec<_> = store.refs_of_symbol(symbol_id).collect();
 
             assert_eq!(refs1.len(), refs2.len());
             for (r1, r2) in refs1.iter().zip(refs2.iter()) {
                 assert_eq!(r1.ref_id, r2.ref_id);
+            }
+        }
+
+        #[test]
+        fn refs_of_symbol_iterator_deterministic() {
+            // Test that iterator order is stable across multiple calls
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let symbol = test_symbol(&mut store, "foo", file_id, 10);
+            let symbol_id = symbol.symbol_id;
+            store.insert_symbol(symbol);
+
+            // Insert references
+            let ref1 = test_reference(&mut store, symbol_id, file_id, 50, 53);
+            let ref2 = test_reference(&mut store, symbol_id, file_id, 100, 103);
+            store.insert_reference(ref1);
+            store.insert_reference(ref2);
+
+            // Collect multiple times and verify same order
+            let first_call: Vec<_> = store.refs_of_symbol(symbol_id).collect();
+            let second_call: Vec<_> = store.refs_of_symbol(symbol_id).collect();
+            let third_call: Vec<_> = store.refs_of_symbol(symbol_id).collect();
+
+            assert_eq!(first_call.len(), second_call.len());
+            assert_eq!(second_call.len(), third_call.len());
+
+            for ((a, b), c) in first_call.iter().zip(second_call.iter()).zip(third_call.iter()) {
+                assert_eq!(a.ref_id, b.ref_id);
+                assert_eq!(b.ref_id, c.ref_id);
+            }
+        }
+
+        #[test]
+        fn iterator_collect_equals_vec_return() {
+            // Test that collecting iterator equals the _vec() method return
+            let mut store = FactsStore::new();
+            let file = test_file(&mut store, "src/main.py");
+            let file_id = file.file_id;
+            store.insert_file(file);
+
+            let symbol = test_symbol(&mut store, "bar", file_id, 10);
+            let symbol_id = symbol.symbol_id;
+            store.insert_symbol(symbol);
+
+            // Insert references
+            let ref1 = test_reference(&mut store, symbol_id, file_id, 50, 53);
+            let ref2 = test_reference(&mut store, symbol_id, file_id, 100, 103);
+            let ref3 = test_reference(&mut store, symbol_id, file_id, 150, 153);
+            store.insert_reference(ref1);
+            store.insert_reference(ref2);
+            store.insert_reference(ref3);
+
+            // Collect iterator
+            let from_iterator: Vec<_> = store.refs_of_symbol(symbol_id).collect();
+            // Use _vec() method
+            let from_vec_method = store.refs_of_symbol_vec(symbol_id);
+
+            assert_eq!(from_iterator.len(), from_vec_method.len());
+            for (a, b) in from_iterator.iter().zip(from_vec_method.iter()) {
+                assert_eq!(a.ref_id, b.ref_id);
+            }
+
+            // Same test for imports
+            let import1 = test_import(&mut store, file_id, "os");
+            let import2 = test_import(&mut store, file_id, "sys");
+            store.insert_import(import1);
+            store.insert_import(import2);
+
+            let imports_from_iterator: Vec<_> = store.imports_in_file(file_id).collect();
+            let imports_from_vec = store.imports_in_file_vec(file_id);
+
+            assert_eq!(imports_from_iterator.len(), imports_from_vec.len());
+            for (a, b) in imports_from_iterator.iter().zip(imports_from_vec.iter()) {
+                assert_eq!(a.import_id, b.import_id);
             }
         }
     }

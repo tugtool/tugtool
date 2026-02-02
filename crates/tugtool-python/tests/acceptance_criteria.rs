@@ -438,12 +438,12 @@ mod ac2_cross_file_reference_resolution {
         assert_eq!(original_symbol.name, "foo");
 
         // Get all references to this symbol
-        let refs = store.refs_of_symbol(original_symbol.symbol_id);
+        let refs_count = store.refs_of_symbol(original_symbol.symbol_id).count();
         // Should have at least 2: the definition and the call in z.py
         assert!(
-            refs.len() >= 1,
+            refs_count >= 1,
             "Expected at least 1 reference, got {}",
-            refs.len()
+            refs_count
         );
     }
 
@@ -466,11 +466,11 @@ mod ac2_cross_file_reference_resolution {
         assert!(result.is_ok());
 
         let original_symbol = result.unwrap();
-        let refs = store.refs_of_symbol(original_symbol.symbol_id);
+        let refs_count = store.refs_of_symbol(original_symbol.symbol_id).count();
 
         // We should have references from multiple files
         // The exact count depends on whether import sites create references
-        assert!(!refs.is_empty(), "Expected references to foo");
+        assert!(refs_count > 0, "Expected references to foo");
     }
 
     #[test]
@@ -492,10 +492,10 @@ mod ac2_cross_file_reference_resolution {
         assert!(result.is_ok());
 
         let original_symbol = result.unwrap();
-        let refs = store.refs_of_symbol(original_symbol.symbol_id);
+        let refs_count = store.refs_of_symbol(original_symbol.symbol_id).count();
 
         // Should have multiple references
-        assert!(!refs.is_empty(), "Expected references to foo across files");
+        assert!(refs_count > 0, "Expected references to foo across files");
     }
 
     #[test]
@@ -830,10 +830,11 @@ mod ac4_import_resolution {
 
         // PHASE 8 REQUIREMENT: Relative imports should create cross-file references.
         // Get references to x - should include bar.py (import site and/or usage site)
-        let refs = store.refs_of_symbol(x.symbol_id);
-
         let bar_file_id = bar_file.unwrap().file_id;
-        let refs_in_bar: Vec<_> = refs.iter().filter(|r| r.file_id == bar_file_id).collect();
+        let refs_in_bar: Vec<_> = store
+            .refs_of_symbol(x.symbol_id)
+            .filter(|r| r.file_id == bar_file_id)
+            .collect();
 
         // This will FAIL until relative import resolution is implemented
         assert!(
@@ -875,7 +876,7 @@ mod ac4_import_resolution {
 
         // PHASE 8 REQUIREMENT: References should exist from files that import process_data
         // Get all references to this symbol
-        let refs = store.refs_of_symbol(process_data_symbol.symbol_id);
+        let refs: Vec<_> = store.refs_of_symbol(process_data_symbol.symbol_id).collect();
 
         // We expect at least 2 references:
         // 1. from lib/__init__.py (import site)
@@ -932,15 +933,13 @@ mod ac4_import_resolution {
         let foo = foo_in_utils.unwrap();
 
         // PHASE 8 REQUIREMENT: Get references to foo - should include consumer.py
-        let refs = store.refs_of_symbol(foo.symbol_id);
-
         // Find reference in consumer.py (either import site or call site)
         let consumer_file = store.file_by_path("pkg/consumer.py");
         assert!(consumer_file.is_some(), "Expected pkg/consumer.py in store");
         let consumer_file_id = consumer_file.unwrap().file_id;
 
-        let refs_in_consumer: Vec<_> = refs
-            .iter()
+        let refs_in_consumer: Vec<_> = store
+            .refs_of_symbol(foo.symbol_id)
             .filter(|r| r.file_id == consumer_file_id)
             .collect();
 
@@ -987,8 +986,6 @@ mod ac4_import_resolution {
         let helper = helper_in_utils.unwrap();
 
         // Get references to helper - should include pkg/sub/consumer.py
-        let refs = store.refs_of_symbol(helper.symbol_id);
-
         let consumer_file = store.file_by_path("pkg/sub/consumer.py");
         assert!(
             consumer_file.is_some(),
@@ -996,8 +993,8 @@ mod ac4_import_resolution {
         );
         let consumer_file_id = consumer_file.unwrap().file_id;
 
-        let refs_in_consumer: Vec<_> = refs
-            .iter()
+        let refs_in_consumer: Vec<_> = store
+            .refs_of_symbol(helper.symbol_id)
             .filter(|r| r.file_id == consumer_file_id)
             .collect();
 
@@ -1044,8 +1041,6 @@ mod ac4_import_resolution {
         let helper = helper_in_utils.unwrap();
 
         // Get references to helper - should include pkg/sub/deep/consumer.py
-        let refs = store.refs_of_symbol(helper.symbol_id);
-
         let consumer_file = store.file_by_path("pkg/sub/deep/consumer.py");
         assert!(
             consumer_file.is_some(),
@@ -1053,8 +1048,8 @@ mod ac4_import_resolution {
         );
         let consumer_file_id = consumer_file.unwrap().file_id;
 
-        let refs_in_consumer: Vec<_> = refs
-            .iter()
+        let refs_in_consumer: Vec<_> = store
+            .refs_of_symbol(helper.symbol_id)
             .filter(|r| r.file_id == consumer_file_id)
             .collect();
 
@@ -1844,9 +1839,8 @@ x.bar()
         let bar_symbol = bar.unwrap();
 
         // Check for call references to bar
-        let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs
-            .iter()
+        let call_refs: Vec<_> = store
+            .refs_of_symbol(bar_symbol.symbol_id)
             .filter(|r| r.ref_kind == ReferenceKind::Call)
             .collect();
 
@@ -1875,9 +1869,8 @@ y.bar()
         assert!(bar.is_some(), "Expected bar method");
 
         let bar_symbol = bar.unwrap();
-        let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs
-            .iter()
+        let call_refs: Vec<_> = store
+            .refs_of_symbol(bar_symbol.symbol_id)
             .filter(|r| r.ref_kind == ReferenceKind::Call)
             .collect();
 
@@ -1907,9 +1900,8 @@ def f(x: Foo):
         assert!(bar.is_some(), "Expected bar method");
 
         let bar_symbol = bar.unwrap();
-        let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs
-            .iter()
+        let call_refs: Vec<_> = store
+            .refs_of_symbol(bar_symbol.symbol_id)
             .filter(|r| r.ref_kind == ReferenceKind::Call)
             .collect();
 
@@ -1939,9 +1931,8 @@ def f(x: Foo):
         assert!(bar.is_some(), "Expected bar method");
 
         let bar_symbol = bar.unwrap();
-        let refs = store.refs_of_symbol(bar_symbol.symbol_id);
-        let call_refs: Vec<_> = refs
-            .iter()
+        let call_refs: Vec<_> = store
+            .refs_of_symbol(bar_symbol.symbol_id)
             .filter(|r| r.ref_kind == ReferenceKind::Call)
             .collect();
 
