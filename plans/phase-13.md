@@ -8753,7 +8753,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
 
 **Tasks:**
 
-- [ ] **Step C.1: Rename `attr_name` to `name` in AttributeAccessInfo**
+- [x] **Step C.1: Rename `attr_name` to `name` in AttributeAccessInfo**
 
   **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
 
@@ -8777,15 +8777,15 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   }
   ```
 
-- [ ] **Step C.2: Update AttributeAccessInfo builder/constructors**
+- [x] **Step C.2: Update AttributeAccessInfo builder/constructors**
 
   Update any builder patterns, `new()` methods, or struct initialization code to use the new field names.
 
-- [ ] **Step C.3: Update all usages in tugtool-python-cst**
+- [x] **Step C.3: Update all usages in tugtool-python-cst**
 
   Search for `.attr_name` and `.attr_span` across the crate and update to `.name` and `.span`.
 
-- [ ] **Step C.4: Update conversion functions in analyzer.rs**
+- [x] **Step C.4: Update conversion functions in analyzer.rs**
 
   **File:** `crates/tugtool-python/src/analyzer.rs`
 
@@ -8805,7 +8805,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   }
   ```
 
-- [ ] **Step C.5: Update any other consumers**
+- [x] **Step C.5: Update any other consumers**
 
   Search workspace for `.attr_name` and `.attr_span` to find any other code that accesses these fields.
 
@@ -8815,16 +8815,16 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
 
 **Tests:**
 
-- [ ] Unit: `test_attribute_access_info_field_names` - Verify new field names work
-- [ ] Integration: `test_attribute_access_data_conversion` - Conversion still produces correct output
-- [ ] Regression: `test_attribute_access_in_rename` - Rename operations still work correctly
+- [x] Unit: `test_attribute_access_info_field_names` - Verify new field names work
+- [x] Integration: `test_attribute_access_data_conversion` - Conversion still produces correct output
+- [x] Regression: `test_attribute_access_in_rename` - Rename operations still work correctly
 
 **Checkpoint:**
 
-- [ ] `cargo build --workspace` succeeds
-- [ ] `cargo nextest run --workspace` passes all tests
-- [ ] No occurrences of `attr_name` or `attr_span` in codebase (except comments/docs)
-- [ ] `AttributeAccessInfo` uses `name` and `span` fields
+- [x] `cargo build --workspace` succeeds
+- [x] `cargo nextest run --workspace` passes all tests
+- [x] No occurrences of `attr_name` or `attr_span` in codebase (except comments/docs)
+- [x] `AttributeAccessInfo` uses `name` and `span` fields
 
 ---
 

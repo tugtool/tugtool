@@ -2037,11 +2037,7 @@ pub(crate) fn convert_cst_signature(cst: &SignatureInfo) -> SignatureData {
         .collect();
 
     // Convert modifiers (CST Modifier to Core Modifier)
-    let modifiers: Vec<Modifier> = cst
-        .modifiers
-        .iter()
-        .map(|m| *m)
-        .collect();
+    let modifiers: Vec<Modifier> = cst.modifiers.to_vec();
 
     SignatureData {
         name: cst.name.clone(),
@@ -2068,8 +2064,8 @@ pub(crate) fn convert_cst_attribute_access(cst: &AttributeAccessInfo) -> Attribu
         scope_path: cst.scope_path.clone(),
         base_symbol_index: None,           // Will be populated during resolution
         base_symbol_qualified_name: None,  // Will be populated during resolution
-        name: cst.attr_name.clone(),
-        span: cst.attr_span.map(|s| Span::new(s.start, s.end)),
+        name: cst.name.clone(),
+        span: cst.span.map(|s| Span::new(s.start, s.end)),
         kind: cst.kind,
     }
 }
@@ -14929,6 +14925,79 @@ def make_counter():
             for variant in variants {
                 let _ = convert_type_comment_kind(variant);
             }
+        }
+    }
+
+    // ============================================================================
+    // Field name alignment tests (Phase C: Field Name Alignment)
+    // ============================================================================
+
+    mod attribute_access_conversion_tests {
+        use super::*;
+
+        /// Test that AttributeAccessInfo -> AttributeAccessData conversion works correctly
+        /// with the renamed fields (`name` and `span` instead of `attr_name` and `attr_span`).
+        #[test]
+        fn test_attribute_access_data_conversion() {
+            let adapter = PythonAdapter::new();
+            let content = "obj.method()";
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Find the attribute access (field is `attributes`)
+            let attr_accesses = &result.attributes;
+            assert_eq!(attr_accesses.len(), 1);
+
+            let access = &attr_accesses[0];
+
+            // Verify conversion preserved the name
+            assert_eq!(access.name, "method");
+
+            // Verify conversion preserved the span
+            assert!(access.span.is_some());
+            let span = access.span.as_ref().unwrap();
+            // "method" starts at position 4 (after "obj.")
+            assert_eq!(span.start, 4);
+            assert_eq!(span.end, 10);
+
+            // Verify other fields
+            assert_eq!(access.receiver, "obj");
+            assert_eq!(access.kind, AttributeAccessKind::Call);
+        }
+
+        /// Test that AttributeAccessData conversion works with multiple access types.
+        #[test]
+        fn test_attribute_access_data_conversion_multiple_types() {
+            let adapter = PythonAdapter::new();
+            let content = r#"
+x = obj.read_attr
+obj.write_attr = 1
+obj.call_attr()
+"#;
+            let result = adapter.analyze_file("test.py", content).unwrap();
+
+            // Field is `attributes`
+            let attr_accesses = &result.attributes;
+            assert_eq!(attr_accesses.len(), 3);
+
+            // Find each access by name
+            let read = attr_accesses.iter().find(|a| a.name == "read_attr").unwrap();
+            let write = attr_accesses.iter().find(|a| a.name == "write_attr").unwrap();
+            let call = attr_accesses.iter().find(|a| a.name == "call_attr").unwrap();
+
+            // Verify names
+            assert_eq!(read.name, "read_attr");
+            assert_eq!(write.name, "write_attr");
+            assert_eq!(call.name, "call_attr");
+
+            // Verify kinds
+            assert_eq!(read.kind, AttributeAccessKind::Read);
+            assert_eq!(write.kind, AttributeAccessKind::Write);
+            assert_eq!(call.kind, AttributeAccessKind::Call);
+
+            // Verify spans exist and point to the attribute names
+            assert!(read.span.is_some());
+            assert!(write.span.is_some());
+            assert!(call.span.is_some());
         }
     }
 }

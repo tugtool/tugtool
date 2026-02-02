@@ -24,7 +24,7 @@
 //!
 //! let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 //! for access in &accesses {
-//!     println!("{}.{} ({:?})", access.receiver, access.attr_name, access.kind);
+//!     println!("{}.{} ({:?})", access.receiver, access.name, access.kind);
 //! }
 //! ```
 
@@ -270,11 +270,11 @@ pub struct AttributeAccessInfo {
     /// For resolution, use `receiver_path` when available.
     pub receiver: String,
     /// The attribute name being accessed.
-    pub attr_name: String,
+    pub name: String,
     /// The kind of access (Read/Write/Call).
     pub kind: AttributeAccessKind,
     /// Byte span of the attribute name (for renaming).
-    pub attr_span: Option<Span>,
+    pub span: Option<Span>,
     /// Scope path where the access occurs.
     pub scope_path: Vec<String>,
     /// Structured receiver path for resolution.
@@ -289,16 +289,16 @@ impl AttributeAccessInfo {
     /// Create a new AttributeAccessInfo.
     fn new(
         receiver: String,
-        attr_name: String,
+        name: String,
         kind: AttributeAccessKind,
         scope_path: Vec<String>,
         receiver_path: Option<ReceiverPath>,
     ) -> Self {
         Self {
             receiver,
-            attr_name,
+            name,
             kind,
-            attr_span: None,
+            span: None,
             scope_path,
             receiver_path,
         }
@@ -306,7 +306,7 @@ impl AttributeAccessInfo {
 
     /// Set the span for the attribute name.
     fn with_span(mut self, span: Option<Span>) -> Self {
-        self.attr_span = span;
+        self.span = span;
         self
     }
 }
@@ -429,7 +429,7 @@ impl<'pos> AttributeAccessCollector<'pos> {
     /// Add an attribute access and register its span in the appropriate set.
     fn add_attribute_access(&mut self, attr: &Attribute<'_>, kind: AttributeAccessKind) {
         let receiver = Self::get_receiver_string(&attr.value);
-        let attr_name = attr.attr.value.to_string();
+        let name = attr.attr.value.to_string();
         let span = self.lookup_span(attr.attr.node_id);
 
         // Extract structured receiver path from the receiver expression.
@@ -447,7 +447,7 @@ impl<'pos> AttributeAccessCollector<'pos> {
 
         let info = AttributeAccessInfo::new(
             receiver,
-            attr_name,
+            name,
             kind,
             self.scope_path.clone(),
             receiver_path,
@@ -591,7 +591,7 @@ mod tests {
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "obj");
-        assert_eq!(accesses[0].attr_name, "attr");
+        assert_eq!(accesses[0].name, "attr");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Read);
     }
 
@@ -603,7 +603,7 @@ mod tests {
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "obj");
-        assert_eq!(accesses[0].attr_name, "attr");
+        assert_eq!(accesses[0].name, "attr");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Write);
     }
 
@@ -615,7 +615,7 @@ mod tests {
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "obj");
-        assert_eq!(accesses[0].attr_name, "method");
+        assert_eq!(accesses[0].name, "method");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Call);
     }
 
@@ -627,7 +627,7 @@ mod tests {
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "obj");
-        assert_eq!(accesses[0].attr_name, "count");
+        assert_eq!(accesses[0].name, "count");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Write);
     }
 
@@ -639,7 +639,7 @@ mod tests {
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "obj");
-        assert_eq!(accesses[0].attr_name, "attr");
+        assert_eq!(accesses[0].name, "attr");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Write);
     }
 
@@ -672,9 +672,9 @@ obj.call_attr()
         assert_eq!(writes.len(), 1);
         assert_eq!(calls.len(), 1);
 
-        assert_eq!(reads[0].attr_name, "read_attr");
-        assert_eq!(writes[0].attr_name, "write_attr");
-        assert_eq!(calls[0].attr_name, "call_attr");
+        assert_eq!(reads[0].name, "read_attr");
+        assert_eq!(writes[0].name, "write_attr");
+        assert_eq!(calls[0].name, "call_attr");
     }
 
     #[test]
@@ -686,7 +686,7 @@ obj.call_attr()
 
         // We should get accesses for a, b, and c
         assert_eq!(accesses.len(), 3);
-        let names: Vec<_> = accesses.iter().map(|a| a.attr_name.as_str()).collect();
+        let names: Vec<_> = accesses.iter().map(|a| a.name.as_str()).collect();
         assert!(names.contains(&"a"));
         assert!(names.contains(&"b"));
         assert!(names.contains(&"c"));
@@ -703,7 +703,7 @@ def process():
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "self");
-        assert_eq!(accesses[0].attr_name, "data");
+        assert_eq!(accesses[0].name, "data");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Write);
         assert_eq!(accesses[0].scope_path, vec!["<module>", "process"]);
     }
@@ -720,7 +720,7 @@ class MyClass:
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].receiver, "self");
-        assert_eq!(accesses[0].attr_name, "value");
+        assert_eq!(accesses[0].name, "value");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Read);
         assert_eq!(
             accesses[0].scope_path,
@@ -735,8 +735,8 @@ class MyClass:
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(accesses.len(), 1);
-        assert!(accesses[0].attr_span.is_some());
-        let span = accesses[0].attr_span.unwrap();
+        assert!(accesses[0].span.is_some());
+        let span = accesses[0].span.unwrap();
         // "attr" starts at position 4 (after "obj.")
         assert_eq!(span.start, 4);
         assert_eq!(span.end, 8);
@@ -753,8 +753,8 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Write)
             .collect();
         assert_eq!(writes.len(), 2);
-        assert!(writes.iter().any(|w| w.attr_name == "a"));
-        assert!(writes.iter().any(|w| w.attr_name == "b"));
+        assert!(writes.iter().any(|w| w.name == "a"));
+        assert!(writes.iter().any(|w| w.name == "b"));
     }
 
     #[test]
@@ -764,7 +764,7 @@ class MyClass:
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
 
         assert_eq!(accesses.len(), 1);
-        assert_eq!(accesses[0].attr_name, "method");
+        assert_eq!(accesses[0].name, "method");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Call);
     }
 
@@ -780,7 +780,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Write)
             .collect();
         assert_eq!(writes.len(), 1);
-        assert_eq!(writes[0].attr_name, "attr");
+        assert_eq!(writes[0].name, "attr");
     }
 
     #[test]
@@ -795,8 +795,8 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Write)
             .collect();
         assert_eq!(writes.len(), 2);
-        assert!(writes.iter().any(|w| w.attr_name == "a"));
-        assert!(writes.iter().any(|w| w.attr_name == "b"));
+        assert!(writes.iter().any(|w| w.name == "a"));
+        assert!(writes.iter().any(|w| w.name == "b"));
     }
 
     #[test]
@@ -811,8 +811,8 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Write)
             .collect();
         assert_eq!(writes.len(), 2);
-        assert!(writes.iter().any(|w| w.attr_name == "first"));
-        assert!(writes.iter().any(|w| w.attr_name == "rest"));
+        assert!(writes.iter().any(|w| w.name == "first"));
+        assert!(writes.iter().any(|w| w.name == "rest"));
     }
 
     #[test]
@@ -828,7 +828,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Read)
             .collect();
         assert_eq!(reads.len(), 1);
-        assert_eq!(reads[0].attr_name, "attr");
+        assert_eq!(reads[0].name, "attr");
     }
 
     // ========================================================================
@@ -848,7 +848,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].name, "method");
         assert_eq!(calls[0].receiver, "get_obj");
     }
 
@@ -867,11 +867,11 @@ class MyClass:
         assert_eq!(calls.len(), 2);
 
         // Find the final method call
-        let method_call = calls.iter().find(|c| c.attr_name == "method").unwrap();
+        let method_call = calls.iter().find(|c| c.name == "method").unwrap();
         assert_eq!(method_call.receiver, "get_a.get_b");
 
         // Find the intermediate get_b call
-        let get_b_call = calls.iter().find(|c| c.attr_name == "get_b").unwrap();
+        let get_b_call = calls.iter().find(|c| c.name == "get_b").unwrap();
         assert_eq!(get_b_call.receiver, "get_a");
     }
 
@@ -888,7 +888,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].name, "method");
         // Now that subscript is supported, receiver shows the container name
         assert_eq!(calls[0].receiver, "data");
     }
@@ -906,7 +906,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Read)
             .collect();
         assert_eq!(reads.len(), 1);
-        assert_eq!(reads[0].attr_name, "attr");
+        assert_eq!(reads[0].name, "attr");
         assert_eq!(reads[0].receiver, "get_obj");
     }
 
@@ -928,7 +928,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "process");
+        assert_eq!(calls[0].name, "process");
 
         // Check the receiver_path
         let path = calls[0]
@@ -962,7 +962,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "process");
+        assert_eq!(calls[0].name, "process");
 
         let path = calls[0]
             .receiver_path
@@ -988,7 +988,7 @@ class MyClass:
         // Find the final `.process()` call
         let process_call = accesses
             .iter()
-            .find(|a| a.attr_name == "process" && a.kind == AttributeAccessKind::Call)
+            .find(|a| a.name == "process" && a.kind == AttributeAccessKind::Call)
             .expect("should find process call");
 
         let path = process_call
@@ -1024,7 +1024,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].name, "method");
 
         let path = calls[0]
             .receiver_path
@@ -1051,7 +1051,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].name, "method");
         // Receiver shows the container name
         assert_eq!(calls[0].receiver, "data");
         // receiver_path should include Subscript step
@@ -1081,7 +1081,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].name, "method");
         // Nested subscript returns None receiver_path
         assert!(
             calls[0].receiver_path.is_none(),
@@ -1101,7 +1101,7 @@ class MyClass:
             .filter(|a| a.kind == AttributeAccessKind::Call)
             .collect();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].attr_name, "method");
+        assert_eq!(calls[0].name, "method");
         // Legacy receiver shows "<expr>"
         assert_eq!(calls[0].receiver, "<expr>");
         // receiver_path should be None
@@ -1121,7 +1121,7 @@ class MyClass:
         // Find the Read for `.value`
         let value_read = accesses
             .iter()
-            .find(|a| a.attr_name == "value" && a.kind == AttributeAccessKind::Read)
+            .find(|a| a.name == "value" && a.kind == AttributeAccessKind::Read)
             .expect("should find value read");
 
         let path = value_read
@@ -1308,7 +1308,7 @@ class MyClass:
         let parsed = parse_module_with_positions(source, None).unwrap();
         let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
         assert_eq!(accesses.len(), 1);
-        assert_eq!(accesses[0].attr_name, "attr");
+        assert_eq!(accesses[0].name, "attr");
         assert_eq!(accesses[0].kind, AttributeAccessKind::Read);
 
         // Test method call with receiver_path
@@ -1319,7 +1319,7 @@ class MyClass:
         // Find the process() call
         let process_call = accesses
             .iter()
-            .find(|a| a.attr_name == "process")
+            .find(|a| a.name == "process")
             .expect("should find process");
         assert_eq!(process_call.kind, AttributeAccessKind::Call);
 
@@ -1350,9 +1350,9 @@ obj.call_attr()
         assert_eq!(accesses.len(), 3);
 
         // Find each kind
-        let read = accesses.iter().find(|a| a.attr_name == "read_attr").unwrap();
-        let write = accesses.iter().find(|a| a.attr_name == "write_attr").unwrap();
-        let call = accesses.iter().find(|a| a.attr_name == "call_attr").unwrap();
+        let read = accesses.iter().find(|a| a.name == "read_attr").unwrap();
+        let write = accesses.iter().find(|a| a.name == "write_attr").unwrap();
+        let call = accesses.iter().find(|a| a.name == "call_attr").unwrap();
 
         // These assertions verify that AttributeAccessKind from Core is used directly
         assert_eq!(read.kind, AttributeAccessKind::Read);
@@ -1361,5 +1361,67 @@ obj.call_attr()
 
         // Verify the types are the same as Core types (no conversion needed)
         let _: tugtool_core::facts::AttributeAccessKind = read.kind;
+    }
+
+    // ========================================================================
+    // Field name alignment tests (Phase C: Field Name Alignment)
+    // ========================================================================
+
+    #[test]
+    fn test_attribute_access_info_field_names() {
+        // Verify AttributeAccessInfo uses `name` and `span` fields (not `attr_name`/`attr_span`)
+        let source = "obj.method()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(accesses.len(), 1);
+        let access = &accesses[0];
+
+        // Verify the `name` field (renamed from `attr_name`)
+        assert_eq!(access.name, "method");
+
+        // Verify the `span` field (renamed from `attr_span`)
+        assert!(access.span.is_some());
+        let span = access.span.unwrap();
+        // "method" starts at position 4 (after "obj.")
+        assert_eq!(span.start, 4);
+        assert_eq!(span.end, 10);
+        assert_eq!(&source[span.start..span.end], "method");
+
+        // Verify other fields still work
+        assert_eq!(access.receiver, "obj");
+        assert_eq!(access.kind, AttributeAccessKind::Call);
+        assert_eq!(access.scope_path, vec!["<module>"]);
+    }
+
+    #[test]
+    fn test_attribute_access_info_field_names_complex() {
+        // Verify field names work with complex expressions
+        let source = "self.handler.process()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Find the process() call
+        let process_access = accesses
+            .iter()
+            .find(|a| a.name == "process")
+            .expect("should find process");
+
+        // Verify `name` field
+        assert_eq!(process_access.name, "process");
+
+        // Verify `span` field
+        assert!(process_access.span.is_some());
+        let span = process_access.span.unwrap();
+        assert_eq!(&source[span.start..span.end], "process");
+
+        // Find the handler read
+        let handler_access = accesses
+            .iter()
+            .find(|a| a.name == "handler")
+            .expect("should find handler");
+
+        // Verify `name` field
+        assert_eq!(handler_access.name, "handler");
     }
 }

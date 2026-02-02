@@ -1566,4 +1566,107 @@ def func():
             );
         }
     }
+
+    // ========================================================================
+    // Field name alignment regression tests (Phase C: Field Name Alignment)
+    // ========================================================================
+
+    mod attribute_access_in_rename_tests {
+        use super::*;
+        use std::fs::File;
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        /// Helper to analyze a single file for rename.
+        fn analyze_single_file_for_rename(
+            content: &str,
+            target_line: u32,
+            target_col: u32,
+            new_name: &str,
+        ) -> ImpactAnalysis {
+            let workspace = TempDir::new().unwrap();
+            let file_path = workspace.path().join("test.py");
+            File::create(&file_path)
+                .unwrap()
+                .write_all(content.as_bytes())
+                .unwrap();
+
+            let file_list = vec![("test.py".to_string(), content.to_string())];
+            let location = Location::new("test.py", target_line, target_col);
+
+            analyze(workspace.path(), &file_list, &location, new_name)
+                .expect("analyze should succeed")
+        }
+
+        /// Regression test: Ensure rename operations work correctly with attribute accesses
+        /// after the field name alignment changes (`attr_name` -> `name`, `attr_span` -> `span`).
+        #[test]
+        fn test_attribute_access_in_rename() {
+            // A method rename should still work correctly - the attribute accesses
+            // are used during the rename analysis to track method calls.
+            let source = r#"class Handler:
+    def process(self):
+        return 42
+
+def use_handler():
+    h = Handler()
+    h.process()
+"#;
+
+            let result = analyze_single_file_for_rename(
+                source,
+                2,  // line (pointing to "process" in "def process")
+                9,  // col
+                "handle",
+            );
+
+            // The rename analysis should succeed (status is "ok")
+            assert_eq!(result.status, "ok", "rename should succeed");
+
+            // The symbol should be found (symbol has name)
+            assert!(
+                !result.symbol.name.is_empty(),
+                "symbol should be found for rename analysis"
+            );
+
+            // The references should include references
+            // (attribute access `h.process()` should be tracked as a reference)
+            assert!(
+                !result.references.is_empty(),
+                "should find references including attribute access call: found {} refs",
+                result.references.len()
+            );
+        }
+
+        /// Regression test: Ensure attribute access spans are correctly tracked
+        /// for rename operations after field name alignment.
+        #[test]
+        fn test_attribute_access_span_in_rename() {
+            let source = r#"class Service:
+    def execute(self):
+        pass
+
+s = Service()
+s.execute()
+"#;
+
+            let result = analyze_single_file_for_rename(
+                source,
+                2, // line (pointing to "execute" in "def execute")
+                9, // col
+                "run",
+            );
+
+            // Verify the rename analysis succeeded (status is "ok")
+            assert_eq!(result.status, "ok", "rename should succeed");
+
+            // Verify references are found (both definition and call site)
+            // The attribute access span tracking is critical for this to work
+            assert!(
+                !result.references.is_empty(),
+                "should track attribute access as reference: found {} refs",
+                result.references.len()
+            );
+        }
+    }
 }

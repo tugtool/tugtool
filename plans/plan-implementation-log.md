@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8.5 Phase C: Field Name Alignment | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase C specification (lines 8748-8828)
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - AttributeAccessInfo struct definition
+- `crates/tugtool-python/src/analyzer.rs` - Conversion function using these fields
+- `crates/tugtool-core/src/adapter.rs` - FileAnalysisResult structure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| C.1: Rename `attr_name` to `name` in AttributeAccessInfo | Done |
+| C.2: Update AttributeAccessInfo builder/constructors | Done |
+| C.3: Update all usages in tugtool-python-cst | Done |
+| C.4: Update conversion functions in analyzer.rs | Done |
+| C.5: Update any other consumers | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`:
+  - Renamed `attr_name` field to `name`
+  - Renamed `attr_span` field to `span`
+  - Updated `new()` constructor parameter and field initialization
+  - Updated `with_span()` method to set `self.span`
+  - Updated `add_attribute_access()` local variable from `attr_name` to `name`
+  - Updated doc comment example to use `.name` instead of `.attr_name`
+  - Updated all test assertions to use `.name` and `.span`
+  - Added 2 new tests: `test_attribute_access_info_field_names`, `test_attribute_access_info_field_names_complex`
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated `convert_cst_attribute_access()` to use `cst.name` and `cst.span`
+  - Fixed clippy warning: changed `.map(|m| *m)` to `.to_vec()` for modifiers conversion
+  - Added 2 new integration tests: `test_attribute_access_data_conversion`, `test_attribute_access_data_conversion_multiple_types`
+- `crates/tugtool-python/src/ops/rename.rs`:
+  - Added 2 new regression tests: `test_attribute_access_in_rename`, `test_attribute_access_span_in_rename`
+- `plans/phase-13.md`:
+  - Checked off all Phase C tasks and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 878 tests passed (2 new)
+- `cargo nextest run -p tugtool-python`: 848 tests passed (4 new)
+- `cargo nextest run --workspace`: 2488 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo build --workspace` succeeds: PASS
+- `cargo nextest run --workspace` passes all tests: PASS (2488 tests)
+- No occurrences of `.attr_name` or `.attr_span` in codebase: PASS
+- `AttributeAccessInfo` uses `name` and `span` fields: PASS
+
+**Key Decisions/Notes:**
+- The only remaining occurrences of `attr_name` and `attr_span` in the codebase are local variable names (not field accesses) in `lib.rs`, `dynamic.rs`, and `type_inference.rs` - these are unrelated to `AttributeAccessInfo`
+- Fixed a pre-existing clippy warning about using `.map(|m| *m)` vs `.to_vec()` while updating the analyzer
+- Added comprehensive regression tests to ensure rename operations still work correctly after field name changes
+
+---
+
 ## [phase-13.md] Step 0.8.5 Phase B: Enum Consolidation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
