@@ -9605,24 +9605,24 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Implement `ImportUpdater` struct
-- [ ] Implement `update_module_path()` for changing module path:
+- [x] Implement `ImportUpdater` struct
+- [x] Implement `update_module_path()` for changing module path:
   - `from old.module import foo` -> `from new.module import foo`
-- [ ] Implement `update_imported_name()` for changing imported name:
+- [x] Implement `update_imported_name()` for changing imported name:
   - `from module import old_name` -> `from module import new_name`
   - Preserves any existing alias
-- [ ] Implement `convert_to_from_import()` for style conversion:
+- [x] Implement `convert_to_from_import()` for style conversion:
   - `import module.sub` -> `from module import sub`
 
 **Code Location:** `crates/tugtool-python/src/layers/imports.rs`
 
 **Tests:**
 
-- [ ] Unit: `test_update_module_path_simple` - `from a import x` -> `from b import x`
-- [ ] Unit: `test_update_module_path_dotted` - `from a.b import x` -> `from c.d import x`
-- [ ] Unit: `test_update_name_simple` - `from m import old` -> `from m import new`
-- [ ] Unit: `test_update_name_preserves_alias` - `from m import old as o` -> `from m import new as o`
-- [ ] Unit: `test_convert_to_from_import` - `import m.sub` -> `from m import sub`
+- [x] Unit: `test_update_module_path_simple` - `from a import x` -> `from b import x`
+- [x] Unit: `test_update_module_path_dotted` - `from a.b import x` -> `from c.d import x`
+- [x] Unit: `test_update_name_simple` - `from m import old` -> `from m import new`
+- [x] Unit: `test_update_name_preserves_alias` - `from m import old as o` -> `from m import new as o`
+- [x] Unit: `test_convert_to_from_import` - `import m.sub` -> `from m import sub`
 
 ---
 

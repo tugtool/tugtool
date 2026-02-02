@@ -1260,6 +1260,157 @@ impl ImportRemover {
     }
 }
 
+// ============================================================================
+// Import Updater
+// ============================================================================
+
+/// Updates existing import statements to change module paths or imported names.
+///
+/// Used during move operations to update imports when symbols are relocated.
+#[derive(Debug, Clone, Default)]
+pub struct ImportUpdater;
+
+impl ImportUpdater {
+    /// Create a new import updater.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Update the module path in an import statement.
+    ///
+    /// For example: `from old.module import foo` -> `from new.module import foo`
+    pub fn update_module_path(
+        &self,
+        source: &str,
+        import_info: &ImportInfo,
+        new_module: &str,
+    ) -> ImportManipulationResult<TextEdit> {
+        let import_text = &source[import_info.start_offset..import_info.end_offset];
+        let old_module = import_info.statement.module_path();
+
+        // Find the module path in the import text
+        let new_text = match &import_info.statement {
+            ImportStatement::Import { alias, .. } => {
+                // `import old.module` or `import old.module as alias`
+                match alias {
+                    Some(a) => format!("import {} as {}", new_module, a),
+                    None => format!("import {}", new_module),
+                }
+            }
+            ImportStatement::FromImport { names, .. } => {
+                // `from old.module import name1, name2`
+                let names_str = names
+                    .iter()
+                    .map(|n| n.render())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("from {} import {}", new_module, names_str)
+            }
+        };
+
+        // Verify the old module is actually in the text
+        if !import_text.contains(old_module) {
+            return Err(ImportManipulationError::NotFound(old_module.to_string()));
+        }
+
+        Ok(TextEdit::replace(
+            import_info.start_offset,
+            import_info.end_offset - import_info.start_offset,
+            new_text,
+        ))
+    }
+
+    /// Update an imported name in a from-import statement.
+    ///
+    /// For example: `from module import old_name` -> `from module import new_name`
+    /// Preserves any existing alias.
+    pub fn update_imported_name(
+        &self,
+        _source: &str,
+        import_info: &ImportInfo,
+        old_name: &str,
+        new_name: &str,
+    ) -> ImportManipulationResult<TextEdit> {
+        let ImportStatement::FromImport { module, names } = &import_info.statement else {
+            return Err(ImportManipulationError::InvalidSyntax(
+                "update_imported_name requires a from-import statement".to_string(),
+            ));
+        };
+
+        // Check that the name exists
+        if !names.iter().any(|n| n.name == old_name) {
+            return Err(ImportManipulationError::NotFound(old_name.to_string()));
+        }
+
+        // Create new names list with the updated name
+        let new_names: Vec<ImportedName> = names
+            .iter()
+            .map(|n| {
+                if n.name == old_name {
+                    ImportedName {
+                        name: new_name.to_string(),
+                        alias: n.alias.clone(), // Preserve existing alias
+                    }
+                } else {
+                    n.clone()
+                }
+            })
+            .collect();
+
+        // Render the new import statement
+        let names_str = new_names
+            .iter()
+            .map(|n| n.render())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let new_text = format!("from {} import {}", module, names_str);
+
+        Ok(TextEdit::replace(
+            import_info.start_offset,
+            import_info.end_offset - import_info.start_offset,
+            new_text,
+        ))
+    }
+
+    /// Convert an import statement to a from-import.
+    ///
+    /// For example: `import module.sub` -> `from module import sub`
+    pub fn convert_to_from_import(
+        &self,
+        _source: &str,
+        import_info: &ImportInfo,
+    ) -> ImportManipulationResult<TextEdit> {
+        let ImportStatement::Import { module, alias } = &import_info.statement else {
+            return Err(ImportManipulationError::InvalidSyntax(
+                "convert_to_from_import requires a simple import statement".to_string(),
+            ));
+        };
+
+        // Split the module path to get parent and name
+        let parts: Vec<&str> = module.rsplitn(2, '.').collect();
+        if parts.len() != 2 {
+            return Err(ImportManipulationError::InvalidSyntax(
+                format!("module path '{}' has no submodule to extract", module),
+            ));
+        }
+
+        let submodule = parts[0]; // Last component
+        let parent = parts[1]; // Everything before the last component
+
+        // Create the from-import
+        let new_text = match alias {
+            Some(a) => format!("from {} import {} as {}", parent, submodule, a),
+            None => format!("from {} import {}", parent, submodule),
+        };
+
+        Ok(TextEdit::replace(
+            import_info.start_offset,
+            import_info.end_offset - import_info.start_offset,
+            new_text,
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2236,5 +2387,163 @@ import os
 
         let result = remover.remove_name_from_import(source, &info, "nonexistent");
         assert!(matches!(result, Err(ImportManipulationError::NotFound(_))));
+    }
+
+    // ============================================================================
+    // ImportUpdater tests (Phase F)
+    // ============================================================================
+
+    #[test]
+    fn test_update_module_path_simple() {
+        let updater = ImportUpdater::new();
+        let source = "from a import x\n";
+        let stmt = ImportStatement::from_import("a", "x");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 15, // "from a import x"
+            line: 1,
+        };
+
+        let edit = updater.update_module_path(source, &info, "b").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from b import x\n");
+    }
+
+    #[test]
+    fn test_update_module_path_dotted() {
+        let updater = ImportUpdater::new();
+        let source = "from a.b import x\n";
+        let stmt = ImportStatement::from_import("a.b", "x");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 17, // "from a.b import x"
+            line: 1,
+        };
+
+        let edit = updater.update_module_path(source, &info, "c.d").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from c.d import x\n");
+    }
+
+    #[test]
+    fn test_update_name_simple() {
+        let updater = ImportUpdater::new();
+        let source = "from m import old\n";
+        let stmt = ImportStatement::from_import("m", "old");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 17, // "from m import old"
+            line: 1,
+        };
+
+        let edit = updater.update_imported_name(source, &info, "old", "new").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from m import new\n");
+    }
+
+    #[test]
+    fn test_update_name_preserves_alias() {
+        let updater = ImportUpdater::new();
+        let source = "from m import old as o\n";
+        let stmt = ImportStatement::from_import_names(
+            "m",
+            vec![ImportedName::with_alias("old", "o")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 22, // "from m import old as o"
+            line: 1,
+        };
+
+        let edit = updater.update_imported_name(source, &info, "old", "new").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from m import new as o\n");
+    }
+
+    #[test]
+    fn test_convert_to_from_import() {
+        let updater = ImportUpdater::new();
+        let source = "import m.sub\n";
+        let stmt = ImportStatement::import("m.sub");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 12, // "import m.sub"
+            line: 1,
+        };
+
+        let edit = updater.convert_to_from_import(source, &info).unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from m import sub\n");
+    }
+
+    #[test]
+    fn test_convert_to_from_import_with_alias() {
+        let updater = ImportUpdater::new();
+        let source = "import module.submodule as sm\n";
+        let stmt = ImportStatement::import_as("module.submodule", "sm");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 29, // "import module.submodule as sm"
+            line: 1,
+        };
+
+        let edit = updater.convert_to_from_import(source, &info).unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from module import submodule as sm\n");
+    }
+
+    #[test]
+    fn test_update_module_path_import_statement() {
+        let updater = ImportUpdater::new();
+        let source = "import old.module\n";
+        let stmt = ImportStatement::import("old.module");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 17, // "import old.module"
+            line: 1,
+        };
+
+        let edit = updater.update_module_path(source, &info, "new.module").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "import new.module\n");
+    }
+
+    #[test]
+    fn test_update_name_in_multi_import() {
+        let updater = ImportUpdater::new();
+        let source = "from m import foo, old, bar\n";
+        let stmt = ImportStatement::from_import_names(
+            "m",
+            vec![
+                ImportedName::new("foo"),
+                ImportedName::new("old"),
+                ImportedName::new("bar"),
+            ],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::ThirdParty,
+            start_offset: 0,
+            end_offset: 27, // "from m import foo, old, bar"
+            line: 1,
+        };
+
+        let edit = updater.update_imported_name(source, &info, "old", "new").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from m import foo, new, bar\n");
     }
 }

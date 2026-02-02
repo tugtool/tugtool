@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase F: ImportUpdater Implementation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase F specification (lines 9600-9627)
+- `crates/tugtool-python/src/layers/imports.rs` - Existing imports module with Phase A-E implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `ImportUpdater` struct | Done |
+| Implement `update_module_path()` for changing module path | Done |
+| Implement `update_imported_name()` for changing imported name | Done |
+| Implement `convert_to_from_import()` for style conversion | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/layers/imports.rs` - Added ImportUpdater struct with 3 methods, 8 tests
+- `crates/tugtool-python/src/layers/mod.rs` - Added export for ImportUpdater
+
+**Key Components Added:**
+- `ImportUpdater` struct:
+  - `new()` - Create a new updater
+  - `update_module_path(source, import_info, new_module)` - Change module path in import
+  - `update_imported_name(source, import_info, old_name, new_name)` - Change imported name (preserves alias)
+  - `convert_to_from_import(source, import_info)` - Convert `import m.sub` to `from m import sub`
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python layers::imports`: 70 tests passed (62 existing + 8 new)
+- `cargo nextest run --workspace`: 2568 tests passed
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Tests Added (8 total):**
+- `test_update_module_path_simple` - `from a import x` -> `from b import x`
+- `test_update_module_path_dotted` - `from a.b import x` -> `from c.d import x`
+- `test_update_name_simple` - `from m import old` -> `from m import new`
+- `test_update_name_preserves_alias` - `from m import old as o` -> `from m import new as o`
+- `test_convert_to_from_import` - `import m.sub` -> `from m import sub`
+- `test_convert_to_from_import_with_alias` - `import module.submodule as sm` -> `from module import submodule as sm`
+- `test_update_module_path_import_statement` - `import old.module` -> `import new.module`
+- `test_update_name_in_multi_import` - Update single name in multi-name import
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python layers::imports` passes: PASS (70 tests)
+- `cargo nextest run --workspace` passes: PASS (2568 tests)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+- Plan checkboxes updated: PASS
+
+**Key Decisions/Notes:**
+- Methods take `_source` parameter (prefixed with underscore) because we reconstruct the import from parsed ImportInfo data rather than manipulating raw text
+- `update_imported_name()` preserves existing aliases when renaming names
+- `convert_to_from_import()` uses `rsplitn` to extract the last component of dotted module path as the imported name
+- Both import types (simple `import` and `from ... import`) are supported for module path updates
+
+---
+
 ## [phase-13.md] Step 0.9 Phase E: ImportRemover Implementation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
