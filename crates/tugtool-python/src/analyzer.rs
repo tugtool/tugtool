@@ -66,13 +66,16 @@ use tugtool_core::adapter::{
     ScopeData, SignatureData, SymbolData, TypeParamData,
 };
 use tugtool_core::facts::{
-    AttributeAccessKind, CallArg, CallSite, CallSiteId, DynamicPattern, DynamicPatternKind,
-    ExportIntent, ExportKind, ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind,
-    IsInstanceCheck, Language, Modifier, ParamKind, Parameter, PublicExport,
-    ReceiverPath as CoreReceiverPath, ReceiverPathStep as CoreReceiverPathStep, Reference,
-    ReferenceKind, ScopeId as CoreScopeId, ScopeInfo as CoreScopeInfo, ScopeKind, Signature,
-    Symbol, SymbolId, SymbolKind, TypeCommentFact, TypeCommentKind, TypeNode,
+    CallArg, CallSite, CallSiteId, DynamicPattern, DynamicPatternKind, ExportIntent, ExportKind,
+    ExportOrigin, ExportTarget, FactsStore, File, Import, ImportKind, IsInstanceCheck, Language,
+    Modifier, Parameter, PublicExport, ReceiverPath as CoreReceiverPath,
+    ReceiverPathStep as CoreReceiverPathStep, Reference, ReferenceKind, ScopeId as CoreScopeId,
+    ScopeInfo as CoreScopeInfo, ScopeKind, Signature, Symbol, SymbolId, SymbolKind, TypeCommentFact,
+    TypeCommentKind, TypeNode,
 };
+// Re-export types used in tests (CST now uses these from Core directly)
+#[cfg(test)]
+use tugtool_core::facts::{AttributeAccessKind, ParamKind};
 use tugtool_core::patch::{ContentHash, FileId, Span};
 
 use crate::alias::AliasGraph;
@@ -2005,7 +2008,7 @@ pub(crate) fn convert_cst_signature(cst: &SignatureInfo) -> SignatureData {
         .iter()
         .map(|p| ParameterData {
             name: p.name.clone(),
-            kind: convert_cst_param_kind(p.kind),
+            kind: p.kind,
             name_span: p.span.map(|s| Span::new(s.start, s.end)),
             default_span: p.default_span.map(|s| Span::new(s.start, s.end)),
             annotation: p.annotation_node.clone(),
@@ -2037,7 +2040,7 @@ pub(crate) fn convert_cst_signature(cst: &SignatureInfo) -> SignatureData {
     let modifiers: Vec<Modifier> = cst
         .modifiers
         .iter()
-        .filter_map(|m| convert_cst_modifier(*m))
+        .map(|m| *m)
         .collect();
 
     SignatureData {
@@ -2067,7 +2070,7 @@ pub(crate) fn convert_cst_attribute_access(cst: &AttributeAccessInfo) -> Attribu
         base_symbol_qualified_name: None,  // Will be populated during resolution
         name: cst.attr_name.clone(),
         span: cst.attr_span.map(|s| Span::new(s.start, s.end)),
-        kind: convert_cst_attribute_access_kind(cst.kind),
+        kind: cst.kind,
     }
 }
 
@@ -6002,41 +6005,9 @@ fn convert_local_import_to_import_data(import: &LocalImport) -> ImportData {
     }
 }
 
-/// Convert CST ParamKind to FactsStore ParamKind.
-fn convert_cst_param_kind(kind: tugtool_python_cst::ParamKind) -> ParamKind {
-    match kind {
-        tugtool_python_cst::ParamKind::Regular => ParamKind::Regular,
-        tugtool_python_cst::ParamKind::PositionalOnly => ParamKind::PositionalOnly,
-        tugtool_python_cst::ParamKind::KeywordOnly => ParamKind::KeywordOnly,
-        tugtool_python_cst::ParamKind::VarArgs => ParamKind::VarArgs,
-        tugtool_python_cst::ParamKind::KwArgs => ParamKind::KwArgs,
-    }
-}
-
-/// Convert CST Modifier to FactsStore Modifier.
-fn convert_cst_modifier(modifier: tugtool_python_cst::Modifier) -> Option<Modifier> {
-    match modifier {
-        tugtool_python_cst::Modifier::Async => Some(Modifier::Async),
-        tugtool_python_cst::Modifier::Static => Some(Modifier::Static),
-        tugtool_python_cst::Modifier::ClassMethod => Some(Modifier::ClassMethod),
-        tugtool_python_cst::Modifier::Property => Some(Modifier::Property),
-        tugtool_python_cst::Modifier::Abstract => Some(Modifier::Abstract),
-        tugtool_python_cst::Modifier::Final => Some(Modifier::Final),
-        tugtool_python_cst::Modifier::Override => Some(Modifier::Override),
-        tugtool_python_cst::Modifier::Generator => Some(Modifier::Generator),
-    }
-}
-
-/// Convert CST AttributeAccessKind to FactsStore AttributeAccessKind.
-fn convert_cst_attribute_access_kind(
-    kind: tugtool_python_cst::AttributeAccessKind,
-) -> AttributeAccessKind {
-    match kind {
-        tugtool_python_cst::AttributeAccessKind::Read => AttributeAccessKind::Read,
-        tugtool_python_cst::AttributeAccessKind::Write => AttributeAccessKind::Write,
-        tugtool_python_cst::AttributeAccessKind::Call => AttributeAccessKind::Call,
-    }
-}
+// NOTE: convert_cst_param_kind, convert_cst_modifier, and convert_cst_attribute_access_kind
+// have been removed because CST now imports these types directly from tugtool_core::facts,
+// eliminating the need for conversion.
 
 /// Build the scope path for a symbol by walking up the scope hierarchy.
 ///

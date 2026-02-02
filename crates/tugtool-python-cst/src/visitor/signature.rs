@@ -48,88 +48,8 @@ use crate::nodes::{
     Annotation, ClassDef, Decorator, Expression, FunctionDef, Module, Parameters, Span, StarArg,
     TypeParameters, TypeVarLike,
 };
-use tugtool_core::facts::TypeNode;
-
-/// Parameter kind classification for Python functions.
-///
-/// Matches the variants in `tugtool_core::facts::ParamKind`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ParamKind {
-    /// Standard named parameter (default).
-    Regular,
-    /// Python positional-only parameter (before `/` separator).
-    PositionalOnly,
-    /// Python keyword-only parameter (after `*` separator).
-    KeywordOnly,
-    /// Python variadic positional parameter (`*args`).
-    VarArgs,
-    /// Python variadic keyword parameter (`**kwargs`).
-    KwArgs,
-}
-
-impl ParamKind {
-    /// Returns the string representation used in output.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ParamKind::Regular => "regular",
-            ParamKind::PositionalOnly => "positional_only",
-            ParamKind::KeywordOnly => "keyword_only",
-            ParamKind::VarArgs => "var_args",
-            ParamKind::KwArgs => "kwargs",
-        }
-    }
-}
-
-impl std::fmt::Display for ParamKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// Function/method modifier (async, decorators).
-///
-/// Matches the variants in `tugtool_core::facts::Modifier`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Modifier {
-    /// Async function/method.
-    Async,
-    /// Static method (`@staticmethod`).
-    Static,
-    /// Class method (`@classmethod`).
-    ClassMethod,
-    /// Property accessor (`@property`).
-    Property,
-    /// Abstract method (`@abstractmethod`).
-    Abstract,
-    /// Final method (`@final`).
-    Final,
-    /// Override (`@override`).
-    Override,
-    /// Generator function (detected by yield, but we'll mark here for completeness).
-    Generator,
-}
-
-impl Modifier {
-    /// Returns the string representation used in output.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Modifier::Async => "async",
-            Modifier::Static => "static",
-            Modifier::ClassMethod => "classmethod",
-            Modifier::Property => "property",
-            Modifier::Abstract => "abstract",
-            Modifier::Final => "final",
-            Modifier::Override => "override",
-            Modifier::Generator => "generator",
-        }
-    }
-}
-
-impl std::fmt::Display for Modifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
+// Import shared types from tugtool_core
+use tugtool_core::facts::{Modifier, ParamKind, TypeNode};
 
 /// Information about a single parameter in a function signature.
 #[derive(Debug, Clone)]
@@ -831,5 +751,46 @@ mod tests {
         assert_eq!(signatures.len(), 1);
         assert!(signatures[0].modifiers.contains(&Modifier::Static));
         assert!(signatures[0].modifiers.contains(&Modifier::Final));
+    }
+
+    // ========================================================================
+    // Consolidated type tests (Phase B: Enum Consolidation)
+    // ========================================================================
+
+    #[test]
+    fn test_param_kind_from_core_in_signature_info() {
+        // Verify SignatureInfo uses ParamKind from tugtool_core::facts
+        let source = "def foo(a, /, b, *args, c, **kwargs): pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let signatures = SignatureCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(signatures.len(), 1);
+        // These assertions verify that ParamKind from Core is used directly
+        assert_eq!(signatures[0].params[0].kind, ParamKind::PositionalOnly);
+        assert_eq!(signatures[0].params[1].kind, ParamKind::Regular);
+        assert_eq!(signatures[0].params[2].kind, ParamKind::VarArgs);
+        assert_eq!(signatures[0].params[3].kind, ParamKind::KeywordOnly);
+        assert_eq!(signatures[0].params[4].kind, ParamKind::KwArgs);
+
+        // Verify the types are the same as Core types (no conversion needed)
+        let _: tugtool_core::facts::ParamKind = signatures[0].params[0].kind;
+    }
+
+    #[test]
+    fn test_modifier_from_core_in_signature_info() {
+        // Verify SignatureInfo uses Modifier from tugtool_core::facts
+        let source = "@staticmethod\n@classmethod\n@property\n@abstractmethod\ndef foo(): pass";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let signatures = SignatureCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(signatures.len(), 1);
+        // These assertions verify that Modifier from Core is used directly
+        assert!(signatures[0].modifiers.contains(&Modifier::Static));
+        assert!(signatures[0].modifiers.contains(&Modifier::ClassMethod));
+        assert!(signatures[0].modifiers.contains(&Modifier::Property));
+        assert!(signatures[0].modifiers.contains(&Modifier::Abstract));
+
+        // Verify the types are the same as Core types (no conversion needed)
+        let _: tugtool_core::facts::Modifier = signatures[0].modifiers[0];
     }
 }

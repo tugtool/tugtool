@@ -6,6 +6,64 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8.5 Phase B: Enum Consolidation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase B specification (lines 8605-8745)
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - ParamKind and Modifier definitions
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - AttributeAccessKind definition
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Re-exports
+- `crates/tugtool-python/src/analyzer.rs` - Conversion functions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| B.1: Remove ParamKind from CST and import from Core | Done |
+| B.2: Remove Modifier from CST and import from Core | Done |
+| B.3: Remove AttributeAccessKind from CST and import from Core | Done |
+| B.4: Update CST mod.rs re-exports | Done |
+| B.5: Update CST lib.rs re-exports | Done |
+| B.6: Remove conversion functions from analyzer.rs | Done |
+| B.7: Update remaining conversion code | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/signature.rs`:
+  - Removed `ParamKind` enum definition (~30 lines)
+  - Removed `Modifier` enum definition (~45 lines)
+  - Added import from `tugtool_core::facts`
+  - Added 2 new tests for consolidated types
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`:
+  - Removed `AttributeAccessKind` enum definition (~25 lines)
+  - Added import from `tugtool_core::facts`
+  - Added 1 new test for consolidated type
+- `crates/tugtool-python-cst/src/visitor/mod.rs`:
+  - Updated re-exports to use Core types directly
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Removed `convert_cst_param_kind`, `convert_cst_modifier`, `convert_cst_attribute_access_kind` functions
+  - Updated call sites to use types directly without conversion
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 876 tests passed (3 new)
+- `cargo nextest run -p tugtool-python`: 844 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes: PASS (876 tests)
+- `cargo nextest run -p tugtool-python` passes: PASS (844 tests)
+- No `ParamKind` definition in signature.rs: PASS
+- No `Modifier` definition in signature.rs: PASS
+- No `AttributeAccessKind` definition in attribute_access.rs: PASS
+- No conversion functions in analyzer.rs: PASS
+
+**Key Decisions/Notes:**
+Consolidated duplicate enum definitions by having CST import `ParamKind`, `Modifier`, and `AttributeAccessKind` from `tugtool_core::facts` instead of defining its own versions. This eliminates ~100 lines of duplicate code and 3 conversion functions, simplifying the codebase and ensuring type consistency across layers.
+
+---
+
 ## [phase-13.md] Step 0.8.5 Phase A: ReceiverStep Variant Rename | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

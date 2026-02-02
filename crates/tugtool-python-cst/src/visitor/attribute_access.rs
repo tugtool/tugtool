@@ -258,33 +258,8 @@ fn extract_receiver_path_recursive(expr: &Expression<'_>, steps: &mut Vec<Receiv
     }
 }
 
-/// The kind of attribute access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AttributeAccessKind {
-    /// Attribute read (load context): `x = obj.attr`
-    Read,
-    /// Attribute write (store context): `obj.attr = x`
-    Write,
-    /// Attribute call (method call): `obj.attr()`
-    Call,
-}
-
-impl AttributeAccessKind {
-    /// Returns the string representation.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AttributeAccessKind::Read => "read",
-            AttributeAccessKind::Write => "write",
-            AttributeAccessKind::Call => "call",
-        }
-    }
-}
-
-impl std::fmt::Display for AttributeAccessKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
+// Import AttributeAccessKind from tugtool_core instead of defining it here
+use tugtool_core::facts::AttributeAccessKind;
 
 /// Information about an attribute access pattern.
 #[derive(Debug, Clone)]
@@ -1355,5 +1330,36 @@ class MyClass:
             &path.steps[1],
             ReceiverStep::Attribute { value } if value == "handler"
         ));
+    }
+
+    // ========================================================================
+    // Consolidated type tests (Phase B: Enum Consolidation)
+    // ========================================================================
+
+    #[test]
+    fn test_attribute_access_kind_from_core() {
+        // Verify AttributeAccessInfo uses AttributeAccessKind from tugtool_core::facts
+        let source = r#"
+x = obj.read_attr
+obj.write_attr = 1
+obj.call_attr()
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        assert_eq!(accesses.len(), 3);
+
+        // Find each kind
+        let read = accesses.iter().find(|a| a.attr_name == "read_attr").unwrap();
+        let write = accesses.iter().find(|a| a.attr_name == "write_attr").unwrap();
+        let call = accesses.iter().find(|a| a.attr_name == "call_attr").unwrap();
+
+        // These assertions verify that AttributeAccessKind from Core is used directly
+        assert_eq!(read.kind, AttributeAccessKind::Read);
+        assert_eq!(write.kind, AttributeAccessKind::Write);
+        assert_eq!(call.kind, AttributeAccessKind::Call);
+
+        // Verify the types are the same as Core types (no conversion needed)
+        let _: tugtool_core::facts::AttributeAccessKind = read.kind;
     }
 }

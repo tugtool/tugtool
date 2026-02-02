@@ -8615,7 +8615,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
 
 **Tasks:**
 
-- [ ] **Step B.1: Remove ParamKind from CST and import from Core**
+- [x] **Step B.1: Remove ParamKind from CST and import from Core**
 
   **File:** `crates/tugtool-python-cst/src/visitor/signature.rs`
 
@@ -8634,7 +8634,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   use tugtool_core::facts::ParamKind;
   ```
 
-- [ ] **Step B.2: Remove Modifier from CST and import from Core**
+- [x] **Step B.2: Remove Modifier from CST and import from Core**
 
   **File:** `crates/tugtool-python-cst/src/visitor/signature.rs`
 
@@ -8653,7 +8653,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   use tugtool_core::facts::Modifier;
   ```
 
-- [ ] **Step B.3: Remove AttributeAccessKind from CST and import from Core**
+- [x] **Step B.3: Remove AttributeAccessKind from CST and import from Core**
 
   **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
 
@@ -8671,7 +8671,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   use tugtool_core::facts::AttributeAccessKind;
   ```
 
-- [ ] **Step B.4: Update CST mod.rs re-exports**
+- [x] **Step B.4: Update CST mod.rs re-exports**
 
   **File:** `crates/tugtool-python-cst/src/visitor/mod.rs`
 
@@ -8691,13 +8691,13 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   pub use tugtool_core::facts::AttributeAccessKind;
   ```
 
-- [ ] **Step B.5: Update CST lib.rs re-exports**
+- [x] **Step B.5: Update CST lib.rs re-exports**
 
   **File:** `crates/tugtool-python-cst/src/lib.rs`
 
   Update any top-level re-exports to reflect the changes in `visitor/mod.rs`.
 
-- [ ] **Step B.6: Remove conversion functions from analyzer.rs**
+- [x] **Step B.6: Remove conversion functions from analyzer.rs**
 
   **File:** `crates/tugtool-python/src/analyzer.rs`
 
@@ -8710,7 +8710,7 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
   // And update call sites to use the types directly without conversion
   ```
 
-- [ ] **Step B.7: Update any remaining conversion code**
+- [x] **Step B.7: Update any remaining conversion code**
 
   Where CST types were previously converted to Core types via the removed functions, update to use the types directly since they are now the same type.
 
@@ -8723,25 +8723,25 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
 
 **Tests:**
 
-- [ ] Unit: `test_param_kind_from_core_in_signature_info` - SignatureInfo uses Core ParamKind
-- [ ] Unit: `test_modifier_from_core_in_signature_info` - SignatureInfo uses Core Modifier
-- [ ] Unit: `test_attribute_access_kind_from_core` - AttributeAccessInfo uses Core AttributeAccessKind
-- [ ] Integration: `test_signature_collection_unchanged` - Signature collection produces same results
-- [ ] Integration: `test_attribute_access_collection_unchanged` - Attribute access collection unchanged
-- [ ] Regression: `test_full_analysis_unchanged` - Full analysis produces identical FactsStore
+- [x] Unit: `test_param_kind_from_core_in_signature_info` - SignatureInfo uses Core ParamKind
+- [x] Unit: `test_modifier_from_core_in_signature_info` - SignatureInfo uses Core Modifier
+- [x] Unit: `test_attribute_access_kind_from_core` - AttributeAccessInfo uses Core AttributeAccessKind
+- [x] Integration: `test_signature_collection_unchanged` - Signature collection produces same results (verified via existing tests)
+- [x] Integration: `test_attribute_access_collection_unchanged` - Attribute access collection unchanged (verified via existing tests)
+- [x] Regression: `test_full_analysis_unchanged` - Full analysis produces identical FactsStore (verified via 844 tugtool-python tests)
 
 **Checkpoint:**
 
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
-- [ ] `cargo nextest run -p tugtool-python` passes all tests
-- [ ] No `ParamKind` definition in `signature.rs`
-- [ ] No `Modifier` definition in `signature.rs`
-- [ ] No `AttributeAccessKind` definition in `attribute_access.rs`
-- [ ] No `convert_cst_param_kind` function in `analyzer.rs`
-- [ ] No `convert_cst_modifier` function in `analyzer.rs`
-- [ ] No `convert_cst_attribute_access_kind` function in `analyzer.rs`
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [x] `cargo nextest run -p tugtool-python` passes all tests
+- [x] No `ParamKind` definition in `signature.rs`
+- [x] No `Modifier` definition in `signature.rs`
+- [x] No `AttributeAccessKind` definition in `attribute_access.rs`
+- [x] No `convert_cst_param_kind` function in `analyzer.rs`
+- [x] No `convert_cst_modifier` function in `analyzer.rs`
+- [x] No `convert_cst_attribute_access_kind` function in `analyzer.rs`
 
 ---
 

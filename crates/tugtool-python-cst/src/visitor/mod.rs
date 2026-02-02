@@ -113,17 +113,19 @@ pub use traits::{Transform, Transformer, VisitResult, Visitor};
 // P1 exports
 pub use annotation::{AnnotationCollector, AnnotationInfo, AnnotationKind, AnnotationSourceKind};
 pub use attribute_access::{
-    extract_receiver_path, AttributeAccessCollector, AttributeAccessInfo, AttributeAccessKind,
-    ReceiverPath, ReceiverStep,
+    extract_receiver_path, AttributeAccessCollector, AttributeAccessInfo, ReceiverPath,
+    ReceiverStep,
 };
+// Re-export AttributeAccessKind from tugtool_core
+pub use tugtool_core::facts::AttributeAccessKind;
 pub use call_site::{CallArgInfo, CallSiteCollector, CallSiteInfo};
 pub use import::{ImportCollector, ImportInfo, ImportKind, ImportedName};
 pub use inheritance::{ClassInheritanceInfo, InheritanceCollector};
 pub use isinstance::{IsInstanceCheck, IsInstanceCollector};
 pub use method_call::{MethodCallCollector, MethodCallInfo};
-pub use signature::{
-    Modifier, ParamInfo, ParamKind, SignatureCollector, SignatureInfo, TypeParamInfo,
-};
+pub use signature::{ParamInfo, SignatureCollector, SignatureInfo, TypeParamInfo};
+// Re-export ParamKind and Modifier from tugtool_core
+pub use tugtool_core::facts::{Modifier, ParamKind};
 pub use type_inference::{AssignmentInfo, TypeInferenceCollector, TypeSource};
 
 // P2 exports
