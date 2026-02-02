@@ -10086,7 +10086,7 @@ Add an `enclosing_scope_path` field to `BindingCollector` that tracks the most r
 
 ---
 
-#### NOTE: Content formerly here in freater detail was move to the next phase: Phase 14: Python Refactoring Operations
+#### NOTE: Content formerly here in greater detail was moved to the next phase: Phase 14: Python Refactoring Operations
 
 ##### Step 1.2: Rename Parameter Operation {#step-1-2}
 ##### Step 1.3: Layer 1 Infrastructure {#step-1-3}
