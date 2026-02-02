@@ -6,6 +6,71 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase B: Stdlib Module Infrastructure | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase B specification (lines 8982-9156)
+- `crates/tugtool-python/Cargo.toml` - Existing dependencies
+- `crates/tugtool-python/src/layers/mod.rs` - Module structure
+- omnilib/stdlibs package documentation
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create generator script `scripts/generate_stdlib_modules.py` | Done |
+| Generate `stdlib_modules.rs` with per-version HashSets | Done |
+| Add `once_cell` dependency to Cargo.toml | Done |
+| Export stdlib_modules from `layers/mod.rs` | Done |
+
+**Files Created:**
+- `scripts/generate_stdlib_modules.py` - Generator script using omnilib/stdlibs package (MIT licensed, same data source as ruff/isort)
+- `crates/tugtool-python/src/layers/stdlib_modules.rs` - Generated Rust source (2,118 lines) with per-version stdlib HashSets
+
+**Files Modified:**
+- `crates/tugtool-python/Cargo.toml` - Added `once_cell = "1.20"` dependency
+- `crates/tugtool-python/src/layers/mod.rs` - Added `stdlib_modules` module and exports
+
+**Generated Content:**
+- `PythonVersion` struct with constants (PY38, PY39, PY310, PY311, PY312, PY313, DEFAULT)
+- Per-version stdlib HashSets:
+  - STDLIB_3_8: 318 modules
+  - STDLIB_3_9: 322 modules (adds graphlib, zoneinfo)
+  - STDLIB_3_10: 319 modules
+  - STDLIB_3_11: 324 modules (adds tomllib)
+  - STDLIB_3_12: 322 modules (removes distutils)
+  - STDLIB_3_13: 313 modules (removes aifc + 20 others per PEP 594)
+- `is_stdlib_module(module, version)` lookup function
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python stdlib`: 10 new tests passed
+- `cargo nextest run -p tugtool-python`: 868 tests passed (up from 858)
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Tests Added:**
+- `test_stdlib_os_all_versions` - os is stdlib on all versions
+- `test_stdlib_sys_all_versions` - sys is stdlib on all versions
+- `test_stdlib_graphlib_39_plus` - graphlib added in 3.9
+- `test_stdlib_zoneinfo_39_plus` - zoneinfo added in 3.9
+- `test_stdlib_tomllib_311_plus` - tomllib added in 3.11
+- `test_stdlib_distutils_removed_312` - distutils removed in 3.12
+- `test_stdlib_aifc_removed_313` - aifc removed in 3.13
+- `test_not_stdlib_numpy` - numpy never stdlib
+- `test_not_stdlib_requests` - requests never stdlib
+- `test_python_version_constants` - version constants correct
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python` passes: PASS (868 tests)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+Generator script creates a temporary venv to install stdlibs package, avoiding system Python issues. Added `PartialOrd, Ord` derives to `PythonVersion` beyond the plan spec (beneficial for version comparisons). The generated file is 2,118 lines with comprehensive coverage of Python 3.8-3.13 stdlib modules.
+
+---
+
 ## [phase-13.md] Step 0.9 Phase B+C: Plan Revision | REVISED | 2026-02-02
 
 **Completed:** 2026-02-02

@@ -8991,7 +8991,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Create generator script `scripts/generate_stdlib_modules.py`:
+- [x] Create generator script `scripts/generate_stdlib_modules.py`:
   ```python
   #!/usr/bin/env python3
   """Generate stdlib_modules.rs from omnilib/stdlibs package.
@@ -9047,7 +9047,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
       generate_rust_source()
   ```
 
-- [ ] Generate `crates/tugtool-python/src/layers/stdlib_modules.rs`:
+- [x] Generate `crates/tugtool-python/src/layers/stdlib_modules.rs`:
   ```rust
   //! Auto-generated stdlib module lists by Python version.
   //!
@@ -9128,9 +9128,9 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Add `once_cell` dependency to `crates/tugtool-python/Cargo.toml` if not present
+- [x] Add `once_cell` dependency to `crates/tugtool-python/Cargo.toml` if not present
 
-- [ ] Export stdlib module from `crates/tugtool-python/src/layers/mod.rs`:
+- [x] Export stdlib module from `crates/tugtool-python/src/layers/mod.rs`:
   ```rust
   pub mod stdlib_modules;
   pub use stdlib_modules::{PythonVersion, is_stdlib_module};
@@ -9142,16 +9142,16 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tests:**
 
-- [ ] Unit: `test_stdlib_os_all_versions` - `os` is stdlib on all Python versions
-- [ ] Unit: `test_stdlib_sys_all_versions` - `sys` is stdlib on all Python versions
-- [ ] Unit: `test_stdlib_graphlib_39_plus` - `graphlib` is stdlib on 3.9+, not on 3.8
-- [ ] Unit: `test_stdlib_zoneinfo_39_plus` - `zoneinfo` is stdlib on 3.9+, not on 3.8
-- [ ] Unit: `test_stdlib_tomllib_311_plus` - `tomllib` is stdlib on 3.11+, not on 3.10
-- [ ] Unit: `test_stdlib_distutils_removed_312` - `distutils` is stdlib on 3.11, not on 3.12+
-- [ ] Unit: `test_stdlib_aifc_removed_313` - `aifc` is stdlib on 3.12, not on 3.13
-- [ ] Unit: `test_not_stdlib_numpy` - `numpy` is not stdlib on any version
-- [ ] Unit: `test_not_stdlib_requests` - `requests` is not stdlib on any version
-- [ ] Unit: `test_python_version_constants` - Version constants are correctly defined
+- [x] Unit: `test_stdlib_os_all_versions` - `os` is stdlib on all Python versions
+- [x] Unit: `test_stdlib_sys_all_versions` - `sys` is stdlib on all Python versions
+- [x] Unit: `test_stdlib_graphlib_39_plus` - `graphlib` is stdlib on 3.9+, not on 3.8
+- [x] Unit: `test_stdlib_zoneinfo_39_plus` - `zoneinfo` is stdlib on 3.9+, not on 3.8
+- [x] Unit: `test_stdlib_tomllib_311_plus` - `tomllib` is stdlib on 3.11+, not on 3.10
+- [x] Unit: `test_stdlib_distutils_removed_312` - `distutils` is stdlib on 3.11, not on 3.12+
+- [x] Unit: `test_stdlib_aifc_removed_313` - `aifc` is stdlib on 3.12, not on 3.13
+- [x] Unit: `test_not_stdlib_numpy` - `numpy` is not stdlib on any version
+- [x] Unit: `test_not_stdlib_requests` - `requests` is not stdlib on any version
+- [x] Unit: `test_python_version_constants` - Version constants are correctly defined
 
 ---
 
