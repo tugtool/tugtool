@@ -12,7 +12,7 @@ pub mod imports;
 pub mod stdlib_modules;
 
 pub use imports::{
-    ImportGroupKind, ImportInsertMode, ImportManipulationError, ImportManipulationResult,
-    ImportStatement, ImportedName,
+    ImportClassifier, ImportClassifierConfig, ImportGroupKind, ImportInsertMode,
+    ImportManipulationError, ImportManipulationResult, ImportStatement, ImportedName,
 };
 pub use stdlib_modules::{is_stdlib_module, PythonVersion};

@@ -6,6 +6,80 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase C: Import Classifier Implementation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase C specification (lines 9158-9464)
+- `crates/tugtool-python/src/layers/imports.rs` - Existing imports module
+- `crates/tugtool-python/src/layers/stdlib_modules.rs` - Phase B stdlib infrastructure
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Define `ImportClassifierConfig` struct | Done |
+| Define backport package mappings | Done |
+| Implement `ImportClassifier` struct with `classify` method | Done |
+| Implement filesystem-based first-party detection | Done |
+| Add `classify_from_file` convenience method | Done |
+| Add TODO note about pyproject.toml configuration | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/layers/imports.rs` - Added ImportClassifier, ImportClassifierConfig, backport mappings, 23 tests
+- `crates/tugtool-python/src/layers/mod.rs` - Added exports for ImportClassifier, ImportClassifierConfig
+
+**Key Components Added:**
+- `BACKPORT_PACKAGES` constant: 5 backport mappings (dataclasses, tomli, backports.zoneinfo, importlib_metadata, importlib_resources)
+- `ALWAYS_THIRD_PARTY` constant: `typing_extensions`
+- `ImportClassifierConfig` struct with builder methods (with_workspace_root, with_target_version, with_known_first_party, etc.)
+- `ImportClassifier` struct with:
+  - `classify(module_path)` - Main classification method
+  - `classify_from_file(module_path, source_file)` - Same-package heuristic
+  - `is_stdlib_for_version(top_level)` - Backport-aware stdlib check
+  - `exists_in_src_paths(module_path)` - Filesystem-based first-party detection
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python classify`: 22 classifier tests passed
+- `cargo nextest run -p tugtool-python`: 891 tests passed (up from 868)
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Tests Added (23 total):**
+- `test_classify_future_import` - __future__ classified as Future
+- `test_classify_relative_import` - .module, ..parent classified as Local
+- `test_classify_explicit_first_party` - known_first_party override
+- `test_classify_explicit_third_party` - known_third_party override
+- `test_classify_explicit_stdlib` - known_stdlib override
+- `test_classify_stdlib_os` - os is Stdlib on all versions
+- `test_classify_stdlib_sys` - sys is Stdlib on all versions
+- `test_classify_stdlib_submodule` - os.path, collections.abc
+- `test_classify_tomllib_311` - tomllib is Stdlib on 3.11+
+- `test_classify_tomllib_310` - tomllib is ThirdParty on 3.10
+- `test_classify_tomli_always_third_party` - tomli backport always ThirdParty
+- `test_classify_graphlib_39` - graphlib Stdlib 3.9+, ThirdParty 3.8
+- `test_classify_distutils_312` - distutils removed in 3.12
+- `test_classify_typing_extensions` - Always ThirdParty
+- `test_classify_third_party_numpy` - numpy is ThirdParty
+- `test_classify_third_party_requests` - requests is ThirdParty
+- `test_classify_filesystem_regular_package` - __init__.py detection
+- `test_classify_filesystem_namespace_package` - PEP 420 detection
+- `test_classify_filesystem_module_file` - {name}.py detection
+- `test_classify_filesystem_src_layout` - src/ layout detection
+- `test_classify_same_package_heuristic` - classify_from_file
+- `test_classify_no_workspace_skips_filesystem` - No workspace handling
+- `test_classifier_with_temp_workspace` - Full integration test
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python` passes: PASS (891 tests)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+Classification follows a priority order: (1) Future imports, (2) Relative imports, (3) Explicit overrides, (4) Always third-party list, (5) Backport-aware stdlib check, (6) Filesystem first-party detection, (7) Default to third-party. Backport packages like `tomli` are always classified as third-party even when targeting Python versions where the stdlib equivalent exists.
+
+---
+
 ## [phase-13.md] Step 0.9 Phase B: Stdlib Module Infrastructure | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

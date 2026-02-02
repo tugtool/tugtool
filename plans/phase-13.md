@@ -9170,7 +9170,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Define `ImportClassifierConfig` struct:
+- [x] Define `ImportClassifierConfig` struct:
   ```rust
   use std::path::PathBuf;
   use std::collections::HashSet;
@@ -9234,7 +9234,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Define backport package mappings:
+- [x] Define backport package mappings:
   ```rust
   /// Backport packages and their stdlib equivalents.
   /// Maps (backport_name, stdlib_name, stdlib_since_version).
@@ -9252,7 +9252,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   ];
   ```
 
-- [ ] Implement `ImportClassifier` struct:
+- [x] Implement `ImportClassifier` struct:
   ```rust
   /// Classifies Python imports into groups (future, stdlib, third-party, local).
   pub struct ImportClassifier {
@@ -9334,7 +9334,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Implement filesystem-based first-party detection:
+- [x] Implement filesystem-based first-party detection:
   ```rust
   impl ImportClassifier {
       /// Check if a module exists in any of the configured src_paths.
@@ -9379,7 +9379,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Add convenience method for classifying within a file context:
+- [x] Add convenience method for classifying within a file context:
   ```rust
   impl ImportClassifier {
       /// Classify import with same-package heuristic.
@@ -9416,7 +9416,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Add note about future pyproject.toml configuration loading:
+- [x] Add note about future pyproject.toml configuration loading:
   ```rust
   // TODO: Future enhancement (separate step):
   // Load configuration from pyproject.toml [tool.tug.python.imports] section:
@@ -9438,29 +9438,29 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tests:**
 
-- [ ] Unit: `test_classify_future_import` - `__future__` classified as Future
-- [ ] Unit: `test_classify_relative_import` - `.module`, `..parent` classified as Local
-- [ ] Unit: `test_classify_explicit_first_party` - Configured known_first_party wins over stdlib
-- [ ] Unit: `test_classify_explicit_third_party` - Configured known_third_party wins over filesystem
-- [ ] Unit: `test_classify_explicit_stdlib` - Configured known_stdlib overrides default
-- [ ] Unit: `test_classify_stdlib_os` - `os` classified as Stdlib on all versions
-- [ ] Unit: `test_classify_stdlib_sys` - `sys` classified as Stdlib on all versions
-- [ ] Unit: `test_classify_stdlib_submodule` - `os.path`, `collections.abc` classified as Stdlib
-- [ ] Unit: `test_classify_tomllib_311` - `tomllib` is Stdlib on 3.11+
-- [ ] Unit: `test_classify_tomllib_310` - `tomllib` is ThirdParty on 3.10 (doesn't exist)
-- [ ] Unit: `test_classify_tomli_always_third_party` - `tomli` is ThirdParty on all versions
-- [ ] Unit: `test_classify_graphlib_39` - `graphlib` is Stdlib on 3.9+, ThirdParty on 3.8
-- [ ] Unit: `test_classify_distutils_312` - `distutils` is Stdlib on 3.11, ThirdParty on 3.12+
-- [ ] Unit: `test_classify_typing_extensions` - Always ThirdParty (never stdlib)
-- [ ] Unit: `test_classify_third_party_numpy` - `numpy` classified as ThirdParty
-- [ ] Unit: `test_classify_third_party_requests` - `requests` classified as ThirdParty
-- [ ] Unit: `test_classify_filesystem_regular_package` - Package with `__init__.py` detected as Local
-- [ ] Unit: `test_classify_filesystem_namespace_package` - PEP 420 namespace package detected as Local
-- [ ] Unit: `test_classify_filesystem_module_file` - `{name}.py` detected as Local
-- [ ] Unit: `test_classify_filesystem_src_layout` - Package in `src/` directory detected as Local
-- [ ] Unit: `test_classify_same_package_heuristic` - Import within same package classified as Local
-- [ ] Unit: `test_classify_no_workspace_skips_filesystem` - Filesystem check skipped when workspace_root is None
-- [ ] Integration: `test_classifier_with_temp_workspace` - Full classification with temp directory structure
+- [x] Unit: `test_classify_future_import` - `__future__` classified as Future
+- [x] Unit: `test_classify_relative_import` - `.module`, `..parent` classified as Local
+- [x] Unit: `test_classify_explicit_first_party` - Configured known_first_party wins over stdlib
+- [x] Unit: `test_classify_explicit_third_party` - Configured known_third_party wins over filesystem
+- [x] Unit: `test_classify_explicit_stdlib` - Configured known_stdlib overrides default
+- [x] Unit: `test_classify_stdlib_os` - `os` classified as Stdlib on all versions
+- [x] Unit: `test_classify_stdlib_sys` - `sys` classified as Stdlib on all versions
+- [x] Unit: `test_classify_stdlib_submodule` - `os.path`, `collections.abc` classified as Stdlib
+- [x] Unit: `test_classify_tomllib_311` - `tomllib` is Stdlib on 3.11+
+- [x] Unit: `test_classify_tomllib_310` - `tomllib` is ThirdParty on 3.10 (doesn't exist)
+- [x] Unit: `test_classify_tomli_always_third_party` - `tomli` is ThirdParty on all versions
+- [x] Unit: `test_classify_graphlib_39` - `graphlib` is Stdlib on 3.9+, ThirdParty on 3.8
+- [x] Unit: `test_classify_distutils_312` - `distutils` is Stdlib on 3.11, ThirdParty on 3.12+
+- [x] Unit: `test_classify_typing_extensions` - Always ThirdParty (never stdlib)
+- [x] Unit: `test_classify_third_party_numpy` - `numpy` classified as ThirdParty
+- [x] Unit: `test_classify_third_party_requests` - `requests` classified as ThirdParty
+- [x] Unit: `test_classify_filesystem_regular_package` - Package with `__init__.py` detected as Local
+- [x] Unit: `test_classify_filesystem_namespace_package` - PEP 420 namespace package detected as Local
+- [x] Unit: `test_classify_filesystem_module_file` - `{name}.py` detected as Local
+- [x] Unit: `test_classify_filesystem_src_layout` - Package in `src/` directory detected as Local
+- [x] Unit: `test_classify_same_package_heuristic` - Import within same package classified as Local
+- [x] Unit: `test_classify_no_workspace_skips_filesystem` - Filesystem check skipped when workspace_root is None
+- [x] Integration: `test_classifier_with_temp_workspace` - Full classification with temp directory structure
 
 ---
 
