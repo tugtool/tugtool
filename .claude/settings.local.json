@@ -306,7 +306,9 @@
       "Bash(test_rename_in_union)",
       "Bash(test_rename_multiple_occurrences)",
       "Bash(test_rename_in_callable)",
-      "Bash(test_no_false_positive_rename)"
+      "Bash(test_no_false_positive_rename)",
+      "WebFetch(domain:peps.python.org)",
+      "WebFetch(domain:stdlibs.omnilib.dev)"
     ],
     "deny": [],
     "ask": []

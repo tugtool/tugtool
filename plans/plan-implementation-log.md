@@ -6,6 +6,63 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase B+C: Plan Revision | REVISED | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase B and C original specifications
+- isort implementation (static stdlib lists per version, filesystem-based first-party detection)
+- ruff implementation (Rust-based, same approach as isort)
+- omnilib/stdlibs package (authoritative stdlib module lists, MIT licensed)
+- PEP 594 (Dead Batteries removal in Python 3.13)
+- PEP 632 (distutils removal in Python 3.12)
+
+**Revision Summary:**
+
+The original Phase B proposed a partial hardcoded stdlib module list. This was flagged as fragile and under-specified. Architectural research was conducted using the code-architect agent, followed by plan revision using the code-planner agent.
+
+**Key Findings from Research:**
+- isort and ruff both use static stdlib lists generated from `omnilib/stdlibs` package
+- Stdlib modules change significantly between Python versions (3.8-3.13)
+- First-party detection requires filesystem scanning, not just a HashSet
+- Backport packages need version-aware classification
+
+**Plan Changes:**
+
+| Phase | Before | After |
+|-------|--------|-------|
+| B | Simple hardcoded stdlib list | Full stdlib infrastructure with generator script, per-version module sets |
+| C | ImportInserter | ImportClassifier with version-aware classification |
+| D | ImportRemover | ImportInserter (renumbered) |
+| E | ImportUpdater | ImportRemover (renumbered) |
+| F | TYPE_CHECKING tracking | ImportUpdater (renumbered) |
+| G | - | TYPE_CHECKING tracking (renumbered) |
+
+**New Phase B: Stdlib Module Infrastructure**
+- Generator script `scripts/generate_stdlib_modules.py` using omnilib/stdlibs
+- Generated `stdlib_modules.rs` with per-version HashSet collections
+- Support for Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13
+- `PythonVersion` struct with version constants
+- `is_stdlib_module(module, version)` lookup function
+- 10 unit tests covering version-specific behavior
+
+**New Phase C: Import Classifier Implementation**
+- `ImportClassifierConfig` with target_version, src_paths, known_* overrides
+- Backport package mapping (tomli/tomllib, backports.zoneinfo/zoneinfo, etc.)
+- `ALWAYS_THIRD_PARTY` list (typing_extensions)
+- Filesystem-based first-party detection (regular packages, namespace packages, module files)
+- Same-package heuristic via `classify_from_file()`
+- 24 unit tests covering all classification scenarios
+
+**Files Modified:**
+- `plans/phase-13.md` - Rewrote Phase B (lines 8982-9155), rewrote Phase C (lines 9158-9464), renumbered subsequent phases
+
+**Key Decisions/Notes:**
+This revision aligns tugtool's import classification with production tools (ruff, isort). The architecture uses static data generated from the authoritative omnilib/stdlibs package, avoiding runtime Python dependencies while supporting version-aware classification. Future work includes pyproject.toml configuration loading.
+
+---
+
 ## [phase-13.md] Step 0.9 Phase A: Import Infrastructure Types | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
