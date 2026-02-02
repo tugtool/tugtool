@@ -498,6 +498,15 @@ impl TextEdit {
         }
     }
 
+    /// Create a deletion edit (delete bytes, insert nothing).
+    pub fn delete(offset: usize, delete_len: usize) -> Self {
+        Self {
+            offset,
+            delete_len,
+            insert_text: String::new(),
+        }
+    }
+
     /// Apply this edit to the given source string.
     pub fn apply(&self, source: &str) -> String {
         let bytes = source.as_bytes();
@@ -977,6 +986,277 @@ impl ImportInserter {
         }
 
         Ok(TextEdit::insert(offset, text))
+    }
+}
+
+// ============================================================================
+// Import Remover
+// ============================================================================
+
+/// Removes import statements or individual names from import statements.
+///
+/// The remover handles cleanup of trailing commas, proper line removal,
+/// and converts multi-name imports to single-name when only one remains.
+#[derive(Debug, Clone, Default)]
+pub struct ImportRemover;
+
+/// Information about an imported name's location within a from-import statement.
+#[derive(Debug, Clone)]
+pub struct ImportedNameSpan {
+    /// The name being imported.
+    pub name: String,
+    /// Optional alias.
+    pub alias: Option<String>,
+    /// Start offset of this name (including leading whitespace/comma if not first).
+    pub start_offset: usize,
+    /// End offset of this name (including trailing comma if not last).
+    pub end_offset: usize,
+    /// Whether this is the first name in the list.
+    pub is_first: bool,
+    /// Whether this is the last name in the list.
+    pub is_last: bool,
+}
+
+impl ImportRemover {
+    /// Create a new import remover.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Remove an entire import statement from source code.
+    ///
+    /// This removes the import statement and its trailing newline.
+    pub fn remove_import(
+        &self,
+        source: &str,
+        import_info: &ImportInfo,
+    ) -> ImportManipulationResult<TextEdit> {
+        // Find the end of the line (including the newline character)
+        let line_end = self.find_line_end(source, import_info.end_offset);
+
+        // Check if there's a blank line after this import that should also be removed
+        // (if this is the last import in a group)
+        let delete_end = line_end;
+
+        Ok(TextEdit::delete(import_info.start_offset, delete_end - import_info.start_offset))
+    }
+
+    /// Remove a specific name from a from-import statement.
+    ///
+    /// If this is the only name, removes the entire import statement.
+    /// Otherwise, removes just this name with proper comma handling.
+    pub fn remove_name_from_import(
+        &self,
+        source: &str,
+        import_info: &ImportInfo,
+        name_to_remove: &str,
+    ) -> ImportManipulationResult<TextEdit> {
+        let ImportStatement::FromImport { module: _, names } = &import_info.statement else {
+            return Err(ImportManipulationError::InvalidSyntax(
+                "remove_name_from_import requires a from-import statement".to_string(),
+            ));
+        };
+
+        // Find the name in the names list
+        let name_index = names
+            .iter()
+            .position(|n| n.name == name_to_remove)
+            .ok_or_else(|| ImportManipulationError::NotFound(name_to_remove.to_string()))?;
+
+        // If this is the only name, remove the entire import
+        if names.len() == 1 {
+            return self.remove_import(source, import_info);
+        }
+
+        // Parse the source to find the exact span of this name
+        let import_text = &source[import_info.start_offset..import_info.end_offset];
+        let name_span = self.calculate_name_removal_span(import_text, names, name_index)?;
+
+        // Calculate the edit
+        let absolute_start = import_info.start_offset + name_span.start_offset;
+        let delete_len = name_span.end_offset - name_span.start_offset;
+
+        Ok(TextEdit::delete(absolute_start, delete_len))
+    }
+
+    /// Calculate the span to remove for a specific name in an import list.
+    ///
+    /// Handles comma placement:
+    /// - First name: remove name and trailing comma/space
+    /// - Middle name: remove leading comma/space and name
+    /// - Last name: remove leading comma/space and name
+    fn calculate_name_removal_span(
+        &self,
+        import_text: &str,
+        names: &[ImportedName],
+        name_index: usize,
+    ) -> ImportManipulationResult<ImportedNameSpan> {
+        let name = &names[name_index];
+        let is_first = name_index == 0;
+        let is_last = name_index == names.len() - 1;
+
+        // Find "import " to locate where names start
+        let import_keyword_pos = import_text
+            .find(" import ")
+            .ok_or_else(|| ImportManipulationError::InvalidSyntax("no 'import' keyword found".to_string()))?;
+        let names_start = import_keyword_pos + " import ".len();
+
+        // Handle parenthesized imports
+        let names_section = &import_text[names_start..];
+        let names_section = names_section.trim_start_matches('(').trim_end_matches(')');
+
+        // Find the position of this specific name
+        let name_pattern = if let Some(alias) = &name.alias {
+            format!("{} as {}", name.name, alias)
+        } else {
+            name.name.clone()
+        };
+
+        // Find all occurrences of each name and map to their positions
+        let mut current_pos = 0;
+        let mut found_pos = None;
+
+        for (idx, part) in names_section.split(',').enumerate() {
+            let trimmed = part.trim();
+            if idx == name_index {
+                // Find where this part starts in the original names_section
+                let part_start = names_section[current_pos..].find(trimmed).unwrap_or(0) + current_pos;
+                found_pos = Some(part_start);
+                break;
+            }
+            // Move past this part and the comma
+            if let Some(comma_pos) = names_section[current_pos..].find(',') {
+                current_pos += comma_pos + 1;
+            }
+        }
+
+        let name_start_in_section = found_pos
+            .ok_or_else(|| ImportManipulationError::NotFound(name.name.clone()))?;
+
+        // Calculate what to remove based on position
+        let (start_offset, end_offset) = if is_first && !is_last {
+            // First name with more after: remove name and trailing comma/space
+            let name_end = name_start_in_section + name_pattern.len();
+            // Find the comma after this name
+            let after_name = &names_section[name_end..];
+            let comma_and_space_len = after_name
+                .find(|c: char| c.is_alphabetic() || c == '_')
+                .unwrap_or(after_name.len());
+            (
+                names_start + name_start_in_section,
+                names_start + name_end + comma_and_space_len,
+            )
+        } else if is_last {
+            // Last name: remove leading comma/space and name
+            let name_end = name_start_in_section + name_pattern.len();
+            // Find how far back to go to include the comma
+            let before_name = &names_section[..name_start_in_section];
+            let comma_pos = before_name.trim_end().rfind(',').unwrap_or(0);
+            (
+                names_start + comma_pos,
+                names_start + name_end,
+            )
+        } else {
+            // Middle name: remove leading comma/space and name
+            let name_end = name_start_in_section + name_pattern.len();
+            let before_name = &names_section[..name_start_in_section];
+            let comma_pos = before_name.rfind(',').unwrap_or(0);
+            (
+                names_start + comma_pos,
+                names_start + name_end,
+            )
+        };
+
+        Ok(ImportedNameSpan {
+            name: name.name.clone(),
+            alias: name.alias.clone(),
+            start_offset,
+            end_offset,
+            is_first,
+            is_last,
+        })
+    }
+
+    /// Find the end of the line containing the given offset.
+    fn find_line_end(&self, source: &str, offset: usize) -> usize {
+        let rest = &source[offset..];
+        match rest.find('\n') {
+            Some(pos) => offset + pos + 1,
+            None => source.len(),
+        }
+    }
+
+    /// Remove a name from a multiline (parenthesized) import.
+    ///
+    /// If the name is on its own line, removes the entire line.
+    /// Handles trailing commas properly.
+    pub fn remove_name_from_multiline_import(
+        &self,
+        source: &str,
+        import_info: &ImportInfo,
+        name_to_remove: &str,
+    ) -> ImportManipulationResult<TextEdit> {
+        let ImportStatement::FromImport { names, .. } = &import_info.statement else {
+            return Err(ImportManipulationError::InvalidSyntax(
+                "remove_name_from_multiline_import requires a from-import statement".to_string(),
+            ));
+        };
+
+        // If only one name, remove entire import
+        if names.len() == 1 {
+            return self.remove_import(source, import_info);
+        }
+
+        // Check if this is actually a multiline import
+        let import_text = &source[import_info.start_offset..import_info.end_offset];
+        let is_multiline = import_text.contains('\n');
+
+        if !is_multiline {
+            // Fall back to single-line removal
+            return self.remove_name_from_import(source, import_info, name_to_remove);
+        }
+
+        // For multiline imports, find the line containing this name
+        let name_index = names
+            .iter()
+            .position(|n| n.name == name_to_remove)
+            .ok_or_else(|| ImportManipulationError::NotFound(name_to_remove.to_string()))?;
+
+        let name = &names[name_index];
+        let name_pattern = if let Some(alias) = &name.alias {
+            format!("{} as {}", name.name, alias)
+        } else {
+            name.name.clone()
+        };
+
+        // Find the line containing this name
+        let mut line_start = import_info.start_offset;
+
+        for line in import_text.lines() {
+            let line_end = line_start + line.len();
+            if source[line_start..line_end].contains(&name_pattern) {
+                // Found the line with this name
+                // If this line only contains this name (plus comma/whitespace), remove the whole line
+                let line_trimmed = line.trim().trim_end_matches(',').trim();
+                if line_trimmed == name_pattern || line_trimmed == format!("{},", name_pattern) {
+                    // Remove the entire line including newline
+                    let actual_line_end = if line_end < source.len() && source.as_bytes()[line_end] == b'\n' {
+                        line_end + 1
+                    } else {
+                        line_end
+                    };
+                    return Ok(TextEdit::delete(line_start, actual_line_end - line_start));
+                }
+                break;
+            }
+            // Move to next line (account for newline)
+            if line_end < import_info.end_offset {
+                line_start = line_end + 1;
+            }
+        }
+
+        // If the name isn't on its own line, use the regular removal logic
+        self.remove_name_from_import(source, import_info, name_to_remove)
     }
 }
 
@@ -1730,5 +2010,231 @@ import os
         let edit = TextEdit::replace(0, 5, "goodbye");
         let result = edit.apply("hello world");
         assert_eq!(result, "goodbye world");
+    }
+
+    #[test]
+    fn test_text_edit_delete() {
+        let edit = TextEdit::delete(5, 6);
+        let result = edit.apply("hello world");
+        assert_eq!(result, "hello");
+    }
+
+    // ============================================================================
+    // ImportRemover tests (Phase E)
+    // ============================================================================
+
+    #[test]
+    fn test_remove_single_name_import() {
+        let remover = ImportRemover::new();
+        let source = "from os import path\n";
+        let stmt = ImportStatement::from_import("os", "path");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 19, // "from os import path"
+            line: 1,
+        };
+
+        let edit = remover.remove_name_from_import(source, &info, "path").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_remove_first_from_multi() {
+        let remover = ImportRemover::new();
+        let source = "from os import path, getcwd\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![ImportedName::new("path"), ImportedName::new("getcwd")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 27, // "from os import path, getcwd"
+            line: 1,
+        };
+
+        let edit = remover.remove_name_from_import(source, &info, "path").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from os import getcwd\n");
+    }
+
+    #[test]
+    fn test_remove_last_from_multi() {
+        let remover = ImportRemover::new();
+        let source = "from os import path, getcwd\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![ImportedName::new("path"), ImportedName::new("getcwd")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 27, // "from os import path, getcwd"
+            line: 1,
+        };
+
+        let edit = remover.remove_name_from_import(source, &info, "getcwd").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from os import path\n");
+    }
+
+    #[test]
+    fn test_remove_middle_from_multi() {
+        let remover = ImportRemover::new();
+        let source = "from os import a, b, c\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![
+                ImportedName::new("a"),
+                ImportedName::new("b"),
+                ImportedName::new("c"),
+            ],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 22, // "from os import a, b, c"
+            line: 1,
+        };
+
+        let edit = remover.remove_name_from_import(source, &info, "b").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from os import a, c\n");
+    }
+
+    #[test]
+    fn test_remove_with_alias() {
+        let remover = ImportRemover::new();
+        let source = "from os import path as p\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![ImportedName::with_alias("path", "p")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 24, // "from os import path as p"
+            line: 1,
+        };
+
+        let edit = remover.remove_name_from_import(source, &info, "path").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_remove_multiline_single() {
+        let remover = ImportRemover::new();
+        let source = "from os import (\n    path,\n    getcwd,\n)\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![ImportedName::new("path"), ImportedName::new("getcwd")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 40, // entire multiline import
+            line: 1,
+        };
+
+        let edit = remover.remove_name_from_multiline_import(source, &info, "path").unwrap();
+        let result = edit.apply(source);
+        // Should remove the "    path,\n" line
+        assert!(result.contains("getcwd"));
+        assert!(!result.contains("path"));
+    }
+
+    #[test]
+    fn test_remove_last_makes_single_line() {
+        // When removing leaves one name, the result should still be valid
+        let remover = ImportRemover::new();
+        let source = "from os import path, getcwd\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![ImportedName::new("path"), ImportedName::new("getcwd")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 27,
+            line: 1,
+        };
+
+        // Remove one, should leave a valid single-name import
+        let edit = remover.remove_name_from_import(source, &info, "getcwd").unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "from os import path\n");
+
+        // Verify it's valid Python syntax (single name, no trailing comma)
+        assert!(!result.contains(','));
+    }
+
+    #[test]
+    fn test_remove_trailing_comma_cleanup() {
+        let remover = ImportRemover::new();
+        // Test that trailing comma after last name is handled
+        let source = "from os import path, getcwd,\n";
+        let stmt = ImportStatement::from_import_names(
+            "os",
+            vec![ImportedName::new("path"), ImportedName::new("getcwd")],
+        );
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 28, // includes trailing comma
+            line: 1,
+        };
+
+        // Remove last name, should handle trailing comma
+        let edit = remover.remove_name_from_import(source, &info, "getcwd").unwrap();
+        let result = edit.apply(source);
+        // Result should not have "getcwd" and should be valid
+        assert!(!result.contains("getcwd"));
+        assert!(result.contains("path"));
+    }
+
+    #[test]
+    fn test_remove_entire_import_statement() {
+        let remover = ImportRemover::new();
+        let source = "import os\nimport sys\n";
+        let stmt = ImportStatement::import("os");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 9, // "import os"
+            line: 1,
+        };
+
+        let edit = remover.remove_import(source, &info).unwrap();
+        let result = edit.apply(source);
+        assert_eq!(result, "import sys\n");
+    }
+
+    #[test]
+    fn test_remove_import_not_found() {
+        let remover = ImportRemover::new();
+        let source = "from os import path\n";
+        let stmt = ImportStatement::from_import("os", "path");
+        let info = ImportInfo {
+            statement: stmt,
+            group: ImportGroupKind::Stdlib,
+            start_offset: 0,
+            end_offset: 19,
+            line: 1,
+        };
+
+        let result = remover.remove_name_from_import(source, &info, "nonexistent");
+        assert!(matches!(result, Err(ImportManipulationError::NotFound(_))));
     }
 }

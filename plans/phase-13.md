@@ -9574,26 +9574,26 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Implement `ImportRemover` struct
-- [ ] Implement `remove_import()` for entire statement removal
-- [ ] Implement `remove_name_from_import()` for single name removal:
+- [x] Implement `ImportRemover` struct
+- [x] Implement `remove_import()` for entire statement removal
+- [x] Implement `remove_name_from_import()` for single name removal:
   - If this is the only name, remove the entire import statement
   - Otherwise, remove just this name with proper comma handling
-- [ ] Implement `calculate_name_removal_span()` for comma handling
-- [ ] Handle multiline imports (parenthesized imports)
+- [x] Implement `calculate_name_removal_span()` for comma handling
+- [x] Handle multiline imports (parenthesized imports)
 
 **Code Location:** `crates/tugtool-python/src/layers/imports.rs`
 
 **Tests:**
 
-- [ ] Unit: `test_remove_single_name_import` - `from os import path` -> removes entire statement
-- [ ] Unit: `test_remove_first_from_multi` - `from os import path, getcwd` -> `from os import getcwd`
-- [ ] Unit: `test_remove_last_from_multi` - `from os import path, getcwd` -> `from os import path`
-- [ ] Unit: `test_remove_middle_from_multi` - `from os import a, b, c` -> `from os import a, c`
-- [ ] Unit: `test_remove_with_alias` - `from os import path as p` removes correctly
-- [ ] Unit: `test_remove_multiline_single` - Removes line from parenthesized import
-- [ ] Unit: `test_remove_last_makes_single_line` - Multi-line with one remaining becomes single-line
-- [ ] Unit: `test_remove_trailing_comma_cleanup` - Trailing commas handled
+- [x] Unit: `test_remove_single_name_import` - `from os import path` -> removes entire statement
+- [x] Unit: `test_remove_first_from_multi` - `from os import path, getcwd` -> `from os import getcwd`
+- [x] Unit: `test_remove_last_from_multi` - `from os import path, getcwd` -> `from os import path`
+- [x] Unit: `test_remove_middle_from_multi` - `from os import a, b, c` -> `from os import a, c`
+- [x] Unit: `test_remove_with_alias` - `from os import path as p` removes correctly
+- [x] Unit: `test_remove_multiline_single` - Removes line from parenthesized import
+- [x] Unit: `test_remove_last_makes_single_line` - Multi-line with one remaining becomes single-line
+- [x] Unit: `test_remove_trailing_comma_cleanup` - Trailing commas handled
 
 ---
 

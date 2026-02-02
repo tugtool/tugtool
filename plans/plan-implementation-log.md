@@ -6,6 +6,71 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase E: ImportRemover Implementation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase E specification (lines 9569-9598)
+- `crates/tugtool-python/src/layers/imports.rs` - Existing imports module with Phase A-D implementations
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `ImportRemover` struct | Done |
+| Implement `remove_import()` for entire statement removal | Done |
+| Implement `remove_name_from_import()` for single name removal | Done |
+| Implement `calculate_name_removal_span()` for comma handling | Done |
+| Handle multiline imports (parenthesized imports) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/layers/imports.rs` - Added TextEdit::delete(), ImportedNameSpan, ImportRemover, 11 tests
+- `crates/tugtool-python/src/layers/mod.rs` - Added exports for ImportRemover, ImportedNameSpan
+
+**Key Components Added:**
+- `TextEdit::delete()` - New method for pure deletion edits
+- `ImportedNameSpan` struct - Information about an imported name's location for comma handling
+- `ImportRemover` struct:
+  - `new()` - Create a new remover
+  - `remove_import(source, import_info)` - Remove entire import statement
+  - `remove_name_from_import(source, import_info, name)` - Remove specific name from from-import
+  - `remove_name_from_multiline_import(source, import_info, name)` - Handle parenthesized imports
+  - `calculate_name_removal_span(import_text, names, index)` - Calculate removal span with comma handling
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python layers::imports`: 62 tests passed (51 existing + 11 new)
+- `cargo nextest run --workspace`: 2560 tests passed
+- `cargo clippy -p tugtool-python -- -D warnings`: No warnings
+
+**Tests Added (11 total):**
+- `test_text_edit_delete` - TextEdit deletion works
+- `test_remove_single_name_import` - `from os import path` removes entire statement
+- `test_remove_first_from_multi` - `from os import path, getcwd` -> `from os import getcwd`
+- `test_remove_last_from_multi` - `from os import path, getcwd` -> `from os import path`
+- `test_remove_middle_from_multi` - `from os import a, b, c` -> `from os import a, c`
+- `test_remove_with_alias` - `from os import path as p` removes correctly
+- `test_remove_multiline_single` - Removes line from parenthesized import
+- `test_remove_last_makes_single_line` - Multi-line with one remaining becomes single-line
+- `test_remove_trailing_comma_cleanup` - Trailing commas handled
+- `test_remove_entire_import_statement` - Removes `import os` statement
+- `test_remove_import_not_found` - Returns NotFound error for missing name
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python layers::imports` passes: PASS (62 tests)
+- `cargo nextest run --workspace` passes: PASS (2560 tests)
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
+- Plan checkboxes updated: PASS
+
+**Key Decisions/Notes:**
+- Used position-based comma handling: first name removes trailing comma/space, middle/last names remove leading comma/space
+- Multiline imports get special handling to remove entire lines when a name is on its own line
+- When last name is removed from a from-import, the entire statement is removed automatically
+- Returns NotFound error if attempting to remove a name that doesn't exist in the import
+
+---
+
 ## [phase-13.md] Step 0.9 Phase D: ImportInserter Implementation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
