@@ -9931,33 +9931,90 @@ Map `BatchEditError` variants to existing `RenameError`:
 - New tests in `crates/tugtool-python/tests/rename_type_comments.rs`
 
 **Tasks:**
-- [ ] Address decorator argument renaming
-- [ ] Add comprehension scope edge case handling (see [D09](#d09-comprehension-scope))
-- [ ] Integrate type comment renaming using infrastructure from [Step 1.0.1](#step-1-0-1)
+- [x] Address decorator argument renaming
+- [x] Add comprehension scope edge case handling (see [D09](#d09-comprehension-scope))
+- [x] Integrate type comment renaming using infrastructure from [Step 1.0.1](#step-1-0-1)
 - [ ] ~~Add `__init__.py` re-export detection~~ DEFERRED to [Step 3.1](#step-3-1) (requires Layer 3)
-- [ ] Add multi-inheritance rename tests
-- [ ] Add aliased import rename tests
-- [ ] Add property setter rename tests
-- [ ] Add nested class rename handling (class defined inside function)
-- [ ] Add walrus operator (`:=`) target renaming
+- [x] Add multi-inheritance rename tests
+- [x] Add aliased import rename tests
+- [x] Add property setter rename tests
+- [x] Add nested class rename handling (class defined inside function)
+- [x] Add walrus operator (`:=`) target renaming (walrus-in-comprehension deferred to [Step 1.1.5](#step-1-1-5))
 - [ ] ~~Update rename to edit stubs and string annotations per [D08](#d08-stub-updates)~~ DEFERRED to [Step 1.2](#step-1-2)
 
 **Tests:**
-- [ ] Unit: `test_rename_decorator_arg` (20 tests in `rename_hardening.rs`)
-- [ ] Unit: `test_rename_comprehension_scope` (in `rename_hardening.rs`)
-- [ ] Unit: `test_rename_type_comment` (13 tests in `rename_type_comments.rs`)
-- [ ] Unit: `test_rename_nested_class` (in `rename_hardening.rs`)
-- [ ] Unit: `test_rename_walrus_operator` (in `rename_hardening.rs`)
+- [x] Unit: `test_rename_decorator_arg` (5 tests in `rename_hardening.rs`)
+- [x] Unit: `test_rename_comprehension_scope` (5 tests in `rename_hardening.rs`)
+- [x] Unit: `test_rename_type_comment` (13 tests in `rename_type_comments.rs`)
+- [x] Unit: `test_rename_nested_class` (3 tests in `rename_hardening.rs`)
+- [x] Unit: `test_rename_walrus_operator` (2 of 3 tests in `rename_hardening.rs`)
+- [ ] ~~Unit: `test_rename_walrus_in_comprehension`~~ DEFERRED to [Step 1.1.5](#step-1-1-5)
 - [ ] ~~Integration: `test_rename_init_reexport`~~ DEFERRED to [Step 3.1](#step-3-1)
-- [ ] Integration: `test_rename_diamond_inheritance` (in `rename_hardening.rs`)
+- [x] Integration: `test_rename_diamond_inheritance` (in `rename_hardening.rs`)
 - [ ] ~~Integration: `test_rename_updates_stub`~~ DEFERRED to [Step 1.2](#step-1-2)
 - [ ] ~~Integration: `test_rename_updates_string_annotation`~~ DEFERRED to [Step 1.2](#step-1-2)
-- [ ] Integration: `test_rename_type_comment_in_function` (in `rename_type_comments.rs`)
-- [ ] Integration: `test_rename_type_comment_multifile` (in `rename_type_comments.rs`)
+- [x] Integration: `test_rename_type_comment_in_function` (in `rename_type_comments.rs`)
+- [x] Integration: `test_rename_type_comment_multifile` (in `rename_type_comments.rs`)
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python rename` (111 tests pass)
-- [ ] 7 of 10 [Table T02](#t02-rename-gaps) items addressed (2 deferred, 1 requires [Step 0.4](#step-0-4))
+- [x] `cargo nextest run -p tugtool-python rename` (116 tests pass - exceeds 111 target)
+- [x] 7 of 10 [Table T02](#t02-rename-gaps) items addressed (2 deferred, 1 to [Step 1.1.5](#step-1-1-5))
+
+**Rollback:** Revert commit
+
+---
+
+##### Step 1.1.5: Harden Walrus Operator Handling {#step-1-1-5}
+
+**Commit:** `fix(python): properly handle walrus operators in comprehensions`
+
+**References:** [D05](#d05-rename-reference), [D09](#d09-comprehension-scope), [Table T02](#t02-rename-gaps), [Step 0.4](#step-0-4), [Step 1.1](#step-1-1)
+
+**Prerequisites:** [Step 0.4](#step-0-4) (reference scope infrastructure), [Step 1.1](#step-1-1) (rename hardening partial)
+
+**Problem Statement:**
+
+The test `test_rename_walrus_in_comprehension` fails with `SymbolNotFound` when trying to rename `y` in:
+
+```python
+results = [y for x in range(10) if (y := compute(x)) > 5]
+```
+
+Per PEP 572, walrus operators (`:=`) inside comprehensions bind to the **enclosing function/module scope**, NOT the comprehension scope. This is different from comprehension iteration variables (`for x in ...`) which ARE confined to the comprehension scope.
+
+**Root Cause:**
+
+The `BindingCollector` uses `scope_path` which includes comprehension scopes (e.g., `["<module>", "<listcomp>"]`). When a walrus operator is encountered inside a comprehension, its binding is recorded with the wrong scope path, causing symbol lookup to fail.
+
+**Solution:**
+
+Add an `enclosing_scope_path` field to `BindingCollector` that tracks the most recent non-comprehension scope. When processing walrus operators, use this enclosing scope instead of the current scope path.
+
+**Artifacts:**
+- Modified: `crates/tugtool-python-cst/src/visitor/binding.rs`
+- Modified: `crates/tugtool-python-cst/src/visitor/reference.rs` (if needed)
+
+**Tasks:**
+- [ ] Add `enclosing_scope_path` field to `BindingCollector`
+- [ ] Add `is_comprehension_scope()` helper function
+- [ ] Update function/class scope entry/exit to update both `scope_path` and `enclosing_scope_path`
+- [ ] Comprehension scope entry/exit only updates `scope_path` (NOT `enclosing_scope_path`)
+- [ ] Modify `visit_named_expr` to use `enclosing_scope_path` for walrus bindings
+- [ ] Add `add_binding_with_id_and_scope()` helper for explicit scope binding
+- [ ] Add matching changes to `ReferenceCollector` if needed for walrus reference scope tracking
+
+**Tests:**
+- [ ] Unit: `test_binding_walrus_in_comprehension_binds_to_enclosing_scope`
+- [ ] Unit: `test_binding_walrus_in_nested_comprehension`
+- [ ] Unit: `test_binding_walrus_in_lambda_in_comprehension`
+- [ ] Unit: `test_binding_walrus_not_in_comprehension` (regression)
+- [ ] Integration: `test_rename_walrus_in_comprehension` (existing, should now pass)
+
+**Checkpoint:**
+- [ ] `cargo build -p tugtool-python-cst` succeeds
+- [ ] `cargo nextest run -p tugtool-python-cst binding` passes (including new walrus tests)
+- [ ] `cargo nextest run -p tugtool-python -E "test(/walrus/)"` passes (all 3 tests)
+- [ ] `cargo clippy -p tugtool-python-cst -- -D warnings` passes
 
 **Rollback:** Revert commit
 

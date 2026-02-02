@@ -44,6 +44,9 @@ use crate::cst_bridge;
 // Native analyze_files for multi-file analysis
 use crate::analyzer::{analyze_files, FileAnalysis, FileAnalysisBundle, Scope, ScopeId};
 
+// Type comment infrastructure for renaming type references in comments
+use tugtool_python_cst::TypeCommentParser;
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -732,7 +735,7 @@ pub fn rename(
     // This handles aliased imports: `from .utils import process_data as proc`
     // The reference to `proc()` resolves to `process_data`, but the span points to "proc",
     // which should NOT be renamed (only the import site "process_data" should change).
-    let mut edits_by_file: HashMap<String, Vec<(Span, &str)>> = HashMap::new();
+    let mut edits_by_file: HashMap<String, Vec<(Span, String)>> = HashMap::new();
     let old_name = &symbol.name;
     for (file_id, span) in &all_edits {
         let file = store
@@ -752,7 +755,7 @@ pub fn rename(
                     edits_by_file
                         .entry(file.path.clone())
                         .or_default()
-                        .push((*span, new_name));
+                        .push((*span, new_name.to_string()));
                 }
             }
         }
@@ -776,7 +779,55 @@ pub fn rename(
                 .iter()
                 .any(|(s, _)| s.start == span.start && s.end == span.end)
             {
-                file_edits.push((span, new_name));
+                file_edits.push((span, new_name.to_string()));
+            }
+        }
+    }
+
+    // Collect type comment edits - rename type references in `# type: ...` comments
+    // Type comments may reference the symbol being renamed (e.g., `# type: Handler`)
+    for type_comment in store.type_comments() {
+        // Skip type ignore comments - they have no type references
+        if type_comment.kind == tugtool_core::facts::TypeCommentKind::Ignore {
+            continue;
+        }
+
+        // Check if this type comment contains the old name
+        // We need to get the original comment text from the file
+        let file = store
+            .file(type_comment.file_id)
+            .ok_or_else(|| RenameError::AnalyzerError {
+                message: "file not found for type comment".to_string(),
+            })?;
+
+        if let Some(content) = file_contents.get(&file.path) {
+            let start = type_comment.span.start;
+            let end = type_comment.span.end;
+            if end <= content.len() {
+                let comment_text = &content[start..end];
+
+                // Use TypeCommentParser to check if the comment contains the old name
+                // and to generate the renamed version
+                if let Ok(contains) = TypeCommentParser::contains_name(comment_text, old_name) {
+                    if contains {
+                        if let Ok(renamed_comment) =
+                            TypeCommentParser::rename(comment_text, old_name, new_name)
+                        {
+                            // Only add the edit if the renamed text is different
+                            if renamed_comment != comment_text {
+                                let file_edits =
+                                    edits_by_file.entry(file.path.clone()).or_default();
+                                // Check for duplicate span
+                                if !file_edits.iter().any(|(s, _)| {
+                                    s.start == type_comment.span.start
+                                        && s.end == type_comment.span.end
+                                }) {
+                                    file_edits.push((type_comment.span, renamed_comment));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
