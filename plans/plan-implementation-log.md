@@ -6,6 +6,53 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8 Phase D: Document and Organize Python-Specific Types | COMPLETE | 2026-02-01
+
+**Completed:** 2026-02-01
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase D specification (lines 8266-8395)
+- `crates/tugtool-core/src/facts/mod.rs` - DynamicPatternKind, TypeCommentKind, DynamicPattern, TypeCommentFact definitions
+- `crates/tugtool-python/src/lib.rs` - existing re-export patterns
+- `crates/tugtool-python/src/analyzer.rs` - convert_dynamic_pattern_kind, convert_type_comment_kind functions
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| D.1: Add Python-specific documentation to types in core | Done |
+| D.2: Add convenience re-exports in tugtool-python/src/lib.rs | Done |
+| D.3: Add exhaustiveness tests for conversion functions | Done |
+| D.4: Verify re-exports work by running tests | Done |
+
+**Files Modified:**
+- `crates/tugtool-core/src/facts/mod.rs`:
+  - Added Python-specific note to `DynamicPatternKind` doc comment
+  - Added Python-specific note to `TypeCommentKind` doc comment
+  - Added Python-specific note to `DynamicPattern` doc comment
+  - Added Python-specific note to `TypeCommentFact` doc comment
+- `crates/tugtool-python/src/lib.rs`:
+  - Added re-exports for DynamicPattern, DynamicPatternId, DynamicPatternKind
+  - Added re-exports for TypeCommentFact, TypeCommentId, TypeCommentKind
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Added `conversion_exhaustiveness_tests` module with 2 tests
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python conversion_exhaustiveness`: 2 tests passed
+- `cargo nextest run --workspace`: 2473 tests passed
+
+**Checkpoints Verified:**
+- Documentation added to all four types in core: PASS
+- Re-exports added to tugtool-python/src/lib.rs: PASS
+- Exhaustiveness tests added and passing: PASS
+- `cargo nextest run --workspace` passes: PASS
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+
+**Key Decisions/Notes:**
+Phase D was originally planned to move Python-specific types from core to tugtool-python. Architectural investigation revealed the current design is intentionally correct: duplicate types in CST and Core create clean layer boundaries with explicit conversion functions. The phase was reframed to document and organize the types instead of moving them, avoiding architectural risk while achieving the original intent of clarifying Python-specificity.
+
+---
+
 ## [phase-13.md] Step 0.8 Phase C: Add refs_by_scope Index | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

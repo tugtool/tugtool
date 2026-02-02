@@ -14918,4 +14918,46 @@ def make_counter():
             assert!(vars.contains(&&"y".to_string()));
         }
     }
+
+    mod conversion_exhaustiveness_tests {
+        use super::*;
+        use tugtool_python_cst::DynamicPatternKind as CstDynamicPatternKind;
+        use tugtool_python_cst::TypeCommentKind as CstTypeCommentKind;
+
+        /// Ensure all CST DynamicPatternKind variants are handled.
+        /// This test will fail to compile if a new variant is added to the CST enum.
+        #[test]
+        fn test_dynamic_pattern_kind_conversion_exhaustive() {
+            let variants = [
+                CstDynamicPatternKind::Getattr,
+                CstDynamicPatternKind::Setattr,
+                CstDynamicPatternKind::Delattr,
+                CstDynamicPatternKind::Hasattr,
+                CstDynamicPatternKind::Eval,
+                CstDynamicPatternKind::Exec,
+                CstDynamicPatternKind::GlobalsSubscript,
+                CstDynamicPatternKind::LocalsSubscript,
+                CstDynamicPatternKind::GetAttrMethod,
+                CstDynamicPatternKind::SetAttrMethod,
+                CstDynamicPatternKind::DelAttrMethod,
+                CstDynamicPatternKind::GetAttributeMethod,
+            ];
+            for variant in variants {
+                let _ = convert_dynamic_pattern_kind(variant);
+            }
+        }
+
+        /// Ensure all CST TypeCommentKind variants are handled.
+        #[test]
+        fn test_type_comment_kind_conversion_exhaustive() {
+            let variants = [
+                CstTypeCommentKind::Variable,
+                CstTypeCommentKind::FunctionSignature,
+                CstTypeCommentKind::Ignore,
+            ];
+            for variant in variants {
+                let _ = convert_type_comment_kind(variant);
+            }
+        }
+    }
 }

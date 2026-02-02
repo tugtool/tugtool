@@ -59,3 +59,10 @@ pub use analyzer::{PythonAdapter, PythonAnalyzerOptions};
 
 // Re-export type narrowing for easy access
 pub use type_narrowing::{build_narrowing_context, type_of_with_narrowing, NarrowingContext};
+
+// Re-export Python-specific facts types from core for convenience.
+// These types are stored in tugtool-core but are semantically Python-specific.
+pub use tugtool_core::facts::{
+    DynamicPattern, DynamicPatternId, DynamicPatternKind, TypeCommentFact, TypeCommentId,
+    TypeCommentKind,
+};

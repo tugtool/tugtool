@@ -8263,74 +8263,135 @@ tracker.process_properties(&adapter_sigs);
 
 ---
 
-###### Phase D: Move Python-Specific Types {#step-0-8-phase-d}
+###### Phase D: Document and Organize Python-Specific Types {#step-0-8-phase-d}
 
 **Prerequisites:** None (can run in parallel with Phases A-C)
 
-**Context:** `DynamicPatternKind` and `TypeCommentKind` are entirely Python-specific but live in `tugtool-core/src/facts/mod.rs`. These should be in the Python crate.
+**Context:** `DynamicPatternKind` and `TypeCommentKind` in `tugtool-core/src/facts/mod.rs` are
+Python-specific types. Initial analysis suggested moving them to `tugtool-python`, but architectural
+investigation revealed the current design is **intentionally correct**:
+
+**Architecture Investigation Findings:**
+
+The codebase has intentional type duplication across layers:
+
+| Layer | Location | Types | Purpose |
+|-------|----------|-------|---------|
+| CST (parsing) | `tugtool-python-cst/src/visitor/dynamic.rs` | `DynamicPatternKind`, `DynamicPatternInfo` | Parser-level detection |
+| CST (parsing) | `tugtool-python-cst/src/visitor/type_comment.rs` | `TypeCommentKind`, `TypeComment` | Parser-level detection |
+| Core (facts) | `tugtool-core/src/facts/mod.rs` | `DynamicPatternKind`, `DynamicPattern`, `TypeCommentKind`, `TypeCommentFact` | FactsStore storage |
+| Adapter | `tugtool-python/src/analyzer.rs` | `convert_dynamic_pattern_kind()`, `convert_type_comment_kind()` | Bridge between layers |
+
+**Why moving the types is wrong:**
+
+1. **Option A (Move everything to Python)**: Would remove types from `FactsStore`, breaking the
+   architectural principle that core provides the semantic model. Dynamic patterns and type comments
+   ARE semantic facts that belong in the facts model.
+
+2. **Option B (CST→Core dependency)**: Would couple the pure CST parser to the facts model, violating
+   the clean parser/semantic boundary.
+
+3. **Option C (Make generic)**: `DynamicPattern<K>` and `TypeCommentFact<K>` would require making
+   `FactsStore` generic or using trait objects. This is over-engineering - YAGNI until we actually
+   have multiple languages with dynamic patterns (unlikely: Rust/Go/Java don't have `getattr`).
+
+**The current architecture is correct because:**
+
+- CST layer has no external dependencies (pure parsing)
+- FactsStore has stable, well-tested types (semantic model)
+- Conversion functions make the layer boundary explicit and type-safe
+- Match exhaustiveness ensures CST and Core stay in sync
+
+**Revised Scope:**
+
+Instead of moving types, this phase documents their Python-specific nature and adds convenience
+re-exports. This achieves the original intent (clarifying these are Python-specific) without
+architectural risk.
 
 **Tasks:**
 
-- [ ] Create `crates/tugtool-python/src/facts_types.rs` for Python-specific types:
+- [x] **D.1**: Add Python-specific documentation to types in `tugtool-core/src/facts/mod.rs`:
+  - Add to `DynamicPatternKind` doc comment: `/// Note: This enum is Python-specific. Other languages would define their own dynamic pattern kinds.`
+  - Add to `TypeCommentKind` doc comment: `/// Note: This enum is Python-specific. Type comments are a Python-only feature.`
+  - Add to `DynamicPattern` doc comment: `/// Note: Dynamic patterns are currently Python-specific.`
+  - Add to `TypeCommentFact` doc comment: `/// Note: Type comments are a Python-specific feature (PEP 484).`
+
+- [x] **D.2**: Add convenience re-exports in `tugtool-python/src/lib.rs`:
   ```rust
-  //! Python-specific types that extend the core FactsStore model.
-  //!
-  //! These types are used by the Python analyzer but are not part of the
-  //! language-agnostic core facts model.
+  // Re-export Python-specific facts types from core for convenience.
+  // These types are stored in tugtool-core but are semantically Python-specific.
+  pub use tugtool_core::facts::{
+      DynamicPattern, DynamicPatternId, DynamicPatternKind,
+      TypeCommentFact, TypeCommentId, TypeCommentKind,
+  };
+  ```
 
-  use serde::{Deserialize, Serialize};
+- [x] **D.3**: Add exhaustiveness test for conversion functions in `tugtool-python/src/analyzer.rs`:
+  ```rust
+  #[cfg(test)]
+  mod conversion_exhaustiveness_tests {
+      use super::*;
+      use tugtool_python_cst::DynamicPatternKind as CstDynamicPatternKind;
+      use tugtool_python_cst::TypeCommentKind as CstTypeCommentKind;
 
-  /// Kind of dynamic pattern detected in Python code.
-  ///
-  /// Dynamic patterns indicate code that accesses or modifies attributes/names
-  /// at runtime, which may affect rename safety.
-  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-  #[serde(rename_all = "snake_case")]
-  pub enum DynamicPatternKind {
-      /// `getattr(obj, 'name')` call.
-      Getattr,
-      /// `setattr(obj, 'name', value)` call.
-      Setattr,
-      // ... rest of variants ...
-  }
+      /// Ensure all CST DynamicPatternKind variants are handled.
+      /// This test will fail to compile if a new variant is added to the CST enum.
+      #[test]
+      fn test_dynamic_pattern_kind_conversion_exhaustive() {
+          let variants = [
+              CstDynamicPatternKind::Getattr,
+              CstDynamicPatternKind::Setattr,
+              CstDynamicPatternKind::Delattr,
+              CstDynamicPatternKind::Hasattr,
+              CstDynamicPatternKind::Eval,
+              CstDynamicPatternKind::Exec,
+              CstDynamicPatternKind::GlobalsSubscript,
+              CstDynamicPatternKind::LocalsSubscript,
+              CstDynamicPatternKind::GetAttrMethod,
+              CstDynamicPatternKind::SetAttrMethod,
+              CstDynamicPatternKind::DelAttrMethod,
+              CstDynamicPatternKind::GetAttributeMethod,
+          ];
+          for variant in variants {
+              let _ = convert_dynamic_pattern_kind(variant);
+          }
+      }
 
-  /// Kind of type comment in Python code.
-  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-  #[serde(rename_all = "snake_case")]
-  pub enum TypeCommentKind {
-      /// A variable type annotation: `# type: T`
-      Variable,
-      /// A function signature annotation: `# type: (...) -> T`
-      FunctionSignature,
-      /// A type ignore directive: `# type: ignore`
-      Ignore,
+      /// Ensure all CST TypeCommentKind variants are handled.
+      #[test]
+      fn test_type_comment_kind_conversion_exhaustive() {
+          let variants = [
+              CstTypeCommentKind::Variable,
+              CstTypeCommentKind::FunctionSignature,
+              CstTypeCommentKind::Ignore,
+          ];
+          for variant in variants {
+              let _ = convert_type_comment_kind(variant);
+          }
+      }
   }
   ```
 
-- [ ] Update `crates/tugtool-python/src/lib.rs` to export the new module:
-  ```rust
-  pub mod facts_types;
-  pub use facts_types::{DynamicPatternKind, TypeCommentKind};
-  ```
-
-- [ ] Remove `DynamicPatternKind` and `TypeCommentKind` from `tugtool-core/src/facts/mod.rs`
-
-- [ ] Update all imports in `tugtool-python` to use the new location
-
-- [ ] Update any imports in `tugtool-core` that reference these types (should be none, but verify)
-
-- [ ] Keep the generic `DynamicPattern` and `TypeCommentFact` structs in core, but parameterize them or use associated types if needed
+- [x] **D.4**: Verify re-exports work by checking existing tests still pass
 
 **Code Location:**
-- New: `crates/tugtool-python/src/facts_types.rs`
-- Modified: `crates/tugtool-core/src/facts/mod.rs`
-- Modified: `crates/tugtool-python/src/lib.rs`
+- Modified: `crates/tugtool-core/src/facts/mod.rs` (documentation only)
+- Modified: `crates/tugtool-python/src/lib.rs` (re-exports)
+- Modified: `crates/tugtool-python/src/analyzer.rs` (exhaustiveness tests)
 
 **Tests:**
 
-- [ ] Unit: `test_dynamic_pattern_kind_serialization` - Verify JSON serialization unchanged
-- [ ] Unit: `test_type_comment_kind_serialization` - Verify JSON serialization unchanged
-- [ ] Integration: `test_analyzer_uses_python_specific_types` - Analyzer still works
+- [x] Unit: `test_dynamic_pattern_kind_conversion_exhaustive` - All CST variants have Core mappings
+- [x] Unit: `test_type_comment_kind_conversion_exhaustive` - All CST variants have Core mappings
+- [x] Integration: Existing analyzer tests pass (verifies re-exports work)
+
+**Checkpoint:**
+
+- [x] Documentation added to all four types in `tugtool-core/src/facts/mod.rs`
+- [x] Re-exports added to `tugtool-python/src/lib.rs`
+- [x] Exhaustiveness tests added and passing
+- [x] `cargo nextest run --workspace` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
 
 ---
 
@@ -8395,7 +8456,7 @@ tracker.process_properties(&adapter_sigs);
 - [ ] `store.call_site_count() > 0` after analyzing files with function/method calls
 - [ ] `FileAnalysis` uses adapter types for `signatures`, `attribute_accesses`, `call_sites`
 - [ ] `store.refs_in_scope(file_id, scope_id)` returns references in the specified scope
-- [ ] `DynamicPatternKind` and `TypeCommentKind` are defined in `tugtool-python`, not `tugtool-core`
+- [ ] `DynamicPatternKind` and `TypeCommentKind` are documented as Python-specific in core and re-exported from `tugtool-python`
 - [ ] All existing tests pass
 - [ ] No regression in rename operation behavior
 

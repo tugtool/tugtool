@@ -494,6 +494,9 @@ pub enum ScopeKind {
 ///
 /// Dynamic patterns indicate code that accesses or modifies attributes/names
 /// at runtime, which may affect rename safety.
+///
+/// Note: This enum is Python-specific. Other languages would define their own
+/// dynamic pattern kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DynamicPatternKind {
@@ -527,6 +530,8 @@ pub enum DynamicPatternKind {
 ///
 /// Type comments are legacy PEP 484-style annotations used in Python 2/3
 /// compatible code.
+///
+/// Note: This enum is Python-specific. Type comments are a Python-only feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TypeCommentKind {
@@ -1467,6 +1472,8 @@ impl IsInstanceCheck {
 ///
 /// Dynamic patterns indicate code that accesses or modifies attributes/names
 /// at runtime, which may affect rename safety.
+///
+/// Note: Dynamic patterns are currently Python-specific.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DynamicPattern {
     /// Unique identifier for this dynamic pattern.
@@ -1514,6 +1521,8 @@ impl DynamicPattern {
 ///
 /// Type comments (`# type: Foo`) are legacy PEP 484-style annotations used in
 /// Python 2/3 compatible code.
+///
+/// Note: Type comments are a Python-specific feature (PEP 484).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeCommentFact {
     /// Unique identifier for this type comment.
