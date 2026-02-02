@@ -18,5 +18,8 @@ tracing = "0.1"
 walkdir = "2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
+[dev-dependencies]
+insta = { version = "1.40", features = ["yaml"] }
+
 [lints]
 workspace = true

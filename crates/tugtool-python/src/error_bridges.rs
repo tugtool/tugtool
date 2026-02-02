@@ -83,9 +83,9 @@ impl From<RenameError> for TugError {
                 // LookupError variants map to TugError variants
                 use crate::lookup::LookupError;
                 match lookup_err {
-                    LookupError::SymbolNotFound { file, line, col } => {
-                        TugError::SymbolNotFound { file, line, col }
-                    }
+                    LookupError::SymbolNotFound {
+                        file, line, col, ..
+                    } => TugError::SymbolNotFound { file, line, col },
                     LookupError::AmbiguousSymbol { candidates } => {
                         let symbols = candidates
                             .into_iter()

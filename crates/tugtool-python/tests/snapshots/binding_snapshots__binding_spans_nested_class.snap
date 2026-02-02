@@ -1,0 +1,65 @@
+---
+source: crates/tugtool-python/tests/binding_snapshots.rs
+assertion_line: 84
+expression: bindings
+---
+- name: Outer
+  kind: Class
+  scope_path:
+    - "<module>"
+  span_start: 23
+  span_end: 28
+- name: x
+  kind: Variable
+  scope_path:
+    - "<module>"
+    - Outer
+  span_start: 34
+  span_end: 35
+- name: Inner
+  kind: Class
+  scope_path:
+    - "<module>"
+    - Outer
+  span_start: 51
+  span_end: 56
+- name: y
+  kind: Variable
+  scope_path:
+    - "<module>"
+    - Outer
+    - Inner
+  span_start: 66
+  span_end: 67
+- name: method
+  kind: Function
+  scope_path:
+    - "<module>"
+    - Outer
+    - Inner
+  span_start: 85
+  span_end: 91
+- name: self
+  kind: Parameter
+  scope_path:
+    - "<module>"
+    - Outer
+    - Inner
+    - method
+  span_start: 92
+  span_end: 96
+- name: outer_method
+  kind: Function
+  scope_path:
+    - "<module>"
+    - Outer
+  span_start: 134
+  span_end: 146
+- name: self
+  kind: Parameter
+  scope_path:
+    - "<module>"
+    - Outer
+    - outer_method
+  span_start: 147
+  span_end: 151

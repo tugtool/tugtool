@@ -6,32 +6,58 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
-## [phase-13.md] Step 1.1.2: Lookup Observability Infrastructure | PLANNED | 2026-02-02
+## [phase-13.md] Step 1.1.2: Lookup Observability Infrastructure | COMPLETE | 2026-02-02
 
-**Completed:** 2026-02-02 (planning only)
+**Completed:** 2026-02-02
 
 **References Reviewed:**
 - `plans/phase-13.md` - Step 1.1.2 (lines 9967-10030)
+- `crates/tugtool-python/src/lookup.rs` - Existing lookup implementation
+- `crates/tugtool-core/src/types.rs` - Location struct definition
+- `crates/tugtool-core/src/text.rs` - position_to_byte_offset_str function
 - `docs/reports/walrus-pipeline-analysis.md` - Analysis report that motivated this step
 
 **Implementation Progress:**
 
 | Task | Status |
 |------|--------|
-| Add step to phase-13.md plan | Done |
-| Implementation of step tasks | Pending |
+| Add `assert_location_char()` test helper | Done |
+| Enhance `SymbolNotFound` error with diagnostic fields | Done |
+| Add optional lookup trace mode | Done |
+| Add span snapshot tests for critical binding types | Done |
 
 **Files Created:**
-- `docs/reports/walrus-pipeline-analysis.md` - Comprehensive pipeline analysis report identifying infrastructure gaps
+- `crates/tugtool-python/src/test_utils.rs` - Test utility module with `assert_location_char()` helper
+- `crates/tugtool-python/tests/binding_snapshots.rs` - Snapshot tests for binding spans
+- `crates/tugtool-python/tests/snapshots/binding_snapshots__binding_spans_walrus.snap` - Walrus operator binding spans
+- `crates/tugtool-python/tests/snapshots/binding_snapshots__binding_spans_comprehension.snap` - Comprehension binding spans
+- `crates/tugtool-python/tests/snapshots/binding_snapshots__binding_spans_nested_class.snap` - Nested class binding spans
 
 **Files Modified:**
-- `plans/phase-13.md` - Added Step 1.1.2 between Step 1.1 and Step 1.1.5
+- `crates/tugtool-python/src/lib.rs` - Added `test_utils` module (cfg(test))
+- `crates/tugtool-python/src/lookup.rs` - Enhanced `SymbolNotFound` error with diagnostic fields, added `LookupTrace`, `SpanCheck`, `find_symbol_at_location_traced()`
+- `crates/tugtool-python/src/error_bridges.rs` - Updated pattern match for new SymbolNotFound fields
+- `crates/tugtool-python/Cargo.toml` - Added insta dev-dependency with yaml feature
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python test_assert_location`: 3 tests passed
+- `cargo nextest run -p tugtool-python test_symbol_not_found`: 1 test passed
+- `cargo nextest run -p tugtool-python -E "test(/binding_spans/)"`: 3 snapshot tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python test_assert_location` passes: PASS
+- `cargo nextest run -p tugtool-python test_symbol_not_found` passes: PASS
+- `cargo nextest run -p tugtool-python binding_snapshots` passes: PASS
+- `cargo clippy -p tugtool-python -- -D warnings` passes: PASS
 
 **Key Decisions/Notes:**
-- Step created to address debugging difficulties encountered during Step 1.1.5
-- The walrus test failure was caused by an off-by-one column error, but SymbolNotFound provided no diagnostic info
-- Step will add: `assert_location_char()` helper, enhanced error diagnostics, optional trace mode, span snapshot tests
-- Positioned before Step 1.1.5 in the plan to reflect infrastructure improvements that would have helped
+- Step was originally created as PLANNED to address debugging difficulties from Step 1.1.5
+- Now fully implemented with all 4 infrastructure improvements
+- `assert_location_char()` catches location specification errors at test time with clear messages
+- Enhanced `SymbolNotFound` includes byte_offset, char_at_offset, and nearest_symbol for diagnostics
+- `LookupTrace` and `find_symbol_at_location_traced()` capture detailed span containment checks
+- Span snapshot tests using insta YAML format detect binding span regressions
 
 ---
 

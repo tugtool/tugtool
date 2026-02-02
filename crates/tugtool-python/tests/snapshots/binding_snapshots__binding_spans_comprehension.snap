@@ -1,0 +1,29 @@
+---
+source: crates/tugtool-python/tests/binding_snapshots.rs
+assertion_line: 63
+expression: bindings
+---
+- name: squares
+  kind: Variable
+  scope_path:
+    - "<module>"
+  span_start: 25
+  span_end: 32
+- name: pairs
+  kind: Variable
+  scope_path:
+    - "<module>"
+  span_start: 62
+  span_end: 67
+- name: filtered
+  kind: Variable
+  scope_path:
+    - "<module>"
+  span_start: 115
+  span_end: 123
+- name: gen
+  kind: Variable
+  scope_path:
+    - "<module>"
+  span_start: 168
+  span_end: 171

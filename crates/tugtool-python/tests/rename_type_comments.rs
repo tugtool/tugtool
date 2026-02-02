@@ -73,7 +73,11 @@ x = None  # type: Handler
 
     // Verify the patch contains the expected renames
     let patch = &output.patch.unified_diff;
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -105,7 +109,11 @@ handlers = []  # type: List[Handler]
     let patch = &output.patch.unified_diff;
 
     // Should rename both the class definition and the type comment
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -136,7 +144,11 @@ x = None  # type: Union[Handler, str]
     let output = result.unwrap();
     let patch = &output.patch.unified_diff;
 
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -166,7 +178,11 @@ mapping = {}  # type: Dict[Handler, Handler]
     let patch = &output.patch.unified_diff;
 
     // Both occurrences should be renamed
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -196,7 +212,11 @@ def process(x):  # type: (Handler) -> str
     let output = result.unwrap();
     let patch = &output.patch.unified_diff;
 
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -227,7 +247,11 @@ y = Handler()
     let patch = &output.patch.unified_diff;
 
     // Class definition should be renamed
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -258,7 +282,11 @@ x = None  # type: module.Handler
     let patch = &output.patch.unified_diff;
 
     // The local class should be renamed
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -288,7 +316,11 @@ x = None  # type:   Handler
     let patch = &output.patch.unified_diff;
 
     // Check that the class is renamed
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 // ============================================================================
@@ -323,7 +355,11 @@ def process():
     let output = result.unwrap();
     let patch = &output.patch.unified_diff;
 
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -352,7 +388,11 @@ fn test_rename_type_comment_in_method() {
     let output = result.unwrap();
     let patch = &output.patch.unified_diff;
 
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 // ============================================================================
@@ -371,10 +411,8 @@ fn test_rename_type_comment_multifile() {
 x = None  # type: Handler
 "#;
 
-    let (workspace, files) = setup_workspace(&[
-        ("module.py", module_code),
-        ("consumer.py", consumer_code),
-    ]);
+    let (workspace, files) =
+        setup_workspace(&[("module.py", module_code), ("consumer.py", consumer_code)]);
     let location = Location::new("module.py", 1, 7);
 
     let result = rename(
@@ -392,7 +430,11 @@ x = None  # type: Handler
     let patch = &output.patch.unified_diff;
 
     // Should rename in both files
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -407,10 +449,8 @@ fn test_rename_type_comment_multifile_with_alias() {
 x = None  # type: H
 "#;
 
-    let (workspace, files) = setup_workspace(&[
-        ("module.py", module_code),
-        ("consumer.py", consumer_code),
-    ]);
+    let (workspace, files) =
+        setup_workspace(&[("module.py", module_code), ("consumer.py", consumer_code)]);
     let location = Location::new("module.py", 1, 7);
 
     let result = rename(
@@ -428,7 +468,11 @@ x = None  # type: H
     let patch = &output.patch.unified_diff;
 
     // Class definition should be renamed
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }
 
 #[test]
@@ -461,5 +505,9 @@ x = None  # type: Other
     let patch = &output.patch.unified_diff;
 
     // Only Handler should be renamed, not Other
-    assert!(patch.contains("RequestHandler"), "Patch should contain new name: {}", patch);
+    assert!(
+        patch.contains("RequestHandler"),
+        "Patch should contain new name: {}",
+        patch
+    );
 }

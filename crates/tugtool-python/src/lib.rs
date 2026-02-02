@@ -50,6 +50,8 @@ pub mod lookup;
 pub mod mro;
 pub mod ops;
 pub mod stubs;
+#[cfg(test)]
+pub mod test_utils;
 pub mod type_narrowing;
 pub mod type_tracker;
 pub mod types;

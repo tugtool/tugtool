@@ -83,7 +83,11 @@ def foo():
         let patch = &output.patch.unified_diff;
 
         // Should rename both the definition and the decorator usage
-        assert!(patch.contains("the_decorator"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("the_decorator"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -118,7 +122,11 @@ def foo():
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("config_value"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("config_value"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -153,7 +161,11 @@ def foo():
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("greeting"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("greeting"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -188,7 +200,11 @@ def foo():
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("SETTINGS"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("SETTINGS"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -224,7 +240,11 @@ def foo():
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("primary"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("primary"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }
 
@@ -259,7 +279,11 @@ doubled = [x * 2 for x in items]
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("numbers"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("numbers"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -286,7 +310,11 @@ flattened = [x for row in matrix for x in row]
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("grid"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("grid"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -313,7 +341,11 @@ mapping = {k: v for k, v in pairs}
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("key_values"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("key_values"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -340,7 +372,11 @@ total = sum(x for x in values if x > 2)
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name (using "numbers" not "items")
-        assert!(patch.contains("numbers"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("numbers"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -367,7 +403,11 @@ unique = {x for x in items}
         let patch = &output.patch.unified_diff;
 
         // The diff shows changed spans, check for the new name
-        assert!(patch.contains("duplicates"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("duplicates"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }
 
@@ -416,7 +456,11 @@ class Diamond(Left, Right):
 
         // All process methods in the hierarchy should be renamed
         // The diff shows changed spans, check for multiple occurrences of the new name
-        assert!(patch.contains("handle"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("handle"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -451,7 +495,11 @@ class Combined(Mixin1, Mixin2):
         let patch = &output.patch.unified_diff;
 
         // At minimum, the method in Mixin1 should be renamed
-        assert!(patch.contains("initialize"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("initialize"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }
 
@@ -474,10 +522,8 @@ def use_it():
     return 42
 "#;
 
-        let (workspace, files) = setup_workspace(&[
-            ("module.py", module_code),
-            ("consumer.py", code),
-        ]);
+        let (workspace, files) =
+            setup_workspace(&[("module.py", module_code), ("consumer.py", code)]);
         let location = Location::new("module.py", 1, 5); // "original" in module
 
         let result = rename(
@@ -495,7 +541,11 @@ def use_it():
         let patch = &output.patch.unified_diff;
 
         // Definition should be renamed, check for the new name in patch
-        assert!(patch.contains("renamed"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("renamed"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -509,10 +559,8 @@ result = old_alias()
     return 42
 "#;
 
-        let (workspace, files) = setup_workspace(&[
-            ("module.py", module_code),
-            ("consumer.py", code),
-        ]);
+        let (workspace, files) =
+            setup_workspace(&[("module.py", module_code), ("consumer.py", code)]);
 
         let location = Location::new("module.py", 1, 5); // "something" in module
 
@@ -531,7 +579,11 @@ result = old_alias()
         let patch = &output.patch.unified_diff;
 
         // Definition should be renamed, check for the new name in patch
-        assert!(patch.contains("other"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("other"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }
 
@@ -575,7 +627,11 @@ mod property_setter {
         let patch = &output.patch.unified_diff;
 
         // Both getter and setter should be renamed, check for the new name
-        assert!(patch.contains("setting"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("setting"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -615,7 +671,11 @@ mod property_setter {
         let patch = &output.patch.unified_diff;
 
         // All three (getter, setter, deleter) should be renamed, check for the new name
-        assert!(patch.contains("content"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("content"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }
 
@@ -654,7 +714,11 @@ result = factory()
         let patch = &output.patch.unified_diff;
 
         // Class definition and reference should be renamed
-        assert!(patch.contains("Product"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("Product"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -685,7 +749,11 @@ result = factory()
         let patch = &output.patch.unified_diff;
 
         // Nested class definition and reference should be renamed
-        assert!(patch.contains("Nested"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("Nested"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -714,7 +782,11 @@ result = factory()
         let patch = &output.patch.unified_diff;
 
         // Inner function definition and reference should be renamed
-        assert!(patch.contains("helper"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("helper"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }
 
@@ -753,7 +825,11 @@ if (result := compute()):
         let patch = &output.patch.unified_diff;
 
         // Walrus target and reference should be renamed
-        assert!(patch.contains("outcome"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("outcome"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -784,7 +860,11 @@ while (line := get_line()):
         let patch = &output.patch.unified_diff;
 
         // Walrus target and reference should be renamed
-        assert!(patch.contains("data"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("data"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 
     #[test]
@@ -814,6 +894,10 @@ results = [y for x in range(10) if (y := compute(x)) > 5]
         let patch = &output.patch.unified_diff;
 
         // The walrus target and its usages should be renamed
-        assert!(patch.contains("value"), "Patch should contain new name: {}", patch);
+        assert!(
+            patch.contains("value"),
+            "Patch should contain new name: {}",
+            patch
+        );
     }
 }

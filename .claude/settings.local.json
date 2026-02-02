@@ -308,7 +308,8 @@
       "Bash(test_rename_in_callable)",
       "Bash(test_no_false_positive_rename)",
       "WebFetch(domain:peps.python.org)",
-      "WebFetch(domain:stdlibs.omnilib.dev)"
+      "WebFetch(domain:stdlibs.omnilib.dev)",
+      "Bash(cargo insta accept:*)"
     ],
     "deny": [],
     "ask": []

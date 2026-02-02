@@ -9988,43 +9988,43 @@ This infrastructure will:
 - New: `crates/tugtool-python/tests/snapshots/` directory for insta snapshots
 
 **Tasks:**
-- [ ] Add `assert_location_char()` test helper
+- [x] Add `assert_location_char()` test helper
   - Location: `crates/tugtool-python/src/test_utils.rs` (new or existing)
   - Signature: `fn assert_location_char(source: &str, loc: &Location, expected: char)`
   - Validates that a Location points to the expected character
   - Panics with message showing actual char, byte offset, and expected char
-- [ ] Enhance `SymbolNotFound` error with diagnostic fields
+- [x] Enhance `SymbolNotFound` error with diagnostic fields
   - Location: `crates/tugtool-python/src/lookup.rs`
   - Add: `byte_offset: usize` (computed byte offset)
   - Add: `char_at_offset: Option<char>` (character at that offset)
   - Add: `nearest_symbol: Option<(String, Span)>` (closest symbol within 10 bytes)
   - Update error formatting to display these diagnostics
-- [ ] Add optional lookup trace mode
+- [x] Add optional lookup trace mode
   - Location: `crates/tugtool-python/src/lookup.rs`
   - Add `LookupTrace` struct capturing: symbols checked, span containment results
   - Add `find_symbol_at_location_traced()` variant for debugging
   - Trace output shows byte offset, symbols at nearby positions, span checks
-- [ ] Add span snapshot tests for critical binding types
+- [x] Add span snapshot tests for critical binding types
   - Location: `crates/tugtool-python/tests/binding_snapshots.rs`
   - Add insta dependency to `Cargo.toml` if not present
   - Snapshot tests for: walrus operator bindings, comprehension bindings, nested class bindings
   - Golden snapshots capture span start/end and scope path
 
 **Tests:**
-- [ ] Unit: `test_assert_location_char_success` - validates helper works on correct location
-- [ ] Unit: `test_assert_location_char_failure` - validates helper panics with helpful message
-- [ ] Unit: `test_symbol_not_found_error_includes_diagnostics` - error has byte offset, char, nearest
-- [ ] Unit: `test_lookup_trace_captures_checks` - trace mode records span containment checks
-- [ ] Snapshot: `binding_spans_walrus.snap` - walrus operator binding spans
-- [ ] Snapshot: `binding_spans_comprehension.snap` - comprehension variable binding spans
-- [ ] Snapshot: `binding_spans_nested_class.snap` - nested class binding spans
+- [x] Unit: `test_assert_location_char_success` - validates helper works on correct location
+- [x] Unit: `test_assert_location_char_failure` - validates helper panics with helpful message
+- [x] Unit: `test_symbol_not_found_error_includes_diagnostics` - error has byte offset, char, nearest
+- [x] Unit: `test_lookup_trace_captures_checks` - trace mode records span containment checks
+- [x] Snapshot: `binding_spans_walrus.snap` - walrus operator binding spans
+- [x] Snapshot: `binding_spans_comprehension.snap` - comprehension variable binding spans
+- [x] Snapshot: `binding_spans_nested_class.snap` - nested class binding spans
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python test_assert_location` passes
-- [ ] `cargo nextest run -p tugtool-python test_symbol_not_found` passes
-- [ ] `cargo nextest run -p tugtool-python binding_snapshots` passes
-- [ ] `cargo clippy -p tugtool-python -- -D warnings` passes
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python test_assert_location` passes
+- [x] `cargo nextest run -p tugtool-python test_symbol_not_found` passes
+- [x] `cargo nextest run -p tugtool-python binding_snapshots` passes
+- [x] `cargo clippy -p tugtool-python -- -D warnings` passes
 
 **Rollback:** Revert commit
 
