@@ -28,7 +28,7 @@ tugtool-python-cst-derive = { path = "../tugtool-python-cst-derive" }
 tugtool-core = { path = "../tugtool-core" }
 
 [dev-dependencies]
-criterion = { version = "0.6", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 difference = "2.0"
 rayon = "1.11"
 itertools = "0.14"
