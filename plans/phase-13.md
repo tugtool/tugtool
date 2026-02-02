@@ -8830,22 +8830,22 @@ The CST crate already depends on `tugtool_core` (for `TypeNode`, `Span`), so it 
 
 ###### Step 0.8.5 Success Criteria {#step-0-8-5-success}
 
-- [ ] `ReceiverStep::Attribute` variant exists and `ReceiverStep::Attr` is removed
-- [ ] `with_attribute()` method exists and `with_attr()` is removed
-- [ ] `ParamKind` is imported from `tugtool_core::facts` in CST, not defined locally
-- [ ] `Modifier` is imported from `tugtool_core::facts` in CST, not defined locally
-- [ ] `AttributeAccessKind` is imported from `tugtool_core::facts` in CST, not defined locally
-- [ ] No `convert_cst_param_kind`, `convert_cst_modifier`, or `convert_cst_attribute_access_kind` functions exist
-- [ ] `AttributeAccessInfo` uses `name` and `span` fields (not `attr_name`/`attr_span`)
-- [ ] All existing tests pass
-- [ ] No regression in rename operation behavior
+- [x] `ReceiverStep::Attribute` variant exists and `ReceiverStep::Attr` is removed
+- [x] `with_attribute()` method exists and `with_attr()` is removed
+- [x] `ParamKind` is imported from `tugtool_core::facts` in CST, not defined locally
+- [x] `Modifier` is imported from `tugtool_core::facts` in CST, not defined locally
+- [x] `AttributeAccessKind` is imported from `tugtool_core::facts` in CST, not defined locally
+- [x] No `convert_cst_param_kind`, `convert_cst_modifier`, or `convert_cst_attribute_access_kind` functions exist
+- [x] `AttributeAccessInfo` uses `name` and `span` fields (not `attr_name`/`attr_span`)
+- [x] All existing tests pass
+- [x] No regression in rename operation behavior
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugtool-python-cst` - All CST tests pass
-- [ ] `cargo nextest run -p tugtool-python` - All Python adapter tests pass
-- [ ] `cargo nextest run --workspace` - All workspace tests pass
-- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+- [x] `cargo nextest run -p tugtool-python-cst` - All CST tests pass
+- [x] `cargo nextest run -p tugtool-python` - All Python adapter tests pass
+- [x] `cargo nextest run --workspace` - All workspace tests pass
+- [x] `cargo clippy --workspace -- -D warnings` - No warnings
 
 **Rollback:** Revert commit
 

@@ -6,6 +6,50 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8.5 Success Criteria | VERIFIED | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.8.5 Success Criteria section (lines 8831-8850)
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - ReceiverStep enum, with_attribute(), AttributeAccessInfo
+- `crates/tugtool-python-cst/src/visitor/signature.rs` - ParamKind and Modifier imports
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Re-exports from Core
+
+**Verification Progress:**
+
+| Criterion | Status |
+|-----------|--------|
+| `ReceiverStep::Attribute` variant exists and `Attr` is removed | Verified |
+| `with_attribute()` method exists and `with_attr()` is removed | Verified |
+| `ParamKind` imported from `tugtool_core::facts` in CST | Verified |
+| `Modifier` imported from `tugtool_core::facts` in CST | Verified |
+| `AttributeAccessKind` imported from `tugtool_core::facts` in CST | Verified |
+| No `convert_cst_*` conversion functions exist | Verified |
+| `AttributeAccessInfo` uses `name` and `span` fields | Verified |
+| All existing tests pass | Verified |
+| No regression in rename operation behavior | Verified |
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 878 tests passed
+- `cargo nextest run -p tugtool-python`: 848 tests passed
+- `cargo nextest run --workspace`: 2488 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python-cst` - All CST tests pass: PASS (878)
+- `cargo nextest run -p tugtool-python` - All Python adapter tests pass: PASS (848)
+- `cargo nextest run --workspace` - All workspace tests pass: PASS (2488)
+- `cargo clippy --workspace -- -D warnings` - No warnings: PASS
+
+**Key Decisions/Notes:**
+Step 0.8.5 is now fully complete. All three phases have been implemented and verified:
+- Phase A: ReceiverStep Variant Rename (`Attr` → `Attribute`, `with_attr()` → `with_attribute()`)
+- Phase B: Enum Consolidation (ParamKind, Modifier, AttributeAccessKind imported from Core)
+- Phase C: Field Name Alignment (`attr_name` → `name`, `attr_span` → `span`)
+
+---
+
 ## [phase-13.md] Step 0.8.5 Phase C: Field Name Alignment | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
