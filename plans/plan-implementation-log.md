@@ -6,6 +6,54 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8.5 Phase A: ReceiverStep Variant Rename | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Phase A specification (lines 8499-8602)
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - Primary implementation file
+- `crates/tugtool-python/src/analyzer.rs` - convert_receiver_path function
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Rename `ReceiverStep::Attr` to `ReceiverStep::Attribute` | Done |
+| Update `with_attr` method to `with_attribute` | Done |
+| Simplify `From<ReceiverStep>` impl | Done |
+| Update all usages in CST crate | Done |
+| Update usages of `with_attr()` | Done (none existed) |
+| Update doc comments for JSON format | Done |
+| Update test assertions for new JSON format | Done |
+| Update `convert_receiver_path` in analyzer.rs | Done |
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/attribute_access.rs`:
+  - Renamed `ReceiverStep::Attr` → `ReceiverStep::Attribute` (enum definition and all usages)
+  - Renamed `with_attr()` → `with_attribute()` method
+  - Updated `From<&ReceiverStep>` impl
+  - Updated doc comment for JSON format
+  - Updated `test_receiver_path_json_serialization` assertion
+  - Added 4 new tests
+- `crates/tugtool-python/src/analyzer.rs`:
+  - Updated `convert_receiver_path` match arm
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst`: 873 tests passed
+- `cargo nextest run -p tugtool-python`: 844 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst` passes all tests: PASS (873 tests)
+- `cargo nextest run -p tugtool-python` passes all tests: PASS (844 tests)
+- No occurrences of `ReceiverStep::Attr` remain in codebase: PASS
+
+**Key Decisions/Notes:**
+Renamed `ReceiverStep::Attr` to `ReceiverStep::Attribute` to align with Core's `ReceiverPathStep::Attribute` variant. This eliminates the naming mismatch in the `From` impl and creates consistency across CST and Core layers. Also updated the JSON serialization format from `"type":"attr"` to `"type":"attribute"`.
+
+---
+
 ## [phase-13.md] Step 0.8 Success Criteria | VERIFIED | 2026-02-02
 
 **Completed:** 2026-02-02

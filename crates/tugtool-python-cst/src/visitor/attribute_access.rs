@@ -47,7 +47,7 @@ use crate::nodes::{
 ///
 /// Serde representation uses adjacently tagged enum format for clear JSON output:
 /// - Name: `{"type": "name", "value": "self"}`
-/// - Attr: `{"type": "attr", "value": "handler"}`
+/// - Attribute: `{"type": "attribute", "value": "handler"}`
 /// - Call: `{"type": "call"}`
 ///
 /// # Examples
@@ -56,8 +56,8 @@ use crate::nodes::{
 /// // self.handler.process()
 /// [
 ///     ReceiverStep::Name { value: "self".into() },
-///     ReceiverStep::Attr { value: "handler".into() },
-///     ReceiverStep::Attr { value: "process".into() },
+///     ReceiverStep::Attribute { value: "handler".into() },
+///     ReceiverStep::Attribute { value: "process".into() },
 ///     ReceiverStep::Call,
 /// ]
 /// ```
@@ -67,7 +67,7 @@ pub enum ReceiverStep {
     /// Simple name: `self`, `obj`, `factory`
     Name { value: String },
     /// Attribute access: `.handler`, `.process`
-    Attr { value: String },
+    Attribute { value: String },
     /// Function/method call: `()`
     Call,
     /// Subscript access: `[index]` - element type resolved from container annotation
@@ -111,8 +111,8 @@ impl ReceiverPath {
     }
 
     /// Add an attribute access step.
-    pub fn with_attr(mut self, attr: impl Into<String>) -> Self {
-        self.steps.push(ReceiverStep::Attr { value: attr.into() });
+    pub fn with_attribute(mut self, attr: impl Into<String>) -> Self {
+        self.steps.push(ReceiverStep::Attribute { value: attr.into() });
         self
     }
 
@@ -153,7 +153,7 @@ impl From<&ReceiverStep> for CoreReceiverPathStep {
             ReceiverStep::Name { value } => CoreReceiverPathStep::Name {
                 value: value.clone(),
             },
-            ReceiverStep::Attr { value } => CoreReceiverPathStep::Attribute {
+            ReceiverStep::Attribute { value } => CoreReceiverPathStep::Attribute {
                 value: value.clone(),
             },
             ReceiverStep::Call => CoreReceiverPathStep::Call,
@@ -226,7 +226,7 @@ fn extract_receiver_path_recursive(expr: &Expression<'_>, steps: &mut Vec<Receiv
                 return false;
             }
             // Then add the attribute access
-            steps.push(ReceiverStep::Attr {
+            steps.push(ReceiverStep::Attribute {
                 value: attr.attr.value.to_string(),
             });
             true
@@ -969,7 +969,7 @@ class MyClass:
         );
         assert_eq!(
             path.steps[1],
-            ReceiverStep::Attr {
+            ReceiverStep::Attribute {
                 value: "handler".to_string()
             }
         );
@@ -1030,7 +1030,7 @@ class MyClass:
         assert_eq!(path.steps[1], ReceiverStep::Call);
         assert_eq!(
             path.steps[2],
-            ReceiverStep::Attr {
+            ReceiverStep::Attribute {
                 value: "create".to_string()
             }
         );
@@ -1162,7 +1162,7 @@ class MyClass:
         );
         assert_eq!(
             path.steps[1],
-            ReceiverStep::Attr {
+            ReceiverStep::Attribute {
                 value: "handler".to_string()
             }
         );
@@ -1176,10 +1176,10 @@ class MyClass:
                 ReceiverStep::Name {
                     value: "self".to_string(),
                 },
-                ReceiverStep::Attr {
+                ReceiverStep::Attribute {
                     value: "handler".to_string(),
                 },
-                ReceiverStep::Attr {
+                ReceiverStep::Attribute {
                     value: "process".to_string(),
                 },
                 ReceiverStep::Call,
@@ -1190,7 +1190,7 @@ class MyClass:
         // Verify adjacently tagged format
         assert!(json.contains(r#""type":"name""#));
         assert!(json.contains(r#""value":"self""#));
-        assert!(json.contains(r#""type":"attr""#));
+        assert!(json.contains(r#""type":"attribute""#));
         assert!(json.contains(r#""value":"handler""#));
         assert!(json.contains(r#""type":"call""#));
 
@@ -1208,7 +1208,7 @@ class MyClass:
                     value: "items".to_string(),
                 },
                 ReceiverStep::Subscript,
-                ReceiverStep::Attr {
+                ReceiverStep::Attribute {
                     value: "process".to_string(),
                 },
                 ReceiverStep::Call,
@@ -1222,5 +1222,138 @@ class MyClass:
         // Verify round-trip
         let deserialized: ReceiverPath = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, path);
+    }
+
+    // ========================================================================
+    // ReceiverStep::Attribute variant tests (Phase A: ReceiverStep Variant Rename)
+    // ========================================================================
+
+    #[test]
+    fn test_receiver_step_attribute_variant() {
+        // Verify ReceiverStep::Attribute works correctly
+        let step = ReceiverStep::Attribute {
+            value: "handler".to_string(),
+        };
+
+        // Verify it can be compared
+        assert_eq!(
+            step,
+            ReceiverStep::Attribute {
+                value: "handler".to_string()
+            }
+        );
+
+        // Verify it can be cloned
+        let cloned = step.clone();
+        assert_eq!(step, cloned);
+
+        // Verify it serializes with the correct type tag
+        let json = serde_json::to_string(&step).unwrap();
+        assert!(json.contains(r#""type":"attribute""#));
+        assert!(json.contains(r#""value":"handler""#));
+    }
+
+    #[test]
+    fn test_receiver_path_builder_with_attribute() {
+        // Verify with_attribute() builder method works
+        let path = ReceiverPath::from_name("self").with_attribute("handler");
+
+        assert_eq!(path.steps.len(), 2);
+        assert_eq!(
+            path.steps[0],
+            ReceiverStep::Name {
+                value: "self".to_string()
+            }
+        );
+        assert_eq!(
+            path.steps[1],
+            ReceiverStep::Attribute {
+                value: "handler".to_string()
+            }
+        );
+
+        // Verify chaining multiple attributes
+        let chained = ReceiverPath::from_name("self")
+            .with_attribute("handler")
+            .with_attribute("process")
+            .with_call();
+
+        assert_eq!(chained.steps.len(), 4);
+        assert_eq!(
+            chained.steps[2],
+            ReceiverStep::Attribute {
+                value: "process".to_string()
+            }
+        );
+        assert_eq!(chained.steps[3], ReceiverStep::Call);
+    }
+
+    #[test]
+    fn test_receiver_step_to_core_conversion() {
+        // Verify From<ReceiverStep> for CoreReceiverPathStep works correctly
+
+        // Test Name conversion
+        let name_step = ReceiverStep::Name {
+            value: "obj".to_string(),
+        };
+        let core_name: CoreReceiverPathStep = name_step.into();
+        assert!(matches!(
+            core_name,
+            CoreReceiverPathStep::Name { value } if value == "obj"
+        ));
+
+        // Test Attribute conversion (the renamed variant)
+        let attr_step = ReceiverStep::Attribute {
+            value: "handler".to_string(),
+        };
+        let core_attr: CoreReceiverPathStep = attr_step.into();
+        assert!(matches!(
+            core_attr,
+            CoreReceiverPathStep::Attribute { value } if value == "handler"
+        ));
+
+        // Test Call conversion
+        let call_step = ReceiverStep::Call;
+        let core_call: CoreReceiverPathStep = call_step.into();
+        assert!(matches!(core_call, CoreReceiverPathStep::Call));
+
+        // Test Subscript conversion
+        let subscript_step = ReceiverStep::Subscript;
+        let core_subscript: CoreReceiverPathStep = subscript_step.into();
+        assert!(matches!(core_subscript, CoreReceiverPathStep::Subscript));
+    }
+
+    #[test]
+    fn test_attribute_access_collection_unchanged() {
+        // Verify existing attribute access collection behavior is unchanged
+        // after the ReceiverStep::Attr -> ReceiverStep::Attribute rename
+
+        // Test basic attribute read
+        let source = "x = obj.attr";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+        assert_eq!(accesses.len(), 1);
+        assert_eq!(accesses[0].attr_name, "attr");
+        assert_eq!(accesses[0].kind, AttributeAccessKind::Read);
+
+        // Test method call with receiver_path
+        let source = "self.handler.process()";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let accesses = AttributeAccessCollector::collect(&parsed.module, &parsed.positions);
+
+        // Find the process() call
+        let process_call = accesses
+            .iter()
+            .find(|a| a.attr_name == "process")
+            .expect("should find process");
+        assert_eq!(process_call.kind, AttributeAccessKind::Call);
+
+        // Verify receiver_path uses Attribute variant (not Attr)
+        let path = process_call.receiver_path.as_ref().expect("should have path");
+        assert_eq!(path.steps.len(), 2);
+        assert!(matches!(
+            &path.steps[1],
+            ReceiverStep::Attribute { value } if value == "handler"
+        ));
     }
 }

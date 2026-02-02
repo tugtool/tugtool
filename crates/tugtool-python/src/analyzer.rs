@@ -1980,7 +1980,7 @@ fn convert_receiver_path(cst_path: &CstReceiverPath) -> CoreReceiverPath {
             ReceiverStep::Name { value } => CoreReceiverPathStep::Name {
                 value: value.clone(),
             },
-            ReceiverStep::Attr { value } => CoreReceiverPathStep::Attribute {
+            ReceiverStep::Attribute { value } => CoreReceiverPathStep::Attribute {
                 value: value.clone(),
             },
             ReceiverStep::Call => CoreReceiverPathStep::Call,

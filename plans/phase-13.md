@@ -8504,7 +8504,7 @@ An architectural audit identified naming inconsistencies and type duplications a
 
 **Tasks:**
 
-- [ ] Rename `ReceiverStep::Attr` to `ReceiverStep::Attribute` in CST:
+- [x] Rename `ReceiverStep::Attr` to `ReceiverStep::Attribute` in CST:
 
   **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
 
@@ -8526,7 +8526,7 @@ An architectural audit identified naming inconsistencies and type duplications a
   }
   ```
 
-- [ ] Update the `with_attr` method name to `with_attribute` for consistency:
+- [x] Update the `with_attr` method name to `with_attribute` for consistency:
 
   **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
 
@@ -8544,7 +8544,7 @@ An architectural audit identified naming inconsistencies and type duplications a
   }
   ```
 
-- [ ] Simplify the `From<ReceiverStep> for CoreReceiverPathStep` impl:
+- [x] Simplify the `From<ReceiverStep> for CoreReceiverPathStep` impl:
 
   **File:** `crates/tugtool-python-cst/src/visitor/attribute_access.rs`
 
@@ -8574,11 +8574,11 @@ An architectural audit identified naming inconsistencies and type duplications a
   }
   ```
 
-- [ ] Update all usages of `ReceiverStep::Attr` in CST crate:
+- [x] Update all usages of `ReceiverStep::Attr` in CST crate:
   - `crates/tugtool-python-cst/src/visitor/attribute_access.rs` - pattern matches, builder calls
   - `crates/tugtool-python-cst/src/visitor/call_site.rs` - if any usage exists
 
-- [ ] Update usages of `with_attr()` to `with_attribute()`:
+- [x] Update usages of `with_attr()` to `with_attribute()`:
   - Search for `.with_attr(` across `crates/tugtool-python-cst/`
   - Update all call sites
 
@@ -8588,17 +8588,17 @@ An architectural audit identified naming inconsistencies and type duplications a
 
 **Tests:**
 
-- [ ] Unit: `test_receiver_step_attribute_variant` - Verify `ReceiverStep::Attribute` works correctly
-- [ ] Unit: `test_receiver_path_builder_with_attribute` - Verify `with_attribute()` method
-- [ ] Unit: `test_receiver_step_to_core_conversion` - Verify `From` impl still works
-- [ ] Integration: `test_attribute_access_collection_unchanged` - Existing attribute access tests pass
+- [x] Unit: `test_receiver_step_attribute_variant` - Verify `ReceiverStep::Attribute` works correctly
+- [x] Unit: `test_receiver_path_builder_with_attribute` - Verify `with_attribute()` method
+- [x] Unit: `test_receiver_step_to_core_conversion` - Verify `From` impl still works
+- [x] Integration: `test_attribute_access_collection_unchanged` - Existing attribute access tests pass
 
 **Checkpoint:**
 
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst` passes all tests
-- [ ] `cargo nextest run -p tugtool-python` passes all tests (no regressions)
-- [ ] No occurrences of `ReceiverStep::Attr` remain in codebase
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst` passes all tests
+- [x] `cargo nextest run -p tugtool-python` passes all tests (no regressions)
+- [x] No occurrences of `ReceiverStep::Attr` remain in codebase
 
 ---
 
