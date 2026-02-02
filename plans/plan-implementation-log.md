@@ -6,6 +6,51 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.8 Success Criteria | VERIFIED | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.8 Success Criteria specification (lines 8453-8470)
+- `crates/tugtool-core/src/facts/mod.rs` - call_sites_to_callee, call_site_count, refs_in_scope implementations
+- `crates/tugtool-python/src/analyzer.rs` - FileAnalysis struct, test_call_sites_to_callee_returns_results test
+- `crates/tugtool-python/src/lib.rs` - DynamicPatternKind/TypeCommentKind re-exports
+
+**Verification Progress:**
+
+| Criterion | Status |
+|-----------|--------|
+| `store.call_sites_to_callee(symbol_id)` returns non-empty results | Verified |
+| `store.call_site_count() > 0` after analyzing files | Verified |
+| `FileAnalysis` uses adapter types for signatures, attribute_accesses, call_sites | Verified |
+| `store.refs_in_scope(file_id, scope_id)` returns references | Verified |
+| `DynamicPatternKind` and `TypeCommentKind` documented and re-exported | Verified |
+| All existing tests pass | Verified |
+| No regression in rename operation behavior | Verified |
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python call_site`: 9 tests passed
+- `cargo nextest run -p tugtool-core facts`: 224 tests passed
+- `cargo nextest run --workspace`: 2475 tests passed
+- `cargo nextest run -p tugtool-python rename`: 80 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Checkpoints Verified:**
+- CallSite persistence tests pass: PASS
+- FactsStore tests pass including refs_by_scope: PASS
+- All existing tests pass: PASS
+- No clippy warnings: PASS
+
+**Key Evidence:**
+- `call_sites_to_callee()` at `facts/mod.rs:3444`, tested by `test_call_sites_to_callee_returns_results` verifying 3 calls returned
+- `call_site_count()` at `facts/mod.rs:3695`
+- `refs_in_scope()` at `facts/mod.rs:3269`, tests verify non-empty results
+- `FileAnalysis` uses `SignatureData`, `AttributeAccessData`, `CallSiteData` adapter types (analyzer.rs:366-370)
+- Python-specific documentation added to DynamicPatternKind/TypeCommentKind in core
+- Re-exports in `tugtool-python/src/lib.rs:66-67`
+
+---
+
 ## [phase-13.md] Step 0.8 Phase E: Iterator Returns for Query Methods | COMPLETE | 2026-02-01
 
 **Completed:** 2026-02-01

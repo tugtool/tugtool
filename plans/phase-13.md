@@ -8452,20 +8452,20 @@ architectural risk.
 
 ###### Step 0.8 Success Criteria {#step-0-8-success}
 
-- [ ] `store.call_sites_to_callee(symbol_id)` returns non-empty results after analyzing code with function calls
-- [ ] `store.call_site_count() > 0` after analyzing files with function/method calls
-- [ ] `FileAnalysis` uses adapter types for `signatures`, `attribute_accesses`, `call_sites`
-- [ ] `store.refs_in_scope(file_id, scope_id)` returns references in the specified scope
-- [ ] `DynamicPatternKind` and `TypeCommentKind` are documented as Python-specific in core and re-exported from `tugtool-python`
-- [ ] All existing tests pass
-- [ ] No regression in rename operation behavior
+- [x] `store.call_sites_to_callee(symbol_id)` returns non-empty results after analyzing code with function calls
+- [x] `store.call_site_count() > 0` after analyzing files with function/method calls
+- [x] `FileAnalysis` uses adapter types for `signatures`, `attribute_accesses`, `call_sites`
+- [x] `store.refs_in_scope(file_id, scope_id)` returns references in the specified scope
+- [x] `DynamicPatternKind` and `TypeCommentKind` are documented as Python-specific in core and re-exported from `tugtool-python`
+- [x] All existing tests pass
+- [x] No regression in rename operation behavior
 
 **Checkpoint:**
 
-- [ ] `cargo nextest run -p tugtool-python call_site` - CallSite persistence tests pass
-- [ ] `cargo nextest run -p tugtool-core facts` - FactsStore tests pass including refs_by_scope
-- [ ] `cargo nextest run --workspace` - All existing tests pass
-- [ ] `cargo clippy --workspace -- -D warnings` - No warnings
+- [x] `cargo nextest run -p tugtool-python call_site` - CallSite persistence tests pass
+- [x] `cargo nextest run -p tugtool-core facts` - FactsStore tests pass including refs_by_scope
+- [x] `cargo nextest run --workspace` - All existing tests pass
+- [x] `cargo clippy --workspace -- -D warnings` - No warnings
 
 **Rollback:** Revert commit
 
