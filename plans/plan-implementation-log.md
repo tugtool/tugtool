@@ -6,6 +6,72 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-14.md] Step 1.2: Layer 1 Infrastructure | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-14.md` - Step 1.2 definition and task list
+- `plans/phase-13.md` - Layer 1 section (line 572), Table T05 (line 1575), Step 0.2 position lookup infrastructure
+- `crates/tugtool-python-cst/src/visitor/position_lookup.rs` - PositionIndex, ExpressionInfo, NodeKind
+- `crates/tugtool-python/src/layers/mod.rs` - Existing layers module structure
+- `crates/tugtool-python/src/layers/imports.rs` - Layer 3 patterns for reference
+- `crates/tugtool-core/src/facts/mod.rs` - FactsStore, Symbol, Reference, ReferenceKind types
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Create `layers/mod.rs` with module structure | Done |
+| Implement `ExpressionBoundaryDetector` | Done |
+| Implement `UniqueNameGenerator` | Done |
+| Implement `SingleAssignmentChecker` | Done |
+| Handle comprehension/generator expression scopes | Done |
+| Add comprehensive unit tests | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/layers/expression.rs` - Layer 1 expression analysis infrastructure (~1200 lines)
+
+**Files Modified:**
+- `crates/tugtool-python/src/layers/mod.rs` - Added expression module export and Layer 1 re-exports
+- `plans/phase-14.md` - Checked off completed tasks, tests, and checkpoints
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python expression`: 16 tests passed
+- `cargo nextest run --workspace`: 2650 tests passed
+
+**Tests Added:**
+- `test_expression_boundary_simple` - Basic expression finding at byte offset
+- `test_expression_boundary_parenthesized` - Parenthesized expression handling
+- `test_expression_boundary_in_comprehension` - Comprehension context detection
+- `test_expression_boundary_in_lambda` - Lambda context detection
+- `test_unique_name_no_conflict` - Name generation without conflicts
+- `test_unique_name_with_conflict` - Name generation with builtin conflict
+- `test_unique_name_builtin_check` - Python builtin verification
+- `test_unique_name_multiple_conflicts` - Multiple suffix increments
+- `test_single_assignment_true` - Single assignment checking (basic)
+- `test_single_assignment_reassigned` - Result structure verification
+- `test_comprehension_scope_detection` - Comprehension scope finding
+- `test_is_in_comprehension` - Comprehension containment check
+- `test_is_in_generator` - Generator containment check
+- `test_literal_detection` - Literal kind detection by NodeKind
+- `test_is_literal_at` - Position-based literal checking
+
+**Checkpoints Verified:**
+- `cargo nextest run -p tugtool-python expression`: PASS (16 tests)
+- All Layer 1 components have >80% test coverage: PASS
+- `cargo clippy --workspace -- -D warnings`: PASS
+- `just ci`: PASS
+
+**Key Decisions/Notes:**
+- Comprehensive `PYTHON_BUILTINS` list includes 200+ names (built-in functions, types, exceptions, typing module names)
+- `ExpressionContext` enum rejects extraction in comprehensions, lambdas, decorators, class bodies, and default arguments
+- `SingleAssignmentChecker` classifies assignment kinds (Simple, Augmented, Walrus, etc.) though currently defaults to Simple
+- Comprehension scope handling recognizes list/dict/set comprehensions and generator expressions
+- Added `detect_literal_kind()` and `LiteralKind` enum for Extract Constant support (Step 1.4)
+
+---
+
 ## [phase-14.md] Step 1.1: Rename Parameter Operation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

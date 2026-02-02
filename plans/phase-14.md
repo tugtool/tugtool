@@ -183,24 +183,24 @@ Phase 14 is organized into four stages, each building a layer of infrastructure 
 - Updated `crates/tugtool-python/src/lib.rs` (export layers module)
 
 **Tasks:**
-- [ ] Create `layers/mod.rs` with module structure
-- [ ] Implement `ExpressionBoundaryDetector` (uses position lookup from [Phase 13 Step 0.2](phase-13.md#step-0-2))
-- [ ] Implement `UniqueNameGenerator`
-- [ ] Implement `SingleAssignmentChecker`
-- [ ] Handle comprehension/generator expression scopes
-- [ ] Add comprehensive unit tests
+- [x] Create `layers/mod.rs` with module structure
+- [x] Implement `ExpressionBoundaryDetector` (uses position lookup from [Phase 13 Step 0.2](phase-13.md#step-0-2))
+- [x] Implement `UniqueNameGenerator`
+- [x] Implement `SingleAssignmentChecker`
+- [x] Handle comprehension/generator expression scopes
+- [x] Add comprehensive unit tests
 
 **Tests:**
-- [ ] Unit: `test_expression_boundary_simple`
-- [ ] Unit: `test_expression_boundary_parenthesized`
-- [ ] Unit: `test_unique_name_no_conflict`
-- [ ] Unit: `test_unique_name_with_conflict`
-- [ ] Unit: `test_single_assignment_true`
-- [ ] Unit: `test_single_assignment_reassigned`
+- [x] Unit: `test_expression_boundary_simple`
+- [x] Unit: `test_expression_boundary_parenthesized`
+- [x] Unit: `test_unique_name_no_conflict`
+- [x] Unit: `test_unique_name_with_conflict`
+- [x] Unit: `test_single_assignment_true`
+- [x] Unit: `test_single_assignment_reassigned`
 
 **Checkpoint:**
-- [ ] `cargo nextest run -p tugtool-python expression`
-- [ ] All Layer 1 components have >80% test coverage
+- [x] `cargo nextest run -p tugtool-python expression` - 16 tests pass
+- [x] All Layer 1 components have >80% test coverage
 
 **Rollback:** Revert commit, delete `layers/` directory
 
