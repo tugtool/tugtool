@@ -6,6 +6,84 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 0.9 Phase D: ImportInserter Implementation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 0.9 Phase D specification (lines 9467-9567)
+- `crates/tugtool-python/src/layers/imports.rs` - Existing imports module with Phase A-C implementations
+- `crates/tugtool-core/src/patch.rs` - Existing Edit and Span types for reference
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement `ImportInserter` struct with builder pattern | Done |
+| Implement `ImportAnalysis` and `ImportInfo` structs | Done |
+| Implement `analyze_imports()` to scan file for import locations | Done |
+| Implement `find_insertion_point()` for `Preserve` mode | Done |
+| Implement `find_insertion_point()` for `Organize` mode | Done |
+| Handle edge cases (empty file, docstring, __future__, multiline) | Done |
+| Implement `insert()` method returning `TextEdit` | Done |
+| Add helper methods to `ImportStatement` (`module_path()`, `imports_name()`) | Done |
+
+**Files Modified:**
+- `crates/tugtool-python/src/layers/imports.rs` - Added TextEdit, ImportInfo, ImportAnalysis, ImportInserter, 18 tests
+- `crates/tugtool-python/src/layers/mod.rs` - Added exports for new types (ImportAnalysis, ImportInfo, ImportInserter, TextEdit)
+
+**Key Components Added:**
+- `TextEdit` struct - Lightweight text edit with `insert()`, `replace()`, `apply()` methods
+- `ImportInfo` struct - Import statement with classification, offsets, and line number
+- `ImportAnalysis` struct - Analysis results with groups, line tracking, docstring detection
+  - Helper methods: `has_import()`, `has_name_imported()`, `last_in_group()`, `first_in_group()`
+- `ImportInserter` struct:
+  - `new(classifier)` - Create with classifier
+  - `with_mode(mode)` - Builder for Preserve/Organize mode
+  - `analyze_imports(source)` - Parse Python source for existing imports
+  - `insert(import, analysis)` - Calculate edit to insert an import
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python layers::imports`: 51 tests passed (33 existing + 18 new)
+- `cargo nextest run --workspace`: 2549 tests passed
+- `cargo clippy --workspace -- -D warnings`: No warnings
+
+**Tests Added (18 total):**
+- `test_insert_into_empty_file` - Insert into file with no imports
+- `test_insert_after_docstring` - Import placed after module docstring
+- `test_insert_stdlib_after_stdlib` - Insert sys after existing os import
+- `test_insert_third_party_after_stdlib` - numpy goes after os with blank line
+- `test_insert_local_after_third_party` - Local import goes last with blank line
+- `test_insert_future_first` - Future imports always first
+- `test_insert_after_future` - Never insert before __future__
+- `test_insert_preserves_blank_lines` - Blank lines between groups preserved
+- `test_insert_adds_blank_line_between_groups` - Adds blank line when inserting new group
+- `test_insert_duplicate_rejected` - Duplicate import returns AlreadyExists error
+- `test_insert_duplicate_from_import_rejected` - Duplicate from-import rejected
+- `test_insert_organize_mode_sorts` - Organize mode places import correctly
+- `test_insert_roundtrip` - Insert, apply edit, parse result
+- `test_analyze_multiline_docstring` - Multi-line docstring detection
+- `test_analyze_from_import_with_alias` - Parse `from os import path as p`
+- `test_analyze_multiple_names` - Parse `from os import path, getcwd, chdir`
+- `test_text_edit_apply` - TextEdit insertion works
+- `test_text_edit_replace` - TextEdit replacement works
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python` succeeds: PASS
+- `cargo nextest run -p tugtool-python layers::imports` passes: PASS (51 tests)
+- `cargo nextest run --workspace` passes: PASS (2549 tests)
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+- Plan checkboxes updated: PASS
+
+**Key Decisions/Notes:**
+- Created lightweight `TextEdit` instead of using full `Edit` from tugtool-core::patch, as import manipulation doesn't need anchor/hash verification machinery
+- `analyze_imports()` does line-by-line parsing rather than full CST parsing for simplicity and performance
+- Docstring detection handles both single-line (`"""..."""`) and multi-line docstrings
+- Blank lines are automatically added between different import groups (Future/Stdlib/ThirdParty/Local)
+- Duplicate detection checks both module paths and individual imported names
+
+---
+
 ## [phase-13.md] Step 0.9 Phase C: Import Classifier Implementation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

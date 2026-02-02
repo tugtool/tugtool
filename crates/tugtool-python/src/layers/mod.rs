@@ -12,7 +12,8 @@ pub mod imports;
 pub mod stdlib_modules;
 
 pub use imports::{
-    ImportClassifier, ImportClassifierConfig, ImportGroupKind, ImportInsertMode,
-    ImportManipulationError, ImportManipulationResult, ImportStatement, ImportedName,
+    ImportAnalysis, ImportClassifier, ImportClassifierConfig, ImportGroupKind, ImportInfo,
+    ImportInsertMode, ImportInserter, ImportManipulationError, ImportManipulationResult,
+    ImportStatement, ImportedName, TextEdit,
 };
 pub use stdlib_modules::{is_stdlib_module, PythonVersion};

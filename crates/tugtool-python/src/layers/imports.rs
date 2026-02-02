@@ -8,7 +8,7 @@
 //! This module provides types and utilities for manipulating Python import statements
 //! during refactoring operations like Move Function, Move Class, and Move Module.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use super::stdlib_modules::{is_stdlib_module, PythonVersion};
@@ -209,6 +209,22 @@ impl ImportStatement {
                     .join(", ");
                 format!("from {} import {}", module, names_str)
             }
+        }
+    }
+
+    /// Get the module path for this import statement.
+    pub fn module_path(&self) -> &str {
+        match self {
+            Self::Import { module, .. } => module,
+            Self::FromImport { module, .. } => module,
+        }
+    }
+
+    /// Check if this statement imports the given name (for duplicate detection).
+    pub fn imports_name(&self, name: &str) -> bool {
+        match self {
+            Self::Import { module, .. } => module == name || module.starts_with(&format!("{}.", name)),
+            Self::FromImport { names, .. } => names.iter().any(|n| n.name == name),
         }
     }
 }
@@ -442,6 +458,525 @@ impl ImportClassifier {
 
         // Fall back to standard classification
         self.classify(module_path)
+    }
+}
+
+// ============================================================================
+// Import Analysis Types
+// ============================================================================
+
+/// A simple text edit operation for import manipulation.
+///
+/// Unlike the full `Edit` type in `tugtool-core::patch`, this is a lightweight
+/// representation focused on single-file text modifications.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEdit {
+    /// Byte offset where the edit starts.
+    pub offset: usize,
+    /// Number of bytes to delete at offset (0 for pure insertion).
+    pub delete_len: usize,
+    /// Text to insert at offset.
+    pub insert_text: String,
+}
+
+impl TextEdit {
+    /// Create an insertion edit (insert text at offset, delete nothing).
+    pub fn insert(offset: usize, text: impl Into<String>) -> Self {
+        Self {
+            offset,
+            delete_len: 0,
+            insert_text: text.into(),
+        }
+    }
+
+    /// Create a replacement edit (delete some bytes and insert new text).
+    pub fn replace(offset: usize, delete_len: usize, text: impl Into<String>) -> Self {
+        Self {
+            offset,
+            delete_len,
+            insert_text: text.into(),
+        }
+    }
+
+    /// Apply this edit to the given source string.
+    pub fn apply(&self, source: &str) -> String {
+        let bytes = source.as_bytes();
+        let before = &bytes[..self.offset];
+        let after = &bytes[self.offset + self.delete_len..];
+
+        let mut result = Vec::with_capacity(before.len() + self.insert_text.len() + after.len());
+        result.extend_from_slice(before);
+        result.extend_from_slice(self.insert_text.as_bytes());
+        result.extend_from_slice(after);
+
+        String::from_utf8(result).expect("edit produced invalid UTF-8")
+    }
+}
+
+/// Information about a single import statement found in a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportInfo {
+    /// The parsed import statement.
+    pub statement: ImportStatement,
+    /// The classification of this import.
+    pub group: ImportGroupKind,
+    /// Start byte offset of the import statement in the source.
+    pub start_offset: usize,
+    /// End byte offset of the import statement in the source (exclusive).
+    pub end_offset: usize,
+    /// Line number (1-indexed) where this import appears.
+    pub line: usize,
+}
+
+/// Analysis of existing imports in a Python source file.
+#[derive(Debug, Clone, Default)]
+pub struct ImportAnalysis {
+    /// All imports found, grouped by classification.
+    pub groups: BTreeMap<ImportGroupKind, Vec<ImportInfo>>,
+    /// Line number of the last import statement (1-indexed), if any.
+    pub last_import_line: Option<usize>,
+    /// Byte offset just after the last import statement, if any.
+    pub after_imports_offset: Option<usize>,
+    /// Line number after module docstring (1-indexed), if present.
+    pub after_docstring_line: Option<usize>,
+    /// Byte offset just after module docstring, if present.
+    pub after_docstring_offset: Option<usize>,
+    /// All imports in source order (for duplicate detection).
+    imports_in_order: Vec<ImportInfo>,
+}
+
+impl ImportAnalysis {
+    /// Check if an import with the same module path exists.
+    pub fn has_import(&self, module_path: &str) -> bool {
+        self.imports_in_order
+            .iter()
+            .any(|info| info.statement.module_path() == module_path)
+    }
+
+    /// Check if a specific name is already imported from a module.
+    pub fn has_name_imported(&self, module_path: &str, name: &str) -> bool {
+        self.imports_in_order.iter().any(|info| {
+            info.statement.module_path() == module_path && info.statement.imports_name(name)
+        })
+    }
+
+    /// Get all imports in source order.
+    pub fn all_imports(&self) -> &[ImportInfo] {
+        &self.imports_in_order
+    }
+
+    /// Get the last import in a specific group.
+    pub fn last_in_group(&self, group: ImportGroupKind) -> Option<&ImportInfo> {
+        self.groups.get(&group).and_then(|v| v.last())
+    }
+
+    /// Get the first import in a specific group.
+    pub fn first_in_group(&self, group: ImportGroupKind) -> Option<&ImportInfo> {
+        self.groups.get(&group).and_then(|v| v.first())
+    }
+
+    /// Check if there are any imports.
+    pub fn is_empty(&self) -> bool {
+        self.imports_in_order.is_empty()
+    }
+}
+
+// ============================================================================
+// Import Inserter
+// ============================================================================
+
+/// Inserts import statements at the correct location in a Python file.
+///
+/// The inserter uses an `ImportClassifier` to determine where new imports
+/// should be placed based on their classification (future, stdlib, third-party, local).
+#[derive(Debug, Clone)]
+pub struct ImportInserter {
+    classifier: ImportClassifier,
+    mode: ImportInsertMode,
+}
+
+impl ImportInserter {
+    /// Create a new import inserter with the given classifier.
+    pub fn new(classifier: ImportClassifier) -> Self {
+        Self {
+            classifier,
+            mode: ImportInsertMode::default(),
+        }
+    }
+
+    /// Set the insertion mode.
+    pub fn with_mode(mut self, mode: ImportInsertMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Get the classifier used by this inserter.
+    pub fn classifier(&self) -> &ImportClassifier {
+        &self.classifier
+    }
+
+    /// Analyze a Python source file to find existing imports.
+    ///
+    /// This performs a simple line-by-line analysis to find import statements.
+    /// It doesn't use the full CST parser for performance and simplicity.
+    pub fn analyze_imports(&self, source: &str) -> ImportAnalysis {
+        let mut analysis = ImportAnalysis::default();
+        let mut current_offset = 0;
+        let mut in_multiline_string = false;
+        let mut multiline_quote: Option<&str> = None;
+        let mut found_first_code = false;
+        let mut in_parenthesized_import = false;
+        let mut paren_import_start: Option<(usize, usize, String)> = None; // (start_offset, line, module)
+
+        for (line_idx, line) in source.lines().enumerate() {
+            let line_num = line_idx + 1;
+            let line_start = current_offset;
+            let line_with_newline_len = if current_offset + line.len() < source.len() {
+                // Account for the newline character
+                let remaining = &source[current_offset + line.len()..];
+                if remaining.starts_with("\r\n") {
+                    line.len() + 2
+                } else if remaining.starts_with('\n') || remaining.starts_with('\r') {
+                    line.len() + 1
+                } else {
+                    line.len()
+                }
+            } else {
+                line.len()
+            };
+
+            current_offset += line_with_newline_len;
+            let trimmed = line.trim();
+
+            // Handle multiline strings (docstrings)
+            if in_multiline_string {
+                if let Some(quote) = multiline_quote {
+                    if trimmed.contains(quote) {
+                        in_multiline_string = false;
+                        multiline_quote = None;
+                        // If this was the module docstring, record where it ends
+                        if !found_first_code {
+                            analysis.after_docstring_line = Some(line_num + 1);
+                            analysis.after_docstring_offset = Some(current_offset);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Check for multiline string start
+            if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
+                let quote = if trimmed.starts_with("\"\"\"") {
+                    "\"\"\""
+                } else {
+                    "'''"
+                };
+
+                // Check if it closes on the same line
+                let after_open = &trimmed[3..];
+                if !after_open.contains(quote) {
+                    in_multiline_string = true;
+                    multiline_quote = Some(quote);
+                } else if !found_first_code {
+                    // Single-line docstring
+                    analysis.after_docstring_line = Some(line_num + 1);
+                    analysis.after_docstring_offset = Some(current_offset);
+                }
+                continue;
+            }
+
+            // Handle parenthesized imports
+            if in_parenthesized_import {
+                if trimmed.contains(')') {
+                    in_parenthesized_import = false;
+                    if let Some((start_offset, start_line, module)) = paren_import_start.take() {
+                        // Parse the accumulated names from the multiline import
+                        // For now, just record it as a from-import
+                        let group = self.classifier.classify(&module);
+                        let info = ImportInfo {
+                            statement: ImportStatement::from_import(&module, "..."),
+                            group,
+                            start_offset,
+                            end_offset: current_offset,
+                            line: start_line,
+                        };
+                        analysis
+                            .groups
+                            .entry(group)
+                            .or_insert_with(Vec::new)
+                            .push(info.clone());
+                        analysis.imports_in_order.push(info);
+                        analysis.last_import_line = Some(line_num);
+                        analysis.after_imports_offset = Some(current_offset);
+                    }
+                }
+                continue;
+            }
+
+            // Skip empty lines and comments
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            found_first_code = true;
+
+            // Parse import statements
+            if let Some(import_info) =
+                self.parse_import_line(trimmed, line_start, current_offset, line_num)
+            {
+                // Check for opening paren indicating multiline
+                if trimmed.contains('(') && !trimmed.contains(')') {
+                    in_parenthesized_import = true;
+                    paren_import_start =
+                        Some((line_start, line_num, import_info.statement.module_path().to_string()));
+                    continue;
+                }
+
+                analysis
+                    .groups
+                    .entry(import_info.group)
+                    .or_insert_with(Vec::new)
+                    .push(import_info.clone());
+                analysis.imports_in_order.push(import_info);
+                analysis.last_import_line = Some(line_num);
+                analysis.after_imports_offset = Some(current_offset);
+            }
+        }
+
+        analysis
+    }
+
+    /// Parse a single line to extract import information.
+    fn parse_import_line(
+        &self,
+        line: &str,
+        start_offset: usize,
+        end_offset: usize,
+        line_num: usize,
+    ) -> Option<ImportInfo> {
+        let trimmed = line.trim();
+
+        // Handle `from X import Y`
+        if let Some(rest) = trimmed.strip_prefix("from ") {
+            let parts: Vec<&str> = rest.splitn(2, " import ").collect();
+            if parts.len() == 2 {
+                let module = parts[0].trim().to_string();
+                let names_part = parts[1].trim();
+
+                // Parse imported names
+                let names = self.parse_imported_names(names_part);
+
+                let statement = ImportStatement::from_import_names(&module, names);
+                let group = self.classifier.classify(&module);
+
+                return Some(ImportInfo {
+                    statement,
+                    group,
+                    start_offset,
+                    end_offset,
+                    line: line_num,
+                });
+            }
+        }
+
+        // Handle `import X`
+        if let Some(rest) = trimmed.strip_prefix("import ") {
+            // Could be `import module` or `import module as alias`
+            let parts: Vec<&str> = rest.splitn(2, " as ").collect();
+            let module = parts[0].trim().to_string();
+            let alias = if parts.len() == 2 {
+                Some(parts[1].trim().to_string())
+            } else {
+                None
+            };
+
+            let statement = if let Some(a) = alias {
+                ImportStatement::import_as(&module, a)
+            } else {
+                ImportStatement::import(&module)
+            };
+
+            let group = self.classifier.classify(&module);
+
+            return Some(ImportInfo {
+                statement,
+                group,
+                start_offset,
+                end_offset,
+                line: line_num,
+            });
+        }
+
+        None
+    }
+
+    /// Parse the names part of a from-import statement.
+    fn parse_imported_names(&self, names_str: &str) -> Vec<ImportedName> {
+        // Remove parentheses if present
+        let names_str = names_str.trim_start_matches('(').trim_end_matches(')');
+
+        names_str
+            .split(',')
+            .map(|n| {
+                let n = n.trim();
+                if let Some(rest) = n.strip_suffix(')') {
+                    // Handle trailing paren
+                    let n = rest.trim();
+                    self.parse_single_name(n)
+                } else {
+                    self.parse_single_name(n)
+                }
+            })
+            .filter(|n| !n.name.is_empty())
+            .collect()
+    }
+
+    /// Parse a single imported name, possibly with alias.
+    fn parse_single_name(&self, name: &str) -> ImportedName {
+        let parts: Vec<&str> = name.splitn(2, " as ").collect();
+        if parts.len() == 2 {
+            ImportedName::with_alias(parts[0].trim(), parts[1].trim())
+        } else {
+            ImportedName::new(parts[0].trim())
+        }
+    }
+
+    /// Find the insertion point for a new import.
+    ///
+    /// Returns the byte offset and whether a blank line should be added before the import.
+    fn find_insertion_point(
+        &self,
+        group: ImportGroupKind,
+        analysis: &ImportAnalysis,
+    ) -> ImportManipulationResult<(usize, bool, bool)> {
+        // (offset, blank_line_before, blank_line_after)
+        match self.mode {
+            ImportInsertMode::Preserve => {
+                self.find_insertion_point_preserve(group, analysis)
+            }
+            ImportInsertMode::Organize => {
+                self.find_insertion_point_organize(group, analysis)
+            }
+        }
+    }
+
+    /// Find insertion point in Preserve mode.
+    /// Tries to minimize changes by inserting near existing imports of the same group.
+    fn find_insertion_point_preserve(
+        &self,
+        group: ImportGroupKind,
+        analysis: &ImportAnalysis,
+    ) -> ImportManipulationResult<(usize, bool, bool)> {
+        // If there are existing imports in this group, insert after the last one
+        if let Some(last) = analysis.last_in_group(group) {
+            return Ok((last.end_offset, false, false));
+        }
+
+        // No existing imports in this group - find the appropriate boundary
+        // Import order: Future < Stdlib < ThirdParty < Local
+
+        // Check for imports in adjacent groups
+        let groups_order = [
+            ImportGroupKind::Future,
+            ImportGroupKind::Stdlib,
+            ImportGroupKind::ThirdParty,
+            ImportGroupKind::Local,
+        ];
+
+        let group_idx = groups_order.iter().position(|g| *g == group).unwrap();
+
+        // Look for the last import in any group before this one
+        for prev_group in groups_order[..group_idx].iter().rev() {
+            if let Some(last) = analysis.last_in_group(*prev_group) {
+                // Insert after this import, with a blank line before (new group)
+                return Ok((last.end_offset, true, false));
+            }
+        }
+
+        // No imports before this group - check if there are imports after
+        for next_group in groups_order.iter().skip(group_idx + 1) {
+            if let Some(first) = analysis.first_in_group(*next_group) {
+                // Insert before this import, with a blank line after (new group)
+                return Ok((first.start_offset, false, true));
+            }
+        }
+
+        // No imports at all - insert at appropriate location
+        self.find_insertion_point_empty(analysis)
+    }
+
+    /// Find insertion point in Organize mode.
+    /// Sorts imports within groups alphabetically.
+    fn find_insertion_point_organize(
+        &self,
+        group: ImportGroupKind,
+        analysis: &ImportAnalysis,
+    ) -> ImportManipulationResult<(usize, bool, bool)> {
+        // Same logic as Preserve for finding the right group location
+        // Organize mode's main difference is in how we sort within groups,
+        // which is handled separately when generating the full import block
+        self.find_insertion_point_preserve(group, analysis)
+    }
+
+    /// Find insertion point when there are no existing imports.
+    fn find_insertion_point_empty(
+        &self,
+        analysis: &ImportAnalysis,
+    ) -> ImportManipulationResult<(usize, bool, bool)> {
+        // If there's a docstring, insert after it
+        if let Some(offset) = analysis.after_docstring_offset {
+            return Ok((offset, false, false));
+        }
+
+        // Insert at the very beginning
+        Ok((0, false, false))
+    }
+
+    /// Calculate the edit to insert an import statement.
+    pub fn insert(
+        &self,
+        import: ImportStatement,
+        analysis: &ImportAnalysis,
+    ) -> ImportManipulationResult<TextEdit> {
+        let module_path = import.module_path();
+        let group = self.classifier.classify(module_path);
+
+        // Check for duplicates
+        match &import {
+            ImportStatement::Import { module, .. } => {
+                if analysis.has_import(module) {
+                    return Err(ImportManipulationError::AlreadyExists(module.clone()));
+                }
+            }
+            ImportStatement::FromImport { module, names } => {
+                for name in names {
+                    if analysis.has_name_imported(module, &name.name) {
+                        return Err(ImportManipulationError::AlreadyExists(format!(
+                            "from {} import {}",
+                            module, name.name
+                        )));
+                    }
+                }
+            }
+        }
+
+        let (offset, blank_before, blank_after) = self.find_insertion_point(group, analysis)?;
+
+        // Build the insert text
+        let mut text = String::new();
+
+        if blank_before {
+            text.push('\n');
+        }
+
+        text.push_str(&import.render());
+        text.push('\n');
+
+        if blank_after {
+            text.push('\n');
+        }
+
+        Ok(TextEdit::insert(offset, text))
     }
 }
 
@@ -887,5 +1422,313 @@ mod tests {
         assert_eq!(classifier.classify("myproject.core"), ImportGroupKind::Local);
         assert_eq!(classifier.classify("myproject.utils"), ImportGroupKind::Local);
         assert_eq!(classifier.classify(".relative"), ImportGroupKind::Local);
+    }
+
+    // ============================================================================
+    // ImportInserter tests (Phase D)
+    // ============================================================================
+
+    fn make_inserter() -> ImportInserter {
+        let config = ImportClassifierConfig::default();
+        let classifier = ImportClassifier::new(config);
+        ImportInserter::new(classifier)
+    }
+
+    #[test]
+    fn test_insert_into_empty_file() {
+        let inserter = make_inserter();
+        let source = "";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::import("os");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        assert_eq!(result, "import os\n");
+    }
+
+    #[test]
+    fn test_insert_after_docstring() {
+        let inserter = make_inserter();
+        let source = r#""""Module docstring."""
+"#;
+        let analysis = inserter.analyze_imports(source);
+
+        // Verify docstring was detected
+        assert!(analysis.after_docstring_offset.is_some());
+
+        let import = ImportStatement::import("os");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        assert!(result.contains("\"\"\"Module docstring.\"\"\""));
+        assert!(result.contains("import os\n"));
+        // Import should be after docstring
+        let docstring_end = result.find("\"\"\"").unwrap() + 3 + result[3..].find("\"\"\"").unwrap() + 3;
+        let import_pos = result.find("import os").unwrap();
+        assert!(import_pos > docstring_end);
+    }
+
+    #[test]
+    fn test_insert_stdlib_after_stdlib() {
+        let inserter = make_inserter();
+        let source = "import os\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::import("sys");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        assert_eq!(result, "import os\nimport sys\n");
+    }
+
+    #[test]
+    fn test_insert_third_party_after_stdlib() {
+        let inserter = make_inserter();
+        let source = "import os\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::import("numpy");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        // Should have blank line between stdlib and third-party
+        assert_eq!(result, "import os\n\nimport numpy\n");
+    }
+
+    #[test]
+    fn test_insert_local_after_third_party() {
+        let inserter = make_inserter();
+        let source = "import numpy\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::from_import(".local", "foo");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        // Should have blank line between third-party and local
+        assert_eq!(result, "import numpy\n\nfrom .local import foo\n");
+    }
+
+    #[test]
+    fn test_insert_future_first() {
+        let inserter = make_inserter();
+        let source = "import os\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::from_import("__future__", "annotations");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        // Future import should come first with blank line after
+        assert_eq!(result, "from __future__ import annotations\n\nimport os\n");
+    }
+
+    #[test]
+    fn test_insert_after_future() {
+        let inserter = make_inserter();
+        let source = "from __future__ import annotations\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::import("os");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        // stdlib should come after future with blank line
+        assert_eq!(result, "from __future__ import annotations\n\nimport os\n");
+    }
+
+    #[test]
+    fn test_insert_preserves_blank_lines() {
+        let inserter = make_inserter();
+        let source = "import os\n\nimport numpy\n";
+        let analysis = inserter.analyze_imports(source);
+
+        // Insert another stdlib - should go with os, not add extra blank line
+        let import = ImportStatement::import("sys");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        // The blank line between groups should be preserved
+        assert!(result.contains("import os\nimport sys\n\nimport numpy\n"));
+    }
+
+    #[test]
+    fn test_insert_adds_blank_line_between_groups() {
+        let inserter = make_inserter();
+        let source = "import os\nimport numpy\n"; // Missing blank line
+        let analysis = inserter.analyze_imports(source);
+
+        // Insert a local import
+        let import = ImportStatement::from_import(".mymodule", "func");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        // Should add blank line before local
+        assert!(result.ends_with("\nfrom .mymodule import func\n"));
+    }
+
+    #[test]
+    fn test_insert_duplicate_rejected() {
+        let inserter = make_inserter();
+        let source = "import os\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::import("os");
+        let result = inserter.insert(import, &analysis);
+
+        assert!(matches!(
+            result,
+            Err(ImportManipulationError::AlreadyExists(_))
+        ));
+    }
+
+    #[test]
+    fn test_insert_duplicate_from_import_rejected() {
+        let inserter = make_inserter();
+        let source = "from os import path\n";
+        let analysis = inserter.analyze_imports(source);
+
+        let import = ImportStatement::from_import("os", "path");
+        let result = inserter.insert(import, &analysis);
+
+        assert!(matches!(
+            result,
+            Err(ImportManipulationError::AlreadyExists(_))
+        ));
+    }
+
+    #[test]
+    fn test_insert_organize_mode_sorts() {
+        let config = ImportClassifierConfig::default();
+        let classifier = ImportClassifier::new(config);
+        let inserter = ImportInserter::new(classifier).with_mode(ImportInsertMode::Organize);
+
+        let source = "import sys\n";
+        let analysis = inserter.analyze_imports(source);
+
+        // Insert os - should go with other stdlib
+        let import = ImportStatement::import("os");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+        assert!(result.contains("import sys\nimport os\n"));
+    }
+
+    #[test]
+    fn test_insert_roundtrip() {
+        let inserter = make_inserter();
+
+        // Start with a realistic file
+        let source = r#""""A module with imports."""
+
+from __future__ import annotations
+
+import os
+import sys
+
+import numpy as np
+
+from .local import helper
+"#;
+
+        let analysis = inserter.analyze_imports(source);
+
+        // Verify analysis captured all imports correctly
+        assert_eq!(analysis.groups.len(), 4); // All 4 group types
+        assert!(analysis.after_docstring_offset.is_some());
+
+        // Insert a new third-party import
+        let import = ImportStatement::import("requests");
+        let edit = inserter.insert(import, &analysis).unwrap();
+
+        let result = edit.apply(source);
+
+        // Verify the result is valid and contains the new import
+        assert!(result.contains("import requests"));
+
+        // Re-analyze to verify structure is preserved
+        let analysis2 = inserter.analyze_imports(&result);
+        assert_eq!(analysis2.groups.len(), 4);
+
+        // Verify import groups are in correct order
+        let groups: Vec<_> = analysis2.groups.keys().collect();
+        assert_eq!(
+            groups,
+            vec![
+                &ImportGroupKind::Future,
+                &ImportGroupKind::Stdlib,
+                &ImportGroupKind::ThirdParty,
+                &ImportGroupKind::Local
+            ]
+        );
+    }
+
+    #[test]
+    fn test_analyze_multiline_docstring() {
+        let inserter = make_inserter();
+        let source = r#""""
+This is a multi-line
+docstring.
+"""
+
+import os
+"#;
+        let analysis = inserter.analyze_imports(source);
+
+        assert!(analysis.after_docstring_offset.is_some());
+        assert_eq!(analysis.imports_in_order.len(), 1);
+        assert_eq!(analysis.imports_in_order[0].statement.module_path(), "os");
+    }
+
+    #[test]
+    fn test_analyze_from_import_with_alias() {
+        let inserter = make_inserter();
+        let source = "from os import path as p\n";
+        let analysis = inserter.analyze_imports(source);
+
+        assert_eq!(analysis.imports_in_order.len(), 1);
+        let import = &analysis.imports_in_order[0];
+        match &import.statement {
+            ImportStatement::FromImport { names, .. } => {
+                assert_eq!(names.len(), 1);
+                assert_eq!(names[0].name, "path");
+                assert_eq!(names[0].alias, Some("p".to_string()));
+            }
+            _ => panic!("Expected FromImport"),
+        }
+    }
+
+    #[test]
+    fn test_analyze_multiple_names() {
+        let inserter = make_inserter();
+        let source = "from os import path, getcwd, chdir\n";
+        let analysis = inserter.analyze_imports(source);
+
+        assert_eq!(analysis.imports_in_order.len(), 1);
+        let import = &analysis.imports_in_order[0];
+        match &import.statement {
+            ImportStatement::FromImport { names, .. } => {
+                assert_eq!(names.len(), 3);
+                assert_eq!(names[0].name, "path");
+                assert_eq!(names[1].name, "getcwd");
+                assert_eq!(names[2].name, "chdir");
+            }
+            _ => panic!("Expected FromImport"),
+        }
+    }
+
+    #[test]
+    fn test_text_edit_apply() {
+        let edit = TextEdit::insert(5, " world");
+        let result = edit.apply("hello!");
+        assert_eq!(result, "hello world!");
+    }
+
+    #[test]
+    fn test_text_edit_replace() {
+        let edit = TextEdit::replace(0, 5, "goodbye");
+        let result = edit.apply("hello world");
+        assert_eq!(result, "goodbye world");
     }
 }

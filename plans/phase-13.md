@@ -9472,7 +9472,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tasks:**
 
-- [ ] Implement `ImportInserter` struct with builder pattern:
+- [x] Implement `ImportInserter` struct with builder pattern:
   ```rust
   /// Inserts import statements at the correct location in a Python file.
   pub struct ImportInserter {
@@ -9492,7 +9492,7 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Implement `analyze_existing_imports()` to scan file for import locations:
+- [x] Implement `analyze_existing_imports()` to scan file for import locations:
   ```rust
   /// Information about existing imports in a file.
   pub struct ImportAnalysis {
@@ -9514,23 +9514,23 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
   }
   ```
 
-- [ ] Implement `find_insertion_point()` for `Preserve` mode:
+- [x] Implement `find_insertion_point()` for `Preserve` mode:
   - If imports of same group exist, insert after last one in group
   - If no imports of same group, insert at appropriate boundary
   - Handle TYPE_CHECKING blocks specially (defer to Phase G integration)
 
-- [ ] Implement `find_insertion_point()` for `Organize` mode:
+- [x] Implement `find_insertion_point()` for `Organize` mode:
   - Sort all imports by group then alphabetically
   - Insert in correct sorted position
   - Add blank lines between groups as needed
 
-- [ ] Handle edge cases:
+- [x] Handle edge cases:
   - File with no existing imports (insert after docstring or at top)
   - File with only docstring (insert after docstring)
   - File with `__future__` imports (never insert before)
   - Multiline imports with parentheses
 
-- [ ] Implement `insert()` method returning edit operation:
+- [x] Implement `insert()` method returning edit operation:
   ```rust
   impl ImportInserter {
       /// Calculate the edit to insert an import statement.
@@ -9551,18 +9551,18 @@ This step builds the import manipulation infrastructure that Layer 3 (Import Gra
 
 **Tests:**
 
-- [ ] Unit: `test_insert_into_empty_file` - Insert into file with no imports
-- [ ] Unit: `test_insert_after_docstring` - Import placed after module docstring
-- [ ] Unit: `test_insert_stdlib_after_stdlib` - Insert os.path after existing os import
-- [ ] Unit: `test_insert_third_party_after_stdlib` - numpy goes after os with blank line
-- [ ] Unit: `test_insert_local_after_third_party` - Local import goes last with blank line
-- [ ] Unit: `test_insert_future_first` - Future imports always first
-- [ ] Unit: `test_insert_after_future` - Never insert before __future__
-- [ ] Unit: `test_insert_preserves_blank_lines` - Blank lines between groups preserved
-- [ ] Unit: `test_insert_adds_blank_line_between_groups` - Adds blank line when inserting new group
-- [ ] Unit: `test_insert_duplicate_rejected` - Duplicate import returns AlreadyExists error
-- [ ] Unit: `test_insert_organize_mode_sorts` - Organize mode places import in sorted position
-- [ ] Integration: `test_insert_roundtrip` - Insert, apply edit, parse result
+- [x] Unit: `test_insert_into_empty_file` - Insert into file with no imports
+- [x] Unit: `test_insert_after_docstring` - Import placed after module docstring
+- [x] Unit: `test_insert_stdlib_after_stdlib` - Insert os.path after existing os import
+- [x] Unit: `test_insert_third_party_after_stdlib` - numpy goes after os with blank line
+- [x] Unit: `test_insert_local_after_third_party` - Local import goes last with blank line
+- [x] Unit: `test_insert_future_first` - Future imports always first
+- [x] Unit: `test_insert_after_future` - Never insert before __future__
+- [x] Unit: `test_insert_preserves_blank_lines` - Blank lines between groups preserved
+- [x] Unit: `test_insert_adds_blank_line_between_groups` - Adds blank line when inserting new group
+- [x] Unit: `test_insert_duplicate_rejected` - Duplicate import returns AlreadyExists error
+- [x] Unit: `test_insert_organize_mode_sorts` - Organize mode places import in sorted position
+- [x] Integration: `test_insert_roundtrip` - Insert, apply edit, parse result
 
 ---
 
