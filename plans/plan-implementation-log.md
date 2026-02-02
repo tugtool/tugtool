@@ -6,6 +6,76 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Steps 1.0.1-1.0.2: Type Comments and BatchSpanEditor Migration | VERIFIED | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 1.0.1 (lines 9760-9841), Step 1.0.2 (lines 9845-9917)
+- `crates/tugtool-python-cst/src/visitor/type_comment.rs` - Type comment infrastructure
+- `crates/tugtool-python-cst/src/visitor/mod.rs` - Module exports
+- `crates/tugtool-python-cst/src/lib.rs` - Re-exports
+- `crates/tugtool-python/src/cst_bridge.rs` - BatchSpanEditor bridge functions
+- `crates/tugtool-python/src/ops/rename.rs` - Migrated rename operations
+- `crates/tugtool-python/src/analyzer.rs` - Type comment integration
+- `crates/tugtool-python/tests/rename_batch_editor_migration.rs` - Migration tests
+
+**Step 1.0.1: Support Type Comments - Verification Results:**
+
+| Artifact | Status |
+|----------|--------|
+| `type_comment.rs` file exists | Verified |
+| `TypeCommentKind` enum (Variable, FunctionSignature, Ignore) | Verified |
+| `TypeComment` struct (kind, content, span, line) | Verified |
+| `TypeNameRef` struct (name, offset_in_content, length) | Verified |
+| `ParsedTypeComment` struct (kind, content, refs) | Verified |
+| `TypeCommentParser::rename()` method | Verified |
+| `TypeCommentParser::contains_name()` method | Verified |
+| `TypeCommentCollector` visitor | Verified |
+| Exported from visitor/mod.rs | Verified |
+| Re-exported from lib.rs | Verified |
+| Integrated into analyzer.rs | Verified |
+| All 16 required tests present | Verified (plus 14 additional) |
+
+**Step 1.0.2: Migrate Rename to BatchSpanEditor - Verification Results:**
+
+| Artifact | Status |
+|----------|--------|
+| `cst_bridge::apply_batch_edits()` function | Verified |
+| `rewrites_to_edit_primitives()` helper | Verified |
+| `rename.rs` uses apply_batch_edits() | Verified |
+| No longer uses RenameTransformer | Verified |
+| `rename_batch_editor_migration.rs` test file | Verified |
+| All 7 required tests present | Verified (plus 5 additional) |
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst type_comment`: 33 tests passed
+- `cargo nextest run -p tugtool-python type_comment`: 6 tests passed
+- `cargo nextest run -p tugtool-python rename`: 82 tests passed
+- `cargo nextest run -p tugtool-python rename_batch_editor_migration`: 12 tests passed
+- `cargo clippy --workspace -- -D warnings`: PASS
+
+**Checkpoints Verified:**
+- Step 1.0.1: `cargo build -p tugtool-python-cst` succeeds: PASS
+- Step 1.0.1: `cargo build -p tugtool-python` succeeds: PASS
+- Step 1.0.1: `cargo nextest run -p tugtool-python-cst type_comment` passes: PASS
+- Step 1.0.1: `cargo nextest run -p tugtool-python type_comment` passes: PASS
+- Step 1.0.2: `cargo build -p tugtool-python` succeeds: PASS
+- Step 1.0.2: `cargo nextest run -p tugtool-python rename` passes: PASS
+- Step 1.0.2: `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes: PASS
+- `cargo clippy --workspace -- -D warnings` passes: PASS
+
+**Files Modified:**
+- `plans/phase-13.md` - Checked off 40 items for Step 1.0.1, 23 items for Step 1.0.2
+
+**Key Decisions/Notes:**
+- Both steps verified complete with all artifacts matching plan specifications
+- Step 1.0.1 TypeNameRef uses `offset_in_content` (plan said `offset_in_comment`) - semantically equivalent
+- Step 1.0.2 RenameTransformer deprecation was correctly skipped (no external users)
+- Implementation exceeds requirements with additional tests for better coverage
+
+---
+
 ## [phase-13.md] Stage 1: Foundation Hardening + Layer 1 | REVIEW | 2026-02-02
 
 **Completed:** 2026-02-02

@@ -9779,25 +9779,25 @@ This step adds infrastructure to parse and track type comments so that rename op
 - Modified `crates/tugtool-python/src/analyzer.rs` - Integrate type comments into analysis
 
 **Tasks:**
-- [ ] Create `type_comment.rs` module in tugtool-python-cst/src/visitor/
-- [ ] Add `TypeCommentKind` enum with variants: `Variable` (`# type: T`), `FunctionSignature` (`# type: (...) -> T`), `Ignore` (`# type: ignore`)
-- [ ] Add `TypeComment` struct with `kind`, `content`, `span`, `line` fields
-- [ ] Add `TypeNameRef` struct with `name`, `offset_in_comment`, `length` fields (similar to `AnnotationRef` in StringAnnotationParser)
-- [ ] Add `ParsedTypeComment` struct with `kind`, `content`, `refs: Vec<TypeNameRef>` fields
-- [ ] Implement `TypeCommentParser` to extract type names from comment content
-  - [ ] Handle simple types: `# type: Foo`
-  - [ ] Handle qualified types: `# type: module.Class`
-  - [ ] Handle generic types: `# type: List[Foo]`
-  - [ ] Handle union types: `# type: Union[A, B]` and `# type: A | B`
-  - [ ] Handle function signatures: `# type: (int, str) -> bool`
-  - [ ] Handle `# type: ignore` and `# type: ignore[code]` (skip parsing, mark as Ignore)
-- [ ] Implement `TypeCommentParser::rename(comment, old_name, new_name)` for transforming type comments
-- [ ] Implement `TypeCommentParser::contains_name(comment, name)` check
-- [ ] Create `TypeCommentCollector` visitor to collect type comments from CST
-  - [ ] Track comment position relative to statement (same line vs separate line)
-  - [ ] Associate type comments with their target bindings when possible
-- [ ] Export types from `visitor/mod.rs` and `lib.rs`
-- [ ] Integrate `TypeCommentCollector` into analyzer to populate binding/reference data with type comment info
+- [x] Create `type_comment.rs` module in tugtool-python-cst/src/visitor/
+- [x] Add `TypeCommentKind` enum with variants: `Variable` (`# type: T`), `FunctionSignature` (`# type: (...) -> T`), `Ignore` (`# type: ignore`)
+- [x] Add `TypeComment` struct with `kind`, `content`, `span`, `line` fields
+- [x] Add `TypeNameRef` struct with `name`, `offset_in_comment`, `length` fields (similar to `AnnotationRef` in StringAnnotationParser)
+- [x] Add `ParsedTypeComment` struct with `kind`, `content`, `refs: Vec<TypeNameRef>` fields
+- [x] Implement `TypeCommentParser` to extract type names from comment content
+  - [x] Handle simple types: `# type: Foo`
+  - [x] Handle qualified types: `# type: module.Class`
+  - [x] Handle generic types: `# type: List[Foo]`
+  - [x] Handle union types: `# type: Union[A, B]` and `# type: A | B`
+  - [x] Handle function signatures: `# type: (int, str) -> bool`
+  - [x] Handle `# type: ignore` and `# type: ignore[code]` (skip parsing, mark as Ignore)
+- [x] Implement `TypeCommentParser::rename(comment, old_name, new_name)` for transforming type comments
+- [x] Implement `TypeCommentParser::contains_name(comment, name)` check
+- [x] Create `TypeCommentCollector` visitor to collect type comments from CST
+  - [x] Track comment position relative to statement (same line vs separate line)
+  - [x] Associate type comments with their target bindings when possible
+- [x] Export types from `visitor/mod.rs` and `lib.rs`
+- [x] Integrate `TypeCommentCollector` into analyzer to populate binding/reference data with type comment info
 
 **Design Notes:**
 
@@ -9814,29 +9814,29 @@ The `TypeCommentCollector` visitor integrates with existing CST infrastructure:
 - Associate with adjacent bindings when on same line
 
 **Tests:**
-- [ ] Unit: `test_type_comment_parse_simple` - Parse `# type: Foo`
-- [ ] Unit: `test_type_comment_parse_qualified` - Parse `# type: module.Class`
-- [ ] Unit: `test_type_comment_parse_generic` - Parse `# type: List[Foo]`
-- [ ] Unit: `test_type_comment_parse_union` - Parse `# type: Union[A, B]`
-- [ ] Unit: `test_type_comment_parse_pipe_union` - Parse `# type: A | B`
-- [ ] Unit: `test_type_comment_parse_function_sig` - Parse `# type: (int) -> str`
-- [ ] Unit: `test_type_comment_parse_ignore` - Recognize `# type: ignore`
-- [ ] Unit: `test_type_comment_parse_ignore_code` - Recognize `# type: ignore[attr-defined]`
-- [ ] Unit: `test_type_comment_rename_simple` - Rename type in simple comment
-- [ ] Unit: `test_type_comment_rename_generic` - Rename type in generic comment
-- [ ] Unit: `test_type_comment_rename_multiple` - Rename multiple occurrences
-- [ ] Unit: `test_type_comment_contains_name_true` - Name found in comment
-- [ ] Unit: `test_type_comment_contains_name_false` - Name not found
-- [ ] Unit: `test_type_comment_collector_basic` - Collect type comments from source
-- [ ] Unit: `test_type_comment_collector_multiple` - Collect multiple type comments
-- [ ] Integration: `test_type_comment_binding_association` - Type comments linked to bindings
+- [x] Unit: `test_type_comment_parse_simple` - Parse `# type: Foo`
+- [x] Unit: `test_type_comment_parse_qualified` - Parse `# type: module.Class`
+- [x] Unit: `test_type_comment_parse_generic` - Parse `# type: List[Foo]`
+- [x] Unit: `test_type_comment_parse_union` - Parse `# type: Union[A, B]`
+- [x] Unit: `test_type_comment_parse_pipe_union` - Parse `# type: A | B`
+- [x] Unit: `test_type_comment_parse_function_sig` - Parse `# type: (int) -> str`
+- [x] Unit: `test_type_comment_parse_ignore` - Recognize `# type: ignore`
+- [x] Unit: `test_type_comment_parse_ignore_code` - Recognize `# type: ignore[attr-defined]`
+- [x] Unit: `test_type_comment_rename_simple` - Rename type in simple comment
+- [x] Unit: `test_type_comment_rename_generic` - Rename type in generic comment
+- [x] Unit: `test_type_comment_rename_multiple` - Rename multiple occurrences
+- [x] Unit: `test_type_comment_contains_name_true` - Name found in comment
+- [x] Unit: `test_type_comment_contains_name_false` - Name not found
+- [x] Unit: `test_type_comment_collector_basic` - Collect type comments from source
+- [x] Unit: `test_type_comment_collector_multiple` - Collect multiple type comments
+- [x] Integration: `test_type_comment_binding_association` - Type comments linked to bindings
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python-cst` succeeds
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python-cst type_comment` passes
-- [ ] `cargo nextest run -p tugtool-python type_comment` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
+- [x] `cargo build -p tugtool-python-cst` succeeds
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python-cst type_comment` passes
+- [x] `cargo nextest run -p tugtool-python type_comment` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
 
 **Rollback:** Revert commit
 
@@ -9865,16 +9865,16 @@ This migration:
 - New `crates/tugtool-python/tests/rename_batch_editor_migration.rs` - Migration validation tests
 
 **Tasks:**
-- [ ] Add bridge function `cst_bridge::apply_batch_edits(source, edits) -> Result<String>` wrapping BatchSpanEditor
-- [ ] Update `rename::generate_edits()` to produce `Vec<EditPrimitive>` instead of `Vec<RenameRequest>`
-  - [ ] Map each reference span to `EditPrimitive::Replace { span, new_text: new_name }`
-  - [ ] Preserve existing span collection logic
-- [ ] Update `rename::apply_edits_to_file()` to use `cst_bridge::apply_batch_edits()`
-- [ ] Verify multi-file rename still works (each file gets its own BatchSpanEditor)
-- [ ] ~~Add `#[deprecated]` attribute to `RenameTransformer` with migration note~~ (skipped - no external users)
-- [ ] Verify all existing rename tests pass without modification
-- [ ] Add migration validation tests comparing old vs new implementation
-- [ ] ~~Update documentation to reference BatchSpanEditor~~ (skipped - no external users)
+- [x] Add bridge function `cst_bridge::apply_batch_edits(source, edits) -> Result<String>` wrapping BatchSpanEditor
+- [x] Update `rename::generate_edits()` to produce `Vec<EditPrimitive>` instead of `Vec<RenameRequest>`
+  - [x] Map each reference span to `EditPrimitive::Replace { span, new_text: new_name }`
+  - [x] Preserve existing span collection logic
+- [x] Update `rename::apply_edits_to_file()` to use `cst_bridge::apply_batch_edits()`
+- [x] Verify multi-file rename still works (each file gets its own BatchSpanEditor)
+- [x] ~~Add `#[deprecated]` attribute to `RenameTransformer` with migration note~~ (skipped - no external users)
+- [x] Verify all existing rename tests pass without modification
+- [x] Add migration validation tests comparing old vs new implementation
+- [x] ~~Update documentation to reference BatchSpanEditor~~ (skipped - no external users)
 
 **Migration Validation:**
 
@@ -9897,21 +9897,21 @@ Map `BatchEditError` variants to existing `RenameError`:
 | `IndentationDetectionFailed` | (not applicable for Replace-only edits) |
 
 **Tests:**
-- [ ] Unit: `test_batch_editor_single_rename` - Single span replacement
-- [ ] Unit: `test_batch_editor_multiple_renames` - Multiple spans in same file
-- [ ] Unit: `test_batch_editor_preserves_formatting` - Whitespace/comments preserved
-- [ ] Unit: `test_batch_editor_unicode_spans` - Multi-byte character handling
-- [ ] Integration: `test_rename_migration_simple` - Compare old vs new for simple case
-- [ ] Integration: `test_rename_migration_multifile` - Compare old vs new for multi-file
-- [ ] Integration: `test_rename_migration_complex` - Compare old vs new for complex case
-- [ ] Regression: All existing rename tests in `crates/tugtool-python/tests/` pass unchanged
+- [x] Unit: `test_batch_editor_single_rename` - Single span replacement
+- [x] Unit: `test_batch_editor_multiple_renames` - Multiple spans in same file
+- [x] Unit: `test_batch_editor_preserves_formatting` - Whitespace/comments preserved
+- [x] Unit: `test_batch_editor_unicode_spans` - Multi-byte character handling
+- [x] Integration: `test_rename_migration_simple` - Compare old vs new for simple case
+- [x] Integration: `test_rename_migration_multifile` - Compare old vs new for multi-file
+- [x] Integration: `test_rename_migration_complex` - Compare old vs new for complex case
+- [x] Regression: All existing rename tests in `crates/tugtool-python/tests/` pass unchanged
 
 **Checkpoint:**
-- [ ] `cargo build -p tugtool-python` succeeds
-- [ ] `cargo nextest run -p tugtool-python rename` passes (all existing tests)
-- [ ] `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
-- [ ] ~~`RenameTransformer` has `#[deprecated]` attribute~~ (skipped - no external users)
+- [x] `cargo build -p tugtool-python` succeeds
+- [x] `cargo nextest run -p tugtool-python rename` passes (all existing tests)
+- [x] `cargo nextest run -p tugtool-python rename_batch_editor_migration` passes
+- [x] `cargo clippy --workspace -- -D warnings` passes
+- [x] ~~`RenameTransformer` has `#[deprecated]` attribute~~ (skipped - no external users)
 
 **Rollback:** Revert commit
 
