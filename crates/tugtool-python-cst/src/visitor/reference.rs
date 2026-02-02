@@ -166,7 +166,12 @@ pub struct ReferenceCollector<'pos> {
     /// This optimizes the common case where a name is not in the stack.
     context_names: HashSet<String>,
     /// Current scope path for tracking where references occur.
+    /// Includes all scopes (comprehensions, lambdas, etc.)
     scope_path: Vec<String>,
+    /// Enclosing non-comprehension scope path for walrus operator bindings.
+    /// Per PEP 572, walrus operators in comprehensions bind to the enclosing
+    /// function/module scope, not the comprehension scope.
+    enclosing_scope_path: Vec<String>,
 }
 
 impl<'pos> ReferenceCollector<'pos> {
@@ -181,6 +186,7 @@ impl<'pos> ReferenceCollector<'pos> {
             assign_skip_counts: Vec::new(),
             context_names: HashSet::new(),
             scope_path: vec![SCOPE_MODULE.to_string()],
+            enclosing_scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -195,6 +201,7 @@ impl<'pos> ReferenceCollector<'pos> {
             assign_skip_counts: Vec::new(),
             context_names: HashSet::new(),
             scope_path: vec![SCOPE_MODULE.to_string()],
+            enclosing_scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -284,6 +291,26 @@ impl<'pos> ReferenceCollector<'pos> {
     fn add_reference_with_id(&mut self, name: &str, kind: ReferenceKind, node_id: Option<NodeId>) {
         let span = self.lookup_span(node_id);
         let info = CstReferenceRecord::new(kind, self.scope_path.clone()).with_span(span);
+
+        self.references
+            .entry(name.to_string())
+            .or_default()
+            .push(info);
+    }
+
+    /// Add a reference with explicit scope path (for walrus operators in comprehensions).
+    ///
+    /// Per PEP 572, walrus operators inside comprehensions bind to the enclosing
+    /// function/module scope, not the comprehension scope.
+    fn add_reference_with_id_and_scope(
+        &mut self,
+        name: &str,
+        kind: ReferenceKind,
+        node_id: Option<NodeId>,
+        scope_path: Vec<String>,
+    ) {
+        let span = self.lookup_span(node_id);
+        let info = CstReferenceRecord::new(kind, scope_path).with_span(span);
 
         self.references
             .entry(name.to_string())
@@ -597,8 +624,10 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
             kind: ContextKind::SkipName,
             name: Some(name_str.clone()),
         });
-        // Push scope for references inside the function body
-        self.scope_path.push(name_str);
+        // Push scope for references inside the function body - update BOTH paths
+        // Functions create a new enclosing scope for walrus operators
+        self.scope_path.push(name_str.clone());
+        self.enclosing_scope_path.push(name_str);
         VisitResult::Continue
     }
 
@@ -611,8 +640,9 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
                 self.context_stack.pop();
             }
         }
-        // Pop scope
+        // Pop scope - both paths
         self.scope_path.pop();
+        self.enclosing_scope_path.pop();
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
@@ -628,8 +658,10 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
             kind: ContextKind::SkipName,
             name: Some(name_str.clone()),
         });
-        // Push scope for references inside the class body
-        self.scope_path.push(name_str);
+        // Push scope for references inside the class body - update BOTH paths
+        // Classes create a new enclosing scope for walrus operators
+        self.scope_path.push(name_str.clone());
+        self.enclosing_scope_path.push(name_str);
         VisitResult::Continue
     }
 
@@ -642,8 +674,9 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
                 self.context_stack.pop();
             }
         }
-        // Pop scope
+        // Pop scope - both paths
         self.scope_path.pop();
+        self.enclosing_scope_path.pop();
     }
 
     fn visit_param(&mut self, node: &Param<'a>) -> VisitResult {
@@ -706,8 +739,15 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     fn visit_named_expr(&mut self, node: &NamedExpr<'a>) -> VisitResult {
         // Walrus operator target is a definition: (x := 5)
         // The target of a NamedExpr is an Expression (usually Name)
+        // Per PEP 572, walrus operators in comprehensions bind to the enclosing
+        // function/module scope, not the comprehension scope.
         if let Expression::Name(name) = node.target.as_ref() {
-            self.add_reference_with_id(name.value, ReferenceKind::Definition, name.node_id);
+            self.add_reference_with_id_and_scope(
+                name.value,
+                ReferenceKind::Definition,
+                name.node_id,
+                self.enclosing_scope_path.clone(),
+            );
             // Push skip context so visit_name doesn't double-count
             let name_str = name.value.to_string();
             self.context_names.insert(name_str.clone());
@@ -733,12 +773,15 @@ impl<'a, 'pos> Visitor<'a> for ReferenceCollector<'pos> {
     // =========================================================================
 
     fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
+        // Lambdas are functions, so they create a new enclosing scope for walrus operators
         self.scope_path.push(SCOPE_LAMBDA.to_string());
+        self.enclosing_scope_path.push(SCOPE_LAMBDA.to_string());
         VisitResult::Continue
     }
 
     fn leave_lambda(&mut self, _node: &Lambda<'a>) {
         self.scope_path.pop();
+        self.enclosing_scope_path.pop();
     }
 
     fn visit_list_comp(&mut self, _node: &ListComp<'a>) -> VisitResult {

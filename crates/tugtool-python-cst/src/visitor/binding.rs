@@ -40,12 +40,14 @@
 
 use super::dispatch::walk_module;
 use super::traits::{VisitResult, Visitor};
-use super::SCOPE_MODULE;
+use super::{
+    SCOPE_DICTCOMP, SCOPE_GENEXPR, SCOPE_LAMBDA, SCOPE_LISTCOMP, SCOPE_MODULE, SCOPE_SETCOMP,
+};
 use crate::inflate_ctx::PositionTable;
 use crate::nodes::{
-    AnnAssign, Assign, AssignTargetExpression, ClassDef, Element, ExceptHandler, Expression, For,
-    FunctionDef, Import, ImportFrom, ImportNames, Module, NameOrAttribute, NamedExpr, NodeId,
-    Param, Span, With,
+    AnnAssign, Assign, AssignTargetExpression, ClassDef, DictComp, Element, ExceptHandler,
+    Expression, For, FunctionDef, GeneratorExp, Import, ImportFrom, ImportNames, Lambda, ListComp,
+    Module, NameOrAttribute, NamedExpr, NodeId, Param, SetComp, Span, With,
 };
 
 /// The kind of binding in Python.
@@ -142,7 +144,12 @@ pub struct BindingCollector<'pos> {
     /// Collected bindings.
     bindings: Vec<BindingInfo>,
     /// Current scope path for tracking where bindings are defined.
+    /// Includes all scopes (comprehensions, lambdas, etc.)
     scope_path: Vec<String>,
+    /// Enclosing non-comprehension scope path for walrus operator bindings.
+    /// Per PEP 572, walrus operators in comprehensions bind to the enclosing
+    /// function/module scope, not the comprehension scope.
+    enclosing_scope_path: Vec<String>,
 }
 
 impl<'pos> BindingCollector<'pos> {
@@ -154,6 +161,7 @@ impl<'pos> BindingCollector<'pos> {
             positions: None,
             bindings: Vec::new(),
             scope_path: vec![SCOPE_MODULE.to_string()],
+            enclosing_scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -165,6 +173,7 @@ impl<'pos> BindingCollector<'pos> {
             positions: Some(positions),
             bindings: Vec::new(),
             scope_path: vec![SCOPE_MODULE.to_string()],
+            enclosing_scope_path: vec![SCOPE_MODULE.to_string()],
         }
     }
 
@@ -206,6 +215,22 @@ impl<'pos> BindingCollector<'pos> {
         let span = self.lookup_span(node_id);
         let binding =
             BindingInfo::new(name.to_string(), kind, self.scope_path.clone()).with_span(span);
+        self.bindings.push(binding);
+    }
+
+    /// Add a binding with explicit scope path (for walrus operators in comprehensions).
+    ///
+    /// Per PEP 572, walrus operators inside comprehensions bind to the enclosing
+    /// function/module scope, not the comprehension scope.
+    fn add_binding_with_id_and_scope(
+        &mut self,
+        name: &str,
+        kind: BindingKind,
+        node_id: Option<NodeId>,
+        scope_path: Vec<String>,
+    ) {
+        let span = self.lookup_span(node_id);
+        let binding = BindingInfo::new(name.to_string(), kind, scope_path).with_span(span);
         self.bindings.push(binding);
     }
 
@@ -264,6 +289,42 @@ impl<'pos> BindingCollector<'pos> {
         }
     }
 
+    /// Extract name bindings with enclosing scope (for walrus operators in comprehensions).
+    ///
+    /// Per PEP 572, walrus operators inside comprehensions bind to the enclosing
+    /// function/module scope, not the comprehension scope. This method uses
+    /// `enclosing_scope_path` which excludes comprehension scopes.
+    fn extract_from_expression_with_enclosing_scope(
+        &mut self,
+        expr: &Expression<'_>,
+        kind: BindingKind,
+    ) {
+        match expr {
+            Expression::Name(name) => {
+                // Use enclosing_scope_path for walrus operator bindings
+                self.add_binding_with_id_and_scope(
+                    name.value,
+                    kind,
+                    name.node_id,
+                    self.enclosing_scope_path.clone(),
+                );
+            }
+            // Note: Walrus operator targets in Python can only be simple names,
+            // not tuples or other complex expressions (SyntaxError in Python).
+            // But for completeness, handle them by falling back to current scope.
+            Expression::Tuple(tuple) => {
+                self.extract_from_tuple_elements(&tuple.elements, kind);
+            }
+            Expression::List(list) => {
+                self.extract_from_tuple_elements(&list.elements, kind);
+            }
+            Expression::StarredElement(starred) => {
+                self.extract_from_expression(&starred.value, kind);
+            }
+            _ => {}
+        }
+    }
+
     /// Get the root name from a NameOrAttribute (for `import a.b.c`, returns `a`).
     fn get_root_name_with_id<'a>(
         &self,
@@ -298,24 +359,88 @@ impl<'a, 'pos> Visitor<'a> for BindingCollector<'pos> {
     fn visit_function_def(&mut self, node: &FunctionDef<'a>) -> VisitResult {
         // Record the function name as a binding
         self.add_binding_with_id(node.name.value, BindingKind::Function, node.name.node_id);
-        // Enter the function scope
+        // Enter the function scope - update BOTH scope paths
+        // Functions create a new enclosing scope for walrus operators
         self.scope_path.push(node.name.value.to_string());
+        self.enclosing_scope_path.push(node.name.value.to_string());
         VisitResult::Continue
     }
 
     fn leave_function_def(&mut self, _node: &FunctionDef<'a>) {
         self.scope_path.pop();
+        self.enclosing_scope_path.pop();
     }
 
     fn visit_class_def(&mut self, node: &ClassDef<'a>) -> VisitResult {
         // Record the class name as a binding
         self.add_binding_with_id(node.name.value, BindingKind::Class, node.name.node_id);
-        // Enter the class scope
+        // Enter the class scope - update BOTH scope paths
+        // Classes create a new enclosing scope for walrus operators
         self.scope_path.push(node.name.value.to_string());
+        self.enclosing_scope_path.push(node.name.value.to_string());
         VisitResult::Continue
     }
 
     fn leave_class_def(&mut self, _node: &ClassDef<'a>) {
+        self.scope_path.pop();
+        self.enclosing_scope_path.pop();
+    }
+
+    // Lambda creates a new enclosing scope (like functions) for walrus operators
+    fn visit_lambda(&mut self, _node: &Lambda<'a>) -> VisitResult {
+        // Enter the lambda scope - update BOTH scope paths
+        // Lambdas are functions, so they create a new enclosing scope for walrus operators
+        self.scope_path.push(SCOPE_LAMBDA.to_string());
+        self.enclosing_scope_path.push(SCOPE_LAMBDA.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_lambda(&mut self, _node: &Lambda<'a>) {
+        self.scope_path.pop();
+        self.enclosing_scope_path.pop();
+    }
+
+    // Comprehension scopes: only update scope_path (NOT enclosing_scope_path)
+    // Per PEP 572, walrus operators inside comprehensions bind to the enclosing
+    // function/module scope, not the comprehension scope.
+
+    fn visit_list_comp(&mut self, _node: &ListComp<'a>) -> VisitResult {
+        // Enter list comprehension scope - only update scope_path
+        self.scope_path.push(SCOPE_LISTCOMP.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_list_comp(&mut self, _node: &ListComp<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_dict_comp(&mut self, _node: &DictComp<'a>) -> VisitResult {
+        // Enter dict comprehension scope - only update scope_path
+        self.scope_path.push(SCOPE_DICTCOMP.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_dict_comp(&mut self, _node: &DictComp<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_set_comp(&mut self, _node: &SetComp<'a>) -> VisitResult {
+        // Enter set comprehension scope - only update scope_path
+        self.scope_path.push(SCOPE_SETCOMP.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_set_comp(&mut self, _node: &SetComp<'a>) {
+        self.scope_path.pop();
+    }
+
+    fn visit_generator_exp(&mut self, _node: &GeneratorExp<'a>) -> VisitResult {
+        // Enter generator expression scope - only update scope_path
+        self.scope_path.push(SCOPE_GENEXPR.to_string());
+        VisitResult::Continue
+    }
+
+    fn leave_generator_exp(&mut self, _node: &GeneratorExp<'a>) {
         self.scope_path.pop();
     }
 
@@ -340,8 +465,11 @@ impl<'a, 'pos> Visitor<'a> for BindingCollector<'pos> {
     }
 
     fn visit_named_expr(&mut self, node: &NamedExpr<'a>) -> VisitResult {
-        // Walrus operator creates a binding for its target
-        self.extract_from_expression(&node.target, BindingKind::Variable);
+        // Walrus operator creates a binding for its target.
+        // Per PEP 572, walrus operators in comprehensions bind to the enclosing
+        // function/module scope, not the comprehension scope.
+        // We use enclosing_scope_path which excludes comprehension scopes.
+        self.extract_from_expression_with_enclosing_scope(&node.target, BindingKind::Variable);
         VisitResult::Continue
     }
 
@@ -1028,5 +1156,96 @@ mod tests {
 
         // Verify SCOPE_MODULE has the expected value
         assert_eq!(SCOPE_MODULE, "<module>");
+    }
+
+    // =========================================================================
+    // Walrus Operator Scoping Tests (PEP 572)
+    // =========================================================================
+
+    #[test]
+    fn test_binding_walrus_in_comprehension_binds_to_enclosing_scope() {
+        // Per PEP 572: walrus in comprehension binds to enclosing scope
+        let source = "results = [y for x in range(10) if (y := x * 2) > 5]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        // Should have: results (module), y (module - NOT listcomp)
+        assert_eq!(bindings.len(), 2);
+
+        // results is at module scope
+        let results_binding = bindings.iter().find(|b| b.name == "results").unwrap();
+        assert_eq!(results_binding.scope_path, vec!["<module>"]);
+
+        // y is at module scope (PEP 572 walrus scope leak)
+        let y_binding = bindings.iter().find(|b| b.name == "y").unwrap();
+        assert_eq!(
+            y_binding.scope_path,
+            vec!["<module>"],
+            "Walrus operator in comprehension should bind to enclosing module scope"
+        );
+    }
+
+    #[test]
+    fn test_binding_walrus_in_nested_comprehension() {
+        // Walrus in nested comprehension also binds to enclosing function scope
+        let source = r#"
+def process():
+    result = [[y for _ in [1]] for x in items if (y := compute(x))]
+    return result
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        let y_binding = bindings.iter().find(|b| b.name == "y").unwrap();
+        assert_eq!(
+            y_binding.scope_path,
+            vec!["<module>", "process"],
+            "Walrus in nested comprehension should bind to enclosing function scope"
+        );
+    }
+
+    #[test]
+    fn test_binding_walrus_in_lambda_in_comprehension() {
+        // Walrus in lambda (which is in comprehension) binds to lambda scope
+        let source = "result = [(lambda: (y := x))() for x in items]";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        let y_binding = bindings.iter().find(|b| b.name == "y").unwrap();
+        // Lambda creates a new enclosing scope, so y binds to lambda
+        assert_eq!(
+            y_binding.scope_path,
+            vec!["<module>", "<lambda>"],
+            "Walrus in lambda should bind to lambda scope even when lambda is in comprehension"
+        );
+    }
+
+    #[test]
+    fn test_binding_walrus_not_in_comprehension() {
+        // Regular walrus (not in comprehension) should still work normally
+        let source = "if (x := 5) > 0:\n    print(x)";
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        let x_binding = bindings.iter().find(|b| b.name == "x").unwrap();
+        assert_eq!(x_binding.scope_path, vec!["<module>"]);
+    }
+
+    #[test]
+    fn test_binding_walrus_in_function_comprehension() {
+        // Walrus in comprehension inside function binds to function scope
+        let source = r#"
+def compute():
+    return [y for x in range(10) if (y := x * 2) > 5]
+"#;
+        let parsed = parse_module_with_positions(source, None).unwrap();
+        let bindings = BindingCollector::collect(&parsed.module, &parsed.positions);
+
+        let y_binding = bindings.iter().find(|b| b.name == "y").unwrap();
+        assert_eq!(
+            y_binding.scope_path,
+            vec!["<module>", "compute"],
+            "Walrus in comprehension inside function should bind to function scope"
+        );
     }
 }

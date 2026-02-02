@@ -14,7 +14,8 @@
     "name": "x",
     "kind": "parameter",
     "scope_path": [
-      "<module>"
+      "<module>",
+      "<lambda>"
     ],
     "span": [
       64,
@@ -36,7 +37,8 @@
     "name": "a",
     "kind": "parameter",
     "scope_path": [
-      "<module>"
+      "<module>",
+      "<lambda>"
     ],
     "span": [
       86,
@@ -47,7 +49,8 @@
     "name": "b",
     "kind": "parameter",
     "scope_path": [
-      "<module>"
+      "<module>",
+      "<lambda>"
     ],
     "span": [
       89,
@@ -69,7 +72,8 @@
     "name": "x",
     "kind": "parameter",
     "scope_path": [
-      "<module>"
+      "<module>",
+      "<lambda>"
     ],
     "span": [
       114,
@@ -80,7 +84,9 @@
     "name": "y",
     "kind": "parameter",
     "scope_path": [
-      "<module>"
+      "<module>",
+      "<lambda>",
+      "<lambda>"
     ],
     "span": [
       124,

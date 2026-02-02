@@ -788,7 +788,6 @@ while (line := get_line()):
     }
 
     #[test]
-    #[ignore = "Deferred to Step 1.1.5: walrus operators in comprehensions require special scope handling (PEP 572)"]
     fn test_rename_walrus_in_comprehension() {
         // WO-03: Walrus in list comprehension condition
         let code = r#"def compute(x):
@@ -798,7 +797,7 @@ results = [y for x in range(10) if (y := compute(x)) > 5]
 "#;
 
         let (workspace, files) = setup_workspace(&[("test.py", code)]);
-        let location = Location::new("test.py", 4, 35); // "y" in walrus
+        let location = Location::new("test.py", 4, 37); // "y" in walrus (column 37, 1-indexed)
 
         let result = rename(
             workspace.path(),

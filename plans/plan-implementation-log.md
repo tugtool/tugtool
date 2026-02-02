@@ -6,6 +6,87 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Step 1.1.2: Lookup Observability Infrastructure | PLANNED | 2026-02-02
+
+**Completed:** 2026-02-02 (planning only)
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 1.1.2 (lines 9967-10030)
+- `docs/reports/walrus-pipeline-analysis.md` - Analysis report that motivated this step
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add step to phase-13.md plan | Done |
+| Implementation of step tasks | Pending |
+
+**Files Created:**
+- `docs/reports/walrus-pipeline-analysis.md` - Comprehensive pipeline analysis report identifying infrastructure gaps
+
+**Files Modified:**
+- `plans/phase-13.md` - Added Step 1.1.2 between Step 1.1 and Step 1.1.5
+
+**Key Decisions/Notes:**
+- Step created to address debugging difficulties encountered during Step 1.1.5
+- The walrus test failure was caused by an off-by-one column error, but SymbolNotFound provided no diagnostic info
+- Step will add: `assert_location_char()` helper, enhanced error diagnostics, optional trace mode, span snapshot tests
+- Positioned before Step 1.1.5 in the plan to reflect infrastructure improvements that would have helped
+
+---
+
+## [phase-13.md] Step 1.1.5: Harden Walrus Operator Handling | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Step 1.1.5 (lines 10033-10086)
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - BindingCollector implementation
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - ReferenceCollector implementation
+- `crates/tugtool-python/tests/rename_hardening.rs` - Integration tests
+- PEP 572 - Assignment Expressions (walrus operator scoping semantics)
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Add `enclosing_scope_path` field to BindingCollector | Done |
+| Add `is_comprehension_scope()` helper function | Done |
+| Update function/class scope entry/exit to update both paths | Done |
+| Add comprehension scope visitors that only update `scope_path` | Done |
+| Modify `visit_named_expr` to use `enclosing_scope_path` | Done |
+| Add `add_binding_with_id_and_scope()` helper | Done |
+| Add matching changes to ReferenceCollector | Done |
+| Fix test column number (36 → 37) | Done |
+
+**Files Created:**
+- None (all changes to existing files)
+
+**Files Modified:**
+- `crates/tugtool-python-cst/src/visitor/binding.rs` - Added `enclosing_scope_path` field, comprehension/lambda scope visitors, walrus scoping logic, 5 unit tests
+- `crates/tugtool-python-cst/src/visitor/reference.rs` - Added same `enclosing_scope_path` infrastructure for reference collection
+- `crates/tugtool-python/tests/rename_hardening.rs` - Fixed column number from 36 to 37, removed `#[ignore]` attribute
+- Golden file for lambda bindings updated (lambda parameters now include `<lambda>` in scope_path)
+
+**Test Results:**
+- `cargo nextest run -p tugtool-python-cst --lib`: 786 tests passed
+- `cargo nextest run -p tugtool-python walrus`: 3 tests passed
+
+**Checkpoints Verified:**
+- `cargo build -p tugtool-python-cst` succeeds: PASS
+- `cargo nextest run -p tugtool-python-cst binding` passes: PASS (52 binding tests)
+- `cargo nextest run -p tugtool-python -E "test(/walrus/)"` passes: PASS (3 tests)
+
+**Key Decisions/Notes:**
+- Root cause of test failure was an off-by-one column error in the test, NOT an infrastructure bug
+- The `enclosing_scope_path` implementation correctly handles PEP 572 semantics
+- Lambda creates a new enclosing scope (like functions), comprehensions do not
+- Code-architect agent traced the full pipeline (BindingCollector → CST Bridge → Analyzer → Lookup) to verify correctness
+- Created analysis report at `docs/reports/walrus-pipeline-analysis.md` documenting the pipeline trace
+- This debugging experience led to creating Step 1.1.2 for observability improvements
+
+---
+
 ## [phase-13.md] Step 1.1: Rename Hardening | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
