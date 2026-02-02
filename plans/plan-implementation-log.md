@@ -6,6 +6,55 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-13.md] Stage 1: Foundation Hardening + Layer 1 | REVIEW | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-13.md` - Stage 1 (lines 9758-10143)
+- `crates/tugtool-python-cst/src/visitor/type_comment.rs` - Type comment infrastructure
+- `crates/tugtool-python/src/cst_bridge.rs` - BatchSpanEditor bridge
+- `crates/tugtool-python/tests/rename_batch_editor_migration.rs` - Migration tests
+- `crates/tugtool-python/src/ops/rename.rs` - Rename operations
+- `crates/tugtool-python/src/ops/rename_param.rs` - Parameter rename operations
+
+**Review Progress:**
+
+| Step | Previous Status | Finding |
+|------|-----------------|---------|
+| Step 1.0.1: Support Type Comments | All checked | VERIFIED COMPLETE - Infrastructure exists and matches plan |
+| Step 1.0.2: Migrate Rename to BatchSpanEditor | All checked | VERIFIED COMPLETE - Bridge function and tests exist |
+| Step 1.1: Rename Hardening | Mostly checked | DISCREPANCY - Test files `rename_hardening.rs` and `rename_type_comments.rs` DO NOT EXIST |
+| Step 1.2: Rename Parameter Operation | All unchecked | Core implementation exists but checkboxes correct (stub editing not done) |
+| Step 1.3: Layer 1 Infrastructure | All unchecked | NOT IMPLEMENTED - Correctly unchecked |
+| Step 1.4: Extract Variable Operation | All unchecked | NOT IMPLEMENTED - Correctly unchecked |
+| Step 1.5: Extract Constant Operation | All unchecked | NOT IMPLEMENTED - Correctly unchecked |
+
+**Critical Issues Found:**
+
+1. **Step 1.1 Test Files Missing**: Plan references `rename_hardening.rs` and `rename_type_comments.rs` but these files don't exist in `crates/tugtool-python/tests/`
+
+2. **Type Comment Rename Not Integrated**: In `rename.rs`, `type_comments: vec![]` is hardcoded (lines 1151, 1209), suggesting type comment renaming from Step 1.0.1 was never integrated into actual rename operations
+
+3. **Only 2 test files exist** in `crates/tugtool-python/tests/`:
+   - `acceptance_criteria.rs`
+   - `rename_batch_editor_migration.rs`
+
+**Files Modified:**
+- `plans/phase-13.md` - Unchecked ALL Stage 1 checkboxes for re-evaluation
+
+**Action Taken:**
+- All Stage 1 checkboxes unchecked using: `sed -i '' '9758,10143s/- \[x\]/- [ ]/g' plans/phase-13.md`
+- Zero checked boxes remain in Stage 1 section
+
+**Key Decisions/Notes:**
+- Stage 1 requires fresh re-verification before proceeding
+- Steps 1.0.1 and 1.0.2 should be quick to re-verify (infrastructure exists)
+- Step 1.1 needs plan update to reflect actual test locations OR missing tests need to be written
+- Type comment rename integration appears incomplete despite previous checkboxes
+
+---
+
 ## [phase-13.md] Stage 0: Foundation Infrastructure Summary | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02
