@@ -262,6 +262,113 @@ pub fn do_rename_param(
 }
 
 // ============================================================================
+// Python Extract Variable Operations (Feature-Gated)
+// ============================================================================
+
+/// Analyze an extract-variable operation (preview without applying).
+///
+/// # Arguments
+///
+/// * `session` - Open session (provides workspace root)
+/// * `at` - Location string in "file:line:col" format
+/// * `name` - Optional variable name (will suggest one if not provided)
+/// * `filter` - CombinedFilter for file filtering
+///
+/// # Returns
+///
+/// JSON string containing the analysis result.
+#[cfg(feature = "python")]
+pub fn analyze_extract_variable(
+    session: &Session,
+    at: &str,
+    name: Option<&str>,
+    filter: &mut CombinedFilter,
+) -> Result<String, TugError> {
+    use tugtool_python::ops::extract_variable::analyze_extract_variable;
+
+    // Parse location
+    let location = Location::parse(at).ok_or_else(|| {
+        TugError::invalid_args(format!(
+            "invalid location format '{}', expected path:line:col",
+            at
+        ))
+    })?;
+
+    // Collect Python files in workspace using combined filter
+    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+
+    // Run analysis
+    let analysis = analyze_extract_variable(&files, &location, name)
+        .map_err(|e| TugError::internal(format!("extract-variable analysis failed: {}", e)))?;
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&analysis)
+        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
+    Ok(json)
+}
+
+/// Execute an extract-variable operation.
+///
+/// # Arguments
+///
+/// * `session` - Open session (provides workspace root, session directory)
+/// * `python_path` - Optional explicit Python path for verification
+/// * `at` - Location string in "file:line:col" format
+/// * `name` - Variable name for the extracted expression
+/// * `verify_mode` - Verification mode after extraction
+/// * `apply` - Whether to apply changes to files
+/// * `filter` - CombinedFilter for file filtering
+///
+/// # Returns
+///
+/// JSON string containing the extract-variable result.
+#[cfg(feature = "python")]
+pub fn do_extract_variable(
+    session: &Session,
+    python_path: Option<PathBuf>,
+    at: &str,
+    name: &str,
+    verify_mode: VerificationMode,
+    apply: bool,
+    filter: &mut CombinedFilter,
+) -> Result<String, TugError> {
+    use tugtool_python::ops::extract_variable::extract_variable;
+
+    // Parse location
+    let location = Location::parse(at).ok_or_else(|| {
+        TugError::invalid_args(format!(
+            "invalid location format '{}', expected path:line:col",
+            at
+        ))
+    })?;
+
+    // Resolve Python interpreter for verification
+    let python = resolve_python_path(python_path)?;
+
+    // Collect Python files in workspace using combined filter
+    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+
+    // Execute extract-variable operation
+    let result = extract_variable(
+        session.workspace_root(),
+        &files,
+        &location,
+        name,
+        &python,
+        verify_mode,
+        apply,
+    )
+    .map_err(|e| TugError::internal(format!("extract-variable failed: {}", e)))?;
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&result)
+        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
+    Ok(json)
+}
+
+// ============================================================================
 // Helper Functions (Feature-Gated)
 // ============================================================================
 

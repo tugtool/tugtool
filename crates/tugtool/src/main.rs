@@ -41,7 +41,11 @@ use tugtool_core::session::{Session, SessionOptions};
 
 // Python feature-gated imports
 #[cfg(feature = "python")]
-use tugtool::cli::{analyze_rename, analyze_rename_param, do_rename, do_rename_param};
+use tugtool::cli;
+#[cfg(feature = "python")]
+use tugtool::cli::{
+    analyze_rename, analyze_rename_param, do_extract_variable, do_rename, do_rename_param,
+};
 #[cfg(feature = "python")]
 use tugtool_core::filter::CombinedFilter;
 #[cfg(feature = "python")]
@@ -298,6 +302,29 @@ enum ApplyPythonCommand {
         #[arg(last = true)]
         filter: Vec<String>,
     },
+    /// Extract an expression into a named variable.
+    ExtractVariable {
+        /// Location of the expression to extract (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// Name for the extracted variable.
+        #[arg(long)]
+        name: String,
+        /// Verification mode after applying changes.
+        #[arg(long, value_enum, default_value = "syntax")]
+        verify: VerifyMode,
+        /// Skip verification entirely.
+        #[arg(long)]
+        no_verify: bool,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
 }
 
 /// Rust commands for apply action (placeholder).
@@ -367,6 +394,26 @@ enum EmitPythonCommand {
         /// New name for the parameter.
         #[arg(long)]
         to: String,
+        /// Output JSON envelope instead of plain diff.
+        #[arg(long)]
+        json: bool,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+    /// Emit diff for extracting an expression into a variable.
+    ExtractVariable {
+        /// Location of the expression to extract (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// Name for the extracted variable.
+        #[arg(long)]
+        name: String,
         /// Output JSON envelope instead of plain diff.
         #[arg(long)]
         json: bool,
@@ -451,6 +498,23 @@ enum AnalyzePythonCommand {
         /// New name for the parameter.
         #[arg(long)]
         to: String,
+
+        /// Filter options.
+        #[command(flatten)]
+        filter_opts: FilterOptions,
+
+        /// File filter patterns (optional, after --).
+        #[arg(last = true)]
+        filter: Vec<String>,
+    },
+    /// Analyze an extract-variable operation (preview expression and insertion point).
+    ExtractVariable {
+        /// Location of the expression to extract (file:line:col).
+        #[arg(long)]
+        at: String,
+        /// Optional variable name (will suggest one if not provided).
+        #[arg(long)]
+        name: Option<String>,
 
         /// Filter options.
         #[command(flatten)]
@@ -761,6 +825,52 @@ fn execute_apply_python(global: &GlobalArgs, command: ApplyPythonCommand) -> Res
             println!("{}", json);
             Ok(())
         }
+        ApplyPythonCommand::ExtractVariable {
+            at,
+            name,
+            verify,
+            no_verify,
+            filter_opts,
+            filter,
+        } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
+
+            let mut session = open_session(global)?;
+            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
+
+            // Determine effective verification mode
+            // --no-verify takes precedence
+            let effective_verify = if no_verify {
+                VerificationMode::None
+            } else {
+                verify.into()
+            };
+
+            // Run the extract-variable operation
+            let json = do_extract_variable(
+                &session,
+                Some(python_path),
+                &at,
+                &name,
+                effective_verify,
+                true,
+                &mut combined_filter,
+            )?;
+
+            // Output JSON result
+            println!("{}", json);
+            Ok(())
+        }
     }
 }
 
@@ -906,6 +1016,86 @@ fn execute_emit_python(global: &GlobalArgs, command: EmitPythonCommand) -> Resul
 
             Ok(())
         }
+        EmitPythonCommand::ExtractVariable {
+            at,
+            name,
+            json: emit_json,
+            filter_opts,
+            filter,
+        } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
+
+            let mut session = open_session(global)?;
+            let python_path = resolve_toolchain(&mut session, "python", &global.toolchain)?;
+
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
+
+            // Run extract-variable in dry-run mode (apply=false) with no verification
+            let json_result = do_extract_variable(
+                &session,
+                Some(python_path),
+                &at,
+                &name,
+                VerificationMode::None,
+                false, // Never apply changes
+                &mut combined_filter,
+            )?;
+
+            // Parse to extract diff
+            let result: serde_json::Value = serde_json::from_str(&json_result)
+                .map_err(|e| TugError::internal(format!("Failed to parse result: {}", e)))?;
+
+            // Extract diff from patch.unified_diff
+            let diff = result
+                .get("patch")
+                .and_then(|p| p.get("unified_diff"))
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+
+            // Extract files affected
+            let files_affected: Vec<String> = result
+                .get("patch")
+                .and_then(|p| p.get("edits"))
+                .and_then(|e| e.as_array())
+                .map(|edits| {
+                    let mut files: Vec<String> = edits
+                        .iter()
+                        .filter_map(|e| e.get("file").and_then(|f| f.as_str()).map(String::from))
+                        .collect();
+                    files.sort();
+                    files.dedup();
+                    files
+                })
+                .unwrap_or_default();
+
+            if emit_json {
+                // Output JSON envelope
+                let envelope = EmitJsonEnvelope {
+                    format: "unified".to_string(),
+                    diff: diff.to_string(),
+                    files_affected,
+                    metadata: serde_json::json!({}),
+                };
+                let json_output = serde_json::to_string_pretty(&envelope)
+                    .map_err(|e| TugError::internal(e.to_string()))?;
+                println!("{}", json_output);
+            } else {
+                // Output plain diff
+                if !diff.is_empty() {
+                    print!("{}", diff);
+                }
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -1010,6 +1200,39 @@ fn execute_analyze_python(
 
             // Run impact analysis (read-only) with combined filter
             let json_result = analyze_rename_param(&session, &at, &to, &mut combined_filter)?;
+
+            // Output full JSON response
+            println!("{}", json_result);
+
+            Ok(())
+        }
+        AnalyzePythonCommand::ExtractVariable {
+            at,
+            name,
+            filter_opts,
+            filter,
+        } => {
+            // Validate filter options
+            validate_filter_options(&filter_opts)?;
+
+            // Handle --filter-list mode (outputs JSON and returns early)
+            if handle_filter_list(global, &filter_opts, &filter)? {
+                return Ok(());
+            }
+
+            let session = open_session(global)?;
+
+            // Build CombinedFilter from all filter sources
+            let mut combined_filter =
+                build_combined_filter(&filter_opts, &filter, session.workspace_root())?;
+
+            // Run extract-variable analysis (read-only)
+            let json_result = cli::analyze_extract_variable(
+                &session,
+                &at,
+                name.as_deref(),
+                &mut combined_filter,
+            )?;
 
             // Output full JSON response
             println!("{}", json_result);

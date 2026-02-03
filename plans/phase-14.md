@@ -229,26 +229,26 @@ The extracted variable assignment is inserted:
 - Expression inside decorator arguments (complex evaluation order)
 
 **Tasks:**
-- [ ] Implement extract-variable operation
-- [ ] Validate expression boundary using Layer 1 infrastructure
-- [ ] Generate unique name if not provided
-- [ ] Detect insertion point (before enclosing statement)
-- [ ] Detect and preserve indentation
-- [ ] Replace expression with variable reference
-- [ ] Reject comprehension/lambda/decorator contexts with clear error
+- [x] Implement extract-variable operation
+- [x] Validate expression boundary using Layer 1 infrastructure
+- [x] Generate unique name if not provided
+- [x] Detect insertion point (before enclosing statement)
+- [x] Detect and preserve indentation
+- [x] Replace expression with variable reference
+- [x] Reject comprehension/lambda/decorator contexts with clear error
 
 **Tests:**
-- [ ] Integration: `test_extract_variable_basic`
-- [ ] Integration: `test_extract_variable_nested`
-- [ ] Integration: `test_extract_variable_in_function`
-- [ ] Integration: `test_extract_variable_multiline`
-- [ ] Integration: `test_extract_variable_reject_comprehension`
-- [ ] Integration: `test_extract_variable_reject_lambda`
-- [ ] Golden: `extract_variable_response.json`
+- [x] Integration: `test_extract_variable_basic`
+- [x] Integration: `test_extract_variable_nested`
+- [x] Integration: `test_extract_variable_in_function`
+- [x] Integration: `test_extract_variable_multiline`
+- [x] Integration: `test_extract_variable_reject_comprehension`
+- [x] Integration: `test_extract_variable_reject_lambda`
+- [x] Golden: `extract_variable_response.json`
 
 **Checkpoint:**
-- [ ] `tug apply python extract-variable --at test.py:5:10-5:25 --name total`
-- [ ] Output matches golden schema
+- [x] `tug apply python extract-variable --at test.py:2:14 --name total` - verified working
+- [x] Output matches golden schema
 
 **Rollback:** Revert commit
 

@@ -366,6 +366,33 @@ fn golden_session_status() {
     }
 }
 
+#[test]
+fn golden_extract_variable_success() {
+    let python = find_python_for_tests();
+
+    // Phase 14 Step 1.3: Extract variable operation
+    // Extracts `100` from `result = sum(items) + 100` to `bonus = 100`
+    let result = run_golden_test(
+        &[
+            "apply",
+            "python",
+            "extract-variable",
+            "--at",
+            "input.py:3:27",
+            "--name",
+            "bonus",
+            "--no-verify",
+        ],
+        "extract_variable_response.json",
+        Some("extract_variable"),
+        &python,
+    );
+
+    if let Err(e) = result {
+        panic!("Golden test failed: {}", e);
+    }
+}
+
 // ============================================================================
 // Error Tests
 // ============================================================================

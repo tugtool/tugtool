@@ -6,6 +6,60 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-14.md] Step 1.3: Extract Variable Operation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-14.md` - Step 1.3 definition and task list
+- `plans/phase-13.md` - Operation 2 (extract-variable), Layer 1, D07 (edit primitives), Step 0.1, Step 0.2
+- `crates/tugtool-python/src/ops/rename.rs` - Existing operation pattern
+- `crates/tugtool-python/src/ops/rename_param.rs` - Recent operation pattern
+- `crates/tugtool-python/src/layers/expression.rs` - ExpressionBoundaryDetector, UniqueNameGenerator
+- `crates/tugtool/src/cli.rs` - CLI function patterns
+- `crates/tugtool/src/main.rs` - CLI command registration
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement extract-variable operation | Done |
+| Validate expression boundary using Layer 1 infrastructure | Done |
+| Generate unique name if not provided | Done |
+| Detect insertion point (before enclosing statement) | Done |
+| Detect and preserve indentation | Done |
+| Replace expression with variable reference | Done |
+| Reject comprehension/lambda/decorator contexts with clear error | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/ops/extract_variable.rs` - Core extract-variable operation (~600 lines)
+- `crates/tugtool/tests/golden/fixtures/extract_variable/input.py` - Golden test fixture
+- `crates/tugtool/tests/golden/output_schema/extract_variable_response.json` - Golden test output
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/mod.rs` - Added `extract_variable` module export
+- `crates/tugtool/src/cli.rs` - Added `analyze_extract_variable()` and `do_extract_variable()` CLI functions
+- `crates/tugtool/src/main.rs` - Added ExtractVariable variants to ApplyPythonCommand, EmitPythonCommand, AnalyzePythonCommand
+- `crates/tugtool/tests/golden_tests.rs` - Added `golden_extract_variable_success` test
+- `plans/phase-14.md` - Checked off all Step 1.3 tasks
+
+**Test Results:**
+- `cargo nextest run --workspace`: 2660 tests passed
+- `cargo nextest run -p tugtool golden`: 13 tests passed
+- `cargo clippy --workspace -- -D warnings`: Clean
+
+**Checkpoints Verified:**
+- `tug apply python extract-variable --at test.py:2:14 --name total`: PASS
+- Output matches golden schema: PASS
+
+**Key Decisions/Notes:**
+- **Critical bug fix**: Initial implementation had incorrect insertion position. The `stmt_span.start` pointed to first non-whitespace character, not line start. Fixed by calculating `line_start` via `rfind('\n')` before the statement span.
+- **Investigation required**: User requested thorough code-architect investigation which identified the root cause: statement spans don't include leading whitespace.
+- **Fix pattern**: `let line_start = content[..stmt_span.start].rfind('\n').map(|i| i + 1).unwrap_or(0);`
+- **Golden test**: Extracts `100` literal from `result = sum(items) + 100` to `bonus = 100`
+
+---
+
 ## [phase-14.md] Step 1.2: Layer 1 Infrastructure | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

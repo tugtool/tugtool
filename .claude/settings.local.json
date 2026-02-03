@@ -309,7 +309,8 @@
       "Bash(test_no_false_positive_rename)",
       "WebFetch(domain:peps.python.org)",
       "WebFetch(domain:stdlibs.omnilib.dev)",
-      "Bash(cargo insta accept:*)"
+      "Bash(cargo insta accept:*)",
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug emit:*)"
     ],
     "deny": [],
     "ask": []
