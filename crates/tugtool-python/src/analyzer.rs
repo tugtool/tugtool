@@ -1328,24 +1328,58 @@ pub fn analyze_files(
     // Maps (FileId, ScopeId) -> Vec of (name, SymbolId, SymbolKind)
     let mut scope_symbols: ScopeSymbolsMap = HashMap::new();
 
-    // Build direct lookup index for O(1) access: (file_id, name, kind) -> SymbolId
-    // This avoids O(n) linear scan in the entries vector for each symbol
-    let symbol_lookup: HashMap<(FileId, &str, SymbolKind), SymbolId> = global_symbols
-        .iter()
-        .flat_map(|((name, kind), entries)| {
-            entries
-                .iter()
-                .map(move |(file_id, sym_id)| ((*file_id, name.as_str(), *kind), *sym_id))
-        })
-        .collect();
+    // Build direct lookup index for O(1) access: (file_id, scope_id, name, kind) -> SymbolId
+    //
+    // CRITICAL FIX (Step 1.5): The key MUST include scope_id to avoid collisions.
+    // Previously, key was (FileId, &str, SymbolKind), which caused HashMap collisions
+    // when multiple functions had parameters with the same name. For example:
+    //   def foo(value): ...
+    //   def bar(value): ...
+    // Both 'value' parameters produced the same key, and only the last one survived.
+    // This corrupted scope_symbols and broke reference resolution.
+    //
+    // The symbol's scope_id uniquely identifies which function/scope it belongs to,
+    // so including it in the key prevents collisions.
+    //
+    // We build this by iterating through LocalSymbols directly and matching them
+    // to their registered SymbolId via span comparison.
+    let mut symbol_lookup: HashMap<(FileId, ScopeId, &str, SymbolKind), SymbolId> = HashMap::new();
+
+    for analysis in &bundle.file_analyses {
+        let file_id = analysis.file_id;
+        for symbol in &analysis.symbols {
+            // Find the SymbolId for this LocalSymbol by matching span
+            // Look in global_symbols to find the entry
+            if let Some(entries) = global_symbols.get(&(symbol.name.clone(), symbol.kind)) {
+                // Find the entry for this file that matches the span
+                for (entry_file_id, sym_id) in entries {
+                    if *entry_file_id == file_id {
+                        // Verify spans match (if available)
+                        let spans_match = symbol.span.is_none()
+                            || store
+                                .symbol(*sym_id)
+                                .is_some_and(|stored| symbol.span == Some(stored.decl_span));
+                        if spans_match {
+                            symbol_lookup.insert(
+                                (file_id, symbol.scope_id, symbol.name.as_str(), symbol.kind),
+                                *sym_id,
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Rebuild scope_symbols from symbols (we need to know which symbols are in which scope)
     // This is populated from the symbols we just registered
     for analysis in &bundle.file_analyses {
         let file_id = analysis.file_id;
         for symbol in &analysis.symbols {
-            // O(1) lookup instead of O(n) scan through entries
-            if let Some(&sym_id) = symbol_lookup.get(&(file_id, symbol.name.as_str(), symbol.kind))
+            // O(1) lookup using the fixed key that includes scope_id
+            if let Some(&sym_id) =
+                symbol_lookup.get(&(file_id, symbol.scope_id, symbol.name.as_str(), symbol.kind))
             {
                 scope_symbols
                     .entry((file_id, symbol.scope_id))
@@ -1544,7 +1578,9 @@ pub fn analyze_files(
             let exported_name_span = local_export.content_span;
 
             // Resolve symbol_id: look up the exported name as a module-level symbol
+            // Exports are always at module scope (ScopeId(0))
             // Check each symbol kind that could be exported (Function, Class, Variable, Constant)
+            let module_scope = ScopeId(0);
             let resolved_symbol_id = [
                 SymbolKind::Function,
                 SymbolKind::Class,
@@ -1555,7 +1591,7 @@ pub fn analyze_files(
             .iter()
             .find_map(|&kind| {
                 symbol_lookup
-                    .get(&(file_id, local_export.name.as_str(), kind))
+                    .get(&(file_id, module_scope, local_export.name.as_str(), kind))
                     .copied()
             });
 

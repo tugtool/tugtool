@@ -310,7 +310,9 @@
       "WebFetch(domain:peps.python.org)",
       "WebFetch(domain:stdlibs.omnilib.dev)",
       "Bash(cargo insta accept:*)",
-      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug emit:*)"
+      "Bash(/Users/kocienda/Mounts/u/src/tugtool/target/release/tug emit:*)",
+      "Bash(# Try adding more of the file head -100 _relative_test.py cargo run -p tugtool -- analyze python rename --at _mid_test.py:31:23 --to ref_date 2>&1)",
+      "Bash(# Parse error at line 100 - let me try a complete function boundary head -70 _relative_test.py cargo run -p tugtool -- analyze python rename --at _mid_test.py:31:23 --to ref_date 2>&1)"
     ],
     "deny": [],
     "ask": []
