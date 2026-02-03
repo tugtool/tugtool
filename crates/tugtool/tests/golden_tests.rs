@@ -393,6 +393,33 @@ fn golden_extract_variable_success() {
     }
 }
 
+#[test]
+fn golden_extract_constant_success() {
+    let python = find_python_for_tests();
+
+    // Phase 14 Step 1.4: Extract constant operation
+    // Extracts `0.08` from `return price * 0.08` to `TAX_RATE = 0.08`
+    let result = run_golden_test(
+        &[
+            "apply",
+            "python",
+            "extract-constant",
+            "--at",
+            "input.py:7:20",
+            "--name",
+            "TAX_RATE",
+            "--no-verify",
+        ],
+        "extract_constant_response.json",
+        Some("extract_constant"),
+        &python,
+    );
+
+    if let Err(e) = result {
+        panic!("Golden test failed: {}", e);
+    }
+}
+
 // ============================================================================
 // Error Tests
 // ============================================================================

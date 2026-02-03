@@ -2,6 +2,7 @@
 //!
 //! Provides common types and context for Python operations.
 
+pub mod extract_constant;
 pub mod extract_variable;
 pub mod rename;
 pub mod rename_param;

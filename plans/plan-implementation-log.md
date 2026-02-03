@@ -6,6 +6,58 @@ This file documents completion summaries for plan step implementations.
 
 Entries are sorted newest-first.
 
+## [phase-14.md] Step 1.4: Extract Constant Operation | COMPLETE | 2026-02-02
+
+**Completed:** 2026-02-02
+
+**References Reviewed:**
+- `plans/phase-14.md` - Step 1.4 definition and task list
+- `plans/phase-13.md` - Operation 3 (extract-constant), Layer 1
+- `crates/tugtool-python/src/ops/extract_variable.rs` - Pattern reference for similar operation
+- `crates/tugtool-core/src/facts/mod.rs` - Symbol and Import structures for insertion point detection
+- `crates/tugtool/src/cli.rs` - CLI function patterns
+- `crates/tugtool/src/main.rs` - CLI command registration
+
+**Implementation Progress:**
+
+| Task | Status |
+|------|--------|
+| Implement extract-constant operation | Done |
+| Detect literal expressions (all supported types) | Done |
+| Insert constant at module level (after imports, before first definition) | Done |
+| Validate constant naming (UPPER_SNAKE_CASE warning if not) | Done |
+| Check for name conflicts with existing module-level names | Done |
+
+**Files Created:**
+- `crates/tugtool-python/src/ops/extract_constant.rs` - Core extract-constant operation (~800 lines)
+- `crates/tugtool/tests/golden/fixtures/extract_constant/input.py` - Golden test fixture
+- `crates/tugtool/tests/golden/output_schema/extract_constant_response.json` - Golden test output
+
+**Files Modified:**
+- `crates/tugtool-python/src/ops/mod.rs` - Added `extract_constant` module export
+- `crates/tugtool/src/cli.rs` - Added `analyze_extract_constant()` and `do_extract_constant()` CLI functions
+- `crates/tugtool/src/main.rs` - Added ExtractConstant variants to ApplyPythonCommand, EmitPythonCommand, AnalyzePythonCommand
+- `crates/tugtool/tests/golden_tests.rs` - Added `golden_extract_constant_success` test
+- `plans/phase-14.md` - Checked off all Step 1.4 tasks
+
+**Test Results:**
+- `cargo nextest run --workspace`: 2671 tests passed
+- `cargo nextest run -p tugtool golden`: 14 tests passed
+- `cargo clippy --workspace -- -D warnings`: Clean
+
+**Checkpoints Verified:**
+- `tug apply python extract-constant --at test.py:2:20 --name TAX_RATE`: PASS
+
+**Key Decisions/Notes:**
+- **Supported literal types**: Integer, Float, String, Bytes, Boolean (`True`/`False`), None
+- **Deferred**: Complex numbers (`3+4j`) and Ellipsis (`...`) - low priority per plan
+- **Placement rules**: After imports, before first class/function definition, after existing constants
+- **UPPER_SNAKE_CASE**: Issues warning (not error) if name doesn't follow convention
+- **Name conflicts**: Checked using `container_symbol_id.is_none()` to identify module-level symbols
+- **Insertion point detection**: Uses FactsStore to find import ends and first definitions
+
+---
+
 ## [phase-14.md] Step 1.3: Extract Variable Operation | COMPLETE | 2026-02-02
 
 **Completed:** 2026-02-02

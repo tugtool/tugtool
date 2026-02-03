@@ -280,20 +280,20 @@ The extracted variable assignment is inserted:
 3. If constants already exist, add after them (preserve grouping)
 
 **Tasks:**
-- [ ] Implement extract-constant operation
-- [ ] Detect literal expressions (all supported types)
-- [ ] Insert constant at module level (after imports, before first definition)
-- [ ] Validate constant naming (UPPER_SNAKE_CASE warning if not)
-- [ ] Check for name conflicts with existing module-level names
+- [x] Implement extract-constant operation
+- [x] Detect literal expressions (all supported types)
+- [x] Insert constant at module level (after imports, before first definition)
+- [x] Validate constant naming (UPPER_SNAKE_CASE warning if not)
+- [x] Check for name conflicts with existing module-level names
 
 **Tests:**
-- [ ] Integration: `test_extract_constant_number`
-- [ ] Integration: `test_extract_constant_string`
-- [ ] Integration: `test_extract_constant_placement`
-- [ ] Golden: `extract_constant_response.json`
+- [x] Integration: `test_extract_constant_number`
+- [x] Integration: `test_extract_constant_string`
+- [x] Integration: `test_extract_constant_placement`
+- [x] Golden: `extract_constant_response.json`
 
 **Checkpoint:**
-- [ ] `tug apply python extract-constant --at test.py:10:15 --name TAX_RATE`
+- [x] `tug apply python extract-constant --at test.py:10:15 --name TAX_RATE`
 
 **Rollback:** Revert commit
 

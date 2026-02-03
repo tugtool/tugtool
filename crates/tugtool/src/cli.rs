@@ -369,6 +369,113 @@ pub fn do_extract_variable(
 }
 
 // ============================================================================
+// Extract Constant Operation (Feature-Gated)
+// ============================================================================
+
+/// Analyze an extract-constant operation (preview without applying).
+///
+/// # Arguments
+///
+/// * `session` - Open session (provides workspace root)
+/// * `at` - Location string in "file:line:col" format
+/// * `name` - Optional constant name (will suggest one if not provided)
+/// * `filter` - CombinedFilter for file filtering
+///
+/// # Returns
+///
+/// JSON string containing the analysis result.
+#[cfg(feature = "python")]
+pub fn analyze_extract_constant(
+    session: &Session,
+    at: &str,
+    name: Option<&str>,
+    filter: &mut CombinedFilter,
+) -> Result<String, TugError> {
+    use tugtool_python::ops::extract_constant::analyze_extract_constant;
+
+    // Parse location
+    let location = Location::parse(at).ok_or_else(|| {
+        TugError::invalid_args(format!(
+            "invalid location format '{}', expected path:line:col",
+            at
+        ))
+    })?;
+
+    // Collect Python files in workspace using combined filter
+    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+
+    // Run analysis
+    let analysis = analyze_extract_constant(&files, &location, name)
+        .map_err(|e| TugError::internal(format!("extract-constant analysis failed: {}", e)))?;
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&analysis)
+        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
+    Ok(json)
+}
+
+/// Execute an extract-constant operation.
+///
+/// # Arguments
+///
+/// * `session` - Open session (provides workspace root, session directory)
+/// * `python_path` - Optional explicit Python path for verification
+/// * `at` - Location string in "file:line:col" format
+/// * `name` - Constant name for the extracted literal
+/// * `verify_mode` - Verification mode after extraction
+/// * `apply` - Whether to apply changes to files
+/// * `filter` - CombinedFilter for file filtering
+///
+/// # Returns
+///
+/// JSON string containing the extract-constant result.
+#[cfg(feature = "python")]
+pub fn do_extract_constant(
+    session: &Session,
+    python_path: Option<PathBuf>,
+    at: &str,
+    name: &str,
+    verify_mode: VerificationMode,
+    apply: bool,
+    filter: &mut CombinedFilter,
+) -> Result<String, TugError> {
+    use tugtool_python::ops::extract_constant::extract_constant;
+
+    // Parse location
+    let location = Location::parse(at).ok_or_else(|| {
+        TugError::invalid_args(format!(
+            "invalid location format '{}', expected path:line:col",
+            at
+        ))
+    })?;
+
+    // Resolve Python interpreter for verification
+    let python = resolve_python_path(python_path)?;
+
+    // Collect Python files in workspace using combined filter
+    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
+        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+
+    // Execute extract-constant operation
+    let result = extract_constant(
+        session.workspace_root(),
+        &files,
+        &location,
+        name,
+        &python,
+        verify_mode,
+        apply,
+    )
+    .map_err(|e| TugError::internal(format!("extract-constant failed: {}", e)))?;
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&result)
+        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
+    Ok(json)
+}
+
+// ============================================================================
 // Helper Functions (Feature-Gated)
 // ============================================================================
 

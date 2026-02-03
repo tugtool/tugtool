@@ -1,0 +1,51 @@
+{
+  "applied": true,
+  "files_written": [
+    "input.py"
+  ],
+  "patch": {
+    "edits": [
+      {
+        "col": 1,
+        "file": "input.py",
+        "line": 2,
+        "new_text": "TAX_RATE = 0.08\n",
+        "old_text": "",
+        "span": {
+          "end": 10,
+          "start": 10
+        }
+      },
+      {
+        "col": 20,
+        "file": "input.py",
+        "line": 7,
+        "new_text": "TAX_RATE",
+        "old_text": "0.08",
+        "span": {
+          "end": 125,
+          "start": 121
+        }
+      }
+    ],
+    "unified_diff": "--- a/input.py\n+++ b/input.py\n@@ -2,1 +2,1 @@\n-\n+TAX_RATE = 0.08\n\n@@ -7,1 +7,1 @@\n-0.08\n+TAX_RATE\n"
+  },
+  "schema_version": "1",
+  "status": "ok",
+  "summary": {
+    "bytes_added": 20,
+    "bytes_removed": 0,
+    "constant_name": "TAX_RATE",
+    "edits_count": 2,
+    "file": "input.py",
+    "insertion_line": 2,
+    "literal": "0.08",
+    "literal_type": "Float",
+    "replacement_line": 7
+  },
+  "verification": {
+    "checks": [],
+    "mode": "none",
+    "status": "skipped"
+  }
+}
