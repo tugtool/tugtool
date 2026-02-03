@@ -1,3 +1,12 @@
+---
+name: implement-plan
+description: |
+  Implement execution steps from a structured plan file that follows the plan-skeleton.md format.
+  Use when implementing a specific phase/step from a planning document.
+argument-hint: "[plan-file-path]"
+disable-model-invocation: true
+---
+
 ## Summary
 
 Implement the execution steps described in $ARGUMENTS, which will refer to a structured plan file that follows the plan-skeleton.md format

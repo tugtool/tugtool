@@ -1,3 +1,11 @@
+---
+name: update-plan-implementation-log
+description: |
+  Update the plan implementation log with a completion summary for recently completed work.
+  Prepends a detailed, well-formatted entry to plans/plan-implementation-log.md.
+disable-model-invocation: true
+---
+
 ## Summary
 
 Update the `plans/plan-implementation-log.md` file with a completion summary for recently completed implementation work.
@@ -42,7 +50,7 @@ Example headers:
 - `## [phase-3.md] Step 9.4: Pass 3 Reference Resolution | COMPLETE | 2026-01-19`
 
 This format enables easy grep/sed operations:
-- `grep "^\## \[phase-4.md\]"` - all phase-4 entries
+- `grep "^\\## \\[phase-4.md\\]"` - all phase-4 entries
 - `grep "| 2026-01-20$"` - all entries from a specific date
 - `grep "| COMPLETE |"` - all completed entries
 
