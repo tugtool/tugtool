@@ -10,17 +10,33 @@ set -euo pipefail
 VERSION="${1:-}"
 VERSION="${VERSION#v}"
 
-echo "==> Releasing v$VERSION"
-echo ""
-
-# Validate
+# Validate version format first, before printing anything
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Error: Invalid version format. Expected X.Y.Z" >&2
     exit 1
 fi
 
+echo "==> Releasing v$VERSION"
+echo ""
+
+# Must be on main
 if [[ "$(git branch --show-current)" != "main" ]]; then
     echo "Error: Must be on main branch" >&2
+    exit 1
+fi
+
+# Must have clean working tree
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Error: Working tree is dirty. Commit or stash changes first." >&2
+    exit 1
+fi
+
+# Must be up-to-date with origin
+git fetch origin main --quiet
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse origin/main)
+if [[ "$LOCAL" != "$REMOTE" ]]; then
+    echo "Error: Local main is not up-to-date with origin. Run: git pull --rebase" >&2
     exit 1
 fi
 
@@ -45,8 +61,13 @@ if git ls-remote --tags origin 2>/dev/null | grep -q "refs/tags/v$VERSION$"; the
 fi
 git tag -d "v$VERSION" &>/dev/null || true
 
-# Version check
-CURRENT=$(grep 'version = ' Cargo.toml | head -1 | sed 's/.*version = "\(.*\)".*/\1/')
+# Version check (anchor to line start to avoid matching rust-version, etc.)
+CURRENT=$(grep '^version = ' Cargo.toml | head -1 | sed 's/^version = "\(.*\)"/\1/')
+if [[ -z "$CURRENT" ]]; then
+    echo "Error: Could not read current version from Cargo.toml" >&2
+    exit 1
+fi
+
 IFS='.' read -r CUR_MAJ CUR_MIN CUR_PAT <<< "$CURRENT"
 IFS='.' read -r NEW_MAJ NEW_MIN NEW_PAT <<< "$VERSION"
 
@@ -57,35 +78,45 @@ if [[ $NEW_MAJ -lt $CUR_MAJ ]] || \
     exit 1
 fi
 
-# Build
-echo "==> Formatting code..."
-cargo fmt --all --quiet
+# Verify code quality (check only — do not auto-fix during a release)
+echo "==> Checking formatting..."
+if ! cargo fmt --all -- --check; then
+    echo "Error: Code is not formatted. Run: cargo fmt --all" >&2
+    exit 1
+fi
 
-echo "==> Running clippy (auto-fix)..."
-cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings &>/dev/null
-
-echo "==> Verifying clean build..."
-cargo clippy --workspace -- -D warnings &>/dev/null
+echo "==> Running clippy..."
+if ! cargo clippy --workspace --all-targets -- -D warnings; then
+    echo "Error: Clippy found warnings. Fix them first." >&2
+    exit 1
+fi
 
 # Update version
 echo "==> Updating version to $VERSION..."
 sed -i '' "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
 
-# Commit
-git add -A
-if ! git diff --cached --quiet; then
-    echo "==> Committing changes..."
-    git commit -m "Release $VERSION" --quiet
+# Verify sed actually changed something
+AFTER=$(grep '^version = ' Cargo.toml | head -1 | sed 's/^version = "\(.*\)"/\1/')
+if [[ "$AFTER" != "$VERSION" ]]; then
+    echo "Error: Failed to update version in Cargo.toml (got '$AFTER', expected '$VERSION')" >&2
+    exit 1
 fi
 
-# Clean up local tag
-git tag -d "v$VERSION" &>/dev/null || true
+# Commit only the version change
+git add Cargo.toml
+if git diff --cached --quiet; then
+    echo "Error: No changes to commit. Version may already be $VERSION." >&2
+    exit 1
+fi
+
+echo "==> Committing version bump..."
+git commit -m "Release $VERSION" --quiet
 
 # Push
-echo "==> Syncing with origin..."
-git pull --rebase origin main --quiet || true
+echo "==> Pushing to origin..."
 git push origin main --quiet
 
+# Tag and push tag
 echo "==> Tagging v$VERSION..."
 git tag "v$VERSION"
 git push origin "v$VERSION" --quiet
