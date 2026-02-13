@@ -122,7 +122,7 @@ The Beads line shows:
   │  Step 0: SPAWN critic-agent → critic_id     │     │
   │  Loop N: RESUME critic_id                   │     │
   │       │                                     │     │
-  │       ├── APPROVE ──► Sync Beads ──► DONE   │     │
+  │       ├── APPROVE ──► Sync Beads ──► Commit ──► DONE │
   │       │                                     │     │
   │       └── REVISE/REJECT ───────────────────┘─────┘
   │                                             │
@@ -261,6 +261,7 @@ Output the Critic post-call message.
 
 **APPROVE:**
 - Run beads sync (see step 6 below)
+- Commit the tugplan (see step 7 below)
 - Output the session end message and HALT with success.
 
 **REVISE:**
@@ -279,7 +280,7 @@ AskUserQuestion(
 )
 ```
 - If "Revise": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
-- If "Accept": run beads sync (see step 6 below), output the session end message, HALT with success
+- If "Accept": run beads sync (see step 6 below), commit tugplan (see step 7 below), output the session end message, HALT with success
 - If "Abort": output `**Planner** — Aborted by user` and HALT
 
 **REJECT:**
@@ -316,6 +317,20 @@ Parse the JSON result:
 - If `status == "error"`: store `beads_synced: false` and `beads_error: <error message>` — treat as best-effort warning, do not halt
 
 **Important:** Beads sync failures are warnings only. Planning completes successfully even if beads sync fails.
+
+### 7. Commit Tugplan (Before Completion)
+
+After beads sync, commit the tugplan so the implementer can find it when it creates a worktree:
+
+```
+Task(
+  subagent_type: "bash",
+  prompt: 'cd <repo_root> && git add <plan_path> && git commit -m "Add <plan_filename>"',
+  description: "Commit tugplan"
+)
+```
+
+If the commit fails (e.g., nothing to commit because the file was already tracked), treat as a warning and continue — do not halt.
 
 ---
 

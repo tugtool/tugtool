@@ -8,7 +8,9 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 
 **ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
 
-**Exception:** The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
+**Exceptions:**
+- The `planner` skill commits the tugplan file after approval so the implementer can find it in a worktree.
+- The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
 
 ## Plan Mode Policy
 
