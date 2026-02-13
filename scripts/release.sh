@@ -99,8 +99,9 @@ if [[ "$AFTER" != "$VERSION" ]]; then
     exit 1
 fi
 
-# Commit only the version change
-git add Cargo.toml
+# Update lockfile and commit version change
+cargo generate-lockfile --quiet
+git add Cargo.toml Cargo.lock
 if git diff --cached --quiet; then
     echo "Error: No changes to commit. Version may already be $VERSION." >&2
     exit 1
