@@ -1,3 +1,0 @@
-@hello
-@bello
-def    f    ()   : ...

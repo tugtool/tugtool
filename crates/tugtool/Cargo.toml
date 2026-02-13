@@ -1,65 +1,26 @@
-# Main tugtool crate - CLI binary and public API
 [package]
 name = "tugtool"
 version.workspace = true
 edition.workspace = true
-authors.workspace = true
 license.workspace = true
-description = "AI-native code transformation engine for verified, deterministic refactors"
-repository.workspace = true
-readme = "../../README.md"
-keywords = ["refactoring", "code-transformation", "ai", "cli"]
-categories = ["development-tools", "command-line-utilities"]
-
-[lib]
-name = "tugtool"
-path = "src/lib.rs"
+rust-version.workspace = true
+description = "From ideas to implementation via multi-agent orchestration"
 
 [[bin]]
-name = "tug"
+name = "tugtool"
 path = "src/main.rs"
 
 [dependencies]
-# Workspace crates
-tugtool-core = { path = "../tugtool-core" }
-tugtool-python = { path = "../tugtool-python", optional = true }
-tugtool-rust = { path = "../tugtool-rust", optional = true }
-
-# Core: serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Core: error handling
-thiserror = "2.0"
-
-# Timestamps: ISO 8601 formatting
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-
-# CLI: argument parsing
-clap = { version = "4", features = ["derive"] }
-
-# File filtering: glob pattern matching
-globset = "0.4"
-
-# Logging: structured logging with JSON output
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-# TOML: fixture lock file parsing
-toml = "0.8"
-
-[features]
-default = ["python"]
-python = ["dep:tugtool-python"]
-rust = ["dep:tugtool-rust"]
-full = ["python", "rust"]
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+regex.workspace = true
+dirs.workspace = true
+tugtool-core.workspace = true
 
 [dev-dependencies]
-regex = "1"
-serde = { version = "1.0", features = ["derive"] }
 tempfile = "3"
-toml = "0.8"
-walkdir = "2"
-
-[lints]
-workspace = true
+serial_test = "3"

@@ -1,4 +1,4 @@
-# Tugtool development commands
+# Tug development commands
 
 default:
     @just --list
@@ -10,21 +10,15 @@ build:
 test:
     cargo nextest run --workspace
 
-test-full:
-    cargo nextest run --workspace --features full
-
-test-python:
-    .tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v
-
-# Run ALL tests (Rust + Python)
-test-all: test-python test-full
-
 # Quality
 fmt:
     cargo fmt --all
 
 lint:
-    cargo clippy --workspace --features full -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
+
+check:
+    cargo check --workspace
 
 # CI (runs all checks)
 ci: fmt lint test
@@ -35,11 +29,11 @@ build-release:
 
 # Run the CLI
 run *ARGS:
-    cargo run -p tugtool -- {{ARGS}}
+    cargo run -p tug -- {{ARGS}}
 
 # Update golden files (for intentional schema changes)
 update-golden:
-    TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
+    TUG_UPDATE_GOLDEN=1 cargo nextest run -p tug golden
 
 # Generate documentation
 doc:
@@ -47,4 +41,8 @@ doc:
 
 # Install locally
 install:
-    cargo install --path crates/tugtool
+    cargo install --path crates/tug
+
+# Release a new version
+release VERSION:
+    ./scripts/release.sh {{VERSION}}

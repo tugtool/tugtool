@@ -1,403 +1,846 @@
-//! Common types shared between error and output modules.
-//!
-//! This module contains types that are used by both the error and output modules,
-//! avoiding circular dependencies.
+//! Core data types for tugplans
 
 use serde::{Deserialize, Serialize};
 
-use crate::text::byte_offset_to_position_str;
-
-// ============================================================================
-// Location Type
-// ============================================================================
-
-/// Location in a source file.
-///
-/// Per 26.0.7 spec #type-location:
-/// - `file`: Workspace-relative path (required)
-/// - `line`: 1-indexed line number (required)
-/// - `col`: 1-indexed column, UTF-8 bytes (required)
-/// - `byte_start`: Byte offset from file start (optional)
-/// - `byte_end`: Byte offset end, exclusive (optional)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Location {
-    /// File path (workspace-relative).
-    pub file: String,
-    /// Line number (1-indexed).
-    pub line: u32,
-    /// Column number (1-indexed, UTF-8 bytes).
-    pub col: u32,
-    /// Byte offset from file start (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub byte_start: Option<usize>,
-    /// Byte offset end, exclusive (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub byte_end: Option<usize>,
+/// A diagnostic emitted during parsing (near-miss, code block content, etc.)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParseDiagnostic {
+    /// Diagnostic code (e.g., "P001", "P006")
+    pub code: String,
+    /// Human-readable message
+    pub message: String,
+    /// Line number where the diagnostic was triggered
+    pub line: usize,
+    /// Optional suggestion for fixing the issue
+    pub suggestion: Option<String>,
 }
 
-impl Location {
-    /// Create a new location without byte offsets.
-    pub fn new(file: impl Into<String>, line: u32, col: u32) -> Self {
-        Location {
-            file: file.into(),
-            line,
-            col,
-            byte_start: None,
-            byte_end: None,
-        }
-    }
+/// A parsed tugplan document
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TugPlan {
+    /// The file path this tugplan was parsed from (if known)
+    pub path: Option<String>,
+    /// Phase title from the document header
+    pub phase_title: Option<String>,
+    /// Phase anchor (e.g., "phase-1")
+    pub phase_anchor: Option<String>,
+    /// Purpose statement
+    pub purpose: Option<String>,
+    /// TugPlan metadata section
+    pub metadata: TugPlanMetadata,
+    /// All anchors found in the document (for cross-reference validation)
+    pub anchors: Vec<Anchor>,
+    /// Design decisions
+    pub decisions: Vec<Decision>,
+    /// Open questions
+    pub questions: Vec<Question>,
+    /// Execution steps
+    pub steps: Vec<Step>,
+    /// Raw content (for line number lookups)
+    pub raw_content: String,
+    /// Parse diagnostics (near-miss patterns, code block issues)
+    #[serde(default)]
+    pub diagnostics: Vec<ParseDiagnostic>,
+}
 
-    /// Create a location with byte start offset (byte_end computed from name length).
-    pub fn with_byte_start(
-        file: impl Into<String>,
-        line: u32,
-        col: u32,
-        byte_start: usize,
-    ) -> Self {
-        Location {
-            file: file.into(),
-            line,
-            col,
-            byte_start: Some(byte_start),
-            byte_end: None,
-        }
-    }
+/// TugPlan metadata section from a tugplan document
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TugPlanMetadata {
+    /// Owner of the tugplan
+    pub owner: Option<String>,
+    /// Status: draft, active, or done
+    pub status: Option<String>,
+    /// Target branch
+    pub target_branch: Option<String>,
+    /// Tracking issue or PR
+    pub tracking: Option<String>,
+    /// Last updated date
+    pub last_updated: Option<String>,
+    /// Beads root ID (optional, set after beads sync)
+    pub beads_root_id: Option<String>,
+}
 
-    /// Create a location with full byte span.
-    pub fn with_span(
-        file: impl Into<String>,
-        line: u32,
-        col: u32,
-        byte_start: usize,
-        byte_end: usize,
-    ) -> Self {
-        Location {
-            file: file.into(),
-            line,
-            col,
-            byte_start: Some(byte_start),
-            byte_end: Some(byte_end),
+impl TugPlanMetadata {
+    /// Check if the status value is valid (draft, active, done)
+    pub fn is_valid_status(&self) -> bool {
+        match &self.status {
+            Some(s) => {
+                let lower = s.to_lowercase();
+                lower == "draft" || lower == "active" || lower == "done"
+            }
+            None => false,
         }
-    }
-
-    /// Create a location from byte offset, computing line/col from content.
-    ///
-    /// This method lazily computes line and column from a byte offset using
-    /// the file content. Per design decision D03, line/col is computed
-    /// at the output boundary rather than stored internally.
-    ///
-    /// # Arguments
-    ///
-    /// * `file` - Workspace-relative file path
-    /// * `content` - The file content (needed to compute line/col)
-    /// * `byte_start` - Byte offset from file start
-    /// * `byte_end` - Optional byte offset end (exclusive)
-    ///
-    /// # Returns
-    ///
-    /// A Location with line/col computed from the byte offset.
-    /// Line and column are 1-indexed. Column counts Unicode scalar values.
-    pub fn with_line_col(
-        file: impl Into<String>,
-        content: &str,
-        byte_start: usize,
-        byte_end: Option<usize>,
-    ) -> Self {
-        let (line, col) = byte_offset_to_position_str(content, byte_start);
-        Location {
-            file: file.into(),
-            line,
-            col,
-            byte_start: Some(byte_start),
-            byte_end,
-        }
-    }
-
-    /// Parse a location from "path:line:col" format.
-    ///
-    /// This parsing is robust against paths containing colons (e.g., Windows paths).
-    pub fn parse(s: &str) -> Option<Self> {
-        let parts: Vec<&str> = s.rsplitn(3, ':').collect();
-        if parts.len() != 3 {
-            return None;
-        }
-        let col: u32 = parts[0].parse().ok()?;
-        let line: u32 = parts[1].parse().ok()?;
-        let file = parts[2].to_string();
-        Some(Location::new(file, line, col))
-    }
-
-    /// Comparison key for deterministic sorting: (file, line, col).
-    fn sort_key(&self) -> (&str, u32, u32) {
-        (&self.file, self.line, self.col)
     }
 }
 
-impl PartialOrd for Location {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Location {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.sort_key().cmp(&other.sort_key())
-    }
-}
-
-// ============================================================================
-// SymbolInfo Type
-// ============================================================================
-
-/// Symbol information for JSON output.
-///
-/// Named `SymbolInfo` to distinguish from `facts::Symbol` (internal graph type).
-/// The "Info" suffix indicates this is an information carrier for serialization.
-///
-/// Per 26.0.7 spec #type-symbol:
-/// - `id`: Stable symbol ID within snapshot (required)
-/// - `name`: Symbol name (required)
-/// - `kind`: One of: function, class, method, variable, parameter, module, import (required)
-/// - `location`: Definition location (required)
-/// - `container`: Parent symbol ID for methods in classes (optional)
+/// An anchor found in the document
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SymbolInfo {
-    /// Symbol ID (stable within snapshot).
-    pub id: String,
-    /// Symbol name.
+pub struct Anchor {
+    /// The anchor name (without the #)
     pub name: String,
-    /// Symbol kind (function, class, method, variable, parameter, module, import).
-    pub kind: String,
-    /// Definition location.
-    pub location: Location,
-    /// Parent symbol ID (for methods in classes).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub container: Option<String>,
+    /// Line number where the anchor was found
+    pub line: usize,
 }
 
-impl SymbolInfo {
-    /// Create a Symbol from internal FactsStore types.
-    ///
-    /// This is the primary constructor used during rename analysis.
-    /// The `container` field is populated when the symbol is a method inside a class.
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_facts(
-        symbol_id: &str,
-        name: &str,
-        kind: &str,
-        file: &str,
-        line: u32,
-        col: u32,
-        byte_start: usize,
-        byte_end: usize,
-        container: Option<String>,
-    ) -> Self {
-        SymbolInfo {
-            id: symbol_id.to_string(),
-            name: name.to_string(),
-            kind: kind.to_string(),
-            location: Location::with_span(file, line, col, byte_start, byte_end),
-            container,
+/// A design decision
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Decision {
+    /// Decision ID (e.g., "D01")
+    pub id: String,
+    /// Decision title
+    pub title: String,
+    /// Status (DECIDED, OPEN)
+    pub status: Option<String>,
+    /// Anchor name
+    pub anchor: Option<String>,
+    /// Line number
+    pub line: usize,
+}
+
+/// An open question
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Question {
+    /// Question ID (e.g., "Q01")
+    pub id: String,
+    /// Question title
+    pub title: String,
+    /// Resolution status (OPEN, DECIDED, DEFERRED)
+    pub resolution: Option<String>,
+    /// Anchor name
+    pub anchor: Option<String>,
+    /// Line number
+    pub line: usize,
+}
+
+/// An execution step within a plan
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Step {
+    /// Step number (e.g., "0", "1", "2")
+    pub number: String,
+    /// Step title
+    pub title: String,
+    /// Step anchor (e.g., "step-0", "step-2-1")
+    pub anchor: String,
+    /// Line number where the step starts
+    pub line: usize,
+    /// Dependencies (step anchors this step depends on)
+    pub depends_on: Vec<String>,
+    /// Associated bead ID (if synced)
+    pub bead_id: Option<String>,
+    /// Beads hints (type, priority, labels, estimate_minutes)
+    pub beads_hints: Option<BeadsHints>,
+    /// Commit message
+    pub commit_message: Option<String>,
+    /// References line content
+    pub references: Option<String>,
+    /// Task items
+    pub tasks: Vec<Checkpoint>,
+    /// Test items
+    pub tests: Vec<Checkpoint>,
+    /// Checkpoint/verification items
+    pub checkpoints: Vec<Checkpoint>,
+    /// Artifact items (deliverables from this step)
+    #[serde(default)]
+    pub artifacts: Vec<String>,
+    /// Substeps (for nested steps like 2.1, 2.2)
+    pub substeps: Vec<Substep>,
+}
+
+impl Step {
+    /// Count total checkbox items (tasks + tests + checkpoints)
+    pub fn total_items(&self) -> usize {
+        self.tasks.len() + self.tests.len() + self.checkpoints.len()
+    }
+
+    /// Count completed checkbox items
+    pub fn completed_items(&self) -> usize {
+        self.tasks.iter().filter(|c| c.checked).count()
+            + self.tests.iter().filter(|c| c.checked).count()
+            + self.checkpoints.iter().filter(|c| c.checked).count()
+    }
+
+    /// Render the step description as markdown (Tasks, Artifacts, Commit Template)
+    pub fn render_description(&self) -> String {
+        let mut sections = Vec::new();
+
+        // Tasks section
+        if !self.tasks.is_empty() {
+            let mut task_lines = vec!["## Tasks".to_string()];
+            for task in &self.tasks {
+                let check = if task.checked { "x" } else { " " };
+                task_lines.push(format!("- [{}] {}", check, task.text));
+            }
+            sections.push(task_lines.join("\n"));
+        }
+
+        // Artifacts section
+        if !self.artifacts.is_empty() {
+            let mut artifact_lines = vec!["## Artifacts".to_string()];
+            for artifact in &self.artifacts {
+                artifact_lines.push(format!("- {}", artifact));
+            }
+            sections.push(artifact_lines.join("\n"));
+        }
+
+        // Commit Template section
+        if let Some(ref commit) = self.commit_message {
+            sections.push(format!("## Commit Template\n{}", commit));
+        }
+
+        sections.join("\n\n")
+    }
+
+    /// Render the acceptance criteria as markdown (Tests, Checkpoints)
+    pub fn render_acceptance_criteria(&self) -> String {
+        let mut sections = Vec::new();
+
+        // Tests section
+        if !self.tests.is_empty() {
+            let mut test_lines = vec!["## Tests".to_string()];
+            for test in &self.tests {
+                let check = if test.checked { "x" } else { " " };
+                test_lines.push(format!("- [{}] {}", check, test.text));
+            }
+            sections.push(test_lines.join("\n"));
+        }
+
+        // Checkpoints section
+        if !self.checkpoints.is_empty() {
+            let mut checkpoint_lines = vec!["## Checkpoints".to_string()];
+            for checkpoint in &self.checkpoints {
+                let check = if checkpoint.checked { "x" } else { " " };
+                checkpoint_lines.push(format!("- [{}] {}", check, checkpoint.text));
+            }
+            sections.push(checkpoint_lines.join("\n"));
+        }
+
+        sections.join("\n\n")
+    }
+}
+
+/// Beads hints for a step (optional metadata for bead creation)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BeadsHints {
+    /// Issue type (task, feature, bug, epic, chore)
+    pub issue_type: Option<String>,
+    /// Priority (1-4)
+    pub priority: Option<u8>,
+    /// Labels (comma-separated)
+    pub labels: Vec<String>,
+    /// Time estimate in minutes
+    pub estimate_minutes: Option<u32>,
+}
+
+/// A nested substep within a step
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Substep {
+    /// Substep number (e.g., "2.1")
+    pub number: String,
+    /// Substep title
+    pub title: String,
+    /// Substep anchor
+    pub anchor: String,
+    /// Line number where the substep starts
+    pub line: usize,
+    /// Dependencies (step anchors this substep depends on)
+    pub depends_on: Vec<String>,
+    /// Associated bead ID (optional, only with --substeps children)
+    pub bead_id: Option<String>,
+    /// Beads hints
+    pub beads_hints: Option<BeadsHints>,
+    /// Commit message
+    pub commit_message: Option<String>,
+    /// References line content
+    pub references: Option<String>,
+    /// Task items
+    pub tasks: Vec<Checkpoint>,
+    /// Test items
+    pub tests: Vec<Checkpoint>,
+    /// Checkpoint/verification items
+    pub checkpoints: Vec<Checkpoint>,
+    /// Artifact items (deliverables from this substep)
+    #[serde(default)]
+    pub artifacts: Vec<String>,
+}
+
+impl Substep {
+    /// Count total checkbox items
+    pub fn total_items(&self) -> usize {
+        self.tasks.len() + self.tests.len() + self.checkpoints.len()
+    }
+
+    /// Count completed checkbox items
+    pub fn completed_items(&self) -> usize {
+        self.tasks.iter().filter(|c| c.checked).count()
+            + self.tests.iter().filter(|c| c.checked).count()
+            + self.checkpoints.iter().filter(|c| c.checked).count()
+    }
+
+    /// Render the substep description as markdown (Tasks, Artifacts, Commit Template)
+    pub fn render_description(&self) -> String {
+        let mut sections = Vec::new();
+
+        // Tasks section
+        if !self.tasks.is_empty() {
+            let mut task_lines = vec!["## Tasks".to_string()];
+            for task in &self.tasks {
+                let check = if task.checked { "x" } else { " " };
+                task_lines.push(format!("- [{}] {}", check, task.text));
+            }
+            sections.push(task_lines.join("\n"));
+        }
+
+        // Artifacts section
+        if !self.artifacts.is_empty() {
+            let mut artifact_lines = vec!["## Artifacts".to_string()];
+            for artifact in &self.artifacts {
+                artifact_lines.push(format!("- {}", artifact));
+            }
+            sections.push(artifact_lines.join("\n"));
+        }
+
+        // Commit Template section
+        if let Some(ref commit) = self.commit_message {
+            sections.push(format!("## Commit Template\n{}", commit));
+        }
+
+        sections.join("\n\n")
+    }
+
+    /// Render the acceptance criteria as markdown (Tests, Checkpoints)
+    pub fn render_acceptance_criteria(&self) -> String {
+        let mut sections = Vec::new();
+
+        // Tests section
+        if !self.tests.is_empty() {
+            let mut test_lines = vec!["## Tests".to_string()];
+            for test in &self.tests {
+                let check = if test.checked { "x" } else { " " };
+                test_lines.push(format!("- [{}] {}", check, test.text));
+            }
+            sections.push(test_lines.join("\n"));
+        }
+
+        // Checkpoints section
+        if !self.checkpoints.is_empty() {
+            let mut checkpoint_lines = vec!["## Checkpoints".to_string()];
+            for checkpoint in &self.checkpoints {
+                let check = if checkpoint.checked { "x" } else { " " };
+                checkpoint_lines.push(format!("- [{}] {}", check, checkpoint.text));
+            }
+            sections.push(checkpoint_lines.join("\n"));
+        }
+
+        sections.join("\n\n")
+    }
+}
+
+/// A checkbox item (task, test, or checkpoint)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Checkpoint {
+    /// Whether the checkbox is checked
+    pub checked: bool,
+    /// The text content of the checkbox item
+    pub text: String,
+    /// Type of checkpoint item
+    pub kind: CheckpointKind,
+    /// Line number where this item appears
+    pub line: usize,
+}
+
+/// Kind of checkpoint item
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum CheckpointKind {
+    /// Task item
+    #[default]
+    Task,
+    /// Test item
+    Test,
+    /// Checkpoint/verification item
+    Checkpoint,
+}
+
+/// Status of a tugplan based on metadata and completion
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TugPlanStatus {
+    /// Metadata Status = "draft"
+    Draft,
+    /// Metadata Status = "active", completion < 100%
+    Active,
+    /// Metadata Status = "done" OR completion = 100%
+    Done,
+}
+
+impl std::fmt::Display for TugPlanStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TugPlanStatus::Draft => write!(f, "draft"),
+            TugPlanStatus::Active => write!(f, "active"),
+            TugPlanStatus::Done => write!(f, "done"),
         }
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
+impl TugPlan {
+    /// Get the computed status based on metadata and completion
+    pub fn computed_status(&self) -> TugPlanStatus {
+        let declared = self.metadata.status.as_deref().map(|s| s.to_lowercase());
+
+        match declared.as_deref() {
+            Some("draft") => TugPlanStatus::Draft,
+            Some("done") => TugPlanStatus::Done,
+            Some("active") => {
+                if self.completion_percentage() >= 100.0 {
+                    TugPlanStatus::Done
+                } else {
+                    TugPlanStatus::Active
+                }
+            }
+            _ => TugPlanStatus::Draft, // Default to draft if unknown
+        }
+    }
+
+    /// Calculate completion percentage based on checkboxes in execution steps
+    pub fn completion_percentage(&self) -> f64 {
+        let (done, total) = self.completion_counts();
+        if total == 0 {
+            0.0
+        } else {
+            (done as f64 / total as f64) * 100.0
+        }
+    }
+
+    /// Get (completed, total) counts for checkboxes in execution steps
+    pub fn completion_counts(&self) -> (usize, usize) {
+        let mut done = 0;
+        let mut total = 0;
+
+        for step in &self.steps {
+            done += step.completed_items();
+            total += step.total_items();
+
+            for substep in &step.substeps {
+                done += substep.completed_items();
+                total += substep.total_items();
+            }
+        }
+
+        (done, total)
+    }
+
+    /// Extract content from a section by its anchor
+    /// Returns the markdown content between the heading with {#anchor} and the next same-or-higher level heading
+    pub fn extract_section_by_anchor(&self, anchor: &str) -> Option<String> {
+        let lines: Vec<&str> = self.raw_content.lines().collect();
+        let anchor_pattern = format!("{{#{}}}", anchor);
+
+        // Find the line with the anchor
+        let start_idx = lines
+            .iter()
+            .position(|line| line.contains(&anchor_pattern))?;
+
+        // Determine the heading level of the anchor line
+        let anchor_line = lines[start_idx];
+        let anchor_level = anchor_line.chars().take_while(|&c| c == '#').count();
+
+        // Find the end of this section (next heading at same or higher level)
+        let mut end_idx = lines.len();
+        for (idx, line) in lines.iter().enumerate().skip(start_idx + 1) {
+            if line.starts_with('#') {
+                let level = line.chars().take_while(|&c| c == '#').count();
+                if level <= anchor_level {
+                    end_idx = idx;
+                    break;
+                }
+            }
+        }
+
+        // Extract the content between start and end (excluding the heading line itself)
+        if start_idx + 1 < end_idx {
+            let content_lines: Vec<&str> = lines[(start_idx + 1)..end_idx].to_vec();
+            let content = content_lines.join("\n").trim().to_string();
+            if content.is_empty() {
+                None
+            } else {
+                Some(content)
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Render the root bead description (Purpose + Strategy + Success Criteria)
+    pub fn render_root_description(&self) -> String {
+        let mut sections = Vec::new();
+
+        // Purpose section
+        if let Some(ref purpose) = self.purpose {
+            sections.push(format!("## Purpose\n{}", purpose));
+        }
+
+        // Strategy section
+        if let Some(strategy) = self.extract_section_by_anchor("strategy") {
+            sections.push(format!("## Strategy\n{}", strategy));
+        }
+
+        // Success Criteria section
+        if let Some(criteria) = self.extract_section_by_anchor("success-criteria") {
+            sections.push(format!("## Success Criteria\n{}", criteria));
+        }
+
+        sections.join("\n\n")
+    }
+
+    /// Render the root bead design (summary of design decisions)
+    pub fn render_root_design(&self) -> String {
+        if self.decisions.is_empty() {
+            return String::new();
+        }
+
+        let mut lines = vec!["## References".to_string()];
+        for decision in &self.decisions {
+            lines.push(format!("- [{}] {}", decision.id, decision.title));
+        }
+
+        lines.join("\n")
+    }
+
+    /// Render the root bead acceptance criteria (phase exit criteria)
+    pub fn render_root_acceptance(&self) -> String {
+        // Try "exit-criteria" first, then "deliverables"
+        if let Some(criteria) = self.extract_section_by_anchor("exit-criteria") {
+            format!("## Exit Criteria\n{}", criteria)
+        } else if let Some(deliverables) = self.extract_section_by_anchor("deliverables") {
+            format!("## Deliverables\n{}", deliverables)
+        } else {
+            String::new()
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    mod location_tests {
-        use super::*;
+    #[test]
+    fn test_valid_status() {
+        let mut meta = TugPlanMetadata::default();
+        assert!(!meta.is_valid_status());
 
-        #[test]
-        fn location_new_serializes_without_byte_offsets() {
-            let loc = Location::new("test.py", 42, 8);
-            let json = serde_json::to_string(&loc).unwrap();
-            // Should NOT include byte_start or byte_end when None
-            assert!(!json.contains("byte_start"));
-            assert!(!json.contains("byte_end"));
-            assert!(json.contains("\"file\":\"test.py\""));
-            assert!(json.contains("\"line\":42"));
-            assert!(json.contains("\"col\":8"));
-        }
+        meta.status = Some("draft".to_string());
+        assert!(meta.is_valid_status());
 
-        #[test]
-        fn location_with_span_serializes_all_fields() {
-            let loc = Location::with_span("src/main.py", 42, 8, 1234, 1245);
-            let json = serde_json::to_string(&loc).unwrap();
-            assert!(json.contains("\"byte_start\":1234"));
-            assert!(json.contains("\"byte_end\":1245"));
-        }
+        meta.status = Some("ACTIVE".to_string());
+        assert!(meta.is_valid_status());
 
-        #[test]
-        fn location_parse_valid() {
-            let loc = Location::parse("src/utils.py:42:5").unwrap();
-            assert_eq!(loc.file, "src/utils.py");
-            assert_eq!(loc.line, 42);
-            assert_eq!(loc.col, 5);
-            assert_eq!(loc.byte_start, None);
-            assert_eq!(loc.byte_end, None);
-        }
+        meta.status = Some("Done".to_string());
+        assert!(meta.is_valid_status());
 
-        #[test]
-        fn location_parse_windows_path() {
-            // Windows paths have colons - rsplitn should handle this
-            let loc = Location::parse("C:/Users/foo/src/utils.py:10:3").unwrap();
-            assert_eq!(loc.file, "C:/Users/foo/src/utils.py");
-            assert_eq!(loc.line, 10);
-            assert_eq!(loc.col, 3);
-        }
-
-        #[test]
-        fn location_parse_invalid() {
-            assert!(Location::parse("src/utils.py").is_none());
-            assert!(Location::parse("src/utils.py:42").is_none());
-            assert!(Location::parse("src/utils.py:abc:5").is_none());
-        }
-
-        // ====================================================================
-        // with_line_col tests (Table T05: Line/Col Helper Test Cases)
-        // ====================================================================
-
-        /// LC-01: Byte 0 → (1, 1)
-        #[test]
-        fn test_with_line_col_first_line() {
-            let content = "def foo():\n    pass\n";
-            let loc = Location::with_line_col("test.py", content, 0, None);
-            assert_eq!(loc.file, "test.py");
-            assert_eq!(loc.line, 1);
-            assert_eq!(loc.col, 1);
-            assert_eq!(loc.byte_start, Some(0));
-            assert_eq!(loc.byte_end, None);
-        }
-
-        /// LC-02: After newline → (2, 1)
-        #[test]
-        fn test_with_line_col_second_line() {
-            let content = "def foo():\n    pass\n";
-            //            0123456789 0 <- newline at byte 10
-            //                       11 <- byte 11 is start of line 2
-            let loc = Location::with_line_col("test.py", content, 11, Some(15));
-            assert_eq!(loc.line, 2);
-            assert_eq!(loc.col, 1);
-            assert_eq!(loc.byte_start, Some(11));
-            assert_eq!(loc.byte_end, Some(15));
-        }
-
-        /// LC-03: Middle of line → correct col
-        #[test]
-        fn test_with_line_col_mid_line() {
-            let content = "def foo():\n    pass\n";
-            //            0123456789
-            //                ^4 = column 5 (1-indexed)
-            let loc = Location::with_line_col("test.py", content, 4, Some(7));
-            assert_eq!(loc.line, 1);
-            assert_eq!(loc.col, 5); // 1-indexed: positions 0,1,2,3 then position 4 is col 5
-            assert_eq!(loc.byte_start, Some(4));
-            assert_eq!(loc.byte_end, Some(7));
-        }
-
-        /// LC-04: Unicode chars (byte vs char offset)
-        /// The column counts Unicode scalar values (chars), not bytes.
-        #[test]
-        fn test_with_line_col_unicode() {
-            // "café" uses 5 bytes but 4 characters (é is 2 bytes in UTF-8)
-            let content = "café\ntest\n";
-            // Bytes:  c(0) a(1) f(2) é(3,4) \n(5) t(6) e(7) s(8) t(9) \n(10)
-            // Chars:  c(1) a(2) f(3) é(4)   \n    t(1) e(2) s(3) t(4) \n
-
-            // Byte 5 is the newline after "café"
-            // At byte 5, we've passed 4 chars + newline, so line 2, col 1
-            let loc = Location::with_line_col("test.py", content, 6, None);
-            assert_eq!(loc.line, 2);
-            assert_eq!(loc.col, 1); // First char of line 2
-
-            // Byte 3 is the start of 'é' (2-byte char)
-            // At byte 3, we've passed c, a, f so we're at column 4
-            let loc2 = Location::with_line_col("test.py", content, 3, None);
-            assert_eq!(loc2.line, 1);
-            assert_eq!(loc2.col, 4); // 'é' is the 4th character
-        }
-
-        /// LC-05: Empty content edge case
-        #[test]
-        fn test_with_line_col_empty_file() {
-            let content = "";
-            let loc = Location::with_line_col("empty.py", content, 0, None);
-            assert_eq!(loc.line, 1);
-            assert_eq!(loc.col, 1);
-            assert_eq!(loc.byte_start, Some(0));
-        }
-
-        /// LC-06: File ending with newline
-        #[test]
-        fn test_with_line_col_trailing_newline() {
-            let content = "line1\nline2\n";
-            // Bytes: l(0) i(1) n(2) e(3) 1(4) \n(5) l(6) i(7) n(8) e(9) 2(10) \n(11)
-            //        ^line 1                       ^line 2
-
-            // Byte 10 is '2', the last char of "line2" before the trailing newline
-            let loc = Location::with_line_col("test.py", content, 10, Some(11));
-            assert_eq!(loc.line, 2);
-            assert_eq!(loc.col, 5); // "line" = 4 chars, then '2' at col 5
-
-            // Byte 11 is the trailing newline itself
-            // At byte 11, we've consumed "line2" (5 chars), so col is 6
-            let loc2 = Location::with_line_col("test.py", content, 11, Some(12));
-            assert_eq!(loc2.line, 2);
-            assert_eq!(loc2.col, 6);
-
-            // Byte 12 (at end, after consuming trailing newline)
-            // The function processes the \n at byte 11, incrementing to line 3
-            let loc3 = Location::with_line_col("test.py", content, 12, None);
-            assert_eq!(loc3.line, 3);
-            assert_eq!(loc3.col, 1); // Start of (empty) line 3
-        }
+        meta.status = Some("invalid".to_string());
+        assert!(!meta.is_valid_status());
     }
 
-    mod symbol_info_tests {
-        use super::*;
+    #[test]
+    fn test_step_counts() {
+        let step = Step {
+            tasks: vec![
+                Checkpoint {
+                    checked: true,
+                    text: "Task 1".to_string(),
+                    kind: CheckpointKind::Task,
+                    line: 1,
+                },
+                Checkpoint {
+                    checked: false,
+                    text: "Task 2".to_string(),
+                    kind: CheckpointKind::Task,
+                    line: 2,
+                },
+            ],
+            tests: vec![Checkpoint {
+                checked: true,
+                text: "Test 1".to_string(),
+                kind: CheckpointKind::Test,
+                line: 3,
+            }],
+            checkpoints: vec![Checkpoint {
+                checked: false,
+                text: "Check 1".to_string(),
+                kind: CheckpointKind::Checkpoint,
+                line: 4,
+            }],
+            ..Default::default()
+        };
 
-        #[test]
-        fn symbol_without_container() {
-            let sym = SymbolInfo::from_facts(
-                "sym_abc123",
-                "process_data",
-                "function",
-                "src/utils.py",
-                42,
-                4,
-                1000,
-                1012,
-                None,
-            );
-            let json = serde_json::to_string(&sym).unwrap();
-            // Should NOT include container when None
-            assert!(!json.contains("container"));
-            assert!(json.contains("\"id\":\"sym_abc123\""));
-            assert!(json.contains("\"name\":\"process_data\""));
-            assert!(json.contains("\"kind\":\"function\""));
-        }
+        assert_eq!(step.total_items(), 4);
+        assert_eq!(step.completed_items(), 2);
+    }
 
-        #[test]
-        fn symbol_with_container() {
-            let sym = SymbolInfo::from_facts(
-                "sym_method",
-                "do_work",
-                "method",
-                "src/utils.py",
-                50,
-                8,
-                1500,
-                1507,
-                Some("sym_class".to_string()),
-            );
-            let json = serde_json::to_string(&sym).unwrap();
-            assert!(json.contains("\"container\":\"sym_class\""));
-        }
+    #[test]
+    fn test_plan_completion() {
+        let mut tugplan = TugPlan::default();
+        tugplan.metadata.status = Some("active".to_string());
+        tugplan.steps.push(Step {
+            tasks: vec![
+                Checkpoint {
+                    checked: true,
+                    text: "Task 1".to_string(),
+                    kind: CheckpointKind::Task,
+                    line: 1,
+                },
+                Checkpoint {
+                    checked: true,
+                    text: "Task 2".to_string(),
+                    kind: CheckpointKind::Task,
+                    line: 2,
+                },
+            ],
+            ..Default::default()
+        });
+
+        assert_eq!(tugplan.completion_counts(), (2, 2));
+        assert_eq!(tugplan.completion_percentage(), 100.0);
+        assert_eq!(tugplan.computed_status(), TugPlanStatus::Done);
+    }
+
+    #[test]
+    fn test_step_render_description() {
+        let step = Step {
+            tasks: vec![
+                Checkpoint {
+                    checked: false,
+                    text: "Task 1".to_string(),
+                    kind: CheckpointKind::Task,
+                    line: 1,
+                },
+                Checkpoint {
+                    checked: true,
+                    text: "Task 2".to_string(),
+                    kind: CheckpointKind::Task,
+                    line: 2,
+                },
+            ],
+            artifacts: vec![
+                "New file: src/api/client.rs".to_string(),
+                "Modified: Cargo.toml".to_string(),
+            ],
+            commit_message: Some("feat(api): add client".to_string()),
+            ..Default::default()
+        };
+
+        let desc = step.render_description();
+        assert!(desc.contains("## Tasks"));
+        assert!(desc.contains("- [ ] Task 1"));
+        assert!(desc.contains("- [x] Task 2"));
+        assert!(desc.contains("## Artifacts"));
+        assert!(desc.contains("- New file: src/api/client.rs"));
+        assert!(desc.contains("- Modified: Cargo.toml"));
+        assert!(desc.contains("## Commit Template"));
+        assert!(desc.contains("feat(api): add client"));
+    }
+
+    #[test]
+    fn test_step_render_description_omits_empty_sections() {
+        let step = Step {
+            tasks: vec![Checkpoint {
+                checked: false,
+                text: "Task 1".to_string(),
+                kind: CheckpointKind::Task,
+                line: 1,
+            }],
+            ..Default::default()
+        };
+
+        let desc = step.render_description();
+        assert!(desc.contains("## Tasks"));
+        assert!(!desc.contains("## Artifacts"));
+        assert!(!desc.contains("## Commit Template"));
+    }
+
+    #[test]
+    fn test_step_render_acceptance_criteria() {
+        let step = Step {
+            tests: vec![Checkpoint {
+                checked: false,
+                text: "Unit test: retry logic".to_string(),
+                kind: CheckpointKind::Test,
+                line: 1,
+            }],
+            checkpoints: vec![
+                Checkpoint {
+                    checked: true,
+                    text: "cargo test passes".to_string(),
+                    kind: CheckpointKind::Checkpoint,
+                    line: 2,
+                },
+                Checkpoint {
+                    checked: false,
+                    text: "cargo clippy clean".to_string(),
+                    kind: CheckpointKind::Checkpoint,
+                    line: 3,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let acceptance = step.render_acceptance_criteria();
+        assert!(acceptance.contains("## Tests"));
+        assert!(acceptance.contains("- [ ] Unit test: retry logic"));
+        assert!(acceptance.contains("## Checkpoints"));
+        assert!(acceptance.contains("- [x] cargo test passes"));
+        assert!(acceptance.contains("- [ ] cargo clippy clean"));
+    }
+
+    #[test]
+    fn test_plan_extract_section_by_anchor() {
+        let content = r#"## Phase 1.0: Test {#phase-1}
+
+### Strategy {#strategy}
+
+This is the strategy content.
+With multiple lines.
+
+### Success Criteria {#success-criteria}
+
+- Criterion 1
+- Criterion 2
+
+### Next Section {#next-section}
+
+Other content.
+"#;
+
+        let tugplan = TugPlan {
+            raw_content: content.to_string(),
+            ..Default::default()
+        };
+
+        let strategy = tugplan.extract_section_by_anchor("strategy").unwrap();
+        assert!(strategy.contains("This is the strategy content."));
+        assert!(strategy.contains("With multiple lines."));
+        assert!(!strategy.contains("### Success Criteria"));
+
+        let criteria = tugplan
+            .extract_section_by_anchor("success-criteria")
+            .unwrap();
+        assert!(criteria.contains("- Criterion 1"));
+        assert!(criteria.contains("- Criterion 2"));
+        assert!(!criteria.contains("### Next Section"));
+    }
+
+    #[test]
+    fn test_plan_extract_section_by_anchor_missing() {
+        let content = "## Phase 1.0: Test {#phase-1}\n";
+        let tugplan = TugPlan {
+            raw_content: content.to_string(),
+            ..Default::default()
+        };
+
+        assert!(tugplan.extract_section_by_anchor("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_plan_extract_section_last_in_document() {
+        let content = r#"## Phase 1.0: Test {#phase-1}
+
+### Last Section {#last-section}
+
+This is the last section.
+It goes to the end of the document.
+"#;
+
+        let tugplan = TugPlan {
+            raw_content: content.to_string(),
+            ..Default::default()
+        };
+
+        let last = tugplan.extract_section_by_anchor("last-section").unwrap();
+        assert!(last.contains("This is the last section."));
+        assert!(last.contains("It goes to the end of the document."));
+    }
+
+    #[test]
+    fn test_plan_extract_section_with_nested_headings() {
+        let content = r#"## Phase 1.0: Test {#phase-1}
+
+### Section {#section}
+
+Content here.
+
+#### Subsection
+
+Nested content.
+
+### Next Section {#next}
+
+Other.
+"#;
+
+        let tugplan = TugPlan {
+            raw_content: content.to_string(),
+            ..Default::default()
+        };
+
+        let section = tugplan.extract_section_by_anchor("section").unwrap();
+        assert!(section.contains("Content here."));
+        assert!(section.contains("#### Subsection"));
+        assert!(section.contains("Nested content."));
+        assert!(!section.contains("### Next Section"));
+    }
+
+    #[test]
+    fn test_plan_render_root_description() {
+        let content = r#"## Phase 1.0: Test {#phase-1}
+
+**Purpose:** Build a test feature.
+
+### Strategy {#strategy}
+
+- Step 1
+- Step 2
+
+### Success Criteria {#success-criteria}
+
+- All tests pass
+- Feature works
+"#;
+
+        let tugplan = TugPlan {
+            raw_content: content.to_string(),
+            purpose: Some("Build a test feature.".to_string()),
+            ..Default::default()
+        };
+
+        let desc = tugplan.render_root_description();
+        assert!(desc.contains("## Purpose"));
+        assert!(desc.contains("Build a test feature."));
+        assert!(desc.contains("## Strategy"));
+        assert!(desc.contains("- Step 1"));
+        assert!(desc.contains("## Success Criteria"));
+        assert!(desc.contains("- All tests pass"));
+    }
+
+    #[test]
+    fn test_plan_render_root_design() {
+        let mut tugplan = TugPlan::default();
+        tugplan.decisions.push(Decision {
+            id: "D01".to_string(),
+            title: "Use Rust".to_string(),
+            status: Some("DECIDED".to_string()),
+            anchor: Some("d01-use-rust".to_string()),
+            line: 1,
+        });
+        tugplan.decisions.push(Decision {
+            id: "D02".to_string(),
+            title: "Use clap".to_string(),
+            status: Some("DECIDED".to_string()),
+            anchor: Some("d02-use-clap".to_string()),
+            line: 2,
+        });
+
+        let design = tugplan.render_root_design();
+        assert!(design.contains("## References"));
+        assert!(design.contains("- [D01] Use Rust"));
+        assert!(design.contains("- [D02] Use clap"));
     }
 }

@@ -1,662 +1,915 @@
-//! CLI front door for agent integration.
-//!
-//! Provides the command-line interface helpers for tug operations:
-//! - `apply python rename` - Execute rename with verification
-//! - `emit python rename` - Emit unified diff (or JSON envelope with `--json`)
-//! - `analyze python rename` - Analyze rename impact (JSON metadata)
-//!
-//! ## Session Integration
-//!
-//! All CLI functions accept a `&Session` parameter. The session handles:
-//! - Directory structure creation (`.tug/python/`, `.tug/workers/`, etc.)
-//! - Workspace root validation
-//! - Configuration persistence
-//!
-//! The caller (typically `main.rs`) is responsible for opening the session
-//! via `Session::open()` before invoking these functions.
-//!
-//! ## Error Handling
-//!
-//! All functions return `Result<T, TugError>`. The `TugError` type
-//! provides stable error codes for JSON output and proper error categorization.
-//!
-//! ## Feature Flags
-//!
-//! Language-specific operations require the corresponding feature flag:
-//! - `python` - Python rename operations (default)
-//! - `rust` - Rust operations (placeholder, not yet implemented)
+//! CLI argument parsing with clap derive
 
-#[cfg(feature = "python")]
-use std::path::PathBuf;
+use clap::{Parser, Subcommand};
 
-use tugtool_core::error::TugError;
-#[cfg(feature = "python")]
-use tugtool_core::filter::CombinedFilter;
-#[cfg(feature = "python")]
-use tugtool_core::output::Location;
-#[cfg(feature = "python")]
-use tugtool_core::session::Session;
-#[cfg(feature = "python")]
-use tugtool_python::files::collect_python_files_with_combined_filter;
-#[cfg(feature = "python")]
-use tugtool_python::ops::rename::{analyze, rename};
-#[cfg(feature = "python")]
-use tugtool_python::verification::VerificationMode;
+use crate::commands::{BeadsCommands, LogCommands, WorktreeCommands};
 
-// ============================================================================
-// Python Language Support (Feature-Gated)
-// ============================================================================
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Analyze a rename operation (preview without applying).
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root, session directory)
-/// * `_python_path` - Unused (kept for API compatibility)
-/// * `at` - Location string in "file:line:col" format
-/// * `to` - New name for the symbol
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the analysis result.
-///
-/// # Feature Requirements
-///
-/// Requires the `python` feature flag.
-#[cfg(feature = "python")]
-pub fn analyze_rename(
-    session: &Session,
-    _python_path: Option<PathBuf>,
-    at: &str,
-    to: &str,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
+/// Tug - From ideas to implementation via multi-agent orchestration
+#[derive(Parser)]
+#[command(name = "tugtool")]
+#[command(version = VERSION)]
+#[command(about = "From ideas to implementation via multi-agent orchestration")]
+#[command(
+    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugtool:planner, /tugtool:implementer).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and integrate with beads for execution tracking."
+)]
+pub struct Cli {
+    /// Increase output verbosity
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
 
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+    /// Suppress non-error output
+    #[arg(short, long, global = true)]
+    pub quiet: bool,
 
-    // Run native analysis - RenameError converts to TugError via From impl
-    let analysis = analyze(session.workspace_root(), &files, &location, to)?;
+    /// Output in JSON format
+    #[arg(long, global = true)]
+    pub json: bool,
 
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&analysis)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
+    #[command(subcommand)]
+    pub command: Option<Commands>,
 }
 
-/// Execute a rename operation.
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root, session directory)
-/// * `python_path` - Optional explicit Python path for verification
-/// * `at` - Location string in "file:line:col" format
-/// * `to` - New name for the symbol
-/// * `verify_mode` - Verification mode after rename
-/// * `apply` - Whether to apply changes to files
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the rename result.
-///
-/// # Feature Requirements
-///
-/// Requires the `python` feature flag.
-#[cfg(feature = "python")]
-pub fn do_rename(
-    session: &Session,
-    python_path: Option<PathBuf>,
-    at: &str,
-    to: &str,
-    verify_mode: VerificationMode,
-    apply: bool,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Initialize a tug project in current directory
+    ///
+    /// Creates .tugtool/ directory with skeleton template and config.
+    /// Idempotent: safe to run multiple times (creates only missing files).
+    #[command(
+        long_about = "Initialize a tug project in current directory.\n\nCreates:\n  .tugtool/tugplan-skeleton.md  Template for new plans\n  .tugtool/config.toml       Project configuration\n  .tugtool/tugplan-implementation-log.md  Implementation progress tracking\n\nIdempotent: if .tugtool/ already exists, creates only missing files without overwriting.\nWith --force, removes and recreates everything.\nWith --check, performs a lightweight verification of initialization status without side effects."
+    )]
+    Init {
+        /// Overwrite existing .tug directory
+        #[arg(long, conflicts_with = "check")]
+        force: bool,
 
-    // Resolve Python interpreter for verification
-    let python = resolve_python_path(python_path)?;
+        /// Check if project is initialized (no side effects)
+        #[arg(long, conflicts_with = "force")]
+        check: bool,
+    },
 
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
+    /// Validate plan structure against format conventions
+    ///
+    /// Checks anchors, references, metadata, and step dependencies.
+    #[command(
+        long_about = "Validate plan structure against format conventions.\n\nChecks:\n  - Required metadata fields (Owner, Status, Last updated)\n  - Anchor format and uniqueness\n  - Reference validity ([D01], #step-0, etc.)\n  - Step dependency cycles\n  - Cross-reference consistency"
+    )]
+    Validate {
+        /// Plan file to validate (validates all if not specified)
+        file: Option<String>,
 
-    // Execute native rename - RenameError converts to TugError via From impl
-    let result = rename(
-        session.workspace_root(),
-        &files,
-        &location,
-        to,
-        &python,
-        verify_mode,
-        apply,
-    )?;
+        /// Enable strict validation mode (deprecated: use --level strict)
+        #[arg(long, hide = true)]
+        strict: bool,
 
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&result)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
+        /// Validation level: lenient, normal, or strict
+        #[arg(long, value_name = "LEVEL")]
+        level: Option<String>,
+    },
+
+    /// List all plans with summary information
+    ///
+    /// Shows each plan's name, status, and completion percentage.
+    #[command(
+        long_about = "List all plans with summary information.\n\nDisplays:\n  - Plan name (from filename)\n  - Status (draft, active, done)\n  - Progress (completed/total items)\n\nPlans are found in .tugtool/ matching the naming pattern."
+    )]
+    List {
+        /// Filter by status (draft, active, done)
+        #[arg(long)]
+        status: Option<String>,
+    },
+
+    /// Show detailed completion status for a plan
+    ///
+    /// Displays step-by-step progress with task and checkpoint counts.
+    #[command(
+        long_about = "Show detailed completion status for a plan.\n\nDisplays:\n  - Overall progress percentage\n  - Per-step completion (tasks, tests, checkpoints)\n  - Substep progress if present\n\nUse -v/--verbose to see individual task and checkpoint items.\nUse --full to include bead-enriched status (bead IDs, commit info, block status)."
+    )]
+    Status {
+        /// Plan file to show status for
+        file: String,
+
+        /// Show individual task and checkpoint details
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Include bead-enriched status (requires beads integration)
+        #[arg(long)]
+        full: bool,
+    },
+
+    /// Beads integration commands
+    ///
+    /// Sync steps to beads, link beads, show status, pull completion.
+    #[command(
+        subcommand,
+        long_about = "Beads integration for two-way sync between plans and work tracking.\n\nRequires:\n  - Beads CLI (bd) installed and in PATH\n  - Beads initialized (bd init creates .beads/)\n  - Network connectivity\n\nSubcommands:\n  sync   Create beads from plan steps, write IDs back\n  link   Manually link a step to an existing bead\n  status Show execution status (complete/ready/blocked)\n  pull   Update plan checkboxes from bead completion\n\nTypical workflow:\n  1. tugtool beads sync tugplan-1.md    # Create beads\n  2. bd close <bead-id>          # Complete work\n  3. tugtool beads pull tugplan-1.md    # Update checkboxes"
+    )]
+    Beads(BeadsCommands),
+
+    /// Worktree commands for isolated implementation environments
+    ///
+    /// Create, list, and clean up git worktrees for plan implementations.
+    #[command(
+        subcommand,
+        long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  create  Create worktree and branch for a plan (optionally sync beads)\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree create .tugtool/tugplan-auth.md --sync-beads\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
+    )]
+    Worktree(WorktreeCommands),
+
+    /// Log management commands
+    ///
+    /// Rotate and prepend entries to the implementation log.
+    #[command(
+        subcommand,
+        long_about = "Log management commands.\n\nProvides log rotation and prepend functionality:\n  - Rotate: Archive logs exceeding size thresholds\n  - Prepend: Add new entries atomically\n\nSubcommands:\n  rotate  Archive log when over 500 lines or 100KB\n  prepend Add entry to log atomically\n\nTypical workflow:\n  1. tug log rotate  # Manual rotation\n  2. (automatic rotation happens via beads close and committer)"
+    )]
+    Log(LogCommands),
+
+    /// Health checks for tug project
+    ///
+    /// Verify initialization, log size, worktrees, and references.
+    #[command(
+        long_about = "Health checks for tug project.\n\nRuns checks:\n  - initialized: Verify .tugtool/ exists with required files\n  - log_size: Check implementation log within thresholds\n  - worktrees: Verify worktree paths are valid\n  - broken_refs: Check for broken anchor references\n\nExit codes:\n  0 - All checks passed\n  1 - Some checks have warnings\n  2 - Some checks failed\n\nUse --json for machine-readable output."
+    )]
+    Doctor,
+
+    /// Merge a plan's implementation and clean up worktree
+    ///
+    /// Automates the post-implementation merge workflow with auto mode detection.
+    #[command(
+        long_about = "Merge a plan's implementation and clean up worktree.\n\nMode auto-detection:\n  Remote mode: Repository has 'origin' remote\n  Local mode:  No remote configured\n\nRemote mode workflow:\n  1. Find worktree for plan\n  2. Check main is synced with origin\n  3. Find PR for worktree branch\n  4. Verify PR checks have passed\n  5. Auto-commit infrastructure files\n  6. Push main to origin\n  7. Merge PR via squash\n  8. Pull main to get squashed commit\n  9. Clean up worktree and branch\n\nLocal mode workflow:\n  1. Find worktree for plan\n  2. Check branch has commits to merge\n  3. Auto-commit infrastructure files\n  4. Squash merge branch into main\n  5. Clean up worktree and branch\n\nInfrastructure files (auto-committed):\n  - agents/*.md, skills/**, .claude/skills/**\n  - .tugtool/tugplan-skeleton.md, .tugtool/config.toml\n  - .tugtool/tugplan-implementation-log.md\n  - .beads/*, CLAUDE.md\n\nUse --dry-run to preview operations.\nUse --force to proceed with non-infrastructure uncommitted files (not recommended)."
+    )]
+    Merge {
+        /// Plan file path (e.g., .tugtool/tugplan-12.md)
+        plan: String,
+
+        /// Show what would happen without executing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Proceed even with non-infrastructure uncommitted files
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Show version information
+    ///
+    /// Display package version and optionally build metadata.
+    #[command(
+        long_about = "Show version information.\n\nBy default, displays the package version. With --verbose, also shows:\n  - Git commit hash\n  - Build date\n  - Rust compiler version\n\nUse --json for machine-readable output."
+    )]
+    Version {
+        /// Show extended build information (commit, date, rustc version)
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Commit a single implementation step
+    ///
+    /// Atomically performs log rotation, prepend, git commit, and bead close.
+    #[command(
+        long_about = "Commit a single implementation step.\n\nAtomic sequence:\n  1. Rotate log if over threshold\n  2. Prepend log entry\n  3. Stage files\n  4. Git commit\n  5. Close bead\n\nAll file paths are relative to worktree root.\n\nPartial success: If commit succeeds but bead close fails, exits 0 with bead_close_failed=true."
+    )]
+    StepCommit {
+        /// Absolute path to the worktree directory
+        #[arg(long, value_name = "PATH")]
+        worktree: String,
+
+        /// Step anchor (e.g., #step-0)
+        #[arg(long, value_name = "ANCHOR")]
+        step: String,
+
+        /// Plan file path relative to repo root
+        #[arg(long, value_name = "PATH")]
+        plan: String,
+
+        /// Git commit message
+        #[arg(long, value_name = "MESSAGE")]
+        message: String,
+
+        /// Files to stage (relative to worktree root, repeatable)
+        #[arg(long, value_name = "FILE", num_args = 1..)]
+        files: Vec<String>,
+
+        /// Bead ID to close (e.g., bd-abc123)
+        #[arg(long, value_name = "BEAD_ID")]
+        bead: String,
+
+        /// One-line summary for log entry
+        #[arg(long, value_name = "TEXT")]
+        summary: String,
+
+        /// Reason for closing the bead (optional)
+        #[arg(long, value_name = "TEXT")]
+        close_reason: Option<String>,
+    },
+
+    /// Publish implementation results via push and PR creation
+    ///
+    /// Pushes branch to remote and creates PR.
+    #[command(
+        long_about = "Publish implementation results via push and PR creation.\n\nSequence:\n  1. Check gh auth\n  2. Derive repo from remote (if not provided)\n  3. Generate PR body from git log\n  4. Push branch to remote\n  5. Create PR via gh\n\nRequires:\n  - GitHub CLI (gh) installed and authenticated\n  - Remote 'origin' configured"
+    )]
+    StepPublish {
+        /// Absolute path to the worktree directory
+        #[arg(long, value_name = "PATH")]
+        worktree: String,
+
+        /// Git branch name (e.g., tug/auth-20260208-143022)
+        #[arg(long, value_name = "BRANCH")]
+        branch: String,
+
+        /// Base branch to merge into (e.g., main)
+        #[arg(long, value_name = "BRANCH")]
+        base: String,
+
+        /// PR title
+        #[arg(long, value_name = "TEXT")]
+        title: String,
+
+        /// Plan file path relative to repo root
+        #[arg(long, value_name = "PATH")]
+        plan: String,
+
+        /// GitHub repo in owner/repo format (auto-derived if not provided)
+        #[arg(long, value_name = "REPO")]
+        repo: Option<String>,
+    },
 }
 
-// ============================================================================
-// Python Rename Parameter Operations (Feature-Gated)
-// ============================================================================
-
-/// Analyze a rename-param operation (preview without applying).
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root, session directory)
-/// * `at` - Location string in "file:line:col" format
-/// * `to` - New name for the parameter
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the analysis result.
-#[cfg(feature = "python")]
-pub fn analyze_rename_param(
-    session: &Session,
-    at: &str,
-    to: &str,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    use tugtool_python::ops::rename_param::analyze_param;
-
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
-
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
-
-    // Run native analysis
-    let analysis = analyze_param(session.workspace_root(), &files, &location, to)
-        .map_err(|e| TugError::internal(format!("rename-param analysis failed: {}", e)))?;
-
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&analysis)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
+/// Get the command args for use in the application
+pub fn parse() -> Cli {
+    Cli::parse()
 }
 
-/// Execute a rename-param operation.
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root, session directory)
-/// * `python_path` - Optional explicit Python path for verification
-/// * `at` - Location string in "file:line:col" format
-/// * `to` - New name for the parameter
-/// * `verify_mode` - Verification mode after rename
-/// * `apply` - Whether to apply changes to files
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the rename-param result.
-#[cfg(feature = "python")]
-pub fn do_rename_param(
-    session: &Session,
-    python_path: Option<PathBuf>,
-    at: &str,
-    to: &str,
-    verify_mode: VerificationMode,
-    apply: bool,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    use tugtool_python::ops::rename_param::rename_param;
-
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
-
-    // Resolve Python interpreter for verification
-    let python = resolve_python_path(python_path)?;
-
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
-
-    // Execute rename-param operation
-    let result = rename_param(
-        session.workspace_root(),
-        &files,
-        &location,
-        to,
-        &python,
-        verify_mode,
-        apply,
-    )
-    .map_err(|e| TugError::internal(format!("rename-param failed: {}", e)))?;
-
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&result)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
-}
-
-// ============================================================================
-// Python Extract Variable Operations (Feature-Gated)
-// ============================================================================
-
-/// Analyze an extract-variable operation (preview without applying).
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root)
-/// * `at` - Location string in "file:line:col" format
-/// * `name` - Optional variable name (will suggest one if not provided)
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the analysis result.
-#[cfg(feature = "python")]
-pub fn analyze_extract_variable(
-    session: &Session,
-    at: &str,
-    name: Option<&str>,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    use tugtool_python::ops::extract_variable::analyze_extract_variable;
-
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
-
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
-
-    // Run analysis
-    let analysis = analyze_extract_variable(&files, &location, name)
-        .map_err(|e| TugError::internal(format!("extract-variable analysis failed: {}", e)))?;
-
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&analysis)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
-}
-
-/// Execute an extract-variable operation.
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root, session directory)
-/// * `python_path` - Optional explicit Python path for verification
-/// * `at` - Location string in "file:line:col" format
-/// * `name` - Variable name for the extracted expression
-/// * `verify_mode` - Verification mode after extraction
-/// * `apply` - Whether to apply changes to files
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the extract-variable result.
-#[cfg(feature = "python")]
-pub fn do_extract_variable(
-    session: &Session,
-    python_path: Option<PathBuf>,
-    at: &str,
-    name: &str,
-    verify_mode: VerificationMode,
-    apply: bool,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    use tugtool_python::ops::extract_variable::extract_variable;
-
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
-
-    // Resolve Python interpreter for verification
-    let python = resolve_python_path(python_path)?;
-
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
-
-    // Execute extract-variable operation
-    let result = extract_variable(
-        session.workspace_root(),
-        &files,
-        &location,
-        name,
-        &python,
-        verify_mode,
-        apply,
-    )
-    .map_err(|e| TugError::internal(format!("extract-variable failed: {}", e)))?;
-
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&result)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
-}
-
-// ============================================================================
-// Extract Constant Operation (Feature-Gated)
-// ============================================================================
-
-/// Analyze an extract-constant operation (preview without applying).
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root)
-/// * `at` - Location string in "file:line:col" format
-/// * `name` - Optional constant name (will suggest one if not provided)
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the analysis result.
-#[cfg(feature = "python")]
-pub fn analyze_extract_constant(
-    session: &Session,
-    at: &str,
-    name: Option<&str>,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    use tugtool_python::ops::extract_constant::analyze_extract_constant;
-
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
-
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
-
-    // Run analysis
-    let analysis = analyze_extract_constant(&files, &location, name)
-        .map_err(|e| TugError::internal(format!("extract-constant analysis failed: {}", e)))?;
-
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&analysis)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
-}
-
-/// Execute an extract-constant operation.
-///
-/// # Arguments
-///
-/// * `session` - Open session (provides workspace root, session directory)
-/// * `python_path` - Optional explicit Python path for verification
-/// * `at` - Location string in "file:line:col" format
-/// * `name` - Constant name for the extracted literal
-/// * `verify_mode` - Verification mode after extraction
-/// * `apply` - Whether to apply changes to files
-/// * `filter` - CombinedFilter for file filtering
-///
-/// # Returns
-///
-/// JSON string containing the extract-constant result.
-#[cfg(feature = "python")]
-pub fn do_extract_constant(
-    session: &Session,
-    python_path: Option<PathBuf>,
-    at: &str,
-    name: &str,
-    verify_mode: VerificationMode,
-    apply: bool,
-    filter: &mut CombinedFilter,
-) -> Result<String, TugError> {
-    use tugtool_python::ops::extract_constant::extract_constant;
-
-    // Parse location
-    let location = Location::parse(at).ok_or_else(|| {
-        TugError::invalid_args(format!(
-            "invalid location format '{}', expected path:line:col",
-            at
-        ))
-    })?;
-
-    // Resolve Python interpreter for verification
-    let python = resolve_python_path(python_path)?;
-
-    // Collect Python files in workspace using combined filter
-    let files = collect_python_files_with_combined_filter(session.workspace_root(), filter)
-        .map_err(|e| TugError::internal(format!("Failed to collect Python files: {}", e)))?;
-
-    // Execute extract-constant operation
-    let result = extract_constant(
-        session.workspace_root(),
-        &files,
-        &location,
-        name,
-        &python,
-        verify_mode,
-        apply,
-    )
-    .map_err(|e| TugError::internal(format!("extract-constant failed: {}", e)))?;
-
-    // Serialize to JSON
-    let json = serde_json::to_string_pretty(&result)
-        .map_err(|e| TugError::internal(format!("JSON serialization error: {}", e)))?;
-    Ok(json)
-}
-
-// ============================================================================
-// Helper Functions (Feature-Gated)
-// ============================================================================
-
-/// Resolve Python interpreter path.
-///
-/// If an explicit path is provided, use it directly.
-/// Otherwise, try common Python executable names in PATH.
-#[cfg(feature = "python")]
-fn resolve_python_path(explicit_path: Option<PathBuf>) -> Result<PathBuf, TugError> {
-    if let Some(path) = explicit_path {
-        return Ok(path);
-    }
-
-    // Try common Python executable names
-    for name in &["python3", "python"] {
-        if let Ok(path) = std::process::Command::new("which")
-            .arg(name)
-            .output()
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        {
-            if !path.is_empty() {
-                return Ok(PathBuf::from(path));
-            }
-        }
-    }
-
-    Err(TugError::internal(
-        "Could not find Python interpreter. Please provide --python-path.".to_string(),
-    ))
-}
-
-// ============================================================================
-// Feature-Not-Available Stubs
-// ============================================================================
-
-/// Returns an error indicating Python support is not compiled in.
-///
-/// This function is only available when the `python` feature is disabled,
-/// providing a graceful error message to users.
-#[cfg(not(feature = "python"))]
-pub fn python_not_available() -> TugError {
-    TugError::invalid_args(
-        "Python support not compiled in.\n\n\
-         To enable: cargo install tugtool --features python"
-            .to_string(),
-    )
-}
-
-// ============================================================================
-// Tests (Feature-Gated)
-// ============================================================================
-
-#[cfg(all(test, feature = "python"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use tugtool_core::session::SessionOptions;
+    use clap::CommandFactory;
 
-    fn create_test_workspace() -> TempDir {
-        let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("test.py"), "def foo(): pass\n").unwrap();
-        temp
+    #[test]
+    fn verify_cli() {
+        Cli::command().debug_assert();
     }
 
-    fn create_default_filter(workspace_root: &std::path::Path) -> CombinedFilter {
-        CombinedFilter::builder()
-            .with_workspace_root(workspace_root)
-            .build()
-            .unwrap()
-    }
+    #[test]
+    fn build_env_vars_accessible() {
+        // Verify that build.rs exports are accessible via env!()
+        // These will fail at compile time if build.rs doesn't set them
+        let commit = env!("TUG_COMMIT");
+        let build_date = env!("TUG_BUILD_DATE");
+        let rustc_version = env!("TUG_RUSTC_VERSION");
 
-    mod resolve_python_path_tests {
-        use super::*;
+        // Basic sanity checks - values should be non-empty
+        assert!(!commit.is_empty(), "TUG_COMMIT should not be empty");
+        assert!(!build_date.is_empty(), "TUG_BUILD_DATE should not be empty");
+        assert!(
+            !rustc_version.is_empty(),
+            "TUG_RUSTC_VERSION should not be empty"
+        );
 
-        #[test]
-        fn explicit_path_is_used_directly() {
-            let explicit = PathBuf::from("/usr/bin/python3.11");
-            let result = resolve_python_path(Some(explicit.clone())).unwrap();
-
-            assert_eq!(result, explicit);
-        }
-
-        #[test]
-        fn explicit_path_overrides_auto_resolution() {
-            // Even if a different Python could be resolved, the explicit path wins
-            let explicit = PathBuf::from("/custom/python");
-            let result = resolve_python_path(Some(explicit.clone())).unwrap();
-
-            assert_eq!(result, explicit);
-        }
-    }
-
-    mod error_handling {
-        use super::*;
-        use tugtool_core::error::OutputErrorCode;
-
-        #[test]
-        fn invalid_location_returns_invalid_arguments_error() {
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-            let mut filter = create_default_filter(workspace.path());
-
-            let result = analyze_rename(
-                &session,
-                Some(PathBuf::from("/usr/bin/python3")),
-                "bad:input", // Missing column
-                "bar",
-                &mut filter,
+        // Build date should match YYYY-MM-DD format or be "unknown"
+        if build_date != "unknown" {
+            assert!(
+                build_date.len() == 10 && build_date.chars().nth(4) == Some('-'),
+                "TUG_BUILD_DATE should be YYYY-MM-DD format, got: {}",
+                build_date
             );
-
-            assert!(result.is_err());
-            let err = result.unwrap_err();
-            assert_eq!(err.error_code(), OutputErrorCode::InvalidArguments);
-            assert!(err.to_string().contains("invalid location format"));
-        }
-
-        #[test]
-        fn missing_column_in_location_returns_error() {
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-            let mut filter = create_default_filter(workspace.path());
-
-            let result = do_rename(
-                &session,
-                Some(PathBuf::from("/usr/bin/python3")),
-                "test.py:1", // Missing column
-                "bar",
-                VerificationMode::None,
-                false,
-                &mut filter,
-            );
-
-            assert!(result.is_err());
-            let err = result.unwrap_err();
-            assert_eq!(err.error_code(), OutputErrorCode::InvalidArguments);
         }
     }
 
-    mod session_integration {
-        use super::*;
+    #[test]
+    fn test_init_command() {
+        let cli = Cli::try_parse_from(["tugtool", "init"]).unwrap();
 
-        #[test]
-        fn session_creates_required_directories() {
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-
-            // Session::open() should have created these directories
-            assert!(session.session_dir().exists());
-            assert!(session.python_dir().exists());
+        match cli.command {
+            Some(Commands::Init { force, check }) => {
+                assert!(!force);
+                assert!(!check);
+            }
+            _ => panic!("Expected Init command"),
         }
+    }
 
-        #[test]
-        fn analyze_rename_accepts_session() {
-            // This test verifies the function signature accepts &Session
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-            let mut filter = create_default_filter(workspace.path());
+    #[test]
+    fn test_init_command_with_force() {
+        let cli = Cli::try_parse_from(["tugtool", "init", "--force"]).unwrap();
 
-            // Just verify the function can be called with Session
-            // Result depends on Python availability - we only care about signature
-            let _result = analyze_rename(&session, None, "test.py:1:5", "bar", &mut filter);
+        match cli.command {
+            Some(Commands::Init { force, check }) => {
+                assert!(force);
+                assert!(!check);
+            }
+            _ => panic!("Expected Init command"),
         }
+    }
 
-        #[test]
-        fn do_rename_accepts_session() {
-            // This test verifies the function signature accepts &Session
-            let workspace = create_test_workspace();
-            let session = Session::open(workspace.path(), SessionOptions::default()).unwrap();
-            let mut filter = create_default_filter(workspace.path());
+    #[test]
+    fn test_init_command_with_check() {
+        let cli = Cli::try_parse_from(["tugtool", "init", "--check"]).unwrap();
 
-            // Just verify the function can be called with Session
-            // Result depends on Python availability - we only care about signature
-            let _result = do_rename(
-                &session,
-                None,
-                "test.py:1:5",
-                "bar",
-                VerificationMode::None,
-                false,
-                &mut filter,
-            );
+        match cli.command {
+            Some(Commands::Init { force, check }) => {
+                assert!(!force);
+                assert!(check);
+            }
+            _ => panic!("Expected Init command"),
+        }
+    }
+
+    #[test]
+    fn test_init_check_and_force_mutually_exclusive() {
+        let result = Cli::try_parse_from(["tugtool", "init", "--check", "--force"]);
+        assert!(
+            result.is_err(),
+            "--check and --force should be mutually exclusive"
+        );
+    }
+
+    #[test]
+    fn test_validate_command() {
+        let cli = Cli::try_parse_from(["tugtool", "validate"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Validate {
+                file,
+                strict,
+                level,
+            }) => {
+                assert!(file.is_none());
+                assert!(!strict);
+                assert!(level.is_none());
+            }
+            _ => panic!("Expected Validate command"),
+        }
+    }
+
+    #[test]
+    fn test_validate_command_with_file() {
+        let cli = Cli::try_parse_from(["tugtool", "validate", "tugplan-1.md"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Validate {
+                file,
+                strict,
+                level,
+            }) => {
+                assert_eq!(file, Some("tugplan-1.md".to_string()));
+                assert!(!strict);
+                assert!(level.is_none());
+            }
+            _ => panic!("Expected Validate command"),
+        }
+    }
+
+    #[test]
+    fn test_validate_command_with_level_strict() {
+        let cli = Cli::try_parse_from(["tugtool", "validate", "--level", "strict"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Validate {
+                file,
+                strict,
+                level,
+            }) => {
+                assert!(file.is_none());
+                assert!(!strict);
+                assert_eq!(level, Some("strict".to_string()));
+            }
+            _ => panic!("Expected Validate command"),
+        }
+    }
+
+    #[test]
+    fn test_validate_command_with_level_lenient() {
+        let cli = Cli::try_parse_from(["tugtool", "validate", "--level", "lenient"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Validate {
+                file,
+                strict,
+                level,
+            }) => {
+                assert!(file.is_none());
+                assert!(!strict);
+                assert_eq!(level, Some("lenient".to_string()));
+            }
+            _ => panic!("Expected Validate command"),
+        }
+    }
+
+    #[test]
+    fn test_validate_command_with_strict_deprecated() {
+        let cli = Cli::try_parse_from(["tugtool", "validate", "--strict"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Validate {
+                file,
+                strict,
+                level,
+            }) => {
+                assert!(file.is_none());
+                assert!(strict);
+                assert!(level.is_none());
+            }
+            _ => panic!("Expected Validate command"),
+        }
+    }
+
+    #[test]
+    fn test_list_command() {
+        let cli = Cli::try_parse_from(["tugtool", "list"]).unwrap();
+
+        match cli.command {
+            Some(Commands::List { status }) => {
+                assert!(status.is_none());
+            }
+            _ => panic!("Expected List command"),
+        }
+    }
+
+    #[test]
+    fn test_status_command() {
+        let cli = Cli::try_parse_from(["tugtool", "status", "tugplan-1.md"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Status {
+                file,
+                verbose,
+                full,
+            }) => {
+                assert_eq!(file, "tugplan-1.md");
+                assert!(!verbose);
+                assert!(!full);
+            }
+            _ => panic!("Expected Status command"),
+        }
+    }
+
+    #[test]
+    fn test_status_command_with_full() {
+        let cli = Cli::try_parse_from(["tugtool", "status", "tugplan-1.md", "--full"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Status {
+                file,
+                verbose,
+                full,
+            }) => {
+                assert_eq!(file, "tugplan-1.md");
+                assert!(!verbose);
+                assert!(full);
+            }
+            _ => panic!("Expected Status command"),
+        }
+    }
+
+    #[test]
+    fn test_version_command() {
+        let cli = Cli::try_parse_from(["tugtool", "version"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Version { verbose }) => {
+                assert!(!verbose);
+            }
+            _ => panic!("Expected Version command"),
+        }
+    }
+
+    #[test]
+    fn test_global_flags() {
+        let cli = Cli::try_parse_from(["tugtool", "--json", "--quiet", "list"]).unwrap();
+
+        assert!(cli.json);
+        assert!(cli.quiet);
+    }
+
+    #[test]
+    fn test_init_help_includes_check_flag() {
+        use clap::CommandFactory;
+        let app = Cli::command();
+        let init_subcommand = app
+            .find_subcommand("init")
+            .expect("init subcommand should exist");
+
+        // Get the long_about text
+        let long_about = init_subcommand
+            .get_long_about()
+            .expect("init should have long_about");
+
+        // Verify --check flag is documented
+        assert!(
+            long_about.to_string().contains("--check"),
+            "init help should document --check flag"
+        );
+        assert!(
+            long_about.to_string().contains("without side effects"),
+            "init help should explain --check has no side effects"
+        );
+    }
+
+    #[test]
+    fn test_merge_command() {
+        let cli = Cli::try_parse_from(["tugtool", "merge", ".tugtool/tugplan-1.md"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Merge {
+                plan,
+                dry_run,
+                force,
+            }) => {
+                assert_eq!(plan, ".tugtool/tugplan-1.md");
+                assert!(!dry_run);
+                assert!(!force);
+            }
+            _ => panic!("Expected Merge command"),
+        }
+    }
+
+    #[test]
+    fn test_merge_command_with_dry_run() {
+        let cli = Cli::try_parse_from(["tugtool", "merge", ".tugtool/tugplan-1.md", "--dry-run"])
+            .unwrap();
+
+        match cli.command {
+            Some(Commands::Merge {
+                plan,
+                dry_run,
+                force,
+            }) => {
+                assert_eq!(plan, ".tugtool/tugplan-1.md");
+                assert!(dry_run);
+                assert!(!force);
+            }
+            _ => panic!("Expected Merge command"),
+        }
+    }
+
+    #[test]
+    fn test_merge_command_with_force() {
+        let cli =
+            Cli::try_parse_from(["tugtool", "merge", ".tugtool/tugplan-1.md", "--force"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Merge {
+                plan,
+                dry_run,
+                force,
+            }) => {
+                assert_eq!(plan, ".tugtool/tugplan-1.md");
+                assert!(!dry_run);
+                assert!(force);
+            }
+            _ => panic!("Expected Merge command"),
+        }
+    }
+
+    #[test]
+    fn test_merge_command_with_both_flags() {
+        let cli = Cli::try_parse_from([
+            "tugtool",
+            "merge",
+            ".tugtool/tugplan-1.md",
+            "--dry-run",
+            "--force",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Merge {
+                plan,
+                dry_run,
+                force,
+            }) => {
+                assert_eq!(plan, ".tugtool/tugplan-1.md");
+                assert!(dry_run);
+                assert!(force);
+            }
+            _ => panic!("Expected Merge command"),
+        }
+    }
+
+    #[test]
+    fn test_log_rotate_command() {
+        let cli = Cli::try_parse_from(["tugtool", "log", "rotate"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Log(log_cmd)) => match log_cmd {
+                LogCommands::Rotate { force } => {
+                    assert!(!force);
+                }
+                _ => panic!("Expected Log Rotate command"),
+            },
+            _ => panic!("Expected Log command"),
+        }
+    }
+
+    #[test]
+    fn test_log_rotate_command_with_force() {
+        let cli = Cli::try_parse_from(["tugtool", "log", "rotate", "--force"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Log(log_cmd)) => match log_cmd {
+                LogCommands::Rotate { force } => {
+                    assert!(force);
+                }
+                _ => panic!("Expected Log Rotate command"),
+            },
+            _ => panic!("Expected Log command"),
+        }
+    }
+
+    #[test]
+    fn test_log_prepend_command() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "log",
+            "prepend",
+            "--step",
+            "#step-0",
+            "--plan",
+            ".tugtool/tugplan-13.md",
+            "--summary",
+            "Completed step 0",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Log(log_cmd)) => match log_cmd {
+                LogCommands::Prepend {
+                    step,
+                    plan,
+                    summary,
+                    bead,
+                } => {
+                    assert_eq!(step, "#step-0");
+                    assert_eq!(plan, ".tugtool/tugplan-13.md");
+                    assert_eq!(summary, "Completed step 0");
+                    assert!(bead.is_none());
+                }
+                _ => panic!("Expected Log Prepend command"),
+            },
+            _ => panic!("Expected Log command"),
+        }
+    }
+
+    #[test]
+    fn test_log_prepend_command_with_bead() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "log",
+            "prepend",
+            "--step",
+            "#step-0",
+            "--plan",
+            ".tugtool/tugplan-13.md",
+            "--summary",
+            "Completed step 0",
+            "--bead",
+            "bd-abc123",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::Log(log_cmd)) => match log_cmd {
+                LogCommands::Prepend {
+                    step,
+                    plan,
+                    summary,
+                    bead,
+                } => {
+                    assert_eq!(step, "#step-0");
+                    assert_eq!(plan, ".tugtool/tugplan-13.md");
+                    assert_eq!(summary, "Completed step 0");
+                    assert_eq!(bead, Some("bd-abc123".to_string()));
+                }
+                _ => panic!("Expected Log Prepend command"),
+            },
+            _ => panic!("Expected Log command"),
+        }
+    }
+
+    #[test]
+    fn test_log_rotate_with_json_flag() {
+        let cli = Cli::try_parse_from(["tugtool", "--json", "log", "rotate"]).unwrap();
+
+        assert!(cli.json);
+        match cli.command {
+            Some(Commands::Log(log_cmd)) => match log_cmd {
+                LogCommands::Rotate { force } => {
+                    assert!(!force);
+                }
+                _ => panic!("Expected Log Rotate command"),
+            },
+            _ => panic!("Expected Log command"),
+        }
+    }
+
+    #[test]
+    fn test_log_prepend_with_quiet_flag() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "--quiet",
+            "log",
+            "prepend",
+            "--step",
+            "#step-0",
+            "--plan",
+            ".tugtool/tugplan-1.md",
+            "--summary",
+            "Done",
+        ])
+        .unwrap();
+
+        assert!(cli.quiet);
+        match cli.command {
+            Some(Commands::Log(log_cmd)) => match log_cmd {
+                LogCommands::Prepend { .. } => {}
+                _ => panic!("Expected Log Prepend command"),
+            },
+            _ => panic!("Expected Log command"),
+        }
+    }
+
+    #[test]
+    fn test_doctor_command() {
+        let cli = Cli::try_parse_from(["tugtool", "doctor"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Doctor) => {}
+            _ => panic!("Expected Doctor command"),
+        }
+    }
+
+    #[test]
+    fn test_doctor_with_json_flag() {
+        let cli = Cli::try_parse_from(["tugtool", "--json", "doctor"]).unwrap();
+
+        assert!(cli.json);
+        match cli.command {
+            Some(Commands::Doctor) => {}
+            _ => panic!("Expected Doctor command"),
+        }
+    }
+
+    #[test]
+    fn test_doctor_with_quiet_flag() {
+        let cli = Cli::try_parse_from(["tugtool", "--quiet", "doctor"]).unwrap();
+
+        assert!(cli.quiet);
+        match cli.command {
+            Some(Commands::Doctor) => {}
+            _ => panic!("Expected Doctor command"),
+        }
+    }
+
+    #[test]
+    fn test_step_commit_command() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "step-commit",
+            "--worktree",
+            "/path/to/worktree",
+            "--step",
+            "#step-0",
+            "--plan",
+            ".tugtool/tugplan-1.md",
+            "--message",
+            "feat: add feature",
+            "--files",
+            "src/a.rs",
+            "src/b.rs",
+            "--bead",
+            "bd-123",
+            "--summary",
+            "Completed step 0",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::StepCommit {
+                worktree,
+                step,
+                plan,
+                message,
+                files,
+                bead,
+                summary,
+                close_reason,
+            }) => {
+                assert_eq!(worktree, "/path/to/worktree");
+                assert_eq!(step, "#step-0");
+                assert_eq!(plan, ".tugtool/tugplan-1.md");
+                assert_eq!(message, "feat: add feature");
+                assert_eq!(files, vec!["src/a.rs", "src/b.rs"]);
+                assert_eq!(bead, "bd-123");
+                assert_eq!(summary, "Completed step 0");
+                assert!(close_reason.is_none());
+            }
+            _ => panic!("Expected StepCommit command"),
+        }
+    }
+
+    #[test]
+    fn test_step_commit_with_close_reason() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "step-commit",
+            "--worktree",
+            "/path",
+            "--step",
+            "#step-1",
+            "--plan",
+            ".tugtool/tugplan-2.md",
+            "--message",
+            "fix: something",
+            "--files",
+            "a.rs",
+            "--bead",
+            "bd-456",
+            "--summary",
+            "Done",
+            "--close-reason",
+            "Step completed successfully",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::StepCommit { close_reason, .. }) => {
+                assert_eq!(
+                    close_reason,
+                    Some("Step completed successfully".to_string())
+                );
+            }
+            _ => panic!("Expected StepCommit command"),
+        }
+    }
+
+    #[test]
+    fn test_step_publish_command() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "step-publish",
+            "--worktree",
+            "/path/to/worktree",
+            "--branch",
+            "tug/auth-123",
+            "--base",
+            "main",
+            "--title",
+            "feat: add authentication",
+            "--plan",
+            ".tugtool/tugplan-1.md",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::StepPublish {
+                worktree,
+                branch,
+                base,
+                title,
+                plan,
+                repo,
+            }) => {
+                assert_eq!(worktree, "/path/to/worktree");
+                assert_eq!(branch, "tug/auth-123");
+                assert_eq!(base, "main");
+                assert_eq!(title, "feat: add authentication");
+                assert_eq!(plan, ".tugtool/tugplan-1.md");
+                assert!(repo.is_none());
+            }
+            _ => panic!("Expected StepPublish command"),
+        }
+    }
+
+    #[test]
+    fn test_step_publish_with_repo() {
+        let cli = Cli::try_parse_from([
+            "tug",
+            "step-publish",
+            "--worktree",
+            "/path",
+            "--branch",
+            "branch",
+            "--base",
+            "main",
+            "--title",
+            "title",
+            "--plan",
+            ".tugtool/tugplan-1.md",
+            "--repo",
+            "owner/repo",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Some(Commands::StepPublish { repo, .. }) => {
+                assert_eq!(repo, Some("owner/repo".to_string()));
+            }
+            _ => panic!("Expected StepPublish command"),
         }
     }
 }

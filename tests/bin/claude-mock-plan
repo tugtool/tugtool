@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# Mock claude CLI for tugtool tugplan command integration tests.
+# Simulates different agent responses based on prompts for testing the planning loop.
+#
+# Behavior controlled by environment variables:
+#   TUG_CLAUDE_MOCK_PLAN_STATE - State file to track invocation count
+#   TUG_CLAUDE_MOCK_PLAN_ABORT - If "true", simulate user abort
+#   TUG_CLAUDE_MOCK_PLAN_REVISE_COUNT - Number of revision loops before approval (default: 0)
+#
+# The mock inspects the prompt (last positional argument) to determine which agent is being invoked
+# and returns appropriate responses to drive the planning loop.
+
+set -e
+
+# Handle --version specially
+for arg in "$@"; do
+    if [[ "$arg" == "--version" ]]; then
+        echo "claude-mock-plan 1.0.0 (mock for tugtool tugplan loop tests)"
+        exit 0
+    fi
+done
+
+# Get the prompt (last argument)
+PROMPT="${@: -1}"
+
+# State tracking
+STATE_FILE="${TUG_CLAUDE_MOCK_PLAN_STATE:-/tmp/tugtool-mock-tugplan-state}"
+ABORT="${TUG_CLAUDE_MOCK_PLAN_ABORT:-false}"
+REVISE_COUNT="${TUG_CLAUDE_MOCK_PLAN_REVISE_COUNT:-0}"
+
+# Initialize or read state
+if [[ -f "$STATE_FILE" ]]; then
+    CALL_COUNT=$(cat "$STATE_FILE")
+else
+    CALL_COUNT=0
+fi
+
+# Increment call count
+CALL_COUNT=$((CALL_COUNT + 1))
+echo "$CALL_COUNT" > "$STATE_FILE"
+
+# Detect which agent is being invoked based on prompt content
+if [[ "$PROMPT" == *"Gather requirements"* ]] || [[ "$PROMPT" == *"gather"* && "$PROMPT" == *"requirements"* ]]; then
+    # Interviewer gather phase
+    echo "Requirements gathered from user:
+- User wants a simple feature
+- Should be implemented in Rust
+- Needs tests"
+    exit 0
+fi
+
+if [[ "$PROMPT" == *"Present the tugplan"* ]] || [[ "$PROMPT" == *"ready or revise"* ]] || [[ "$PROMPT" == *"Ready to approve"* ]]; then
+    # Interviewer present phase
+    if [[ "$ABORT" == "true" ]]; then
+        echo "ABORTED: User chose to abort the planning loop."
+        exit 0
+    fi
+
+    # Calculate how many presentation phases have occurred
+    # (Every 3 calls = 1 full loop: gather, planner, critic)
+    LOOP_NUM=$(( (CALL_COUNT - 1) / 4 ))
+
+    if [[ $LOOP_NUM -lt $REVISE_COUNT ]]; then
+        echo "REVISE: User wants the following changes:
+- Add more detail to step 1
+- Clarify the success criteria"
+        exit 0
+    else
+        echo "APPROVED: User is satisfied with the tugplan."
+        exit 0
+    fi
+fi
+
+if [[ "$PROMPT" == *"Create/revise the tugplan"* ]] || [[ "$PROMPT" == *"Create"* && "$PROMPT" == *"tugplan"* ]] || [[ "$PROMPT" == *"revision"* && "$PROMPT" == *"feedback"* ]]; then
+    # Planner phase - we need to actually create the tugplan file
+    # Extract the path from the prompt
+    TUGPLAN_PATH=$(echo "$PROMPT" | grep -oE '\.tugtool/tugplan-[^ ]+\.md' | head -1)
+
+    if [[ -n "$TUGPLAN_PATH" ]]; then
+        # Create a minimal valid tugplan
+        mkdir -p "$(dirname "$TUGPLAN_PATH")"
+        cat > "$TUGPLAN_PATH" << 'EOF'
+## Phase 1.0: Test Feature {#phase-test-feature}
+
+**Purpose:** Implement a test feature for integration testing.
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | TBD |
+| Status | active |
+| Target branch | main |
+| Tracking issue/PR | N/A |
+| Last updated | 2026-02-05 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+This is a test tugplan created by the mock planner for integration testing.
+
+#### Strategy {#strategy}
+
+- Step 1: Set up the basic structure
+- Step 2: Implement the feature
+- Step 3: Add tests
+
+#### Stakeholders / Primary Customers {#stakeholders}
+
+1. Integration tests
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+- Tests pass
+- Feature works as expected
+
+#### Scope {#scope}
+
+1. Basic feature implementation
+2. Unit tests
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- Production deployment
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- None
+
+#### Constraints {#constraints}
+
+- Must be simple
+
+#### Assumptions {#assumptions}
+
+- Tests will be run in CI
+
+---
+
+### 1.0.5 Execution Steps {#execution-steps}
+
+#### Step 0: Setup {#step-0}
+
+**Commit:** `feat: initial setup`
+
+**References:** [D01] Test decision, (#phase-overview)
+
+**Artifacts:**
+- `src/feature.rs` - Feature implementation
+
+**Tasks:**
+- [ ] Create feature file
+- [ ] Add basic structure
+
+**Tests:**
+- [ ] Unit test: feature works
+
+**Checkpoint:**
+- [ ] Code compiles
+- [ ] Tests pass
+
+**Rollback:**
+- Remove feature file
+
+**Commit after all checkpoints pass.**
+
+---
+
+#### Step 1: Implementation {#step-1}
+
+**Depends on:** #step-0
+
+**Commit:** `feat: implement feature`
+
+**References:** [D01] Test decision, (#step-0)
+
+**Artifacts:**
+- Updated `src/feature.rs`
+
+**Tasks:**
+- [ ] Implement feature logic
+- [ ] Add error handling
+
+**Tests:**
+- [ ] Integration test passes
+
+**Checkpoint:**
+- [ ] All tests pass
+
+**Rollback:**
+- Revert changes
+
+**Commit after all checkpoints pass.**
+EOF
+        echo "Tugplan created at $TUGPLAN_PATH"
+    else
+        echo "Planner processed the request."
+    fi
+    exit 0
+fi
+
+if [[ "$PROMPT" == *"Review"* ]] || [[ "$PROMPT" == *"quality"* && "$PROMPT" == *"compliance"* ]]; then
+    # Critic phase
+    echo "Critic Review:
+- Overall quality: Good
+- Compliance: Passes validation
+- Implementability: Steps are clear and achievable
+
+Recommendation: APPROVE
+
+Minor suggestions:
+- Consider adding more detail to step descriptions
+- Could benefit from clearer acceptance criteria"
+    exit 0
+fi
+
+# Default response for unknown prompts
+echo "Mock response for: ${PROMPT:0:50}..."
+exit 0

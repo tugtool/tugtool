@@ -2,27 +2,20 @@
 name = "tugtool-core"
 version.workspace = true
 edition.workspace = true
-authors.workspace = true
 license.workspace = true
-description = "Core infrastructure for tugtool: patch IR, facts, session, workspace, sandbox"
+rust-version.workspace = true
+description = "Core library for tugtool: parsing, validation, and types"
+
+[lib]
+name = "tugtool_core"
+path = "src/lib.rs"
 
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-globset = "0.4"
-hex = "0.4"
-regex = "1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-sha2 = "0.10"
-tempfile = "3"
-thiserror = "2.0"
-tracing = "0.1"
-wait-timeout = "0.2"
-walkdir = "2"
-winnow = "0.7"
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+regex.workspace = true
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[lints]
-workspace = true
+[dev-dependencies]
+tempfile.workspace = true

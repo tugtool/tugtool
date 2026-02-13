@@ -1,46 +1,34 @@
-# Root Cargo.toml - VIRTUAL WORKSPACE
-# All crates are now in crates/ directory
-
 [workspace]
 resolver = "2"
-members = [
-    "crates/tugtool",
-    "crates/tugtool-core",
-    "crates/tugtool-python-cst",
-    "crates/tugtool-python-cst-derive",
-    "crates/tugtool-python",
-    "crates/tugtool-rust",
-]
+members = ["crates/tugtool", "crates/tugtool-core"]
 
 [workspace.package]
-version = "0.1.0"
-edition = "2021"
-authors = ["Ken Kocienda"]
+version = "0.2.30"
+edition = "2024"
 license = "MIT"
-repository = "https://github.com/tugtool/tugtool"
+rust-version = "1.85"
 
-[workspace.lints.rust]
-warnings = "deny"
+[workspace.dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
 
-[workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
-collapsible_if = "allow"
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
 
-# NO [package] section - this is now a virtual workspace
-# NO [dependencies] section - dependencies are in individual crates
+# Error handling
+thiserror = "2"
+anyhow = "1"
 
-[profile.release]
-lto = "thin"
-debug = "line-tables-only"
+# Regex for parsing
+regex = "1"
 
-[profile.dev]
-debug = 1
-incremental = true
-codegen-units = 256
-lto = false
-panic = "unwind"
+# Directory paths
+dirs = "5"
 
-[profile.test]
-debug = 1
-incremental = true
-lto = false
+# Testing
+tempfile = "3"
+
+# Internal crates
+tugtool-core = { path = "crates/tugtool-core" }

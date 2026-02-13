@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": 2,
-    "message": "invalid arguments: invalid JSON: key must be a string at line 1 column 2"
-  },
-  "schema_version": "1",
-  "status": "error"
-}

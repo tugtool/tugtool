@@ -1,793 +1,421 @@
-# Tugtool Development Guide
-
-## Critical Rules
-
-**NEVER commit code.** The user handles all git commits. You may stage changes, but do not run `git commit`.
+# Claude Code Guidelines for Tugtool
 
 ## Project Overview
 
-Tugtool is an AI-native code transformation engine for verified, deterministic refactors. It provides semantic refactoring operations that understand code structure rather than just text patterns.
+Tugtool transforms ideas into working software through orchestrated LLM agents. A multi-agent suite collaborates to create structured tugplans and execute them to completion—from initial idea through implementation, review, and delivery.
 
-## Architecture
+## Git Policy
 
-Tugtool is organized as a Cargo workspace with the following crates:
+**ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
+
+**Exception:** The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
+
+## Plan Mode Policy
+
+**DO NOT automatically enter Plan mode.** Never use `EnterPlanMode` unless the user explicitly asks for it. Just do the work directly.
+
+## Crate Structure
 
 ```
 crates/
-├── tugtool/          # Main binary and CLI (the "tug" command)
-│   ├── src/
-│   │   ├── lib.rs    # Library root - re-exports public API
-│   │   ├── main.rs   # CLI binary entry point
-│   │   ├── cli.rs    # CLI command implementations
-│   │   └── testcmd.rs # Test command resolution
-│   └── tests/        # Integration tests
-├── tugtool-core/     # Shared infrastructure
+├── tugtool/         # CLI binary crate
 │   └── src/
-│       ├── error.rs      # Error types (TugError)
-│       ├── output.rs     # JSON output types and formatting
-│       ├── session.rs    # Session management
-│       ├── workspace.rs  # Workspace snapshots
-│       ├── sandbox.rs    # Sandboxed file operations
-│       ├── patch.rs      # Unified diff generation
-│       ├── facts/        # Symbol and reference tracking
-│       └── ...
-├── tugtool-python/   # Python language support (feature-gated)
-│   └── src/
-│       ├── analyzer.rs   # Semantic analysis
-│       ├── cst_bridge.rs # Native CST bridge to tugtool-python-cst
-│       ├── ops/          # Refactoring operations (rename, etc.)
-│       └── ...
-├── tugtool-python-cst/      # Native Python CST parser (adapted from LibCST)
-│   └── src/
-│       ├── parser/       # PEG-based Python parser
-│       ├── visitor/      # Visitor infrastructure and collectors
-│       └── ...
-├── tugtool-python-cst-derive/   # Proc macro helpers for tugtool-python-cst
-└── tugtool-rust/     # Rust language support (placeholder)
+│       ├── main.rs      # Entry point
+│       ├── cli.rs       # Clap argument parsing
+│       ├── output.rs    # JSON/text output types
+│       └── commands/    # Subcommand implementations
+└── tugtool-core/   # Library crate
+    └── src/
+        ├── lib.rs       # Public exports
+        ├── types.rs     # Core data types (TugPlan, Step, etc.)
+        ├── parser.rs    # Markdown tugplan parser
+        ├── validator.rs # Validation rules
+        ├── config.rs    # Configuration handling
+        └── error.rs     # Error types
 ```
 
-## Feature Flags
+## Build Policy
 
-The `tugtool` crate supports these feature flags:
+**WARNINGS ARE ERRORS.** This project enforces `-D warnings` via `.cargo/config.toml`.
 
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `python` | Yes | Python language support via native CST |
-| `rust` | No | Rust language support (placeholder) |
-| `full` | No | Enable all features |
+- `cargo build` will fail if there are any warnings
+- `cargo nextest run` will fail if tests have any warnings
+- Fix warnings immediately; do not leave them for later
+- Use `#[allow(dead_code)]` sparingly and only with a comment explaining why
 
-Build with specific features:
+If you see warnings, fix them before completing your task. No exceptions.
+
+## Key Conventions
+
+### TugPlan Format
+
+Tugplans are structured markdown files in `.tugtool/` directory:
+- Filename pattern: `tugplan-*.md` (e.g., `tugplan-1.md`, `tugplan-auth.md`)
+- Reserved files: `tugplan-skeleton.md`, `config.toml`
+
+### Anchors
+
+- Use explicit anchors: `### Section {#section-name}`
+- Anchor format: lowercase, kebab-case, no phase numbers
+- Step anchors: `{#step-0}`, `{#step-1}`, `{#step-2-1}` (substeps)
+- Decision anchors: `{#d01-decision-slug}`
+
+### References in Steps
+
+Every execution step must have a `**References:**` line citing tugplan artifacts:
+- Decisions: `[D01] Decision name`
+- Anchors: `(#anchor-name, #another-anchor)`
+- Tables/Specs: `Table T01`, `Spec S01`
+
+### Dependencies
+
+Steps declare dependencies with:
+```markdown
+**Depends on:** #step-0, #step-1
+```
+
+### Agent Files
+
+Sub-agent definitions live in `agents/` directory as markdown with YAML frontmatter:
+```markdown
+---
+name: clarifier-agent
+description: Analyze ideas and generate clarifying questions
+tools: Read, Grep, Glob
+---
+```
+
+### Skill Files
+
+Orchestrator skills live in `skills/<name>/SKILL.md` with YAML frontmatter:
+```markdown
+---
+name: planner
+description: Orchestrates the planning workflow - spawns sub-agents via Task
+allowed-tools: Task, AskUserQuestion
+---
+```
+
+## Testing
+
+Run tests with:
 ```bash
-# Default features (python)
-cargo build -p tugtool
-
-# All features
-cargo build -p tugtool --features full
+cargo nextest run
 ```
 
-## Build Commands
+Test fixtures are in `tests/fixtures/`:
+- `valid/` - Valid tugplans for success cases
+- `invalid/` - Invalid tugplans for error cases
+- `golden/` - Expected JSON output
 
-```bash
-# Build all crates
-cargo build
+## Common Commands
 
-# Build specific crate
-cargo build -p tugtool-core
-
-# Release build
-cargo build --release
-
-# Run the CLI
-cargo run -p tugtool -- --help
-
-# Install locally
-cargo install --path crates/tugtool
-```
-
-## Test Commands
-
-**CRITICAL: Tests must NEVER silently skip.** If a test requires an environment or setup (Python, pytest, etc.), it must either:
-1. Work correctly because the environment is properly configured
-2. **Fail loudly** with a clear error message explaining what's missing and how to fix it
-
-No "graceful degradation." No "skip if unavailable." Tests pass or they fail. When they fail, we fix the environment so they pass. This is a pillar of how we work on this project.
-
-### Rust Tests
-
-**IMPORTANT:** Use nextest for running tests (faster, parallel execution).
-
-```bash
-# Run all tests in workspace
-cargo nextest run --workspace
-
-# Run tests for specific crate
-cargo nextest run -p tugtool-python
-
-# Run specific test
-cargo nextest run test_name_substring
-
-# Run tests with output
-cargo nextest run -- --nocapture
-
-# Update golden files (when making intentional schema changes)
-TUG_UPDATE_GOLDEN=1 cargo nextest run -p tugtool golden
-```
-
-### Python Tests (Temporale fixture)
-
-**⚠️ CRITICAL: USE THE INSTALLED VENV - NEVER USE `uv run` ⚠️**
-
-Temporale is an external fixture fetched from https://github.com/tugtool/temporale. It is NOT vendored in the tugtool repository.
-
-#### Fixture Setup
-
-Before running Temporale integration tests locally, fetch the fixture:
+### CLI (Utility Commands)
 
 ```bash
-# Fetch all fixtures according to lock files
-cargo run -p tugtool -- fixture fetch
+tugtool init                       # Initialize project
+tugtool validate                   # Validate all tugplans
+tugtool validate tugplan-1.md      # Validate specific file
+tugtool list                       # List all tugplans
+tugtool status tugplan-1.md        # Show progress
+tugtool beads sync tugplan-1.md    # Sync steps to beads
+tugtool beads status               # Show bead completion status
+tugtool beads close bd-xxx         # Close a bead
 
-# Or fetch specific fixture
-cargo run -p tugtool -- fixture fetch temporale
+# Log management commands
+tugtool log rotate                 # Rotate implementation log when over threshold (500 lines or 100KB)
+tugtool log rotate --force        # Force rotation even if under threshold
+tugtool log prepend --step <anchor> --plan <path> --summary <text>  # Add entry to log
 
-# Install in test venv
-.tug-test-venv/bin/pip install -e .tug/fixtures/temporale/
+# Step commit and publish commands (used by committer-agent)
+tugtool step-commit \
+  --worktree <path> \
+  --step <anchor> \
+  --plan <path> \
+  --message <text> \
+  --files <file1> <file2> ... \
+  --bead <bead-id> \
+  --summary <text> \
+  --close-reason <text> \
+  --json                          # Atomic commit: log rotate, prepend, git commit, bead close
+
+tugtool step-publish \
+  --worktree <path> \
+  --branch <name> \
+  --base <branch> \
+  --title <text> \
+  --plan <path> \
+  --repo <owner/repo> \
+  --json                           # Atomic publish: push branch, create PR (body from git log)
+
+# Health check command
+tugtool doctor                     # Run health checks (log size, worktrees, broken refs)
+tugtool doctor --json             # Output health check results in JSON
+
+# Worktree commands (for isolated implementation environments)
+tugtool worktree create <tugplan>  # Create isolated worktree for implementation
+tugtool worktree list              # List active worktrees
+tugtool worktree cleanup --merged  # Remove worktrees for merged PRs
+tugtool merge <tugplan>            # Merge PR and clean up (recommended approach)
 ```
 
-For local fixture development, use the environment variable override:
+### Claude Code Skills (Planning and Execution)
+
+**Initialization is automatic.** A pre-hook runs `tugtool init` before the planner and implementer skills start. You can also run it manually:
 ```bash
-export TUG_TEMPORALE_PATH=/path/to/your/temporale
+tugtool init
 ```
 
-This bypasses the fixture fetch system entirely and uses your local checkout instead.
+This creates the `.tugtool/` directory with required files:
+- `tugplan-skeleton.md` - Template for tugplan structure
+- `config.toml` - Configuration settings
+- `tugplan-implementation-log.md` - Progress tracking
 
-#### Running Python Tests
-
-Python tests for Temporale MUST be run using the pre-installed virtual environment at the **workspace root**:
-
-```bash
-# CORRECT - The ONE AND ONLY way to run Python tests:
-.tug-test-venv/bin/python -m pytest .tug/fixtures/temporale/tests/ -v
+Use the skills:
+```
+/tugtool:planner "add user authentication"       # Create a new tugplan
+/tugtool:planner .tugtool/tugplan-auth.md       # Revise existing tugplan
+/tugtool:implementer .tugtool/tugplan-auth.md  # Execute a tugplan
+/tugtool:merge .tugtool/tugplan-auth.md         # Merge PR and clean up
 ```
 
-**ABSOLUTELY FORBIDDEN:**
-- ❌ `uv run python -m pytest ...` - Creates unwanted venvs, breaks project structure
-- ❌ `python -m pytest ...` - Uses wrong Python, missing dependencies
-- ❌ `pytest ...` - May use system pytest without temporale installed
+## Error Codes
 
-**Why this matters:**
-- The `.tug-test-venv/` is at the **tugtool workspace root**
-- This venv has temporale installed in editable mode (`-e`)
-- This venv has pytest and all test dependencies
-- Using `uv run` auto-creates new venvs and breaks the testing setup
+| Code | Description |
+|------|-------------|
+| E001 | Parse error |
+| E002 | Missing required field |
+| E005 | Invalid anchor format |
+| E006 | Duplicate anchor |
+| E009 | Not initialized |
+| E010 | Broken reference |
+| E011 | Circular dependency |
+| E035 | Beads sync failed |
+| E036 | Bead commit failed |
 
-**If the venv doesn't exist, create it:**
-```bash
-uv venv --python 3.11 .tug-test-venv
-uv pip install --python .tug-test-venv/bin/python pytest
-uv pip install --python .tug-test-venv/bin/python -e .tug/fixtures/temporale/
-```
+## Implementation Log
 
-## Quality Checks
+The implementation log at `.tugtool/tugplan-implementation-log.md` tracks completed work. The `committer-agent` updates this log as part of the commit procedure during implementation.
 
-```bash
-# Format code
-cargo fmt --all
+## Agent and Skill Architecture
 
-# Lint with clippy
-cargo clippy --workspace -- -D warnings
+Tugtool is a Claude Code plugin. Planning and execution are invoked via skills, not CLI commands.
 
-# Run all CI checks locally
-just ci
+### Primary Interface
 
-# Generate documentation
-cargo doc --workspace --open
-```
+| Skill | Purpose |
+|-------|---------|
+| `/tugtool:planner` | Create or revise a tugplan through agent collaboration |
+| `/tugtool:implementer` | Execute a tugplan through agent orchestration |
+| `/tugtool:merge` | Merge implementation PR and clean up worktree |
 
-## Key Concepts
+### Orchestrator Skills (3)
 
-### Session Directory
+Three skills contain the main workflow logic. Orchestrators are **pure dispatchers** with only `Task` and `AskUserQuestion` tools — they cannot read files, write files, or run commands.
 
-Tugtool stores session data in `.tug/` within the workspace:
-- `session.json` - Session metadata
-- `snapshots/` - Workspace snapshots
-- `fixtures/` - Fetched test fixtures (e.g., Temporale)
+| Skill | Role |
+|-------|------|
+| **planner** | Orchestrates planning loop: setup → clarifier → author → critic |
+| **implementer** | Orchestrates implementation loop: setup → architect → coder → reviewer → committer |
+| **merge** | Wraps `tugtool merge` CLI with dry-run preview, confirmation, and post-merge health checks |
 
-### Test Fixtures
+### Sub-Agents (8)
 
-Test fixtures are external repositories fetched at test time. Each fixture has a lock file in `fixtures/` that pins the exact version:
+Sub-agents are invoked via Task tool and return JSON results. Each has specific tools and contracts.
 
-- `fixtures/temporale.lock` - Python datetime library for refactoring tests
+**Planning agents (invoked by planner):**
 
-Future fixtures (Rust, JavaScript, Go) will follow the same pattern: a `.lock` file in `fixtures/` and fetched code in `.tug/fixtures/`.
+| Agent | Role | Tools |
+|-------|------|-------|
+| **clarifier-agent** | Analyzes ideas, generates clarifying questions | Read, Grep, Glob |
+| **author-agent** | Creates and revises tugplan documents | Read, Grep, Glob, Write, Edit |
+| **critic-agent** | Reviews tugplan quality and skeleton compliance | Read, Grep, Glob |
 
-### Environment Variables
+**Implementation agents (invoked by implementer):**
 
-- `TUG_UPDATE_GOLDEN` - Enable golden file updates in tests
-- `TUG_SANDBOX` - Set when running in sandbox mode
+| Agent | Role | Tools |
+|-------|------|-------|
+| **implementer-setup-agent** | Create worktree, sync beads, resolve steps | Read, Grep, Glob, Bash, Write, Edit |
+| **architect-agent** | Read-only codebase analysis, produces implementation strategy per step | Bash, Read, Grep, Glob, WebFetch, WebSearch |
+| **coder-agent** | Implements strategy from architect with drift detection | Read, Grep, Glob, Write, Edit, Bash, WebFetch, WebSearch |
+| **reviewer-agent** | Reviews code, verifies tugplan conformance, checks build/test reports | Read, Grep, Glob, Write |
+| **committer-agent** | Stage, commit, close beads, push, create PR | Read, Grep, Glob, Write, Edit, Bash |
 
-### Error Codes
+All agents use the **persistent agent pattern** — spawned once and resumed for subsequent invocations. Planning agents (clarifier, author, critic) persist across revision loops. Implementation agents (architect, coder, reviewer, committer) persist across steps. This eliminates cold-start exploration, lets agents accumulate knowledge, and enables targeted revisions. Auto-compaction handles context overflow.
 
-All errors use stable codes for JSON output (Table T26):
-- `2` - Invalid arguments
-- `3` - Resolution errors (symbol not found, ambiguous)
-- `4` - Apply errors (failed to write changes)
-- `5` - Verification failed
-- `10` - Internal errors
+### Development Workflow
 
-## Tug Refactoring (Highly Recommended for Symbol Renames)
-
-When the user requests symbol renaming or reference updates, **tug is highly recommended**.
-
-**Language Support:** Tug currently supports **Python only**. Rust support is planned but not yet implemented. Do not attempt to use tug for Rust refactoring in this project.
-
-### Recognition Patterns
-
-Look for these patterns in user requests:
-- "rename X to Y" / "rename the function/class/variable"
-- "change the name of X" / "change X's name to Y"
-- "refactor the name" / "refactor...name"
-- "update all references to X"
-- "find and replace X with Y" (when discussing code symbols)
-
-### When to Use Tug
-
-**Use tug when:**
-- The symbol appears in multiple files
-- Renaming functions, classes, methods, or variables
-- User mentions "all references", "across the codebase", "everywhere"
-- Manual editing would risk missing shadowed or scoped references
-
-**Skip tug when:**
-- Single file, single occurrence
-- String literals or comments only
-- File renaming (not symbol renaming)
-
-### Why Tug Over Manual Editing
-
-- **Scope-aware**: Understands language scoping rules (won't rename shadowed variables)
-- **Verified**: Runs syntax verification before applying
-- **Deterministic**: Same input produces same output
-- **Safe**: Requires explicit approval before changes
-
-### Quick Reference
-
-```bash
-# Full workflow (analyze -> review -> apply)
-/tug-apply-rename
-
-# Generate diff only (no changes)
-/tug-emit-rename
-
-# Analyze impact only (no changes)
-/tug-analyze-rename
-
-# CLI commands follow: tug <action> <language> <command> [options] [-- <filter>]
-
-# Apply a rename (modifies files)
-tug apply python rename --at <file:line:col> --to <new_name>
-
-# Emit a diff without modifying files
-tug emit python rename --at <file:line:col> --to <new_name>
-
-# Emit as JSON envelope (includes files_affected, metadata)
-tug emit python rename --at <file:line:col> --to <new_name> --json
-
-# Analyze operation metadata (full impact analysis)
-tug analyze python rename --at <file:line:col> --to <new_name>
-
-# Analyze - just references
-tug analyze python rename --at <file:line:col> --to <new_name> --output references
-
-# Analyze - just symbol info
-tug analyze python rename --at <file:line:col> --to <new_name> --output symbol
-
-# With file filter (restrict scope)
-tug apply python rename --at <file:line:col> --to <new_name> -- 'src/**/*.py'
-
-# With exclusion filter
-tug apply python rename --at <file:line:col> --to <new_name> -- '!tests/**'
-
-# Combined inclusion and exclusion
-tug apply python rename --at <file:line:col> --to <new_name> -- 'src/**/*.py' '!**/test_*.py'
-
-# Verification modes for apply (default: syntax)
-tug apply python rename --at <file:line:col> --to <new_name> --verify=none
-tug apply python rename --at <file:line:col> --to <new_name> --verify=syntax
-tug apply python rename --at <file:line:col> --to <new_name> --no-verify  # shorthand for --verify=none
-```
-
-### File Filter Specification
-
-File filters restrict which files are included in the operation scope. They use gitignore-style patterns.
-
-**Syntax:** Patterns appear after `--` at the end of the command.
-
-**Pattern Rules:**
-- Patterns without `!` prefix are **inclusions**
-- Patterns with `!` prefix are **exclusions**
-- Standard glob syntax: `*`, `**`, `?`, `[abc]`
-
-**Behavior:**
-1. **No filter specified**: All language-appropriate files (`**/*.py` for Python)
-2. **Only exclusions**: Start with all files, then apply exclusions
-3. **Inclusions specified**: Start with matching files, then apply exclusions
-
-**Default exclusions** (always applied): `.git`, `__pycache__`, `venv`, `.venv`, `node_modules`, `target`
-
-**Examples:**
-```bash
-# Only files in src/
-tug apply python rename ... -- 'src/**/*.py'
-
-# All Python files except tests
-tug apply python rename ... -- '!tests/**'
-
-# Files in src/, excluding test files
-tug apply python rename ... -- 'src/**/*.py' '!**/test_*.py'
-
-# All Python files except tests and conftest
-tug apply python rename ... -- '!tests/**' '!**/conftest.py'
-```
-
-### Filter Expression Language
-
-Filter expressions provide powerful file selection beyond simple glob patterns. Use `--filter "<expr>"` to specify filter expressions.
-
-**Grammar:**
-```
-<expr>       := <term> (("and" | "or") <term>)*
-<term>       := ["not"] <factor>
-<factor>     := <predicate> | "(" <expr> ")"
-<predicate>  := key ":" value | key "~" regex | key comparator value
-```
-
-**Predicates:**
-
-| Key | Meaning | Examples |
-|-----|---------|----------|
-| `path` | Path glob match | `path:src/**` |
-| `name` | Basename glob match | `name:*_test.py` |
-| `ext` | File extension (no dot) | `ext:py` |
-| `lang` | Language tag | `lang:python` |
-| `kind` | `file` or `dir` | `kind:file` |
-| `size` | File size in bytes | `size>10k`, `size<=2m` |
-| `mtime` | File modified time | `mtime>2024-01-01`, `mtime<=2024-12-31T23:59:59Z` |
-| `contains` | Content substring | `contains:"TODO"` |
-| `regex` | Content regex | `regex:/@deprecated\b/` |
-| `git_status` | Git status | `git_status:modified`, `git_status:untracked` |
-| `git_tracked` | File tracked by git | `git_tracked:true` |
-| `git_ignored` | File ignored by git | `git_ignored:true` |
-| `git_stage` | Staging state | `git_stage:staged`, `git_stage:unstaged` |
-
-**Operators:**
-
-| Operator | Meaning | Example |
-|----------|---------|---------|
-| `:` | Glob/equality match | `ext:py`, `name:*.test.py` |
-| `~` | Regex match | `name~test_\d+\.py` |
-| `=` | Exact equality | `ext=py` |
-| `!=` | Not equal | `ext!=pyc` |
-| `>`, `>=` | Greater than | `size>1m`, `mtime>2024-01-01` |
-| `<`, `<=` | Less than | `size<=100k`, `mtime<2024-12-31` |
-
-**Combinators:**
-
-| Combinator | Meaning | Example |
-|------------|---------|---------|
-| `and` | Both must match | `ext:py and path:src/**` |
-| `or` | Either can match | `ext:py or ext:pyi` |
-| `not` | Negate expression | `not name:*_test.py` |
-| `(...)` | Grouping | `ext:py and (path:src/** or path:lib/**)` |
-
-**Precedence:** `not` > `and` > `or`. Use parentheses to override.
-
-**Content Predicates (`contains`, `regex`):**
-These predicates require the `--filter-content` flag:
-```bash
-tug apply python rename --at f.py:1:5 --to bar --filter "contains:TODO" --filter-content
-```
-
-Use `--filter-content-max-bytes <n>` to limit file size for content matching (skips larger files).
-
-**Git Predicates:**
-- If no `.git` directory is found, git predicates return `false`
-- `git_status` values: `modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`
-- `git_stage` values: `staged`, `unstaged`
-
-**Examples:**
-```bash
-# Python files in src/ directory
-tug apply python rename ... --filter "ext:py and path:src/**"
-
-# All Python files except tests
-tug apply python rename ... --filter "ext:py and not name:*_test.py"
-
-# Files modified in git
-tug apply python rename ... --filter "git_status:modified"
-
-# Large files only
-tug apply python rename ... --filter "size>100k"
-
-# Files containing TODO (requires --filter-content)
-tug apply python rename ... --filter "contains:TODO" --filter-content
-```
-
-### JSON Filter Schema
-
-For programmatic filter construction, use `--filter-json`:
-
-```json
-{
-  "all": [ <filter>, ... ],   // AND - all filters must match
-  "any": [ <filter>, ... ],   // OR - any filter can match
-  "not": <filter>,            // NOT - negate the filter
-  "predicates": [             // AND-combined predicate list
-    { "key": "path", "op": "glob", "value": "src/**" },
-    { "key": "ext", "op": "eq", "value": "py" }
-  ]
-}
-```
-
-**Predicate operations:** `eq`, `glob`, `regex`, `gt`, `gte`, `lt`, `lte`
-
-**Example:**
-```bash
-# JSON equivalent of: ext:py and path:src/**
-tug apply python rename ... --filter-json '{"predicates":[{"key":"ext","op":"eq","value":"py"},{"key":"path","op":"glob","value":"src/**"}]}'
-
-# Complex filter: (ext:py or ext:pyi) and not path:tests/**
-tug apply python rename ... --filter-json '{
-  "all": [
-    {"any": [
-      {"predicates": [{"key":"ext","op":"eq","value":"py"}]},
-      {"predicates": [{"key":"ext","op":"eq","value":"pyi"}]}
-    ]},
-    {"not": {"predicates": [{"key":"path","op":"glob","value":"tests/**"}]}}
-  ]
-}'
-```
-
-### Filter CLI Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `--filter <expr>` | Repeatable | Expression filter (multiple are AND'd) |
-| `--filter-json <json>` | Single | JSON filter schema |
-| `--filter-file <path>` | Single | File containing filter content |
-| `--filter-file-format <fmt>` | Single | Format for `--filter-file`: `json`, `glob`, or `expr` |
-| `--filter-content` | Flag | Enable content predicates (`contains`, `regex`) |
-| `--filter-content-max-bytes <n>` | Single | Max file size for content matching |
-| `--filter-list` | Flag | Output matched files as JSON and exit (no refactor) |
-
-**Filter combination order:**
-1. Start with language-appropriate files (e.g., `**/*.py`)
-2. Apply default exclusions (`.git`, `__pycache__`, `venv`, etc.)
-3. Apply glob patterns (`-- <patterns...>`)
-4. Apply `--filter` expressions (AND)
-5. Apply `--filter-json` (AND)
-6. Apply `--filter-file` content (AND)
-
-**Filter introspection with `--filter-list`:**
-```bash
-# See which files match without running the operation
-tug apply python rename --at f.py:1:5 --to bar --filter "path:src/**" --filter-list
-# Output: {"files": ["src/a.py", "src/b.py"], "count": 2, "filter_summary": {...}}
-```
-
-### Common Filter Recipes
+Use tugplans to develop tugplans:
 
 ```bash
-# Source files only (exclude tests)
---filter "path:src/**" -- '!tests/**'
-
-# Only modified files (useful for incremental refactoring)
---filter "git_status:modified"
-
-# Only tracked files (skip untracked/generated)
---filter "git_tracked:true"
-
-# Files with TODOs (requires --filter-content)
---filter "contains:TODO" --filter-content
-
-# Large files only
---filter "size>50k"
-
-# Recently modified files (after a date)
---filter "mtime>2024-01-01"
-
-# Multiple conditions
---filter "ext:py" --filter "path:src/**" --filter "not name:*_test.py"
-
-# Combining expression and glob filters
---filter "ext:py and git_tracked:true" -- 'src/**' '!**/generated/**'
+cd /path/to/tugtool
+claude --plugin-dir .
 ```
 
-### Agent Rules
+This loads the repo as a plugin. All skills and agents are available immediately.
 
-1. **Always analyze first**: Run `tug analyze python rename` or `tug emit python rename` before applying
-2. **Review before apply**: Show preview to user before running `tug apply python rename`
-3. **Get explicit approval**: Never apply without user confirmation
-4. **Handle errors by exit code**: See Error Codes section
-5. **No mutation during workflow**: Don't manually edit files between analyze and apply
+## Worktree Workflow
 
-## Python Language Support
+The implementer skill uses git worktrees to isolate implementation work in separate directories with dedicated branches. This provides:
 
-Python refactoring uses a native Rust CST parser (adapted from LibCST):
+- **Isolation**: Each tugplan implementation gets its own branch and working directory
+- **Parallel work**: Multiple tugplans can be implemented concurrently
+- **Clean history**: One commit per step, matching bead granularity
+- **PR-based review**: Implementation is complete when the PR is merged
 
-1. **Native parsing** - Pure Rust parser in `tugtool-python-cst` crate
-2. **Visitor infrastructure** - Collectors for scopes, bindings, references, etc.
-3. **Facts collection** - Builds symbol/reference graph via `cst_bridge`
-4. **Rename execution** - Applies transformations via native CST
+### How It Works
 
-No Python installation is required. All analysis is performed natively in Rust.
+When you run `/tugtool:implementer .tugtool/tugplan-N.md`:
 
-### Analyzer Options
+1. **Worktree created**: A new git worktree is created at `.tugtool-worktrees/tugplan__<name>-<timestamp>/`
+2. **Branch created**: A new branch `tugplan/<name>-<timestamp>` is created from main
+3. **Beads synced**: Bead annotations are synced and committed to the worktree
+4. **Steps executed**: Each step is implemented and committed separately
+5. **PR created**: After all steps complete, a PR is automatically created to main
 
-The Python analyzer supports optional features via `PythonAnalyzerOptions`:
+### Merge Workflow (Recommended)
 
-```rust
-use tugtool_python::analyzer::{PythonAdapter, PythonAnalyzerOptions};
-
-let opts = PythonAnalyzerOptions {
-    infer_visibility: true,           // Infer visibility from naming conventions
-    compute_effective_exports: true,  // Compute exports for modules without __all__
-    ..Default::default()
-};
-let adapter = PythonAdapter::with_options(opts);
-```
-
-**`compute_effective_exports`** (default: `false`):
-- When enabled and a module lacks an explicit `__all__`, the analyzer emits `ExportIntent::Effective` entries for module-level symbols that are considered public by Python convention:
-  - Names not starting with `_` are public
-  - Dunder names (`__init__`, `__name__`) are public
-  - Names starting with `_` (except dunders) are private
-  - Imported symbols are excluded (they're not defined in this module)
-- Useful for API surface analysis and move-module refactors
-
-### Receiver Resolution
-
-The analyzer supports resolving receivers in attribute accesses and method calls.
-
-**Single-File Patterns (Level 1-3 inference):**
-- Simple names: `obj.method()` (resolves `obj` to its type)
-- Dotted paths: `self.handler.process()` (follows attribute chain)
-- Call expressions: `get_handler().process()` (uses return type)
-- Callable attributes: `self.handler_factory().process()` where handler_factory has type `Callable[[], Handler]`
-- Chained calls: `factory().create().process()` (follows call chain up to depth limit)
-- Subscript expressions: `items[0].method()` where `items: List[Handler]` (extracts element type)
-- isinstance narrowing: `if isinstance(x, Handler): x.process()` (narrows type within branch)
-
-**Unsupported Patterns (returns None):**
-- Complex expressions: `(a or b).method()`
-- Nested generic extraction: `List[Dict[str, Handler]]` → `Handler`
-- Duck typing / protocol-based inference
-
-**Depth Limit:** Resolution is limited to 4 steps (`MAX_RESOLUTION_DEPTH`). Deeper chains like `a.b.c.d.e.method()` return None.
-
-**TypeTracker Methods:**
-- `attribute_type_of(class_name, attr_name)` - Get type of class attribute (with property fallback)
-- `method_return_type_of(class_name, method_name)` - Get return type of method
-- `property_type_of(class_name, property_name)` - Get return type of @property
-- `type_of(scope_path, name)` - Get type of variable in scope
-
-### Cross-File Type Resolution
-
-The analyzer supports resolving types across file boundaries when all files are in the workspace.
-
-**Capabilities:**
-- Resolve imported types: `from handler import Handler; h = Handler(); h.process()`
-- Follow attribute chains through imports: `self.handler.process()` where `Handler` is imported
-- Resolve re-exported symbols through import chains
-- Support for submodule imports: `from pkg import mod; mod.Handler()`
-
-**Cross-File Resolution Depth:** Limited to 3 files (`MAX_CROSS_FILE_DEPTH`) to prevent performance issues.
-
-**Limitations:**
-- Only workspace files are resolved (no external packages)
-- Circular imports are detected and gracefully handled (resolution returns None)
-
-### Function-Level Import Resolution
-
-Imports inside functions are tracked and resolved within their defining scope.
-
-**Supported:**
-- `from module import Name` inside a function → resolves within that function
-- Function-level imports shadow module-level imports (Python's LEGB scoping)
-- Nested function/class imports track full scope path
-
-**Example:**
-```python
-from external import Handler as Handler  # Module-level
-
-def process():
-    from internal import Handler  # Function-level, shadows module-level
-    h = Handler()
-    h.process()  # Resolves to internal.Handler.process
-```
-
-**Limitations:**
-- Star imports (`from module import *`) without `__all__` expansion are ambiguous (resolution returns None)
-
-### Container Type Element Extraction
-
-Generic container types are resolved for subscript access.
-
-**Supported Containers:**
-- Sequence types: `List[T]`, `Sequence[T]`, `Iterable[T]`, `Set[T]`, `Tuple[T, ...]`
-- Mapping types: `Dict[K, V]`, `Mapping[K, V]` (extracts value type `V`)
-- Optional: `Optional[T]` (extracts `T`)
-- Built-in generics: `list[T]`, `dict[K, V]`, `set[T]` (Python 3.9+ syntax)
-
-**Example:**
-```python
-handlers: List[Handler] = []
-first = handlers[0]
-first.process()  # Resolves to Handler.process
-```
-
-**Limitations:**
-- Nested generics: `List[Dict[str, Handler]]` → cannot extract `Handler`
-- TypeVar resolution: `T` → concrete type not resolved
-
-### isinstance Type Narrowing
-
-Type narrowing within conditional branches after isinstance checks.
-
-**Supported Patterns:**
-- Single type: `isinstance(x, Handler)` narrows `x` to `Handler` in the if-branch
-- Tuple of types: `isinstance(x, (A, B))` narrows to `Union[A, B]`
-
-**Example:**
-```python
-def handle(x: Base) -> None:
-    if isinstance(x, Handler):
-        x.process()  # Resolves to Handler.process (narrowed from Base)
-    # x is still Base type here
-```
-
-**Limitations:**
-- Attribute narrowing: `isinstance(self.attr, Type)` not supported
-- Early-return patterns: narrowing after `if not isinstance(...): return` not supported
-- Negated checks: `if not isinstance(x, A)` does not narrow in else branch
-- Comprehension scope: `[h for h in items if isinstance(h, Handler)]` not supported
-
-**Key Types:**
-- `CrossFileTypeCache` - Caches type information across files
-- `FileTypeContext` - Bundle of per-file context (tracker, symbol maps, import targets)
-- `ImportTarget` - Resolved import with file path and import kind
-
-### MRO-Based Attribute Lookup
-
-When an attribute is not found directly on a class, the analyzer walks the Method Resolution Order (MRO) to find inherited attributes.
-
-**Supported Patterns:**
-- Single inheritance: `class Child(Parent)` → `Child` inherits `Parent` attributes
-- Multiple inheritance: `class C(A, B)` → Uses C3 linearization
-- Diamond inheritance: Correctly resolves ambiguous attributes via C3
-- Cross-file inheritance: Base classes from imported modules are resolved
-
-**Example:**
-```python
-# base.py
-class Base:
-    def process(self) -> str: ...
-
-# handler.py
-from base import Base
-class Handler(Base):
-    pass
-
-# consumer.py
-from handler import Handler
-h = Handler()
-h.process()  # Resolves to Base.process() via MRO
-```
-
-**MRO Computation:**
-- Uses C3 linearization algorithm (same as Python runtime)
-- Caches computed MROs per class
-- Detects and reports MRO conflicts (inconsistent linearization)
-
-### Property Decorator Support
-
-Properties decorated with `@property` are resolved like attributes.
-
-**Supported:**
-- `@property` with return type annotation → provides type for attribute access
-- Inherited properties resolved via MRO
-
-**Example:**
-```python
-class Person:
-    @property
-    def name(self) -> str:
-        return self._name
-
-p = Person()
-p.name  # Resolves to type 'str'
-```
-
-**Note:** Properties without return type annotations return None.
-
-### Type Stub Support
-
-Type stub files (`.pyi`) provide type information that overrides source types.
-
-**Discovery Rules:**
-1. For `foo.py`, check for `foo.pyi` in the same directory (inline stub)
-2. If not found, check `stubs/foo.pyi` at workspace root using module path
-
-**Supported Stub Syntax:**
-- Class and function signatures with type annotations
-- Ellipsis bodies (`...`) and `pass` statement bodies
-- `Optional[T]`, `Union[A, B]` type annotations
-- `Callable[..., T]` simple named return types
-- Class attribute annotations
-
-**Unsupported Stub Syntax (returns None):**
-- `@overload` decorated function overloads
-- `TypeVar` and generic type parameters
-- `Protocol` and structural subtyping
-- `ParamSpec` and callable parameter specification
-- `TypeAlias` explicit type aliases
-
-**Merge Rules:**
-- Stub types override source types
-- Source symbols not in stub are preserved (partial stubs supported)
-
-**Example:**
-```python
-# service.py
-class Service:
-    def process(self): return 123  # No return type
-
-# service.pyi
-class Service:
-    def process(self) -> str: ...  # Stub provides type
-
-# consumer.py
-s = Service()
-s.process()  # Resolves to 'str' from stub
-```
-
-## Fixture Commands
-
-Manage test fixtures (external repositories used for integration tests).
+After implementation completes and a PR is created, use the `tugtool merge` command to automate the merge workflow:
 
 ```bash
-# List available fixtures from lock files
-tug fixture list
+# Preview what will happen
+tugtool merge .tugtool/tugplan-12.md --dry-run
 
-# Show status of all fixtures (fetched, missing, sha-mismatch, etc.)
-tug fixture status
-
-# Show status of specific fixture
-tug fixture status temporale
-
-# Fetch all fixtures according to lock files
-tug fixture fetch
-
-# Fetch specific fixture
-tug fixture fetch temporale
-
-# Force re-fetch even if up-to-date
-tug fixture fetch --force
-
-# Update lock file to new version
-tug fixture update temporale --ref v0.2.0
-
-# After updating, fetch the new version
-tug fixture fetch temporale
+# Merge the PR and clean up
+tugtool merge .tugtool/tugplan-12.md
 ```
 
-All fixture commands produce JSON output for agent integration.
+The merge command auto-detects the mode based on whether the repository has an `origin` remote and an open PR:
 
-## Adding New Features
+- **Remote mode** (has origin + open PR): Squash-merges the PR via `gh pr merge`, then cleans up
+- **Local mode** (no origin, or no open PR): Runs `git merge --squash` directly, then cleans up
 
-1. **New refactoring operation**: Add to `crates/tugtool-python/src/`
-2. **New CLI command**: Update `crates/tugtool/src/main.rs` and `crates/tugtool/src/cli.rs`
-3. **New output type**: Update `crates/tugtool-core/src/output.rs`
-4. **New core infrastructure**: Add to `crates/tugtool-core/src/`
+Steps:
+1. Finds the worktree for the tugplan using git-native worktree discovery
+2. Detects merge mode (remote or local)
+3. Reports any uncommitted changes in main as `dirty_files`
+4. Squash-merges (via PR or local branch)
+5. Cleans up the worktree and branch
 
-Always add tests for new functionality.
+The `/tugtool:merge` skill wraps this command with a dry-run preview, user confirmation, and auto-commits any dirty files before merging.
+
+### Manual Cleanup (Alternative)
+
+If you prefer manual control or the merge command is unavailable:
+
+```bash
+# Fetch latest main to ensure merge is detected
+git fetch origin main
+
+# Remove worktrees for merged PRs (dry run first)
+tugtool worktree cleanup --merged --dry-run
+
+# Actually remove them
+tugtool worktree cleanup --merged
+```
+
+The cleanup command:
+- Uses git-native worktree removal (`git worktree remove`)
+- Prunes stale worktree metadata (`git worktree prune`)
+- Deletes the local branch
+
+### Troubleshooting
+
+#### "Worktree already exists"
+
+If you see this error, it means a worktree for this tugplan already exists:
+
+```bash
+# List all worktrees to see what exists
+tugtool worktree list
+
+# If the worktree is stale, remove it manually
+rm -rf .tugtool-worktrees/tugplan__<name>-<timestamp>
+git worktree prune
+```
+
+#### "Branch not merged" after PR merge
+
+This can happen with squash or rebase merges, where the original commits are not ancestors of main:
+
+```bash
+# Update your local main branch
+git fetch origin main
+git checkout main
+git pull origin main
+
+# Try cleanup again
+tugtool worktree cleanup --merged
+```
+
+If cleanup still fails, you may need to remove the worktree manually:
+
+```bash
+# Remove the worktree
+git worktree remove .tugtool-worktrees/tugplan__<name>-<timestamp>
+
+# Prune stale entries
+git worktree prune
+
+# Delete the branch manually
+git branch -d tugplan/<name>-<timestamp>
+```
+
+#### Step commit succeeds but bead close fails
+
+This happens when a step commit succeeds but the bead close fails. The worktree is left in a consistent state, but beads tracking is out of sync. To fix:
+
+1. Check the implementation log in the worktree for the bead ID
+2. Close the bead manually: `tugtool beads close bd-xxx`
+3. If continuing implementation, the next step should proceed normally
+
+#### Implementation log is too large
+
+If the implementation log grows beyond 500 lines or 100KB, it can slow down parsing and git operations. The `tugtool doctor` command will warn you about large logs:
+
+```bash
+# Check project health including log size
+tugtool doctor
+
+# If the log is oversized, rotate it to archive
+tugtool log rotate
+```
+
+When you run `tugtool log rotate`, the current log is moved to `.tugtool/archive/implementation-log-YYYY-MM-DD-HHMMSS.md` and a fresh log is created. All historical entries are preserved in the archive.
+
+Note: `tugtool beads close` automatically rotates oversized logs, so manual rotation is rarely needed.
+
+#### Doctor reports broken references
+
+If `tugtool doctor` finds broken anchor references in your tugplans, you need to fix them before implementation:
+
+```bash
+# See which references are broken
+tugtool doctor --json | jq '.checks[] | select(.name == "broken_refs")'
+
+# Common causes:
+# - Step anchor was renamed but references weren't updated
+# - Decision anchor typo
+# - Anchor was removed but reference remained
+
+# Fix the references in your tugplan file, then verify
+tugtool validate .tugtool/tugplan-N.md
+```
+
+#### Doctor reports invalid worktree paths
+
+Valid worktree paths must start with `.tugtool-worktrees/` and exist on disk. If doctor finds invalid paths:
+
+```bash
+# List all worktrees to see what's active
+tugtool worktree list
+
+# If a worktree is stale or misconfigured, remove it
+git worktree remove .tugtool-worktrees/tugplan__<name>-<timestamp>
+git worktree prune
+```
+
+This usually happens if:
+- A worktree directory was deleted manually without using `git worktree remove`
+- Session files reference a worktree that no longer exists
+- Worktree was created outside the standard `.tugtool-worktrees/` location

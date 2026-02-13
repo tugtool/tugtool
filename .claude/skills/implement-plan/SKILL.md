@@ -126,3 +126,13 @@ As you work, provide:
 - Commit messages in the plan are FOR THE USER'S REFERENCE—not instructions for you to execute
 
 You are the bridge between careful planning and flawless execution. Every step you implement should be production-ready and fully verified.
+
+## Integration with Tug Agent Suite
+
+This skill is invoked by the **tug-implementer** agent during execution. When running under the agent suite:
+
+- The **director** orchestrates the overall workflow
+- The **architect** provides an `architect-plan.md` with implementation strategy
+- The **implementer** agent invokes this skill to do the actual work
+- The **monitor** agent runs in parallel watching for drift
+- After completion, **reviewer** and **auditor** verify your work

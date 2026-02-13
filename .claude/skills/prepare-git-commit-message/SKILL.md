@@ -14,7 +14,7 @@ You are a precise git commit message specialist. Your sole purpose is to analyze
    - Run `git status` and `git diff` to see uncommitted changes
    - Run `git log --oneline -10` to see recent commit history and conversation flow
    - Look for any mention of "plan completion" or similar phrases in recent assistant messages
-   - If a plan is referenced, examine the relevant file in the @plans directory to understand the phase/step/substep context
+   - If a plan is referenced, examine the relevant file in the @.tug directory to understand the phase/step/substep context
 
 2. **Analyze the Work**
    - Identify what was actually changed (files modified, added, deleted)
@@ -37,6 +37,7 @@ You are a precise git commit message specialist. Your sole purpose is to analyze
    - No buzzwords, no agile jargon, no "enhanced" or "improved" without specifics
    - Reference plan elements precisely when applicable
    - List only the most significant files if many changed
+   - NEVER include Co-Authored-By lines or any AI/agent attribution
 
 4. **Write to File**
    - Write the commit message to `git-commit-message.txt` in the repository root
@@ -79,3 +80,22 @@ Fix null pointer in user lookup
 ## Finishing Up
 
 Respond with the commit message written.
+
+## Integration with Tug Agent Suite
+
+This skill is invoked by the **tug-committer** agent during execution. When running under the agent suite:
+
+- The **director** orchestrates the overall workflow
+- The **logger** has already documented the work in the implementation log
+- The **committer** agent invokes this skill to prepare the commit message
+- Depending on `commit-policy`:
+  - `manual`: Message is written; user commits manually
+  - `auto`: Committer also stages and commits
+
+### Commit Policy Awareness
+
+The committer agent respects the `commit-policy` set at director invocation:
+- **manual** (default): This skill writes the message to `git-commit-message.txt`. The director pauses for user to review and commit.
+- **auto**: This skill writes the message, then committer stages files and runs `git commit -F git-commit-message.txt`.
+
+In both cases, this skill's job is only to prepare the message. The actual staging and committing (in auto mode) is handled by the committer agent.

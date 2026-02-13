@@ -1,385 +1,440 @@
-//! Error types and error code constants for tug.
-//!
-//! This module provides a unified error type (`TugError`) that bridges
-//! domain-specific errors from different subsystems (rename, session, etc.)
-//! into a common format suitable for JSON output.
-//!
-//! ## Error Code Mapping
-//!
-//! Exit codes follow Table T26 from the 26.0.7 spec:
-//! - `2`: Invalid arguments (bad input from caller)
-//! - `3`: Resolution errors (symbol not found, ambiguous, file not found)
-//! - `4`: Apply errors (failed to apply changes)
-//! - `5`: Verification failed (syntax/type/test errors after changes)
-//! - `10`: Internal errors (bugs, unexpected state)
-//!
-//! ## Design
-//!
-//! The error hierarchy follows these principles:
-//! - **Unified type**: `TugError` is the single error type for CLI output
-//! - **Bridging**: `impl From<X> for TugError` bridges domain errors
-//! - **Code mapping**: `OutputErrorCode` provides stable integer codes for JSON
-
-use std::fmt;
+//! Error types for tug operations
 
 use thiserror::Error;
 
-// Re-export common types from the types module
-pub use crate::types::{Location, SymbolInfo};
-
-// ============================================================================
-// Output Error Codes (Table T26)
-// ============================================================================
-
-/// Error codes for JSON output per Table T26.
-///
-/// These codes map to CLI exit codes and appear in JSON error responses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum OutputErrorCode {
-    /// Invalid arguments from caller (bad input, malformed request).
-    InvalidArguments = 2,
-    /// Resolution errors (symbol not found, ambiguous, file not found).
-    ResolutionError = 3,
-    /// Apply errors (failed to write changes, snapshot mismatch).
-    ApplyError = 4,
-    /// Verification failed (syntax/type/test errors after changes).
-    VerificationFailed = 5,
-    /// Internal errors (bugs, unexpected state).
-    InternalError = 10,
-}
-
-impl OutputErrorCode {
-    /// Get the numeric code value.
-    pub fn code(&self) -> u8 {
-        *self as u8
-    }
-}
-
-impl fmt::Display for OutputErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.code())
-    }
-}
-
-// ============================================================================
-// Unified Error Type
-// ============================================================================
-
-/// Unified error type for CLI output.
-///
-/// This is the canonical error type that all subsystem errors are converted to
-/// before being rendered as JSON output. Each variant includes enough context
-/// to produce a helpful error message and optional `details` field.
-#[derive(Debug, Error)]
+/// Core error type for tug operations
+#[derive(Error, Debug)]
 pub enum TugError {
-    /// Invalid arguments from caller.
-    #[error("invalid arguments: {message}")]
-    InvalidArguments {
+    // === Structural errors (E001-E006) ===
+    /// E001: Missing required section
+    #[error("E001: Missing required section: {section}")]
+    MissingSection {
+        section: String,
+        line: Option<usize>,
+    },
+
+    /// E002: Missing or empty required metadata field
+    #[error("E002: Missing or empty required metadata field: {field}")]
+    MissingMetadataField { field: String, line: Option<usize> },
+
+    /// E003: Invalid metadata Status value
+    #[error("E003: Invalid metadata Status value: {value} (must be draft/active/done)")]
+    InvalidStatus { value: String, line: Option<usize> },
+
+    /// E004: Step missing References line
+    #[error("E004: Step missing References line")]
+    MissingReferences { step: String, line: Option<usize> },
+
+    /// E005: Invalid anchor format
+    #[error("E005: Invalid anchor format: {anchor}")]
+    InvalidAnchor { anchor: String, line: Option<usize> },
+
+    /// E006: Duplicate anchor
+    #[error("E006: Duplicate anchor: {anchor}")]
+    DuplicateAnchor {
+        anchor: String,
+        first_line: usize,
+        second_line: usize,
+    },
+
+    // === Project errors (E009) ===
+    /// E009: .tug directory not initialized
+    #[error("E009: .tug directory not initialized")]
+    NotInitialized,
+
+    // === Dependency errors (E010-E011) ===
+    /// E010: Dependency references non-existent step anchor
+    #[error("E010: Dependency references non-existent step anchor: {anchor}")]
+    InvalidDependency {
+        anchor: String,
+        step: String,
+        line: Option<usize>,
+    },
+
+    /// E011: Circular dependency detected
+    #[error("E011: Circular dependency detected: {cycle}")]
+    CircularDependency { cycle: String },
+
+    // === Beads errors (E012-E015) ===
+    /// E012: Invalid bead ID format
+    #[error("E012: Invalid bead ID format: {id}")]
+    InvalidBeadId { id: String, line: Option<usize> },
+
+    /// E013: Beads not initialized in project
+    #[error("E013: Beads not initialized in project (run `bd init`)")]
+    BeadsNotInitialized,
+
+    /// E014: Beads Root bead does not exist
+    #[error("E014: Beads Root bead does not exist: {id}")]
+    BeadsRootNotFound { id: String },
+
+    /// E015: Step bead does not exist
+    #[error("E015: Step bead does not exist: {id} (step anchor: {anchor})")]
+    StepBeadNotFound { id: String, anchor: String },
+
+    // === IO and system errors ===
+    /// File not found or unreadable
+    #[error("file not found or unreadable: {0}")]
+    FileNotFound(String),
+
+    /// IO error
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// Configuration error
+    #[error("configuration error: {0}")]
+    Config(String),
+
+    /// Parse error (general markdown/structure issue)
+    #[error("parse error: {message}")]
+    Parse {
         message: String,
-        details: Option<serde_json::Value>,
+        line: Option<usize>,
     },
 
-    /// Symbol not found at the specified location.
-    #[error("no symbol found at {file}:{line}:{col}")]
-    SymbolNotFound { file: String, line: u32, col: u32 },
+    /// Feature not implemented
+    #[error("feature not implemented: {0}")]
+    NotImplemented(String),
 
-    /// Multiple symbols match at the location.
-    #[error("ambiguous symbol at location")]
-    AmbiguousSymbol { candidates: Vec<SymbolInfo> },
+    /// Beads CLI not installed (exit code 5)
+    #[error("beads CLI not installed or not found")]
+    BeadsNotInstalled,
 
-    /// Invalid identifier (syntax error in new name).
-    #[error("invalid identifier '{name}': {reason}")]
-    InvalidIdentifier { name: String, reason: String },
+    /// Beads command failed
+    #[error("beads command failed: {0}")]
+    BeadsCommand(String),
 
-    /// File not found.
-    #[error("file not found: {path}")]
-    FileNotFound { path: String },
+    /// Step anchor not found
+    #[error("step anchor not found: {0}")]
+    StepAnchorNotFound(String),
 
-    /// Failed to apply changes.
-    #[error("apply error: {message}")]
-    ApplyError {
-        message: String,
-        file: Option<String>,
+    // === Agent errors (E019-E021) ===
+    /// E019: Claude CLI not installed
+    #[error("E019: Claude CLI not installed. Install Claude Code from https://claude.ai/download")]
+    ClaudeCliNotInstalled,
+
+    /// E020: Agent invocation failed
+    #[error("E020: Agent invocation failed: {reason}")]
+    AgentInvocationFailed { reason: String },
+
+    /// E021: Agent timeout
+    #[error("E021: Agent timeout after {secs} seconds")]
+    AgentTimeout { secs: u64 },
+
+    // === Planning errors (E023-E024) ===
+    /// E023: Created plan has validation warnings
+    #[error("E023: Created plan has validation warnings")]
+    PlanValidationWarnings { warning_count: usize },
+
+    /// E024: User aborted planning loop
+    #[error("E024: User aborted planning loop")]
+    UserAborted,
+
+    // === Execution errors (E022) ===
+    /// E022: Monitor halted execution
+    #[error("E022: Monitor halted execution: {reason}")]
+    MonitorHalted { reason: String },
+
+    // === Distribution errors (E025-E026) ===
+    /// E025: Skills not found in share directory
+    #[error("E025: Skills not found in share directory: {path}")]
+    SkillsNotFound { path: String },
+
+    /// E026: Required agents missing for command
+    #[error("E026: Missing required agents for 'tug {command}': {}", missing.join(", "))]
+    RequiredAgentsMissing {
+        command: String,
+        missing: Vec<String>,
+        searched: Vec<String>,
     },
 
-    /// Verification failed after applying changes.
-    #[error("verification failed ({mode}): exit code {exit_code}")]
-    VerificationFailed {
-        mode: String,
-        output: String,
-        exit_code: i32,
-    },
+    // === Interaction errors (E027) ===
+    /// E027: Interaction failed (non-TTY, timeout, etc.)
+    #[error("E027: Interaction failed: {reason}")]
+    InteractionFailed { reason: String },
 
-    /// Internal error (bug or unexpected state).
-    #[error("internal error: {message}")]
-    InternalError { message: String },
+    // === Worktree errors (E028-E034) ===
+    /// E028: Worktree already exists for this plan
+    #[error("E028: Worktree already exists for this plan")]
+    WorktreeAlreadyExists,
 
-    /// Session error.
-    #[error("session error: {message}")]
-    SessionError { message: String },
+    /// E029: Git version insufficient (need 2.15+)
+    #[error("E029: Git version insufficient (need 2.15+ for worktree support)")]
+    GitVersionInsufficient,
+
+    /// E030: Not in a git repository
+    #[error("E030: Not in a git repository")]
+    NotAGitRepository,
+
+    /// E031: Base branch not found
+    #[error("E031: Base branch not found: {branch}")]
+    BaseBranchNotFound { branch: String },
+
+    /// E032: Plan has no execution steps
+    #[error("E032: Plan has no execution steps")]
+    PlanHasNoSteps,
+
+    /// E033: Worktree creation failed
+    #[error("E033: Worktree creation failed: {reason}")]
+    WorktreeCreationFailed { reason: String },
+
+    /// E034: Worktree cleanup failed
+    #[error("E034: Worktree cleanup failed: {reason}")]
+    WorktreeCleanupFailed { reason: String },
+
+    /// E035: Beads sync failed during worktree creation
+    #[error("E035: Beads sync failed: {reason}")]
+    BeadsSyncFailed { reason: String },
+
+    /// E036: Bead commit failed during worktree creation
+    #[error("E036: Bead commit failed: {reason}")]
+    BeadCommitFailed { reason: String },
+
+    /// E037: Init failed during worktree creation
+    #[error("E037: Init failed: {reason}")]
+    InitFailed { reason: String },
 }
-
-// ============================================================================
-// Error Code Mapping
-// ============================================================================
-
-impl From<&TugError> for OutputErrorCode {
-    fn from(err: &TugError) -> Self {
-        match err {
-            TugError::InvalidArguments { .. } => OutputErrorCode::InvalidArguments,
-            TugError::SymbolNotFound { .. } => OutputErrorCode::ResolutionError,
-            TugError::AmbiguousSymbol { .. } => OutputErrorCode::ResolutionError,
-            TugError::InvalidIdentifier { .. } => OutputErrorCode::InvalidArguments,
-            TugError::FileNotFound { .. } => OutputErrorCode::ResolutionError,
-            TugError::ApplyError { .. } => OutputErrorCode::ApplyError,
-            TugError::VerificationFailed { .. } => OutputErrorCode::VerificationFailed,
-            TugError::InternalError { .. } => OutputErrorCode::InternalError,
-            TugError::SessionError { .. } => OutputErrorCode::InternalError,
-        }
-    }
-}
-
-impl From<TugError> for OutputErrorCode {
-    fn from(err: TugError) -> Self {
-        OutputErrorCode::from(&err)
-    }
-}
-
-// ============================================================================
-// Bridge: SessionError -> TugError
-// ============================================================================
-
-impl From<crate::session::SessionError> for TugError {
-    fn from(err: crate::session::SessionError) -> Self {
-        use crate::session::SessionError;
-        match err {
-            SessionError::SessionNotWritable { path } => TugError::SessionError {
-                message: format!("session directory not writable: {}", path.display()),
-            },
-            SessionError::WorkspaceNotFound { expected } => TugError::FileNotFound {
-                path: expected.to_string_lossy().into_owned(),
-            },
-            SessionError::ConcurrentModification { expected, actual } => TugError::ApplyError {
-                message: format!(
-                    "session was modified concurrently (expected {}, found {})",
-                    expected, actual
-                ),
-                file: None,
-            },
-            SessionError::SessionCorrupt { path, reason } => TugError::SessionError {
-                message: format!("session corrupt at {}: {}", path.display(), reason),
-            },
-            SessionError::CacheCorrupt { path } => TugError::SessionError {
-                message: format!("cache corrupt: {}", path.display()),
-            },
-            SessionError::Io(io_err) => TugError::InternalError {
-                message: format!("IO error: {}", io_err),
-            },
-            SessionError::Json(json_err) => TugError::InternalError {
-                message: format!("JSON error: {}", json_err),
-            },
-            SessionError::WorkspaceRootMismatch {
-                session_root,
-                current_root,
-            } => TugError::SessionError {
-                message: format!(
-                    "workspace root mismatch: session bound to {}, now at {}",
-                    session_root.display(),
-                    current_root.display()
-                ),
-            },
-        }
-    }
-}
-
-// ============================================================================
-// Convenience Constructors
-// ============================================================================
 
 impl TugError {
-    /// Create an invalid arguments error with optional details.
-    pub fn invalid_args(message: impl Into<String>) -> Self {
-        TugError::InvalidArguments {
-            message: message.into(),
-            details: None,
+    /// Get the error code (e.g., "E001", "E002")
+    pub fn code(&self) -> &'static str {
+        match self {
+            TugError::MissingSection { .. } => "E001",
+            TugError::MissingMetadataField { .. } => "E002",
+            TugError::InvalidStatus { .. } => "E003",
+            TugError::MissingReferences { .. } => "E004",
+            TugError::InvalidAnchor { .. } => "E005",
+            TugError::DuplicateAnchor { .. } => "E006",
+            TugError::NotInitialized => "E009",
+            TugError::InvalidDependency { .. } => "E010",
+            TugError::CircularDependency { .. } => "E011",
+            TugError::InvalidBeadId { .. } => "E012",
+            TugError::BeadsNotInitialized => "E013",
+            TugError::BeadsRootNotFound { .. } => "E014",
+            TugError::StepBeadNotFound { .. } => "E015",
+            TugError::FileNotFound(_) => "E002", // Reuse for file errors
+            TugError::Io(_) => "E002",
+            TugError::Config(_) => "E004", // Config errors
+            TugError::Parse { .. } => "E001",
+            TugError::NotImplemented(_) => "E003", // Feature not implemented
+            TugError::BeadsNotInstalled => "E005", // Beads CLI error
+            TugError::BeadsCommand(_) => "E016",   // Beads command error
+            TugError::StepAnchorNotFound(_) => "E017", // Step anchor not found
+            TugError::ClaudeCliNotInstalled => "E019",
+            TugError::AgentInvocationFailed { .. } => "E020",
+            TugError::AgentTimeout { .. } => "E021",
+            TugError::MonitorHalted { .. } => "E022",
+            TugError::PlanValidationWarnings { .. } => "E023",
+            TugError::UserAborted => "E024",
+            TugError::SkillsNotFound { .. } => "E025",
+            TugError::RequiredAgentsMissing { .. } => "E026",
+            TugError::InteractionFailed { .. } => "E027",
+            TugError::WorktreeAlreadyExists => "E028",
+            TugError::GitVersionInsufficient => "E029",
+            TugError::NotAGitRepository => "E030",
+            TugError::BaseBranchNotFound { .. } => "E031",
+            TugError::PlanHasNoSteps => "E032",
+            TugError::WorktreeCreationFailed { .. } => "E033",
+            TugError::WorktreeCleanupFailed { .. } => "E034",
+            TugError::BeadsSyncFailed { .. } => "E035",
+            TugError::BeadCommitFailed { .. } => "E036",
+            TugError::InitFailed { .. } => "E037",
         }
     }
 
-    /// Create an invalid arguments error with JSON details.
-    pub fn invalid_args_with_details(
-        message: impl Into<String>,
-        details: serde_json::Value,
-    ) -> Self {
-        TugError::InvalidArguments {
-            message: message.into(),
-            details: Some(details),
+    /// Get the line number associated with this error, if any
+    pub fn line(&self) -> Option<usize> {
+        match self {
+            TugError::MissingSection { line, .. } => *line,
+            TugError::MissingMetadataField { line, .. } => *line,
+            TugError::InvalidStatus { line, .. } => *line,
+            TugError::MissingReferences { line, .. } => *line,
+            TugError::InvalidAnchor { line, .. } => *line,
+            TugError::DuplicateAnchor { second_line, .. } => Some(*second_line),
+            TugError::InvalidDependency { line, .. } => *line,
+            TugError::InvalidBeadId { line, .. } => *line,
+            TugError::Parse { line, .. } => *line,
+            _ => None,
         }
     }
 
-    /// Create a symbol not found error.
-    pub fn symbol_not_found(file: impl Into<String>, line: u32, col: u32) -> Self {
-        TugError::SymbolNotFound {
-            file: file.into(),
-            line,
-            col,
+    /// Get the exit code for this error type
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            TugError::MissingSection { .. }
+            | TugError::MissingMetadataField { .. }
+            | TugError::InvalidStatus { .. }
+            | TugError::MissingReferences { .. }
+            | TugError::InvalidAnchor { .. }
+            | TugError::DuplicateAnchor { .. }
+            | TugError::InvalidDependency { .. }
+            | TugError::CircularDependency { .. }
+            | TugError::InvalidBeadId { .. } => 1, // Validation errors
+
+            TugError::FileNotFound(_) | TugError::Io(_) => 2, // File errors
+
+            TugError::NotImplemented(_) => 3, // Feature not implemented
+
+            TugError::Config(_) => 4, // Configuration error
+
+            TugError::BeadsNotInstalled => 5, // Beads CLI not installed
+
+            TugError::BeadsCommand(_) => 1, // Beads command error
+
+            TugError::StepAnchorNotFound(_) => 2, // Step anchor not found
+
+            TugError::NotInitialized => 9, // .tug not initialized
+
+            TugError::BeadsNotInitialized
+            | TugError::BeadsRootNotFound { .. }
+            | TugError::StepBeadNotFound { .. } => 13, // Beads not initialized
+
+            TugError::Parse { .. } => 1, // Parse errors are validation errors
+
+            TugError::ClaudeCliNotInstalled => 6, // Claude CLI not installed
+
+            TugError::AgentInvocationFailed { .. } | TugError::AgentTimeout { .. } => 1, // Agent errors
+
+            TugError::MonitorHalted { .. } => 4, // Monitor halted execution
+
+            TugError::PlanValidationWarnings { .. } => 0, // Warnings are not failures
+
+            TugError::UserAborted => 5, // User aborted planning loop
+
+            TugError::SkillsNotFound { .. } => 7, // Skills not found
+
+            TugError::RequiredAgentsMissing { .. } => 8, // Required agents missing
+
+            TugError::InteractionFailed { .. } => 1, // Interaction errors
+
+            TugError::WorktreeAlreadyExists => 3, // Worktree already exists (exit code 3 per T02)
+            TugError::GitVersionInsufficient => 4, // Git version insufficient (exit code 4 per T02)
+            TugError::NotAGitRepository => 5,     // Not a git repository (exit code 5 per T02)
+            TugError::BaseBranchNotFound { .. } => 6, // Base branch not found (exit code 6 per T02)
+            TugError::PlanHasNoSteps => 8,        // Plan has no steps (exit code 8 per T02)
+            TugError::WorktreeCreationFailed { .. } => 1, // Worktree creation failed
+            TugError::WorktreeCleanupFailed { .. } => 1, // Worktree cleanup failed
+            TugError::BeadsSyncFailed { .. } => 10, // Beads sync failed (exit code 10 per S02)
+            TugError::BeadCommitFailed { .. } => 11, // Bead commit failed (exit code 11 per S02)
+            TugError::InitFailed { .. } => 12,    // Init failed (exit code 12)
         }
-    }
-
-    /// Create a file not found error.
-    pub fn file_not_found(path: impl Into<String>) -> Self {
-        TugError::FileNotFound { path: path.into() }
-    }
-
-    /// Create an internal error.
-    pub fn internal(message: impl Into<String>) -> Self {
-        TugError::InternalError {
-            message: message.into(),
-        }
-    }
-
-    /// Get the error code for this error.
-    pub fn error_code(&self) -> OutputErrorCode {
-        OutputErrorCode::from(self)
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    mod error_code_mapping {
-        use super::*;
+    #[test]
+    fn test_error_codes() {
+        let err = TugError::MissingSection {
+            section: "Plan Metadata".to_string(),
+            line: Some(10),
+        };
+        assert_eq!(err.code(), "E001");
+        assert_eq!(err.line(), Some(10));
+        assert_eq!(err.exit_code(), 1);
 
-        #[test]
-        fn symbol_not_found_maps_to_resolution_error() {
-            let err = TugError::symbol_not_found("test.py", 42, 8);
-            assert_eq!(
-                OutputErrorCode::from(&err),
-                OutputErrorCode::ResolutionError
-            );
-            assert_eq!(err.error_code().code(), 3);
-        }
+        let err = TugError::NotInitialized;
+        assert_eq!(err.code(), "E009");
+        assert_eq!(err.exit_code(), 9);
 
-        #[test]
-        fn invalid_arguments_maps_to_invalid_arguments() {
-            let err = TugError::invalid_args("missing required field");
-            assert_eq!(
-                OutputErrorCode::from(&err),
-                OutputErrorCode::InvalidArguments
-            );
-            assert_eq!(err.error_code().code(), 2);
-        }
-
-        #[test]
-        fn verification_failed_maps_to_verification_failed() {
-            let err = TugError::VerificationFailed {
-                mode: "syntax".to_string(),
-                output: "SyntaxError: invalid syntax".to_string(),
-                exit_code: 1,
-            };
-            assert_eq!(
-                OutputErrorCode::from(&err),
-                OutputErrorCode::VerificationFailed
-            );
-            assert_eq!(err.error_code().code(), 5);
-        }
-
-        #[test]
-        fn internal_error_maps_to_internal_error() {
-            let err = TugError::internal("unexpected state");
-            assert_eq!(OutputErrorCode::from(&err), OutputErrorCode::InternalError);
-            assert_eq!(err.error_code().code(), 10);
-        }
-
-        #[test]
-        fn ambiguous_symbol_maps_to_resolution_error() {
-            let err = TugError::AmbiguousSymbol { candidates: vec![] };
-            assert_eq!(
-                OutputErrorCode::from(&err),
-                OutputErrorCode::ResolutionError
-            );
-        }
-
-        #[test]
-        fn file_not_found_maps_to_resolution_error() {
-            let err = TugError::file_not_found("missing.py");
-            assert_eq!(
-                OutputErrorCode::from(&err),
-                OutputErrorCode::ResolutionError
-            );
-        }
-
-        #[test]
-        fn apply_error_maps_to_apply_error() {
-            let err = TugError::ApplyError {
-                message: "snapshot mismatch".to_string(),
-                file: Some("test.py".to_string()),
-            };
-            assert_eq!(OutputErrorCode::from(&err), OutputErrorCode::ApplyError);
-            assert_eq!(err.error_code().code(), 4);
-        }
-
-        #[test]
-        fn invalid_identifier_maps_to_invalid_arguments() {
-            let err = TugError::InvalidIdentifier {
-                name: "123abc".to_string(),
-                reason: "cannot start with digit".to_string(),
-            };
-            assert_eq!(
-                OutputErrorCode::from(&err),
-                OutputErrorCode::InvalidArguments
-            );
-        }
+        let err = TugError::BeadsNotInitialized;
+        assert_eq!(err.code(), "E013");
+        assert_eq!(err.exit_code(), 13);
     }
 
-    mod error_display {
-        use super::*;
-
-        #[test]
-        fn symbol_not_found_display() {
-            let err = TugError::symbol_not_found("test.py", 42, 8);
-            assert_eq!(err.to_string(), "no symbol found at test.py:42:8");
-        }
-
-        #[test]
-        fn invalid_arguments_display() {
-            let err = TugError::invalid_args("missing field");
-            assert_eq!(err.to_string(), "invalid arguments: missing field");
-        }
-
-        #[test]
-        fn verification_failed_display() {
-            let err = TugError::VerificationFailed {
-                mode: "syntax".to_string(),
-                output: "error".to_string(),
-                exit_code: 1,
-            };
-            assert_eq!(err.to_string(), "verification failed (syntax): exit code 1");
-        }
+    #[test]
+    fn test_error_display() {
+        let err = TugError::InvalidStatus {
+            value: "invalid".to_string(),
+            line: Some(5),
+        };
+        assert_eq!(
+            err.to_string(),
+            "E003: Invalid metadata Status value: invalid (must be draft/active/done)"
+        );
     }
 
-    mod output_error_code {
-        use super::*;
+    #[test]
+    fn test_agent_error_codes() {
+        let err = TugError::ClaudeCliNotInstalled;
+        assert_eq!(err.code(), "E019");
+        assert_eq!(err.exit_code(), 6);
 
-        #[test]
-        fn code_values_match_spec() {
-            assert_eq!(OutputErrorCode::InvalidArguments.code(), 2);
-            assert_eq!(OutputErrorCode::ResolutionError.code(), 3);
-            assert_eq!(OutputErrorCode::ApplyError.code(), 4);
-            assert_eq!(OutputErrorCode::VerificationFailed.code(), 5);
-            assert_eq!(OutputErrorCode::InternalError.code(), 10);
-        }
+        let err = TugError::AgentInvocationFailed {
+            reason: "test failure".to_string(),
+        };
+        assert_eq!(err.code(), "E020");
+        assert_eq!(err.exit_code(), 1);
+        assert!(err.to_string().contains("test failure"));
 
-        #[test]
-        fn display_shows_code() {
-            assert_eq!(format!("{}", OutputErrorCode::InvalidArguments), "2");
-            assert_eq!(format!("{}", OutputErrorCode::ResolutionError), "3");
-            assert_eq!(format!("{}", OutputErrorCode::InternalError), "10");
-        }
+        let err = TugError::AgentTimeout { secs: 300 };
+        assert_eq!(err.code(), "E021");
+        assert_eq!(err.exit_code(), 1);
+        assert!(err.to_string().contains("300 seconds"));
+    }
+
+    #[test]
+    fn test_planning_error_codes() {
+        let err = TugError::PlanValidationWarnings { warning_count: 3 };
+        assert_eq!(err.code(), "E023");
+        assert_eq!(err.exit_code(), 0); // Warnings don't cause failure
+        assert!(err.to_string().contains("validation warnings"));
+
+        let err = TugError::UserAborted;
+        assert_eq!(err.code(), "E024");
+        assert_eq!(err.exit_code(), 5);
+        assert!(err.to_string().contains("aborted"));
+    }
+
+    #[test]
+    fn test_skills_not_found_error() {
+        let err = TugError::SkillsNotFound {
+            path: "/some/path".to_string(),
+        };
+        assert_eq!(err.code(), "E025");
+        assert_eq!(err.exit_code(), 7);
+        assert!(err.to_string().contains("/some/path"));
+        assert!(err.to_string().contains("Skills not found"));
+    }
+
+    #[test]
+    fn test_monitor_halted_error() {
+        let err = TugError::MonitorHalted {
+            reason: "drift detected".to_string(),
+        };
+        assert_eq!(err.code(), "E022");
+        assert_eq!(err.exit_code(), 4);
+        assert!(err.to_string().contains("drift detected"));
+        assert!(err.to_string().contains("Monitor halted"));
+    }
+
+    #[test]
+    fn test_required_agents_missing_error() {
+        let err = TugError::RequiredAgentsMissing {
+            command: "plan".to_string(),
+            missing: vec!["clarifier-agent".to_string(), "critic-agent".to_string()],
+            searched: vec![
+                "./agents/".to_string(),
+                "/opt/homebrew/share/tug/agents/".to_string(),
+            ],
+        };
+        assert_eq!(err.code(), "E026");
+        assert_eq!(err.exit_code(), 8);
+        assert!(err.to_string().contains("tug plan"));
+        assert!(err.to_string().contains("clarifier-agent"));
+        assert!(err.to_string().contains("critic-agent"));
+    }
+
+    #[test]
+    fn test_interaction_failed_error() {
+        let err = TugError::InteractionFailed {
+            reason: "stdin is not a TTY".to_string(),
+        };
+        assert_eq!(err.code(), "E027");
+        assert_eq!(err.exit_code(), 1);
+        assert!(err.to_string().contains("Interaction failed"));
+        assert!(err.to_string().contains("stdin is not a TTY"));
     }
 }

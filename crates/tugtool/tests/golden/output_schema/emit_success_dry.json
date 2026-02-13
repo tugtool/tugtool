@@ -1,8 +1,0 @@
-{
-  "diff": "--- a/input.py\n+++ b/input.py\n@@ -1,1 +1,1 @@\n-process_data\n+transform_data\n@@ -11,1 +11,1 @@\n-process_data\n+transform_data\n",
-  "files_affected": [
-    "input.py"
-  ],
-  "format": "unified",
-  "metadata": {}
-}

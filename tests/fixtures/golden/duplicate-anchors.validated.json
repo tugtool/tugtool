@@ -1,0 +1,25 @@
+{
+  "schema_version": "1",
+  "command": "validate",
+  "status": "error",
+  "data": {
+    "files": [
+      {
+        "path": "tests/fixtures/invalid/duplicate-anchors.md",
+        "valid": false,
+        "error_count": 1,
+        "warning_count": 0
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "E006",
+      "severity": "error",
+      "message": "Duplicate anchor: duplicate-anchor (first at line 23)",
+      "file": "tests/fixtures/invalid/duplicate-anchors.md",
+      "line": 29,
+      "anchor": "#duplicate-anchor"
+    }
+  ]
+}

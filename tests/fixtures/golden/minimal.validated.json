@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "command": "validate",
+  "status": "ok",
+  "data": {
+    "files": [
+      {
+        "path": "tests/fixtures/valid/minimal.md",
+        "valid": true,
+        "error_count": 0,
+        "warning_count": 0
+      }
+    ]
+  },
+  "issues": []
+}

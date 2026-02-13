@@ -1,8 +1,0 @@
-{
-  "error": {
-    "code": 2,
-    "message": "invalid identifier '123invalid': must start with letter or underscore"
-  },
-  "schema_version": "1",
-  "status": "error"
-}

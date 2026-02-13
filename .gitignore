@@ -1,20 +1,7 @@
-# Rust
+# Rust build artifacts
 /target/
 **/*.rs.bk
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-.eggs/
-dist/
-build/
-*.whl
-.venv/
-.tug-test-venv/
+Cargo.lock
 
 # IDE
 .idea/
@@ -23,19 +10,21 @@ build/
 *.swo
 *~
 
-# OS
+# Claude Code local settings
+.claude/settings.local.json
+
+# macOS
 .DS_Store
-Thumbs.db
 
-# Environment
-.env
-.env.local
+# Test artifacts
+*.log
 
-# Tug session artifacts
-**/.tug/
-
-# generated commit message
+# project files
 git-commit-message.txt
-
-# aside directory
 aside
+
+# Tug worktrees
+.tugtool.worktrees/
+
+# Tug step artifacts (optional local debug)
+.tugtool/step-artifacts/

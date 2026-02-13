@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "command": "status",
+  "status": "ok",
+  "data": {
+    "name": "test-fallback",
+    "status": "draft",
+    "progress": {
+      "done": 2,
+      "total": 4
+    },
+    "steps": [
+      {
+        "title": "Bootstrap",
+        "anchor": "#step-0",
+        "done": 2,
+        "total": 4,
+        "substeps": []
+      }
+    ],
+    "all_steps": [
+      {
+        "anchor": "#step-0",
+        "title": "Bootstrap",
+        "number": "0"
+      }
+    ],
+    "completed_steps": [],
+    "remaining_steps": [
+      {
+        "anchor": "#step-0",
+        "title": "Bootstrap",
+        "number": "0"
+      }
+    ],
+    "next_step": {
+      "anchor": "#step-0",
+      "title": "Bootstrap",
+      "number": "0"
+    },
+    "bead_mapping": {},
+    "dependencies": {
+      "#step-0": []
+    },
+    "mode": "checkbox"
+  },
+  "issues": []
+}

@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+# Deterministic fake `bd` for tug integration tests.
+# Conforms to docs/beads-json-contract.md. State in TUG_BD_STATE (default: tests/.bd-fake-state).
+
+set -e
+STATE_DIR="${TUG_BD_STATE:-$(dirname "$0")/../.bd-fake-state}"
+ISSUES_JSON="$STATE_DIR/issues.json"
+DEPS_JSON="$STATE_DIR/deps.json"
+
+need_jq() {
+  if ! command -v jq &>/dev/null; then
+    echo "bd-fake requires jq" >&2
+    exit 1
+  fi
+}
+
+init_state() {
+  mkdir -p "$STATE_DIR"
+  if [[ ! -f "$ISSUES_JSON" ]]; then
+    echo '{}' > "$ISSUES_JSON"
+  fi
+  if [[ ! -f "$DEPS_JSON" ]]; then
+    echo '[]' > "$DEPS_JSON"
+  fi
+}
+
+next_id() {
+  local parent="$1"
+  need_jq
+  init_state
+  if [[ -z "$parent" ]]; then
+    local n
+    n=$(jq -r 'to_entries | map(select(.key | test("\\.") | not)) | length' "$ISSUES_JSON" 2>/dev/null || echo 0)
+    echo "bd-fake-$(( n + 1 ))"
+  else
+    local count
+    count=$(jq -r --arg p "$parent" '[. | keys[] | select(startswith($p + "."))] | length' "$ISSUES_JSON" 2>/dev/null || echo 0)
+    echo "${parent}.$(( count + 1 ))"
+  fi
+}
+
+cmd_create() {
+  need_jq
+  init_state
+  local title="" description="" parent="" type="task" priority=2 design="" acceptance="" notes=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) shift ;;
+      --parent) parent="$2"; shift 2 ;;
+      --type|-t) type="$2"; shift 2 ;;
+      --description) description="$2"; shift 2 ;;
+      --design) design="$2"; shift 2 ;;
+      --acceptance) acceptance="$2"; shift 2 ;;
+      --notes) notes="$2"; shift 2 ;;
+      -p*) priority="${1#-p}"; shift ;;
+      *) title="$1"; shift ;;
+    esac
+  done
+  [[ -z "$title" ]] && title="(no title)"
+  local id
+  id=$(next_id "$parent")
+  local issue
+  # Initialize all fields, using empty string as default (will be converted to null by show)
+  issue=$(jq -n \
+    --arg id "$id" \
+    --arg title "$title" \
+    --arg desc "$description" \
+    --arg type "$type" \
+    --argjson priority "$priority" \
+    --arg design "$design" \
+    --arg acceptance "$acceptance" \
+    --arg notes "$notes" \
+    '{id: $id, title: $title, description: $desc, status: "open", priority: $priority, issue_type: $type, design: $design, acceptance_criteria: $acceptance, notes: $notes}')
+  local issues
+  issues=$(jq -r --arg id "$id" --argjson obj "$issue" '. + {($id): ($obj | . + {id: $id})}' "$ISSUES_JSON")
+  echo "$issues" > "$ISSUES_JSON"
+  # Output single Issue object (contract)
+  jq -n -c --arg id "$id" --arg title "$title" --arg desc "$description" --arg type "$type" --argjson priority "$priority" \
+    '{id: $id, title: $title, description: $desc, status: "open", priority: $priority, issue_type: $type}'
+}
+
+cmd_show() {
+  need_jq
+  init_state
+  local id="$1"
+  [[ -z "$id" ]] && { echo "bd-fake: show requires id" >&2; exit 1; }
+  local issue
+  issue=$(jq -r --arg id "$id" '.[$id] // empty' "$ISSUES_JSON")
+  if [[ -z "$issue" || "$issue" == "null" ]]; then
+    echo "bd-fake: issue $id not found" >&2
+    exit 1
+  fi
+  local deps
+  deps=$(jq -r -c --arg id "$id" '[.[] | select(.issue_id == $id) | {id: .depends_on_id, dependency_type: .type}]' "$DEPS_JSON")
+  local details
+  # Ensure design, acceptance_criteria, notes, and close_reason fields exist
+  # Convert empty strings or missing fields to null
+  details=$(echo "$issue" | jq -c --argjson deps "$deps" '. + {dependencies: $deps} |
+    if (.design // "") == "" then .design = null else . end |
+    if (.acceptance_criteria // "") == "" then .acceptance_criteria = null else . end |
+    if (.notes // "") == "" then .notes = null else . end |
+    if (.close_reason // "") == "" then .close_reason = null else . end')
+  # Output as single-object (contract allows array or object)
+  echo "$details"
+}
+
+cmd_dep_add() {
+  need_jq
+  init_state
+  local from_id to_id dep_type="blocks"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) shift ;;
+      --type|-t) dep_type="$2"; shift 2 ;;
+      *) from_id="${from_id:-$1}"; to_id="${to_id:-$2}"; shift; [[ -n "$from_id" && -n "$to_id" ]] && break ;;
+    esac
+  done
+  [[ -z "$from_id" || -z "$to_id" ]] && { echo "bd-fake: dep add requires <from> <to>" >&2; exit 1; }
+  local new_dep
+  new_dep=$(jq -n -c --arg from "$from_id" --arg to "$to_id" --arg type "$dep_type" \
+    '{issue_id: $from, depends_on_id: $to, type: $type}')
+  local deps
+  deps=$(jq -r -c --argjson new "$new_dep" '. + [$new]' "$DEPS_JSON")
+  echo "$deps" > "$DEPS_JSON"
+  if [[ " ${*:1} " == *" --json "* ]]; then
+    jq -n -c --arg from "$from_id" --arg to "$to_id" --arg type "$dep_type" \
+      '{status: "added", issue_id: $from, depends_on_id: $to, type: $type}'
+  fi
+}
+
+cmd_dep_remove() {
+  need_jq
+  init_state
+  local from_id="$1" to_id="$2"
+  shift 2
+  [[ -z "$from_id" || -z "$to_id" ]] && { echo "bd-fake: dep remove requires <from> <to>" >&2; exit 1; }
+  local deps
+  deps=$(jq -r -c --arg from "$from_id" --arg to "$to_id" \
+    '[.[] | select(.issue_id != $from or .depends_on_id != $to)]' "$DEPS_JSON")
+  echo "$deps" > "$DEPS_JSON"
+  if [[ " $* " == *" --json "* ]]; then
+    jq -n -c --arg from "$from_id" --arg to "$to_id" '{status: "removed", issue_id: $from, depends_on_id: $to}'
+  fi
+}
+
+cmd_dep_list() {
+  need_jq
+  init_state
+  local id="$1"
+  shift
+  [[ -z "$id" ]] && { echo "bd-fake: dep list requires id" >&2; exit 1; }
+  local direction="down"
+  for arg in "$@"; do
+    [[ "$arg" == "--direction" ]] && direction="$2" && shift 2
+  done
+  if [[ "$direction" == "down" ]]; then
+    jq -r -c --arg id "$id" '[.[] | select(.issue_id == $id) | {id: .depends_on_id, dependency_type: .type, title: "", status: "open", priority: 2, issue_type: "task"}]' "$DEPS_JSON"
+  else
+    jq -r -c --arg id "$id" '[.[] | select(.depends_on_id == $id) | {id: .issue_id, dependency_type: .type, title: "", status: "open", priority: 2, issue_type: "task"}]' "$DEPS_JSON"
+  fi
+}
+
+cmd_init() {
+  init_state
+  echo "Initialized bd-fake state at $STATE_DIR"
+}
+
+cmd_update() {
+  need_jq
+  init_state
+  local id="$1"
+  shift
+  [[ -z "$id" ]] && { echo "bd-fake: update requires id" >&2; exit 1; }
+
+  # Check if issue exists
+  local issue
+  issue=$(jq -r --arg id "$id" '.[$id] // empty' "$ISSUES_JSON")
+  if [[ -z "$issue" || "$issue" == "null" ]]; then
+    echo "bd-fake: issue $id not found" >&2
+    exit 1
+  fi
+
+  local description="" design="" acceptance="" notes=""
+  local has_update=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --description) description="$2"; has_update=true; shift 2 ;;
+      --design) design="$2"; has_update=true; shift 2 ;;
+      --acceptance) acceptance="$2"; has_update=true; shift 2 ;;
+      --notes) notes="$2"; has_update=true; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  [[ "$has_update" == "false" ]] && { echo "bd-fake: update requires at least one field flag" >&2; exit 1; }
+
+  # Build jq update expression
+  local updated
+  updated=$(jq -r --arg id "$id" \
+    --arg desc "$description" \
+    --arg design "$design" \
+    --arg acceptance "$acceptance" \
+    --arg notes "$notes" \
+    '
+    # Ensure the rich fields exist in the issue object
+    .[$id].design = (.[$id].design // "") |
+    .[$id].acceptance_criteria = (.[$id].acceptance_criteria // "") |
+    .[$id].notes = (.[$id].notes // "") |
+    # Update fields if provided
+    if $desc != "" then .[$id].description = $desc else . end |
+    if $design != "" then .[$id].design = $design else . end |
+    if $acceptance != "" then .[$id].acceptance_criteria = $acceptance else . end |
+    if $notes != "" then .[$id].notes = $notes else . end
+    ' "$ISSUES_JSON")
+  echo "$updated" > "$ISSUES_JSON"
+}
+
+cmd_close() {
+  need_jq
+  init_state
+  local id="$1"
+  shift
+  [[ -z "$id" ]] && { echo "bd-fake: close requires id" >&2; exit 1; }
+  local reason=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reason) reason="$2"; shift 2 ;;
+      --json) shift ;;
+      *) shift ;;
+    esac
+  done
+  # Update issue status to closed and store close_reason
+  local updated
+  updated=$(jq -r --arg id "$id" --arg reason "$reason" '
+    .[$id].status = "closed" |
+    if $reason != "" then .[$id].close_reason = $reason else . end
+  ' "$ISSUES_JSON")
+  echo "$updated" > "$ISSUES_JSON"
+}
+
+cmd_append() {
+  need_jq
+  init_state
+  local id="$1"
+  shift
+  [[ -z "$id" ]] && { echo "bd-fake: append requires id" >&2; exit 1; }
+
+  # Check if issue exists
+  local issue
+  issue=$(jq -r --arg id "$id" '.[$id] // empty' "$ISSUES_JSON")
+  if [[ -z "$issue" || "$issue" == "null" ]]; then
+    echo "bd-fake: issue $id not found" >&2
+    exit 1
+  fi
+
+  local design="" notes=""
+  local has_update=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --design) design="$2"; has_update=true; shift 2 ;;
+      --notes) notes="$2"; has_update=true; shift 2 ;;
+      --json) shift ;;
+      *) shift ;;
+    esac
+  done
+
+  [[ "$has_update" == "false" ]] && { echo "bd-fake: append requires at least one field flag" >&2; exit 1; }
+
+  # Append with --- separator
+  local updated
+  updated=$(jq -r --arg id "$id" \
+    --arg design "$design" \
+    --arg notes "$notes" \
+    '
+    # Ensure the rich fields exist in the issue object
+    .[$id].design = (.[$id].design // "") |
+    .[$id].notes = (.[$id].notes // "") |
+    # Append fields if provided (with --- separator)
+    if $design != "" then
+      if .[$id].design == "" then
+        .[$id].design = $design
+      else
+        .[$id].design = .[$id].design + "\n\n---\n\n" + $design
+      end
+    else . end |
+    if $notes != "" then
+      if .[$id].notes == "" then
+        .[$id].notes = $notes
+      else
+        .[$id].notes = .[$id].notes + "\n\n---\n\n" + $notes
+      end
+    else . end
+    ' "$ISSUES_JSON")
+  echo "$updated" > "$ISSUES_JSON"
+}
+
+cmd_ready() {
+  need_jq
+  init_state
+  local parent=""
+  local json_output=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --parent) parent="$2"; shift 2 ;;
+      --json) json_output="true"; shift ;;
+      *) shift ;;
+    esac
+  done
+  # Return open issues with no unmet deps (all deps closed)
+  # Build list of issues with all deps met
+  local issues_json deps_json
+  issues_json=$(cat "$ISSUES_JSON")
+  deps_json=$(cat "$DEPS_JSON")
+
+  # Get all open issues (optionally filtered by parent)
+  local candidates
+  if [[ -n "$parent" ]]; then
+    candidates=$(echo "$issues_json" | jq -c --arg p "$parent" '[to_entries[] | select(.key | startswith($p + ".")) | select(.value.status == "open") | .key]')
+  else
+    candidates=$(echo "$issues_json" | jq -c '[to_entries[] | select(.value.status == "open") | .key]')
+  fi
+
+  # For each candidate, check if all dependencies are closed
+  local ready_ids="[]"
+  for issue_id in $(echo "$candidates" | jq -r '.[]'); do
+    # Get deps for this issue
+    local issue_deps
+    issue_deps=$(echo "$deps_json" | jq -r --arg id "$issue_id" '[.[] | select(.issue_id == $id) | .depends_on_id]')
+
+    # Check if all deps are closed
+    local all_closed="true"
+    for dep_id in $(echo "$issue_deps" | jq -r '.[]'); do
+      local dep_status
+      dep_status=$(echo "$issues_json" | jq -r --arg id "$dep_id" '.[$id].status // "open"')
+      if [[ "$dep_status" != "closed" ]]; then
+        all_closed="false"
+        break
+      fi
+    done
+
+    if [[ "$all_closed" == "true" ]]; then
+      ready_ids=$(echo "$ready_ids" | jq -c --arg id "$issue_id" '. + [$id]')
+    fi
+  done
+
+  # Output the ready issues
+  echo "$ready_ids" | jq -c --argjson issues "$issues_json" '[.[] as $id | $issues[$id]]'
+}
+
+cmd_sync() {
+  # No-op in mock (state already persisted)
+  :
+}
+
+cmd_list() {
+  need_jq
+  init_state
+  local filter_ids=""
+  local json_output=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --id) filter_ids="$2"; shift 2 ;;
+      --json) json_output="true"; shift ;;
+      --limit) shift 2 ;;  # Ignored in fake
+      --all) shift ;;      # Ignored in fake
+      *) shift ;;
+    esac
+  done
+
+  if [[ -n "$filter_ids" ]]; then
+    # Filter by comma-separated IDs
+    # Convert comma-separated to JSON array
+    local ids_array
+    ids_array=$(echo "$filter_ids" | tr ',' '\n' | jq -R . | jq -s .)
+    # Filter issues by these IDs and return as array
+    jq -c --argjson ids "$ids_array" '[to_entries[] | select(.key as $k | $ids | index($k)) | .value]' "$ISSUES_JSON"
+  else
+    # Return all issues as array
+    jq -c '[.[] | .]' "$ISSUES_JSON"
+  fi
+}
+
+cmd_version() {
+  echo "bd-fake 1.0.0 (mock for tugtool testing)"
+}
+
+# Parse global --json for create/show/dep
+SUBCMD="${1:-}"
+shift || true
+case "$SUBCMD" in
+  create)   cmd_create "$@" ;;
+  show)     cmd_show "$@" ;;
+  list)     cmd_list "$@" ;;
+  update)   cmd_update "$@" ;;
+  append)   cmd_append "$@" ;;
+  dep)
+    SUB="$1"
+    shift || true
+    case "$SUB" in
+      add)    cmd_dep_add "$@" ;;
+      remove|rm) cmd_dep_remove "$@" ;;
+      list)   cmd_dep_list "$@" ;;
+      *)      echo "bd-fake: dep $SUB not implemented" >&2; exit 1 ;;
+    esac
+    ;;
+  init)     cmd_init "$@" ;;
+  close)    cmd_close "$@" ;;
+  ready)    cmd_ready "$@" ;;
+  sync)     cmd_sync "$@" ;;
+  --version) cmd_version ;;
+  -v)       cmd_version ;;
+  *)
+    echo "bd-fake: unknown command $SUBCMD (create|show|list|update|append|dep|init|close|ready|sync)" >&2
+    exit 1
+    ;;
+esac

@@ -1,26 +1,58 @@
-//! Core infrastructure for tugtool.
+//! tug-core: Core library for parsing, validation, and types
 //!
-//! This crate provides language-agnostic infrastructure:
-//! - Patch IR for representing code transformations
-//! - Facts store for symbol and reference tracking
-//! - Error types and error codes
-//! - JSON output types for CLI responses
-//! - Session management
-//! - Workspace snapshots
-//! - Sandboxed file operations
-//! - Text utilities and diff generation
-//! - Language adapter trait for pluggable language support
+//! This crate provides the foundational types and logic for the tug system.
 
-pub mod adapter;
-pub mod diff;
+/// Core error types for tug operations
 pub mod error;
-pub mod facts;
-pub mod filter;
-pub mod output;
-pub mod patch;
-pub mod sandbox;
-pub mod session;
-pub mod text;
+
+/// Configuration handling
+pub mod config;
+
+/// Core data types (Plan, Step, Checkpoint, etc.)
 pub mod types;
-pub mod util;
-pub mod workspace;
+
+/// Plan file parsing
+pub mod parser;
+
+/// Validation logic and rules
+pub mod validator;
+
+/// Beads integration utilities
+pub mod beads;
+
+/// Interaction adapter for mode-agnostic user interaction
+pub mod interaction;
+
+/// Timestamp utilities
+pub mod session;
+
+/// Worktree management for plan implementations
+pub mod worktree;
+
+// Re-exports for convenience
+pub use beads::{
+    BeadStatus, BeadsCli, CloseReasonParsed, Issue, IssueDetails, is_valid_bead_id,
+    parse_close_reason,
+};
+pub use config::{
+    BeadsConfig, Config, NamingConfig, RESERVED_FILES, TugConfig, find_project_root,
+    find_project_root_from, find_tugplans, is_reserved_file, tugplan_name_from_path,
+};
+pub use error::TugError;
+pub use interaction::{InteractionAdapter, InteractionError, InteractionResult, ProgressHandle};
+pub use parser::parse_tugplan;
+pub use session::now_iso8601;
+pub use types::{
+    Anchor, BeadsHints, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step,
+    Substep, TugPlan, TugPlanMetadata, TugPlanStatus,
+};
+pub use validator::{
+    Severity, ValidationConfig, ValidationIssue, ValidationLevel, ValidationResult,
+    validate_tugplan, validate_tugplan_with_config,
+};
+pub use worktree::{
+    CleanupMode, CleanupResult, DiscoveredWorktree, WorktreeConfig, WorktreeDiscovery,
+    cleanup_stale_branches, cleanup_worktrees, create_worktree, derive_tugplan_slug,
+    find_worktree_by_tugplan, generate_branch_name, is_valid_worktree_path, list_tugtool_branches,
+    list_worktrees, remove_worktree, sanitize_branch_name,
+};

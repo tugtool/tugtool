@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "command": "validate",
+  "status": "error",
+  "data": {
+    "files": [
+      {
+        "path": "tests/fixtures/invalid/missing-metadata.md",
+        "valid": false,
+        "error_count": 3,
+        "warning_count": 0
+      }
+    ]
+  },
+  "issues": [
+    {
+      "code": "E002",
+      "severity": "error",
+      "message": "Missing or empty required metadata field: Owner",
+      "file": "tests/fixtures/invalid/missing-metadata.md"
+    },
+    {
+      "code": "E002",
+      "severity": "error",
+      "message": "Missing or empty required metadata field: Status",
+      "file": "tests/fixtures/invalid/missing-metadata.md"
+    },
+    {
+      "code": "E002",
+      "severity": "error",
+      "message": "Missing or empty required metadata field: Last updated",
+      "file": "tests/fixtures/invalid/missing-metadata.md"
+    }
+  ]
+}

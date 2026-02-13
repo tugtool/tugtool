@@ -1,14 +1,14 @@
 ---
-name: update-plan-implementation-log
+name: update-tug-implementation-log
 description: |
   Update the plan implementation log with a completion summary for recently completed work.
-  Prepends a detailed, well-formatted entry to plans/plan-implementation-log.md.
+  Prepends a detailed, well-formatted entry to .tug/plan-implementation-log.md.
 disable-model-invocation: true
 ---
 
 ## Summary
 
-Update the `plans/plan-implementation-log.md` file with a completion summary for recently completed implementation work.
+Update the `.tug/plan-implementation-log.md` file with a completion summary for recently completed implementation work.
 
 ## Your Role
 
@@ -16,7 +16,7 @@ You are a meticulous documentation specialist. Your job is to create a detailed,
 
 ## Your Mission
 
-Review the recent conversation context to understand what implementation work was completed, then generate and prepend a completion summary to `plans/plan-implementation-log.md`.
+Review the recent conversation context to understand what implementation work was completed, then generate and prepend a completion summary to `.tug/plan-implementation-log.md`.
 
 ## Workflow
 
@@ -30,7 +30,7 @@ Review the recent conversation context to understand what implementation work wa
 
 2. **Read the Plan File**: Open the referenced plan file to get the exact step title and understand the context
 
-3. **Read Log Header**: Read the first 15-20 lines of `plans/plan-implementation-log.md` to see the header structure and first existing entry
+3. **Read Log Header**: Read the first 15-20 lines of `.tug/plan-implementation-log.md` to see the header structure and first existing entry
 
 4. **Generate the Summary**: Create a detailed completion summary using the format below
 
@@ -129,7 +129,7 @@ Before reporting completion:
 - [ ] Generated a complete, detailed summary
 - [ ] **Header uses pipe-separated format**: `## [plan.md] Step: Title | STATUS | DATE`
 - [ ] Used Edit tool to prepend the entry (not head/cat/temp files)
-- [ ] Verified the entry was added correctly with `head -60 plans/plan-implementation-log.md`
+- [ ] Verified the entry was added correctly with `head -60 .tug/plan-implementation-log.md`
 
 ## Purpose
 
@@ -156,3 +156,19 @@ The implementation log serves as a historical record of all implementation work:
 ## Note on Git Commit Hashes
 
 The implementation log is written **before** the git commit is created, so we cannot include commit hashes. This is an intentional limitation. If you need to correlate log entries with commits, use the completion date and step title to find the relevant commit in git history.
+
+## Integration with Tug Agent Suite
+
+This skill is invoked by the **tug-logger** agent during execution. When running under the agent suite:
+
+- The **director** orchestrates the overall workflow
+- After the **reviewer** and **auditor** approve the implementation
+- The **logger** agent invokes this skill to document what was done
+- Then the **committer** agent prepares/executes the commit
+
+### Timing in the Workflow
+
+The logger runs AFTER review/audit approval but BEFORE commit. This ensures:
+1. Only approved work gets logged
+2. The log is updated before the commit message is prepared
+3. The committer can reference the log entry in the commit message if needed

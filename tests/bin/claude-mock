@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Mock claude CLI for tugtool integration tests.
+# Simulates claude CLI responses for testing agent invocation.
+#
+# Behavior controlled by environment variables:
+#   TUG_CLAUDE_MOCK_OUTPUT  - Output to echo (default: empty)
+#   TUG_CLAUDE_MOCK_EXIT    - Exit code (default: 0)
+#   TUG_CLAUDE_MOCK_DELAY   - Sleep delay in seconds (default: 0)
+#   TUG_CLAUDE_MOCK_STDERR  - Text to write to stderr (default: empty)
+#
+# Special handling:
+#   --version flag returns mock version info
+
+set -e
+
+# Handle --version specially
+for arg in "$@"; do
+    if [[ "$arg" == "--version" ]]; then
+        echo "claude-mock 1.0.0 (mock for tugtool testing)"
+        exit 0
+    fi
+done
+
+# Apply delay if configured
+if [[ -n "$TUG_CLAUDE_MOCK_DELAY" ]]; then
+    sleep "$TUG_CLAUDE_MOCK_DELAY"
+fi
+
+# Write to stderr if configured
+if [[ -n "$TUG_CLAUDE_MOCK_STDERR" ]]; then
+    echo "$TUG_CLAUDE_MOCK_STDERR" >&2
+fi
+
+# Output the mock response
+if [[ -n "$TUG_CLAUDE_MOCK_OUTPUT" ]]; then
+    echo "$TUG_CLAUDE_MOCK_OUTPUT"
+fi
+
+# Exit with configured code
+exit "${TUG_CLAUDE_MOCK_EXIT:-0}"
