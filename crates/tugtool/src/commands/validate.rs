@@ -196,19 +196,16 @@ fn resolve_file_path(project_root: &Path, file: &str) -> PathBuf {
     let path = Path::new(file);
     if path.is_absolute() {
         path.to_path_buf()
-    } else if file.starts_with(".tug/") || file.starts_with(".tug\\") {
+    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
         project_root.join(file)
-    } else if file.starts_with("plan-") {
-        // Assume it's in .tug/
-        project_root.join(".tug").join(file)
+    } else if file.starts_with("tugplan-") {
+        project_root.join(".tugtool").join(file)
     } else {
-        // Try as-is first
         let as_is = project_root.join(file);
         if as_is.exists() {
             as_is
         } else {
-            // Try in .tug/
-            project_root.join(".tug").join(file)
+            project_root.join(".tugtool").join(file)
         }
     }
 }

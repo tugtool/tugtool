@@ -26,7 +26,7 @@ pub fn run_status(
     let project_root = match find_project_root() {
         Ok(root) => root,
         Err(_) => {
-            let message = ".tug directory not initialized".to_string();
+            let message = ".tugtool directory not initialized".to_string();
             if json_output {
                 let issues = vec![JsonIssue {
                     code: "E009".to_string(),
@@ -267,26 +267,25 @@ fn resolve_file_path(project_root: &Path, file: &str) -> PathBuf {
     let path = Path::new(file);
     if path.is_absolute() {
         path.to_path_buf()
-    } else if file.starts_with(".tug/") || file.starts_with(".tug\\") {
+    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
         project_root.join(file)
-    } else if file.starts_with("plan-") || file.ends_with(".md") {
-        // Assume it's in .tug/
-        let filename = if file.starts_with("plan-") && file.ends_with(".md") {
+    } else if file.starts_with("tugplan-") || file.ends_with(".md") {
+        // Assume it's in .tugtool/
+        let filename = if file.starts_with("tugplan-") && file.ends_with(".md") {
             file.to_string()
-        } else if file.starts_with("plan-") {
+        } else if file.starts_with("tugplan-") {
             format!("{}.md", file)
         } else {
-            format!("plan-{}.md", file)
+            format!("tugplan-{}.md", file)
         };
-        project_root.join(".tug").join(filename)
+        project_root.join(".tugtool").join(filename)
     } else {
         // Try as-is first
         let as_is = project_root.join(file);
         if as_is.exists() {
             as_is
         } else {
-            // Try in .tug/ with prefix
-            project_root.join(".tug").join(format!("plan-{}.md", file))
+            project_root.join(".tugtool").join(format!("tugplan-{}.md", file))
         }
     }
 }

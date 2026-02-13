@@ -12,11 +12,11 @@ fn tug_binary() -> PathBuf {
     path.pop(); // repo root
     path.push("target");
     path.push("debug");
-    path.push("tug");
+    path.push("tugtool");
     path
 }
 
-/// Create a temp directory with .tug initialized and git repo set up
+/// Create a temp directory with .tugtool initialized and git repo set up
 fn setup_test_git_repo() -> tempfile::TempDir {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -73,8 +73,8 @@ fn setup_test_git_repo() -> tempfile::TempDir {
 fn create_test_plan(temp_dir: &tempfile::TempDir, name: &str, content: &str) {
     let plan_path = temp_dir
         .path()
-        .join(".tug")
-        .join(format!("plan-{}.md", name));
+        .join(".tugtool")
+        .join(format!("tugplan-{}.md", name));
     fs::write(&plan_path, content).expect("failed to write test plan");
 }
 
@@ -155,7 +155,7 @@ fn test_worktree_lifecycle() {
 
     // Commit the plan file
     Command::new("git")
-        .args(["add", ".tug/plan-test-worktree.md"])
+        .args(["add", ".tugtool/tugplan-test-worktree.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to stage plan");
@@ -170,7 +170,7 @@ fn test_worktree_lifecycle() {
     let output = Command::new(tug_binary())
         .arg("worktree")
         .arg("create")
-        .arg(".tug/plan-test-worktree.md")
+        .arg(".tugtool/tugplan-test-worktree.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug worktree create");
@@ -183,10 +183,10 @@ fn test_worktree_lifecycle() {
     );
 
     // Step 2: Verify worktree directory exists
-    let worktrees_dir = temp.path().join(".tug-worktrees");
+    let worktrees_dir = temp.path().join(".tugtool-worktrees");
     assert!(
         worktrees_dir.is_dir(),
-        ".tug-worktrees directory should exist"
+        ".tugtool-worktrees directory should exist"
     );
 
     // Find the created worktree (should be only one)
@@ -219,7 +219,7 @@ fn test_worktree_lifecycle() {
     let session_id = worktree_name.strip_prefix("tug__").unwrap();
     let session_file = temp
         .path()
-        .join(".tug-worktrees")
+        .join(".tugtool-worktrees")
         .join(".sessions")
         .join(format!("{}.json", session_id));
     assert!(
@@ -232,7 +232,7 @@ fn test_worktree_lifecycle() {
         serde_json::from_str(&session_contents).expect("session.json should be valid JSON");
 
     assert_eq!(session["schema_version"], "1");
-    assert_eq!(session["plan_path"], ".tug/plan-test-worktree.md");
+    assert_eq!(session["plan_path"], ".tugtool/tugplan-test-worktree.md");
     assert_eq!(session["plan_slug"], "test-worktree");
     assert_eq!(session["base_branch"], "main");
     assert_eq!(session["status"], "pending");
@@ -245,13 +245,13 @@ fn test_worktree_lifecycle() {
 
     // Step 4: Verify worktree directory structure
     assert!(
-        worktree_path.join(".tug").is_dir(),
-        "worktree should have .tug directory"
+        worktree_path.join(".tugtool").is_dir(),
+        "worktree should have .tugtool directory"
     );
     assert!(
         worktree_path
-            .join(".tug")
-            .join("plan-test-worktree.md")
+            .join(".tugtool")
+            .join("tugplan-test-worktree.md")
             .is_file(),
         "plan should be in worktree"
     );
@@ -398,7 +398,7 @@ fn test_worktree_list_json_output() {
 
     // Commit the plan file
     Command::new("git")
-        .args(["add", ".tug/plan-test-json.md"])
+        .args(["add", ".tugtool/tugplan-test-json.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to stage plan");
@@ -413,7 +413,7 @@ fn test_worktree_list_json_output() {
     let output = Command::new(tug_binary())
         .arg("worktree")
         .arg("create")
-        .arg(".tug/plan-test-json.md")
+        .arg(".tugtool/tugplan-test-json.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug worktree create");
@@ -454,7 +454,7 @@ fn test_worktree_cleanup_dry_run() {
 
     // Commit the plan file
     Command::new("git")
-        .args(["add", ".tug/plan-test-cleanup.md"])
+        .args(["add", ".tugtool/tugplan-test-cleanup.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to stage plan");
@@ -469,7 +469,7 @@ fn test_worktree_cleanup_dry_run() {
     let output = Command::new(tug_binary())
         .arg("worktree")
         .arg("create")
-        .arg(".tug/plan-test-cleanup.md")
+        .arg(".tugtool/tugplan-test-cleanup.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug worktree create");
@@ -477,7 +477,7 @@ fn test_worktree_cleanup_dry_run() {
     assert!(output.status.success(), "worktree create should succeed");
 
     // Get the worktree path
-    let worktrees_dir = temp.path().join(".tug-worktrees");
+    let worktrees_dir = temp.path().join(".tugtool-worktrees");
     let worktree_entries: Vec<_> = fs::read_dir(&worktrees_dir)
         .expect("failed to read worktrees dir")
         .filter_map(|e| e.ok())
@@ -495,7 +495,7 @@ fn test_worktree_cleanup_dry_run() {
     let session_id = worktree_name.strip_prefix("tug__").unwrap();
     let session_file = temp
         .path()
-        .join(".tug-worktrees")
+        .join(".tugtool-worktrees")
         .join(".sessions")
         .join(format!("{}.json", session_id));
     let session_contents = fs::read_to_string(&session_file).expect("failed to read session.json");
@@ -575,7 +575,7 @@ fn test_worktree_create_with_valid_plan_succeeds() {
     create_test_plan(&temp, "valid", MINIMAL_PLAN);
 
     let output = Command::new(tug_binary())
-        .args(["worktree", "create", ".tug/plan-valid.md"])
+        .args(["worktree", "create", ".tugtool/tugplan-valid.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run worktree create");
@@ -587,7 +587,7 @@ fn test_worktree_create_with_valid_plan_succeeds() {
     );
 
     // Verify worktree was created
-    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tug-worktrees"))
+    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tugtool-worktrees"))
         .expect("worktrees dir should exist")
         .filter_map(|e| e.ok())
         .collect();
@@ -650,7 +650,7 @@ Test decision.
     create_test_plan(&temp, "invalid", invalid_plan);
 
     let output = Command::new(tug_binary())
-        .args(["worktree", "create", ".tug/plan-invalid.md"])
+        .args(["worktree", "create", ".tugtool/tugplan-invalid.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run worktree create");
@@ -670,7 +670,7 @@ Test decision.
     );
 
     // Verify worktree was NOT created
-    let worktree_path = temp.path().join(".tug-worktrees");
+    let worktree_path = temp.path().join(".tugtool-worktrees");
     if worktree_path.exists() {
         let worktree_dirs: Vec<_> = fs::read_dir(&worktree_path)
             .expect("should be able to read worktrees dir")
@@ -763,7 +763,7 @@ Test context paragraph.
     create_test_plan(&temp, "diag", plan_with_diagnostics);
 
     let output = Command::new(tug_binary())
-        .args(["worktree", "create", ".tug/plan-diag.md"])
+        .args(["worktree", "create", ".tugtool/tugplan-diag.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run worktree create");
@@ -783,7 +783,7 @@ Test context paragraph.
     );
 
     // Verify worktree was NOT created
-    let worktree_path = temp.path().join(".tug-worktrees");
+    let worktree_path = temp.path().join(".tugtool-worktrees");
     if worktree_path.exists() {
         let worktree_dirs: Vec<_> = fs::read_dir(&worktree_path)
             .expect("should be able to read worktrees dir")
@@ -879,7 +879,7 @@ Test context paragraph.
         .args([
             "worktree",
             "create",
-            ".tug/plan-skip.md",
+            ".tugtool/tugplan-skip.md",
             "--skip-validation",
         ])
         .current_dir(temp.path())
@@ -893,7 +893,7 @@ Test context paragraph.
     );
 
     // Verify worktree was created
-    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tug-worktrees"))
+    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tugtool-worktrees"))
         .expect("worktrees dir should exist")
         .filter_map(|e| e.ok())
         .collect();

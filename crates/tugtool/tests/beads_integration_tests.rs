@@ -7,14 +7,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Get the path to the tug binary
+/// Get the path to the tugtool binary
 fn tug_binary() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.pop(); // crates
     path.pop(); // repo root
     path.push("target");
     path.push("debug");
-    path.push("tug");
+    path.push("tugtool");
     path
 }
 
@@ -29,7 +29,7 @@ fn bd_fake_path() -> PathBuf {
     path
 }
 
-/// Create a temp directory with .tug and .beads initialized
+/// Create a temp directory with .tugtool and .beads initialized
 fn setup_test_project() -> tempfile::TempDir {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -56,8 +56,8 @@ fn setup_test_project() -> tempfile::TempDir {
 fn create_test_plan(temp_dir: &tempfile::TempDir, name: &str, content: &str) {
     let plan_path = temp_dir
         .path()
-        .join(".tug")
-        .join(format!("plan-{}.md", name));
+        .join(".tugtool")
+        .join(format!("tugplan-{}.md", name));
     fs::write(&plan_path, content).expect("failed to write test plan");
 }
 
@@ -394,7 +394,7 @@ fn test_beads_sync_creates_root_and_step_beads() {
     let output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "sync", "plan-test.md", "--json"])
+        .args(["beads", "sync", "tugplan-test.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug beads sync");
@@ -423,7 +423,7 @@ fn test_beads_sync_creates_root_and_step_beads() {
 
     // Verify the plan file was updated with bead IDs
     let plan_content =
-        fs::read_to_string(temp.path().join(".tug/plan-test.md")).expect("failed to read plan");
+        fs::read_to_string(temp.path().join(".tugtool/tugplan-test.md")).expect("failed to read plan");
 
     assert!(
         plan_content.contains("**Bead:**") || plan_content.contains("Beads Root"),
@@ -442,7 +442,7 @@ fn test_beads_sync_is_idempotent() {
         let output = Command::new(tug_binary())
             .env("TUG_BD_PATH", bd_fake_path())
             .env("TUG_BD_STATE", temp_state.path())
-            .args(["beads", "sync", "plan-test.md", "--json"])
+            .args(["beads", "sync", "tugplan-test.md", "--json"])
             .current_dir(temp.path())
             .output()
             .expect("failed to run tug beads sync");
@@ -486,7 +486,7 @@ fn test_beads_sync_creates_dependency_edges() {
     let output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "sync", "plan-multi.md", "--json"])
+        .args(["beads", "sync", "tugplan-multi.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug beads sync");
@@ -526,7 +526,7 @@ fn test_beads_status_computes_readiness() {
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "sync", "plan-multi.md"])
+        .args(["beads", "sync", "tugplan-multi.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run sync");
@@ -535,7 +535,7 @@ fn test_beads_status_computes_readiness() {
     let output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "status", "plan-multi.md", "--json"])
+        .args(["beads", "status", "tugplan-multi.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run status");
@@ -584,7 +584,7 @@ fn test_beads_pull_updates_checkboxes() {
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "sync", "plan-test.md"])
+        .args(["beads", "sync", "tugplan-test.md"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run sync");
@@ -613,7 +613,7 @@ fn test_beads_pull_updates_checkboxes() {
     let output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "pull", "plan-test.md", "--json"])
+        .args(["beads", "pull", "tugplan-test.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run pull");
@@ -631,7 +631,7 @@ fn test_beads_pull_updates_checkboxes() {
 
     // Verify the plan file has checked checkboxes
     let plan_content =
-        fs::read_to_string(temp.path().join(".tug/plan-test.md")).expect("failed to read plan");
+        fs::read_to_string(temp.path().join(".tugtool/tugplan-test.md")).expect("failed to read plan");
 
     // The checkpoint checkbox should be checked
     assert!(
@@ -660,7 +660,7 @@ fn test_full_beads_workflow_sync_work_pull() {
     let sync_output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "sync", "plan-workflow.md", "--json"])
+        .args(["beads", "sync", "tugplan-workflow.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run sync");
@@ -672,7 +672,7 @@ fn test_full_beads_workflow_sync_work_pull() {
 
     // Verify bead IDs were written to plan
     let plan_after_sync =
-        fs::read_to_string(temp.path().join(".tug/plan-workflow.md")).expect("failed to read plan");
+        fs::read_to_string(temp.path().join(".tugtool/tugplan-workflow.md")).expect("failed to read plan");
     assert!(
         plan_after_sync.contains("**Bead:**"),
         "plan should have Bead IDs after sync"
@@ -682,7 +682,7 @@ fn test_full_beads_workflow_sync_work_pull() {
     let status_output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "status", "plan-workflow.md", "--json"])
+        .args(["beads", "status", "tugplan-workflow.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run status");
@@ -708,7 +708,7 @@ fn test_full_beads_workflow_sync_work_pull() {
     let status_after_work = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "status", "plan-workflow.md", "--json"])
+        .args(["beads", "status", "tugplan-workflow.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run status after work");
@@ -741,7 +741,7 @@ fn test_full_beads_workflow_sync_work_pull() {
     let pull_output = Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "pull", "plan-workflow.md", "--json"])
+        .args(["beads", "pull", "tugplan-workflow.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to run pull");
@@ -755,7 +755,7 @@ fn test_full_beads_workflow_sync_work_pull() {
     );
 
     // Verify checkboxes were updated in plan file
-    let plan_after_pull = fs::read_to_string(temp.path().join(".tug/plan-workflow.md"))
+    let plan_after_pull = fs::read_to_string(temp.path().join(".tugtool/tugplan-workflow.md"))
         .expect("failed to read plan after pull");
     assert!(
         plan_after_pull.contains("[x] Base works") || plan_after_pull.contains("[X] Base works"),
@@ -1103,7 +1103,7 @@ fn test_full_agent_cycle_bead_audit_trail() {
     Command::new(tug_binary())
         .env("TUG_BD_PATH", bd_fake_path())
         .env("TUG_BD_STATE", temp_state.path())
-        .args(["beads", "sync", "plan-agent-cycle.md", "--json"])
+        .args(["beads", "sync", "tugplan-agent-cycle.md", "--json"])
         .current_dir(temp.path())
         .output()
         .expect("failed to sync");

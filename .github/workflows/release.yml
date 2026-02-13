@@ -36,32 +36,32 @@ jobs:
       - name: Build binary
         run: |
           cargo build --release --target ${{ matrix.target }}
-          strip target/${{ matrix.target }}/release/tug
+          strip target/${{ matrix.target }}/release/tugtool
 
       - name: Create release directory structure
         run: |
           # Create directory structure at root level (no wrapper directory)
           mkdir -p release/bin
-          mkdir -p release/share/tug/skills/planner
-          mkdir -p release/share/tug/skills/implementer
-          mkdir -p release/share/tug/skills/merge
-          mkdir -p release/share/tug/agents
+          mkdir -p release/share/tugtool/skills/planner
+          mkdir -p release/share/tugtool/skills/implementer
+          mkdir -p release/share/tugtool/skills/merge
+          mkdir -p release/share/tugtool/agents
 
           # Copy binary
-          cp target/${{ matrix.target }}/release/tug release/bin/
+          cp target/${{ matrix.target }}/release/tugtool release/bin/
 
           # Copy skills (orchestrators)
-          cp skills/planner/SKILL.md release/share/tug/skills/planner/
-          cp skills/implementer/SKILL.md release/share/tug/skills/implementer/
-          cp skills/merge/SKILL.md release/share/tug/skills/merge/
+          cp skills/planner/SKILL.md release/share/tugtool/skills/planner/
+          cp skills/implementer/SKILL.md release/share/tugtool/skills/implementer/
+          cp skills/merge/SKILL.md release/share/tugtool/skills/merge/
 
           # Copy agents
-          cp agents/*.md release/share/tug/agents/
+          cp agents/*.md release/share/tugtool/agents/
 
       - name: Create tarball
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          TARBALL_NAME="tug-${VERSION}-macos-${{ matrix.arch }}"
+          TARBALL_NAME="tugtool-${VERSION}-macos-${{ matrix.arch }}"
 
           # Create tarball with bin/ and share/ at root (no wrapper directory)
           cd release
@@ -74,10 +74,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tug-macos-${{ matrix.arch }}
+          name: tugtool-macos-${{ matrix.arch }}
           path: |
-            tug-*.tar.gz
-            tug-*.tar.gz.sha256
+            tugtool-*.tar.gz
+            tugtool-*.tar.gz.sha256
 
   release:
     name: Create Release
@@ -116,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only run for real releases (not test tags like v0.0.1-test)
     # Only run on the main repository
-    if: github.repository == 'specks-dev/specks' && !contains(github.ref, '-')
+    if: github.repository == 'tugtool/tugtool' && !contains(github.ref, '-')
     concurrency:
       group: formula-update
       cancel-in-progress: false
@@ -135,8 +135,8 @@ jobs:
         id: checksums
         run: |
           # Find and extract checksums from .sha256 files
-          ARM64_SHA=$(awk '{print $1}' artifacts/tug-macos-arm64/tug-*-macos-arm64.tar.gz.sha256)
-          X86_64_SHA=$(awk '{print $1}' artifacts/tug-macos-x86_64/tug-*-macos-x86_64.tar.gz.sha256)
+          ARM64_SHA=$(awk '{print $1}' artifacts/tugtool-macos-arm64/tugtool-*-macos-arm64.tar.gz.sha256)
+          X86_64_SHA=$(awk '{print $1}' artifacts/tugtool-macos-x86_64/tugtool-*-macos-x86_64.tar.gz.sha256)
 
           echo "arm64_sha=$ARM64_SHA" >> "$GITHUB_OUTPUT"
           echo "x86_64_sha=$X86_64_SHA" >> "$GITHUB_OUTPUT"
@@ -162,7 +162,7 @@ jobs:
             "${{ steps.checksums.outputs.x86_64_sha }}"
 
           # Commit only if there are changes
-          git add Formula/tug.rb
+          git add Formula/tugtool.rb
           if ! git diff --cached --quiet; then
             VERSION=${GITHUB_REF#refs/tags/v}
             git commit -m "Update formula to $VERSION"

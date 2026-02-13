@@ -9,21 +9,21 @@ Go from ideas to implementation via multi-agent orchestration. Tugtool transform
 The easiest way to install tugtool on macOS:
 
 ```bash
-brew tap specks-dev/tug https://github.com/specks-dev/tug
-brew install tug
+brew tap tugtool/tugtool https://github.com/tugtool/tugtool
+brew install tugtool
 ```
 
 ### Download Binary
 
-Download prebuilt binaries from [GitHub Releases](https://github.com/tug-dev/tug/releases):
+Download prebuilt binaries from [GitHub Releases](https://github.com/tugtool/tugtool/releases) (replace `<VERSION>` with a release tag like `0.2.30`):
 
 ```bash
 # For Apple Silicon (M1/M2/M3)
-curl -L https://github.com/tug-dev/tug/releases/latest/download/tugtool-latest-macos-arm64.tar.gz | tar xz
+curl -L https://github.com/tugtool/tugtool/releases/latest/download/tugtool-<VERSION>-macos-arm64.tar.gz | tar xz
 sudo mv bin/tugtool /usr/local/bin/
 
 # For Intel Mac
-curl -L https://github.com/tug-dev/tug/releases/latest/download/tugtool-latest-macos-x86_64.tar.gz | tar xz
+curl -L https://github.com/tugtool/tugtool/releases/latest/download/tugtool-<VERSION>-macos-x86_64.tar.gz | tar xz
 sudo mv bin/tugtool /usr/local/bin/
 ```
 
@@ -32,8 +32,8 @@ sudo mv bin/tugtool /usr/local/bin/
 Requires Rust 1.70+ and Cargo:
 
 ```bash
-git clone https://github.com/tug-dev/tug.git
-cd tug
+git clone https://github.com/tugtool/tugtool.git
+cd tugtool
 cargo install --path crates/tugtool
 ```
 

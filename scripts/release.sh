@@ -46,7 +46,7 @@ fi
 git tag -d "v$VERSION" &>/dev/null || true
 
 # Version check
-CURRENT=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+CURRENT=$(grep 'version = ' Cargo.toml | head -1 | sed 's/.*version = "\(.*\)".*/\1/')
 IFS='.' read -r CUR_MAJ CUR_MIN CUR_PAT <<< "$CURRENT"
 IFS='.' read -r NEW_MAJ NEW_MIN NEW_PAT <<< "$VERSION"
 
@@ -69,7 +69,7 @@ cargo clippy --workspace -- -D warnings &>/dev/null
 
 # Update version
 echo "==> Updating version to $VERSION..."
-sed -i '' "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
+sed -i '' "s/^  version = .*/  version = \"$VERSION\"/" Cargo.toml
 
 # Commit
 git add -A
@@ -92,4 +92,4 @@ git push origin "v$VERSION" --quiet
 
 echo ""
 echo "==> Released v$VERSION"
-echo "    CI: https://github.com/specks-dev/tug/actions"
+echo "    CI: https://github.com/tugtool/tugtool/actions"

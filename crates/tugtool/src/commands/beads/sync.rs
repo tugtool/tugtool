@@ -51,7 +51,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
             return output_error(
                 json_output,
                 "E009",
-                ".tug directory not initialized",
+                ".tugtool directory not initialized",
                 &file,
                 9,
             );
@@ -791,20 +791,20 @@ fn resolve_file_path(project_root: &Path, file: &str) -> std::path::PathBuf {
     let path = Path::new(file);
     if path.is_absolute() {
         path.to_path_buf()
-    } else if file.starts_with(".tug/") || file.starts_with(".tug\\") {
+    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
         project_root.join(file)
-    } else if file.starts_with("plan-") && file.ends_with(".md") {
-        project_root.join(".tug").join(file)
+    } else if file.starts_with("tugplan-") && file.ends_with(".md") {
+        project_root.join(".tugtool").join(file)
     } else if file.ends_with(".md") {
         // Try as-is first
         let as_is = project_root.join(file);
         if as_is.exists() {
             as_is
         } else {
-            project_root.join(".tug").join(format!("plan-{}", file))
+            project_root.join(".tugtool").join(format!("tugplan-{}", file))
         }
     } else {
-        project_root.join(".tug").join(format!("plan-{}.md", file))
+        project_root.join(".tugtool").join(format!("tugplan-{}.md", file))
     }
 }
 

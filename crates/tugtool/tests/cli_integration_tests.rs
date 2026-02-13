@@ -12,11 +12,11 @@ fn tug_binary() -> PathBuf {
     path.pop(); // repo root
     path.push("target");
     path.push("debug");
-    path.push("tug");
+    path.push("tugtool");
     path
 }
 
-/// Create a temp directory with .tug initialized
+/// Create a temp directory with .tugtool initialized
 fn setup_test_project() -> tempfile::TempDir {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
@@ -40,8 +40,8 @@ fn setup_test_project() -> tempfile::TempDir {
 fn create_test_plan(temp_dir: &tempfile::TempDir, name: &str, content: &str) {
     let plan_path = temp_dir
         .path()
-        .join(".tug")
-        .join(format!("plan-{}.md", name));
+        .join(".tugtool")
+        .join(format!("tugplan-{}.md", name));
     fs::write(&plan_path, content).expect("failed to write test plan");
 }
 
@@ -127,15 +127,15 @@ fn test_init_creates_expected_files() {
     assert!(output.status.success(), "init should succeed");
 
     // Check files were created
-    let tug_dir = temp.path().join(".tug");
-    assert!(tug_dir.is_dir(), ".tug directory should exist");
+    let tug_dir = temp.path().join(".tugtool");
+    assert!(tug_dir.is_dir(), ".tugtool directory should exist");
     assert!(
-        tug_dir.join("plan-skeleton.md").is_file(),
+        tug_dir.join("tugplan-skeleton.md").is_file(),
         "skeleton should exist"
     );
     assert!(tug_dir.join("config.toml").is_file(), "config should exist");
     assert!(
-        tug_dir.join("plan-implementation-log.md").is_file(),
+        tug_dir.join("tugplan-implementation-log.md").is_file(),
         "implementation log should exist"
     );
 }
@@ -157,20 +157,20 @@ fn test_init_idempotent_on_existing_project() {
     );
 
     // All files should still exist
-    let tug_dir = temp.path().join(".tug");
-    assert!(tug_dir.join("plan-skeleton.md").is_file());
+    let tug_dir = temp.path().join(".tugtool");
+    assert!(tug_dir.join("tugplan-skeleton.md").is_file());
     assert!(tug_dir.join("config.toml").is_file());
-    assert!(tug_dir.join("plan-implementation-log.md").is_file());
+    assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
 }
 
 #[test]
 fn test_init_creates_missing_files() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Create .tug/ with only a plan file (simulates worktree scenario)
-    let tug_dir = temp.path().join(".tug");
-    std::fs::create_dir_all(&tug_dir).expect("failed to create .tug");
-    std::fs::write(tug_dir.join("plan-1.md"), "# My Plan\n").expect("failed to write plan");
+    // Create .tugtool/ with only a plan file (simulates worktree scenario)
+    let tug_dir = temp.path().join(".tugtool");
+    std::fs::create_dir_all(&tug_dir).expect("failed to create .tugtool");
+    std::fs::write(tug_dir.join("tugplan-1.md"), "# My Plan\n").expect("failed to write plan");
 
     // Running init should create the missing infrastructure files
     let output = Command::new(tug_binary())
@@ -185,12 +185,12 @@ fn test_init_creates_missing_files() {
     );
 
     // Infrastructure files should now exist
-    assert!(tug_dir.join("plan-skeleton.md").is_file());
+    assert!(tug_dir.join("tugplan-skeleton.md").is_file());
     assert!(tug_dir.join("config.toml").is_file());
-    assert!(tug_dir.join("plan-implementation-log.md").is_file());
+    assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
 
     // Original plan file should be untouched
-    let content = std::fs::read_to_string(tug_dir.join("plan-1.md")).expect("failed to read plan");
+    let content = std::fs::read_to_string(tug_dir.join("tugplan-1.md")).expect("failed to read plan");
     assert_eq!(content, "# My Plan\n");
 }
 
@@ -215,7 +215,7 @@ fn test_validate_valid_plan() {
 
     let output = Command::new(tug_binary())
         .arg("validate")
-        .arg("plan-test.md")
+        .arg("tugplan-test.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug validate");
@@ -276,7 +276,7 @@ None
 
     let output = Command::new(tug_binary())
         .arg("validate")
-        .arg("plan-invalid.md")
+        .arg("tugplan-invalid.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug validate");
@@ -313,7 +313,7 @@ fn test_status_shows_step_breakdown() {
 
     let output = Command::new(tug_binary())
         .arg("status")
-        .arg("plan-test.md")
+        .arg("tugplan-test.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug status");
@@ -378,7 +378,7 @@ fn test_json_output_validate() {
 
     let output = Command::new(tug_binary())
         .arg("validate")
-        .arg("plan-test.md")
+        .arg("tugplan-test.md")
         .arg("--json")
         .current_dir(temp.path())
         .output()
@@ -406,7 +406,7 @@ fn test_json_output_status() {
 
     let output = Command::new(tug_binary())
         .arg("status")
-        .arg("plan-test.md")
+        .arg("tugplan-test.md")
         .arg("--json")
         .current_dir(temp.path())
         .output()
@@ -485,7 +485,7 @@ fn test_init_check_json_uninitialized() {
     assert_eq!(json["command"], "init");
     assert_eq!(json["status"], "ok");
     assert_eq!(json["data"]["initialized"], false);
-    assert_eq!(json["data"]["path"], ".tug/");
+    assert_eq!(json["data"]["path"], ".tugtool/");
 }
 
 #[test]
@@ -509,7 +509,7 @@ fn test_init_check_json_initialized() {
     assert_eq!(json["command"], "init");
     assert_eq!(json["status"], "ok");
     assert_eq!(json["data"]["initialized"], true);
-    assert_eq!(json["data"]["path"], ".tug/");
+    assert_eq!(json["data"]["path"], ".tugtool/");
 }
 
 #[test]
@@ -580,7 +580,7 @@ This should trigger P001 diagnostic.
 
     let output = Command::new(tug_binary())
         .arg("validate")
-        .arg(".tug/plan-diagnostic-test.md")
+        .arg(".tugtool/tugplan-diagnostic-test.md")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tug validate");
@@ -658,7 +658,7 @@ This triggers P003.
 
     let output = Command::new(tug_binary())
         .arg("validate")
-        .arg(".tug/plan-json-diagnostic-test.md")
+        .arg(".tugtool/tugplan-json-diagnostic-test.md")
         .arg("--json")
         .current_dir(temp.path())
         .output()
@@ -746,7 +746,7 @@ This triggers P001.
     // Run with --level lenient
     let output = Command::new(tug_binary())
         .arg("validate")
-        .arg(".tug/plan-lenient-test.md")
+        .arg(".tugtool/tugplan-lenient-test.md")
         .arg("--level")
         .arg("lenient")
         .arg("--json")
