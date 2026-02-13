@@ -69,7 +69,7 @@ cargo clippy --workspace -- -D warnings &>/dev/null
 
 # Update version
 echo "==> Updating version to $VERSION..."
-sed -i '' "s/^  version = .*/  version = \"$VERSION\"/" Cargo.toml
+sed -i '' "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
 
 # Commit
 git add -A

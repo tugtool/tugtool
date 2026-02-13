@@ -11,7 +11,7 @@ const SPECTACLES: &[&str] = &["  ○━━○ ○━━○", "    ╲───�
 pub fn show_splash() {
     if !std::io::stdout().is_terminal() {
         // Non-TTY: just show version
-        println!("tug v{}", env!("CARGO_PKG_VERSION"));
+        println!("tugtool v{}", env!("CARGO_PKG_VERSION"));
         return;
     }
 
@@ -19,7 +19,7 @@ pub fn show_splash() {
     let version = env!("CARGO_PKG_VERSION");
 
     // Print spectacles with info on the right
-    writeln!(stdout, "{}   tug v{}", SPECTACLES[0], version).ok();
+    writeln!(stdout, "{}   tugtool v{}", SPECTACLES[0], version).ok();
     writeln!(stdout, "{}   Multi-agent orchestration", SPECTACLES[1]).ok();
     writeln!(stdout).ok();
 
