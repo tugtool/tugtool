@@ -1,5 +1,5 @@
 ---
-name: prepare-git-commit-message
+name: commit-message
 description: |
   Analyze recent work and create clear, informative commit messages.
   Writes the message to a file for user review—does NOT commit.

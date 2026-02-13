@@ -64,7 +64,17 @@ If the implementer needs clarification (e.g., step selection), you are resumed w
 
 ---
 
-## Implementation: 3 Phases
+## Implementation: 4 Phases
+
+### Phase 0: Commit Tugplan
+
+Before creating the worktree, ensure the tugplan file is committed to main so it will be available on the worktree branch.
+
+```bash
+git add <plan_path> && git commit -m "Add <plan_filename>" --quiet
+```
+
+If the commit fails (e.g., file already committed, nothing to commit), ignore the error and continue — the file is already tracked.
 
 ### Phase 1: Call CLI to Create Worktree
 

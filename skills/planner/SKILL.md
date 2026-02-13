@@ -94,14 +94,8 @@ or:
   Plan: {plan_path}
   Steps: {step_count} | Decisions: {decision_count}
   Revisions: {revision_count}
-  Beads: {beads_synced ? "synced ({beads_root_id})" : "sync failed ({beads_error})" : "not configured"}
   Next: /tugtool:implementer {plan_path}
 ```
-
-The Beads line shows:
-- `synced (bd-xxx)` if sync succeeded
-- `sync failed (error message)` if sync failed (warning only, planning still complete)
-- `not configured` if beads integration is not enabled in config.toml
 
 ---
 
@@ -122,7 +116,7 @@ The Beads line shows:
   │  Step 0: SPAWN critic-agent → critic_id     │     │
   │  Loop N: RESUME critic_id                   │     │
   │       │                                     │     │
-  │       ├── APPROVE ──► Sync Beads ──► Commit ──► DONE │
+  │       ├── APPROVE ──► DONE                  │     │
   │       │                                     │     │
   │       └── REVISE/REJECT ───────────────────┘─────┘
   │                                             │
@@ -260,8 +254,6 @@ Output the Critic post-call message.
 ### 5. Handle Critic Recommendation
 
 **APPROVE:**
-- Run beads sync (see step 6 below)
-- Commit the tugplan (see step 7 below)
 - Output the session end message and HALT with success.
 
 **REVISE:**
@@ -280,7 +272,7 @@ AskUserQuestion(
 )
 ```
 - If "Revise": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
-- If "Accept": run beads sync (see step 6 below), commit tugplan (see step 7 below), output the session end message, HALT with success
+- If "Accept": output the session end message, HALT with success
 - If "Abort": output `**Planner** — Aborted by user` and HALT
 
 **REJECT:**
@@ -299,38 +291,6 @@ AskUserQuestion(
 ```
 - If "Start over": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
 - If "Abort": output `**Planner** — Aborted by user` and HALT
-
-### 6. Sync Beads (Before Completion)
-
-When the plan is approved (either via APPROVE or Accept-as-is), sync beads with enrichment:
-
-```
-Task(
-  subagent_type: "bash",
-  prompt: 'cd <repo_root> && tugtool beads sync --enrich <plan_path> --json',
-  description: "Sync beads with enrichment"
-)
-```
-
-Parse the JSON result:
-- If `status == "ok"`: store `beads_synced: true` and `beads_root_id: <root_id from result>`
-- If `status == "error"`: store `beads_synced: false` and `beads_error: <error message>` — treat as best-effort warning, do not halt
-
-**Important:** Beads sync failures are warnings only. Planning completes successfully even if beads sync fails.
-
-### 7. Commit Tugplan (Before Completion)
-
-After beads sync, commit the tugplan so the implementer can find it when it creates a worktree:
-
-```
-Task(
-  subagent_type: "bash",
-  prompt: 'cd <repo_root> && git add <plan_path> && git commit -m "Add <plan_filename>"',
-  description: "Commit tugplan"
-)
-```
-
-If the commit fails (e.g., nothing to commit because the file was already tracked), treat as a warning and continue — do not halt.
 
 ---
 
