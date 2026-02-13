@@ -285,7 +285,9 @@ fn resolve_file_path(project_root: &Path, file: &str) -> PathBuf {
         if as_is.exists() {
             as_is
         } else {
-            project_root.join(".tugtool").join(format!("tugplan-{}.md", file))
+            project_root
+                .join(".tugtool")
+                .join(format!("tugplan-{}.md", file))
         }
     }
 }

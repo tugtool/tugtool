@@ -287,10 +287,14 @@ fn resolve_file_path(project_root: &Path, file: &str) -> std::path::PathBuf {
         if as_is.exists() {
             as_is
         } else {
-            project_root.join(".tugtool").join(format!("tugplan-{}", file))
+            project_root
+                .join(".tugtool")
+                .join(format!("tugplan-{}", file))
         }
     } else {
-        project_root.join(".tugtool").join(format!("tugplan-{}.md", file))
+        project_root
+            .join(".tugtool")
+            .join(format!("tugplan-{}.md", file))
     }
 }
 

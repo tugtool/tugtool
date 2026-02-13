@@ -14,6 +14,9 @@ test:
 fmt:
     cargo fmt --all
 
+fmt-check:
+    cargo fmt --all -- --check
+
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
@@ -21,7 +24,7 @@ check:
     cargo check --workspace
 
 # CI (runs all checks)
-ci: fmt lint test
+ci: fmt-check lint test
 
 # Release
 build-release:

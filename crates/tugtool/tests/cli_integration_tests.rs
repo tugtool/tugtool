@@ -190,7 +190,8 @@ fn test_init_creates_missing_files() {
     assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
 
     // Original plan file should be untouched
-    let content = std::fs::read_to_string(tug_dir.join("tugplan-1.md")).expect("failed to read plan");
+    let content =
+        std::fs::read_to_string(tug_dir.join("tugplan-1.md")).expect("failed to read plan");
     assert_eq!(content, "# My Plan\n");
 }
 

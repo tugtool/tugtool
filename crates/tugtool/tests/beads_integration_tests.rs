@@ -422,8 +422,8 @@ fn test_beads_sync_creates_root_and_step_beads() {
     );
 
     // Verify the plan file was updated with bead IDs
-    let plan_content =
-        fs::read_to_string(temp.path().join(".tugtool/tugplan-test.md")).expect("failed to read plan");
+    let plan_content = fs::read_to_string(temp.path().join(".tugtool/tugplan-test.md"))
+        .expect("failed to read plan");
 
     assert!(
         plan_content.contains("**Bead:**") || plan_content.contains("Beads Root"),
@@ -630,8 +630,8 @@ fn test_beads_pull_updates_checkboxes() {
     );
 
     // Verify the plan file has checked checkboxes
-    let plan_content =
-        fs::read_to_string(temp.path().join(".tugtool/tugplan-test.md")).expect("failed to read plan");
+    let plan_content = fs::read_to_string(temp.path().join(".tugtool/tugplan-test.md"))
+        .expect("failed to read plan");
 
     // The checkpoint checkbox should be checked
     assert!(
@@ -671,8 +671,8 @@ fn test_full_beads_workflow_sync_work_pull() {
     assert_eq!(sync_json["data"]["steps_synced"], 3, "should sync 3 steps");
 
     // Verify bead IDs were written to plan
-    let plan_after_sync =
-        fs::read_to_string(temp.path().join(".tugtool/tugplan-workflow.md")).expect("failed to read plan");
+    let plan_after_sync = fs::read_to_string(temp.path().join(".tugtool/tugplan-workflow.md"))
+        .expect("failed to read plan");
     assert!(
         plan_after_sync.contains("**Bead:**"),
         "plan should have Bead IDs after sync"
