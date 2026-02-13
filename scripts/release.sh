@@ -30,11 +30,11 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 
-# Must not be behind origin
+# Sync with origin if behind
 git fetch origin main --quiet
 if ! git merge-base --is-ancestor origin/main HEAD; then
-    echo "Error: Local main is behind origin. Run: git pull --rebase" >&2
-    exit 1
+    echo "==> Rebasing onto origin/main..."
+    git rebase origin/main --quiet
 fi
 
 # Clean up failed release if it exists
