@@ -16,12 +16,12 @@ class Tugtool < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/tugtool/tugtool/releases/download/v#{version}/tugtool-#{version}-macos-arm64.tar.gz"
-      # SHA256 ARM64: ca5fa24a667d49463c822362db31ceb8e69f66df2e78cd714b85d84be910aa0c
-      sha256 "ca5fa24a667d49463c822362db31ceb8e69f66df2e78cd714b85d84be910aa0c"
+      # SHA256 ARM64: 9aef700709117fdf7c9a18a5542004dce3009b88423a37946912212fc3d05b6f
+      sha256 "9aef700709117fdf7c9a18a5542004dce3009b88423a37946912212fc3d05b6f"
     else
       url "https://github.com/tugtool/tugtool/releases/download/v#{version}/tugtool-#{version}-macos-x86_64.tar.gz"
-      # SHA256 X86_64: cd4e8eff12bdab1f2a018318984d23ba1f97d561ccd1ea329c3fd93a991703be
-      sha256 "cd4e8eff12bdab1f2a018318984d23ba1f97d561ccd1ea329c3fd93a991703be"
+      # SHA256 X86_64: 50516c11bd2c7bcf6128df72815de97be5a77ffd9bcdaa0565d00227b9a1120d
+      sha256 "50516c11bd2c7bcf6128df72815de97be5a77ffd9bcdaa0565d00227b9a1120d"
     end
   end
 
