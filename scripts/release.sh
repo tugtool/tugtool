@@ -31,12 +31,10 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 
-# Must be up-to-date with origin
+# Must not be behind origin
 git fetch origin main --quiet
-LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
-if [[ "$LOCAL" != "$REMOTE" ]]; then
-    echo "Error: Local main is not up-to-date with origin. Run: git pull --rebase" >&2
+if ! git merge-base --is-ancestor origin/main HEAD; then
+    echo "Error: Local main is behind origin. Run: git pull --rebase" >&2
     exit 1
 fi
 
