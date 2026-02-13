@@ -17,7 +17,6 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 echo "==> Releasing v$VERSION"
-echo ""
 
 # Must be on main
 if [[ "$(git branch --show-current)" != "main" ]]; then
@@ -119,6 +118,5 @@ echo "==> Tagging v$VERSION..."
 git tag "v$VERSION"
 git push origin "v$VERSION" --quiet
 
-echo ""
 echo "==> Released v$VERSION"
 echo "    CI: https://github.com/tugtool/tugtool/actions"
