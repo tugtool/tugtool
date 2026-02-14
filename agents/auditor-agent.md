@@ -49,7 +49,7 @@ You do NOT need to re-read the entire plan or re-explore the entire codebase fro
 
 ```json
 {
-  "worktree_path": "/abs/path/to/.tugtool-worktrees/tug__name-timestamp",
+  "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
   "plan_path": ".tugtool/tugplan-N.md"
 }
 ```

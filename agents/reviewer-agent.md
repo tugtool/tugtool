@@ -49,7 +49,7 @@ If resumed with updated coder output after a REVISE recommendation, re-check the
 
 ```json
 {
-  "worktree_path": "/abs/path/to/.tugtool-worktrees/tug__auth-20260208-143022",
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": "string",
   "step_anchor": "string",
   "bead_id": "bd-abc123.0"
@@ -378,7 +378,7 @@ After verifying plan conformance, review the code and the coder's build/test rep
 **Input:**
 ```json
 {
-  "worktree_path": "/abs/path/to/.tugtool-worktrees/tug__auth-20260208-143022",
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-5.md",
   "step_anchor": "#step-2",
   "bead_id": "bd-abc123.2"

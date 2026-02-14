@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "std::env::set_current_dir", reason = "Process-global CWD breaks parallel tests. Use -C flags or pass absolute paths instead." },
+]

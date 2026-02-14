@@ -271,7 +271,7 @@ The implementer skill uses git worktrees to isolate implementation work in separ
 
 When you run `/tugtool:implement .tugtool/tugplan-N.md`:
 
-1. **Worktree created**: A new git worktree is created at `.tugtool-worktrees/tugplan__<name>-<timestamp>/`
+1. **Worktree created**: A new git worktree is created at `.tugtree/tugplan__<name>-<timestamp>/`
 2. **Branch created**: A new branch `tugplan/<name>-<timestamp>` is created from main
 3. **Beads synced**: Bead annotations are synced and committed to the worktree
 4. **Steps executed**: Each step is implemented and committed separately
@@ -334,7 +334,7 @@ If you see this error, it means a worktree for this tugplan already exists:
 tugtool worktree list
 
 # If the worktree is stale, remove it manually
-rm -rf .tugtool-worktrees/tugplan__<name>-<timestamp>
+rm -rf .tugtree/tugplan__<name>-<timestamp>
 git worktree prune
 ```
 
@@ -356,7 +356,7 @@ If cleanup still fails, you may need to remove the worktree manually:
 
 ```bash
 # Remove the worktree
-git worktree remove .tugtool-worktrees/tugplan__<name>-<timestamp>
+git worktree remove .tugtree/tugplan__<name>-<timestamp>
 
 # Prune stale entries
 git worktree prune
@@ -408,18 +408,18 @@ tugtool validate .tugtool/tugplan-N.md
 
 #### Doctor reports invalid worktree paths
 
-Valid worktree paths must start with `.tugtool-worktrees/` and exist on disk. If doctor finds invalid paths:
+Valid worktree paths must start with `.tugtree/` and exist on disk. If doctor finds invalid paths:
 
 ```bash
 # List all worktrees to see what's active
 tugtool worktree list
 
 # If a worktree is stale or misconfigured, remove it
-git worktree remove .tugtool-worktrees/tugplan__<name>-<timestamp>
+git worktree remove .tugtree/tugplan__<name>-<timestamp>
 git worktree prune
 ```
 
 This usually happens if:
 - A worktree directory was deleted manually without using `git worktree remove`
 - Session files reference a worktree that no longer exists
-- Worktree was created outside the standard `.tugtool-worktrees/` location
+- Worktree was created outside the standard `.tugtree/` location

@@ -49,7 +49,7 @@ If resumed with reviewer feedback, fix the identified issues. You retain full co
 
 ```json
 {
-  "worktree_path": "/abs/path/to/.tugtool-worktrees/tug__auth-20260208-143022",
+  "worktree_path": "/abs/path/to/.tugtree/tug__auth-20260208-143022",
   "plan_path": ".tugtool/tugplan-N.md",
   "step_anchor": "#step-0",
   "bead_id": "bd-abc123.0"

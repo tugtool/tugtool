@@ -582,10 +582,7 @@ pub fn create_worktree(config: &WorktreeConfig) -> Result<(PathBuf, String, Stri
     let slug = derive_tugplan_slug(&config.plan_path);
     let branch_name = generate_branch_name(&slug)?;
     let worktree_dir_name = sanitize_branch_name(&branch_name);
-    let worktree_path = config
-        .repo_root
-        .join(".tugtool.worktrees")
-        .join(&worktree_dir_name);
+    let worktree_path = config.repo_root.join(".tugtree").join(&worktree_dir_name);
 
     // Create branch from base
     git.create_branch(&config.base_branch, &branch_name)?;
@@ -603,7 +600,7 @@ pub fn create_worktree(config: &WorktreeConfig) -> Result<(PathBuf, String, Stri
 
 /// List all active worktrees
 ///
-/// Prunes stale worktree metadata first, then scans .tugtool.worktrees/
+/// Prunes stale worktree metadata first, then scans .tugtree/
 /// for session.json files. Skips orphaned entries where directory doesn't exist.
 pub fn list_worktrees(repo_root: &Path) -> Result<Vec<DiscoveredWorktree>, TugError> {
     let git = GitCli::new(repo_root);
@@ -778,7 +775,7 @@ pub fn find_worktree_by_tugplan(
 /// Validate that a worktree path follows the expected pattern
 ///
 /// Valid worktree paths must:
-/// - Start with `.tugtool.worktrees/tugtool__`
+/// - Start with `.tugtree/tugtool__`
 /// - Be a relative path (not absolute)
 ///
 /// This function does NOT check if the directory exists on disk.
@@ -790,8 +787,8 @@ pub fn find_worktree_by_tugplan(
 /// use std::path::Path;
 /// use tug_core::is_valid_worktree_path;
 ///
-/// assert!(is_valid_worktree_path(Path::new(".tugtool.worktrees/tugtool__auth-20260208-143022")));
-/// assert!(!is_valid_worktree_path(Path::new(".tugtool.worktrees/foo")));
+/// assert!(is_valid_worktree_path(Path::new(".tugtree/tugtool__auth-20260208-143022")));
+/// assert!(!is_valid_worktree_path(Path::new(".tugtree/foo")));
 /// assert!(!is_valid_worktree_path(Path::new("../worktrees/tugtool__auth")));
 /// assert!(!is_valid_worktree_path(Path::new("/abs/path/tugtool__auth")));
 /// ```
@@ -799,8 +796,8 @@ pub fn is_valid_worktree_path(path: &Path) -> bool {
     // Convert to string for pattern matching
     let path_str = path.to_string_lossy();
 
-    // Must start with .tugtool.worktrees/tugtool__
-    path_str.starts_with(".tugtool.worktrees/tugtool__")
+    // Must start with .tugtree/tugtool__
+    path_str.starts_with(".tugtree/tugtool__")
 }
 
 /// List all local branches matching the tugtool/* pattern
@@ -988,7 +985,7 @@ pub(crate) fn cleanup_stale_branches_with_pr_checker(
 /// Remove a worktree and clean up all associated files
 ///
 /// This function orchestrates the cleanup of a worktree by:
-/// 1. Deleting external session files at `.tugtool.worktrees/.sessions/`
+/// 1. Deleting external session files at `.tugtree/.sessions/`
 /// 2. Deleting legacy internal session files at `{worktree}/.tugtool/session.json`
 /// 3. Deleting worktree-local artifacts at `{worktree}/.tugtool/artifacts/`
 /// 4. Removing the worktree directory using git worktree remove (without --force)
@@ -1235,20 +1232,20 @@ mod tests {
     #[test]
     fn test_is_valid_worktree_path_valid() {
         assert!(is_valid_worktree_path(Path::new(
-            ".tugtool.worktrees/tugtool__auth-20260208-143022"
+            ".tugtree/tugtool__auth-20260208-143022"
         )));
         assert!(is_valid_worktree_path(Path::new(
-            ".tugtool.worktrees/tugtool__13-20250209-152734"
+            ".tugtree/tugtool__13-20250209-152734"
         )));
         assert!(is_valid_worktree_path(Path::new(
-            ".tugtool.worktrees/tugtool__feature-name"
+            ".tugtree/tugtool__feature-name"
         )));
     }
 
     #[test]
     fn test_is_valid_worktree_path_invalid() {
         // Wrong prefix
-        assert!(!is_valid_worktree_path(Path::new(".tugtool.worktrees/foo")));
+        assert!(!is_valid_worktree_path(Path::new(".tugtree/foo")));
         assert!(!is_valid_worktree_path(Path::new(
             "worktrees/tugtool__auth"
         )));
@@ -1264,9 +1261,7 @@ mod tests {
         )));
 
         // Missing tugtool__ prefix
-        assert!(!is_valid_worktree_path(Path::new(
-            ".tugtool.worktrees/auth-20260208"
-        )));
+        assert!(!is_valid_worktree_path(Path::new(".tugtree/auth-20260208")));
     }
 
     #[test]
@@ -1332,7 +1327,7 @@ mod tests {
             .expect("Failed to commit");
 
         // Create worktree directory
-        let worktrees_dir = temp_dir.join(".tugtool.worktrees");
+        let worktrees_dir = temp_dir.join(".tugtree");
         std::fs::create_dir_all(&worktrees_dir).unwrap();
 
         // Create branch and worktree
@@ -1403,7 +1398,7 @@ mod tests {
             .expect("Failed to commit");
 
         // Create worktree
-        let worktrees_dir = temp_dir.join(".tugtool.worktrees");
+        let worktrees_dir = temp_dir.join(".tugtree");
         std::fs::create_dir_all(&worktrees_dir).unwrap();
 
         Command::new("git")

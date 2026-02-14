@@ -183,11 +183,8 @@ fn test_worktree_lifecycle() {
     );
 
     // Step 2: Verify worktree directory exists
-    let worktrees_dir = temp.path().join(".tugtool-worktrees");
-    assert!(
-        worktrees_dir.is_dir(),
-        ".tugtool-worktrees directory should exist"
-    );
+    let worktrees_dir = temp.path().join(".tugtree");
+    assert!(worktrees_dir.is_dir(), ".tugtree directory should exist");
 
     // Find the created worktree (should be only one)
     // Filter for actual worktrees (starting with tug__), excluding .sessions and .artifacts
@@ -219,7 +216,7 @@ fn test_worktree_lifecycle() {
     let session_id = worktree_name.strip_prefix("tug__").unwrap();
     let session_file = temp
         .path()
-        .join(".tugtool-worktrees")
+        .join(".tugtree")
         .join(".sessions")
         .join(format!("{}.json", session_id));
     assert!(
@@ -477,7 +474,7 @@ fn test_worktree_cleanup_dry_run() {
     assert!(output.status.success(), "worktree create should succeed");
 
     // Get the worktree path
-    let worktrees_dir = temp.path().join(".tugtool-worktrees");
+    let worktrees_dir = temp.path().join(".tugtree");
     let worktree_entries: Vec<_> = fs::read_dir(&worktrees_dir)
         .expect("failed to read worktrees dir")
         .filter_map(|e| e.ok())
@@ -495,7 +492,7 @@ fn test_worktree_cleanup_dry_run() {
     let session_id = worktree_name.strip_prefix("tug__").unwrap();
     let session_file = temp
         .path()
-        .join(".tugtool-worktrees")
+        .join(".tugtree")
         .join(".sessions")
         .join(format!("{}.json", session_id));
     let session_contents = fs::read_to_string(&session_file).expect("failed to read session.json");
@@ -587,7 +584,7 @@ fn test_worktree_create_with_valid_plan_succeeds() {
     );
 
     // Verify worktree was created
-    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tugtool-worktrees"))
+    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tugtree"))
         .expect("worktrees dir should exist")
         .filter_map(|e| e.ok())
         .collect();
@@ -670,7 +667,7 @@ Test decision.
     );
 
     // Verify worktree was NOT created
-    let worktree_path = temp.path().join(".tugtool-worktrees");
+    let worktree_path = temp.path().join(".tugtree");
     if worktree_path.exists() {
         let worktree_dirs: Vec<_> = fs::read_dir(&worktree_path)
             .expect("should be able to read worktrees dir")
@@ -783,7 +780,7 @@ Test context paragraph.
     );
 
     // Verify worktree was NOT created
-    let worktree_path = temp.path().join(".tugtool-worktrees");
+    let worktree_path = temp.path().join(".tugtree");
     if worktree_path.exists() {
         let worktree_dirs: Vec<_> = fs::read_dir(&worktree_path)
             .expect("should be able to read worktrees dir")
@@ -893,7 +890,7 @@ Test context paragraph.
     );
 
     // Verify worktree was created
-    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tugtool-worktrees"))
+    let worktree_dirs: Vec<_> = fs::read_dir(temp.path().join(".tugtree"))
         .expect("worktrees dir should exist")
         .filter_map(|e| e.ok())
         .collect();

@@ -209,7 +209,7 @@ impl BeadsCli {
     /// Check if beads is initialized (`.beads/` directory exists).
     ///
     /// Walks parent directories because `bd` searches upward for its database.
-    /// A worktree at `.tugtool-worktrees/foo/` will find `.beads/` in the main repo.
+    /// A worktree at `.tugtree/foo/` will find `.beads/` in the main repo.
     pub fn is_initialized(&self, project_root: &Path) -> bool {
         let mut dir = project_root.to_path_buf();
         loop {

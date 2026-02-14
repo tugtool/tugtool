@@ -21,7 +21,7 @@ pub enum WorktreeCommands {
     ///
     /// Creates a git worktree and branch for implementing a plan in isolation.
     #[command(
-        long_about = "Create worktree for plan implementation.\n\nCreates:\n  - Branch: tugtool/<slug>-<timestamp>\n  - Worktree: .tugtool-worktrees/<sanitized-branch-name>/\n\nBeads sync is always-on:\n  - Atomically syncs beads and commits annotations in worktree\n  - Full rollback if sync or commit fails\n\nWorktree creation is idempotent:\n  - Returns existing worktree if one exists for this plan\n  - Creates new worktree if none exists\n\nValidates that the plan has at least one execution step."
+        long_about = "Create worktree for plan implementation.\n\nCreates:\n  - Branch: tugtool/<slug>-<timestamp>\n  - Worktree: .tugtree/<sanitized-branch-name>/\n\nBeads sync is always-on:\n  - Atomically syncs beads and commits annotations in worktree\n  - Full rollback if sync or commit fails\n\nWorktree creation is idempotent:\n  - Returns existing worktree if one exists for this plan\n  - Creates new worktree if none exists\n\nValidates that the plan has at least one execution step."
     )]
     Create {
         /// Plan file to implement
@@ -76,7 +76,7 @@ pub enum WorktreeCommands {
     ///
     /// Removes a worktree identified by plan path, branch name, or worktree path.
     #[command(
-        long_about = "Remove a specific worktree.\n\nIdentifies worktree by:\n  - Plan path (e.g., .tugtool/tugplan-14.md)\n  - Branch name (e.g., tugtool/14-20250209-172637)\n  - Worktree path (e.g., .tugtool-worktrees/tugtool__14-...)\n\nIf multiple worktrees match a plan path, an error is returned\nlisting all candidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
+        long_about = "Remove a specific worktree.\n\nIdentifies worktree by:\n  - Plan path (e.g., .tugtool/tugplan-14.md)\n  - Branch name (e.g., tugtool/14-20250209-172637)\n  - Worktree path (e.g., .tugtree/tugtool__14-...)\n\nIf multiple worktrees match a plan path, an error is returned\nlisting all candidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
     )]
     Remove {
         /// Target identifier (plan path, branch name, or worktree path)
@@ -1339,7 +1339,7 @@ mod tests {
     #[test]
     fn test_remove_data_serialization() {
         let data = RemoveData {
-            worktree_path: ".tugtool-worktrees/tugtool__test-20260210-120000".to_string(),
+            worktree_path: ".tugtree/tugtool__test-20260210-120000".to_string(),
             branch_name: "tugtool/test-20260210-120000".to_string(),
             plan_path: ".tugtool/tugplan-test.md".to_string(),
         };

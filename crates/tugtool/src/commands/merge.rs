@@ -958,12 +958,24 @@ fn check_main_sync(repo_root: &Path) -> Result<(), String> {
 pub fn run_merge(
     plan: String,
     dry_run: bool,
-    _force: bool,
+    force: bool,
     json: bool,
     quiet: bool,
 ) -> Result<i32, String> {
     let repo_root =
         std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?;
+    run_merge_in(&repo_root, plan, dry_run, force, json, quiet)
+}
+
+fn run_merge_in(
+    repo_root: &Path,
+    plan: String,
+    dry_run: bool,
+    _force: bool,
+    json: bool,
+    quiet: bool,
+) -> Result<i32, String> {
+    let repo_root = repo_root.to_path_buf();
 
     // Step 0: Validate we're on main in the main worktree
     if let Err(e) = is_main_worktree(&repo_root) {
@@ -1659,7 +1671,7 @@ mod tests {
             status: "ok".to_string(),
             merge_mode: Some("local".to_string()),
             branch_name: Some("tugtool/1-20260210-120000".to_string()),
-            worktree_path: Some(".tugtool.worktrees/tugtool__1-20260210-120000".to_string()),
+            worktree_path: Some(".tugtree/tugtool__1-20260210-120000".to_string()),
             pr_url: None,
             pr_number: None,
             squash_commit: None,
@@ -3214,8 +3226,14 @@ mod tests {
             .unwrap();
 
         // Run merge with non-infra dirty file
-        std::env::set_current_dir(repo_path).unwrap();
-        let result = run_merge("tugplan-1.md".to_string(), false, false, true, true);
+        let result = run_merge_in(
+            repo_path,
+            "tugplan-1.md".to_string(),
+            false,
+            false,
+            true,
+            true,
+        );
 
         assert!(result.is_err(), "Should reject non-infra dirty files");
         let err = result.unwrap_err();
@@ -3293,8 +3311,14 @@ mod tests {
             .unwrap();
 
         // Run merge with only infra dirty files - should NOT error on dirty check
-        std::env::set_current_dir(repo_path).unwrap();
-        let result = run_merge("tugplan-1.md".to_string(), false, false, true, true);
+        let result = run_merge_in(
+            repo_path,
+            "tugplan-1.md".to_string(),
+            false,
+            false,
+            true,
+            true,
+        );
 
         // May fail for other reasons (no origin, etc.) but NOT due to dirty files
         if let Err(e) = result {
@@ -3351,8 +3375,14 @@ mod tests {
             .unwrap();
 
         // Run dry-run with non-infra dirty files
-        std::env::set_current_dir(repo_path).unwrap();
-        let result = run_merge("tugplan-1.md".to_string(), true, false, true, true);
+        let result = run_merge_in(
+            repo_path,
+            "tugplan-1.md".to_string(),
+            true,
+            false,
+            true,
+            true,
+        );
 
         assert!(result.is_err(), "Dry-run should surface dirty file error");
         let err = result.unwrap_err();
@@ -3455,7 +3485,7 @@ mod tests {
             .output()
             .unwrap();
 
-        let wt_path = clone_path.join(".tugtool.worktrees/tugtool__1-test");
+        let wt_path = clone_path.join(".tugtree/tugtool__1-test");
         Command::new("git")
             .arg("-C")
             .arg(clone_path)

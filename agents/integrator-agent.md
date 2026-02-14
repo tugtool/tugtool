@@ -52,7 +52,7 @@ You do NOT need to recreate the PR — you already have the PR URL from your ini
 ```json
 {
   "operation": "publish",
-  "worktree_path": "/abs/path/to/.tugtool-worktrees/tug__name-timestamp",
+  "worktree_path": "/abs/path/to/.tugtree/tug__name-timestamp",
   "branch_name": "tugplan/name-timestamp",
   "base_branch": "main",
   "plan_title": "Phase D: Post-Loop Quality Gates",

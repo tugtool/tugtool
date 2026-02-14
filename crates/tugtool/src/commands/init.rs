@@ -202,10 +202,10 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     Ok(0)
 }
 
-/// Ensure .tugtool.worktrees/ is listed in .gitignore
+/// Ensure .tugtree/ is listed in .gitignore
 fn ensure_gitignore(_quiet: bool) -> Result<(), String> {
     let gitignore_path = Path::new(".gitignore");
-    let gitignore_entry = ".tugtool.worktrees/";
+    let gitignore_entry = ".tugtree/";
 
     let should_add_entry = if gitignore_path.exists() {
         let content = fs::read_to_string(gitignore_path)

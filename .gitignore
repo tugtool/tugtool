@@ -24,7 +24,7 @@ git-commit-message.txt
 aside
 
 # Tug worktrees
-.tugtool.worktrees/
+.tugtree/
 
 # Tug step artifacts (optional local debug)
 .tugtool/step-artifacts/
