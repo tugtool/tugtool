@@ -517,6 +517,7 @@ Using persistent agents means both retain their full accumulated context — the
 ```
 Task(
   subagent_type: "tugtool:committer-agent",
+  max_turns: 5,
   prompt: '{
     "operation": "commit",
     "worktree_path": "<worktree_path>",
@@ -527,10 +528,7 @@ Task(
     "bead_id": "<bead_id from bead_mapping>",
     "close_reason": "Step N complete: <summary>",
     "log_entry": {
-      "summary": "<brief description>",
-      "tasks_completed": [<from reviewer plan_conformance.tasks>],
-      "tests_run": ["<test results>"],
-      "checkpoints_verified": ["<checkpoint results>"]
+      "summary": "<brief description of what was done>"
     }
   }',
   description: "Commit step 0"
@@ -544,6 +542,7 @@ Task(
 ```
 Task(
   resume: "<committer_id>",
+  max_turns: 5,
   prompt: '<same JSON payload as above for the new step>',
   description: "Commit step N"
 )
@@ -621,6 +620,7 @@ Output the Coder post-call message.
 ```
 Task(
   resume: "<committer_id>",
+  max_turns: 5,
   prompt: '{
     "operation": "fixup",
     "worktree_path": "<worktree_path>",
@@ -716,6 +716,7 @@ Output the Coder post-call message.
 ```
 Task(
   resume: "<committer_id>",
+  max_turns: 5,
   prompt: '{
     "operation": "fixup",
     "worktree_path": "<worktree_path>",
