@@ -172,7 +172,7 @@ pub enum Commands {
     #[command(
         long_about = "Commit a single implementation step.\n\nAtomic sequence:\n  1. Rotate log if over threshold\n  2. Prepend log entry\n  3. Stage files\n  4. Git commit\n  5. Close bead\n\nAll file paths are relative to worktree root.\n\nPartial success: If commit succeeds but bead close fails, exits 0 with bead_close_failed=true."
     )]
-    StepCommit {
+    Commit {
         /// Absolute path to the worktree directory
         #[arg(long, value_name = "PATH")]
         worktree: String,
@@ -206,13 +206,13 @@ pub enum Commands {
         close_reason: Option<String>,
     },
 
-    /// Publish implementation results via push and PR creation
+    /// Push branch and open a pull request
     ///
     /// Pushes branch to remote and creates PR.
     #[command(
-        long_about = "Publish implementation results via push and PR creation.\n\nSequence:\n  1. Check gh auth\n  2. Derive repo from remote (if not provided)\n  3. Generate PR body from git log\n  4. Push branch to remote\n  5. Create PR via gh\n\nRequires:\n  - GitHub CLI (gh) installed and authenticated\n  - Remote 'origin' configured"
+        long_about = "Push branch and open a pull request.\n\nSequence:\n  1. Check gh auth\n  2. Derive repo from remote (if not provided)\n  3. Generate PR body from git log\n  4. Push branch to remote\n  5. Create PR via gh\n\nRequires:\n  - GitHub CLI (gh) installed and authenticated\n  - Remote 'origin' configured"
     )]
-    StepPublish {
+    OpenPr {
         /// Absolute path to the worktree directory
         #[arg(long, value_name = "PATH")]
         worktree: String,
@@ -766,10 +766,10 @@ mod tests {
     }
 
     #[test]
-    fn test_step_commit_command() {
+    fn test_commit_command() {
         let cli = Cli::try_parse_from([
             "tug",
-            "step-commit",
+            "commit",
             "--worktree",
             "/path/to/worktree",
             "--step",
@@ -789,7 +789,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Some(Commands::StepCommit {
+            Some(Commands::Commit {
                 worktree,
                 step,
                 plan,
@@ -808,15 +808,15 @@ mod tests {
                 assert_eq!(summary, "Completed step 0");
                 assert!(close_reason.is_none());
             }
-            _ => panic!("Expected StepCommit command"),
+            _ => panic!("Expected Commit command"),
         }
     }
 
     #[test]
-    fn test_step_commit_with_close_reason() {
+    fn test_commit_with_close_reason() {
         let cli = Cli::try_parse_from([
             "tug",
-            "step-commit",
+            "commit",
             "--worktree",
             "/path",
             "--step",
@@ -837,21 +837,21 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Some(Commands::StepCommit { close_reason, .. }) => {
+            Some(Commands::Commit { close_reason, .. }) => {
                 assert_eq!(
                     close_reason,
                     Some("Step completed successfully".to_string())
                 );
             }
-            _ => panic!("Expected StepCommit command"),
+            _ => panic!("Expected Commit command"),
         }
     }
 
     #[test]
-    fn test_step_publish_command() {
+    fn test_open_pr_command() {
         let cli = Cli::try_parse_from([
             "tug",
-            "step-publish",
+            "open-pr",
             "--worktree",
             "/path/to/worktree",
             "--branch",
@@ -866,7 +866,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Some(Commands::StepPublish {
+            Some(Commands::OpenPr {
                 worktree,
                 branch,
                 base,
@@ -881,15 +881,15 @@ mod tests {
                 assert_eq!(plan, ".tugtool/tugplan-1.md");
                 assert!(repo.is_none());
             }
-            _ => panic!("Expected StepPublish command"),
+            _ => panic!("Expected OpenPr command"),
         }
     }
 
     #[test]
-    fn test_step_publish_with_repo() {
+    fn test_open_pr_with_repo() {
         let cli = Cli::try_parse_from([
             "tug",
-            "step-publish",
+            "open-pr",
             "--worktree",
             "/path",
             "--branch",
@@ -906,10 +906,10 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Some(Commands::StepPublish { repo, .. }) => {
+            Some(Commands::OpenPr { repo, .. }) => {
                 assert_eq!(repo, Some("owner/repo".to_string()));
             }
-            _ => panic!("Expected StepPublish command"),
+            _ => panic!("Expected OpenPr command"),
         }
     }
 }

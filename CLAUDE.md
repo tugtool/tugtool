@@ -129,8 +129,8 @@ tugtool log rotate                 # Rotate implementation log when over thresho
 tugtool log rotate --force        # Force rotation even if under threshold
 tugtool log prepend --step <anchor> --plan <path> --summary <text>  # Add entry to log
 
-# Step commit and publish commands (used by committer-agent)
-tugtool step-commit \
+# Commit and open-pr commands (used by committer-agent and integrator-agent)
+tugtool commit \
   --worktree <path> \
   --step <anchor> \
   --plan <path> \
@@ -141,14 +141,14 @@ tugtool step-commit \
   --close-reason <text> \
   --json                          # Atomic commit: log rotate, prepend, git commit, bead close
 
-tugtool step-publish \
+tugtool open-pr \
   --worktree <path> \
   --branch <name> \
   --base <branch> \
   --title <text> \
   --plan <path> \
   --repo <owner/repo> \
-  --json                           # Atomic publish: push branch, create PR (body from git log)
+  --json                           # Push branch and open PR (body from git log)
 
 # Health check command
 tugtool doctor                     # Run health checks (log size, worktrees, broken refs)

@@ -1,15 +1,15 @@
-//! step-publish command implementation
+//! open-pr command implementation
 //!
 //! Pushes branch to remote and creates PR.
 
-use crate::output::{JsonResponse, StepPublishData};
+use crate::output::{JsonResponse, OpenPrData};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-/// Run the step-publish command
+/// Run the open-pr command
 #[allow(clippy::too_many_arguments)]
-pub fn run_step_publish(
+pub fn run_open_pr(
     worktree: String,
     branch: String,
     base: String,
@@ -98,7 +98,7 @@ pub fn run_step_publish(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         // Partial success: pushed but PR failed
-        let data = StepPublishData {
+        let data = OpenPrData {
             success: false,
             pushed,
             pr_created: false,
@@ -108,7 +108,7 @@ pub fn run_step_publish(
         };
 
         if json {
-            let response = JsonResponse::ok("step-publish", data);
+            let response = JsonResponse::ok("open-pr", data);
             println!("{}", serde_json::to_string_pretty(&response).unwrap());
         } else if !quiet {
             eprintln!(
@@ -127,7 +127,7 @@ pub fn run_step_publish(
     let (pr_url, pr_number) = parse_pr_info(&stdout);
 
     // Step 6: Return response
-    let data = StepPublishData {
+    let data = OpenPrData {
         success: true,
         pushed,
         pr_created,
@@ -137,7 +137,7 @@ pub fn run_step_publish(
     };
 
     if json {
-        let response = JsonResponse::ok("step-publish", data);
+        let response = JsonResponse::ok("open-pr", data);
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     } else if !quiet {
         println!("Implementation published successfully");
@@ -267,7 +267,7 @@ fn parse_pr_info(stdout: &str) -> (Option<String>, Option<i64>) {
 
 /// Helper to construct error response
 fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String> {
-    let data = StepPublishData {
+    let data = OpenPrData {
         success: false,
         pushed: false,
         pr_created: false,
@@ -277,7 +277,7 @@ fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String>
     };
 
     if json {
-        let response = JsonResponse::error("step-publish", data, vec![]);
+        let response = JsonResponse::error("open-pr", data, vec![]);
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     } else if !quiet {
         eprintln!("Error: {}", message);

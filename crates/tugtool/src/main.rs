@@ -144,7 +144,7 @@ fn main() -> ExitCode {
         },
         Some(Commands::Doctor) => commands::run_doctor(cli.json, cli.quiet),
         Some(Commands::Version { verbose }) => commands::run_version(verbose, cli.json, cli.quiet),
-        Some(Commands::StepCommit {
+        Some(Commands::Commit {
             worktree,
             step,
             plan,
@@ -153,7 +153,7 @@ fn main() -> ExitCode {
             bead,
             summary,
             close_reason,
-        }) => commands::run_step_commit(
+        }) => commands::run_commit(
             worktree,
             step,
             plan,
@@ -165,14 +165,14 @@ fn main() -> ExitCode {
             cli.json,
             cli.quiet,
         ),
-        Some(Commands::StepPublish {
+        Some(Commands::OpenPr {
             worktree,
             branch,
             base,
             title,
             plan,
             repo,
-        }) => commands::run_step_publish(
+        }) => commands::run_open_pr(
             worktree, branch, base, title, plan, repo, cli.json, cli.quiet,
         ),
         None => {

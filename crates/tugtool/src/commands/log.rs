@@ -148,7 +148,7 @@ pub struct PrependResult {
 /// Internal helper to perform log rotation
 ///
 /// Returns structured result instead of printing to stdout.
-/// Used by both run_log_rotate (CLI) and step-commit (programmatic).
+/// Used by both run_log_rotate (CLI) and commit (programmatic).
 pub fn log_rotate_inner(root: &std::path::Path, force: bool) -> Result<RotateResult, String> {
     use std::fs;
 
@@ -406,7 +406,7 @@ fn find_insertion_point(content: &str) -> usize {
 /// Internal helper to prepend an entry to the log
 ///
 /// Returns structured result instead of printing to stdout.
-/// Used by both run_log_prepend (CLI) and step-commit (programmatic).
+/// Used by both run_log_prepend (CLI) and commit (programmatic).
 pub fn log_prepend_inner(
     root: &std::path::Path,
     step: &str,

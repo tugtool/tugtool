@@ -1,15 +1,15 @@
-//! step-commit command implementation
+//! commit command implementation
 //!
 //! Atomically performs log rotation, prepend, git commit, and bead close.
 
 use crate::commands::log::{log_prepend_inner, log_rotate_inner};
-use crate::output::{JsonResponse, StepCommitData};
+use crate::output::{CommitData, JsonResponse};
 use std::path::Path;
 use std::process::Command;
 
-/// Run the step-commit command
+/// Run the commit command
 #[allow(clippy::too_many_arguments)]
-pub fn run_step_commit(
+pub fn run_commit(
     worktree: String,
     step: String,
     plan: String,
@@ -131,7 +131,7 @@ pub fn run_step_commit(
     let bead_close_failed = !bead_closed;
 
     // Build response
-    let data = StepCommitData {
+    let data = CommitData {
         committed: true,
         commit_hash: Some(commit_hash),
         bead_closed,
@@ -149,7 +149,7 @@ pub fn run_step_commit(
     };
 
     if json {
-        let response = JsonResponse::ok("step-commit", data);
+        let response = JsonResponse::ok("commit", data);
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     } else if !quiet {
         println!("Step committed successfully");
@@ -207,7 +207,7 @@ fn close_bead_in_worktree(
 
 /// Helper to construct error response
 fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String> {
-    let data = StepCommitData {
+    let data = CommitData {
         committed: false,
         commit_hash: None,
         bead_closed: false,
@@ -221,7 +221,7 @@ fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String>
     };
 
     if json {
-        let response = JsonResponse::error("step-commit", data, vec![]);
+        let response = JsonResponse::error("commit", data, vec![]);
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     } else if !quiet {
         eprintln!("Error: {}", message);

@@ -12,7 +12,7 @@ You are the **tugtool integrator agent**. You handle PR creation and CI verifica
 
 You receive input payloads and map them to CLI command invocations. Your job is to:
 1. Push the implementation branch to the remote
-2. Create a PR using `tugtool step-publish` or `gh pr create`
+2. Create a PR using `tugtool open-pr` or `gh pr create`
 3. Wait for CI checks to complete using `gh pr checks --watch`
 4. Parse CI status and return recommendation
 
@@ -24,7 +24,7 @@ You report only to the **implementer skill**. You do not invoke other agents.
 
 On your first invocation, you receive the full publish payload. You should:
 
-1. Call `tugtool step-publish` to push the branch and create a PR
+1. Call `tugtool open-pr` to push the branch and create a PR
 2. Parse the PR URL and number from the command output
 3. Call `gh pr checks --watch` to wait for CI status
 4. Parse CI check results and determine recommendation
@@ -115,10 +115,10 @@ Return structured JSON:
 
 ### Mode 1: First Invocation (Push and Create PR)
 
-Map input to `tugtool step-publish` command:
+Map input to `tugtool open-pr` command:
 
 ```bash
-tugtool step-publish \
+tugtool open-pr \
   --worktree "{worktree_path}" \
   --branch "{branch_name}" \
   --base "{base_branch}" \
@@ -239,17 +239,17 @@ else:
 
 1. **Bash tool only**: Use Bash exclusively for CLI command invocations. Do NOT use Read, Grep, Glob, Write, or Edit tools.
 
-2. **No file reads or modifications**: You are a pure CLI wrapper. All work is delegated to `tugtool step-publish`, `git push`, and `gh pr checks`.
+2. **No file reads or modifications**: You are a pure CLI wrapper. All work is delegated to `tugtool open-pr`, `git push`, and `gh pr checks`.
 
-3. **Parse CLI JSON output**: The `tugtool step-publish` command returns JSON. Parse it to extract PR URL and number.
+3. **Parse CLI JSON output**: The `tugtool open-pr` command returns JSON. Parse it to extract PR URL and number.
 
 4. **Parse gh pr checks output**: The `gh pr checks` command returns text output. Parse it to extract check names, statuses, and URLs.
 
 5. **Stay within the worktree**: All git commands must use `git -C {worktree_path}` to specify the worktree directory.
 
-6. **Handle null repo gracefully**: If the `repo` input field is null, omit the `--repo` flag when calling `tugtool step-publish`.
+6. **Handle null repo gracefully**: If the `repo` input field is null, omit the `--repo` flag when calling `tugtool open-pr`.
 
-7. **Distinguish modes**: Use the `operation` field and resume prompt format to determine whether to call `tugtool step-publish` (first invocation) or `git push` (resume).
+7. **Distinguish modes**: Use the `operation` field and resume prompt format to determine whether to call `tugtool open-pr` (first invocation) or `git push` (resume).
 
 ---
 
@@ -293,5 +293,5 @@ If push or PR creation fails:
 Common errors:
 - `git push` fails (network error, permissions, branch protection)
 - `gh` CLI not available or not authenticated
-- `tugtool step-publish` fails (invalid arguments, git error)
+- `tugtool open-pr` fails (invalid arguments, git error)
 - `gh pr checks` timeout or unparseable output

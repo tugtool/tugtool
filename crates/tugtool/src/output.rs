@@ -430,9 +430,9 @@ pub struct BeadsCloseData {
     pub archived_path: Option<String>,
 }
 
-/// Data payload for step-commit command (Spec S01)
+/// Data payload for commit command (Spec S01)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepCommitData {
+pub struct CommitData {
     /// Whether the git commit was created
     pub committed: bool,
     /// Full git commit hash, null if not committed
@@ -459,9 +459,9 @@ pub struct StepCommitData {
     pub warnings: Vec<String>,
 }
 
-/// Data payload for step-publish command (Spec S02)
+/// Data payload for open-pr command (Spec S02)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepPublishData {
+pub struct OpenPrData {
     /// Whether both push and PR creation succeeded
     pub success: bool,
     /// Whether the branch was pushed to remote
@@ -484,8 +484,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_step_commit_data_serialization() {
-        let data = StepCommitData {
+    fn test_commit_data_serialization() {
+        let data = CommitData {
             committed: true,
             commit_hash: Some("abc1234".to_string()),
             bead_closed: true,
@@ -499,7 +499,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&data).unwrap();
-        let deserialized: StepCommitData = serde_json::from_str(&json).unwrap();
+        let deserialized: CommitData = serde_json::from_str(&json).unwrap();
 
         assert!(deserialized.committed);
         assert_eq!(deserialized.commit_hash, Some("abc1234".to_string()));
@@ -514,8 +514,8 @@ mod tests {
     }
 
     #[test]
-    fn test_step_commit_data_with_warnings() {
-        let data = StepCommitData {
+    fn test_commit_data_with_warnings() {
+        let data = CommitData {
             committed: true,
             commit_hash: Some("def5678".to_string()),
             bead_closed: false,
@@ -529,7 +529,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&data).unwrap();
-        let deserialized: StepCommitData = serde_json::from_str(&json).unwrap();
+        let deserialized: CommitData = serde_json::from_str(&json).unwrap();
 
         assert!(deserialized.bead_close_failed);
         assert_eq!(deserialized.warnings, vec!["Bead close failed"]);
@@ -540,8 +540,8 @@ mod tests {
     }
 
     #[test]
-    fn test_step_publish_data_serialization() {
-        let data = StepPublishData {
+    fn test_open_pr_data_serialization() {
+        let data = OpenPrData {
             success: true,
             pushed: true,
             pr_created: true,
@@ -551,7 +551,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&data).unwrap();
-        let deserialized: StepPublishData = serde_json::from_str(&json).unwrap();
+        let deserialized: OpenPrData = serde_json::from_str(&json).unwrap();
 
         assert!(deserialized.success);
         assert!(deserialized.pushed);
@@ -565,8 +565,8 @@ mod tests {
     }
 
     #[test]
-    fn test_step_publish_data_partial_success() {
-        let data = StepPublishData {
+    fn test_open_pr_data_partial_success() {
+        let data = OpenPrData {
             success: false,
             pushed: true,
             pr_created: false,
@@ -576,7 +576,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&data).unwrap();
-        let deserialized: StepPublishData = serde_json::from_str(&json).unwrap();
+        let deserialized: OpenPrData = serde_json::from_str(&json).unwrap();
 
         assert!(!deserialized.success);
         assert!(deserialized.pushed);

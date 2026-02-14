@@ -815,9 +815,9 @@ From coder output, evaluate `drift_assessment`:
 - `root_bead`: The root bead ID for the entire plan
 - `bead_mapping`: A map from step anchors to bead IDs
 
-**Close after commit** (handled by committer-agent via `tugtool step-commit`):
+**Close after commit** (handled by committer-agent via `tugtool commit`):
 
-The committer-agent is a thin CLI wrapper that delegates to `tugtool step-commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.
+The committer-agent is a thin CLI wrapper that delegates to `tugtool commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.
 
 **Fixup commits** (audit and integration fixes) are outside the bead system. They use `tugtool log prepend` for tracking and direct git commands for commits, but do not close beads. Only step commits close beads.
 
