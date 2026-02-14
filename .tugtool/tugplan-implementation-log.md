@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-14T20:46:15Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix two long fs::write lines in merge.rs test functions
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-14T20:41:32Z
 bead: tugtool-0wx.3
