@@ -287,6 +287,119 @@ fn commit_bead_annotations(
     Ok(())
 }
 
+/// Ensure the working directory is a git repo with at least one commit on the base branch.
+///
+/// For fresh directories where the planner created a plan but git hasn't been initialized:
+/// 1. Runs `git init -b <base>` if .git doesn't exist
+/// 2. Creates an initial commit with .tugtool/ files if no commits exist
+/// 3. Ensures the base branch exists
+fn ensure_git_repo(repo_root: &Path, base_branch: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let git_dir = repo_root.join(".git");
+
+    // Step 1: Initialize git if not a repo
+    if !git_dir.exists() {
+        let output = Command::new("git")
+            .args(["init", "-b", base_branch])
+            .current_dir(repo_root)
+            .output()
+            .map_err(|e| format!("Failed to run git init: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git init failed: {}", stderr));
+        }
+    }
+
+    // Step 2: Check if any commits exist
+    let has_commits = Command::new("git")
+        .args([
+            "-C",
+            &repo_root.to_string_lossy(),
+            "rev-parse",
+            "--verify",
+            "HEAD",
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !has_commits {
+        // Stage .tugtool/ directory (includes plan, skeleton, config, log)
+        let output = Command::new("git")
+            .args(["-C", &repo_root.to_string_lossy(), "add", ".tugtool/"])
+            .output()
+            .map_err(|e| format!("Failed to stage files: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git add failed: {}", stderr));
+        }
+
+        // Also stage .gitignore if it exists
+        if repo_root.join(".gitignore").exists() {
+            let _ = Command::new("git")
+                .args(["-C", &repo_root.to_string_lossy(), "add", ".gitignore"])
+                .output();
+        }
+
+        // Create initial commit
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &repo_root.to_string_lossy(),
+                "commit",
+                "-m",
+                "Initial commit",
+            ])
+            .output()
+            .map_err(|e| format!("Failed to create initial commit: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git commit failed: {}", stderr));
+        }
+
+        // Ensure base branch exists (current branch may differ if git was
+        // initialized earlier without the -b flag)
+        let base_exists = Command::new("git")
+            .args([
+                "-C",
+                &repo_root.to_string_lossy(),
+                "rev-parse",
+                "--verify",
+                base_branch,
+            ])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if !base_exists {
+            let output = Command::new("git")
+                .args([
+                    "-C",
+                    &repo_root.to_string_lossy(),
+                    "branch",
+                    base_branch,
+                    "HEAD",
+                ])
+                .output()
+                .map_err(|e| format!("Failed to create {} branch: {}", base_branch, e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "Failed to create {} branch: {}",
+                    base_branch, stderr
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Rollback worktree creation by removing worktree and branch
 fn rollback_worktree_creation(
     worktree_path: &Path,
@@ -452,6 +565,9 @@ pub fn run_worktree_create_with_root(
             return Ok(8); // Exit code 8: Validation failed
         }
     }
+
+    // Ensure git repository is ready (auto-init for fresh directories)
+    ensure_git_repo(&repo_root, &base)?;
 
     let config = WorktreeConfig {
         plan_path: plan_path.clone(),
@@ -1321,5 +1437,105 @@ mod integration_tests {
 
         // Verify worktree directory exists
         assert!(worktree_path.exists(), "worktree directory should exist");
+    }
+
+    #[test]
+    fn test_ensure_git_repo_initializes_fresh_directory() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let repo_path = temp.path().to_path_buf();
+
+        // Create .tugtool directory with a plan (simulates post-planner state)
+        let tugtool_dir = repo_path.join(".tugtool");
+        fs::create_dir(&tugtool_dir).expect("failed to create .tugtool dir");
+        fs::write(
+            tugtool_dir.join("tugplan-test.md"),
+            "# Test plan\n## Phase {#phase-1}\n",
+        )
+        .expect("failed to write plan");
+
+        // No .git directory exists yet
+        assert!(!repo_path.join(".git").exists());
+
+        // Configure git identity for the test
+        // (ensure_git_repo needs this for the initial commit)
+        let result = ensure_git_repo(&repo_path, "main");
+        if result.is_err() {
+            // May fail if git user.name/email not configured globally;
+            // configure them and retry
+            Command::new("git")
+                .args(["config", "user.email", "test@example.com"])
+                .current_dir(&repo_path)
+                .output()
+                .expect("failed to set git user.email");
+            Command::new("git")
+                .args(["config", "user.name", "Test User"])
+                .current_dir(&repo_path)
+                .output()
+                .expect("failed to set git user.name");
+
+            ensure_git_repo(&repo_path, "main")
+                .expect("ensure_git_repo should succeed after config");
+        }
+
+        // Verify: .git exists
+        assert!(repo_path.join(".git").exists(), ".git should exist");
+
+        // Verify: main branch exists with a commit
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &repo_path.to_string_lossy(),
+                "rev-parse",
+                "--verify",
+                "main",
+            ])
+            .output()
+            .expect("failed to check main branch");
+        assert!(output.status.success(), "main branch should exist");
+
+        // Verify: .tugtool/ is committed
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &repo_path.to_string_lossy(),
+                "ls-tree",
+                "--name-only",
+                "HEAD",
+            ])
+            .output()
+            .expect("failed to list committed files");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(".tugtool"),
+            ".tugtool should be committed, got: {}",
+            stdout
+        );
+    }
+
+    #[test]
+    fn test_ensure_git_repo_noop_for_existing_repo() {
+        let (_temp, repo_path) = setup_test_repo();
+
+        // Get the current HEAD commit
+        let before = Command::new("git")
+            .args(["-C", &repo_path.to_string_lossy(), "rev-parse", "HEAD"])
+            .output()
+            .expect("failed to get HEAD");
+        let before_hash = String::from_utf8_lossy(&before.stdout).trim().to_string();
+
+        // Run ensure_git_repo — should be a no-op
+        ensure_git_repo(&repo_path, "main").expect("ensure_git_repo should succeed");
+
+        // Verify HEAD hasn't changed
+        let after = Command::new("git")
+            .args(["-C", &repo_path.to_string_lossy(), "rev-parse", "HEAD"])
+            .output()
+            .expect("failed to get HEAD");
+        let after_hash = String::from_utf8_lossy(&after.stdout).trim().to_string();
+
+        assert_eq!(
+            before_hash, after_hash,
+            "HEAD should not change for existing repo"
+        );
     }
 }
