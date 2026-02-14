@@ -7,8 +7,8 @@
 //! - Inter-agent protocols are consistent
 //!
 //! Note: As of Phase 4.0, the architecture changed to:
-//! - 2 orchestrator SKILLS (planner, implementer) in skills/
-//! - 11 sub-AGENTS invoked via Task tool in agents/
+//! - 3 orchestrator SKILLS (plan, implement, merge) in skills/
+//! - 10 sub-AGENTS invoked via Task tool in agents/
 
 use std::fs;
 use std::path::PathBuf;
@@ -65,7 +65,7 @@ const ALL_AGENTS: &[&str] = &[
     "coder-agent",
     "reviewer-agent",
     "committer-agent",
-    "implementer-setup-agent",
+    "implement-setup-agent",
 ];
 
 /// Read-only agents (no Write/Edit, but may have Bash for specific commands like validate)

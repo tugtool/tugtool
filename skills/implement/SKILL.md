@@ -14,7 +14,7 @@ hooks:
 
 **YOUR TOOLS:** `Task` and `AskUserQuestion` ONLY. You have no other tools. You cannot read files, write files, edit files, or run commands. Everything happens through agents you spawn via `Task`.
 
-**FIRST ACTION:** Your very first tool call MUST be `Task` with `tugtool:implementer-setup-agent`. No exceptions.
+**FIRST ACTION:** Your very first tool call MUST be `Task` with `tugtool:implement-setup-agent`. No exceptions.
 
 **FORBIDDEN:**
 - Reading, writing, editing, or creating ANY files
@@ -50,10 +50,10 @@ Implementation complete
   PR: {pr_url}
 ```
 
-### implementer-setup-agent post-call
+### implement-setup-agent post-call
 
 ```
-**tugtool:implementer-setup-agent**(Complete)
+**tugtool:implement-setup-agent**(Complete)
   Worktree: {worktree_path}
   Branch: {branch_name} (from {base_branch})
   Steps to implement: {remaining_count} of {total_count} ({completed_count} already complete)
@@ -188,7 +188,7 @@ For `bead_close_failed` (warn and continue):
 ## Orchestration Loop
 
 ```
-  Task: implementer-setup-agent (FRESH spawn, one time)
+  Task: implement-setup-agent (FRESH spawn, one time)
        │
        ├── error ──► HALT with error
        │
@@ -292,7 +292,7 @@ Output the session start message.
 
 ```
 Task(
-  subagent_type: "tugtool:implementer-setup-agent",
+  subagent_type: "tugtool:implement-setup-agent",
   prompt: '{"plan_path": "<path>", "user_input": "<raw user text or null>", "user_answers": null}',
   description: "Initialize implementation session"
 )
@@ -308,7 +308,7 @@ Parse the setup agent's JSON response. Extract all fields from the output contra
 
 ```
 Task(
-  subagent_type: "tugtool:implementer-setup-agent",
+  subagent_type: "tugtool:implement-setup-agent",
   prompt: '{"plan_path": "<path>", "user_input": null, "user_answers": <user answers>}',
   description: "Re-run setup with user answers"
 )

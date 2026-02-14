@@ -221,27 +221,29 @@ Three skills contain the main workflow logic. Orchestrators are **pure dispatche
 | **implement** | Orchestrates implementation loop: setup → architect → coder → reviewer → committer |
 | **merge** | Wraps `tugtool merge` CLI with dry-run preview, confirmation, and post-merge health checks |
 
-### Sub-Agents (8)
+### Sub-Agents (10)
 
 Sub-agents are invoked via Task tool and return JSON results. Each has specific tools and contracts.
 
-**Planning agents (invoked by planner):**
+**Planning agents (invoked by plan):**
 
 | Agent | Role | Tools |
 |-------|------|-------|
-| **clarifier-agent** | Analyzes ideas, generates clarifying questions | Read, Grep, Glob |
-| **author-agent** | Creates and revises tugplan documents | Read, Grep, Glob, Write, Edit |
-| **critic-agent** | Reviews tugplan quality and skeleton compliance | Read, Grep, Glob |
+| **clarifier-agent** | Analyzes ideas, generates clarifying questions | Bash, Read, Grep, Glob, WebFetch, WebSearch, Write, Edit |
+| **author-agent** | Creates and revises tugplan documents | Bash, Read, Grep, Glob, Write, Edit |
+| **critic-agent** | Reviews tugplan quality and skeleton compliance | Read, Grep, Glob, Bash |
 
-**Implementation agents (invoked by implementer):**
+**Implementation agents (invoked by implement):**
 
 | Agent | Role | Tools |
 |-------|------|-------|
-| **implementer-setup-agent** | Create worktree, sync beads, resolve steps | Read, Grep, Glob, Bash, Write, Edit |
+| **implement-setup-agent** | Create worktree, sync beads, resolve steps | Bash |
 | **architect-agent** | Read-only codebase analysis, produces implementation strategy per step | Bash, Read, Grep, Glob, WebFetch, WebSearch |
 | **coder-agent** | Implements strategy from architect with drift detection | Read, Grep, Glob, Write, Edit, Bash, WebFetch, WebSearch |
-| **reviewer-agent** | Reviews code, verifies tugplan conformance, checks build/test reports | Read, Grep, Glob, Write |
-| **committer-agent** | Stage, commit, close beads, push, create PR | Read, Grep, Glob, Write, Edit, Bash |
+| **reviewer-agent** | Reviews code, verifies tugplan conformance, checks build/test reports | Bash, Read, Grep, Glob, Write, Edit |
+| **committer-agent** | Thin CLI wrapper for git commits | Bash |
+| **auditor-agent** | Post-loop quality gate, verifies deliverables, runs fresh build/test/clippy/fmt | Bash, Read, Grep, Glob |
+| **integrator-agent** | Push branch, create PR, verify CI status | Bash |
 
 All agents use the **persistent agent pattern** — spawned once and resumed for subsequent invocations. Planning agents (clarifier, author, critic) persist across revision loops. Implementation agents (architect, coder, reviewer, committer) persist across steps. This eliminates cold-start exploration, lets agents accumulate knowledge, and enables targeted revisions. Auto-compaction handles context overflow.
 

@@ -1,5 +1,5 @@
 ---
-name: implementer-setup-agent
+name: implement-setup-agent
 description: Initialize implementation session - create worktree via CLI, resolve steps.
 model: sonnet
 permissionMode: dontAsk
