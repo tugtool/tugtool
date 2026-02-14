@@ -111,14 +111,14 @@ or:
   ┌─────────────────────────────────────────────┐
   │                                             │
   │  Step 0: SPAWN author-agent → author_id     │
-  │  Loop N: RESUME author_id                  │◄────┐
+  │  Loop N: RESUME author_id  ◄────────────────┼─────┐
   │                                             │     │
   │  Step 0: SPAWN critic-agent → critic_id     │     │
   │  Loop N: RESUME critic_id                   │     │
   │       │                                     │     │
   │       ├── APPROVE ──► DONE                  │     │
   │       │                                     │     │
-  │       └── REVISE/REJECT ───────────────────┘─────┘
+  │       └── REVISE/REJECT ────────────────────┼─────┘
   │                                             │
   └─────────────────────────────────────────────┘
 ```

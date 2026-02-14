@@ -569,6 +569,25 @@ pub fn run_worktree_create_with_root(
     // Ensure git repository is ready (auto-init for fresh directories)
     ensure_git_repo(&repo_root, &base)?;
 
+    // Ensure beads is initialized in the project root.
+    // All worktrees are subdirectories of repo_root, so bd finds this database
+    // by walking up the directory tree. This must happen before worktree creation
+    // so there's no rollback to worry about.
+    {
+        use tugtool_core::beads::BeadsCli;
+        let beads = BeadsCli::default();
+        if !beads.is_initialized(&repo_root) {
+            if let Err(e) = beads.init(&repo_root) {
+                if json_output {
+                    eprintln!(r#"{{"error": "{}"}}"#, e);
+                } else if !quiet {
+                    eprintln!("error: {}", e);
+                }
+                return Ok(e.exit_code());
+            }
+        }
+    }
+
     // Commit the plan file to the current branch so it's in the worktree after branching
     {
         use std::process::Command;
@@ -695,26 +714,8 @@ pub fn run_worktree_create_with_root(
                 return Ok(e.exit_code());
             }
 
-            // Initialize beads in worktree if not already present
-            {
-                use tugtool_core::beads::BeadsCli;
-                let beads = BeadsCli::default();
-                if !beads.is_initialized(&worktree_path) {
-                    if let Err(e) = beads.init(&worktree_path) {
-                        let _ =
-                            rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
-                        if json_output {
-                            eprintln!(r#"{{"error": "{}"}}"#, e);
-                        } else if !quiet {
-                            eprintln!("error: {}", e);
-                            eprintln!("Rolled back worktree creation");
-                        }
-                        return Ok(e.exit_code());
-                    }
-                }
-            }
-
             // Sync beads and commit (always-on)
+            // Beads database lives in repo_root; bd finds it by walking up from worktree.
             let (bead_mapping, root_bead_id) = match sync_beads_in_worktree(&worktree_path, &plan) {
                 Ok((mapping, root_id)) => {
                     // Try to commit the changes

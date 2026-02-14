@@ -206,12 +206,26 @@ impl BeadsCli {
             .unwrap_or(false)
     }
 
-    /// Check if beads is initialized (`.beads/` directory exists)
+    /// Check if beads is initialized (`.beads/` directory exists).
+    ///
+    /// Walks parent directories because `bd` searches upward for its database.
+    /// A worktree at `.tugtool-worktrees/foo/` will find `.beads/` in the main repo.
     pub fn is_initialized(&self, project_root: &Path) -> bool {
-        project_root.join(".beads").is_dir()
+        let mut dir = project_root.to_path_buf();
+        loop {
+            if dir.join(".beads").is_dir() {
+                return true;
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+        false
     }
 
-    /// Initialize beads in a directory (runs `bd init`)
+    /// Initialize beads in a directory (runs `bd init`).
+    ///
+    /// Idempotent: succeeds if beads is already initialized (locally or in a parent directory).
     pub fn init(&self, working_dir: &Path) -> Result<(), TugError> {
         let output = self
             .cmd_with_dir(Some(working_dir))
@@ -221,6 +235,10 @@ impl BeadsCli {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            // Already initialized (locally or in a parent directory) is not an error
+            if stderr.contains("existing database") {
+                return Ok(());
+            }
             return Err(TugError::BeadsCommand(format!(
                 "bd init failed: {}",
                 stderr.trim()
