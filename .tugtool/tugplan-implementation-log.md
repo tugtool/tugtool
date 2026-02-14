@@ -9,6 +9,32 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-14T22:54:54Z
+bead: tugtool-b23.2
+---
+
+## #step-1: Removed files_to_stage from committer-agent.md, SKILL.md (3 payloads), and CLAUDE.md; updated fixup mode to 4 commands with git add -A and git diff --cached --name-only
+
+**Files changed:**
+- .tugtool/tugplan-4.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-14T22:49:42Z
+bead: tugtool-b23.1
+---
+
+## #step-0: Removed --files CLI flag from tugtool commit; replaced per-file staging with git add -A; added worktree safety guard; removed find_orphaned_changes; populate files_staged from git diff --cached --name-only
+
+**Files changed:**
+- .tugtool/tugplan-4.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-14T20:46:15Z
 ---

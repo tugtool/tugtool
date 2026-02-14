@@ -189,10 +189,6 @@ pub enum Commands {
         #[arg(long, value_name = "MESSAGE")]
         message: String,
 
-        /// Files to stage (relative to worktree root, repeatable)
-        #[arg(long, value_name = "FILE", num_args = 1..)]
-        files: Vec<String>,
-
         /// Bead ID to close (e.g., bd-abc123)
         #[arg(long, value_name = "BEAD_ID")]
         bead: String,
@@ -778,9 +774,6 @@ mod tests {
             ".tugtool/tugplan-1.md",
             "--message",
             "feat: add feature",
-            "--files",
-            "src/a.rs",
-            "src/b.rs",
             "--bead",
             "bd-123",
             "--summary",
@@ -794,7 +787,6 @@ mod tests {
                 step,
                 plan,
                 message,
-                files,
                 bead,
                 summary,
                 close_reason,
@@ -803,7 +795,6 @@ mod tests {
                 assert_eq!(step, "#step-0");
                 assert_eq!(plan, ".tugtool/tugplan-1.md");
                 assert_eq!(message, "feat: add feature");
-                assert_eq!(files, vec!["src/a.rs", "src/b.rs"]);
                 assert_eq!(bead, "bd-123");
                 assert_eq!(summary, "Completed step 0");
                 assert!(close_reason.is_none());
@@ -825,8 +816,6 @@ mod tests {
             ".tugtool/tugplan-2.md",
             "--message",
             "fix: something",
-            "--files",
-            "a.rs",
             "--bead",
             "bd-456",
             "--summary",
