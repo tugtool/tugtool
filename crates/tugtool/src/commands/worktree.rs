@@ -569,6 +569,35 @@ pub fn run_worktree_create_with_root(
     // Ensure git repository is ready (auto-init for fresh directories)
     ensure_git_repo(&repo_root, &base)?;
 
+    // Commit the plan file to the current branch so it's in the worktree after branching
+    {
+        use std::process::Command;
+        let root_str = repo_root.to_string_lossy();
+
+        // Stage the plan file
+        let _ = Command::new("git")
+            .args(["-C", &root_str, "add", &plan])
+            .output();
+
+        // Check if anything is staged
+        let staged = Command::new("git")
+            .args(["-C", &root_str, "diff", "--cached", "--quiet"])
+            .status()
+            .map(|s| !s.success()) // exit 1 = something staged
+            .unwrap_or(false);
+
+        if staged {
+            let plan_filename = plan_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("tugplan");
+            let msg = format!("Add {}", plan_filename);
+            let _ = Command::new("git")
+                .args(["-C", &root_str, "commit", "-m", &msg])
+                .output();
+        }
+    }
+
     let config = WorktreeConfig {
         plan_path: plan_path.clone(),
         base_branch: base,
@@ -666,8 +695,26 @@ pub fn run_worktree_create_with_root(
                 return Ok(e.exit_code());
             }
 
+            // Initialize beads in worktree if not already present
+            {
+                use tugtool_core::beads::BeadsCli;
+                let beads = BeadsCli::default();
+                if !beads.is_initialized(&worktree_path) {
+                    if let Err(e) = beads.init(&worktree_path) {
+                        let _ =
+                            rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
+                        if json_output {
+                            eprintln!(r#"{{"error": "{}"}}"#, e);
+                        } else if !quiet {
+                            eprintln!("error: {}", e);
+                            eprintln!("Rolled back worktree creation");
+                        }
+                        return Ok(e.exit_code());
+                    }
+                }
+            }
+
             // Sync beads and commit (always-on)
-            // Try to sync beads
             let (bead_mapping, root_bead_id) = match sync_beads_in_worktree(&worktree_path, &plan) {
                 Ok((mapping, root_id)) => {
                     // Try to commit the changes

@@ -211,6 +211,25 @@ impl BeadsCli {
         project_root.join(".beads").is_dir()
     }
 
+    /// Initialize beads in a directory (runs `bd init`)
+    pub fn init(&self, working_dir: &Path) -> Result<(), TugError> {
+        let output = self
+            .cmd_with_dir(Some(working_dir))
+            .arg("init")
+            .output()
+            .map_err(|e| TugError::BeadsCommand(format!("failed to run bd init: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(TugError::BeadsCommand(format!(
+                "bd init failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Create a new bead
     #[allow(clippy::too_many_arguments)] // Backward compatibility requires optional parameters
     pub fn create(
