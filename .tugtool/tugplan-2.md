@@ -12,6 +12,8 @@
 | Status | draft |
 | Target branch | main |
 | Last updated | 2026-02-14 |
+| Beads Root | `tugtool-f41` |
+| Beads Root | `tugtool-g22` |
 
 ---
 
@@ -170,6 +172,8 @@ These problems collectively break the four-step workflow (plan, implement, PR, m
 
 #### Step 0: Hardcode env vars in BeadsCli constructor {#step-0}
 
+**Bead:** `tugtool-g22.1`
+
 **Commit:** `fix(beads): hardcode BEADS_NO_DAEMON and BEADS_NO_AUTO_FLUSH in BeadsCli`
 
 **References:** [D01] Hardcode daemon-disable env vars in BeadsCli constructor, (#d01-no-daemon, #context)
@@ -202,6 +206,8 @@ These problems collectively break the four-step workflow (plan, implement, PR, m
 #### Step 1: Stop writing bead annotations to plan files {#step-1}
 
 **Depends on:** #step-0
+
+**Bead:** `tugtool-g22.2`
 
 **Commit:** `fix(beads): stop writing bead annotations to plan files during sync`
 
@@ -242,6 +248,8 @@ These problems collectively break the four-step workflow (plan, implement, PR, m
 
 **Depends on:** #step-0
 
+**Bead:** `tugtool-g22.3`
+
 **Commit:** `fix(init): remove beads git hooks during init`
 
 **References:** [D05] Init removes beads git hooks, (#d05-remove-hooks, #context)
@@ -275,6 +283,8 @@ These problems collectively break the four-step workflow (plan, implement, PR, m
 #### Step 3: Remove bead completion check and convert main sync to warning in merge {#step-3}
 
 **Depends on:** #step-0
+
+**Bead:** `tugtool-g22.4`
 
 **Commit:** `fix(merge): remove bead completion check, convert main sync to warning`
 
@@ -313,6 +323,8 @@ These problems collectively break the four-step workflow (plan, implement, PR, m
 #### Step 4: Update skill files and CLAUDE.md {#step-4}
 
 **Depends on:** #step-1, #step-2, #step-3
+
+**Bead:** `tugtool-g22.5`
 
 **Commit:** `docs: update skill files and CLAUDE.md for fixed beads integration`
 

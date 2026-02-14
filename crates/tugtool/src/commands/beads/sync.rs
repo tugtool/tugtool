@@ -20,6 +20,8 @@ pub struct SyncData {
     pub enriched: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enrich_errors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bead_mapping: Option<HashMap<String, String>>,
 }
 
 /// Options for the sync command
@@ -138,22 +140,7 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
     let result = sync_plan_to_beads(&path, &plan, &content, &ctx);
 
     match result {
-        Ok((root_id, steps_synced, deps_added, updated_content, enrich_errors)) => {
-            // Write updated content back to file (unless dry run)
-            if !dry_run {
-                if let Some(new_content) = updated_content {
-                    if let Err(e) = fs::write(&path, new_content) {
-                        return output_error(
-                            json_output,
-                            "E002",
-                            &format!("failed to write file: {}", e),
-                            &file,
-                            1,
-                        );
-                    }
-                }
-            }
-
+        Ok((root_id, steps_synced, deps_added, bead_mapping, enrich_errors)) => {
             if json_output {
                 let data = SyncData {
                     file: file.clone(),
@@ -166,6 +153,11 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
                         None
                     } else {
                         Some(enrich_errors.clone())
+                    },
+                    bead_mapping: if bead_mapping.is_empty() {
+                        None
+                    } else {
+                        Some(bead_mapping)
                     },
                 };
                 let response = JsonResponse::ok("beads sync", data);
@@ -223,10 +215,18 @@ struct SyncContext<'a> {
 fn sync_plan_to_beads(
     _path: &Path,
     plan: &TugPlan,
-    content: &str,
+    _content: &str,
     ctx: &SyncContext<'_>,
-) -> Result<(Option<String>, usize, usize, Option<String>, Vec<String>), TugError> {
-    let mut updated_content = content.to_string();
+) -> Result<
+    (
+        Option<String>,
+        usize,
+        usize,
+        HashMap<String, String>,
+        Vec<String>,
+    ),
+    TugError,
+> {
     let mut steps_synced = 0;
     let mut deps_added = 0;
 
@@ -262,8 +262,7 @@ fn sync_plan_to_beads(
     };
 
     // Step 1: Ensure root bead exists
-    let (root_id, root_created) =
-        ensure_root_bead(plan, &phase_title, ctx, &existing_ids, &mut updated_content)?;
+    let (root_id, root_created) = ensure_root_bead(plan, &phase_title, ctx, &existing_ids)?;
 
     // Track newly created beads to avoid double-updates during enrichment
     let mut created_beads: HashSet<String> = HashSet::new();
@@ -276,14 +275,8 @@ fn sync_plan_to_beads(
 
     // Step 2: Process each step
     for step in &plan.steps {
-        let (step_bead_id, step_created) = ensure_step_bead(
-            step,
-            &root_id,
-            plan,
-            ctx,
-            &existing_ids,
-            &mut updated_content,
-        )?;
+        let (step_bead_id, step_created) =
+            ensure_step_bead(step, &root_id, plan, ctx, &existing_ids)?;
 
         anchor_to_bead.insert(step.anchor.clone(), step_bead_id.clone());
         if step_created {
@@ -294,14 +287,8 @@ fn sync_plan_to_beads(
         // Handle substeps if mode is "children"
         if ctx.substeps_mode == "children" {
             for substep in &step.substeps {
-                let (substep_bead_id, substep_created) = ensure_substep_bead(
-                    substep,
-                    &step_bead_id,
-                    plan,
-                    ctx,
-                    &existing_ids,
-                    &mut updated_content,
-                )?;
+                let (substep_bead_id, substep_created) =
+                    ensure_substep_bead(substep, &step_bead_id, plan, ctx, &existing_ids)?;
 
                 anchor_to_bead.insert(substep.anchor.clone(), substep_bead_id.clone());
                 if substep_created {
@@ -418,16 +405,11 @@ fn sync_plan_to_beads(
         }
     }
 
-    let content_changed = updated_content != content;
     Ok((
         Some(root_id),
         steps_synced,
         deps_added,
-        if content_changed {
-            Some(updated_content)
-        } else {
-            None
-        },
+        anchor_to_bead,
         enrich_errors,
     ))
 }
@@ -438,7 +420,6 @@ fn ensure_root_bead(
     phase_title: &str,
     ctx: &SyncContext<'_>,
     existing_ids: &HashSet<String>,
-    content: &mut String,
 ) -> Result<(String, bool), TugError> {
     // Check if we already have a root ID
     if let Some(ref root_id) = plan.metadata.beads_root_id {
@@ -461,7 +442,6 @@ fn ensure_root_bead(
     if ctx.dry_run {
         // Generate a fake ID for dry run
         let fake_id = "bd-dryrun-root".to_string();
-        write_beads_root_to_content(content, &fake_id);
         return Ok((fake_id, true));
     }
 
@@ -485,9 +465,6 @@ fn ensure_root_bead(
         None,
     )?;
 
-    // Write Beads Root to content
-    write_beads_root_to_content(content, &issue.id);
-
     Ok((issue.id, true))
 }
 
@@ -498,7 +475,6 @@ fn ensure_step_bead(
     plan: &TugPlan,
     ctx: &SyncContext<'_>,
     existing_ids: &HashSet<String>,
-    content: &mut String,
 ) -> Result<(String, bool), TugError> {
     // Check if step already has a bead ID
     if let Some(ref bead_id) = step.bead_id {
@@ -521,7 +497,6 @@ fn ensure_step_bead(
     if ctx.dry_run {
         // Generate a fake ID for dry run
         let fake_id = format!("bd-dryrun-{}", step.anchor);
-        write_bead_to_step(content, &step.anchor, &fake_id);
         return Ok((fake_id, true));
     }
 
@@ -545,9 +520,6 @@ fn ensure_step_bead(
         None,
     )?;
 
-    // Write Bead ID to step in content
-    write_bead_to_step(content, &step.anchor, &issue.id);
-
     Ok((issue.id, true))
 }
 
@@ -558,7 +530,6 @@ fn ensure_substep_bead(
     plan: &TugPlan,
     ctx: &SyncContext<'_>,
     existing_ids: &HashSet<String>,
-    content: &mut String,
 ) -> Result<(String, bool), TugError> {
     // Check if substep already has a bead ID
     if let Some(ref bead_id) = substep.bead_id {
@@ -598,7 +569,6 @@ fn ensure_substep_bead(
 
     if ctx.dry_run {
         let fake_id = format!("bd-dryrun-{}", substep.anchor);
-        write_bead_to_step(content, &substep.anchor, &fake_id);
         return Ok((fake_id, true));
     }
 
@@ -621,9 +591,6 @@ fn ensure_substep_bead(
         None,
         None,
     )?;
-
-    // Write Bead ID to substep in content
-    write_bead_to_step(content, &substep.anchor, &issue.id);
 
     Ok((issue.id, true))
 }
@@ -673,117 +640,6 @@ fn sync_dependencies(
     }
 
     Ok(added)
-}
-
-/// Write Beads Root ID to content (in Plan Metadata)
-fn write_beads_root_to_content(content: &mut String, bead_id: &str) {
-    // Check if Beads Root already exists in content
-    let beads_root_pattern = regex::Regex::new(r"\*\*Beads Root:\*\*\s*`[^`]*`").unwrap();
-    let beads_root_line = format!("**Beads Root:** `{}`", bead_id);
-
-    if beads_root_pattern.is_match(content) {
-        // Replace existing
-        *content = beads_root_pattern
-            .replace(content, beads_root_line.as_str())
-            .to_string();
-    } else {
-        // Add after Plan Metadata table
-        // Look for the table end (line starting with | followed by blank line or ---)
-        let lines: Vec<&str> = content.lines().collect();
-        let mut insert_pos = None;
-        let mut in_metadata = false;
-
-        for (i, line) in lines.iter().enumerate() {
-            if line.contains("Plan Metadata") {
-                in_metadata = true;
-            }
-            if in_metadata && line.starts_with('|') && line.contains("Last updated") {
-                // Insert after the table row containing Last updated
-                for (j, next_line) in lines.iter().enumerate().skip(i + 1) {
-                    if !next_line.starts_with('|') {
-                        insert_pos = Some(j);
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-
-        if let Some(pos) = insert_pos {
-            let mut new_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-            // Insert Beads Root row in table format
-            let table_row = format!("| Beads Root | `{}` |", bead_id);
-            new_lines.insert(pos, table_row);
-            *content = new_lines.join("\n");
-        }
-    }
-}
-
-/// Write Bead ID to a step in content
-///
-/// Uses anchor-based matching only (not line numbers) to avoid issues with
-/// stale line numbers after content modifications.
-fn write_bead_to_step(content: &mut String, anchor: &str, bead_id: &str) {
-    let lines: Vec<&str> = content.lines().collect();
-    let mut new_lines: Vec<String> = Vec::new();
-    let bead_line = format!("**Bead:** `{}`", bead_id);
-    let bead_pattern = regex::Regex::new(r"^\*\*Bead:\*\*\s*`[^`]*`").unwrap();
-
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i];
-        new_lines.push(line.to_string());
-
-        // Only match on anchor - line numbers become stale after edits
-        if line.contains(&format!("{{#{}}}", anchor)) {
-            // Look ahead to find where to insert/update Bead line
-            // Placement: after **Depends on:** if present, before **Commit:**
-            let mut found_bead = false;
-            let mut insert_before = None;
-
-            for j in (i + 1)..std::cmp::min(i + 20, lines.len()) {
-                let next_line = lines[j];
-
-                // Check if bead line already exists
-                if bead_pattern.is_match(next_line) {
-                    // Copy intermediate lines first, then replace the bead
-                    for line in lines.iter().skip(i + 1).take(j - i - 1) {
-                        new_lines.push(line.to_string());
-                    }
-                    new_lines.push(bead_line.clone());
-                    found_bead = true;
-                    i = j;
-                    break;
-                }
-
-                // Check for **Commit:** or next step/section header
-                if next_line.starts_with("**Commit:**")
-                    || next_line.starts_with("####")
-                    || next_line.starts_with("---")
-                {
-                    insert_before = Some(j);
-                    break;
-                }
-            }
-
-            if !found_bead {
-                if let Some(pos) = insert_before {
-                    // Copy lines up to insert position
-                    for line in lines.iter().skip(i + 1).take(pos - i - 1) {
-                        new_lines.push(line.to_string());
-                    }
-                    // Insert bead line
-                    new_lines.push(bead_line.clone());
-                    new_lines.push(String::new()); // Blank line before next section
-                    i = pos - 1;
-                }
-            }
-        }
-
-        i += 1;
-    }
-
-    *content = new_lines.join("\n");
 }
 
 /// Resolve file path relative to project
@@ -986,6 +842,7 @@ fn output_error(
                 dry_run: false,
                 enriched: None,
                 enrich_errors: None,
+                bead_mapping: None,
             },
             issues,
         );

@@ -11,9 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use tugtool_core::{
-    BeadsCli, Step, derive_tugplan_slug, find_worktree_by_tugplan, parse_tugplan, remove_worktree,
-};
+use tugtool_core::{derive_tugplan_slug, find_worktree_by_tugplan, remove_worktree};
 
 /// JSON output for merge command
 #[derive(Serialize)]
@@ -211,55 +209,6 @@ fn check_worktree_dirty(wt_path: &Path) -> Result<Option<String>, String> {
     }
 }
 
-/// P1 preflight check: warn if beads/steps are not all complete.
-/// Returns None if all complete, beads unavailable, or beads not configured.
-fn check_bead_completion(repo_root: &Path, plan_path: &Path) -> Option<String> {
-    // Read and parse the plan file
-    let full_path = repo_root.join(plan_path);
-    let content = std::fs::read_to_string(&full_path).ok()?;
-    let plan = parse_tugplan(&content).ok()?;
-
-    // Check if beads are configured (has any bead_id on steps)
-    let steps_with_beads: Vec<&Step> = plan.steps.iter().filter(|s| s.bead_id.is_some()).collect();
-
-    if steps_with_beads.is_empty() {
-        return None; // No beads configured, skip check silently
-    }
-
-    // Check bead completion via BeadsCli
-    let beads = BeadsCli::default();
-    if !beads.is_installed(None) {
-        return None; // bd not installed, skip silently
-    }
-
-    let total = steps_with_beads.len();
-    let complete = steps_with_beads
-        .iter()
-        .filter(|s| {
-            if let Some(ref bead_id) = s.bead_id {
-                beads
-                    .show(bead_id, None)
-                    .map(|d| d.status.to_lowercase() == "closed")
-                    .unwrap_or(false)
-            } else {
-                false
-            }
-        })
-        .count();
-
-    let incomplete = total - complete;
-    if incomplete == 0 {
-        None
-    } else {
-        Some(format!(
-            "{} of {} steps incomplete. Run 'tug beads status {}' to review.",
-            incomplete,
-            total,
-            plan_path.display()
-        ))
-    }
-}
-
 /// P2 preflight check (dry-run only): preview branch divergence from main.
 /// Shows commit count and diff stat summary.
 /// Returns None if merge-base fails or branch has no commits ahead.
@@ -423,7 +372,7 @@ fn check_pr_checks(branch: &str) -> Option<String> {
 fn run_preflight_checks(
     wt_path: &Path,
     repo_root: &Path,
-    plan_path: &Path,
+    _plan_path: &Path,
     dry_run: bool,
     branch: &str,
 ) -> PreflightResult {
@@ -435,11 +384,6 @@ fn run_preflight_checks(
         Ok(Some(err)) => blocking_error = Some(err),
         Ok(None) => {}
         Err(e) => warnings.push(format!("Could not check worktree status: {}", e)),
-    }
-
-    // P1: Bead completion check (warning only)
-    if let Some(warning) = check_bead_completion(repo_root, plan_path) {
-        warnings.push(warning);
     }
 
     // P2: Branch divergence and infrastructure diff (dry-run only)
@@ -1110,6 +1054,13 @@ fn run_merge_in(
         }
     }
 
+    // P4: Main sync check (remote mode only, warning not blocker)
+    if effective_mode == "remote" {
+        if let Err(e) = check_main_sync(&repo_root) {
+            all_warnings.push(format!("Main sync warning: {}", e));
+        }
+    }
+
     let preflight_warnings: Option<Vec<String>> = if all_warnings.is_empty() {
         None
     } else {
@@ -1118,17 +1069,6 @@ fn run_merge_in(
 
     // Step 2: Pre-dry-run checks
     let dirty_files = get_dirty_files(&repo_root).unwrap_or_default();
-
-    // Step 2a: Remote mode only - check main sync with origin
-    if effective_mode == "remote" {
-        if let Err(e) = check_main_sync(&repo_root) {
-            let data = MergeData::error(e.clone(), dry_run);
-            if json {
-                println!("{}", serde_json::to_string_pretty(&data).unwrap());
-            }
-            return Err(e);
-        }
-    }
 
     // Step 2b: Partition dirty files into infrastructure and non-infrastructure
     let infra_files: Vec<&str> = dirty_files
@@ -2413,60 +2353,6 @@ mod tests {
         assert_eq!(result.warnings.len(), 1);
         assert_eq!(result.warnings[0], "some warning");
         assert_eq!(result.blocking_error.unwrap(), "blocking issue");
-    }
-
-    #[test]
-    fn test_check_bead_completion_no_beads_returns_none() {
-        use tempfile::TempDir;
-        let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path();
-
-        // Create a minimal plan file with no bead IDs
-        let tug_dir = temp_path.join(".tugtool");
-        fs::create_dir_all(&tug_dir).unwrap();
-        fs::write(
-            tug_dir.join("tugplan-test.md"),
-            "## Phase 1 {#phase-1}\n\n---\n\n### 1.0.4 Execution Steps {#execution-steps}\n\n#### Step 0: Do something {#step-0}\n\n**Tasks:**\n- [ ] Do a thing\n",
-        )
-        .unwrap();
-
-        let result = check_bead_completion(temp_path, Path::new(".tugtool/tugplan-test.md"));
-        assert!(result.is_none(), "No beads configured should return None");
-    }
-
-    #[test]
-    fn test_check_bead_completion_bd_not_installed_returns_none() {
-        use tempfile::TempDir;
-        let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path();
-
-        // Create a plan file with bead IDs
-        let tug_dir = temp_path.join(".tugtool");
-        fs::create_dir_all(&tug_dir).unwrap();
-        fs::write(
-            tug_dir.join("tugplan-test.md"),
-            "## Phase 1 {#phase-1}\n\n---\n\n### Plan Metadata {#plan-metadata}\n\n| Field | Value |\n|------|-------|\n| Beads Root | `test-root` |\n\n---\n\n### 1.0.4 Execution Steps {#execution-steps}\n\n#### Step 0: Do something {#step-0}\n\n**Bead:** `test-root.1`\n\n**Tasks:**\n- [ ] Do a thing\n",
-        )
-        .unwrap();
-
-        // When bd is not installed, should return None (skip silently)
-        let result = check_bead_completion(temp_path, Path::new(".tugtool/tugplan-test.md"));
-        // Result depends on whether bd is installed in the test environment
-        // If bd is not installed: None (silently skipped)
-        // If bd is installed but bead doesn't exist: None (show fails, treated as incomplete)
-        // Either way, this should not panic
-        let _ = result;
-    }
-
-    #[test]
-    fn test_check_bead_completion_missing_file_returns_none() {
-        use tempfile::TempDir;
-        let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path();
-
-        // Plan file does not exist
-        let result = check_bead_completion(temp_path, Path::new(".tugtool/tugplan-nonexistent.md"));
-        assert!(result.is_none(), "Missing plan file should return None");
     }
 
     #[test]

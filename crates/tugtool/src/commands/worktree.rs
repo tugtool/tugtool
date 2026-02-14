@@ -183,26 +183,8 @@ fn sync_beads_in_worktree(
         });
     }
 
-    // Re-parse the plan to extract bead mapping
-    let plan_content = std::fs::read_to_string(worktree_path.join(plan_path)).map_err(|e| {
-        tugtool_core::error::TugError::BeadsSyncFailed {
-            reason: format!("failed to read synced plan: {}", e),
-        }
-    })?;
-
-    let parsed_plan = tugtool_core::parse_tugplan(&plan_content).map_err(|e| {
-        tugtool_core::error::TugError::BeadsSyncFailed {
-            reason: format!("failed to parse synced plan: {}", e),
-        }
-    })?;
-
-    // Build bead mapping from step anchors to bead IDs
-    let mut bead_mapping = std::collections::HashMap::new();
-    for step in &parsed_plan.steps {
-        if let Some(ref bead_id) = step.bead_id {
-            bead_mapping.insert(step.anchor.clone(), bead_id.clone());
-        }
-    }
+    // Extract bead mapping from sync response
+    let bead_mapping = response.data.bead_mapping.unwrap_or_default();
 
     Ok((bead_mapping, response.data.root_bead_id))
 }

@@ -9,8 +9,17 @@ Tugtool transforms ideas into working software through orchestrated LLM agents. 
 **ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
 
 **Exceptions:**
-- The `tugtool worktree create` command commits the tugplan file and bead annotations to the worktree branch as part of worktree setup.
+- The `tugtool worktree create` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
 - The `committer-agent` is explicitly given the job to make commits during the implementer workflow.
+
+## Beads Policy
+
+**Beads is a hard requirement.** Beads provides inter-agent communication (architect writes strategy to bead design field, coder reads it) and enables interrupt/resume via `bd ready`. Beads failures during worktree setup are fatal.
+
+- **Direct SQLite mode**: All `bd` commands run with `BEADS_NO_DAEMON=1` and `BEADS_NO_AUTO_FLUSH=1` (hardcoded in `BeadsCli` constructor). No daemon, no auto-flush.
+- **No plan file annotations**: `tugtool beads sync` creates beads in SQLite and returns `bead_mapping` in JSON output. Plan files are never modified by sync.
+- **Hook removal**: `tugtool init` detects and removes `.git/hooks/pre-commit` and `.git/hooks/post-merge` files that contain beads/bd references. This prevents beads git hooks from blocking commits.
+- **Merge checks simplified**: The unreliable bead completion check has been removed from merge preflight. The main sync check (local vs origin/main) is now a warning, not a blocker.
 
 ## Plan Mode Policy
 
@@ -272,7 +281,7 @@ When you run `/tugtool:implement .tugtool/tugplan-N.md`:
 
 1. **Worktree created**: A new git worktree is created at `.tugtree/tugplan__<name>-<timestamp>/`
 2. **Branch created**: A new branch `tugplan/<name>-<timestamp>` is created from main
-3. **Beads synced**: Bead annotations are synced and committed to the worktree
+3. **Beads synced**: Beads are synced to SQLite and bead_mapping is returned in JSON output (plan files are not modified)
 4. **Steps executed**: Each step is implemented and committed separately
 5. **PR created**: After all steps complete, a PR is automatically created to main
 
@@ -366,7 +375,9 @@ git branch -d tugplan/<name>-<timestamp>
 
 #### Step commit succeeds but bead close fails
 
-This happens when a step commit succeeds but the bead close fails. The worktree is left in a consistent state, but beads tracking is out of sync. To fix:
+This happens when a step commit succeeds but the bead close fails. The worktree is left in a consistent state, but beads tracking is out of sync.
+
+Note: Beads now uses direct SQLite mode (no daemon, no auto-flush), which eliminates most daemon-related failures. If a bead close still fails, to fix:
 
 1. Check the implementation log in the worktree for the bead ID
 2. Close the bead manually: `tugtool beads close bd-xxx`

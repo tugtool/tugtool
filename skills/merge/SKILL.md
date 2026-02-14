@@ -59,7 +59,7 @@ If the command fails (exit code non-zero), report the error and halt. The error 
 Note: The CLI handles dirty files automatically during the actual merge (commits infrastructure files, discards leaked implementation files). The skill does NOT need to commit or clean up dirty files — just report them if present in the dry-run output.
 
 If the dry-run output includes a `warnings` array, present each warning to the user before asking for confirmation. Warnings are non-blocking (the merge can proceed) but surface important information such as:
-- Incomplete steps/beads
+- Main sync warning (local main is out of sync with origin/main)
 - Multiple worktrees found for the plan
 - gh CLI unavailable (falling back to local mode)
 - Branch divergence details (commit count, diff stat)
@@ -163,7 +163,7 @@ If any step fails, report clearly and suggest recovery. Do not retry automatical
 - **Worktree cleanup failed**: Run `git worktree remove <path> --force`
 
 **Common preflight warnings** (non-blocking):
-- **Incomplete steps**: "N of M steps incomplete" -- some beads are still open. Merge can proceed; user may be deferring work to a follow-up.
+- **Main sync warning**: Local main is out of sync with origin/main. This is now a warning, not a blocker — the merge can proceed.
 - **Multiple worktrees**: More than one worktree matches the plan. The most recent is used; others may be stale.
 - **gh CLI unavailable**: Remote origin detected but `gh` is not installed or authenticated. Falls back to local merge mode.
 - **Branch divergence**: Shows commit count and diff stat for the branch ahead of main. Informational only.
