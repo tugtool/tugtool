@@ -470,6 +470,32 @@ pub fn run_worktree_create_with_root(
             // We can determine reuse by checking if the worktree already had content
             let reused = worktree_path.join(".tugtool").exists();
 
+            // Ensure plan file exists in worktree (it may not be committed to base branch)
+            if !reused {
+                let worktree_plan = worktree_path.join(&plan_path);
+                if !worktree_plan.exists() {
+                    let source_plan = repo_root.join(&plan_path);
+                    if let Some(parent) = worktree_plan.parent() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            let _ = rollback_worktree_creation(
+                                &worktree_path,
+                                &branch_name,
+                                &repo_root,
+                            );
+                            return Err(format!(
+                                "Failed to create plan directory in worktree: {}",
+                                e
+                            ));
+                        }
+                    }
+                    if let Err(e) = std::fs::copy(&source_plan, &worktree_plan) {
+                        let _ =
+                            rollback_worktree_creation(&worktree_path, &branch_name, &repo_root);
+                        return Err(format!("Failed to copy plan to worktree: {}", e));
+                    }
+                }
+            }
+
             // Run tugtool init in the worktree (idempotent, creates .tugtool/ infrastructure)
             let init_result = std::env::current_exe()
                 .map_err(|e| tugtool_core::error::TugError::InitFailed {
