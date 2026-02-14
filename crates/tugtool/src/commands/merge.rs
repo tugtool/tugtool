@@ -1511,9 +1511,10 @@ fn run_merge_in(
         .output();
 
     // Sweep any other stale tugtool/* branches (no associated worktree)
-    if let (Ok(branches), Ok(worktrees)) =
-        (list_tugtool_branches(&repo_root), list_worktrees(&repo_root))
-    {
+    if let (Ok(branches), Ok(worktrees)) = (
+        list_tugtool_branches(&repo_root),
+        list_worktrees(&repo_root),
+    ) {
         let active_branches: std::collections::HashSet<_> =
             worktrees.iter().map(|w| w.branch.clone()).collect();
         for b in &branches {
