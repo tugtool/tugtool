@@ -21,7 +21,7 @@ pub enum WorktreeCommands {
     ///
     /// Creates a git worktree and branch for implementing a plan in isolation.
     #[command(
-        long_about = "Create worktree for plan implementation.\n\nCreates:\n  - Branch: tug/<slug>-<timestamp>\n  - Worktree: .tug.worktrees/<sanitized-branch-name>/\n\nBeads sync is always-on:\n  - Atomically syncs beads and commits annotations in worktree\n  - Full rollback if sync or commit fails\n\nWorktree creation is idempotent:\n  - Returns existing worktree if one exists for this plan\n  - Creates new worktree if none exists\n\nValidates that the plan has at least one execution step."
+        long_about = "Create worktree for plan implementation.\n\nCreates:\n  - Branch: tugtool/<slug>-<timestamp>\n  - Worktree: .tugtool-worktrees/<sanitized-branch-name>/\n\nBeads sync is always-on:\n  - Atomically syncs beads and commits annotations in worktree\n  - Full rollback if sync or commit fails\n\nWorktree creation is idempotent:\n  - Returns existing worktree if one exists for this plan\n  - Creates new worktree if none exists\n\nValidates that the plan has at least one execution step."
     )]
     Create {
         /// Plan file to implement
@@ -76,7 +76,7 @@ pub enum WorktreeCommands {
     ///
     /// Removes a worktree identified by plan path, branch name, or worktree path.
     #[command(
-        long_about = "Remove a specific worktree.\n\nIdentifies worktree by:\n  - Plan path (e.g., .tug/plan-14.md)\n  - Branch name (e.g., tug/14-20250209-172637)\n  - Worktree path (e.g., .tug.worktrees/tug__14-...)\n\nIf multiple worktrees match a plan path, an error is returned\nlisting all candidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
+        long_about = "Remove a specific worktree.\n\nIdentifies worktree by:\n  - Plan path (e.g., .tugtool/tugplan-14.md)\n  - Branch name (e.g., tugtool/14-20250209-172637)\n  - Worktree path (e.g., .tugtool-worktrees/tugtool__14-...)\n\nIf multiple worktrees match a plan path, an error is returned\nlisting all candidates. Use branch name or worktree path to disambiguate.\n\nUse --force to remove dirty worktrees with uncommitted changes."
     )]
     Remove {
         /// Target identifier (plan path, branch name, or worktree path)
@@ -215,17 +215,17 @@ fn commit_bead_annotations(
 ) -> Result<(), tugtool_core::error::TugError> {
     use std::process::Command;
 
-    // Stage the .tug/ directory (includes init files: config, log, skeleton)
+    // Stage the .tugtool/ directory (includes init files: config, log, skeleton)
     let status = Command::new("git")
-        .args(["-C", &worktree_path.to_string_lossy(), "add", ".tug/"])
+        .args(["-C", &worktree_path.to_string_lossy(), "add", ".tugtool/"])
         .status()
         .map_err(|e| tugtool_core::error::TugError::BeadCommitFailed {
-            reason: format!("failed to stage .tug/ directory: {}", e),
+            reason: format!("failed to stage .tugtool/ directory: {}", e),
         })?;
 
     if !status.success() {
         return Err(tugtool_core::error::TugError::BeadCommitFailed {
-            reason: "git add .tug/ failed".to_string(),
+            reason: "git add .tugtool/ failed".to_string(),
         });
     }
 
@@ -446,7 +446,7 @@ pub fn run_worktree_create_with_root(
                 }
 
                 eprintln!("\nFix validation issues before creating worktree.");
-                eprintln!("Run: tug validate {}", plan);
+                eprintln!("Run: tugtool validate {}", plan);
                 eprintln!("Or use --skip-validation to bypass this check.");
             }
             return Ok(8); // Exit code 8: Validation failed
@@ -468,9 +468,9 @@ pub fn run_worktree_create_with_root(
 
             // Reuse detection is now handled by find_existing_worktree() in core
             // We can determine reuse by checking if the worktree already had content
-            let reused = worktree_path.join(".tug").exists();
+            let reused = worktree_path.join(".tugtool").exists();
 
-            // Run tug init in the worktree (idempotent, creates .tug/ infrastructure)
+            // Run tugtool init in the worktree (idempotent, creates .tugtool/ infrastructure)
             let init_result = std::env::current_exe()
                 .map_err(|e| tugtool_core::error::TugError::InitFailed {
                     reason: format!("failed to get current executable: {}", e),
@@ -635,7 +635,7 @@ pub fn run_worktree_create_with_root(
             };
 
             // Create artifact directories inside worktree
-            let artifacts_base = worktree_path.join(".tug/artifacts");
+            let artifacts_base = worktree_path.join(".tugtool/artifacts");
             if let Err(e) = std::fs::create_dir_all(&artifacts_base) {
                 eprintln!("warning: failed to create artifacts base directory: {}", e);
             }
@@ -1070,7 +1070,7 @@ pub fn run_worktree_remove_with_root(
         .output();
 
     if json_output {
-        let plan_path = format!(".tug/plan-{}.md", worktree.plan_slug);
+        let plan_path = format!(".tugtool/tugplan-{}.md", worktree.plan_slug);
         let data = RemoveData {
             worktree_path: worktree_path.display().to_string(),
             branch_name: worktree.branch.clone(),
@@ -1100,7 +1100,7 @@ mod tests {
             worktree_path: "/path/to/worktree".to_string(),
             branch_name: "tug/test-20260208-120000".to_string(),
             base_branch: "main".to_string(),
-            plan_path: ".tug/plan-test.md".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
             total_steps: 5,
             bead_mapping: None,
             root_bead_id: None,
@@ -1149,9 +1149,9 @@ mod tests {
     #[test]
     fn test_remove_data_serialization() {
         let data = RemoveData {
-            worktree_path: ".tug.worktrees/tug__test-20260210-120000".to_string(),
-            branch_name: "tug/test-20260210-120000".to_string(),
-            plan_path: ".tug/plan-test.md".to_string(),
+            worktree_path: ".tugtool-worktrees/tugtool__test-20260210-120000".to_string(),
+            branch_name: "tugtool/test-20260210-120000".to_string(),
+            plan_path: ".tugtool/tugplan-test.md".to_string(),
         };
 
         let json = serde_json::to_string(&data).expect("serialization should succeed");

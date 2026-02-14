@@ -53,11 +53,11 @@ pub fn run_step_commit(
     let mut files_to_stage = files.clone();
 
     // Add implementation log
-    files_to_stage.push(".tug/plan-implementation-log.md".to_string());
+    files_to_stage.push(".tugtool/tugplan-implementation-log.md".to_string());
 
     // If rotation occurred, add archive directory
     if rotate_result.rotated {
-        files_to_stage.push(".tug/archive".to_string());
+        files_to_stage.push(".tugtool/archive".to_string());
     }
 
     // Stage all files
@@ -257,8 +257,8 @@ fn find_orphaned_changes(worktree_path: &Path) -> Result<Vec<String>, String> {
         let worktree_status = line.as_bytes()[1];
         let file_path = line[3..].to_string();
 
-        // Skip .tug/ infrastructure files — these are managed separately
-        if file_path.starts_with(".tug/") {
+        // Skip .tugtool/ infrastructure files — these are managed separately
+        if file_path.starts_with(".tugtool/") {
             continue;
         }
 

@@ -1007,19 +1007,19 @@ pub(crate) fn cleanup_stale_branches_with_pr_checker(
 /// * `Err(TugError)` if any step fails
 pub fn remove_worktree(worktree_path: &Path, repo_root: &Path) -> Result<(), TugError> {
     // Delete legacy internal session file (backward compatibility)
-    let internal_session = worktree_path.join(".tug").join("session.json");
+    let internal_session = worktree_path.join(".tugtool").join("session.json");
     if internal_session.exists() {
         std::fs::remove_file(&internal_session)?;
     }
 
     // Delete legacy internal step-artifacts directory (backward compatibility)
-    let internal_artifacts = worktree_path.join(".tug").join("step-artifacts");
+    let internal_artifacts = worktree_path.join(".tugtool").join("step-artifacts");
     if internal_artifacts.exists() {
         std::fs::remove_dir_all(&internal_artifacts)?;
     }
 
     // Delete current artifacts directory (new location)
-    let artifacts = worktree_path.join(".tug").join("artifacts");
+    let artifacts = worktree_path.join(".tugtool").join("artifacts");
     if artifacts.exists() {
         std::fs::remove_dir_all(&artifacts)?;
     }
