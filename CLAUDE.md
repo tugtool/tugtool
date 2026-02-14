@@ -175,9 +175,9 @@ This creates the `.tugtool/` directory with required files:
 
 Use the skills:
 ```
-/tugtool:planner "add user authentication"       # Create a new tugplan
-/tugtool:planner .tugtool/tugplan-auth.md       # Revise existing tugplan
-/tugtool:implementer .tugtool/tugplan-auth.md  # Execute a tugplan
+/tugtool:plan "add user authentication"       # Create a new tugplan
+/tugtool:plan .tugtool/tugplan-auth.md       # Revise existing tugplan
+/tugtool:implement .tugtool/tugplan-auth.md  # Execute a tugplan
 /tugtool:merge .tugtool/tugplan-auth.md         # Merge PR and clean up
 ```
 
@@ -207,8 +207,8 @@ Tugtool is a Claude Code plugin. Planning and execution are invoked via skills, 
 
 | Skill | Purpose |
 |-------|---------|
-| `/tugtool:planner` | Create or revise a tugplan through agent collaboration |
-| `/tugtool:implementer` | Execute a tugplan through agent orchestration |
+| `/tugtool:plan` | Create or revise a tugplan through agent collaboration |
+| `/tugtool:implement` | Execute a tugplan through agent orchestration |
 | `/tugtool:merge` | Merge implementation PR and clean up worktree |
 
 ### Orchestrator Skills (3)
@@ -217,8 +217,8 @@ Three skills contain the main workflow logic. Orchestrators are **pure dispatche
 
 | Skill | Role |
 |-------|------|
-| **planner** | Orchestrates planning loop: setup → clarifier → author → critic |
-| **implementer** | Orchestrates implementation loop: setup → architect → coder → reviewer → committer |
+| **plan** | Orchestrates planning loop: setup → clarifier → author → critic |
+| **implement** | Orchestrates implementation loop: setup → architect → coder → reviewer → committer |
 | **merge** | Wraps `tugtool merge` CLI with dry-run preview, confirmation, and post-merge health checks |
 
 ### Sub-Agents (8)
@@ -267,7 +267,7 @@ The implementer skill uses git worktrees to isolate implementation work in separ
 
 ### How It Works
 
-When you run `/tugtool:implementer .tugtool/tugplan-N.md`:
+When you run `/tugtool:implement .tugtool/tugplan-N.md`:
 
 1. **Worktree created**: A new git worktree is created at `.tugtool-worktrees/tugplan__<name>-<timestamp>/`
 2. **Branch created**: A new branch `tugplan/<name>-<timestamp>` is created from main

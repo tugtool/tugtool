@@ -1,5 +1,5 @@
 ---
-name: implementer
+name: implement
 description: Orchestrates the implementation workflow - spawns sub-agents via Task
 allowed-tools: Task, AskUserQuestion, Bash, Read, Grep, Glob, Write, Edit, WebFetch, WebSearch
 hooks:

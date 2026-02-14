@@ -6,7 +6,7 @@ allowed-tools: Bash, AskUserQuestion, Read
 
 ## Purpose
 
-Wraps the `tugtool merge` CLI command with a dry-run preview, user confirmation, and post-merge health checks. This is the final step in the `/tugtool:planner` → `/tugtool:implementer` → `/tugtool:merge` flow.
+Wraps the `tugtool merge` CLI command with a dry-run preview, user confirmation, and post-merge health checks. This is the final step in the `/tugtool:plan` → `/tugtool:implement` → `/tugtool:merge` flow.
 
 The merge command auto-detects the mode based on whether the repository has an 'origin' remote and an open PR:
 - **Remote mode**: Has origin + open PR → squash-merge the PR via `gh pr merge`

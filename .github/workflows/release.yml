@@ -42,8 +42,8 @@ jobs:
         run: |
           # Create directory structure at root level (no wrapper directory)
           mkdir -p release/bin
-          mkdir -p release/share/tugtool/skills/planner
-          mkdir -p release/share/tugtool/skills/implementer
+          mkdir -p release/share/tugtool/skills/plan
+          mkdir -p release/share/tugtool/skills/implement
           mkdir -p release/share/tugtool/skills/merge
           mkdir -p release/share/tugtool/agents
 
@@ -51,8 +51,8 @@ jobs:
           cp target/${{ matrix.target }}/release/tugtool release/bin/
 
           # Copy skills (orchestrators)
-          cp skills/planner/SKILL.md release/share/tugtool/skills/planner/
-          cp skills/implementer/SKILL.md release/share/tugtool/skills/implementer/
+          cp skills/plan/SKILL.md release/share/tugtool/skills/plan/
+          cp skills/implement/SKILL.md release/share/tugtool/skills/implement/
           cp skills/merge/SKILL.md release/share/tugtool/skills/merge/
 
           # Copy agents

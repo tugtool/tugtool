@@ -1,5 +1,5 @@
 ---
-name: planner
+name: plan
 description: Orchestrates the planning workflow - spawns sub-agents via Task
 allowed-tools: Task, AskUserQuestion, Bash, Read, Grep, Glob, Write, Edit, WebFetch, WebSearch
 hooks:
@@ -94,7 +94,7 @@ or:
   Plan: {plan_path}
   Steps: {step_count} | Decisions: {decision_count}
   Revisions: {revision_count}
-  Next: /tugtool:implementer {plan_path}
+  Next: /tugtool:implement {plan_path}
 ```
 
 ---

@@ -64,8 +64,8 @@ claude --plugin-dir .
 ```
 
 This loads all tugtool skills and agents. You can then use:
-- `/tugtool:planner "your idea"` - Create a new tugplan
-- `/tugtool:implementer .tugtool/tugplan-name.md` - Execute a tugplan
+- `/tugtool:plan "your idea"` - Create a new tugplan
+- `/tugtool:implement .tugtool/tugplan-name.md` - Execute a tugplan
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ This creates a `.tugtool/` directory with:
 ```bash
 claude --plugin-dir /path/to/tugtool
 # Then in Claude Code:
-/tugtool:planner "add a health check endpoint"
+/tugtool:plan "add a health check endpoint"
 ```
 
 Or manually from the skeleton:
@@ -104,7 +104,7 @@ tugtool validate tugplan-myfeature.md
 ```bash
 claude --plugin-dir /path/to/tugtool
 # Then in Claude Code:
-/tugtool:implementer .tugtool/tugplan-myfeature.md
+/tugtool:implement .tugtool/tugplan-myfeature.md
 ```
 
 5. Track progress:

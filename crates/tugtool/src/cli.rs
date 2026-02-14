@@ -12,7 +12,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(version = VERSION)]
 #[command(about = "From ideas to implementation via multi-agent orchestration")]
 #[command(
-    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugtool:planner, /tugtool:implementer).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and integrate with beads for execution tracking."
+    long_about = "Tug transforms ideas into working software through orchestrated LLM agents.\n\nA multi-agent suite collaborates to create structured plans and execute them to completion.\n\nPlanning and execution are invoked via Claude Code skills (/tugtool:plan, /tugtool:implement).\n\nThe CLI provides utilities to initialize, validate, list, track progress, and integrate with beads for execution tracking."
 )]
 pub struct Cli {
     /// Increase output verbosity

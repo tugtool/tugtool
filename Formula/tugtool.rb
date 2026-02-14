@@ -45,7 +45,7 @@ class Tugtool < Formula
       Claude Code skills have been installed to:
         #{HOMEBREW_PREFIX}/share/tugtool/skills/
 
-      To use /tugtool:planner and /tugtool:implementer in your projects, run:
+      To use /tugtool:plan and /tugtool:implement in your projects, run:
         tugtool setup claude
 
       This will copy the skills to your project's .claude/skills/ directory.
