@@ -8,7 +8,7 @@
 //!
 //! Note: As of Phase 4.0, the architecture changed to:
 //! - 3 orchestrator SKILLS (plan, implement, merge) in skills/
-//! - 10 sub-AGENTS invoked via Task tool in agents/
+//! - 9 sub-AGENTS invoked via Task tool in agents/
 
 use std::fs;
 use std::path::PathBuf;
@@ -54,9 +54,10 @@ fn parse_agent_frontmatter(content: &str) -> Option<(String, String, String)> {
     }
 }
 
-/// List of all sub-agents (8 agents invoked via Task)
+/// List of all sub-agents (7 agents invoked via Task)
 /// Per plan-4.md and plan-5.md, these are the sub-agents.
 /// Note: planner-setup-agent was removed — its work is now a pre-hook.
+/// Note: implement-setup-agent was removed — worktree creation is now a direct CLI call.
 const ALL_AGENTS: &[&str] = &[
     "clarifier-agent",
     "author-agent",
@@ -65,7 +66,6 @@ const ALL_AGENTS: &[&str] = &[
     "coder-agent",
     "reviewer-agent",
     "committer-agent",
-    "implement-setup-agent",
 ];
 
 /// Read-only agents (no Write/Edit, but may have Bash for specific commands like validate)
@@ -141,8 +141,8 @@ fn test_only_expected_agents_exist() {
 
     assert_eq!(
         entries.len(),
-        10,
-        "Expected exactly 10 agent files, found {}",
+        9,
+        "Expected exactly 9 agent files, found {}",
         entries.len()
     );
 
