@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use tugtool_core::{derive_tugplan_slug, find_worktree_by_tugplan, remove_worktree};
+use tugtool_core::{
+    derive_tugplan_slug, find_worktree_by_tugplan, list_tugtool_branches, list_worktrees,
+    remove_worktree,
+};
 
 /// JSON output for merge command
 #[derive(Serialize)]
@@ -1506,6 +1509,22 @@ fn run_merge_in(
         .current_dir(&repo_root)
         .args(["worktree", "prune"])
         .output();
+
+    // Sweep any other stale tugtool/* branches (no associated worktree)
+    if let (Ok(branches), Ok(worktrees)) =
+        (list_tugtool_branches(&repo_root), list_worktrees(&repo_root))
+    {
+        let active_branches: std::collections::HashSet<_> =
+            worktrees.iter().map(|w| w.branch.clone()).collect();
+        for b in &branches {
+            if !active_branches.contains(b) {
+                let _ = Command::new("git")
+                    .current_dir(&repo_root)
+                    .args(["branch", "-D", b])
+                    .output();
+            }
+        }
+    }
 
     if !quiet && worktree_cleaned {
         println!("Worktree cleaned up");
