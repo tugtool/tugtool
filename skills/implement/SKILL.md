@@ -54,14 +54,14 @@ Implementation complete
   PR: {pr_url}
 ```
 
-### implement-setup-agent post-call
+### Setup complete (after tugtool worktree create)
 
 ```
-**tugtool:implement-setup-agent**(Complete)
+**Setup**(Complete)
   Worktree: {worktree_path}
   Branch: {branch_name} (from {base_branch})
   Steps to implement: {remaining_count} of {total_count} ({completed_count} already complete)
-  Beads: synced | Root: {root_bead}
+  Beads: synced | Root: {root_bead_id}
 ```
 
 ### Step header
@@ -192,13 +192,11 @@ For `bead_close_failed` (warn and continue):
 ## Orchestration Loop
 
 ```
-  Task: implement-setup-agent (FRESH spawn, one time)
+  Bash: tugtool worktree create <plan_path> --json
        │
-       ├── error ──► HALT with error
+       ├── non-zero exit ──► HALT with error
        │
-       ├── needs_clarification ──► AskUserQuestion ──► re-run setup agent
-       │
-       └── ready (worktree_path, branch_name, base_branch, resolved_steps, bead_mapping)
+       └── zero exit (worktree_path, branch_name, base_branch, all_steps, ready_steps, bead_mapping)
               │
               ▼
        ┌─────────────────────────────────────────────────────────────────┐
@@ -278,8 +276,8 @@ For `bead_close_failed` (warn and continue):
 ```
 
 **Architecture principles:**
-- Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` only
-- All file I/O, git operations, and code execution happen in subagents
+- Orchestrator is a pure dispatcher: `Task` + `AskUserQuestion` + `Bash` (tugtool CLI only)
+- All file I/O, git operations, and code execution happen in subagents (except tugtool CLI calls which the orchestrator runs directly)
 - **Persistent agents**: architect, coder, reviewer, committer are each spawned ONCE (during step 0) and RESUMED for all subsequent steps
 - Auto-compaction handles context overflow — agents compact at ~95% capacity
 - Agents accumulate cross-step knowledge: codebase structure, files created, patterns established
@@ -290,39 +288,47 @@ For `bead_close_failed` (warn and continue):
 
 ## Execute This Sequence
 
-### 1. Spawn Setup Agent
+### 1. Create Worktree
 
 Output the session start message.
 
-```
-Task(
-  subagent_type: "tugtool:implement-setup-agent",
-  prompt: '{"plan_path": "<path>", "user_input": "<raw user text or null>", "user_answers": null}',
-  description: "Initialize implementation session"
-)
-```
-
-Parse the setup agent's JSON response. Extract all fields from the output contract.
-
-### 2. Handle Setup Result
-
-**If `status == "error"`:** Output the Setup failure message and HALT.
-
-**If `status == "needs_clarification"`:** Use `AskUserQuestion` with the template from the agent's `clarification_needed` field, then re-run the setup agent with the user's answer:
+Run the worktree creation command via Bash:
 
 ```
-Task(
-  subagent_type: "tugtool:implement-setup-agent",
-  prompt: '{"plan_path": "<path>", "user_input": null, "user_answers": <user answers>}',
-  description: "Re-run setup with user answers"
-)
+Bash: tugtool worktree create <plan_path> --json
 ```
 
-**If `status == "ready"`:**
-- If `resolved_steps` is empty: report "All steps already complete." and HALT
-- Otherwise: output the Setup post-call message and proceed to the step loop
+This runs from the repo root (the current working directory when the skill starts).
 
-Store in memory: `worktree_path`, `branch_name`, `base_branch`, `resolved_steps`, `bead_mapping`, `root_bead`
+Parse the JSON output from stdout. The output is a CreateData object with these fields:
+- `worktree_path`: Absolute path to the created worktree
+- `branch_name`: Git branch name (e.g., "tugtool/slug-20260214-120000")
+- `base_branch`: Base branch (e.g., "main")
+- `plan_path`: Relative path to the plan file
+- `total_steps`: Total number of execution steps
+- `all_steps`: Array of all step anchors (e.g., ["#step-0", "#step-1"])
+- `ready_steps`: Array of step anchors ready for implementation (dependencies met, not yet closed)
+- `bead_mapping`: Map from step anchors to bead IDs (e.g., {"#step-0": "bd-abc.1"})
+- `root_bead_id`: Root bead ID for the plan
+
+### 2. Handle Worktree Result
+
+**If non-zero exit code:** Output the Setup failure message (stderr contains the error) and HALT. No retry.
+
+**If zero exit code:**
+
+Derive session state inline:
+- `completed_steps = all_steps - ready_steps` (steps already closed)
+- `remaining_steps = ready_steps` (if present) or `all_steps` (if ready_steps is null)
+- `resolved_steps = remaining_steps` (implement all remaining steps, no interactive selection)
+- `completed_count = total_steps - len(resolved_steps)`
+- `remaining_count = len(resolved_steps)`
+
+If `resolved_steps` is empty: output "All steps already complete." and HALT.
+
+Otherwise: output the Setup complete progress message and proceed to the step loop.
+
+Store in memory: `worktree_path`, `branch_name`, `base_branch`, `resolved_steps`, `bead_mapping`, `root_bead_id`
 
 ### 3. For Each Step in `resolved_steps`
 
@@ -817,7 +823,7 @@ From coder output, evaluate `drift_assessment`:
 ## Reference: Beads Integration
 
 **Beads are synced during setup**, which populates:
-- `root_bead`: The root bead ID for the entire plan
+- `root_bead_id`: The root bead ID for the entire plan
 - `bead_mapping`: A map from step anchors to bead IDs
 
 **Close after commit** (handled by committer-agent via `tugtool commit`):
