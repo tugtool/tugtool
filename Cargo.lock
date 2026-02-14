@@ -713,7 +713,7 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tugtool"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "anyhow",
  "clap",
@@ -730,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "tugtool-core"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "regex",
  "serde",
