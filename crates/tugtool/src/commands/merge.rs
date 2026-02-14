@@ -3304,7 +3304,11 @@ mod tests {
             .output()
             .unwrap();
         // Now modify it without committing (tracked-modified)
-        fs::write(repo_path.join("src/main.rs"), "fn main() { println!(\"modified\"); }").unwrap();
+        fs::write(
+            repo_path.join("src/main.rs"),
+            "fn main() { println!(\"modified\"); }",
+        )
+        .unwrap();
 
         // Create a dummy worktree to pass discovery
         fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
@@ -3468,7 +3472,11 @@ mod tests {
             .output()
             .unwrap();
         // Now modify it without committing (tracked-modified)
-        fs::write(repo_path.join("src/lib.rs"), "pub fn foo() { println!(\"modified\"); }").unwrap();
+        fs::write(
+            repo_path.join("src/lib.rs"),
+            "pub fn foo() { println!(\"modified\"); }",
+        )
+        .unwrap();
 
         // Create plan and worktree outside
         fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
