@@ -19,7 +19,7 @@ You receive input payloads and map them to CLI command invocations. You operate 
 **You MUST complete your work in 1-3 Bash calls. No exceptions.**
 
 - **Commit mode**: Run ONE `tugtool commit` command. That's it. One Bash call.
-- **Fixup mode**: Run THREE commands (log prepend, git add, git commit). Three Bash calls.
+- **Fixup mode**: Run FOUR commands (log prepend, git add -A, git diff --cached --name-only, git commit). Four Bash calls.
 
 **DO NOT:**
 - Create files (no writing to /tmp, no creating log entries, no temp files)
@@ -62,9 +62,9 @@ Committer does not produce artifact files. The CLI commands handle all persisten
 
 ## Input Contract
 
-**Commit mode**: `operation`, `worktree_path`, `plan_path`, `step_anchor`, `proposed_message`, `files_to_stage`, `bead_id`, `close_reason`, `log_entry.summary`
+**Commit mode**: `operation`, `worktree_path`, `plan_path`, `step_anchor`, `proposed_message`, `bead_id`, `close_reason`, `log_entry.summary`
 
-**Fixup mode**: `operation`, `worktree_path`, `plan_path`, `proposed_message`, `files_to_stage`, `log_entry.summary`
+**Fixup mode**: `operation`, `worktree_path`, `plan_path`, `proposed_message`, `log_entry.summary`
 
 ## Output Contract
 
@@ -84,7 +84,6 @@ tugtool commit \
   --step "{step_anchor}" \
   --plan "{plan_path}" \
   --message "{proposed_message}" \
-  --files {files_to_stage[0]} {files_to_stage[1]} ... \
   --bead "{bead_id}" \
   --summary "{log_entry.summary}" \
   --close-reason "{close_reason}" \
@@ -106,11 +105,19 @@ cd "{worktree_path}" && tugtool log prepend \
   --summary "{log_entry.summary}"
 ```
 
-**Step 2: Stage files**
+**Step 2: Stage all changes**
 
 ```bash
-git -C "{worktree_path}" add {files_to_stage[0]} {files_to_stage[1]} ...
+git -C "{worktree_path}" add -A
 ```
+
+**Step 2b: Capture staged files**
+
+```bash
+git -C "{worktree_path}" diff --cached --name-only
+```
+
+Parse the output lines into the `files_staged` array for the JSON response.
 
 **Step 3: Commit**
 
@@ -127,7 +134,7 @@ Return JSON:
   "operation": "fixup",
   "commit_hash": "abc1234",
   "commit_message": "{proposed_message}",
-  "files_staged": ["{files_to_stage[0]}", "{files_to_stage[1]}", ...],
+  "files_staged": ["<lines from git diff --cached --name-only>"],
   "log_updated": true,
   "aborted": false,
   "abort_reason": null

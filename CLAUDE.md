@@ -144,7 +144,6 @@ tugtool commit \
   --step <anchor> \
   --plan <path> \
   --message <text> \
-  --files <file1> <file2> ... \
   --bead <bead-id> \
   --summary <text> \
   --close-reason <text> \

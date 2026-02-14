@@ -534,7 +534,6 @@ Task(
     "plan_path": "<path>",
     "step_anchor": "#step-N",
     "proposed_message": "feat(<scope>): <description>",
-    "files_to_stage": [<...files_created, ...files_modified from coder output, ".tugtool/tugplan-implementation-log.md">],
     "bead_id": "<bead_id from bead_mapping>",
     "close_reason": "Step N complete: <summary>",
     "log_entry": {
@@ -636,7 +635,6 @@ Task(
     "worktree_path": "<worktree_path>",
     "plan_path": "<plan_path>",
     "proposed_message": "fix(audit): <brief description>",
-    "files_to_stage": [<files from coder output>, ".tugtool/tugplan-implementation-log.md"],
     "log_entry": {
       "summary": "Audit fix: <description>"
     }
@@ -732,7 +730,6 @@ Task(
     "worktree_path": "<worktree_path>",
     "plan_path": "<plan_path>",
     "proposed_message": "fix(ci): <brief description>",
-    "files_to_stage": [<files from coder output>, ".tugtool/tugplan-implementation-log.md"],
     "log_entry": {
       "summary": "CI fix: <description>"
     }
