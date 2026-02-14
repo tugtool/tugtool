@@ -1462,7 +1462,11 @@ mod tests {
         use tugtool_core::error::TugError;
 
         let err = TugError::BeadsNotInstalled;
-        assert_eq!(err.exit_code(), 5, "BeadsNotInstalled should return exit code 5");
+        assert_eq!(
+            err.exit_code(),
+            5,
+            "BeadsNotInstalled should return exit code 5"
+        );
     }
 
     #[test]
@@ -1481,10 +1485,27 @@ mod tests {
         let obj = error_json.as_object().expect("should be an object");
 
         // Check required fields
-        assert_eq!(obj.get("status").and_then(|v| v.as_str()), Some("error"), "status should be 'error'");
-        assert_eq!(obj.get("exit_code").and_then(|v| v.as_i64()), Some(5), "exit_code should be 5");
-        assert!(obj.get("error").and_then(|v| v.as_str()).is_some(), "error field should be present and non-empty");
-        assert!(!obj.get("error").and_then(|v| v.as_str()).unwrap().is_empty(), "error message should not be empty");
+        assert_eq!(
+            obj.get("status").and_then(|v| v.as_str()),
+            Some("error"),
+            "status should be 'error'"
+        );
+        assert_eq!(
+            obj.get("exit_code").and_then(|v| v.as_i64()),
+            Some(5),
+            "exit_code should be 5"
+        );
+        assert!(
+            obj.get("error").and_then(|v| v.as_str()).is_some(),
+            "error field should be present and non-empty"
+        );
+        assert!(
+            !obj.get("error")
+                .and_then(|v| v.as_str())
+                .unwrap()
+                .is_empty(),
+            "error message should not be empty"
+        );
     }
 }
 
