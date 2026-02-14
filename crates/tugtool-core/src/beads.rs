@@ -138,7 +138,7 @@ impl Default for BeadsCli {
     fn default() -> Self {
         Self {
             bd_path: "bd".to_string(),
-            env_vars: HashMap::new(),
+            env_vars: Self::default_env_vars(),
         }
     }
 }
@@ -148,8 +148,16 @@ impl BeadsCli {
     pub fn new(bd_path: String) -> Self {
         Self {
             bd_path,
-            env_vars: HashMap::new(),
+            env_vars: Self::default_env_vars(),
         }
+    }
+
+    /// Return default environment variables for bd commands
+    fn default_env_vars() -> HashMap<String, String> {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("BEADS_NO_DAEMON".to_string(), "1".to_string());
+        env_vars.insert("BEADS_NO_AUTO_FLUSH".to_string(), "1".to_string());
+        env_vars
     }
 
     /// Set an environment variable that will be passed to every bd command
@@ -1230,5 +1238,33 @@ mod tests {
         assert_eq!(parsed.commit_hash, Some("abc123d".to_string()));
         assert_eq!(parsed.commit_summary, None);
         assert_eq!(parsed.raw, "Committed: abc123d");
+    }
+
+    #[test]
+    fn test_beadscli_default_env_vars() {
+        let cli = BeadsCli::default();
+        assert_eq!(
+            cli.env_vars.get("BEADS_NO_DAEMON"),
+            Some(&"1".to_string())
+        );
+        assert_eq!(
+            cli.env_vars.get("BEADS_NO_AUTO_FLUSH"),
+            Some(&"1".to_string())
+        );
+        assert_eq!(cli.env_vars.len(), 2);
+    }
+
+    #[test]
+    fn test_beadscli_new_env_vars() {
+        let cli = BeadsCli::new("bd".to_string());
+        assert_eq!(
+            cli.env_vars.get("BEADS_NO_DAEMON"),
+            Some(&"1".to_string())
+        );
+        assert_eq!(
+            cli.env_vars.get("BEADS_NO_AUTO_FLUSH"),
+            Some(&"1".to_string())
+        );
+        assert_eq!(cli.env_vars.len(), 2);
     }
 }
