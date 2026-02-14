@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-14T20:36:38Z
+bead: tugtool-0wx.2
+---
+
+## #step-1: Changed blocking logic so only tracked-modified non-infrastructure files block merges; untracked files reported as informational warnings via new MergeData.untracked_files field
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-14T20:25:21Z
 bead: tugtool-0wx.1
