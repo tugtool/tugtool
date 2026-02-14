@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-14T20:41:32Z
+bead: tugtool-0wx.3
+---
+
+## #step-2: Added no-remote detection to integrator-agent.md: pre-check in Mode 1, behavior rule 8, and No Remote Origin error handling section with ESCALATE JSON
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-14T20:36:38Z
 bead: tugtool-0wx.2
