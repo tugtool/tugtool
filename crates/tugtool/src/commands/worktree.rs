@@ -434,6 +434,20 @@ fn rollback_worktree_creation(
     Ok(())
 }
 
+/// Normalize plan path to relative by stripping repo_root prefix if absolute.
+/// PathBuf::join discards the base when the right-hand side is absolute,
+/// which breaks worktree path construction.
+fn normalize_plan_path(plan: String, plan_path: PathBuf, repo_root: &Path) -> (String, PathBuf) {
+    if plan_path.is_absolute() {
+        match plan_path.strip_prefix(repo_root) {
+            Ok(rel) => (rel.to_string_lossy().to_string(), rel.to_path_buf()),
+            Err(_) => (plan, plan_path),
+        }
+    } else {
+        (plan, plan_path)
+    }
+}
+
 /// Run worktree create command
 ///
 /// If `override_root` is provided, use it instead of `current_dir()`.
@@ -462,6 +476,7 @@ pub fn run_worktree_create_with_root(
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
     let plan_path = PathBuf::from(&plan);
+    let (plan, plan_path) = normalize_plan_path(plan, plan_path, &repo_root);
 
     // Check if plan file exists
     if !repo_root.join(&plan_path).exists() {
@@ -576,6 +591,20 @@ pub fn run_worktree_create_with_root(
     {
         use tugtool_core::beads::BeadsCli;
         let beads = BeadsCli::default();
+        if !beads.is_installed(None) {
+            let err = tugtool_core::error::TugError::BeadsNotInstalled;
+            if json_output {
+                let error_json = serde_json::json!({
+                    "status": "error",
+                    "error": err.to_string(),
+                    "exit_code": err.exit_code()
+                });
+                eprintln!("{}", error_json);
+            } else if !quiet {
+                eprintln!("error: {}", err);
+            }
+            return Ok(err.exit_code());
+        }
         if !beads.is_initialized(&repo_root) {
             if let Err(e) = beads.init(&repo_root) {
                 if json_output {
@@ -1380,6 +1409,102 @@ mod tests {
             long_about.to_string().contains("atomically")
                 || long_about.to_string().contains("rollback"),
             "create help should explain atomic behavior"
+        );
+    }
+
+    #[test]
+    fn test_normalize_plan_path_absolute_strips_prefix() {
+        use std::path::PathBuf;
+
+        let repo_root = PathBuf::from("/abs/path");
+        let plan = "/abs/path/.tugtool/tugplan-1.md".to_string();
+        let plan_path = PathBuf::from(&plan);
+
+        let (normalized_plan, normalized_path) = normalize_plan_path(plan, plan_path, &repo_root);
+
+        assert_eq!(normalized_plan, ".tugtool/tugplan-1.md");
+        assert_eq!(normalized_path, PathBuf::from(".tugtool/tugplan-1.md"));
+    }
+
+    #[test]
+    fn test_normalize_plan_path_relative_unchanged() {
+        use std::path::PathBuf;
+
+        let repo_root = PathBuf::from("/abs/path");
+        let plan = ".tugtool/tugplan-1.md".to_string();
+        let plan_path = PathBuf::from(&plan);
+
+        let (normalized_plan, normalized_path) =
+            normalize_plan_path(plan.clone(), plan_path.clone(), &repo_root);
+
+        assert_eq!(normalized_plan, plan);
+        assert_eq!(normalized_path, plan_path);
+    }
+
+    #[test]
+    fn test_normalize_plan_path_absolute_no_prefix_match() {
+        use std::path::PathBuf;
+
+        let repo_root = PathBuf::from("/abs/path");
+        let plan = "/other/path/.tugtool/tugplan-1.md".to_string();
+        let plan_path = PathBuf::from(&plan);
+
+        let (normalized_plan, normalized_path) =
+            normalize_plan_path(plan.clone(), plan_path.clone(), &repo_root);
+
+        // Should return original path unchanged (fallback behavior)
+        assert_eq!(normalized_plan, plan);
+        assert_eq!(normalized_path, plan_path);
+    }
+
+    #[test]
+    fn test_beads_not_installed_exit_code() {
+        use tugtool_core::error::TugError;
+
+        let err = TugError::BeadsNotInstalled;
+        assert_eq!(
+            err.exit_code(),
+            5,
+            "BeadsNotInstalled should return exit code 5"
+        );
+    }
+
+    #[test]
+    fn test_beads_not_installed_json_error_format() {
+        use tugtool_core::error::TugError;
+
+        let err = TugError::BeadsNotInstalled;
+        let error_json = serde_json::json!({
+            "status": "error",
+            "error": err.to_string(),
+            "exit_code": err.exit_code()
+        });
+
+        // Verify structure
+        assert!(error_json.is_object(), "error_json should be an object");
+        let obj = error_json.as_object().expect("should be an object");
+
+        // Check required fields
+        assert_eq!(
+            obj.get("status").and_then(|v| v.as_str()),
+            Some("error"),
+            "status should be 'error'"
+        );
+        assert_eq!(
+            obj.get("exit_code").and_then(|v| v.as_i64()),
+            Some(5),
+            "exit_code should be 5"
+        );
+        assert!(
+            obj.get("error").and_then(|v| v.as_str()).is_some(),
+            "error field should be present and non-empty"
+        );
+        assert!(
+            !obj.get("error")
+                .and_then(|v| v.as_str())
+                .unwrap()
+                .is_empty(),
+            "error message should not be empty"
         );
     }
 }

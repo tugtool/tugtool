@@ -213,15 +213,15 @@ Tugtool is a Claude Code plugin. Planning and execution are invoked via skills, 
 
 ### Orchestrator Skills (3)
 
-Three skills contain the main workflow logic. Orchestrators are **pure dispatchers** with only `Task` and `AskUserQuestion` tools — they cannot read files, write files, or run commands.
+Three skills contain the main workflow logic. Orchestrators are **pure dispatchers** with only `Task` and `AskUserQuestion` tools — they cannot read files, write files, or run commands. Exception: the implement skill additionally uses Bash for `tugtool` CLI commands (worktree creation), gated by a PreToolUse hook.
 
 | Skill | Role |
 |-------|------|
 | **plan** | Orchestrates planning loop: setup → clarifier → author → critic |
-| **implement** | Orchestrates implementation loop: setup → architect → coder → reviewer → committer |
+| **implement** | Orchestrates implementation loop: architect → coder → reviewer → committer (worktree setup via direct CLI call) |
 | **merge** | Wraps `tugtool merge` CLI with dry-run preview, confirmation, and post-merge health checks |
 
-### Sub-Agents (10)
+### Sub-Agents (9)
 
 Sub-agents are invoked via Task tool and return JSON results. Each has specific tools and contracts.
 
@@ -237,7 +237,6 @@ Sub-agents are invoked via Task tool and return JSON results. Each has specific 
 
 | Agent | Role | Tools |
 |-------|------|-------|
-| **implement-setup-agent** | Create worktree, sync beads, resolve steps | Bash |
 | **architect-agent** | Read-only codebase analysis, produces implementation strategy per step | Bash, Read, Grep, Glob, WebFetch, WebSearch |
 | **coder-agent** | Implements strategy from architect with drift detection | Read, Grep, Glob, Write, Edit, Bash, WebFetch, WebSearch |
 | **reviewer-agent** | Reviews code, verifies tugplan conformance, checks build/test reports | Bash, Read, Grep, Glob, Write, Edit |
