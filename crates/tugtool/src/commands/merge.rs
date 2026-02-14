@@ -11,9 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use tugtool_core::{
-    derive_tugplan_slug, find_worktree_by_tugplan, remove_worktree,
-};
+use tugtool_core::{derive_tugplan_slug, find_worktree_by_tugplan, remove_worktree};
 
 /// JSON output for merge command
 #[derive(Serialize)]

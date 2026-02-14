@@ -217,7 +217,16 @@ fn sync_plan_to_beads(
     plan: &TugPlan,
     _content: &str,
     ctx: &SyncContext<'_>,
-) -> Result<(Option<String>, usize, usize, HashMap<String, String>, Vec<String>), TugError> {
+) -> Result<
+    (
+        Option<String>,
+        usize,
+        usize,
+        HashMap<String, String>,
+        Vec<String>,
+    ),
+    TugError,
+> {
     let mut steps_synced = 0;
     let mut deps_added = 0;
 
@@ -253,8 +262,7 @@ fn sync_plan_to_beads(
     };
 
     // Step 1: Ensure root bead exists
-    let (root_id, root_created) =
-        ensure_root_bead(plan, &phase_title, ctx, &existing_ids)?;
+    let (root_id, root_created) = ensure_root_bead(plan, &phase_title, ctx, &existing_ids)?;
 
     // Track newly created beads to avoid double-updates during enrichment
     let mut created_beads: HashSet<String> = HashSet::new();
@@ -267,13 +275,8 @@ fn sync_plan_to_beads(
 
     // Step 2: Process each step
     for step in &plan.steps {
-        let (step_bead_id, step_created) = ensure_step_bead(
-            step,
-            &root_id,
-            plan,
-            ctx,
-            &existing_ids,
-        )?;
+        let (step_bead_id, step_created) =
+            ensure_step_bead(step, &root_id, plan, ctx, &existing_ids)?;
 
         anchor_to_bead.insert(step.anchor.clone(), step_bead_id.clone());
         if step_created {
@@ -284,13 +287,8 @@ fn sync_plan_to_beads(
         // Handle substeps if mode is "children"
         if ctx.substeps_mode == "children" {
             for substep in &step.substeps {
-                let (substep_bead_id, substep_created) = ensure_substep_bead(
-                    substep,
-                    &step_bead_id,
-                    plan,
-                    ctx,
-                    &existing_ids,
-                )?;
+                let (substep_bead_id, substep_created) =
+                    ensure_substep_bead(substep, &step_bead_id, plan, ctx, &existing_ids)?;
 
                 anchor_to_bead.insert(substep.anchor.clone(), substep_bead_id.clone());
                 if substep_created {

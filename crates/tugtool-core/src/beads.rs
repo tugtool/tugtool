@@ -1243,10 +1243,7 @@ mod tests {
     #[test]
     fn test_beadscli_default_env_vars() {
         let cli = BeadsCli::default();
-        assert_eq!(
-            cli.env_vars.get("BEADS_NO_DAEMON"),
-            Some(&"1".to_string())
-        );
+        assert_eq!(cli.env_vars.get("BEADS_NO_DAEMON"), Some(&"1".to_string()));
         assert_eq!(
             cli.env_vars.get("BEADS_NO_AUTO_FLUSH"),
             Some(&"1".to_string())
@@ -1257,10 +1254,7 @@ mod tests {
     #[test]
     fn test_beadscli_new_env_vars() {
         let cli = BeadsCli::new("bd".to_string());
-        assert_eq!(
-            cli.env_vars.get("BEADS_NO_DAEMON"),
-            Some(&"1".to_string())
-        );
+        assert_eq!(cli.env_vars.get("BEADS_NO_DAEMON"), Some(&"1".to_string()));
         assert_eq!(
             cli.env_vars.get("BEADS_NO_AUTO_FLUSH"),
             Some(&"1".to_string())

@@ -252,7 +252,11 @@ fn remove_beads_hooks(root: &Path) -> Vec<String> {
 
         // Check if content contains beads/bd references
         // Look for "bd " (with space), "bd\n" (at line end), "bd\t" (with tab), or "beads"
-        if content.contains("bd ") || content.contains("bd\n") || content.contains("bd\t") || content.contains("beads") {
+        if content.contains("bd ")
+            || content.contains("bd\n")
+            || content.contains("bd\t")
+            || content.contains("beads")
+        {
             // Remove the hook file
             if fs::remove_file(&hook_path).is_ok() {
                 removed_hooks.push(hook_name.to_string());
@@ -357,8 +361,7 @@ mod tests {
 
         // Create pre-commit hook with bd reference
         let hook_path = hooks_dir.join("pre-commit");
-        fs::write(&hook_path, "#!/bin/sh\nbd sync --flush-only\n")
-            .expect("failed to write hook");
+        fs::write(&hook_path, "#!/bin/sh\nbd sync --flush-only\n").expect("failed to write hook");
 
         // Call remove_beads_hooks
         let removed = remove_beads_hooks(temp_path);
@@ -379,8 +382,7 @@ mod tests {
 
         // Create pre-commit hook with unrelated content
         let hook_path = hooks_dir.join("pre-commit");
-        fs::write(&hook_path, "#!/bin/sh\nrustfmt\n")
-            .expect("failed to write hook");
+        fs::write(&hook_path, "#!/bin/sh\nrustfmt\n").expect("failed to write hook");
 
         // Call remove_beads_hooks
         let removed = remove_beads_hooks(temp_path);
@@ -401,6 +403,9 @@ mod tests {
         let removed = remove_beads_hooks(temp_path);
 
         // Verify no error and no hooks removed
-        assert!(removed.is_empty(), "should return empty vec when no .git/hooks");
+        assert!(
+            removed.is_empty(),
+            "should return empty vec when no .git/hooks"
+        );
     }
 }
