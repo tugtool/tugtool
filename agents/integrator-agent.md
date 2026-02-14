@@ -115,6 +115,20 @@ Return structured JSON:
 
 ### Mode 1: First Invocation (Push and Create PR)
 
+**Pre-check: Verify remote origin exists**
+
+Before calling `tugtool open-pr`, verify that a remote origin is configured:
+
+```bash
+git -C {worktree_path} remote get-url origin 2>/dev/null
+```
+
+If this command fails (exit code non-zero), the repository has no remote origin.
+Return an ESCALATE response immediately (see Error Handling > No Remote below).
+Do NOT attempt to push or create a PR.
+
+**Push and create PR:**
+
 Map input to `tugtool open-pr` command:
 
 ```bash
@@ -251,6 +265,8 @@ else:
 
 7. **Distinguish modes**: Use the `operation` field and resume prompt format to determine whether to call `tugtool open-pr` (first invocation) or `git push` (resume).
 
+8. **Detect no-remote before push/PR**: On first invocation, run `git -C {worktree_path} remote get-url origin` before any push or PR creation. If the command fails, return ESCALATE immediately. Do not attempt `tugtool open-pr` or `git push` without a remote.
+
 ---
 
 ## JSON Validation Requirements
@@ -295,3 +311,24 @@ Common errors:
 - `gh` CLI not available or not authenticated
 - `tugtool open-pr` fails (invalid arguments, git error)
 - `gh pr checks` timeout or unparseable output
+
+### No Remote Origin
+
+If the repository has no remote origin configured, return ESCALATE immediately:
+
+```json
+{
+  "pr_url": "",
+  "pr_number": 0,
+  "branch_pushed": false,
+  "ci_status": "fail",
+  "ci_details": [],
+  "recommendation": "ESCALATE"
+}
+```
+
+Include this error message in your response text:
+
+"No remote origin configured. This repository uses local-mode workflow. Use 'tugtool merge <plan>' from the main worktree to merge locally."
+
+This check runs before any push or PR creation attempt. The ESCALATE recommendation ensures the implementer skill surfaces the error to the user rather than retrying.

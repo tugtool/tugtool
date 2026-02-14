@@ -36,6 +36,8 @@ pub struct MergeData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dirty_files: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub untracked_files: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub warnings: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -60,6 +62,7 @@ impl MergeData {
             worktree_cleaned: None,
             dry_run,
             dirty_files: None,
+            untracked_files: None,
             warnings: None,
             error: Some(msg),
             message: None,
@@ -160,8 +163,23 @@ fn get_pr_for_branch(branch: &str) -> Result<PrInfo, String> {
     serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh pr view output: {}", e))
 }
 
-/// Get list of uncommitted files in the working tree, with porcelain status prefix
-fn get_dirty_files(repo_root: &Path) -> Result<Vec<String>, String> {
+/// Structured result from get_dirty_files
+#[derive(Default, Debug)]
+struct DirtyFiles {
+    /// Files that are tracked and modified (not yet committed)
+    tracked_modified: Vec<String>,
+    /// Files that are untracked (never git-added)
+    untracked: Vec<String>,
+}
+
+impl DirtyFiles {
+    fn is_empty(&self) -> bool {
+        self.tracked_modified.is_empty() && self.untracked.is_empty()
+    }
+}
+
+/// Get list of uncommitted files in the working tree, partitioned by status
+fn get_dirty_files(repo_root: &Path) -> Result<DirtyFiles, String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
@@ -174,12 +192,25 @@ fn get_dirty_files(repo_root: &Path) -> Result<Vec<String>, String> {
         return Err(format!("git status failed: {}", stderr));
     }
 
+    let mut tracked_modified = Vec::new();
+    let mut untracked = Vec::new();
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout
-        .lines()
-        .filter(|line| line.len() >= 4)
-        .map(|line| line[3..].to_string())
-        .collect())
+    for line in stdout.lines() {
+        if line.len() >= 4 {
+            let file_path = line[3..].to_string();
+            if line.starts_with("??") {
+                untracked.push(file_path);
+            } else {
+                tracked_modified.push(file_path);
+            }
+        }
+    }
+
+    Ok(DirtyFiles {
+        tracked_modified,
+        untracked,
+    })
 }
 
 fn is_infrastructure_path(path: &str) -> bool {
@@ -201,10 +232,16 @@ fn check_worktree_dirty(wt_path: &Path) -> Result<Option<String>, String> {
     if dirty.is_empty() {
         Ok(None)
     } else {
+        let all_dirty: Vec<String> = dirty
+            .tracked_modified
+            .iter()
+            .chain(dirty.untracked.iter())
+            .cloned()
+            .collect();
         Ok(Some(format!(
             "Implementation worktree has uncommitted changes:\n  {}\n\n\
              Please commit or discard these changes before merging.",
-            dirty.join("\n  ")
+            all_dirty.join("\n  ")
         )))
     }
 }
@@ -405,10 +442,18 @@ fn run_preflight_checks(
 /// Prepare main for merge by committing infrastructure files and discarding everything else.
 /// Returns the list of dirty files that were found (for reporting).
 fn prepare_main_for_merge(repo_root: &Path, quiet: bool) -> Result<Vec<String>, String> {
-    let dirty_files = get_dirty_files(repo_root)?;
-    if dirty_files.is_empty() {
+    let dirty = get_dirty_files(repo_root)?;
+    if dirty.is_empty() {
         return Ok(vec![]);
     }
+
+    // Combine tracked_modified and untracked into single vector for partitioning
+    let dirty_files: Vec<String> = dirty
+        .tracked_modified
+        .iter()
+        .chain(dirty.untracked.iter())
+        .cloned()
+        .collect();
 
     let infra: Vec<&str> = dirty_files
         .iter()
@@ -1061,33 +1106,48 @@ fn run_merge_in(
         }
     }
 
-    let preflight_warnings: Option<Vec<String>> = if all_warnings.is_empty() {
-        None
-    } else {
-        Some(all_warnings)
-    };
-
     // Step 2: Pre-dry-run checks
-    let dirty_files = get_dirty_files(&repo_root).unwrap_or_default();
+    let dirty = get_dirty_files(&repo_root).unwrap_or_default();
 
-    // Step 2b: Partition dirty files into infrastructure and non-infrastructure
-    let infra_files: Vec<&str> = dirty_files
+    // Step 2b: Partition tracked-modified and untracked files
+    let tracked_infra: Vec<&str> = dirty
+        .tracked_modified
         .iter()
         .filter(|f| is_infrastructure_path(f))
         .map(|s| s.as_str())
         .collect();
-    let non_infra_files: Vec<&str> = dirty_files
+    let tracked_non_infra: Vec<&str> = dirty
+        .tracked_modified
+        .iter()
+        .filter(|f| !is_infrastructure_path(f))
+        .map(|s| s.as_str())
+        .collect();
+    let untracked_infra: Vec<&str> = dirty
+        .untracked
+        .iter()
+        .filter(|f| is_infrastructure_path(f))
+        .map(|s| s.as_str())
+        .collect();
+    let untracked_non_infra: Vec<&str> = dirty
+        .untracked
         .iter()
         .filter(|f| !is_infrastructure_path(f))
         .map(|s| s.as_str())
         .collect();
 
-    // Reject non-infrastructure dirty files for both modes
-    if !non_infra_files.is_empty() {
+    // Combined infra files for actual merge operations (prepare_main_for_merge, save/restore)
+    let infra_files: Vec<&str> = tracked_infra
+        .iter()
+        .chain(untracked_infra.iter())
+        .copied()
+        .collect();
+
+    // Only tracked-modified non-infra files block the merge
+    if !tracked_non_infra.is_empty() {
         let e = format!(
             "Uncommitted changes in main prevent merge:\n  {}\n\n\
              Please commit or stash these changes before merging.",
-            non_infra_files.join("\n  ")
+            tracked_non_infra.join("\n  ")
         );
         let data = MergeData::error(e.clone(), dry_run);
         if json {
@@ -1096,7 +1156,22 @@ fn run_merge_in(
         return Err(e);
     }
 
-    // Dry-run: report and exit (only report infrastructure files)
+    // Untracked non-infra files are a warning, not a blocker
+    if !untracked_non_infra.is_empty() {
+        all_warnings.push(format!(
+            "{} untracked file(s) present (not blocking merge): {}",
+            untracked_non_infra.len(),
+            untracked_non_infra.join(", ")
+        ));
+    }
+
+    let preflight_warnings: Option<Vec<String>> = if all_warnings.is_empty() {
+        None
+    } else {
+        Some(all_warnings)
+    };
+
+    // Dry-run: report and exit
     if dry_run {
         let data = MergeData {
             status: "ok".to_string(),
@@ -1108,10 +1183,15 @@ fn run_merge_in(
             squash_commit: None,
             worktree_cleaned: None,
             dry_run: true,
-            dirty_files: if infra_files.is_empty() {
+            dirty_files: if tracked_infra.is_empty() {
                 None
             } else {
-                Some(infra_files.iter().map(|s| s.to_string()).collect())
+                Some(tracked_infra.iter().map(|s| s.to_string()).collect())
+            },
+            untracked_files: if untracked_non_infra.is_empty() {
+                None
+            } else {
+                Some(untracked_non_infra.iter().map(|s| s.to_string()).collect())
             },
             warnings: preflight_warnings.clone(),
             error: None,
@@ -1137,12 +1217,21 @@ fn run_merge_in(
             if let Some(ref pr) = pr_info {
                 println!("PR:       #{} - {}", pr.number, pr.url);
             }
-            if !infra_files.is_empty() {
+            if !tracked_infra.is_empty() {
                 println!(
                     "\nInfrastructure files in main ({}):\n  {}",
-                    infra_files.len(),
-                    infra_files.join("\n  ")
+                    tracked_infra.len(),
+                    tracked_infra.join("\n  ")
                 );
+            }
+            if !untracked_non_infra.is_empty() {
+                println!(
+                    "\n{} untracked file(s) present (not blocking merge):",
+                    untracked_non_infra.len()
+                );
+                for f in &untracked_non_infra {
+                    println!("  {}", f);
+                }
             }
             if let Some(ref warnings) = data.warnings {
                 if !warnings.is_empty() {
@@ -1224,6 +1313,7 @@ fn run_merge_in(
                 worktree_cleaned: None,
                 dry_run: false,
                 dirty_files: None,
+                untracked_files: None,
                 warnings: preflight_warnings.clone(),
                 error: Some(err_msg.clone()),
                 message: None,
@@ -1261,6 +1351,7 @@ fn run_merge_in(
                 worktree_cleaned: None,
                 dry_run: false,
                 dirty_files: None,
+                untracked_files: None,
                 warnings: preflight_warnings.clone(),
                 error: Some(err_msg.clone()),
                 message: None,
@@ -1293,6 +1384,7 @@ fn run_merge_in(
                 worktree_cleaned: None,
                 dry_run: false,
                 dirty_files: None,
+                untracked_files: None,
                 warnings: preflight_warnings.clone(),
                 error: Some(err_msg.clone()),
                 message: None,
@@ -1367,6 +1459,7 @@ fn run_merge_in(
                     worktree_cleaned: None,
                     dry_run: false,
                     dirty_files: None,
+                    untracked_files: None,
                     warnings: preflight_warnings.clone(),
                     error: Some(format!("Squash merge failed: {}", e)),
                     message: None,
@@ -1419,7 +1512,13 @@ fn run_merge_in(
     }
 
     // Step 4b: Commit any dirty infrastructure files (beads state, implementation log, etc.)
-    let post_dirty = get_dirty_files(&repo_root).unwrap_or_default();
+    let post_dirty_struct = get_dirty_files(&repo_root).unwrap_or_default();
+    let post_dirty: Vec<String> = post_dirty_struct
+        .tracked_modified
+        .iter()
+        .chain(post_dirty_struct.untracked.iter())
+        .cloned()
+        .collect();
     let post_infra: Vec<&str> = post_dirty
         .iter()
         .filter(|f| is_infrastructure_path(f))
@@ -1471,6 +1570,7 @@ fn run_merge_in(
         worktree_cleaned: Some(worktree_cleaned),
         dry_run: false,
         dirty_files: None,
+        untracked_files: None,
         warnings: preflight_warnings,
         error: None,
         message: Some(match effective_mode {
@@ -1567,6 +1667,7 @@ mod tests {
             worktree_cleaned: Some(true),
             dry_run: false,
             dirty_files: None,
+            untracked_files: None,
             warnings: None,
             error: None,
             message: Some("Success".to_string()),
@@ -1588,6 +1689,7 @@ mod tests {
             worktree_cleaned: Some(true),
             dry_run: false,
             dirty_files: None,
+            untracked_files: None,
             warnings: Some(vec!["warn1".to_string(), "warn2".to_string()]),
             error: None,
             message: Some("Success".to_string()),
@@ -1606,6 +1708,52 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_data_omits_untracked_files_when_none() {
+        let data = MergeData {
+            status: "ok".to_string(),
+            merge_mode: Some("local".to_string()),
+            branch_name: Some("tug/test".to_string()),
+            worktree_path: None,
+            pr_url: None,
+            pr_number: None,
+            squash_commit: None,
+            worktree_cleaned: Some(true),
+            dry_run: false,
+            dirty_files: None,
+            untracked_files: None,
+            warnings: None,
+            error: None,
+            message: Some("Success".to_string()),
+        };
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        assert!(!json.contains("\"untracked_files\""));
+    }
+
+    #[test]
+    fn test_merge_data_includes_untracked_files_when_present() {
+        let data = MergeData {
+            status: "ok".to_string(),
+            merge_mode: Some("local".to_string()),
+            branch_name: Some("tug/test".to_string()),
+            worktree_path: None,
+            pr_url: None,
+            pr_number: None,
+            squash_commit: None,
+            worktree_cleaned: None,
+            dry_run: true,
+            dirty_files: None,
+            untracked_files: Some(vec!["scratch.txt".to_string(), "tmp.log".to_string()]),
+            warnings: None,
+            error: None,
+            message: Some("Would merge".to_string()),
+        };
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        assert!(json.contains("\"untracked_files\""));
+        assert!(json.contains("scratch.txt"));
+        assert!(json.contains("tmp.log"));
+    }
+
+    #[test]
     fn test_merge_data_dry_run_local() {
         let data = MergeData {
             status: "ok".to_string(),
@@ -1618,6 +1766,7 @@ mod tests {
             worktree_cleaned: None,
             dry_run: true,
             dirty_files: Some(vec![".beads/beads.jsonl".to_string()]),
+            untracked_files: None,
             warnings: None,
             error: None,
             message: Some("Would squash-merge".to_string()),
@@ -1644,6 +1793,7 @@ mod tests {
             worktree_cleaned: Some(true),
             dry_run: false,
             dirty_files: None,
+            untracked_files: None,
             warnings: None,
             error: None,
             message: Some("Merged PR #42".to_string()),
@@ -1669,6 +1819,7 @@ mod tests {
             worktree_cleaned: Some(true),
             dry_run: false,
             dirty_files: None,
+            untracked_files: None,
             warnings: None,
             error: None,
             message: Some("Squash merged".to_string()),
@@ -2240,6 +2391,8 @@ mod tests {
 
         let files = get_dirty_files(temp_path).unwrap();
         assert!(files.is_empty());
+        assert!(files.tracked_modified.is_empty());
+        assert!(files.untracked.is_empty());
     }
 
     #[test]
@@ -2256,9 +2409,68 @@ mod tests {
         fs::write(temp_path.join(".beads/beads.jsonl"), "{}").unwrap();
 
         let files = get_dirty_files(temp_path).unwrap();
-        assert_eq!(files.len(), 2);
-        assert!(files.contains(&".beads/beads.jsonl".to_string()));
-        assert!(files.contains(&"new_file.txt".to_string()));
+        // Both files are untracked (never git-added)
+        assert!(files.tracked_modified.is_empty());
+        assert_eq!(files.untracked.len(), 2);
+        assert!(files.untracked.contains(&".beads/beads.jsonl".to_string()));
+        assert!(files.untracked.contains(&"new_file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_get_dirty_files_tracked_only() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        init_git_repo(temp_path);
+        make_initial_commit(temp_path);
+
+        // Modify a tracked file
+        fs::write(temp_path.join("README.md"), "modified").unwrap();
+
+        let files = get_dirty_files(temp_path).unwrap();
+        assert_eq!(files.tracked_modified.len(), 1);
+        assert!(files.tracked_modified.contains(&"README.md".to_string()));
+        assert!(files.untracked.is_empty());
+    }
+
+    #[test]
+    fn test_get_dirty_files_untracked_only() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        init_git_repo(temp_path);
+        make_initial_commit(temp_path);
+
+        // Create a new untracked file
+        fs::write(temp_path.join("new.txt"), "untracked").unwrap();
+
+        let files = get_dirty_files(temp_path).unwrap();
+        assert!(files.tracked_modified.is_empty());
+        assert_eq!(files.untracked.len(), 1);
+        assert!(files.untracked.contains(&"new.txt".to_string()));
+    }
+
+    #[test]
+    fn test_get_dirty_files_mixed() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        init_git_repo(temp_path);
+        make_initial_commit(temp_path);
+
+        // Modify a tracked file
+        fs::write(temp_path.join("README.md"), "modified").unwrap();
+        // Create a new untracked file
+        fs::write(temp_path.join("new.txt"), "untracked").unwrap();
+
+        let files = get_dirty_files(temp_path).unwrap();
+        assert_eq!(files.tracked_modified.len(), 1);
+        assert!(files.tracked_modified.contains(&"README.md".to_string()));
+        assert_eq!(files.untracked.len(), 1);
+        assert!(files.untracked.contains(&"new.txt".to_string()));
     }
 
     // -- Preflight check tests --
@@ -2368,6 +2580,7 @@ mod tests {
             worktree_cleaned: None,
             dry_run: true,
             dirty_files: None,
+            untracked_files: None,
             warnings: Some(vec![
                 "2 of 5 steps incomplete. Run 'tug beads status .tugtool/tugplan-1.md' to review."
                     .to_string(),
@@ -3075,9 +3288,27 @@ mod tests {
         init_git_repo(repo_path);
         make_initial_commit(repo_path);
 
-        // Create non-infrastructure dirty file
+        // Create non-infrastructure tracked file, then modify it (tracked-modified blocks merge)
         fs::create_dir_all(repo_path.join("src")).unwrap();
         fs::write(repo_path.join("src/main.rs"), "fn main() {}").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["add", "src/main.rs"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["commit", "-m", "Add main.rs"])
+            .output()
+            .unwrap();
+        // Now modify it without committing (tracked-modified)
+        fs::write(
+            repo_path.join("src/main.rs"),
+            "fn main() { println!(\"modified\"); }",
+        )
+        .unwrap();
 
         // Create a dummy worktree to pass discovery
         fs::create_dir_all(repo_path.join(".tugtool")).unwrap();
@@ -3225,9 +3456,27 @@ mod tests {
         init_git_repo(repo_path);
         make_initial_commit(repo_path);
 
-        // Create non-infrastructure dirty file
+        // Create non-infrastructure tracked file, then modify it (tracked-modified blocks merge)
         fs::create_dir_all(repo_path.join("src")).unwrap();
         fs::write(repo_path.join("src/lib.rs"), "pub fn foo() {}").unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["add", "src/lib.rs"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo_path)
+            .args(["commit", "-m", "Add lib.rs"])
+            .output()
+            .unwrap();
+        // Now modify it without committing (tracked-modified)
+        fs::write(
+            repo_path.join("src/lib.rs"),
+            "pub fn foo() { println!(\"modified\"); }",
+        )
+        .unwrap();
 
         // Create plan and worktree outside
         fs::create_dir_all(repo_path.join(".tugtool")).unwrap();

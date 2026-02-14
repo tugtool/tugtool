@@ -636,7 +636,7 @@ Task(
     "worktree_path": "<worktree_path>",
     "plan_path": "<plan_path>",
     "proposed_message": "fix(audit): <brief description>",
-    "files_to_stage": [<files from coder output>],
+    "files_to_stage": [<files from coder output>, ".tugtool/tugplan-implementation-log.md"],
     "log_entry": {
       "summary": "Audit fix: <description>"
     }
@@ -732,7 +732,7 @@ Task(
     "worktree_path": "<worktree_path>",
     "plan_path": "<plan_path>",
     "proposed_message": "fix(ci): <brief description>",
-    "files_to_stage": [<files from coder output>],
+    "files_to_stage": [<files from coder output>, ".tugtool/tugplan-implementation-log.md"],
     "log_entry": {
       "summary": "CI fix: <description>"
     }

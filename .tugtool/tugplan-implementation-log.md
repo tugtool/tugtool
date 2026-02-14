@@ -10,6 +10,57 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-14T20:46:15Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix two long fs::write lines in merge.rs test functions
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-14T20:41:32Z
+bead: tugtool-0wx.3
+---
+
+## #step-2: Added no-remote detection to integrator-agent.md: pre-check in Mode 1, behavior rule 8, and No Remote Origin error handling section with ESCALATE JSON
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-14T20:36:38Z
+bead: tugtool-0wx.2
+---
+
+## #step-1: Changed blocking logic so only tracked-modified non-infrastructure files block merges; untracked files reported as informational warnings via new MergeData.untracked_files field
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-14T20:25:21Z
+bead: tugtool-0wx.1
+---
+
+## #step-0: Introduced DirtyFiles struct with tracked_modified/untracked fields, refactored get_dirty_files() to parse porcelain status codes, updated all callers
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-14T19:07:45Z
 ---
 
