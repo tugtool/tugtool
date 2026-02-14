@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-14T19:04:04Z
+bead: tugtool-g22.5
+---
+
+## #step-4: Updated skills/implement/SKILL.md beads reference section, skills/merge/SKILL.md to remove obsolete bead completion warning and add main sync warning, CLAUDE.md with new Beads Policy section and updated worktree workflow description.
+
+**Files changed:**
+- .tugtool/tugplan-2.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-14T18:57:57Z
 bead: tugtool-g22.4

@@ -826,6 +826,12 @@ From coder output, evaluate `drift_assessment`:
 - `root_bead_id`: The root bead ID for the entire plan
 - `bead_mapping`: A map from step anchors to bead IDs
 
+**Key implementation details**:
+- Beads uses **direct SQLite mode** (BEADS_NO_DAEMON=1, BEADS_NO_AUTO_FLUSH=1) — no daemon, no auto-flush
+- `bead_mapping` comes from the beads sync **JSON output** (not from plan file annotations)
+- **Plan files are never modified** by beads sync
+- Beads sync errors during worktree create remain **fatal** (fail fast)
+
 **Close after commit** (handled by committer-agent via `tugtool commit`):
 
 The committer-agent is a thin CLI wrapper that delegates to `tugtool commit` for step commits (log rotate, prepend, git commit, bead close). All git/log/bead operations are performed atomically by this CLI command.
