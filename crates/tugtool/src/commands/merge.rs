@@ -160,8 +160,23 @@ fn get_pr_for_branch(branch: &str) -> Result<PrInfo, String> {
     serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse gh pr view output: {}", e))
 }
 
-/// Get list of uncommitted files in the working tree, with porcelain status prefix
-fn get_dirty_files(repo_root: &Path) -> Result<Vec<String>, String> {
+/// Structured result from get_dirty_files
+#[derive(Default, Debug)]
+struct DirtyFiles {
+    /// Files that are tracked and modified (not yet committed)
+    tracked_modified: Vec<String>,
+    /// Files that are untracked (never git-added)
+    untracked: Vec<String>,
+}
+
+impl DirtyFiles {
+    fn is_empty(&self) -> bool {
+        self.tracked_modified.is_empty() && self.untracked.is_empty()
+    }
+}
+
+/// Get list of uncommitted files in the working tree, partitioned by status
+fn get_dirty_files(repo_root: &Path) -> Result<DirtyFiles, String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
@@ -174,12 +189,25 @@ fn get_dirty_files(repo_root: &Path) -> Result<Vec<String>, String> {
         return Err(format!("git status failed: {}", stderr));
     }
 
+    let mut tracked_modified = Vec::new();
+    let mut untracked = Vec::new();
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout
-        .lines()
-        .filter(|line| line.len() >= 4)
-        .map(|line| line[3..].to_string())
-        .collect())
+    for line in stdout.lines() {
+        if line.len() >= 4 {
+            let file_path = line[3..].to_string();
+            if line.starts_with("??") {
+                untracked.push(file_path);
+            } else {
+                tracked_modified.push(file_path);
+            }
+        }
+    }
+
+    Ok(DirtyFiles {
+        tracked_modified,
+        untracked,
+    })
 }
 
 fn is_infrastructure_path(path: &str) -> bool {
@@ -201,10 +229,16 @@ fn check_worktree_dirty(wt_path: &Path) -> Result<Option<String>, String> {
     if dirty.is_empty() {
         Ok(None)
     } else {
+        let all_dirty: Vec<String> = dirty
+            .tracked_modified
+            .iter()
+            .chain(dirty.untracked.iter())
+            .cloned()
+            .collect();
         Ok(Some(format!(
             "Implementation worktree has uncommitted changes:\n  {}\n\n\
              Please commit or discard these changes before merging.",
-            dirty.join("\n  ")
+            all_dirty.join("\n  ")
         )))
     }
 }
@@ -405,10 +439,18 @@ fn run_preflight_checks(
 /// Prepare main for merge by committing infrastructure files and discarding everything else.
 /// Returns the list of dirty files that were found (for reporting).
 fn prepare_main_for_merge(repo_root: &Path, quiet: bool) -> Result<Vec<String>, String> {
-    let dirty_files = get_dirty_files(repo_root)?;
-    if dirty_files.is_empty() {
+    let dirty = get_dirty_files(repo_root)?;
+    if dirty.is_empty() {
         return Ok(vec![]);
     }
+
+    // Combine tracked_modified and untracked into single vector for partitioning
+    let dirty_files: Vec<String> = dirty
+        .tracked_modified
+        .iter()
+        .chain(dirty.untracked.iter())
+        .cloned()
+        .collect();
 
     let infra: Vec<&str> = dirty_files
         .iter()
@@ -1068,9 +1110,15 @@ fn run_merge_in(
     };
 
     // Step 2: Pre-dry-run checks
-    let dirty_files = get_dirty_files(&repo_root).unwrap_or_default();
+    let dirty = get_dirty_files(&repo_root).unwrap_or_default();
 
-    // Step 2b: Partition dirty files into infrastructure and non-infrastructure
+    // Step 2b: Combine and partition dirty files into infrastructure and non-infrastructure
+    let dirty_files: Vec<String> = dirty
+        .tracked_modified
+        .iter()
+        .chain(dirty.untracked.iter())
+        .cloned()
+        .collect();
     let infra_files: Vec<&str> = dirty_files
         .iter()
         .filter(|f| is_infrastructure_path(f))
@@ -1419,7 +1467,13 @@ fn run_merge_in(
     }
 
     // Step 4b: Commit any dirty infrastructure files (beads state, implementation log, etc.)
-    let post_dirty = get_dirty_files(&repo_root).unwrap_or_default();
+    let post_dirty_struct = get_dirty_files(&repo_root).unwrap_or_default();
+    let post_dirty: Vec<String> = post_dirty_struct
+        .tracked_modified
+        .iter()
+        .chain(post_dirty_struct.untracked.iter())
+        .cloned()
+        .collect();
     let post_infra: Vec<&str> = post_dirty
         .iter()
         .filter(|f| is_infrastructure_path(f))
@@ -2240,6 +2294,8 @@ mod tests {
 
         let files = get_dirty_files(temp_path).unwrap();
         assert!(files.is_empty());
+        assert!(files.tracked_modified.is_empty());
+        assert!(files.untracked.is_empty());
     }
 
     #[test]
@@ -2256,9 +2312,68 @@ mod tests {
         fs::write(temp_path.join(".beads/beads.jsonl"), "{}").unwrap();
 
         let files = get_dirty_files(temp_path).unwrap();
-        assert_eq!(files.len(), 2);
-        assert!(files.contains(&".beads/beads.jsonl".to_string()));
-        assert!(files.contains(&"new_file.txt".to_string()));
+        // Both files are untracked (never git-added)
+        assert!(files.tracked_modified.is_empty());
+        assert_eq!(files.untracked.len(), 2);
+        assert!(files.untracked.contains(&".beads/beads.jsonl".to_string()));
+        assert!(files.untracked.contains(&"new_file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_get_dirty_files_tracked_only() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        init_git_repo(temp_path);
+        make_initial_commit(temp_path);
+
+        // Modify a tracked file
+        fs::write(temp_path.join("README.md"), "modified").unwrap();
+
+        let files = get_dirty_files(temp_path).unwrap();
+        assert_eq!(files.tracked_modified.len(), 1);
+        assert!(files.tracked_modified.contains(&"README.md".to_string()));
+        assert!(files.untracked.is_empty());
+    }
+
+    #[test]
+    fn test_get_dirty_files_untracked_only() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        init_git_repo(temp_path);
+        make_initial_commit(temp_path);
+
+        // Create a new untracked file
+        fs::write(temp_path.join("new.txt"), "untracked").unwrap();
+
+        let files = get_dirty_files(temp_path).unwrap();
+        assert!(files.tracked_modified.is_empty());
+        assert_eq!(files.untracked.len(), 1);
+        assert!(files.untracked.contains(&"new.txt".to_string()));
+    }
+
+    #[test]
+    fn test_get_dirty_files_mixed() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        init_git_repo(temp_path);
+        make_initial_commit(temp_path);
+
+        // Modify a tracked file
+        fs::write(temp_path.join("README.md"), "modified").unwrap();
+        // Create a new untracked file
+        fs::write(temp_path.join("new.txt"), "untracked").unwrap();
+
+        let files = get_dirty_files(temp_path).unwrap();
+        assert_eq!(files.tracked_modified.len(), 1);
+        assert!(files.tracked_modified.contains(&"README.md".to_string()));
+        assert_eq!(files.untracked.len(), 1);
+        assert!(files.untracked.contains(&"new.txt".to_string()));
     }
 
     // -- Preflight check tests --

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-14T20:25:21Z
+bead: tugtool-0wx.1
+---
+
+## #step-0: Introduced DirtyFiles struct with tracked_modified/untracked fields, refactored get_dirty_files() to parse porcelain status codes, updated all callers
+
+**Files changed:**
+- .tugtool/tugplan-3.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-14T19:07:45Z
 ---
