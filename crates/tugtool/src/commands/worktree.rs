@@ -591,6 +591,20 @@ pub fn run_worktree_create_with_root(
     {
         use tugtool_core::beads::BeadsCli;
         let beads = BeadsCli::default();
+        if !beads.is_installed(None) {
+            let err = tugtool_core::error::TugError::BeadsNotInstalled;
+            if json_output {
+                let error_json = serde_json::json!({
+                    "status": "error",
+                    "error": err.to_string(),
+                    "exit_code": err.exit_code()
+                });
+                eprintln!("{}", error_json);
+            } else if !quiet {
+                eprintln!("error: {}", err);
+            }
+            return Ok(err.exit_code());
+        }
         if !beads.is_initialized(&repo_root) {
             if let Err(e) = beads.init(&repo_root) {
                 if json_output {
@@ -1441,6 +1455,36 @@ mod tests {
         // Should return original path unchanged (fallback behavior)
         assert_eq!(normalized_plan, plan);
         assert_eq!(normalized_path, plan_path);
+    }
+
+    #[test]
+    fn test_beads_not_installed_exit_code() {
+        use tugtool_core::error::TugError;
+
+        let err = TugError::BeadsNotInstalled;
+        assert_eq!(err.exit_code(), 5, "BeadsNotInstalled should return exit code 5");
+    }
+
+    #[test]
+    fn test_beads_not_installed_json_error_format() {
+        use tugtool_core::error::TugError;
+
+        let err = TugError::BeadsNotInstalled;
+        let error_json = serde_json::json!({
+            "status": "error",
+            "error": err.to_string(),
+            "exit_code": err.exit_code()
+        });
+
+        // Verify structure
+        assert!(error_json.is_object(), "error_json should be an object");
+        let obj = error_json.as_object().expect("should be an object");
+
+        // Check required fields
+        assert_eq!(obj.get("status").and_then(|v| v.as_str()), Some("error"), "status should be 'error'");
+        assert_eq!(obj.get("exit_code").and_then(|v| v.as_i64()), Some(5), "exit_code should be 5");
+        assert!(obj.get("error").and_then(|v| v.as_str()).is_some(), "error field should be present and non-empty");
+        assert!(!obj.get("error").and_then(|v| v.as_str()).unwrap().is_empty(), "error message should not be empty");
     }
 }
 
