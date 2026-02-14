@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-14T18:50:00Z
+bead: tugtool-g22.3
+---
+
+## #step-2: Added remove_beads_hooks function to init.rs that detects and removes .git/hooks/pre-commit and post-merge containing beads/bd references. Called in both idempotent and force init paths. Added 3 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-2.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-14T18:44:39Z
 bead: tugtool-g22.2

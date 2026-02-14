@@ -128,6 +128,12 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
         // Handle .gitignore even in idempotent mode
         ensure_gitignore(quiet)?;
 
+        // Remove beads git hooks
+        let hooks_removed = remove_beads_hooks(Path::new("."));
+        for hook in &hooks_removed {
+            files_created.push(format!("removed .git/hooks/{}", hook));
+        }
+
         if json_output {
             let response = JsonResponse::ok(
                 "init",
@@ -141,9 +147,13 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
             if files_created.is_empty() {
                 println!("Tug project already initialized in .tugtool/ (nothing to do)");
             } else {
-                println!("Tug project in .tugtool/ updated with missing files:");
+                println!("Tug project in .tugtool/ updated:");
                 for f in &files_created {
-                    println!("  Created: {}", f);
+                    if f.starts_with("removed ") {
+                        println!("  {}", f);
+                    } else {
+                        println!("  Created: {}", f);
+                    }
                 }
             }
         }
@@ -177,11 +187,17 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
 
     ensure_gitignore(quiet)?;
 
-    let files_created = vec![
+    // Remove beads git hooks
+    let hooks_removed = remove_beads_hooks(Path::new("."));
+
+    let mut files_created = vec![
         "tugplan-skeleton.md".to_string(),
         "config.toml".to_string(),
         "tugplan-implementation-log.md".to_string(),
     ];
+    for hook in &hooks_removed {
+        files_created.push(format!("removed .git/hooks/{}", hook));
+    }
 
     if json_output {
         let response = JsonResponse::ok(
@@ -197,9 +213,54 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
         println!("  Created: tugplan-skeleton.md");
         println!("  Created: config.toml");
         println!("  Created: tugplan-implementation-log.md");
+        for hook in &hooks_removed {
+            println!("  Removed .git/hooks/{}", hook);
+        }
     }
 
     Ok(0)
+}
+
+/// Remove beads-related git hooks from .git/hooks/
+///
+/// Scans .git/hooks/ for pre-commit and post-merge files that contain beads/bd references.
+/// Returns a list of removed hook filenames.
+fn remove_beads_hooks(root: &Path) -> Vec<String> {
+    let hooks_dir = root.join(".git/hooks");
+
+    // If .git/hooks doesn't exist, nothing to do
+    if !hooks_dir.exists() {
+        return vec![];
+    }
+
+    let mut removed_hooks = vec![];
+    let hook_names = ["pre-commit", "post-merge"];
+
+    for hook_name in &hook_names {
+        let hook_path = hooks_dir.join(hook_name);
+
+        // Skip if hook file doesn't exist
+        if !hook_path.exists() {
+            continue;
+        }
+
+        // Read hook content
+        let content = match fs::read_to_string(&hook_path) {
+            Ok(c) => c,
+            Err(_) => continue, // Skip files we can't read
+        };
+
+        // Check if content contains beads/bd references
+        // Look for "bd " (with space), "bd\n" (at line end), "bd\t" (with tab), or "beads"
+        if content.contains("bd ") || content.contains("bd\n") || content.contains("bd\t") || content.contains("beads") {
+            // Remove the hook file
+            if fs::remove_file(&hook_path).is_ok() {
+                removed_hooks.push(hook_name.to_string());
+            }
+        }
+    }
+
+    removed_hooks
 }
 
 /// Ensure .tugtree/ is listed in .gitignore
@@ -283,5 +344,63 @@ mod tests {
         let result = run_init_check(Some(temp_path), true).expect("init check should not error");
         assert_eq!(result, 9, "should return exit code 9");
         // TempDir auto-cleans on drop - no manual cleanup needed
+    }
+
+    #[test]
+    fn test_remove_beads_hooks_removes_bd_hook() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let temp_path = temp.path();
+
+        // Create .git/hooks directory
+        let hooks_dir = temp_path.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).expect("failed to create hooks dir");
+
+        // Create pre-commit hook with bd reference
+        let hook_path = hooks_dir.join("pre-commit");
+        fs::write(&hook_path, "#!/bin/sh\nbd sync --flush-only\n")
+            .expect("failed to write hook");
+
+        // Call remove_beads_hooks
+        let removed = remove_beads_hooks(temp_path);
+
+        // Verify hook was removed
+        assert_eq!(removed, vec!["pre-commit"], "should remove pre-commit hook");
+        assert!(!hook_path.exists(), "hook file should be deleted");
+    }
+
+    #[test]
+    fn test_remove_beads_hooks_preserves_non_bd_hook() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let temp_path = temp.path();
+
+        // Create .git/hooks directory
+        let hooks_dir = temp_path.join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).expect("failed to create hooks dir");
+
+        // Create pre-commit hook with unrelated content
+        let hook_path = hooks_dir.join("pre-commit");
+        fs::write(&hook_path, "#!/bin/sh\nrustfmt\n")
+            .expect("failed to write hook");
+
+        // Call remove_beads_hooks
+        let removed = remove_beads_hooks(temp_path);
+
+        // Verify hook was NOT removed
+        assert!(removed.is_empty(), "should not remove non-bd hook");
+        assert!(hook_path.exists(), "hook file should still exist");
+    }
+
+    #[test]
+    fn test_remove_beads_hooks_no_git_dir() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let temp_path = temp.path();
+
+        // Don't create .git/hooks directory
+
+        // Call remove_beads_hooks
+        let removed = remove_beads_hooks(temp_path);
+
+        // Verify no error and no hooks removed
+        assert!(removed.is_empty(), "should return empty vec when no .git/hooks");
     }
 }
