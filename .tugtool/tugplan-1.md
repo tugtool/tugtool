@@ -26,7 +26,7 @@ The implement-setup-agent is an LLM agent that exists solely to run `tugtool wor
 Before the agent can be removed, three bugs in the tugtool CLI must be fixed. These bugs prevent `tugtool worktree create` from succeeding and would block both the current agent-based flow and the planned direct CLI call:
 
 1. **Absolute path join bug** — In `worktree.rs`, multiple call sites join `plan_path` (or the raw `plan` String) with `worktree_path` or pass it to `git add`. When `plan_path` is absolute, `PathBuf::join` discards the worktree base, and `git add` tries to stage a path outside the worktree. Affected sites: plan file copy (line 639), `sync_beads_in_worktree` (line 187), `commit_bead_annotations` (line 234), and re-read after sync (line 788).
-2. **Beads initialization failure** — The auto-init code in worktree creation calls `beads.init()` which runs `bd init`, but if `bd` is not installed the error handling returns an exit code without a clear message, and the error type may not match what the JSON output expects.
+2. **Beads initialization failure** — The auto-init code in worktree creation calls `beads.init()` without first checking whether `bd` is installed. When `bd` is missing, the error is unclear and does not guide the user to install it. The fix is to add an `is_installed()` check before `init()` and fail with a clear, actionable `TugError::BeadsNotInstalled` error (which already exists with exit code 5).
 3. **Doctor command uses wrong directory and filename references** — The `doctor.rs` command hardcodes stale names throughout all five health check functions: `check_initialized()` uses `.tug/` and `plan-skeleton.md`; `check_log_size()` uses `.tug/plan-implementation-log.md`; `check_worktrees()` uses `.tug.worktrees` and `tug__` prefix; `check_orphaned_sessions()` uses `.tug.worktrees/.sessions`; `check_broken_refs()` uses `.tug/` and `plan-` prefix. The correct values are `.tugtool/`, `tugplan-` prefix, `.tugtree`, and `tugtool__` prefix respectively.
 
 The implement orchestrator skill currently uses a PreToolUse hook that blocks all Bash, Write, and Edit calls, enforcing that the orchestrator delegates everything through Task. To allow the orchestrator to run `tugtool` commands directly, the hook must be updated to use a pattern-based allowlist that permits Bash calls starting with `tugtool` while continuing to block all other direct tool usage.
@@ -35,7 +35,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 - Fix the three blocking infrastructure bugs first (Steps 0-2), since they prevent worktree creation from succeeding
 - Fix the absolute path join in `worktree.rs` by normalizing the `plan` String to a relative path at the top of `run_worktree_create_with_root()`, so all downstream uses (plan copy, beads sync, bead commit, post-sync re-read) automatically get a relative path
-- Fix the beads initialization by improving error handling when `bd` is not installed — skip beads init gracefully rather than failing the entire worktree creation
+- Fix the beads initialization by adding an `is_installed()` check before `init()` — fail with a clear, actionable error (`TugError::BeadsNotInstalled`, exit code 5) when `bd` is not installed, with proper JSON error output when `--json` is used
 - Fix the doctor command by updating all five health check functions: replace `.tug/` with `.tugtool/`, `.tug.worktrees` with `.tugtree`, `plan-` prefixed filenames with `tugplan-` prefixed filenames, and `tug__` prefix with `tugtool__`
 - Then proceed with the agent elimination: update the PreToolUse hook, replace the setup agent spawn, delete the agent file and update references
 - Default step selection to "all remaining steps" — no interactive step selection, no ambiguity
@@ -49,7 +49,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `tugtool worktree create .tugtool/tugplan-1.md` succeeds when invoked with an absolute plan path (no path-join bug)
-- `tugtool worktree create` succeeds even when `bd` is not installed (graceful degradation)
+- `tugtool worktree create` fails with a clear, actionable error message when `bd` is not installed (exit code 5, proper JSON error when `--json` is used)
 - `tugtool doctor` correctly detects `.tugtool/` directory, `tugplan-` prefixed files, `.tugtree` worktree directory, and `tugtool__` worktree prefix
 - `agents/implement-setup-agent.md` does not exist after implementation
 - `cargo nextest run` passes with zero warnings (all tests updated to reflect 9 agents)
@@ -92,7 +92,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 - The PreToolUse hook can distinguish commands by prefix pattern matching (the hook inspects the Bash command string)
 - The `worktree create` JSON output contains all fields the orchestrator needs: `worktree_path`, `branch_name`, `base_branch`, `all_steps`, `ready_steps`, `bead_mapping`, `root_bead_id`
 - Step selection defaults to "all remaining" without user interaction
-- The `bd` CLI may not be installed in all environments; worktree creation should degrade gracefully
+- The `bd` CLI is a hard requirement for the implementer workflow; worktree creation must fail with a clear error if `bd` is not installed
 
 ---
 
@@ -176,19 +176,21 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 - After normalization, `repo_root.join(&plan_path)` still works correctly (joining a relative path onto an absolute base is fine)
 - The normalization must handle the case where the absolute path does not start with `repo_root` (keep the original path as a fallback)
 
-#### [D06] Graceful beads degradation when bd is not installed (DECIDED) {#d06-graceful-beads-degradation}
+#### [D06] Fail fast with clear error when bd is not installed (DECIDED) {#d06-fail-fast-beads-not-installed}
 
-**Decision:** When `bd` is not installed or beads initialization fails, worktree creation proceeds without beads rather than failing entirely. A warning is emitted but the worktree is still created.
+**Decision:** When `bd` is not installed, worktree creation fails immediately with `TugError::BeadsNotInstalled` (exit code 5) and a clear, actionable error message. No fallback, no warning-and-continue.
 
 **Rationale:**
-- Beads is an optional enhancement; worktree creation is the critical path
-- Failing the entire worktree creation because of a missing optional tool is too aggressive
-- The beads sync step later in the flow already handles beads-not-available gracefully
+- Beads is a hard requirement for the implementer workflow, not an optional enhancement
+- The entire bead-mediated agent communication pattern depends on beads: architect reads/writes bead design field, coder reads strategy from beads, reviewer reads notes from beads, committer closes beads, and `bd ready` queries drive the step loop
+- There is no viable fallback when `bd` is missing -- proceeding without beads would produce a broken implementation session where agents cannot communicate through the bead protocol
+- The existing `TugError::BeadsNotInstalled` variant (error.rs line 99-101) and exit code 5 (error.rs line 280) already exist for this exact purpose
 
 **Implications:**
-- The beads auto-init block must check `beads.is_installed()` before attempting `beads.init()`
-- If beads is not installed, emit a warning and continue
-- If beads init fails for other reasons, emit a warning and continue (do not return an error exit code)
+- The beads auto-init block must call `beads.is_installed()` before `beads.init()` -- the real bug is that current code (lines 576-589) calls `init()` without checking `is_installed()`
+- When `bd` is not installed: return `TugError::BeadsNotInstalled` which produces exit code 5 and a clear error message telling the user to install `bd`
+- When `--json` is used: the error must produce a proper JSON error object (not just text to stderr)
+- When `bd` IS installed but `init()` fails: keep existing error handling (already produces proper exit code)
 
 #### [D07] Fix doctor command directory and filename references (DECIDED) {#d07-fix-doctor-references}
 
@@ -259,44 +261,62 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 **Depends on:** #step-0
 
-**Commit:** `fix(worktree): gracefully handle missing bd CLI during beads initialization`
+**Commit:** `fix(worktree): fail fast with clear error when bd CLI is not installed`
 
-**References:** [D06] Graceful beads degradation when bd is not installed, (#context, #strategy)
+**References:** [D06] Fail fast with clear error when bd is not installed, (#context, #strategy)
 
 **Artifacts:**
 - Modified `crates/tugtool/src/commands/worktree.rs` — beads auto-init block (lines 576-589)
 
 **Tasks:**
-- [ ] In the beads auto-init block (lines 576-589 of `worktree.rs`), add an `is_installed()` check before calling `beads.init()`:
+- [ ] In the beads auto-init block (lines 576-589 of `worktree.rs`), add a `beads.is_installed()` check **before** calling `beads.init()`. The real bug is that current code calls `init()` without checking `is_installed()`, leading to unclear errors when `bd` is missing:
   ```rust
   {
       use tugtool_core::beads::BeadsCli;
       let beads = BeadsCli::default();
-      if beads.is_installed(None) {
-          if !beads.is_initialized(&repo_root) {
-              if let Err(e) = beads.init(&repo_root) {
-                  // Warn but don't fail — beads is optional
-                  if !quiet {
-                      eprintln!("warning: beads init failed: {}", e);
-                  }
-              }
+      if !beads.is_installed(None) {
+          // bd CLI is not installed — fail fast with a clear, actionable error
+          let err = TugError::BeadsNotInstalled;
+          if json_output {
+              let error_json = serde_json::json!({
+                  "status": "error",
+                  "error": err.to_string(),
+                  "exit_code": err.exit_code()
+              });
+              eprintln!("{}", error_json);
+          } else {
+              eprintln!("error: {}", err);
           }
-      } else if !quiet {
-          eprintln!("warning: bd CLI not found, skipping beads initialization");
+          return Ok(err.exit_code());
+      }
+      // bd is installed — proceed with init if needed
+      if !beads.is_initialized(&repo_root) {
+          if let Err(e) = beads.init(&repo_root) {
+              // init() failed for a reason other than missing bd — keep existing error handling
+              if json_output {
+                  eprintln!(r#"{{"error": "{}"}}"#, e);
+              }
+              return Ok(e.exit_code());
+          }
       }
   }
   ```
-- [ ] Remove the early-return error exit code path (lines 581-587). The existing code calls `e.exit_code()` on a `TugError::BeadsCommand` variant and returns it as the process exit code, plus emits a JSON error object via `eprintln!(r#"{{"error": "{}"}}"#, e)` when `json_output` is true. This entire error-as-exit-code pattern is being replaced with a warning-and-continue pattern, which is a deliberate simplification: beads init failure no longer produces a JSON error response or a non-zero exit code.
-- [ ] Ensure the JSON output path also handles this gracefully — when beads is unavailable, the worktree creation should succeed with `bead_mapping: null` and `root_bead_id: null` in the JSON response, rather than emitting a JSON error object to stderr
+- [ ] The `TugError::BeadsNotInstalled` variant already exists in `error.rs` (lines 99-101) with exit code 5 (line 280) and a user-facing message — no new error type is needed
+- [ ] When `--json` is used and `bd` is not installed, produce a proper JSON error object to stderr with `status`, `error`, and `exit_code` fields, then return exit code 5
+- [ ] When `bd` IS installed but `init()` fails for other reasons, keep the existing error handling (already produces proper exit code)
 
 **Tests:**
+- [ ] Unit test: verify that when `bd` is not installed, the function returns exit code 5 (`TugError::BeadsNotInstalled`)
+- [ ] Unit test: verify that when `--json` is used and `bd` is not installed, the stderr output is valid JSON with `status: "error"` and `exit_code: 5`
 - [ ] `cargo build` succeeds with zero warnings
-- [ ] `cargo nextest run` passes (existing tests should still pass since they may or may not have bd installed)
+- [ ] `cargo nextest run` passes
 
 **Checkpoint:**
 - [ ] `cargo build` succeeds with zero warnings
 - [ ] `cargo nextest run` passes
-- [ ] The beads auto-init block no longer returns an error exit code on beads failure
+- [ ] The beads auto-init block checks `is_installed()` before calling `init()`
+- [ ] When `bd` is not installed, the error path produces exit code 5 and a clear error message
+- [ ] When `--json` is used and `bd` is not installed, stderr contains a valid JSON error object
 
 **Rollback:**
 - Revert the beads auto-init block changes in `worktree.rs`
@@ -508,12 +528,12 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 ### 1.0.2 Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Three infrastructure bugs fixed (absolute path join, beads initialization, doctor directory name) and the implement orchestrator runs `tugtool worktree create` directly via Bash instead of spawning a setup agent, with the setup agent deleted and all references updated.
+**Deliverable:** Three infrastructure bugs fixed (absolute path join, beads fail-fast error handling, doctor directory name) and the implement orchestrator runs `tugtool worktree create` directly via Bash instead of spawning a setup agent, with the setup agent deleted and all references updated.
 
 #### Phase Exit Criteria ("Done means...") {#exit-criteria}
 
 - [ ] `tugtool worktree create` correctly handles absolute plan paths (path join bug fixed)
-- [ ] `tugtool worktree create` succeeds when `bd` is not installed (beads degradation)
+- [ ] `tugtool worktree create` fails with a clear, actionable error (exit code 5, proper JSON error) when `bd` is not installed (beads fail-fast error handling)
 - [ ] `tugtool doctor` checks `.tugtool/` directory, `tugplan-` prefixed files, `.tugtree` worktree directory, and `tugtool__` worktree prefix (all five health check functions fixed)
 - [ ] `agents/implement-setup-agent.md` does not exist
 - [ ] `cargo nextest run` passes with zero warnings
@@ -535,7 +555,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 | Checkpoint | Verification |
 |------------|--------------|
 | Path join bug fixed | `cargo nextest run` with absolute path test |
-| Beads degradation works | Worktree creation succeeds without `bd` |
+| Beads fail-fast error works | Worktree creation fails with exit code 5 and clear error when `bd` is not installed |
 | Doctor references fixed | `grep -rn '\.tug["/)]|\.tug\.worktrees|"tug__"' crates/tugtool/src/commands/doctor.rs` returns empty |
 | Agent deleted | `! test -f agents/implement-setup-agent.md` |
 | Tests pass | `cargo nextest run` exit code 0 |
