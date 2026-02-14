@@ -2422,7 +2422,7 @@ mod tests {
         let temp_path = temp_dir.path();
 
         // Create a minimal plan file with no bead IDs
-        let tug_dir = temp_path.join(".tug");
+        let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).unwrap();
         fs::write(
             tug_dir.join("tugplan-test.md"),
@@ -2441,7 +2441,7 @@ mod tests {
         let temp_path = temp_dir.path();
 
         // Create a plan file with bead IDs
-        let tug_dir = temp_path.join(".tug");
+        let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).unwrap();
         fs::write(
             tug_dir.join("tugplan-test.md"),

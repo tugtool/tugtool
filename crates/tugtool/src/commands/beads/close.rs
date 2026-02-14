@@ -121,7 +121,7 @@ fn output_error(
 fn check_and_rotate_log(project_root: &std::path::Path) -> Result<(bool, Option<String>), String> {
     use std::fs;
 
-    let log_path = project_root.join(".tug/plan-implementation-log.md");
+    let log_path = project_root.join(".tugtool/tugplan-implementation-log.md");
 
     // If log doesn't exist, no rotation needed
     if !log_path.exists() {
@@ -157,8 +157,8 @@ fn perform_log_rotation(
 ) -> Result<(bool, Option<String>), String> {
     use std::fs;
 
-    let log_path = project_root.join(".tug/plan-implementation-log.md");
-    let archive_dir = project_root.join(".tug/archive");
+    let log_path = project_root.join(".tugtool/tugplan-implementation-log.md");
+    let archive_dir = project_root.join(".tugtool/archive");
 
     // Create archive directory if it doesn't exist
     if !archive_dir.exists() {
@@ -191,7 +191,7 @@ Entries are sorted newest-first.
     fs::write(&log_path, IMPLEMENTATION_LOG_HEADER)
         .map_err(|e| format!("Failed to create fresh log file: {}", e))?;
 
-    let archived_path_str = format!(".tug/archive/{}", archive_filename);
+    let archived_path_str = format!(".tugtool/archive/{}", archive_filename);
     Ok((true, Some(archived_path_str)))
 }
 
@@ -279,12 +279,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Set up .tug directory structure
-        let tug_dir = temp_path.join(".tug");
+        // Set up .tugtool directory structure
+        let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).unwrap();
 
         // Create oversized log (> 500 lines)
-        let log_path = tug_dir.join("plan-implementation-log.md");
+        let log_path = tug_dir.join("tugplan-implementation-log.md");
         let mut content = String::new();
         for i in 0..510 {
             content.push_str(&format!("Line {}\n", i));
@@ -318,12 +318,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Set up .tug directory structure
-        let tug_dir = temp_path.join(".tug");
+        // Set up .tugtool directory structure
+        let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).unwrap();
 
         // Create small log (< 500 lines)
-        let log_path = tug_dir.join("plan-implementation-log.md");
+        let log_path = tug_dir.join("tugplan-implementation-log.md");
         let mut content = String::new();
         for i in 0..100 {
             content.push_str(&format!("Line {}\n", i));
@@ -356,12 +356,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Set up .tug directory structure
-        let tug_dir = temp_path.join(".tug");
+        // Set up .tugtool directory structure
+        let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).unwrap();
 
         // Create log with > 100KB (exceeds byte threshold)
-        let log_path = tug_dir.join("plan-implementation-log.md");
+        let log_path = tug_dir.join("tugplan-implementation-log.md");
         let line = "x".repeat(1000); // 1000 bytes per line
         let mut content = String::new();
         for i in 0..110 {
@@ -388,8 +388,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Set up .tug directory but no log
-        let tug_dir = temp_path.join(".tug");
+        // Set up .tugtool directory but no log
+        let tug_dir = temp_path.join(".tugtool");
         fs::create_dir_all(&tug_dir).unwrap();
 
         // Call check_and_rotate_log

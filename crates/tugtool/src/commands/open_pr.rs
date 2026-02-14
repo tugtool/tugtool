@@ -52,7 +52,7 @@ pub fn run_open_pr(
     let pr_body = generate_pr_body(worktree_path, &base)?;
 
     // Write PR body to temp file to avoid shell escaping issues
-    let temp_body_path = worktree_path.join(".tug").join("pr-body.md");
+    let temp_body_path = worktree_path.join(".tugtool").join("pr-body.md");
     fs::write(&temp_body_path, &pr_body)
         .map_err(|e| format!("Failed to write PR body temp file: {}", e))?;
 

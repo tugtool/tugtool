@@ -20,7 +20,7 @@ pub enum LogCommands {
     ///
     /// Archives log when it exceeds 500 lines or 100KB.
     #[command(
-        long_about = "Rotate implementation log when over threshold.\n\nRotation triggers when:\n  - Log exceeds 500 lines, OR\n  - Log exceeds 100KB (102400 bytes)\n\nArchives to .tug/archive/implementation-log-YYYY-MM-DD-HHMMSS.md\nCreates fresh log with header template.\n\nUse --force to rotate even when below thresholds."
+        long_about = "Rotate implementation log when over threshold.\n\nRotation triggers when:\n  - Log exceeds 500 lines, OR\n  - Log exceeds 100KB (102400 bytes)\n\nArchives to .tugtool/archive/implementation-log-YYYY-MM-DD-HHMMSS.md\nCreates fresh log with header template.\n\nUse --force to rotate even when below thresholds."
     )]
     Rotate {
         /// Rotate even if below thresholds
@@ -152,7 +152,7 @@ pub struct PrependResult {
 pub fn log_rotate_inner(root: &std::path::Path, force: bool) -> Result<RotateResult, String> {
     use std::fs;
 
-    let log_path = root.join(".tug/plan-implementation-log.md");
+    let log_path = root.join(".tugtool/tugplan-implementation-log.md");
 
     // Check if log file exists
     if !log_path.exists() {
@@ -195,7 +195,7 @@ pub fn log_rotate_inner(root: &std::path::Path, force: bool) -> Result<RotateRes
     };
 
     // Create archive directory if it doesn't exist
-    let archive_dir = root.join(".tug/archive");
+    let archive_dir = root.join(".tugtool/archive");
     if !archive_dir.exists() {
         fs::create_dir_all(&archive_dir)
             .map_err(|e| format!("Failed to create archive directory: {}", e))?;
@@ -227,7 +227,7 @@ Entries are sorted newest-first.
         .map_err(|e| format!("Failed to create fresh log file: {}", e))?;
 
     // Build result
-    let archived_path_str = format!(".tug/archive/{}", archive_filename);
+    let archived_path_str = format!(".tugtool/archive/{}", archive_filename);
     Ok(RotateResult {
         rotated: true,
         archived_path: Some(archived_path_str),
@@ -416,7 +416,7 @@ pub fn log_prepend_inner(
 ) -> Result<PrependResult, String> {
     use std::fs;
 
-    let log_path = root.join(".tug/plan-implementation-log.md");
+    let log_path = root.join(".tugtool/tugplan-implementation-log.md");
 
     // Check if log file exists
     if !log_path.exists() {
@@ -530,11 +530,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Create .tug directory
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        // Create .tugtool directory
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create log with > 500 lines (exceeds LOG_LINE_THRESHOLD)
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         let mut content = String::new();
         for i in 0..510 {
             content.push_str(&format!("Line {}\n", i));
@@ -546,7 +546,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify archive was created
-        let archive_dir = temp_path.join(".tug/archive");
+        let archive_dir = temp_path.join(".tugtool/archive");
         assert!(archive_dir.exists());
         let archive_files: Vec<_> = fs::read_dir(&archive_dir)
             .unwrap()
@@ -566,11 +566,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Create .tug directory
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        // Create .tugtool directory
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create log with > 100KB (exceeds LOG_BYTE_THRESHOLD)
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         let line = "x".repeat(1000); // 1000 bytes per line
         let mut content = String::new();
         for i in 0..110 {
@@ -584,7 +584,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify archive was created
-        let archive_dir = temp_path.join(".tug/archive");
+        let archive_dir = temp_path.join(".tugtool/archive");
         assert!(archive_dir.exists());
     }
 
@@ -593,11 +593,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Create .tug directory
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        // Create .tugtool directory
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create small log (under both thresholds)
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         let mut content = String::new();
         for i in 0..100 {
             // Only 100 lines
@@ -610,7 +610,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify archive was NOT created
-        let archive_dir = temp_path.join(".tug/archive");
+        let archive_dir = temp_path.join(".tugtool/archive");
         assert!(!archive_dir.exists());
 
         // Verify log still exists and unchanged
@@ -624,11 +624,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Create .tug directory
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        // Create .tugtool directory
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create small log (under both thresholds)
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         fs::write(&log_path, "Small log\n").unwrap();
 
         // Run rotation WITH force (should rotate even though under thresholds)
@@ -636,7 +636,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify archive was created
-        let archive_dir = temp_path.join(".tug/archive");
+        let archive_dir = temp_path.join(".tugtool/archive");
         assert!(archive_dir.exists());
         let archive_files: Vec<_> = fs::read_dir(&archive_dir)
             .unwrap()
@@ -655,8 +655,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        // Create .tug directory but NO log
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        // Create .tugtool directory but NO log
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Run rotation (should succeed but not rotate)
         let result = run_log_rotate(Some(temp_path), false, false, true);
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
 
         // Verify no archive created
-        let archive_dir = temp_path.join(".tug/archive");
+        let archive_dir = temp_path.join(".tugtool/archive");
         assert!(!archive_dir.exists());
     }
 
@@ -673,10 +673,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create log that exceeds threshold
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         let mut content = String::new();
         for i in 0..510 {
             content.push_str(&format!("Line {}\n", i));
@@ -687,7 +687,7 @@ mod tests {
         run_log_rotate(Some(temp_path), false, false, true).unwrap();
 
         // Check archive filename matches pattern implementation-log-YYYY-MM-DD-HHMMSS.md
-        let archive_dir = temp_path.join(".tug/archive");
+        let archive_dir = temp_path.join(".tugtool/archive");
         let archive_files: Vec<_> = fs::read_dir(&archive_dir)
             .unwrap()
             .filter_map(|e| e.ok().and_then(|e| e.file_name().into_string().ok()))
@@ -719,7 +719,7 @@ mod tests {
     fn test_yaml_entry_generation() {
         let entry = generate_yaml_entry(
             "#step-0",
-            ".tug/plan-13.md",
+            ".tugtool/tugplan-13.md",
             "Test summary",
             Some("bd-123"),
             "2026-02-09T14:30:00Z",
@@ -729,14 +729,14 @@ mod tests {
         assert!(entry.contains("date: 2026-02-09T14:30:00Z"));
         assert!(entry.contains("bead: bd-123"));
         assert!(entry.contains("## #step-0: Test summary"));
-        assert!(entry.contains("- .tug/plan-13.md"));
+        assert!(entry.contains("- .tugtool/tugplan-13.md"));
     }
 
     #[test]
     fn test_yaml_entry_generation_no_bead() {
         let entry = generate_yaml_entry(
             "#step-1",
-            ".tug/plan-13.md",
+            ".tugtool/tugplan-13.md",
             "Test summary",
             None,
             "2026-02-09T14:30:00Z",
@@ -773,10 +773,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create initial log with header
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         let initial_content = r#"# Tug Implementation Log
 
 This file documents the implementation progress for this project.
@@ -794,7 +794,7 @@ Entries are sorted newest-first.
         let result = run_log_prepend(
             Some(temp_path),
             "#step-0".to_string(),
-            ".tug/plan-13.md".to_string(),
+            ".tugtool/tugplan-13.md".to_string(),
             "Test implementation".to_string(),
             Some("bd-123".to_string()),
             false,
@@ -807,7 +807,7 @@ Entries are sorted newest-first.
         assert!(new_content.contains("step: #step-0"));
         assert!(new_content.contains("bead: bd-123"));
         assert!(new_content.contains("## #step-0: Test implementation"));
-        assert!(new_content.contains("- .tug/plan-13.md"));
+        assert!(new_content.contains("- .tugtool/tugplan-13.md"));
 
         // Verify entry is after the separator
         let separator_pos = new_content.find("---\n\n").unwrap();
@@ -820,10 +820,10 @@ Entries are sorted newest-first.
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Create initial log
-        let log_path = temp_path.join(".tug/plan-implementation-log.md");
+        let log_path = temp_path.join(".tugtool/tugplan-implementation-log.md");
         let initial_content = "# Tug Implementation Log\n\n---\n\n";
         fs::write(&log_path, initial_content).unwrap();
 
@@ -831,7 +831,7 @@ Entries are sorted newest-first.
         run_log_prepend(
             Some(temp_path),
             "#step-0".to_string(),
-            ".tug/plan-13.md".to_string(),
+            ".tugtool/tugplan-13.md".to_string(),
             "First entry".to_string(),
             None,
             false,
@@ -843,7 +843,7 @@ Entries are sorted newest-first.
         run_log_prepend(
             Some(temp_path),
             "#step-1".to_string(),
-            ".tug/plan-13.md".to_string(),
+            ".tugtool/tugplan-13.md".to_string(),
             "Second entry".to_string(),
             None,
             false,
@@ -863,13 +863,13 @@ Entries are sorted newest-first.
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
-        fs::create_dir_all(temp_path.join(".tug")).unwrap();
+        fs::create_dir_all(temp_path.join(".tugtool")).unwrap();
 
         // Run prepend without log file
         let result = run_log_prepend(
             Some(temp_path),
             "#step-0".to_string(),
-            ".tug/plan-13.md".to_string(),
+            ".tugtool/tugplan-13.md".to_string(),
             "Test".to_string(),
             None,
             false,

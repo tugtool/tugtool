@@ -106,7 +106,7 @@ pub enum BeadsCommands {
     ///
     /// Closes the specified bead, optionally with a reason.
     #[command(
-        long_about = "Close a bead to mark work complete.\n\nThis is typically called by the committer skill after a successful commit\nto finalize step completion.\n\nThe bead ID must exist and be open. Once closed, the bead status\nwill be reflected in `tug beads status` as complete.\n\nAuto-rotation: After closing a bead, the implementation log is checked\nfor size thresholds (500 lines or 100KB). If exceeded, the log is\nautomatically rotated to .tug/archive/ and a fresh log is created."
+        long_about = "Close a bead to mark work complete.\n\nThis is typically called by the committer skill after a successful commit\nto finalize step completion.\n\nThe bead ID must exist and be open. Once closed, the bead status\nwill be reflected in `tug beads status` as complete.\n\nAuto-rotation: After closing a bead, the implementation log is checked\nfor size thresholds (500 lines or 100KB). If exceeded, the log is\nautomatically rotated to .tugtool/archive/ and a fresh log is created."
     )]
     Close {
         /// Bead ID to close

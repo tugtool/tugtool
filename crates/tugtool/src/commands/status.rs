@@ -1039,7 +1039,7 @@ mod tests {
             bead_mapping: None,
             dependencies: None,
             mode: Some("beads".to_string()),
-            plan: Some(".tug/plan-test-beads.md".to_string()),
+            plan: Some(".tugtool/tugplan-test-beads.md".to_string()),
             phase_title: Some("Test Beads Feature".to_string()),
             total_step_count: Some(3),
             completed_step_count: Some(1),

@@ -522,7 +522,7 @@ mod tests {
             bead_id: None,
             log_updated: true,
             log_rotated: true,
-            archived_path: Some(".tug/archive/log-2026-02-11.md".to_string()),
+            archived_path: Some(".tugtool/archive/log-2026-02-11.md".to_string()),
             files_staged: vec!["x.rs".to_string()],
             bead_close_failed: true,
             warnings: vec!["Bead close failed".to_string()],
@@ -535,7 +535,7 @@ mod tests {
         assert_eq!(deserialized.warnings, vec!["Bead close failed"]);
         assert_eq!(
             deserialized.archived_path,
-            Some(".tug/archive/log-2026-02-11.md".to_string())
+            Some(".tugtool/archive/log-2026-02-11.md".to_string())
         );
     }
 
