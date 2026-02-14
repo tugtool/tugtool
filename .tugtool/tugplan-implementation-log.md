@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-14T18:57:57Z
+bead: tugtool-g22.4
+---
+
+## #step-3: Deleted check_bead_completion function and its call in run_preflight_checks. Removed unused BeadsCli/Step/parse_tugplan imports. Converted check_main_sync call site from blocking error to warning pushed onto all_warnings.
+
+**Files changed:**
+- .tugtool/tugplan-2.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-14T18:50:00Z
 bead: tugtool-g22.3
