@@ -427,7 +427,7 @@ fn test_beads_sync_creates_root_and_step_beads() {
         "should have bead_mapping in JSON output"
     );
     assert!(
-        json["data"]["bead_mapping"].as_object().unwrap().len() >= 1,
+        !json["data"]["bead_mapping"].as_object().unwrap().is_empty(),
         "bead_mapping should contain at least one entry"
     );
 
