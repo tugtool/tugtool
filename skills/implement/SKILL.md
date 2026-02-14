@@ -4,29 +4,33 @@ description: Orchestrates the implementation workflow - spawns sub-agents via Ta
 allowed-tools: Task, AskUserQuestion, Bash, Read, Grep, Glob, Write, Edit, WebFetch, WebSearch
 hooks:
   PreToolUse:
-    - matcher: "Bash|Write|Edit"
+    - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: "echo 'Orchestrator must delegate via Task, not use tools directly' >&2; exit 2"
+          command: "echo 'Orchestrator must not use Write/Edit directly' >&2; exit 2"
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "CMD=$(jq -r '.tool_input.command // \"\"'); case \"$CMD\" in tugtool\\ *) exit 0 ;; *) echo 'Orchestrator Bash restricted to tugtool commands' >&2; exit 2 ;; esac"
 ---
 
 ## CRITICAL: You Are a Pure Orchestrator
 
-**YOUR TOOLS:** `Task` and `AskUserQuestion` ONLY. You have no other tools. You cannot read files, write files, edit files, or run commands. Everything happens through agents you spawn via `Task`.
+**YOUR TOOLS:** `Task`, `AskUserQuestion`, and `Bash` (for `tugtool` CLI commands ONLY). You cannot read files, write files, or edit files. Agent work happens through Task. Worktree setup happens through direct `tugtool` CLI calls via Bash.
 
-**FIRST ACTION:** Your very first tool call MUST be `Task` with `tugtool:implement-setup-agent`. No exceptions.
+**FIRST ACTION:** Your very first action MUST be running `tugtool worktree create` via Bash. No exceptions.
 
 **FORBIDDEN:**
 - Reading, writing, editing, or creating ANY files
-- Running ANY shell commands
+- Running ANY shell commands other than `tugtool` CLI commands
 - Implementing code (the coder-agent does this)
 - Analyzing the plan yourself (the architect-agent does this)
 - Spawning planning agents (clarifier, author, critic)
-- Using any tool other than Task and AskUserQuestion
+- Using any tool other than Task, AskUserQuestion, and Bash (tugtool commands only)
 
 **YOUR ENTIRE JOB:** Spawn agents in sequence, parse their JSON output, pass data between them, ask the user questions when needed, and **report progress at every step**.
 
-**GOAL:** Execute plan steps by orchestrating: setup, architect, coder, reviewer, committer.
+**GOAL:** Execute plan steps by creating the worktree via `tugtool` CLI, then orchestrating: architect, coder, reviewer, committer.
 
 ---
 
