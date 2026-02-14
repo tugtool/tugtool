@@ -80,17 +80,17 @@ On revision loops, use `(Complete, revision {N})` in all post-call messages.
 
 **Start (output before any tool calls):**
 ```
-**Planner** — Starting new plan from idea
+**Plan** — Starting new plan from idea
 ```
 or:
 ```
-**Planner** — Revising existing plan at {path}
+**Plan** — Revising existing plan at {path}
 ```
 
 **End (output after final phase):**
 ```
 ---
-**Planner**(Complete)
+**Plan**(Complete)
   Plan: {plan_path}
   Steps: {step_count} | Decisions: {decision_count}
   Revisions: {revision_count}
@@ -273,7 +273,7 @@ AskUserQuestion(
 ```
 - If "Revise": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
 - If "Accept": output the session end message, HALT with success
-- If "Abort": output `**Planner** — Aborted by user` and HALT
+- If "Abort": output `**Plan** — Aborted by user` and HALT
 
 **REJECT:**
 ```
@@ -290,7 +290,7 @@ AskUserQuestion(
 )
 ```
 - If "Start over": set `critic_feedback = critic response`, increment `revision_count`, **GO TO STEP 3** (author, not clarifier)
-- If "Abort": output `**Planner** — Aborted by user` and HALT
+- If "Abort": output `**Plan** — Aborted by user` and HALT
 
 ---
 

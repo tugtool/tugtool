@@ -40,7 +40,7 @@ Follow these formats exactly.
 
 **Start (output before any tool calls):**
 ```
-**Implementer** — Starting implementation of {plan_path}
+**Implement** — Starting implementation of {plan_path}
 ```
 
 **End (output after integrator passes):**
