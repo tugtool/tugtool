@@ -1,5 +1,5 @@
 {
-  "description": "Auto-approve tugtool plugin tool calls",
+  "description": "Auto-approve tugtool plugin tool calls and safe Bash commands",
   "hooks": {
     "PreToolUse": [
       {
@@ -21,6 +21,15 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/ensure-init.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve-tug.sh"
           }
         ]
       }
