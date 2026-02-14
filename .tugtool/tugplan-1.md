@@ -13,7 +13,8 @@
 | Target branch | main |
 | Tracking issue/PR | TBD |
 | Last updated | 2026-02-14 |
-| Beads Root | `tugtool-9jh` |
+| Beads Root | `tugtool-8g5` |
+| Beads Root | `tugtool-chz` |
 
 ---
 
@@ -211,7 +212,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 #### Step 0: Fix absolute path join bug in worktree.rs {#step-0}
 
-**Bead:** `tugtool-9jh.1`
+**Bead:** `tugtool-chz.1`
 
 **Commit:** `fix(worktree): normalize plan path to relative at function entry`
 
@@ -263,7 +264,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 **Depends on:** #step-0
 
-**Bead:** `tugtool-9jh.2`
+**Bead:** `tugtool-chz.2`
 
 **Commit:** `fix(worktree): fail fast with clear error when bd CLI is not installed`
 
@@ -333,7 +334,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 **Depends on:** #step-0
 
-**Bead:** `tugtool-9jh.3`
+**Bead:** `tugtool-chz.3`
 
 **Commit:** `fix(doctor): update all five health checks to use correct directory and filename references`
 
@@ -396,7 +397,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 **Depends on:** #step-0, #step-1, #step-2
 
-**Bead:** `tugtool-9jh.4`
+**Bead:** `tugtool-chz.4`
 
 **Commit:** `feat(implement): allow tugtool CLI calls in orchestrator PreToolUse hook`
 
@@ -445,7 +446,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 **Depends on:** #step-3
 
-**Bead:** `tugtool-9jh.5`
+**Bead:** `tugtool-chz.5`
 
 **Commit:** `feat(implement): replace setup agent with direct tugtool worktree create call`
 
@@ -492,7 +493,7 @@ The implement orchestrator skill currently uses a PreToolUse hook that blocks al
 
 **Depends on:** #step-4
 
-**Bead:** `tugtool-9jh.6`
+**Bead:** `tugtool-chz.6`
 
 **Commit:** `refactor: remove implement-setup-agent, update docs and tests`
 
