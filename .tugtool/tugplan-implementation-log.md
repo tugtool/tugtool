@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-14T22:49:42Z
+bead: tugtool-b23.1
+---
+
+## #step-0: Removed --files CLI flag from tugtool commit; replaced per-file staging with git add -A; added worktree safety guard; removed find_orphaned_changes; populate files_staged from git diff --cached --name-only
+
+**Files changed:**
+- .tugtool/tugplan-4.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-14T20:46:15Z
 ---

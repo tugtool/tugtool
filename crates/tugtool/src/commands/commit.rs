@@ -14,7 +14,6 @@ pub fn run_commit(
     step: String,
     plan: String,
     message: String,
-    files: Vec<String>,
     bead: String,
     summary: String,
     close_reason: Option<String>,
@@ -29,16 +28,15 @@ pub fn run_commit(
         return error_response("Worktree directory does not exist", json, quiet);
     }
 
-    // Validate that all files exist in worktree
-    for file in &files {
-        let file_path = worktree_path.join(file);
-        if !file_path.exists() {
-            return error_response(
-                &format!("File not found in worktree: {}", file),
-                json,
-                quiet,
-            );
-        }
+    // Check that we're in a linked worktree, not the main worktree
+    let git_path = worktree_path.join(".git");
+    if git_path.is_dir() {
+        return error_response(
+            "Refusing to auto-stage in main worktree. \
+             tugtool commit must run in a linked worktree (.git must be a file, not a directory).",
+            json,
+            quiet,
+        );
     }
 
     // Step 1: Rotate log if needed
@@ -49,49 +47,35 @@ pub fn run_commit(
     let _prepend_result = log_prepend_inner(worktree_path, &step, &plan, &summary, Some(&bead))
         .map_err(|e| format!("Log prepend failed: {}", e))?;
 
-    // Step 3: Stage files
-    let mut files_to_stage = files.clone();
+    // Step 3: Stage all changes
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("add")
+        .arg("-A")
+        .output()
+        .map_err(|e| format!("Failed to run git add -A: {}", e))?;
 
-    // Add implementation log
-    files_to_stage.push(".tugtool/tugplan-implementation-log.md".to_string());
-
-    // If rotation occurred, add archive directory
-    if rotate_result.rotated {
-        files_to_stage.push(".tugtool/archive".to_string());
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return error_response(&format!("git add -A failed: {}", stderr), json, quiet);
     }
 
-    // Stage all files
-    for file in &files_to_stage {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("add")
-            .arg(file)
-            .output()
-            .map_err(|e| format!("Failed to run git add: {}", e))?;
+    // Step 3b: Collect actually-staged files for reporting
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("diff")
+        .arg("--cached")
+        .arg("--name-only")
+        .output()
+        .map_err(|e| format!("Failed to run git diff --cached: {}", e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("git add failed for {}: {}", file, stderr));
-        }
-    }
-
-    // Step 3b: Check for orphaned changes (unstaged modifications not in files list)
-    // This prevents silently losing work when the caller's file list is incomplete.
-    let orphaned = find_orphaned_changes(worktree_path)?;
-    if !orphaned.is_empty() {
-        let file_list = orphaned.join("\n  ");
-        return error_response(
-            &format!(
-                "Worktree has unstaged changes not in --files list:\n  {}\n\
-                 These files were modified but would not be committed. \
-                 Add them to --files or revert them.",
-                file_list
-            ),
-            json,
-            quiet,
-        );
-    }
+    let files_staged: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect();
 
     // Step 4: Commit
     let output = Command::new("git")
@@ -143,7 +127,7 @@ pub fn run_commit(
         log_updated: true,
         log_rotated: rotate_result.rotated,
         archived_path: rotate_result.archived_path.clone(),
-        files_staged: files_to_stage,
+        files_staged,
         bead_close_failed,
         warnings,
     };
@@ -228,56 +212,4 @@ fn error_response(message: &str, json: bool, quiet: bool) -> Result<i32, String>
     }
 
     Err(message.to_string())
-}
-
-/// Check for modified/untracked files in the worktree that aren't staged.
-/// Returns file paths that would be lost if we commit only the staged set.
-fn find_orphaned_changes(worktree_path: &Path) -> Result<Vec<String>, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree_path)
-        .arg("status")
-        .arg("--porcelain")
-        .output()
-        .map_err(|e| format!("Failed to run git status: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git status failed: {}", stderr));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut orphaned = Vec::new();
-
-    for line in stdout.lines() {
-        if line.len() < 4 {
-            continue;
-        }
-        let index_status = line.as_bytes()[0];
-        let worktree_status = line.as_bytes()[1];
-        let file_path = line[3..].to_string();
-
-        // Skip .tugtool/ infrastructure files — these are managed separately
-        if file_path.starts_with(".tugtool/") {
-            continue;
-        }
-
-        // A file is "orphaned" if it has worktree modifications that aren't staged:
-        // - ' M' = modified but not staged
-        // - ' D' = deleted but not staged
-        // - '??' = untracked
-        // - 'MM' = staged AND has additional unstaged modifications
-        let is_orphaned = match (index_status, worktree_status) {
-            (b' ', b'M') | (b' ', b'D') => true, // unstaged modification/deletion
-            (b'?', b'?') => true,                // untracked file
-            (_, b'M') | (_, b'D') => true,       // staged but also has unstaged changes
-            _ => false,
-        };
-
-        if is_orphaned {
-            orphaned.push(file_path);
-        }
-    }
-
-    Ok(orphaned)
 }
