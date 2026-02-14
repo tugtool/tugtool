@@ -1,4 +1,4 @@
-//! Doctor command - health checks for tug project
+//! Doctor command - health checks for tugtool project
 
 use std::path::Path;
 use std::process::Command;
@@ -160,21 +160,21 @@ fn print_doctor_results(data: &DoctorData) {
     );
 }
 
-/// Check if tug is initialized
+/// Check if tugtool is initialized
 fn check_initialized() -> HealthCheck {
-    let tug_dir = Path::new(".tug");
+    let tug_dir = Path::new(".tugtool");
 
     if !tug_dir.exists() {
         return HealthCheck {
             name: "initialized".to_string(),
             status: "fail".to_string(),
-            message: "Tug is not initialized (.tug/ directory missing)".to_string(),
+            message: "Tugtool is not initialized (.tugtool/ directory missing)".to_string(),
             details: None,
         };
     }
 
     // Check for required files
-    let required_files = ["plan-skeleton.md", "config.toml"];
+    let required_files = ["tugplan-skeleton.md", "config.toml"];
     let missing: Vec<_> = required_files
         .iter()
         .filter(|f| !tug_dir.join(f).exists())
@@ -185,7 +185,7 @@ fn check_initialized() -> HealthCheck {
             name: "initialized".to_string(),
             status: "fail".to_string(),
             message: format!(
-                "Tug directory missing required files: {}",
+                "Tugtool directory missing required files: {}",
                 missing
                     .iter()
                     .map(|s| s.to_string())
@@ -199,14 +199,14 @@ fn check_initialized() -> HealthCheck {
     HealthCheck {
         name: "initialized".to_string(),
         status: "pass".to_string(),
-        message: "Tug is initialized".to_string(),
+        message: "Tugtool is initialized".to_string(),
         details: None,
     }
 }
 
 /// Check implementation log size
 fn check_log_size() -> HealthCheck {
-    let log_path = Path::new(".tug/plan-implementation-log.md");
+    let log_path = Path::new(".tugtool/tugplan-implementation-log.md");
 
     if !log_path.exists() {
         return HealthCheck {
@@ -274,7 +274,7 @@ fn check_log_size() -> HealthCheck {
 
 /// Check worktree consistency
 fn check_worktrees() -> HealthCheck {
-    let worktrees_dir = Path::new(".tug.worktrees");
+    let worktrees_dir = Path::new(".tugtree");
 
     if !worktrees_dir.exists() {
         return HealthCheck {
@@ -304,10 +304,10 @@ fn check_worktrees() -> HealthCheck {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            // Only validate directories matching tug__* pattern
+            // Only validate directories matching tugtool__* pattern
             // Exclude infrastructure directories like .sessions
             let dir_name = path.file_name().unwrap_or_default().to_string_lossy();
-            if !dir_name.starts_with("tug__") {
+            if !dir_name.starts_with("tugtool__") {
                 continue;
             }
 
@@ -487,10 +487,10 @@ fn check_orphaned_worktrees() -> HealthCheck {
 /// Check for sessionless worktrees (directories in git worktree list without parseable sessions)
 /// Check for orphaned .sessions/ directory
 ///
-/// After session elimination, the `.tug.worktrees/.sessions/` directory
+/// After session elimination, the `.tugtree/.sessions/` directory
 /// should not exist. If it does, it's orphaned and should be manually removed.
 fn check_orphaned_sessions() -> HealthCheck {
-    let sessions_dir = Path::new(".tug.worktrees/.sessions");
+    let sessions_dir = Path::new(".tugtree/.sessions");
 
     if !sessions_dir.exists() {
         return HealthCheck {
@@ -521,7 +521,7 @@ fn check_orphaned_sessions() -> HealthCheck {
             status: "warn".to_string(),
             message: "Orphaned .sessions/ directory found (empty)".to_string(),
             details: Some(serde_json::json!({
-                "recommendation": "Remove empty directory: rm -rf .tug.worktrees/.sessions"
+                "recommendation": "Remove empty directory: rm -rf .tugtree/.sessions"
             })),
         }
     } else {
@@ -540,7 +540,7 @@ fn check_orphaned_sessions() -> HealthCheck {
             ),
             details: Some(serde_json::json!({
                 "session_files": session_files,
-                "recommendation": "Session files are no longer used. Review and remove: rm -rf .tug.worktrees/.sessions"
+                "recommendation": "Session files are no longer used. Review and remove: rm -rf .tugtree/.sessions"
             })),
         }
     }
@@ -599,12 +599,12 @@ fn check_closed_pr_worktrees() -> HealthCheck {
 fn check_broken_refs() -> HealthCheck {
     use tugtool_core::{Severity, parse_tugplan, validate_tugplan};
 
-    let tug_dir = Path::new(".tug");
+    let tug_dir = Path::new(".tugtool");
     if !tug_dir.exists() {
         return HealthCheck {
             name: "broken_refs".to_string(),
             status: "pass".to_string(),
-            message: "No .tug directory to check".to_string(),
+            message: "No .tugtool directory to check".to_string(),
             details: None,
         };
     }
@@ -616,7 +616,7 @@ fn check_broken_refs() -> HealthCheck {
             return HealthCheck {
                 name: "broken_refs".to_string(),
                 status: "fail".to_string(),
-                message: format!("Failed to read .tug directory: {}", e),
+                message: format!("Failed to read .tugtool directory: {}", e),
                 details: None,
             };
         }
@@ -629,10 +629,10 @@ fn check_broken_refs() -> HealthCheck {
         if path.is_file() {
             let filename = path.file_name().unwrap().to_string_lossy();
             // Skip skeleton, config, and log files
-            if filename.starts_with("plan-")
+            if filename.starts_with("tugplan-")
                 && filename.ends_with(".md")
-                && filename != "plan-skeleton.md"
-                && filename != "plan-implementation-log.md"
+                && filename != "tugplan-skeleton.md"
+                && filename != "tugplan-implementation-log.md"
             {
                 // Read and parse the plan
                 match std::fs::read_to_string(&path) {
