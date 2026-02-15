@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tugtool", "crates/tugtool-core"]
+members = ["crates/tugtool", "crates/tugtool-core", "crates/tugcast", "crates/tugcast-core"]
 
 [workspace.package]
 version = "0.5.18"
@@ -32,3 +32,34 @@ tempfile = "3"
 
 # Internal crates
 tugtool-core = { path = "crates/tugtool-core" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web framework
+axum = { version = "0.8", features = ["ws"] }
+
+# Async utilities
+async-trait = "0.1"
+tokio-util = "0.7"
+
+# PTY management
+pty-process = { version = "0.5", features = ["async"] }
+
+# Random generation
+rand = "0.10"
+
+# HTTP utilities
+tower-http = { version = "0.6", features = ["fs"] }
+
+# Asset embedding
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing utilities
+tower = { version = "0.5", features = ["util"] }
+tokio-tungstenite = "0.28"
+http-body-util = "0.1"

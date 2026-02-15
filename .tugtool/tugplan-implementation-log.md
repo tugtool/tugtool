@@ -10,6 +10,173 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-15T22:02:13Z
+---
+
+## audit-fix: CI fix: removed duplicate #![cfg(test)] attribute from integration_tests.rs that caused clippy::duplicated_attributes error on CI
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: audit-fix
+date: 2025-02-15T21:57:25Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix formatting across 8 files in tugcast and tugcast-core crates
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-10
+date: 2025-02-15T21:53:13Z
+bead: tugtool-581.11
+---
+
+## #step-10: Added end-to-end integration tests: 5 HTTP tests (auth valid/invalid/single-use, static index, WS session check), extracted build_app() for testability, clippy/build/test all pass, Phase 1 acceptance criteria verified
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-9
+date: 2025-02-15T21:41:01Z
+bead: tugtool-581.10
+---
+
+## #step-9: Implemented tugdeck terminal card: TugCard interface, TerminalCard with xterm.js (FitAddon, WebLinksAddon), keyboard input forwarding, resize events, DeckManager layout, main.ts application wiring
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-8
+date: 2025-02-15T21:33:20Z
+bead: tugtool-581.9
+---
+
+## #step-8: Implemented tugdeck WebSocket protocol (protocol.ts mirroring Rust wire format) and connection management (connection.ts with TugConnection class, heartbeat, callback dispatch)
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-7
+date: 2025-02-15T21:26:33Z
+bead: tugtool-581.8
+---
+
+## #step-7: Scaffolded tugdeck frontend: package.json with xterm.js deps, tsconfig.json, index.html shell, placeholder main.ts, build.rs (npm install + esbuild bundle), rust-embed $OUT_DIR/tugdeck/ integration
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-15T21:18:04Z
+bead: tugtool-581.7
+---
+
+## #step-6: Implemented axum server module: rust-embed static serving, routes (/auth, /ws, fallback), FromRef state extraction, full main.rs orchestration (tmux check, auth, feed, router, server), browser open, 5 new tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-15T21:09:05Z
+bead: tugtool-581.6
+---
+
+## #step-5: Implemented feed router and WebSocket handler: BOOTSTRAP/LIVE state machine per Spec S01, heartbeat (15s/45s), auth validation on upgrade, broadcast capacity 4096, 4 new tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-15T21:01:24Z
+bead: tugtool-581.5
+---
+
+## #step-4: Implemented terminal feed (PTY-tmux bridge): StreamFeed trait impl, async read/write loops, tmux session management, resize via tmux resize-pane, capture_pane for snapshots, 20 unit tests + 3 integration tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-15T20:51:23Z
+bead: tugtool-581.4
+---
+
+## #step-3: Implemented single-use token auth module: 32-byte hex token, HttpOnly/SameSite=Strict cookies, session expiry (24h TTL), origin validation for 127.0.0.1/localhost, 10 tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-15T20:43:31Z
+bead: tugtool-581.3
+---
+
+## #step-2: Implemented StreamFeed and SnapshotFeed async traits with async_trait for object safety, broadcast/watch channels, CancellationToken for shutdown, 2 compile-time object safety tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-15T20:38:53Z
+bead: tugtool-581.2
+---
+
+## #step-1: Implemented binary WebSocket frame protocol: FeedId enum (4 variants), Frame encode/decode, ProtocolError, MAX_PAYLOAD_SIZE (1MB), 17 tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-15T20:33:20Z
+bead: tugtool-581.1
+---
+
+## #step-0: Scaffolded tugcast-core and tugcast crates with independent versioning, CLI (--session, --port, --dir, --open), tracing setup, and workspace dependencies
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-15T15:05:33Z
 ---
 
