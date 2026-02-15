@@ -730,6 +730,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71cec9e2670207c5ebb9e477763c74436af3b9091dd550b9fb3c1bec7f3ea266"
 dependencies = [
  "rustix",
+ "tokio",
 ]
 
 [[package]]
@@ -1342,12 +1343,15 @@ dependencies = [
 name = "tugcast"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "clap",
  "pty-process",
  "rand",
  "rust-embed",
  "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tower-http",

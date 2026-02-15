@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-15T21:01:24Z
+bead: tugtool-581.5
+---
+
+## #step-4: Implemented terminal feed (PTY-tmux bridge): StreamFeed trait impl, async read/write loops, tmux session management, resize via tmux resize-pane, capture_pane for snapshots, 20 unit tests + 3 integration tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-15T20:51:23Z
 bead: tugtool-581.4

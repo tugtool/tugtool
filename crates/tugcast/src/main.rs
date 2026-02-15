@@ -1,5 +1,6 @@
 mod cli;
 mod auth;
+mod feeds;
 
 use cli::Cli;
 use tracing::info;

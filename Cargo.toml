@@ -44,7 +44,7 @@ async-trait = "0.1"
 tokio-util = "0.7"
 
 # PTY management
-pty-process = "0.5"
+pty-process = { version = "0.5", features = ["async"] }
 
 # Random generation
 rand = "0.10"
