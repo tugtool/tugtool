@@ -37,7 +37,7 @@ tugtool-core = { path = "crates/tugtool-core" }
 tokio = { version = "1", features = ["full"] }
 
 # Web framework
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 
 # Async utilities
 async-trait = "0.1"

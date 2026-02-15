@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-15T21:09:05Z
+bead: tugtool-581.6
+---
+
+## #step-5: Implemented feed router and WebSocket handler: BOOTSTRAP/LIVE state machine per Spec S01, heartbeat (15s/45s), auth validation on upgrade, broadcast capacity 4096, 4 new tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-15T21:01:24Z
 bead: tugtool-581.5

@@ -1,6 +1,7 @@
 mod cli;
 mod auth;
 mod feeds;
+mod router;
 
 use cli::Cli;
 use tracing::info;
