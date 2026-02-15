@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-15T20:38:53Z
+bead: tugtool-581.2
+---
+
+## #step-1: Implemented binary WebSocket frame protocol: FeedId enum (4 variants), Frame encode/decode, ProtocolError, MAX_PAYLOAD_SIZE (1MB), 17 tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-15T20:33:20Z
 bead: tugtool-581.1

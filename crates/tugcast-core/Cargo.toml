@@ -14,3 +14,4 @@ serde = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 tokio-util = { workspace = true }
+thiserror = { workspace = true }
