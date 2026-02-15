@@ -3,6 +3,7 @@
 //! Implements a PTY-tmux bridge that attaches to a tmux session and streams
 //! terminal I/O over WebSocket frames.
 
+use std::os::unix::io::AsRawFd;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -206,6 +207,9 @@ impl StreamFeed for TerminalFeed {
             }
         };
 
+        // Grab raw fd for resize ioctl (needed after split)
+        let pty_fd = pty.as_raw_fd();
+
         // Split PTY into reader and writer
         let (mut reader, mut writer) = pty.into_split();
 
@@ -244,7 +248,6 @@ impl StreamFeed for TerminalFeed {
 
         // Spawn write/resize loop task
         let write_cancel = cancel.clone();
-        let session_clone = self.session.clone();
         let write_task = tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -261,20 +264,13 @@ impl StreamFeed for TerminalFeed {
                                 }
                             }
                             FeedId::TerminalResize => {
-                                // Parse resize payload and run tmux resize-pane
+                                // Parse resize payload and resize PTY via ioctl
+                                // tmux detects SIGWINCH and adjusts automatically
                                 if let Ok(resize) = serde_json::from_slice::<ResizePayload>(&frame.payload) {
-                                    let _ = TokioCommand::new("tmux")
-                                        .args([
-                                            "resize-pane",
-                                            "-t",
-                                            &session_clone,
-                                            "-x",
-                                            &resize.cols.to_string(),
-                                            "-y",
-                                            &resize.rows.to_string(),
-                                        ])
-                                        .output()
-                                        .await;
+                                    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+                                    ws.ws_col = resize.cols;
+                                    ws.ws_row = resize.rows;
+                                    unsafe { libc::ioctl(pty_fd, libc::TIOCSWINSZ, &ws) };
                                     info!(cols = resize.cols, rows = resize.rows, "terminal resized");
                                 } else {
                                     warn!("failed to parse resize payload");

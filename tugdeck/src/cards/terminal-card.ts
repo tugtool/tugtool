@@ -17,6 +17,7 @@ export class TerminalCard implements TugCard {
 
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private connection: TugConnection;
 
   constructor(connection: TugConnection) {
@@ -43,8 +44,14 @@ export class TerminalCard implements TugCard {
     // Open terminal in container
     this.terminal.open(container);
 
-    // Fit to container size
-    this.fitAddon.fit();
+    // Use ResizeObserver to fit when the container gets dimensions
+    // (fires on initial layout and on subsequent resizes)
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.fitAddon) {
+        this.fitAddon.fit();
+      }
+    });
+    this.resizeObserver.observe(container);
 
     // Forward keyboard input to server
     this.terminal.onData((data: string) => {
@@ -66,12 +73,21 @@ export class TerminalCard implements TugCard {
   }
 
   onResize(_width: number, _height: number): void {
-    if (this.fitAddon) {
+    if (this.fitAddon && this.terminal) {
       this.fitAddon.fit();
+      // Always send current size — fit may not trigger terminal.onResize
+      // if the terminal dimensions haven't changed, but the server needs
+      // to know the size (e.g. on WebSocket reconnect)
+      const frame = resizeFrame(this.terminal.cols, this.terminal.rows);
+      this.connection.send(frame.feedId, frame.payload);
     }
   }
 
   destroy(): void {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
     if (this.terminal) {
       this.terminal.dispose();
       this.terminal = null;

@@ -25,6 +25,9 @@ export class DeckManager {
 
     // Listen for window resize
     window.addEventListener("resize", () => this.handleResize());
+
+    // Re-fit cards when connection opens (sends resize frame to server)
+    connection.onOpen(() => this.handleResize());
   }
 
   /**

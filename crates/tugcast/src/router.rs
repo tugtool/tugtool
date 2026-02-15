@@ -101,15 +101,17 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
     // Subscribe to terminal output broadcast
     let mut broadcast_rx = router.terminal_tx.subscribe();
 
-    // Start in BOOTSTRAP state
-    let mut state = ClientState::Bootstrap { buffer: Vec::new() };
+    // Skip BOOTSTRAP snapshot on initial connect — the client's resize frame
+    // will trigger a PTY resize → tmux SIGWINCH → full screen redraw at the
+    // correct dimensions, which serves as the bootstrap.
+    let mut state = ClientState::Live;
 
     loop {
         match &mut state {
             ClientState::Bootstrap { buffer } => {
-                info!("Client entering BOOTSTRAP state");
+                info!("Client re-entering BOOTSTRAP state (lagged)");
 
-                // Capture terminal snapshot
+                // Capture terminal snapshot (for reconnection after lag)
                 match terminal::capture_pane(&router.session).await {
                     Ok(snapshot) => {
                         let frame = Frame::new(FeedId::TerminalOutput, snapshot);

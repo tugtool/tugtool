@@ -55,6 +55,9 @@ tower-http = { version = "0.6", features = ["fs"] }
 # Asset embedding
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 
+# System interfaces
+libc = "0.2"
+
 # Logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -27,6 +27,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 export class TugConnection {
   private ws: WebSocket | null = null;
   private callbacks: Map<number, FrameCallback[]> = new Map();
+  private openCallbacks: Array<() => void> = [];
   private heartbeatTimer: number | null = null;
   private url: string;
 
@@ -46,6 +47,9 @@ export class TugConnection {
     this.ws.onopen = () => {
       console.log("tugdeck: WebSocket connected");
       this.startHeartbeat();
+      for (const cb of this.openCallbacks) {
+        cb();
+      }
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
@@ -77,6 +81,13 @@ export class TugConnection {
       const frame: Frame = { feedId, payload };
       this.ws.send(encodeFrame(frame));
     }
+  }
+
+  /**
+   * Register a callback for when the connection opens
+   */
+  onOpen(callback: () => void): void {
+    this.openCallbacks.push(callback);
   }
 
   /**
