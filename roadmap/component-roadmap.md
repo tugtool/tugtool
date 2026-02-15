@@ -36,7 +36,7 @@ Claude Code runs as an interactive TUI in a terminal. There is currently no way 
 │              Multiplexed WebSocket                              │
 │              (binary frames, feed-tagged)                       │
 └────────────────────────┬────────────────────────────────────────┘
-                         │ ws://127.0.0.1:<port>/?token=<T>
+                         │ ws://127.0.0.1:<port>/ws (cookie auth)
                          │
 ┌────────────────────────┴──────── tugcast ───────────────────────┐
 │                                                                 │
@@ -103,7 +103,7 @@ tugtool/
 │       └── src/
 │           ├── lib.rs            # Public exports
 │           ├── protocol.rs       # Frame format, feed IDs, serialization
-│           ├── feed.rs           # TugFeed trait definition
+│           ├── feed.rs           # StreamFeed + SnapshotFeed trait definitions
 │           └── types.rs          # FsEvent, GitStatus, StatSnapshot, etc.
 │
 ├── tugdeck/                      # Frontend — vanilla TypeScript
@@ -149,12 +149,13 @@ tugcast depends on tugcast-core. tugdeck is a standalone TypeScript project whos
 
 **Crate: `axum` 0.8.x** (tokio-native, ergonomic, near-Actix performance, lower memory)
 
-tugcast does three things:
+tugcast does four things:
 1. Serves tugdeck assets (HTML, JS, CSS) from an embedded directory (`rust-embed`)
-2. Accepts WebSocket upgrade at `GET /ws?token=<T>`
-3. Validates the auth token, then hands the connection to the feed router
+2. Handles one-time auth at `GET /auth?token=<T>` (sets session cookie, invalidates token, redirects)
+3. Accepts WebSocket upgrade at `GET /ws` (validates session cookie)
+4. Hands authenticated connections to the feed router
 
-A single `main.rs` boots the server, binds to `127.0.0.1:<port>`, prints the URL + token to stdout, and optionally opens the browser.
+A single `main.rs` boots the server, binds to `127.0.0.1:<port>`, prints the bootstrap URL (`/auth?token=<T>`) to stdout, and optionally opens the browser.
 
 ### 5.2 Terminal TugFeed
 
@@ -168,12 +169,14 @@ The terminal tugfeed is the core integration point. It works as follows:
 2. **PTY attachment.** tugcast spawns a PTY that runs `tmux attach-session -t cc0`. This gives two handles:
    - `AsyncRead` — raw bytes from tmux (terminal output, ANSI sequences, everything)
    - `AsyncWrite` — raw bytes to tmux (keystrokes, escape sequences, everything)
-3. **Async bridging.** The async read side feeds directly into a `tokio::sync::broadcast` channel. The write side receives from an `mpsc` channel. No blocking thread wrappers needed.
-4. **Resize propagation.** When tugdeck sends a resize event, tugcast calls the PTY resize ioctl and also runs `tmux resize-pane -t cc0 -x <cols> -y <rows>` to keep tmux in sync.
+3. **Async bridging.** The async read side feeds into a `tokio::sync::broadcast` channel (capacity: 4096 messages; each message is one PTY read chunk, typically 1-4KB). The write side receives from an `mpsc` channel. No blocking thread wrappers needed.
+4. **Resize propagation.** When tugdeck sends a resize event, tugcast calls the PTY resize ioctl and also runs `tmux resize-pane -t cc0 -x <cols> -y <rows>`. tmux's built-in "smallest client wins" policy arbitrates when multiple clients (real terminal + tugdeck) have different dimensions. tugdeck does not override the user's terminal — it is just another tmux client.
+5. **Reconnect bootstrap.** Each tugdeck client has a per-client state machine: `BOOTSTRAP -> LIVE`. On new connection or reconnect, the client starts in BOOTSTRAP state. tugcast runs `tmux capture-pane -t cc0 -p -e` (preserving ANSI escapes) and sends the snapshot as the first terminal frame. During BOOTSTRAP, live PTY output is buffered (not dropped) for this client. After the snapshot is sent, buffered output is flushed and the client transitions to LIVE. This avoids duplicate or out-of-order rendering during active output.
+6. **Backpressure.** If a slow tugdeck client falls behind the broadcast buffer (4096 messages), it receives a `Lagged` notification and transitions to BOOTSTRAP state for a capture-pane resync (see step 5). The slow client never blocks other clients or the PTY read loop.
 
 **Why PTY-attach and not tmux control mode?** Control mode (`tmux -CC`) emits structured `%output` events, but they encode pane content as escaped text that must be reassembled. It's designed for GUI terminal emulators like iTerm2 that maintain their own terminal state machine. For our case — where xterm.js *is* the terminal state machine — raw PTY bytes from `tmux attach` are simpler, lower-latency, and more correct. We get every byte exactly as tmux would render it, including ANSI colors, cursor movement, alternate screen buffer, etc.
 
-**Shared session semantics.** Because tmux supports multiple clients, the user's real terminal and tugdeck both attach to the same session simultaneously. Keystrokes from either side reach Claude Code. Output appears on both. There is structurally one source of truth.
+**Shared session semantics.** Because tmux supports multiple clients, the user's real terminal and tugdeck both attach to the same session simultaneously. Keystrokes from either side reach Claude Code. Output appears on both. There is structurally one source of truth. Input from all clients is multiplexed by tmux natively — no locking or writer-lease needed.
 
 ### 5.3 Filesystem TugFeed
 
@@ -191,11 +194,15 @@ enum FsEvent {
 
 Events are debounced (100ms window) to avoid flooding tugdeck during bulk operations (git checkout, cargo build). The watcher respects `.gitignore` patterns via the `ignore` crate to skip `target/`, `node_modules/`, etc.
 
+Uses a `tokio::sync::watch` channel. Debounced events are coalesced into a batch; slow clients see the latest batch, not a growing queue.
+
 Events are serialized to JSON and cast on the filesystem feed.
 
 ### 5.4 Git TugFeed
 
 **Initial approach: `git` CLI** (simple, handles all edge cases including worktrees and sparse checkouts)
+
+Uses a `tokio::sync::watch` channel (not broadcast). A watch channel holds only the latest value, so slow tugdeck clients always see current state rather than queuing stale snapshots.
 
 Polls at a configurable interval (default: 2 seconds, accelerates to 500ms when filesystem events fire). Emits a snapshot:
 
@@ -218,11 +225,11 @@ Starts with `git status --porcelain=v2 --branch` for reliability. Can migrate to
 
 Extensible slot for arbitrary metrics. Initial built-in collectors:
 
-| Collector | Source | Interval |
-|-----------|--------|----------|
-| Process info | `/proc` or `sysctl` | 5s |
-| Claude Code token usage | Parse tmux pane output for status line | On change |
-| Build status | Watch `target/` modification times | On FS event |
+| Collector | Source | Interval | Reliability |
+|-----------|--------|----------|-------------|
+| Process info | `/proc` or `sysctl` | 5s | Stable |
+| Claude Code token usage | Parse tmux pane output for status line | On change | Best-effort (fragile to upstream UI changes) |
+| Build status | Watch `target/` modification times | On FS event | Stable |
 
 The stats tugfeed uses a trait-based plugin system:
 ```rust
@@ -233,39 +240,52 @@ trait StatCollector: Send + Sync {
 }
 ```
 
-New collectors can be registered at startup. They run on independent timers and push JSON values onto the stats broadcast channel.
+New collectors can be registered at startup. They run on independent timers and push JSON values onto the stats watch channel.
 
-### 5.6 The TugFeed Trait
+### 5.6 Feed Traits
 
-Defined in `tugcast-core`, this is the contract every feed implements:
+Defined in `tugcast-core`. There are two feed types, matching the two outbound channel semantics:
 
 ```rust
-/// A TugFeed produces frames on a specific channel.
-/// tugcast starts all registered feeds and routes their output
-/// to connected tugdeck clients.
+/// A StreamFeed produces a continuous stream of frames.
+/// Used for terminal output where every byte matters and ordering is critical.
+/// Backed by `tokio::sync::broadcast`.
 #[async_trait]
-pub trait TugFeed: Send + Sync {
-    /// Unique feed identifier (matches a channel ID in the protocol).
+pub trait StreamFeed: Send + Sync {
     fn feed_id(&self) -> FeedId;
-
-    /// Human-readable name for logging and diagnostics.
     fn name(&self) -> &str;
 
     /// Start the feed. Sends frames on `tx`. Runs until cancelled.
     async fn run(&self, tx: broadcast::Sender<Frame>, cancel: CancellationToken);
 }
+
+/// A SnapshotFeed produces periodic state snapshots.
+/// Used for git status, filesystem events, stats — where only the latest
+/// value matters. Backed by `tokio::sync::watch`.
+#[async_trait]
+pub trait SnapshotFeed: Send + Sync {
+    fn feed_id(&self) -> FeedId;
+    fn name(&self) -> &str;
+
+    /// Start the feed. Writes latest state to `tx`. Runs until cancelled.
+    async fn run(&self, tx: watch::Sender<Frame>, cancel: CancellationToken);
+}
 ```
+
+The terminal tugfeed implements `StreamFeed`. The filesystem, git, and stats tugfeeds implement `SnapshotFeed`.
 
 ### 5.7 Feed Router
 
 The feed router is the central multiplexer inside tugcast. It holds:
-- One `broadcast::Sender<Frame>` per outbound tugfeed (terminal, fs, git, stats)
+- One `broadcast::Sender<Frame>` for stream feeds (terminal output)
+- One `watch::Sender<Frame>` per snapshot feed (fs, git, stats)
 - One `mpsc::Sender<Frame>` for inbound frames (terminal input, control commands)
 
 When a WebSocket connection is established, the router:
-1. Subscribes to all tugfeed broadcast channels
-2. Spawns a select loop that forwards frames from any feed to the WebSocket
-3. Spawns a reader loop that demultiplexes incoming WebSocket frames and dispatches to the appropriate inbound sender
+1. Subscribes to the broadcast channel for the terminal stream feed
+2. Subscribes to each watch channel for snapshot feeds
+3. Spawns a per-client select loop that forwards frames from all feeds to the WebSocket, respecting the client's state machine (BOOTSTRAP -> LIVE for the terminal stream)
+4. Spawns a reader loop that demultiplexes incoming WebSocket frames and dispatches to the appropriate inbound sender
 
 ## 6. WebSocket Protocol
 
@@ -296,9 +316,11 @@ All WebSocket messages are **binary frames** with a minimal header:
 
 ### 6.3 Invariants
 
-- **No buffering for terminal.** Terminal output frames (0x00) are sent immediately. tugcast reads PTY output in small chunks (4KB) and forwards without accumulation. Latency target: <5ms from PTY read to WebSocket send.
+- **Terminal: bounded broadcast.** Terminal output frames (0x00) are sent immediately. tugcast reads PTY output in small chunks (1-4KB) and forwards without accumulation. Latency target: <5ms from PTY read to WebSocket send. The broadcast channel holds 4096 messages; slow clients that fall behind receive `Lagged` and transition to BOOTSTRAP for a capture-pane resync.
+- **JSON feeds: latest-value semantics.** Filesystem (0x10), git (0x20), and stats (0x30) feeds use `watch` channels (snapshot feeds). Slow clients always see the latest state, never a growing backlog.
 - **Heartbeat.** Both sides send heartbeat frames every 15 seconds. If no heartbeat is received within 45 seconds, the connection is considered dead and is torn down.
 - **Ordering.** Within a feed, frames are ordered. Across feeds, no ordering guarantee (but in practice they share a single WS connection, so they're serialized).
+- **Input: pass-through.** All keyboard input including Ctrl-C, Ctrl-D, Escape is forwarded as raw bytes. tugdeck is a terminal, not a sandbox.
 
 ## 7. tugdeck: Frontend UI
 
@@ -394,21 +416,34 @@ Renders JSON from feed 0x30 as key-value cards. Each stat collector gets a sub-c
 
 tugcast binds exclusively to `127.0.0.1`. There is no configuration option to bind to `0.0.0.0`. If remote access is ever needed, it must go through an external tunnel (SSH, Tailscale, etc.) that the user sets up themselves.
 
-### 8.2 Auth Token
+### 8.2 Auth Token (Single-Use Bootstrap)
 
 On startup, tugcast generates a cryptographically random 32-byte token (hex-encoded, 64 characters). The token is printed to stdout alongside the URL:
 
 ```
-tugcast: http://127.0.0.1:7890/?token=a3f8...c912
+tugcast: http://127.0.0.1:7890/auth?token=a3f8...c912
 ```
 
-The token is required on:
-- The initial HTTP request (as a query parameter) — this sets an `HttpOnly` session cookie
-- The WebSocket upgrade request (validated against the cookie)
+The token is used exactly once:
+1. User opens the URL. `GET /auth?token=<T>` validates the token.
+2. tugcast sets an `HttpOnly; SameSite=Strict; Path=/` session cookie and **invalidates the token** (it cannot be reused).
+3. tugcast responds with `302 /`, stripping the token from the URL.
+4. All subsequent requests (HTTP and WebSocket upgrade) authenticate via the session cookie only.
+
+The redirect minimizes token persistence in browser history and logs, though browser/proxy behavior varies. Regardless, the token is invalidated after first use, so any residual copies are inert. The session cookie has a configurable TTL (default: 24 hours).
 
 ### 8.3 Origin Check
 
 The WebSocket upgrade handler rejects requests where the `Origin` header is not `http://127.0.0.1:<port>` or `http://localhost:<port>`. This prevents cross-origin WebSocket hijacking from malicious websites.
+
+### 8.4 Threat Model
+
+tugcast's security posture is designed for a **single-user local development workstation**. The threat surface is:
+
+- **Remote network attacks**: Fully mitigated. Binds to 127.0.0.1 only.
+- **Browser-based CSRF/hijacking**: Mitigated by origin check + SameSite cookie.
+- **Malicious local processes**: A local process that can read stdout (to steal the token) or connect to localhost already has full access to the user's files, tmux sessions, and shell. The single-use token minimizes the theft window. This residual risk is accepted as inherent to the local development use case.
+- **Shared-user machines**: Explicitly out of scope for v1. Multi-user isolation would require per-user auth, which is not warranted for the target use case.
 
 ## 9. Session Lifecycle
 
@@ -445,8 +480,12 @@ The tmux session survives. The user can re-launch tugcast and reattach.
 
 If the WebSocket drops (browser tab closed, network blip on localhost — unlikely but possible):
 - tugdeck shows a "Disconnected" banner and attempts reconnection every 2 seconds
-- On reconnect, the terminal is in the correct state because tmux maintained it
-- No replay/resync needed — the next bytes from the PTY are the current terminal state
+- On reconnect, the per-client state machine enters BOOTSTRAP:
+  1. tugcast runs `tmux capture-pane -p -e` and sends the snapshot
+  2. Live PTY output is buffered for this client during BOOTSTRAP
+  3. After snapshot delivery, buffered output is flushed and client transitions to LIVE
+- Target: visible screen state restored within 500ms
+- Snapshot feeds (git, fs, stats) use watch channels, so latest state is delivered immediately on reconnect
 
 ## 10. Key Dependencies
 
@@ -513,11 +552,11 @@ tugcast --port 8080 --dir /path/to/project
 **Deliverable:** tugcast binary that attaches to a tmux session and renders it in tugdeck via xterm.js. One tugfeed, one tugcard. End-to-end proof that the "no drift" architecture works.
 
 **Crates:**
-- `tugcast-core` — Frame type, FeedId enum, TugFeed trait
-- `tugcast` — main binary with axum server, auth, terminal tugfeed only
+- `tugcast-core` — Frame type, FeedId enum, StreamFeed/SnapshotFeed traits
+- `tugcast` — main binary with axum server, cookie auth, terminal tugfeed only
 
 **tugdeck:**
-- `connection.ts` — WebSocket connect/reconnect with auth token
+- `connection.ts` — WebSocket connect/reconnect with cookie session
 - `protocol.ts` — Frame parse/serialize
 - `deck.ts` — Single-card layout (terminal fills the viewport)
 - `cards/terminal-card.ts` — xterm.js terminal tugcard
@@ -573,13 +612,74 @@ tugcast --port 8080 --dir /path/to/project
 - CLI polish (--help, --version, clean error messages)
 - Thorough error handling throughout
 
-## 13. Open Questions
+## 13. Architecture Decisions (Resolved)
+
+Decisions made during design review, February 2026.
+
+### AD-1: Reconnect State Bootstrap
+
+**Decision:** Per-client `BOOTSTRAP -> LIVE` state machine with `tmux capture-pane` snapshot.
+
+On new connection or reconnect, the client enters BOOTSTRAP state. tugcast runs `tmux capture-pane -t <session> -p -e` and sends the result as the first terminal frame. The `-e` flag preserves ANSI escape sequences so xterm.js can render colors and formatting. During BOOTSTRAP, live PTY output is buffered (not dropped) for this client; after the snapshot is delivered, the buffer is flushed and the client transitions to LIVE. This ordering prevents duplicate or out-of-order rendering during active output. Target: screen restored within 500ms.
+
+### AD-2: Multi-Client Input and Resize
+
+**Decision:** Native tmux multiplexing. No custom arbitration.
+
+- **Input:** All attached clients (real terminal + tugdeck) can send keystrokes simultaneously. tmux multiplexes them natively, same as multiple `tmux attach` sessions. No writer-lease or locking.
+- **Resize:** tmux's built-in "smallest client wins" policy applies. tugdeck sends its dimensions on connect and on window resize, exactly as any tmux client does. The user's real terminal and tugdeck negotiate size through tmux, not through tugcast.
+- **Observe-only mode:** Deferred to Phase 3. Not a v1 requirement.
+
+### AD-3: Auth and Session Hardening
+
+**Decision:** Single-use token exchange with HttpOnly cookie.
+
+The startup token is used exactly once at `GET /auth?token=<T>`. This endpoint validates the token, sets an `HttpOnly; SameSite=Strict` session cookie, invalidates the token permanently, and redirects to `/`. All subsequent authentication (HTTP and WebSocket upgrade) uses the cookie only. The redirect minimizes token persistence in browser history; regardless of browser/proxy behavior, the invalidated token is inert. See Section 8.2 for details.
+
+### AD-4: Backpressure Strategy
+
+**Decision:** Two feed types — `StreamFeed` (broadcast) for terminal, `SnapshotFeed` (watch) for JSON feeds.
+
+- **Terminal (StreamFeed):** tokio `broadcast` with 4096-message capacity. Each message is one PTY read chunk (1-4KB). Slow clients receive `Lagged` and transition to BOOTSTRAP for a capture-pane resync.
+- **JSON feeds (SnapshotFeed):** tokio `watch` channels. Only the latest value is held; slow clients skip intermediate states and always see current state. No unbounded queue growth.
+
+The `StreamFeed` and `SnapshotFeed` traits in `tugcast-core` formalize this distinction. The feed router handles both types.
+
+### AD-5: Repo Scope and Product Boundary
+
+**Decision:** Same workspace, separate binary, independent release.
+
+`tugcast` and `tugcast-core` live in `crates/` alongside `tugtool` and `tugtool-core`. No cross-dependency between the two products. Independent version numbers and release cadence. They share workspace configuration and CI but are separate binaries with separate concerns.
+
+### AD-6: Platform Target
+
+**Decision:** macOS and Linux for v1. No Windows.
+
+Both platforms support tmux, PTY, and all selected crates (`pty-process`, `notify`). tmux 3.x is the minimum supported version.
+
+### AD-7: Keyboard Pass-Through
+
+**Decision:** All keys pass through. No gating.
+
+tugdeck is a terminal emulator, not a sandbox. Ctrl-C, Ctrl-D, Ctrl-Z, Escape, and all other keys are forwarded as raw bytes without confirmation or filtering. This matches every terminal emulator in existence.
+
+## 14. Open Questions
 
 1. **Multiple tmux panes.** Should tugcast support casting multiple tmux panes (e.g., Claude Code in one, a build watcher in another)? Architecturally straightforward (multiple terminal tugfeeds), but adds tugdeck UI complexity.
 2. **Frontend build integration.** Should the tugdeck build be driven by `build.rs` (cargo invokes esbuild) or kept as a separate `make` step? The `build.rs` approach is more seamless but adds a build-time dependency on Node/npx.
 3. **git2 vs CLI.** `git2` (libgit2) is faster but adds a non-trivial native dependency. Shelling out to `git` is simpler and handles all edge cases. Recommendation: start with CLI, switch to `git2` if latency matters.
 
-## 14. Prior Art and Landscape
+## 15. Phase 1 Acceptance Criteria
+
+- Keystroke latency: < 10ms end-to-end (key press to PTY write)
+- Output latency: < 10ms (PTY read to xterm.js render)
+- Reconnect: visible screen state restored within 500ms via capture-pane
+- Zero input loss under normal single-client operation
+- Escape key arrives identically to native terminal (`\x1b`, no reinterpretation)
+- Auth: single-use token exchange, cookie-based session, origin check
+- Works with tmux 3.x on macOS and Linux
+
+## 16. Prior Art and Landscape
 
 Research conducted February 2026. Key existing projects:
 
