@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-15T23:58:12Z
+bead: tugtool-nez.5
+---
+
+## #step-4: Added FILESYSTEM/GIT FeedId constants to protocol.ts, created FilesCard, GitCard, and StatsCard TypeScript card implementations
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-15T23:51:31Z
 bead: tugtool-nez.4
