@@ -1,0 +1,16 @@
+[package]
+name = "tugcast-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[lib]
+name = "tugcast_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+tokio-util = { workspace = true }

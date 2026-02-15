@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-15T20:33:20Z
+bead: tugtool-581.1
+---
+
+## #step-0: Scaffolded tugcast-core and tugcast crates with independent versioning, CLI (--session, --port, --dir, --open), tracing setup, and workspace dependencies
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-15T15:05:33Z
 ---
