@@ -58,3 +58,8 @@ rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 # Logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing utilities
+tower = { version = "0.5", features = ["util"] }
+tokio-tungstenite = "0.28"
+http-body-util = "0.1"

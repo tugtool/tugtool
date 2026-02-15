@@ -63,19 +63,27 @@ async fn serve_asset(uri: Uri) -> Response {
     }
 }
 
+/// Build the axum application router
+///
+/// Constructs the Router with auth, WebSocket, and static asset routes.
+/// Separated from `run_server` to enable testing without TCP binding.
+pub(crate) fn build_app(router: FeedRouter) -> Router {
+    Router::new()
+        .route("/auth", get(crate::auth::handle_auth))
+        .route("/ws", get(crate::router::ws_handler))
+        .fallback(serve_asset)
+        .with_state(router)
+}
+
 /// Run the HTTP server
 ///
-/// Sets up axum routes and binds to 127.0.0.1:<port>
+/// Sets up axum routes and binds to `127.0.0.1:<port>`
 pub async fn run_server(
     port: u16,
     router: FeedRouter,
     _auth: SharedAuthState,
 ) -> Result<(), std::io::Error> {
-    let app = Router::new()
-        .route("/auth", get(crate::auth::handle_auth))
-        .route("/ws", get(crate::router::ws_handler))
-        .fallback(serve_asset)
-        .with_state(router);
+    let app = build_app(router);
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     info!(port = port, "tugcast server listening");

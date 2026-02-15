@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-10
+date: 2025-02-15T21:53:13Z
+bead: tugtool-581.11
+---
+
+## #step-10: Added end-to-end integration tests: 5 HTTP tests (auth valid/invalid/single-use, static index, WS session check), extracted build_app() for testability, clippy/build/test all pass, Phase 1 acceptance criteria verified
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-9
 date: 2025-02-15T21:41:01Z
 bead: tugtool-581.10

@@ -4,6 +4,9 @@ mod feeds;
 mod router;
 mod server;
 
+#[cfg(test)]
+mod integration_tests;
+
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
