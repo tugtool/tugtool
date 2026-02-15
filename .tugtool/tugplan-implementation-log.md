@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-15T20:51:23Z
+bead: tugtool-581.4
+---
+
+## #step-3: Implemented single-use token auth module: 32-byte hex token, HttpOnly/SameSite=Strict cookies, session expiry (24h TTL), origin validation for 127.0.0.1/localhost, 10 tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-15T20:43:31Z
 bead: tugtool-581.3
