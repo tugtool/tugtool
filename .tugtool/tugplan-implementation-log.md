@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-15T21:18:04Z
+bead: tugtool-581.7
+---
+
+## #step-6: Implemented axum server module: rust-embed static serving, routes (/auth, /ws, fallback), FromRef state extraction, full main.rs orchestration (tmux check, auth, feed, router, server), browser open, 5 new tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-15T21:09:05Z
 bead: tugtool-581.6

@@ -3,8 +3,6 @@
 //! Implements a PTY-tmux bridge that attaches to a tmux session and streams
 //! terminal I/O over WebSocket frames.
 
-#![allow(dead_code)]
-
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -43,6 +41,7 @@ pub enum TmuxError {
     CommandFailed(String),
 
     #[error("PTY error: {0}")]
+    #[allow(dead_code)] // Reserved for PTY-specific errors
     PtyError(String),
 }
 

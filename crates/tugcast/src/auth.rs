@@ -7,9 +7,6 @@
 //! 3. Server validates token, creates session, sets HttpOnly cookie, invalidates token
 //! 4. All subsequent requests authenticated via session cookie
 
-// Public items used in step 6 (server module)
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

@@ -4,8 +4,6 @@
 //! Each client gets a snapshot on connect (BOOTSTRAP), then transitions to live
 //! streaming (LIVE). If the client falls behind, it re-enters BOOTSTRAP.
 
-#![allow(dead_code)]
-
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -232,6 +230,13 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                 }
             }
         }
+    }
+}
+
+/// Extract SharedAuthState from FeedRouter for axum State
+impl axum::extract::FromRef<FeedRouter> for SharedAuthState {
+    fn from_ref(router: &FeedRouter) -> Self {
+        router.auth.clone()
     }
 }
 
