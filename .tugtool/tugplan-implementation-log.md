@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-15T22:02:13Z
+---
+
+## audit-fix: CI fix: removed duplicate #![cfg(test)] attribute from integration_tests.rs that caused clippy::duplicated_attributes error on CI
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-15T21:57:25Z
 ---
 

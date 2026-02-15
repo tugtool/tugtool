@@ -3,8 +3,6 @@
 //! These tests verify end-to-end functionality including auth flow,
 //! WebSocket communication, and terminal integration.
 
-#![cfg(test)]
-
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use tokio::sync::broadcast;
