@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-15T14:40:32Z
+bead: tugtool-5zv.2
+---
+
+## #step-1: Added tugtool resolve CLI subcommand with ResolveData output struct, commands/resolve.rs handler, Resolve variant in cli.rs, dispatch in main.rs, and CLAUDE.md documentation. Maps resolve_plan() results to JSON per Spec S02. 210 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-15T14:32:41Z
 bead: tugtool-5zv.1

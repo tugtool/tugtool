@@ -129,6 +129,9 @@ tugtool validate                   # Validate all tugplans
 tugtool validate tugplan-1.md      # Validate specific file
 tugtool list                       # List all tugplans
 tugtool status tugplan-1.md        # Show progress
+tugtool resolve user-auth          # Resolve plan identifier to file path
+tugtool resolve 1                  # Resolve numeric plan
+tugtool resolve                    # Auto-select single plan
 tugtool beads sync tugplan-1.md    # Sync steps to beads
 tugtool beads status               # Show bead completion status
 tugtool beads close bd-xxx         # Close a bead
