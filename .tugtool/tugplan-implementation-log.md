@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-15T20:43:31Z
+bead: tugtool-581.3
+---
+
+## #step-2: Implemented StreamFeed and SnapshotFeed async traits with async_trait for object safety, broadcast/watch channels, CancellationToken for shutdown, 2 compile-time object safety tests
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-15T20:38:53Z
 bead: tugtool-581.2
