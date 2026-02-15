@@ -3,4 +3,5 @@
 //! This module contains the implementations of different feed types
 //! (terminal, filesystem, git, etc.) and manages their lifecycle.
 
+pub mod filesystem;
 pub mod terminal;

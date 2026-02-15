@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-15T23:35:44Z
+bead: tugtool-nez.2
+---
+
+## #step-1: Created FilesystemFeed struct implementing SnapshotFeed with notify watcher, gitignore filtering, manual 100ms debounce, and comprehensive test coverage
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-15T23:24:56Z
 bead: tugtool-nez.1
