@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-8
+date: 2025-02-15T21:33:20Z
+bead: tugtool-581.9
+---
+
+## #step-8: Implemented tugdeck WebSocket protocol (protocol.ts mirroring Rust wire format) and connection management (connection.ts with TugConnection class, heartbeat, callback dispatch)
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-15T21:26:33Z
 bead: tugtool-581.8
