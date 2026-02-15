@@ -134,6 +134,11 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
             files_created.push(format!("removed .git/hooks/{}", hook));
         }
 
+        // Remove AGENTS.md dropped by bd init
+        if remove_agents_md(Path::new(".")) {
+            files_created.push("removed AGENTS.md".to_string());
+        }
+
         if json_output {
             let response = JsonResponse::ok(
                 "init",
@@ -197,6 +202,11 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     ];
     for hook in &hooks_removed {
         files_created.push(format!("removed .git/hooks/{}", hook));
+    }
+
+    // Remove AGENTS.md dropped by bd init
+    if remove_agents_md(Path::new(".")) {
+        files_created.push("removed AGENTS.md".to_string());
     }
 
     if json_output {
@@ -265,6 +275,14 @@ fn remove_beads_hooks(root: &Path) -> Vec<String> {
     }
 
     removed_hooks
+}
+
+/// Remove AGENTS.md file dropped by `bd init`.
+///
+/// Returns true if the file existed and was removed.
+fn remove_agents_md(root: &Path) -> bool {
+    let agents_md = root.join("AGENTS.md");
+    fs::remove_file(agents_md).is_ok()
 }
 
 /// Ensure .tugtree/ is listed in .gitignore

@@ -28,3 +28,6 @@ aside
 
 # Tug step artifacts (optional local debug)
 .tugtool/step-artifacts/
+
+# Unwanted file dropped by bd init
+AGENTS.md

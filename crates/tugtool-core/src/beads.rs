@@ -253,6 +253,10 @@ impl BeadsCli {
             )));
         }
 
+        // bd init drops an AGENTS.md file we don't want — remove it silently
+        let agents_md = working_dir.join("AGENTS.md");
+        let _ = std::fs::remove_file(agents_md);
+
         Ok(())
     }
 
