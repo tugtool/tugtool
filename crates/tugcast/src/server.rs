@@ -3,10 +3,10 @@
 //! Implements the axum server with routes for auth, WebSocket upgrade,
 //! and static asset serving using rust-embed.
 
-use axum::http::{header, StatusCode, Uri};
+use axum::Router;
+use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use rust_embed::RustEmbed;
 use tokio::net::TcpListener;
 use tracing::{error, info};

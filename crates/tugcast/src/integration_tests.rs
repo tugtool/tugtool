@@ -6,12 +6,12 @@
 #![cfg(test)]
 
 use axum::body::Body;
-use axum::http::{header, Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 
 use crate::auth::{self, SESSION_COOKIE_NAME};
-use crate::router::{FeedRouter, BROADCAST_CAPACITY};
+use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 use crate::server::build_app;
 
 /// Helper to build a test app with fresh auth state

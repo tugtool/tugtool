@@ -6,8 +6,8 @@
 
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use tokio::sync::{broadcast, mpsc};
@@ -102,9 +102,7 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
     let mut broadcast_rx = router.terminal_tx.subscribe();
 
     // Start in BOOTSTRAP state
-    let mut state = ClientState::Bootstrap {
-        buffer: Vec::new(),
-    };
+    let mut state = ClientState::Bootstrap { buffer: Vec::new() };
 
     loop {
         match &mut state {
@@ -246,9 +244,7 @@ mod tests {
 
     #[test]
     fn test_client_state_bootstrap_to_live() {
-        let state = ClientState::Bootstrap {
-            buffer: Vec::new(),
-        };
+        let state = ClientState::Bootstrap { buffer: Vec::new() };
         match state {
             ClientState::Bootstrap { .. } => {} // Bootstrap state verified
             ClientState::Live => panic!("Expected Bootstrap state"),
@@ -264,9 +260,7 @@ mod tests {
         }
 
         // Verify that we can construct Bootstrap state (transition logic)
-        let _new_state = ClientState::Bootstrap {
-            buffer: Vec::new(),
-        };
+        let _new_state = ClientState::Bootstrap { buffer: Vec::new() };
     }
 
     #[test]

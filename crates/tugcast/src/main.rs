@@ -1,5 +1,5 @@
-mod cli;
 mod auth;
+mod cli;
 mod feeds;
 mod router;
 mod server;
@@ -10,12 +10,12 @@ mod integration_tests;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use tugcast_core::StreamFeed;
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::terminal::{self, TerminalFeed};
-use crate::router::{FeedRouter, BROADCAST_CAPACITY};
+use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 
 #[tokio::main]
 async fn main() {

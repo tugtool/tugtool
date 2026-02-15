@@ -44,8 +44,11 @@ fn main() {
     }
 
     // Copy index.html to output
-    fs::copy(tugdeck_dir.join("index.html"), tugdeck_out.join("index.html"))
-        .expect("failed to copy index.html");
+    fs::copy(
+        tugdeck_dir.join("index.html"),
+        tugdeck_out.join("index.html"),
+    )
+    .expect("failed to copy index.html");
 
     // Copy xterm.js CSS to output as app.css
     // The xterm.js CSS is in node_modules/@xterm/xterm/css/xterm.css

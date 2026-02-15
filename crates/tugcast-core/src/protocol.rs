@@ -122,8 +122,7 @@ impl Frame {
         }
 
         // Parse feed ID
-        let feed_id = FeedId::from_byte(bytes[0])
-            .ok_or(ProtocolError::InvalidFeedId(bytes[0]))?;
+        let feed_id = FeedId::from_byte(bytes[0]).ok_or(ProtocolError::InvalidFeedId(bytes[0]))?;
 
         // Parse payload length (big-endian u32)
         let length = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]) as usize;

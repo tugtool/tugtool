@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Query, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use tracing::{info, warn};
@@ -291,9 +291,12 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::COOKIE,
-            format!("other=value; {}=test-session-id; another=val", SESSION_COOKIE_NAME)
-                .parse()
-                .unwrap(),
+            format!(
+                "other=value; {}=test-session-id; another=val",
+                SESSION_COOKIE_NAME
+            )
+            .parse()
+            .unwrap(),
         );
 
         let session_id = extract_session_cookie(&headers);
@@ -312,7 +315,10 @@ mod tests {
 
     #[test]
     fn test_cookie_header_format() {
-        let cookie = format!("{}=test-id; HttpOnly; SameSite=Strict; Path=/", SESSION_COOKIE_NAME);
+        let cookie = format!(
+            "{}=test-id; HttpOnly; SameSite=Strict; Path=/",
+            SESSION_COOKIE_NAME
+        );
 
         // Verify required attributes are present
         assert!(cookie.contains("HttpOnly"));
