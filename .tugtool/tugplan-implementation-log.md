@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-15T21:26:33Z
+bead: tugtool-581.8
+---
+
+## #step-7: Scaffolded tugdeck frontend: package.json with xterm.js deps, tsconfig.json, index.html shell, placeholder main.ts, build.rs (npm install + esbuild bundle), rust-embed $OUT_DIR/tugdeck/ integration
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-15T21:18:04Z
 bead: tugtool-581.7

@@ -16,7 +16,7 @@ use crate::router::FeedRouter;
 
 /// Embedded static assets (tugdeck frontend)
 #[derive(RustEmbed)]
-#[folder = "assets/"]
+#[folder = "$OUT_DIR/tugdeck/"]
 struct Assets;
 
 /// Determine Content-Type header for a file path

@@ -31,3 +31,4 @@ aside
 
 # Unwanted file dropped by bd init
 AGENTS.md
+node_modules/

@@ -53,7 +53,7 @@ rand = "0.10"
 tower-http = { version = "0.6", features = ["fs"] }
 
 # Asset embedding
-rust-embed = "8"
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 
 # Logging and tracing
 tracing = "0.1"
