@@ -192,87 +192,104 @@ For `bead_close_failed` (warn and continue):
 ## Orchestration Loop
 
 ```
-  Bash: tugtool worktree create <plan_path> --json
-       │
-       ├── non-zero exit ──► HALT with error
-       │
-       └── zero exit (worktree_path, branch_name, base_branch, all_steps, ready_steps, bead_mapping)
-              │
-              ▼
-       ┌─────────────────────────────────────────────────────────────────┐
-       │              FOR EACH STEP in resolved_steps                    │
-       │  ┌───────────────────────────────────────────────────────────┐  │
-       │  │                                                           │  │
-       │  │  Step 0: SPAWN architect-agent (FRESH) → architect_id     │  │
-       │  │  Step N: RESUME architect_id                              │  │
-       │  │           │                                               │  │
-       │  │           ▼  (strategy)                                   │  │
-       │  │                                                           │  │
-       │  │  Step 0: SPAWN coder-agent (FRESH) → coder_id             │  │
-       │  │  Step N: RESUME coder_id                                  │  │
-       │  │           │                                               │  │
-       │  │           ▼                                               │  │
-       │  │    Drift Check                                            │  │
-       │  │    (AskUserQuestion if moderate/major)                    │  │
-       │  │           │                                               │  │
-       │  │  ┌─────────────────────────────────────────────────┐      │  │
-       │  │  │         REVIEW LOOP (max 3 retries)             │      │  │
-       │  │  │                                                 │      │  │
-       │  │  │  Step 0: SPAWN reviewer-agent → reviewer_id     │      │  │
-       │  │  │  Step N: RESUME reviewer_id                     │      │  │
-       │  │  │         │                                       │      │  │
-       │  │  │    REVISE? ──► RESUME coder_id                  │      │  │
-       │  │  │                  ──► RESUME reviewer_id         │      │  │
-       │  │  │         │                                       │      │  │
-       │  │  │      APPROVE                                    │      │  │
-       │  │  └─────────────────────────────────────────────────┘      │  │
-       │  │           │                                               │  │
-       │  │           ▼                                               │  │
-       │  │  Step 0: SPAWN committer-agent → committer_id             │  │
-       │  │  Step N: RESUME committer_id                              │  │
-       │  │     ├─► update log + stage + commit + close bead          │  │
-       │  │     └─► collect step summary                              │  │
-       │  │                                                           │  │
-       │  └───────────────────────────────────────────────────────────┘  │
-       │                           │                                     │
-       │                           ▼                                     │
-       │                    Next step (all agents RESUMED)               │
-       └─────────────────────────────────────────────────────────────────┘
-              │
-              ▼
-       ┌─────────────────────────────────────────────────────────────────┐
-       │  POST-LOOP: AUDITOR PHASE                                      │
-       │  ┌───────────────────────────────────────────────────────────┐  │
-       │  │  SPAWN auditor-agent → auditor_id                         │  │
-       │  │         │                                                 │  │
-       │  │    PASS? ──► proceed to integrator                        │  │
-       │  │         │                                                 │  │
-       │  │    REVISE? ──► RESUME coder_id (fix issues)               │  │
-       │  │                  ──► RESUME committer_id (fixup)          │  │
-       │  │                  ──► RESUME auditor_id (re-audit)         │  │
-       │  │                  ──► (max 3 rounds, then ESCALATE)        │  │
-       │  │         │                                                 │  │
-       │  │    ESCALATE? ──► AskUserQuestion (continue/abort)         │  │
-       │  └───────────────────────────────────────────────────────────┘  │
-       └─────────────────────────────────────────────────────────────────┘
-              │
-              ▼
-       ┌─────────────────────────────────────────────────────────────────┐
-       │  POST-LOOP: INTEGRATOR PHASE                                   │
-       │  ┌───────────────────────────────────────────────────────────┐  │
-       │  │  SPAWN integrator-agent → integrator_id                   │  │
-       │  │    (push branch, create PR, wait for CI)                  │  │
-       │  │         │                                                 │  │
-       │  │    PASS? ──► implementation complete                      │  │
-       │  │         │                                                 │  │
-       │  │    REVISE? ──► RESUME coder_id (fix CI issues)            │  │
-       │  │                  ──► RESUME committer_id (fixup)          │  │
-       │  │                  ──► RESUME integrator_id (re-push/check) │  │
-       │  │                  ──► (max 3 rounds, then ESCALATE)        │  │
-       │  │         │                                                 │  │
-       │  │    ESCALATE? ──► AskUserQuestion (continue/abort)         │  │
-       │  └───────────────────────────────────────────────────────────┘  │
-       └─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│  tugtool worktree create <plan> --json   │
+└────────────────────┬─────────────────────┘
+                     │
+                     ▼
+              ┌────────────┐
+              │ succeeded? │
+              └──┬──────┬──┘
+             yes │      └ no ──► HALT WITH ERROR
+                 │
+                 ▼
+
+     ═══ STEP LOOP (each ready step) ═══
+
+┌──────────────────────────────────────────┐
+│ architect-agent                          │
+│ Pass 0: SPAWN → architect_id             │
+│ Pass N: RESUME architect_id              │
+└────────────────────┬─────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────┐
+│ coder-agent                              │
+│ Pass 0: SPAWN → coder_id                 │
+│ Pass N: RESUME coder_id                  │
+└────────────────────┬─────────────────────┘
+                     │
+                     ▼
+              ┌────────────┐
+              │   drift?   │
+              └──┬──────┬──┘
+         none/   │      │ moderate/major
+         minor   │      └──► AskUserQuestion
+                 │               │
+                 │◄──────────────┘
+                 │
+                 ▼
+┌──────────────────────────────────────────┐
+│ reviewer-agent                           │◄──┐
+│ Pass 0: SPAWN → reviewer_id              │   │
+│ Pass N: RESUME reviewer_id               │   │
+└────────────────────┬─────────────────────┘   │
+                     │                         │
+                     ▼                         │ review
+             ┌───────────────┐                 │ retry
+             │   reviewer    │                 │
+             │recommendation?│                 │
+             └──┬─────────┬──┘                 │
+        APPROVE │         │ REVISE (max 3)     │
+                │         └─► coder fix ───────┘
+                ▼
+┌──────────────────────────────────────────┐
+│ committer-agent                          │
+│ SPAWN/RESUME → commit + close bead       │
+└────────────────────┬─────────────────────┘
+                     │
+             ┌───────────────┐
+             │  more steps?  │─ yes ─► back to architect
+             └───────┬───────┘
+                     │ no
+                     ▼
+
+          ═══ AUDITOR PHASE ═══
+
+┌──────────────────────────────────────────┐
+│               auditor-agent              │◄─────────────┐
+│               SPAWN/RESUME               │              │
+└────────────────────┬─────────────────────┘              │
+                     │                                    │
+                     ▼                                    │ audit
+             ┌───────────────┐                            │ retry
+             │    auditor    │                            │
+             │recommendation?│                            │
+             └──┬─────────┬──┘                            │
+           PASS │         │ REVISE (max 3)                │
+                │         └─► coder fix → committer ──────┘
+                ▼
+
+        ═══ INTEGRATOR PHASE ═══
+
+┌──────────────────────────────────────────┐
+│            integrator-agent              │◄─────────────┐
+│            SPAWN/RESUME → push, PR, CI   │              │
+└────────────────────┬─────────────────────┘              │
+                     │                                    │
+                     ▼                                    │ CI
+             ┌───────────────┐                            │ retry
+             │  integrator   │                            │
+             │recommendation?│                            │
+             └──┬─────────┬──┘                            │
+           PASS │         │ REVISE (max 3)                │
+                │         └─► coder fix → committer ──────┘
+                ▼
+
+┌──────────────────────────────────────────┐
+│         IMPLEMENTATION COMPLETE          │
+│      Plan: {plan_path}  PR: {pr_url}     │
+└──────────────────────────────────────────┘
 ```
 
 **Architecture principles:**

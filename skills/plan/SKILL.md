@@ -102,25 +102,54 @@ or:
 ## Orchestration Loop
 
 ```
-  SPAWN clarifier-agent → clarifier_id (ONE TIME ONLY)
-       │
-       ▼
-  AskUserQuestion (if questions exist)
-       │
-       ▼
-  ┌─────────────────────────────────────────────┐
-  │                                             │
-  │  Step 0: SPAWN author-agent → author_id     │
-  │  Loop N: RESUME author_id  ◄────────────────┼─────┐
-  │                                             │     │
-  │  Step 0: SPAWN critic-agent → critic_id     │     │
-  │  Loop N: RESUME critic_id                   │     │
-  │       │                                     │     │
-  │       ├── APPROVE ──► DONE                  │     │
-  │       │                                     │     │
-  │       └── REVISE/REJECT ────────────────────┼─────┘
-  │                                             │
-  └─────────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│          PLANNING PHASE BEGINS           │
+│ (produce a tugplan at .tugtool/tugplan)  │
+└────────────────────┬─────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────┐
+│        clarifier-agent (runs once)       │
+│        SPAWN → clarifier_id              │
+└────────────────────┬─────────────────────┘
+                     │
+                     ▼
+               ┌────────────┐
+               │ questions? │
+               └──┬─────┬───┘
+              yes │     │ no
+                  ▼     │
+  ┌──────────────────┐  │
+  │ AskUserQuestion  │  │
+  └────────┬─────────┘  │
+           └──────┬─────┘
+                  │
+┌─────────────────▼────────────────────────┐
+│ author-agent                             │
+│ Pass 0: SPAWN (FRESH) → author_id        │◄─┐
+│ Pass N: RESUME author_id                 │  │
+└────────────────────┬─────────────────────┘  │
+                     │                        │
+                     ▼                        │
+┌──────────────────────────────────────────┐  │
+│ critic-agent                             │  │ revision
+│ Pass 0: SPAWN (FRESH) → critic_id        │  │ loop
+│ Pass N: RESUME critic_id                 │  │
+└────────────────────┬─────────────────────┘  │
+                     │                        │
+                     ▼                        │
+             ┌────────────────┐               │
+             │    critic      │               │
+             │recommendation? │               │
+             └──┬──────────┬──┘               │
+        APPROVE │          │ REVISE / REJECT  │
+                │          └──────────────────┘
+                ▼
+┌──────────────────────────────────────────┐
+│        PLANNING PHASE COMPLETE           │
+│ Plan ready at {plan_path}                │
+│ Next: /tugtool:implement {plan_path}     │
+└──────────────────────────────────────────┘
 ```
 
 **The clarifier runs ONCE during the first pass.** Revision loops go directly to the author — the clarifier's job (understanding the idea, asking questions) is already done.
