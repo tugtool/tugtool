@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-9
+date: 2025-02-15T21:41:01Z
+bead: tugtool-581.10
+---
+
+## #step-9: Implemented tugdeck terminal card: TugCard interface, TerminalCard with xterm.js (FitAddon, WebLinksAddon), keyboard input forwarding, resize events, DeckManager layout, main.ts application wiring
+
+**Files changed:**
+- .tugtool/tugplan-terminal-bridge.md
+
+---
+
+---
 step: #step-8
 date: 2025-02-15T21:33:20Z
 bead: tugtool-581.9
