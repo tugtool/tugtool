@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-15T14:32:41Z
+bead: tugtool-5zv.1
+---
+
+## #step-0: Added resolve.rs module to tugtool-core with ResolveStage enum, ResolveResult enum, and resolve_plan() function implementing 5-stage resolution cascade (exact path, bare filename, slug, prefix, auto-select). Re-exported from lib.rs. 172 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-14T22:54:54Z
 bead: tugtool-b23.2
