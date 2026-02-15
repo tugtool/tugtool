@@ -1,10 +1,10 @@
 //! Implementation of the `tug beads pull` command (Spec S09)
 
 use std::fs;
-use std::path::Path;
 
 use tugtool_core::{
-    BeadsCli, Config, find_project_root, find_tugplans, parse_tugplan, tugplan_name_from_path,
+    BeadsCli, Config, ResolveResult, find_project_root, find_tugplans, parse_tugplan, resolve_plan,
+    tugplan_name_from_path,
 };
 
 use crate::output::{JsonIssue, JsonResponse};
@@ -69,10 +69,20 @@ pub fn run_pull(
     // Get files to process
     let files = match &file {
         Some(f) => {
-            let path = resolve_file_path(&project_root, f);
-            if !path.exists() {
-                return output_error(json_output, "E002", &format!("file not found: {}", f), 2);
-            }
+            let path = match resolve_plan(f, &project_root) {
+                Ok(ResolveResult::Found { path, .. }) => path,
+                Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
+                    return output_error(json_output, "E002", &format!("file not found: {}", f), 2);
+                }
+                Err(e) => {
+                    return output_error(
+                        json_output,
+                        e.code(),
+                        &format!("Resolution failed: {}", e),
+                        e.exit_code(),
+                    );
+                }
+            };
             vec![path]
         }
         None => find_tugplans(&project_root).unwrap_or_default(),
@@ -289,31 +299,6 @@ fn mark_step_checkboxes_complete(
     }
 
     (new_lines.join("\n"), count)
-}
-
-/// Resolve file path relative to project
-fn resolve_file_path(project_root: &Path, file: &str) -> std::path::PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
-        project_root.join(file)
-    } else if file.starts_with("tugplan-") && file.ends_with(".md") {
-        project_root.join(".tugtool").join(file)
-    } else if file.ends_with(".md") {
-        let as_is = project_root.join(file);
-        if as_is.exists() {
-            as_is
-        } else {
-            project_root
-                .join(".tugtool")
-                .join(format!("tugplan-{}", file))
-        }
-    } else {
-        project_root
-            .join(".tugtool")
-            .join(format!("tugplan-{}.md", file))
-    }
 }
 
 /// Output an error in JSON or text format

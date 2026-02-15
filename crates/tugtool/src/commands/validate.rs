@@ -4,8 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use tugtool_core::{
-    Config, Severity, ValidationConfig, ValidationLevel, ValidationResult, find_project_root,
-    find_tugplans, parse_tugplan, tugplan_name_from_path, validate_tugplan_with_config,
+    Config, ResolveResult, Severity, ValidationConfig, ValidationLevel, ValidationResult,
+    find_project_root, find_tugplans, parse_tugplan, resolve_plan, tugplan_name_from_path,
+    validate_tugplan_with_config,
 };
 
 use crate::output::{JsonDiagnostic, JsonIssue, JsonResponse, ValidateData, ValidatedFile};
@@ -94,32 +95,59 @@ pub fn run_validate(
     let files_to_validate = match file {
         Some(f) => {
             // Single file validation
-            let path = resolve_file_path(&project_root, &f);
-            if !path.exists() {
-                let message = format!("file not found: {}", f);
-                if json_output {
-                    let issues = vec![JsonIssue {
-                        code: "E002".to_string(),
-                        severity: "error".to_string(),
-                        message: message.clone(),
-                        file: Some(f),
-                        line: None,
-                        anchor: None,
-                    }];
-                    let response: JsonResponse<ValidateData> = JsonResponse::error(
-                        "validate",
-                        ValidateData {
-                            files: vec![],
-                            ..Default::default()
-                        },
-                        issues,
-                    );
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                } else {
-                    eprintln!("error: {}", message);
+            let path = match resolve_plan(&f, &project_root) {
+                Ok(ResolveResult::Found { path, .. }) => path,
+                Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
+                    let message = format!("file not found: {}", f);
+                    if json_output {
+                        let issues = vec![JsonIssue {
+                            code: "E002".to_string(),
+                            severity: "error".to_string(),
+                            message: message.clone(),
+                            file: Some(f),
+                            line: None,
+                            anchor: None,
+                        }];
+                        let response: JsonResponse<ValidateData> = JsonResponse::error(
+                            "validate",
+                            ValidateData {
+                                files: vec![],
+                                ..Default::default()
+                            },
+                            issues,
+                        );
+                        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    } else {
+                        eprintln!("error: {}", message);
+                    }
+                    return Ok(2);
                 }
-                return Ok(2); // File not found exit code
-            }
+                Err(e) => {
+                    let message = format!("Resolution failed: {}", e);
+                    if json_output {
+                        let issues = vec![JsonIssue {
+                            code: e.code().to_string(),
+                            severity: "error".to_string(),
+                            message,
+                            file: None,
+                            line: None,
+                            anchor: None,
+                        }];
+                        let response: JsonResponse<ValidateData> = JsonResponse::error(
+                            "validate",
+                            ValidateData {
+                                files: vec![],
+                                ..Default::default()
+                            },
+                            issues,
+                        );
+                        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    } else {
+                        eprintln!("error: Resolution failed: {}", e);
+                    }
+                    return Ok(e.exit_code());
+                }
+            };
             vec![path]
         }
         None => {
@@ -192,24 +220,6 @@ pub fn run_validate(
 }
 
 /// Resolve a file path relative to the project
-fn resolve_file_path(project_root: &Path, file: &str) -> PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
-        project_root.join(file)
-    } else if file.starts_with("tugplan-") {
-        project_root.join(".tugtool").join(file)
-    } else {
-        let as_is = project_root.join(file);
-        if as_is.exists() {
-            as_is
-        } else {
-            project_root.join(".tugtool").join(file)
-        }
-    }
-}
-
 /// Validate a single file
 fn validate_file(path: &Path, config: &ValidationConfig) -> ValidationResult {
     // Read the file

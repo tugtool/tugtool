@@ -29,6 +29,9 @@ pub mod session;
 /// Worktree management for plan implementations
 pub mod worktree;
 
+/// Plan resolution logic
+pub mod resolve;
+
 // Re-exports for convenience
 pub use beads::{
     BeadStatus, BeadsCli, CloseReasonParsed, Issue, IssueDetails, is_valid_bead_id,
@@ -41,6 +44,7 @@ pub use config::{
 pub use error::TugError;
 pub use interaction::{InteractionAdapter, InteractionError, InteractionResult, ProgressHandle};
 pub use parser::parse_tugplan;
+pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use session::now_iso8601;
 pub use types::{
     Anchor, BeadsHints, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step,

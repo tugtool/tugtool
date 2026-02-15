@@ -143,6 +143,9 @@ fn main() -> ExitCode {
             } => commands::run_log_prepend(None, step, plan, summary, bead, cli.json, cli.quiet),
         },
         Some(Commands::Doctor) => commands::run_doctor(cli.json, cli.quiet),
+        Some(Commands::Resolve { identifier }) => {
+            commands::run_resolve(identifier, cli.json, cli.quiet)
+        }
         Some(Commands::Version { verbose }) => commands::run_version(verbose, cli.json, cli.quiet),
         Some(Commands::Commit {
             worktree,

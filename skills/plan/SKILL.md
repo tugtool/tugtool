@@ -27,7 +27,7 @@ hooks:
 
 **YOUR ENTIRE JOB:** Parse input, spawn agents in sequence, relay results, ask user questions when needed, and **report progress at every step**.
 
-**GOAL:** Produce a tugplan file at `.tugtool/tugplan-N.md` by orchestrating agents.
+**GOAL:** Produce a tugplan file at `.tugtool/tugplan-<slug>.md` by orchestrating agents.
 
 ---
 
@@ -354,7 +354,7 @@ Parse the user's input to determine mode:
 | Input Pattern | Mode | Behavior |
 |---------------|------|----------|
 | `"idea text"` | new | Create new plan from idea |
-| `.tugtool/tugplan-N.md` | revise | Revise existing plan |
+| `.tugtool/tugplan-<name>.md` | revise | Revise existing plan |
 
 ---
 

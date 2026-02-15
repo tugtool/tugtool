@@ -154,6 +154,17 @@ pub enum Commands {
         force: bool,
     },
 
+    /// Resolve a plan identifier to a file path
+    ///
+    /// Uses the five-stage resolution cascade: exact path, bare filename, slug, prefix, auto-select.
+    #[command(
+        long_about = "Resolve a plan identifier to a file path.\n\nResolution cascade (tried in order):\n  1. Exact path: Input starts with / or . and file exists\n  2. Bare filename: Input starts with tugplan- (joined with .tugtool/)\n  3. Slug: .tugtool/tugplan-{input}.md exists\n  4. Prefix: Unique slug starting with input\n  5. Auto-select: Exactly one plan exists\n\nReturns the resolved path, or an error with candidates if ambiguous.\nUse --json for machine-readable output (Spec S02)."
+    )]
+    Resolve {
+        /// Plan identifier (path, filename, slug, prefix, or empty for auto-select)
+        identifier: Option<String>,
+    },
+
     /// Show version information
     ///
     /// Display package version and optionally build metadata.
@@ -899,6 +910,30 @@ mod tests {
                 assert_eq!(repo, Some("owner/repo".to_string()));
             }
             _ => panic!("Expected OpenPr command"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_command() {
+        let cli = Cli::try_parse_from(["tugtool", "resolve"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Resolve { identifier }) => {
+                assert!(identifier.is_none());
+            }
+            _ => panic!("Expected Resolve command"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_command_with_identifier() {
+        let cli = Cli::try_parse_from(["tugtool", "resolve", "user-auth"]).unwrap();
+
+        match cli.command {
+            Some(Commands::Resolve { identifier }) => {
+                assert_eq!(identifier, Some("user-auth".to_string()));
+            }
+            _ => panic!("Expected Resolve command"),
         }
     }
 }

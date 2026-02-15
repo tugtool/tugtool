@@ -94,7 +94,7 @@ Return structured JSON:
 
 ```json
 {
-  "plan_path": ".tugtool/tugplan-N.md",
+  "plan_path": ".tugtool/tugplan-<slug>.md",
   "created": true,
   "sections_written": ["plan-metadata", "phase-overview", "design-decisions", "execution-steps", "deliverables"],
   "skeleton_compliance": {
@@ -129,12 +129,31 @@ Before returning, verify ALL of these:
 
 ## File Naming
 
-For new tugplan:
-1. Find the highest existing tugplan number: `Glob ".tugtool/tugplan-*.md"`
-2. Use the next number: `tugplan-N.md`
-3. If no tugplans exist, start with `tugplan-1.md`
+For new plans, derive a descriptive slug from the idea:
 
-Exception: Skip `tugplan-skeleton.md` when counting.
+1. **Derive slug**: Pick 2-4 words from the idea that capture its essence. Use kebab-case (lowercase, hyphens between words). Examples:
+   - "add user authentication" -> `user-auth`
+   - "refactor database connection pooling" -> `db-connection-pool`
+   - "fix pagination bug in search results" -> `fix-search-pagination`
+   - "add hello command" -> `hello-command`
+
+2. **Validate slug**: Must match the regex `^[a-z][a-z0-9-]{1,49}$`. Requirements:
+   - Starts with a lowercase letter
+   - Contains only lowercase letters, digits, and hyphens
+   - Between 2 and 50 characters total
+   - No leading/trailing hyphens, no consecutive hyphens
+
+3. **Check for collision**: `Glob ".tugtool/tugplan-*.md"` and check if `tugplan-{slug}.md` already exists.
+   - If collision: append numeric suffix (`-2`, `-3`, etc.) until unique. Example: `user-auth` collides -> try `user-auth-2`.
+   - Re-validate the suffixed slug against the regex.
+
+4. **Fallback to numeric naming**: If slug derivation fails validation (e.g., idea is in a language that doesn't transliterate well to ASCII), fall back to the old convention:
+   - Find the highest existing tugplan number
+   - Use `tugplan-{N+1}.md`
+
+5. **Write file**: Save plan to `.tugtool/tugplan-{slug}.md`
+
+Exception: Skip `tugplan-skeleton.md` and `tugplan-implementation-log.md` when checking for collisions.
 
 ## Behavior Rules
 
@@ -171,14 +190,15 @@ Exception: Skip `tugplan-skeleton.md` when counting.
 
 **Process:**
 1. Read `.tugtool/tugplan-skeleton.md`
-2. Find next plan number: `Glob ".tugtool/tugplan-*.md"`
-3. Write plan following skeleton structure
-4. Validate: `tugtool validate .tugtool/tugplan-N.md`
+2. Derive slug from idea: "add hello command" -> `hello-command`
+3. Check for collision: `Glob ".tugtool/tugplan-*.md"`
+4. Write plan following skeleton structure
+5. Validate: `tugtool validate .tugtool/tugplan-hello-command.md`
 
 **Output:**
 ```json
 {
-  "plan_path": ".tugtool/tugplan-5.md",
+  "plan_path": ".tugtool/tugplan-hello-command.md",
   "created": true,
   "sections_written": ["plan-metadata", "phase-overview", "design-decisions", "execution-steps", "deliverables"],
   "skeleton_compliance": {
@@ -204,7 +224,7 @@ When `critic_feedback` is present:
 
 ```json
 {
-  "plan_path": ".tugtool/tugplan-5.md",
+  "plan_path": ".tugtool/tugplan-hello-command.md",
   "created": false,
   "sections_written": ["execution-steps"],
   "skeleton_compliance": { ... },

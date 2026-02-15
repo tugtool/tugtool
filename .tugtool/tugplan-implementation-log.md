@@ -9,6 +9,70 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-15T15:05:33Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt to fix import ordering and line wrapping in 6 files, removed orphaned normalize_plan_path test comment from merge.rs
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-15T15:01:02Z
+bead: tugtool-5zv.4
+---
+
+## #step-3: Updated agents/author-agent.md with descriptive slug naming: LLM derives 2-4 word kebab-case slug from idea, validates against regex, handles collisions with numeric suffix, falls back to numeric naming. Updated skills/plan/SKILL.md GOAL and input table for consistency. 376 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-15T14:55:04Z
+bead: tugtool-5zv.3
+---
+
+## #step-2: Replaced 8 duplicated resolve_file_path/normalize_plan_path functions in status.rs, validate.rs, beads/sync.rs, beads/status.rs, beads/pull.rs, beads/link.rs, merge.rs, and worktree.rs with calls to unified resolve_plan() from tugtool-core. Deleted all old functions and their tests. All 376 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-15T14:40:32Z
+bead: tugtool-5zv.2
+---
+
+## #step-1: Added tugtool resolve CLI subcommand with ResolveData output struct, commands/resolve.rs handler, Resolve variant in cli.rs, dispatch in main.rs, and CLAUDE.md documentation. Maps resolve_plan() results to JSON per Spec S02. 210 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-15T14:32:41Z
+bead: tugtool-5zv.1
+---
+
+## #step-0: Added resolve.rs module to tugtool-core with ResolveStage enum, ResolveResult enum, and resolve_plan() function implementing 5-stage resolution cascade (exact path, bare filename, slug, prefix, auto-select). Re-exported from lib.rs. 172 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-14T22:54:54Z
 bead: tugtool-b23.2
