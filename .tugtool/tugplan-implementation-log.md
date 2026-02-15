@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-15T15:01:02Z
+bead: tugtool-5zv.4
+---
+
+## #step-3: Updated agents/author-agent.md with descriptive slug naming: LLM derives 2-4 word kebab-case slug from idea, validates against regex, handles collisions with numeric suffix, falls back to numeric naming. Updated skills/plan/SKILL.md GOAL and input table for consistency. 376 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-15T14:55:04Z
 bead: tugtool-5zv.3
