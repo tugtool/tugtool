@@ -3,8 +3,8 @@
 use std::fs;
 
 use tugtool_core::{
-    BeadsCli, Config, ResolveResult, find_project_root, find_tugplans, parse_tugplan,
-    resolve_plan, tugplan_name_from_path,
+    BeadsCli, Config, ResolveResult, find_project_root, find_tugplans, parse_tugplan, resolve_plan,
+    tugplan_name_from_path,
 };
 
 use crate::output::{JsonIssue, JsonResponse};
@@ -72,12 +72,7 @@ pub fn run_pull(
             let path = match resolve_plan(f, &project_root) {
                 Ok(ResolveResult::Found { path, .. }) => path,
                 Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
-                    return output_error(
-                        json_output,
-                        "E002",
-                        &format!("file not found: {}", f),
-                        2,
-                    );
+                    return output_error(json_output, "E002", &format!("file not found: {}", f), 2);
                 }
                 Err(e) => {
                     return output_error(

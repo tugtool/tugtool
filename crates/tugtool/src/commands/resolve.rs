@@ -1,7 +1,9 @@
 //! Resolve command implementation
 
-use tugtool_core::{find_project_root, resolve_plan, ResolveResult, ResolveStage, TugError, tugplan_name_from_path};
 use crate::output::{JsonIssue, JsonResponse, ResolveData};
+use tugtool_core::{
+    ResolveResult, ResolveStage, TugError, find_project_root, resolve_plan, tugplan_name_from_path,
+};
 
 /// Map ResolveStage enum to lowercase string for JSON output
 fn stage_to_str(stage: ResolveStage) -> &'static str {
@@ -17,7 +19,11 @@ fn stage_to_str(stage: ResolveStage) -> &'static str {
 /// Run the resolve command
 ///
 /// Resolves a plan identifier to a file path using the five-stage cascade.
-pub fn run_resolve(identifier: Option<String>, json_output: bool, quiet: bool) -> Result<i32, String> {
+pub fn run_resolve(
+    identifier: Option<String>,
+    json_output: bool,
+    quiet: bool,
+) -> Result<i32, String> {
     // Find project root
     let project_root = match find_project_root() {
         Ok(root) => root,
@@ -208,7 +214,11 @@ pub fn run_resolve(identifier: Option<String>, json_output: bool, quiet: bool) -
                     message: if input.is_empty() {
                         format!("Ambiguous: {} plans found", relative_candidates.len())
                     } else {
-                        format!("Ambiguous plan identifier '{}': matches {} plans", input, relative_candidates.len())
+                        format!(
+                            "Ambiguous plan identifier '{}': matches {} plans",
+                            input,
+                            relative_candidates.len()
+                        )
                     },
                     file: None,
                     line: None,
@@ -217,13 +227,20 @@ pub fn run_resolve(identifier: Option<String>, json_output: bool, quiet: bool) -
                 let response = JsonResponse::error("resolve", data, issues);
                 println!("{}", serde_json::to_string_pretty(&response).unwrap());
             } else if input.is_empty() {
-                eprintln!("error: ambiguous: {} plans found", relative_candidates.len());
+                eprintln!(
+                    "error: ambiguous: {} plans found",
+                    relative_candidates.len()
+                );
                 eprintln!("Candidates:");
                 for candidate in &relative_candidates {
                     eprintln!("  {}", candidate);
                 }
             } else {
-                eprintln!("error: ambiguous plan identifier '{}': matches {} plans", input, relative_candidates.len());
+                eprintln!(
+                    "error: ambiguous plan identifier '{}': matches {} plans",
+                    input,
+                    relative_candidates.len()
+                );
                 eprintln!("Candidates:");
                 for candidate in &relative_candidates {
                     eprintln!("  {}", candidate);

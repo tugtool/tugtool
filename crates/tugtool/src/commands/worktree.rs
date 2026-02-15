@@ -7,8 +7,7 @@ use clap::Subcommand;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tugtool_core::{
-    ResolveResult, TugError, ValidationLevel,
-    resolve_plan,
+    ResolveResult, TugError, ValidationLevel, resolve_plan,
     worktree::{
         CleanupMode, DiscoveredWorktree, WorktreeConfig, cleanup_worktrees, create_worktree,
         list_worktrees, remove_worktree,

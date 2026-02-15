@@ -75,12 +75,7 @@ pub fn run_beads_status(
             let path = match resolve_plan(f, &project_root) {
                 Ok(ResolveResult::Found { path, .. }) => path,
                 Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
-                    return output_error(
-                        json_output,
-                        "E002",
-                        &format!("file not found: {}", f),
-                        2,
-                    );
+                    return output_error(json_output, "E002", &format!("file not found: {}", f), 2);
                 }
                 Err(e) => {
                     return output_error(

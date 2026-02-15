@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tugtool_core::{
-    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan,
-    list_tugtool_branches, list_worktrees, remove_worktree, resolve_plan,
+    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan, list_tugtool_branches,
+    list_worktrees, remove_worktree, resolve_plan,
 };
 
 /// JSON output for merge command
@@ -968,9 +968,7 @@ fn run_merge_in(
     let plan_path = match resolve_plan(&plan, &repo_root) {
         Ok(ResolveResult::Found { path, .. }) => {
             // Strip repo_root prefix to get relative path
-            path.strip_prefix(&repo_root)
-                .unwrap_or(&path)
-                .to_path_buf()
+            path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf()
         }
         Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
             let e = format!("Plan file not found: {}", plan);
@@ -1874,8 +1872,6 @@ mod tests {
         let pr: PrInfo = serde_json::from_str(json).unwrap();
         assert_eq!(pr.state, "MERGED");
     }
-
-    // -- normalize_plan_path tests --
 
     #[test]
     fn test_plan_file_not_found_error_message() {

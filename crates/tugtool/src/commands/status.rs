@@ -390,7 +390,6 @@ pub fn run_status(
     }
 }
 
-
 /// Build status data from a parsed plan using checkbox counting (fallback mode)
 fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
     let mut total_done = 0;
