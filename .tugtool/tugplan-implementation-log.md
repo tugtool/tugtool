@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-15T23:24:56Z
+bead: tugtool-nez.1
+---
+
+## #step-0: Added Filesystem and Git FeedId variants to protocol.rs, created types.rs with FsEvent/GitStatus/FileStatus data types, added serde_json dependency, updated lib.rs exports
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-15T22:02:13Z
 ---

@@ -22,6 +22,10 @@ pub enum FeedId {
     TerminalInput = 0x01,
     /// Terminal resize events (tugdeck -> tugcast)
     TerminalResize = 0x02,
+    /// Filesystem events snapshot (tugcast -> tugdeck)
+    Filesystem = 0x10,
+    /// Git status snapshot (tugcast -> tugdeck)
+    Git = 0x20,
     /// Heartbeat/keepalive frames (bidirectional)
     Heartbeat = 0xFF,
 }
@@ -35,6 +39,8 @@ impl FeedId {
             0x00 => Some(FeedId::TerminalOutput),
             0x01 => Some(FeedId::TerminalInput),
             0x02 => Some(FeedId::TerminalResize),
+            0x10 => Some(FeedId::Filesystem),
+            0x20 => Some(FeedId::Git),
             0xFF => Some(FeedId::Heartbeat),
             _ => None,
         }
@@ -160,9 +166,11 @@ mod tests {
         assert_eq!(FeedId::from_byte(0x00), Some(FeedId::TerminalOutput));
         assert_eq!(FeedId::from_byte(0x01), Some(FeedId::TerminalInput));
         assert_eq!(FeedId::from_byte(0x02), Some(FeedId::TerminalResize));
+        assert_eq!(FeedId::from_byte(0x10), Some(FeedId::Filesystem));
+        assert_eq!(FeedId::from_byte(0x20), Some(FeedId::Git));
         assert_eq!(FeedId::from_byte(0xFF), Some(FeedId::Heartbeat));
         assert_eq!(FeedId::from_byte(0x03), None);
-        assert_eq!(FeedId::from_byte(0x10), None);
+        assert_eq!(FeedId::from_byte(0x30), None);
     }
 
     #[test]
@@ -170,6 +178,8 @@ mod tests {
         assert_eq!(FeedId::TerminalOutput.as_byte(), 0x00);
         assert_eq!(FeedId::TerminalInput.as_byte(), 0x01);
         assert_eq!(FeedId::TerminalResize.as_byte(), 0x02);
+        assert_eq!(FeedId::Filesystem.as_byte(), 0x10);
+        assert_eq!(FeedId::Git.as_byte(), 0x20);
         assert_eq!(FeedId::Heartbeat.as_byte(), 0xFF);
     }
 
@@ -206,6 +216,30 @@ mod tests {
     #[test]
     fn test_round_trip_heartbeat() {
         let original = Frame::heartbeat();
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_filesystem() {
+        let original = Frame::new(
+            FeedId::Filesystem,
+            b"{\"kind\":\"Created\",\"path\":\"src/main.rs\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_git() {
+        let original = Frame::new(
+            FeedId::Git,
+            b"{\"branch\":\"main\",\"ahead\":0,\"behind\":0}".to_vec(),
+        );
         let encoded = original.encode();
         let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded, original);

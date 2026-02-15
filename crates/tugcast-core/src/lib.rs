@@ -5,6 +5,8 @@
 
 pub mod feed;
 pub mod protocol;
+pub mod types;
 
 pub use feed::{SnapshotFeed, StreamFeed};
 pub use protocol::{FeedId, Frame, HEADER_SIZE, MAX_PAYLOAD_SIZE, ProtocolError};
+pub use types::{FileStatus, FsEvent, GitStatus};
