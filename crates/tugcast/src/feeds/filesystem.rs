@@ -25,13 +25,10 @@ const DEBOUNCE_MILLIS: u64 = 100;
 const POLL_MILLIS: u64 = 50;
 
 /// Filesystem feed that watches a directory and broadcasts FsEvent batches
-// FilesystemFeed and its methods are used via SnapshotFeed trait in step 3 (router integration)
-#[allow(dead_code)]
 pub struct FilesystemFeed {
     watch_dir: PathBuf,
 }
 
-#[allow(dead_code)]
 impl FilesystemFeed {
     /// Create a new filesystem feed watching the given directory
     pub fn new(watch_dir: PathBuf) -> Self {
@@ -40,8 +37,6 @@ impl FilesystemFeed {
 }
 
 /// Build gitignore matcher from .gitignore file in the watch directory
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 fn build_gitignore(watch_dir: &Path) -> Gitignore {
     let mut builder = GitignoreBuilder::new(watch_dir);
     let gitignore_path = watch_dir.join(".gitignore");
@@ -62,8 +57,6 @@ fn build_gitignore(watch_dir: &Path) -> Gitignore {
 }
 
 /// Check if a path should be ignored according to gitignore rules
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 fn is_ignored(path: &Path, watch_dir: &Path, gitignore: &Gitignore) -> bool {
     let relative = match path.strip_prefix(watch_dir) {
         Ok(rel) => rel,
@@ -94,8 +87,6 @@ fn is_ignored(path: &Path, watch_dir: &Path, gitignore: &Gitignore) -> bool {
 }
 
 /// Check if an FsEvent should be ignored
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 fn is_fsevent_ignored(event: &FsEvent, watch_dir: &Path, gitignore: &Gitignore) -> bool {
     match event {
         FsEvent::Created { path } | FsEvent::Modified { path } | FsEvent::Removed { path } => {
@@ -112,8 +103,6 @@ fn is_fsevent_ignored(event: &FsEvent, watch_dir: &Path, gitignore: &Gitignore) 
 }
 
 /// Convert notify Event to FsEvent values
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
     let to_relative = |p: &Path| -> String {
         p.strip_prefix(watch_dir)

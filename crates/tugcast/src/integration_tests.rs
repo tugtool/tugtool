@@ -25,6 +25,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
         input_tx,
         "test-dummy".to_string(),
         auth.clone(),
+        vec![], // No snapshot feeds for auth/WebSocket tests
     );
 
     let app = build_app(feed_router);

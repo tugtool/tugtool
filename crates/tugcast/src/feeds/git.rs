@@ -19,13 +19,10 @@ use tugcast_core::{FeedId, Frame, SnapshotFeed};
 const POLL_INTERVAL_SECS: u64 = 2;
 
 /// Git feed that polls repository status at fixed intervals
-// GitFeed and its methods are used via SnapshotFeed trait in step 3 (router integration)
-#[allow(dead_code)]
 pub struct GitFeed {
     repo_dir: PathBuf,
 }
 
-#[allow(dead_code)]
 impl GitFeed {
     /// Create a new git feed watching the given repository directory
     pub fn new(repo_dir: PathBuf) -> Self {
@@ -34,8 +31,6 @@ impl GitFeed {
 }
 
 /// Parse git status --porcelain=v2 --branch output into GitStatus
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 fn parse_porcelain_v2(output: &str) -> GitStatus {
     let mut branch = String::new();
     let mut ahead: u32 = 0;
@@ -141,8 +136,6 @@ fn parse_porcelain_v2(output: &str) -> GitStatus {
 }
 
 /// Fetch the HEAD commit message
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 async fn fetch_head_message(repo_dir: &Path) -> String {
     let output = Command::new("git")
         .args(["-C", &repo_dir.to_string_lossy(), "log", "-1", "--format=%s"])
@@ -156,8 +149,6 @@ async fn fetch_head_message(repo_dir: &Path) -> String {
 }
 
 /// Fetch git status output
-// Used in SnapshotFeed::run() implementation, will be called in step 3
-#[allow(dead_code)]
 async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
     let output = Command::new("git")
         .args([

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-15T23:51:31Z
+bead: tugtool-nez.4
+---
+
+## #step-3: Wired filesystem and git snapshot feeds into FeedRouter and main.rs with per-client watch forwarding, initial snapshot send on connect, and dead_code cleanup
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-15T23:42:41Z
 bead: tugtool-nez.3
