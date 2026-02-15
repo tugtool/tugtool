@@ -7,7 +7,8 @@ use clap::Subcommand;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tugtool_core::{
-    ValidationLevel,
+    ResolveResult, TugError, ValidationLevel,
+    resolve_plan,
     worktree::{
         CleanupMode, DiscoveredWorktree, WorktreeConfig, cleanup_worktrees, create_worktree,
         list_worktrees, remove_worktree,
@@ -416,20 +417,6 @@ fn rollback_worktree_creation(
     Ok(())
 }
 
-/// Normalize plan path to relative by stripping repo_root prefix if absolute.
-/// PathBuf::join discards the base when the right-hand side is absolute,
-/// which breaks worktree path construction.
-fn normalize_plan_path(plan: String, plan_path: PathBuf, repo_root: &Path) -> (String, PathBuf) {
-    if plan_path.is_absolute() {
-        match plan_path.strip_prefix(repo_root) {
-            Ok(rel) => (rel.to_string_lossy().to_string(), rel.to_path_buf()),
-            Err(_) => (plan, plan_path),
-        }
-    } else {
-        (plan, plan_path)
-    }
-}
-
 /// Run worktree create command
 ///
 /// If `override_root` is provided, use it instead of `current_dir()`.
@@ -457,21 +444,40 @@ pub fn run_worktree_create_with_root(
         Some(root) => root.to_path_buf(),
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
-    let plan_path = PathBuf::from(&plan);
-    let (plan, plan_path) = normalize_plan_path(plan, plan_path, &repo_root);
 
-    // Check if plan file exists
-    if !repo_root.join(&plan_path).exists() {
-        if json_output {
-            println!(
-                r#"{{"error": "Plan file not found: {}"}}"#,
-                plan_path.display()
-            );
-        } else if !quiet {
-            eprintln!("error: Plan file not found: {}", plan_path.display());
+    // Resolve plan path and strip repo_root to get relative path
+    let (plan, plan_path) = match resolve_plan(&plan, &repo_root) {
+        Ok(ResolveResult::Found { path, .. }) => {
+            // Get relative path from absolute resolved path
+            let relative_path = path.strip_prefix(&repo_root).unwrap_or(&path).to_path_buf();
+            let plan_str = relative_path.to_string_lossy().to_string();
+            (plan_str, relative_path)
         }
-        return Ok(7); // Exit code 7: Plan file not found
-    }
+        Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
+            if json_output {
+                println!(r#"{{"error": "Plan file not found: {}"}}"#, plan);
+            } else if !quiet {
+                eprintln!("error: Plan file not found: {}", plan);
+            }
+            return Ok(7);
+        }
+        Err(TugError::NotInitialized) => {
+            if json_output {
+                println!(r#"{{"error": ".tugtool directory not initialized"}}"#);
+            } else if !quiet {
+                eprintln!("error: .tugtool directory not initialized");
+            }
+            return Ok(9);
+        }
+        Err(e) => {
+            if json_output {
+                println!(r#"{{"error": "Resolution failed: {}"}}"#, e);
+            } else if !quiet {
+                eprintln!("error: Resolution failed: {}", e);
+            }
+            return Ok(e.exit_code());
+        }
+    };
 
     // Pre-flight validation (unless --skip-validation is used)
     if !skip_validation {
@@ -1392,51 +1398,6 @@ mod tests {
                 || long_about.to_string().contains("rollback"),
             "create help should explain atomic behavior"
         );
-    }
-
-    #[test]
-    fn test_normalize_plan_path_absolute_strips_prefix() {
-        use std::path::PathBuf;
-
-        let repo_root = PathBuf::from("/abs/path");
-        let plan = "/abs/path/.tugtool/tugplan-1.md".to_string();
-        let plan_path = PathBuf::from(&plan);
-
-        let (normalized_plan, normalized_path) = normalize_plan_path(plan, plan_path, &repo_root);
-
-        assert_eq!(normalized_plan, ".tugtool/tugplan-1.md");
-        assert_eq!(normalized_path, PathBuf::from(".tugtool/tugplan-1.md"));
-    }
-
-    #[test]
-    fn test_normalize_plan_path_relative_unchanged() {
-        use std::path::PathBuf;
-
-        let repo_root = PathBuf::from("/abs/path");
-        let plan = ".tugtool/tugplan-1.md".to_string();
-        let plan_path = PathBuf::from(&plan);
-
-        let (normalized_plan, normalized_path) =
-            normalize_plan_path(plan.clone(), plan_path.clone(), &repo_root);
-
-        assert_eq!(normalized_plan, plan);
-        assert_eq!(normalized_path, plan_path);
-    }
-
-    #[test]
-    fn test_normalize_plan_path_absolute_no_prefix_match() {
-        use std::path::PathBuf;
-
-        let repo_root = PathBuf::from("/abs/path");
-        let plan = "/other/path/.tugtool/tugplan-1.md".to_string();
-        let plan_path = PathBuf::from(&plan);
-
-        let (normalized_plan, normalized_path) =
-            normalize_plan_path(plan.clone(), plan_path.clone(), &repo_root);
-
-        // Should return original path unchanged (fallback behavior)
-        assert_eq!(normalized_plan, plan);
-        assert_eq!(normalized_path, plan_path);
     }
 
     #[test]

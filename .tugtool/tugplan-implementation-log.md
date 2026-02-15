@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-15T14:55:04Z
+bead: tugtool-5zv.3
+---
+
+## #step-2: Replaced 8 duplicated resolve_file_path/normalize_plan_path functions in status.rs, validate.rs, beads/sync.rs, beads/status.rs, beads/pull.rs, beads/link.rs, merge.rs, and worktree.rs with calls to unified resolve_plan() from tugtool-core. Deleted all old functions and their tests. All 376 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-5.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-15T14:40:32Z
 bead: tugtool-5zv.2

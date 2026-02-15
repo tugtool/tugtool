@@ -4,7 +4,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use tugtool_core::{BeadsCli, Config, TugError, TugPlan, find_project_root, parse_tugplan};
+use tugtool_core::{
+    BeadsCli, Config, ResolveResult, TugError, TugPlan, find_project_root, parse_tugplan,
+    resolve_plan,
+};
 
 use crate::output::{JsonIssue, JsonResponse};
 
@@ -89,16 +92,27 @@ pub fn run_sync(opts: SyncOptions) -> Result<i32, String> {
     }
 
     // Resolve file path
-    let path = resolve_file_path(&project_root, &file);
-    if !path.exists() {
-        return output_error(
-            json_output,
-            "E002",
-            &format!("file not found: {}", file),
-            &file,
-            2,
-        );
-    }
+    let path = match resolve_plan(&file, &project_root) {
+        Ok(ResolveResult::Found { path, .. }) => path,
+        Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
+            return output_error(
+                json_output,
+                "E002",
+                &format!("file not found: {}", file),
+                &file,
+                2,
+            );
+        }
+        Err(e) => {
+            return output_error(
+                json_output,
+                e.code(),
+                &format!("Resolution failed: {}", e),
+                &file,
+                e.exit_code(),
+            );
+        }
+    };
 
     // Read and parse the plan
     let content = match fs::read_to_string(&path) {
@@ -640,32 +654,6 @@ fn sync_dependencies(
     }
 
     Ok(added)
-}
-
-/// Resolve file path relative to project
-fn resolve_file_path(project_root: &Path, file: &str) -> std::path::PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
-        project_root.join(file)
-    } else if file.starts_with("tugplan-") && file.ends_with(".md") {
-        project_root.join(".tugtool").join(file)
-    } else if file.ends_with(".md") {
-        // Try as-is first
-        let as_is = project_root.join(file);
-        if as_is.exists() {
-            as_is
-        } else {
-            project_root
-                .join(".tugtool")
-                .join(format!("tugplan-{}", file))
-        }
-    } else {
-        project_root
-            .join(".tugtool")
-            .join(format!("tugplan-{}.md", file))
-    }
 }
 
 /// Resolve step references and expand decision IDs to titles

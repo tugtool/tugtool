@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tugtool_core::{
-    derive_tugplan_slug, find_worktree_by_tugplan, list_tugtool_branches, list_worktrees,
-    remove_worktree,
+    ResolveResult, TugError, derive_tugplan_slug, find_worktree_by_tugplan,
+    list_tugtool_branches, list_worktrees, remove_worktree, resolve_plan,
 };
 
 /// JSON output for merge command
@@ -697,20 +697,6 @@ fn try_auto_resolve_conflicts(repo_root: &Path) -> Result<bool, String> {
 }
 
 /// Normalize tugplan path input to a relative path like `.tugtool/tugplan-N.md`
-fn normalize_plan_path(input: &str) -> PathBuf {
-    let s = input.strip_prefix("./").unwrap_or(input);
-    if s.starts_with(".tugtool/") {
-        PathBuf::from(s)
-    } else if s.starts_with("tugplan-") {
-        PathBuf::from(format!(".tugtool/{}", s))
-    } else if s.starts_with("plan-") && s.ends_with(".md") {
-        let name = &s[5..s.len() - 3];
-        PathBuf::from(format!(".tugtool/tugplan-{}.md", name))
-    } else {
-        PathBuf::from(format!(".tugtool/{}", s))
-    }
-}
-
 /// Save infrastructure files to a temporary directory.
 /// Creates a temp dir at std::env::temp_dir()/tug-merge-{timestamp}-{nanos},
 /// copies files preserving relative paths including nested directories.
@@ -978,18 +964,39 @@ fn run_merge_in(
         return Err(e);
     }
 
-    // Step 1: Find the worktree via git-native discovery
-    let plan_path = normalize_plan_path(&plan);
-
-    // Check that the plan file actually exists before worktree discovery
-    if !repo_root.join(&plan_path).exists() {
-        let e = format!("Plan file not found: {}", plan_path.display());
-        let data = MergeData::error(e.clone(), dry_run);
-        if json {
-            println!("{}", serde_json::to_string_pretty(&data).unwrap());
+    // Step 1: Resolve and find the worktree via git-native discovery
+    let plan_path = match resolve_plan(&plan, &repo_root) {
+        Ok(ResolveResult::Found { path, .. }) => {
+            // Strip repo_root prefix to get relative path
+            path.strip_prefix(&repo_root)
+                .unwrap_or(&path)
+                .to_path_buf()
         }
-        return Err(e);
-    }
+        Ok(ResolveResult::NotFound) | Ok(ResolveResult::Ambiguous(_)) => {
+            let e = format!("Plan file not found: {}", plan);
+            let data = MergeData::error(e.clone(), dry_run);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&data).unwrap());
+            }
+            return Err(e);
+        }
+        Err(TugError::NotInitialized) => {
+            let e = ".tugtool directory not initialized".to_string();
+            let data = MergeData::error(e.clone(), dry_run);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&data).unwrap());
+            }
+            return Err(e);
+        }
+        Err(e) => {
+            let err_msg = format!("Resolution failed: {}", e);
+            let data = MergeData::error(err_msg.clone(), dry_run);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&data).unwrap());
+            }
+            return Err(err_msg);
+        }
+    };
 
     let discovery = match find_worktree_by_tugplan(&repo_root, &plan_path) {
         Ok(d) => d,
@@ -1869,30 +1876,6 @@ mod tests {
     }
 
     // -- normalize_plan_path tests --
-
-    #[test]
-    fn test_normalize_plan_path_already_qualified() {
-        assert_eq!(
-            normalize_plan_path(".tugtool/tugplan-1.md"),
-            PathBuf::from(".tugtool/tugplan-1.md")
-        );
-    }
-
-    #[test]
-    fn test_normalize_plan_path_bare_filename() {
-        assert_eq!(
-            normalize_plan_path("tugplan-1.md"),
-            PathBuf::from(".tugtool/tugplan-1.md")
-        );
-    }
-
-    #[test]
-    fn test_normalize_plan_path_dotslash() {
-        assert_eq!(
-            normalize_plan_path("./.tugtool/tugplan-1.md"),
-            PathBuf::from(".tugtool/tugplan-1.md")
-        );
-    }
 
     #[test]
     fn test_plan_file_not_found_error_message() {

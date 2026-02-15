@@ -2,11 +2,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use tugtool_core::{
-    BeadsCli, IssueDetails, TugPlan, find_project_root, parse_close_reason, parse_tugplan,
-    tugplan_name_from_path,
+    BeadsCli, IssueDetails, ResolveResult, TugError, TugPlan, find_project_root,
+    parse_close_reason, parse_tugplan, resolve_plan, tugplan_name_from_path,
 };
 
 use crate::output::{
@@ -69,48 +68,177 @@ pub fn run_status(
     };
 
     // Resolve file path
-    let path = resolve_file_path(&project_root, &file);
-    if !path.exists() {
-        let message = format!("file not found: {}", file);
-        if json_output {
-            let issues = vec![JsonIssue {
-                code: "E002".to_string(),
-                severity: "error".to_string(),
-                message: message.clone(),
-                file: Some(file),
-                line: None,
-                anchor: None,
-            }];
-            let response: JsonResponse<StatusData> = JsonResponse::error(
-                "status",
-                StatusData {
-                    name: String::new(),
-                    status: String::new(),
-                    progress: Progress { done: 0, total: 0 },
-                    steps: vec![],
-                    all_steps: None,
-                    completed_steps: None,
-                    remaining_steps: None,
-                    next_step: None,
-                    bead_mapping: None,
-                    dependencies: None,
-                    mode: None,
-                    plan: None,
-                    phase_title: None,
-                    total_step_count: None,
-                    completed_step_count: None,
-                    ready_step_count: None,
-                    blocked_step_count: None,
-                    bead_steps: None,
-                },
-                issues,
-            );
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
-        } else {
-            eprintln!("error: {}", message);
+    let path = match resolve_plan(&file, &project_root) {
+        Ok(ResolveResult::Found { path, .. }) => path,
+        Ok(ResolveResult::NotFound) => {
+            let message = format!("file not found: {}", file);
+            if json_output {
+                let issues = vec![JsonIssue {
+                    code: "E002".to_string(),
+                    severity: "error".to_string(),
+                    message: message.clone(),
+                    file: Some(file),
+                    line: None,
+                    anchor: None,
+                }];
+                let response: JsonResponse<StatusData> = JsonResponse::error(
+                    "status",
+                    StatusData {
+                        name: String::new(),
+                        status: String::new(),
+                        progress: Progress { done: 0, total: 0 },
+                        steps: vec![],
+                        all_steps: None,
+                        completed_steps: None,
+                        remaining_steps: None,
+                        next_step: None,
+                        bead_mapping: None,
+                        dependencies: None,
+                        mode: None,
+                        plan: None,
+                        phase_title: None,
+                        total_step_count: None,
+                        completed_step_count: None,
+                        ready_step_count: None,
+                        blocked_step_count: None,
+                        bead_steps: None,
+                    },
+                    issues,
+                );
+                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            } else {
+                eprintln!("error: {}", message);
+            }
+            return Ok(2);
         }
-        return Ok(2);
-    }
+        Ok(ResolveResult::Ambiguous(candidates)) => {
+            let message = format!(
+                "Ambiguous plan identifier '{}': matches {} plans",
+                file,
+                candidates.len()
+            );
+            if json_output {
+                let issues = vec![JsonIssue {
+                    code: "E040".to_string(),
+                    severity: "error".to_string(),
+                    message: message.clone(),
+                    file: Some(file),
+                    line: None,
+                    anchor: None,
+                }];
+                let response: JsonResponse<StatusData> = JsonResponse::error(
+                    "status",
+                    StatusData {
+                        name: String::new(),
+                        status: String::new(),
+                        progress: Progress { done: 0, total: 0 },
+                        steps: vec![],
+                        all_steps: None,
+                        completed_steps: None,
+                        remaining_steps: None,
+                        next_step: None,
+                        bead_mapping: None,
+                        dependencies: None,
+                        mode: None,
+                        plan: None,
+                        phase_title: None,
+                        total_step_count: None,
+                        completed_step_count: None,
+                        ready_step_count: None,
+                        blocked_step_count: None,
+                        bead_steps: None,
+                    },
+                    issues,
+                );
+                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            } else {
+                eprintln!("error: {}", message);
+            }
+            return Ok(2);
+        }
+        Err(TugError::NotInitialized) => {
+            let message = ".tugtool directory not initialized".to_string();
+            if json_output {
+                let issues = vec![JsonIssue {
+                    code: "E009".to_string(),
+                    severity: "error".to_string(),
+                    message: message.clone(),
+                    file: None,
+                    line: None,
+                    anchor: None,
+                }];
+                let response: JsonResponse<StatusData> = JsonResponse::error(
+                    "status",
+                    StatusData {
+                        name: String::new(),
+                        status: String::new(),
+                        progress: Progress { done: 0, total: 0 },
+                        steps: vec![],
+                        all_steps: None,
+                        completed_steps: None,
+                        remaining_steps: None,
+                        next_step: None,
+                        bead_mapping: None,
+                        dependencies: None,
+                        mode: None,
+                        plan: None,
+                        phase_title: None,
+                        total_step_count: None,
+                        completed_step_count: None,
+                        ready_step_count: None,
+                        blocked_step_count: None,
+                        bead_steps: None,
+                    },
+                    issues,
+                );
+                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            } else {
+                eprintln!("error: {}", message);
+            }
+            return Ok(9);
+        }
+        Err(e) => {
+            let message = format!("Resolution failed: {}", e);
+            if json_output {
+                let issues = vec![JsonIssue {
+                    code: e.code().to_string(),
+                    severity: "error".to_string(),
+                    message: message.clone(),
+                    file: None,
+                    line: None,
+                    anchor: None,
+                }];
+                let response: JsonResponse<StatusData> = JsonResponse::error(
+                    "status",
+                    StatusData {
+                        name: String::new(),
+                        status: String::new(),
+                        progress: Progress { done: 0, total: 0 },
+                        steps: vec![],
+                        all_steps: None,
+                        completed_steps: None,
+                        remaining_steps: None,
+                        next_step: None,
+                        bead_mapping: None,
+                        dependencies: None,
+                        mode: None,
+                        plan: None,
+                        phase_title: None,
+                        total_step_count: None,
+                        completed_step_count: None,
+                        ready_step_count: None,
+                        blocked_step_count: None,
+                        bead_steps: None,
+                    },
+                    issues,
+                );
+                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            } else {
+                eprintln!("error: {}", message);
+            }
+            return Ok(e.exit_code());
+        }
+    };
 
     // Read and parse the plan
     let content = match fs::read_to_string(&path) {
@@ -262,35 +390,6 @@ pub fn run_status(
     }
 }
 
-/// Resolve a file path relative to the project
-fn resolve_file_path(project_root: &Path, file: &str) -> PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else if file.starts_with(".tugtool/") || file.starts_with(".tugtool\\") {
-        project_root.join(file)
-    } else if file.starts_with("tugplan-") || file.ends_with(".md") {
-        // Assume it's in .tugtool/
-        let filename = if file.starts_with("tugplan-") && file.ends_with(".md") {
-            file.to_string()
-        } else if file.starts_with("tugplan-") {
-            format!("{}.md", file)
-        } else {
-            format!("tugplan-{}.md", file)
-        };
-        project_root.join(".tugtool").join(filename)
-    } else {
-        // Try as-is first
-        let as_is = project_root.join(file);
-        if as_is.exists() {
-            as_is
-        } else {
-            project_root
-                .join(".tugtool")
-                .join(format!("tugplan-{}.md", file))
-        }
-    }
-}
 
 /// Build status data from a parsed plan using checkbox counting (fallback mode)
 fn build_checkbox_status_data(plan: &TugPlan, name: &str) -> StatusData {
