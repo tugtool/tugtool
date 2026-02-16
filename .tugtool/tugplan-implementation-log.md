@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-16T00:07:01Z
+bead: tugtool-nez.6
+---
+
+## #step-5: Created CSS Grid multi-card layout with deck.css/cards.css, rewrote DeckManager with named card slots and drag-handle resize, wired all four cards in main.ts, updated build.rs for CSS bundling
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-15T23:58:12Z
 bead: tugtool-nez.5
