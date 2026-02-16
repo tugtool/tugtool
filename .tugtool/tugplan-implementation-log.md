@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-16T17:21:11Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt on crates/tugcast/build.rs to collapse multi-line chain per rustfmt
+
+**Files changed:**
+- .tugtool/tugplan-bun-pivot.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-16T17:16:17Z
 bead: tugtool-icp.2

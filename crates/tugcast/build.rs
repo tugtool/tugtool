@@ -14,9 +14,7 @@ fn main() {
     let tugdeck_dir = repo_root.join("tugdeck");
 
     // Check that Bun is installed
-    let bun_check = Command::new("bun")
-        .arg("--version")
-        .output();
+    let bun_check = Command::new("bun").arg("--version").output();
     if bun_check.is_err() || !bun_check.unwrap().status.success() {
         panic!("Bun is required to build tugdeck. Install it from https://bun.sh");
     }
