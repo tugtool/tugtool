@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-16T19:15:54Z
+bead: tugtool-zlm.4
+---
+
+## #step-3: Removed --open flag from tugcast: deleted open field from Cli, open_browser from server.rs, if cli.open from main.rs. Updated long_about, fixed tracing import, updated 6 tests, added test_open_flag_rejected. 508 workspace tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugcode-launcher.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-16T19:09:54Z
 bead: tugtool-zlm.3

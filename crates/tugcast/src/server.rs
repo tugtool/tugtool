@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
 use tokio::net::TcpListener;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::auth::SharedAuthState;
 use crate::router::FeedRouter;
@@ -89,29 +89,6 @@ pub async fn run_server(
     info!(port = port, "tugcast server listening");
 
     axum::serve(listener, app).await
-}
-
-/// Open a URL in the default browser
-pub fn open_browser(url: &str) {
-    #[cfg(target_os = "macos")]
-    let command = "open";
-
-    #[cfg(target_os = "linux")]
-    let command = "xdg-open";
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        error!("Browser auto-open not supported on this platform");
-        return;
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        match std::process::Command::new(command).arg(url).spawn() {
-            Ok(_) => info!("Opened browser to {}", url),
-            Err(e) => error!("Failed to open browser: {}", e),
-        }
-    }
 }
 
 #[cfg(test)]

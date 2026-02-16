@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[command(version)]
 #[command(
     about = "Attach to a tmux session and serve a live dashboard over WebSocket",
-    long_about = "tugcast attaches to a tmux session and serves a live dashboard over WebSocket.\n\nIt provides real-time terminal output, filesystem events, git status, and system\nstats to the tugdeck browser frontend. Multiple data feeds run concurrently:\nterminal I/O, filesystem watching, git polling, and stats collection.\n\nUsage:\n  tugcast                        Start with defaults (session: cc0, port: 7890)\n  tugcast --session dev --port 8080  Custom session and port\n  tugcast --dir /path/to/project     Watch a specific directory\n  tugcast --open                     Auto-open browser after starting"
+    long_about = "tugcast attaches to a tmux session and serves a live dashboard over WebSocket.\n\nIt provides real-time terminal output, filesystem events, git status, and system\nstats to the tugdeck browser frontend. Multiple data feeds run concurrently:\nterminal I/O, filesystem watching, git polling, and stats collection.\n\nUsage:\n  tugcast                        Start with defaults (session: cc0, port: 7890)\n  tugcast --session dev --port 8080  Custom session and port\n  tugcast --dir /path/to/project     Watch a specific directory"
 )]
 pub struct Cli {
     /// Tmux session name to attach to (created if it doesn't exist)
@@ -21,10 +21,6 @@ pub struct Cli {
     /// Working directory for the tmux session
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
-
-    /// Automatically open the browser after starting
-    #[arg(long, default_value_t = false)]
-    pub open: bool,
 }
 
 impl Cli {
@@ -44,7 +40,6 @@ mod tests {
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 7890);
         assert_eq!(cli.dir, PathBuf::from("."));
-        assert!(!cli.open);
     }
 
     #[test]
@@ -68,12 +63,6 @@ mod tests {
     }
 
     #[test]
-    fn test_open_flag() {
-        let cli = Cli::try_parse_from(["tugcast", "--open"]).unwrap();
-        assert!(cli.open);
-    }
-
-    #[test]
     fn test_all_overrides() {
         let cli = Cli::try_parse_from([
             "tugcast",
@@ -83,13 +72,11 @@ mod tests {
             "9000",
             "--dir",
             "/workspace",
-            "--open",
         ])
         .unwrap();
         assert_eq!(cli.session, "test");
         assert_eq!(cli.port, 9000);
         assert_eq!(cli.dir, PathBuf::from("/workspace"));
-        assert!(cli.open);
     }
 
     #[test]
@@ -123,7 +110,6 @@ mod tests {
         );
         assert!(help_text.contains("--port"), "help should contain --port");
         assert!(help_text.contains("--dir"), "help should contain --dir");
-        assert!(help_text.contains("--open"), "help should contain --open");
         assert!(
             help_text.contains("--version"),
             "help should contain --version"
@@ -140,5 +126,12 @@ mod tests {
             version_text.contains(env!("CARGO_PKG_VERSION")),
             "version output should contain the package version"
         );
+    }
+
+    #[test]
+    fn test_open_flag_rejected() {
+        // --open flag was removed; verify it is no longer recognized
+        let result = Cli::try_parse_from(["tugcast", "--open"]);
+        assert!(result.is_err(), "--open should no longer be a valid flag");
     }
 }
