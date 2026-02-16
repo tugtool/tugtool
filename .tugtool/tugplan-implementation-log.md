@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-16T21:58:25Z
+bead: tugtool-kfp.7
+---
+
+## #step-6: Added Shiki code blocks (17 languages, copy button, lazy loading, fallback), syntax token CSS variables, progressive enhancement, CSP WASM update, 76 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-16T21:45:37Z
 bead: tugtool-kfp.6

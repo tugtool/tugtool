@@ -13,7 +13,7 @@ global.document = window.document as any;
 global.DOMParser = window.DOMParser as any;
 
 // Now import the module that uses DOMPurify
-import { renderMarkdown, SANITIZE_CONFIG } from "./message-renderer";
+import { renderMarkdown, enhanceCodeBlocks, SANITIZE_CONFIG } from "./message-renderer";
 
 describe("message-renderer", () => {
   describe("basic Markdown rendering", () => {
@@ -290,6 +290,62 @@ code block
       for (const attr of events) {
         expect(SANITIZE_CONFIG.FORBID_ATTR).toContain(attr);
       }
+    });
+  });
+
+  describe("enhanceCodeBlocks", () => {
+    test("function completes without throwing", async () => {
+      const container = document.createElement("div");
+      container.innerHTML = '<pre><code class="language-javascript">const x = 1;</code></pre>';
+
+      // Should not throw even if Shiki fails to load in test environment
+      await expect(enhanceCodeBlocks(container)).resolves.toBeUndefined();
+    });
+
+    test("preserves original pre element if enhancement fails", async () => {
+      const container = document.createElement("div");
+      container.innerHTML = '<pre><code>plain text</code></pre>';
+
+      await enhanceCodeBlocks(container);
+
+      // Either enhanced or left as-is - content should be preserved
+      expect(container.textContent).toContain("plain text");
+    });
+
+    test("preserves code content", async () => {
+      const code = "function test() { return 42; }";
+      const container = document.createElement("div");
+      container.innerHTML = `<pre><code class="language-javascript">${code}</code></pre>`;
+
+      await enhanceCodeBlocks(container);
+
+      // Content must be preserved regardless of enhancement success
+      expect(container.textContent).toContain(code);
+    });
+
+    test("handles multiple code blocks without errors", async () => {
+      const container = document.createElement("div");
+      container.innerHTML = `
+        <pre><code class="language-python">print('hello')</code></pre>
+        <p>Some text</p>
+        <pre><code class="language-rust">fn main() {}</code></pre>
+      `;
+
+      // Should not throw
+      await expect(enhanceCodeBlocks(container)).resolves.toBeUndefined();
+
+      // Text paragraph should be preserved
+      expect(container.querySelector("p")?.textContent).toBe("Some text");
+    });
+
+    test("does not affect non-code elements", async () => {
+      const container = document.createElement("div");
+      container.innerHTML = '<p>Normal text</p><strong>Bold</strong>';
+
+      await enhanceCodeBlocks(container);
+
+      expect(container.querySelector("p")?.textContent).toBe("Normal text");
+      expect(container.querySelector("strong")?.textContent).toBe("Bold");
     });
   });
 });

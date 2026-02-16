@@ -16,7 +16,8 @@
     "dompurify": "^3.2.2",
     "isomorphic-dompurify": "^3.0.0-rc.2",
     "lucide": "^0.564.0",
-    "marked": "^15.0.6"
+    "marked": "^15.0.6",
+    "shiki": "^3.22.0"
   },
   "devDependencies": {
     "@types/dompurify": "^3.2.0",

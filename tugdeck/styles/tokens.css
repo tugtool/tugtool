@@ -62,4 +62,32 @@
   --chart-3: var(--palette-yellow);
   --chart-4: var(--palette-red);
   --chart-5: var(--palette-purple);
+
+  /* Syntax highlighting tokens */
+  --syntax-keyword: var(--palette-blue-2);
+  --syntax-string: var(--palette-orange);
+  --syntax-number: var(--palette-green);
+  --syntax-function: var(--palette-yellow);
+  --syntax-type: var(--palette-green);
+  --syntax-variable: var(--palette-blue-3);
+  --syntax-comment: var(--palette-gray-5);
+  --syntax-operator: var(--foreground);
+  --syntax-punctuation: var(--foreground);
+  --syntax-constant: var(--palette-blue-3);
+  --syntax-decorator: var(--palette-purple);
+  --syntax-tag: var(--palette-blue-2);
+  --syntax-attribute: var(--palette-blue-3);
+
+  /* Shiki CSS variables theme bridge */
+  --syntax-foreground: var(--foreground);
+  --syntax-background: var(--muted);
+  --syntax-token-keyword: var(--syntax-keyword);
+  --syntax-token-string: var(--syntax-string);
+  --syntax-token-comment: var(--syntax-comment);
+  --syntax-token-function: var(--syntax-function);
+  --syntax-token-constant: var(--syntax-constant);
+  --syntax-token-punctuation: var(--syntax-punctuation);
+  --syntax-token-parameter: var(--syntax-variable);
+  --syntax-token-string-expression: var(--syntax-string);
+  --syntax-token-link: var(--syntax-keyword);
 }

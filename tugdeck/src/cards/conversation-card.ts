@@ -14,7 +14,7 @@ import {
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
 import type { DeckManager } from "../deck";
-import { renderMarkdown } from "./conversation/message-renderer";
+import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-renderer";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -156,6 +156,11 @@ export class ConversationCard implements TugCard {
 
     // Update text content with Markdown rendering
     msgEl.innerHTML = renderMarkdown(event.text);
+
+    // Enhance code blocks with syntax highlighting (async, fire-and-forget)
+    enhanceCodeBlocks(msgEl).catch(error => {
+      console.error("Failed to enhance code blocks:", error);
+    });
 
     // Add status indicator for partial
     if (event.is_partial) {

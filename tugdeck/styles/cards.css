@@ -490,3 +490,83 @@
   max-width: 100%;
   border-radius: var(--radius);
 }
+
+/* Code block container styles */
+.code-block-container {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0.75em 0;
+}
+
+.code-block-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+
+.code-block-language {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-transform: uppercase;
+}
+
+.code-block-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s;
+}
+
+.code-block-copy-btn:hover {
+  color: var(--foreground);
+}
+
+.code-block-copy-btn.copied {
+  color: var(--success);
+}
+
+.code-block-code {
+  overflow-x: auto;
+  padding: 12px;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.code-block-code pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.code-block-code code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.code-block-fallback {
+  overflow-x: auto;
+  padding: 12px;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+}

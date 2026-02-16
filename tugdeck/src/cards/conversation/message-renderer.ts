@@ -4,6 +4,7 @@
 
 import { marked } from "marked";
 import DOMPurify from "isomorphic-dompurify";
+import { renderCodeBlock } from "./code-block";
 
 // Configure marked with GitHub-Flavored Markdown
 marked.setOptions({
@@ -40,4 +41,36 @@ export function renderMarkdown(text: string): string {
 
   // Wrap in conversation-prose container
   return `<div class="conversation-prose">${clean}</div>`;
+}
+
+/**
+ * Enhance code blocks with Shiki syntax highlighting
+ * Finds all pre > code elements and replaces them with enhanced code blocks
+ */
+export async function enhanceCodeBlocks(container: HTMLElement): Promise<void> {
+  const codeElements = container.querySelectorAll("pre > code");
+
+  for (const codeEl of Array.from(codeElements)) {
+    const preEl = codeEl.parentElement;
+    if (!preEl) continue;
+
+    // Extract language from class (marked adds language-* classes)
+    const classList = Array.from(codeEl.classList);
+    const langClass = classList.find(cls => cls.startsWith("language-"));
+    const language = langClass ? langClass.replace("language-", "") : "text";
+
+    // Extract code content
+    const code = codeEl.textContent || "";
+
+    try {
+      // Render enhanced code block
+      const enhancedBlock = await renderCodeBlock(code, language);
+
+      // Replace the pre element with enhanced block
+      preEl.replaceWith(enhancedBlock);
+    } catch (error) {
+      console.error("Failed to enhance code block:", error);
+      // Leave original block in place on error
+    }
+  }
 }
