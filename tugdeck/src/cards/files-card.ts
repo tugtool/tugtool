@@ -4,6 +4,7 @@
  * Displays filesystem events as a scrolling log.
  */
 
+import { createElement, FilePlus, FilePen, FileX, FileSymlink } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
 import { TugCard } from "./card";
 
@@ -63,10 +64,16 @@ export class FilesCard implements TugCard {
       const entry = document.createElement("div");
       entry.className = `event-entry event-${event.kind.toLowerCase()}`;
 
-      const icon = this.iconForKind(event.kind);
-      const label = this.labelForEvent(event);
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "event-icon";
+      iconSpan.appendChild(this.iconForKind(event.kind));
 
-      entry.innerHTML = `<span class="event-icon">${icon}</span><span class="event-label">${label}</span>`;
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "event-label";
+      labelSpan.textContent = this.labelForEvent(event);
+
+      entry.appendChild(iconSpan);
+      entry.appendChild(labelSpan);
       el.appendChild(entry);
     }
 
@@ -94,18 +101,18 @@ export class FilesCard implements TugCard {
     }
   }
 
-  private iconForKind(kind: string): string {
+  private iconForKind(kind: string): Element {
     switch (kind) {
       case "Created":
-        return "+";
+        return createElement(FilePlus, { width: 14, height: 14 });
       case "Modified":
-        return "~";
+        return createElement(FilePen, { width: 14, height: 14 });
       case "Removed":
-        return "-";
+        return createElement(FileX, { width: 14, height: 14 });
       case "Renamed":
-        return ">";
+        return createElement(FileSymlink, { width: 14, height: 14 });
       default:
-        return "?";
+        return createElement(FileX, { width: 14, height: 14 });
     }
   }
 

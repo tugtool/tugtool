@@ -24,10 +24,11 @@
   border: none;
   color: var(--muted-foreground);
   cursor: pointer;
-  font-size: 14px;
-  font-family: monospace;
   padding: 0 4px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-header .collapse-btn:hover {
@@ -62,9 +63,10 @@
 
 .files-card .event-icon {
   width: 14px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  font-weight: bold;
 }
 
 .files-card .event-label {
@@ -151,9 +153,10 @@
 
 .git-card .file-status {
   width: 14px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  font-weight: bold;
 }
 
 .git-card .file-path {
@@ -249,4 +252,11 @@
 
 .card-slot-stats {
   border-top: 1px solid var(--border);
+}
+
+/* SVG icon display to prevent inline spacing issues */
+.event-icon svg,
+.file-status svg,
+.collapse-btn svg {
+  display: block;
 }

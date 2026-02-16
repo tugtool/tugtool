@@ -5,6 +5,7 @@
  * Phase 3: Card collapse/expand and layout persistence
  */
 
+import { createElement, ChevronUp, ChevronDown } from "lucide";
 import { FeedIdValue } from "./protocol";
 import { TugCard } from "./cards/card";
 import { TugConnection } from "./connection";
@@ -106,7 +107,10 @@ export class DeckManager {
         if (header) {
           const btn = document.createElement("button");
           btn.className = "collapse-btn";
-          btn.textContent = this.collapsedSlots.has(slot) ? "+" : "-";
+          const icon = this.collapsedSlots.has(slot)
+            ? createElement(ChevronDown, { width: 14, height: 14 })
+            : createElement(ChevronUp, { width: 14, height: 14 });
+          btn.appendChild(icon);
           btn.addEventListener("click", () => this.toggleCollapse(slot));
           header.appendChild(btn);
 
@@ -144,10 +148,11 @@ export class DeckManager {
 
     slotEl.classList.add("collapsed");
 
-    // Update button text
+    // Update button icon
     const btn = slotEl.querySelector(".collapse-btn");
     if (btn) {
-      btn.textContent = "+";
+      btn.innerHTML = "";
+      btn.appendChild(createElement(ChevronDown, { width: 14, height: 14 }));
     }
 
     this.updateGridTracks();
@@ -159,10 +164,11 @@ export class DeckManager {
 
     slotEl.classList.remove("collapsed");
 
-    // Update button text
+    // Update button icon
     const btn = slotEl.querySelector(".collapse-btn");
     if (btn) {
-      btn.textContent = "-";
+      btn.innerHTML = "";
+      btn.appendChild(createElement(ChevronUp, { width: 14, height: 14 }));
     }
 
     this.updateGridTracks();

@@ -4,6 +4,7 @@
  * Displays process info, token usage, and build status with sparkline charts.
  */
 
+import { createElement, Activity, Coins, Hammer } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
 import { TugCard } from "./card";
 
@@ -100,7 +101,7 @@ class SubCard {
   private sparkline: Sparkline;
   private canvas: HTMLCanvasElement;
 
-  constructor(name: string, color: string, bufferSize: number = 60) {
+  constructor(name: string, color: string, bufferSize: number = 60, icon?: object) {
     // Create container
     this.container = document.createElement("div");
     this.container.className = "stat-sub-card";
@@ -109,15 +110,26 @@ class SubCard {
     const header = document.createElement("div");
     header.className = "stat-header";
 
+    // Create name group (icon + name) to preserve two-child layout for space-between
+    const nameGroup = document.createElement("span");
+    nameGroup.style.display = "flex";
+    nameGroup.style.alignItems = "center";
+    nameGroup.style.gap = "4px";
+
+    if (icon) {
+      nameGroup.appendChild(createElement(icon as any, { width: 12, height: 12 }));
+    }
+
     this.nameSpan = document.createElement("span");
     this.nameSpan.className = "stat-name";
     this.nameSpan.textContent = name;
+    nameGroup.appendChild(this.nameSpan);
 
     this.valueSpan = document.createElement("span");
     this.valueSpan.className = "stat-value";
     this.valueSpan.textContent = "--";
 
-    header.appendChild(this.nameSpan);
+    header.appendChild(nameGroup);
     header.appendChild(this.valueSpan);
 
     // Create sparkline canvas
@@ -193,13 +205,13 @@ export class StatsCard implements TugCard {
     this.container.appendChild(this.content);
 
     // Create sub-cards
-    this.processInfo = new SubCard("CPU / Memory", getCSSToken("--chart-1"));
+    this.processInfo = new SubCard("CPU / Memory", getCSSToken("--chart-1"), 60, Activity);
     this.processInfo.mount(this.content);
 
-    this.tokenUsage = new SubCard("Token Usage", getCSSToken("--chart-2"));
+    this.tokenUsage = new SubCard("Token Usage", getCSSToken("--chart-2"), 60, Coins);
     this.tokenUsage.mount(this.content);
 
-    this.buildStatus = new SubCard("Build Status", getCSSToken("--chart-3"));
+    this.buildStatus = new SubCard("Build Status", getCSSToken("--chart-3"), 60, Hammer);
     this.buildStatus.mount(this.content);
   }
 

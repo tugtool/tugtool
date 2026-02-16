@@ -4,6 +4,7 @@
  * Displays git repository status: branch, ahead/behind, staged/unstaged/untracked files.
  */
 
+import { createElement, GitBranch, CircleCheck, CircleDot, CircleDashed } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
 import { TugCard } from "./card";
 
@@ -84,6 +85,10 @@ export class GitCard implements TugCard {
     const branchSection = document.createElement("div");
     branchSection.className = "branch-section";
 
+    const branchIcon = createElement(GitBranch, { width: 14, height: 14 });
+    (branchIcon as HTMLElement).style.color = "var(--muted-foreground)";
+    branchSection.appendChild(branchIcon);
+
     const branchBadge = document.createElement("span");
     branchBadge.className = "branch-badge";
     branchBadge.textContent = status.branch;
@@ -152,7 +157,20 @@ export class GitCard implements TugCard {
     for (const file of files) {
       const entry = document.createElement("div");
       entry.className = "file-entry";
-      entry.innerHTML = `<span class="file-status">${file.status}</span><span class="file-path">${file.path}</span>`;
+
+      const statusSpan = document.createElement("span");
+      statusSpan.className = "file-status";
+      const icon = className === "staged"
+        ? createElement(CircleCheck, { width: 14, height: 14 })
+        : createElement(CircleDot, { width: 14, height: 14 });
+      statusSpan.appendChild(icon);
+
+      const pathSpan = document.createElement("span");
+      pathSpan.className = "file-path";
+      pathSpan.textContent = file.path;
+
+      entry.appendChild(statusSpan);
+      entry.appendChild(pathSpan);
       section.appendChild(entry);
     }
 
@@ -173,7 +191,17 @@ export class GitCard implements TugCard {
     for (const path of paths) {
       const entry = document.createElement("div");
       entry.className = "file-entry";
-      entry.innerHTML = `<span class="file-status">?</span><span class="file-path">${path}</span>`;
+
+      const statusSpan = document.createElement("span");
+      statusSpan.className = "file-status";
+      statusSpan.appendChild(createElement(CircleDashed, { width: 14, height: 14 }));
+
+      const pathSpan = document.createElement("span");
+      pathSpan.className = "file-path";
+      pathSpan.textContent = path;
+
+      entry.appendChild(statusSpan);
+      entry.appendChild(pathSpan);
       section.appendChild(entry);
     }
 
