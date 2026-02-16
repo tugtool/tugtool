@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-16T21:14:58Z
+bead: tugtool-kfp.4
+---
+
+## #step-3: Added conversation feed IDs to tugdeck protocol, conversation message types (Spec S01/S02/S04), MessageOrderingBuffer (seq ordering, dedup, gap timeout), first tugdeck test infrastructure, 19 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-16T21:04:35Z
 bead: tugtool-kfp.3
