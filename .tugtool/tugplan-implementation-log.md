@@ -10,6 +10,44 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-16T17:21:11Z
+---
+
+## audit-fix: Audit fix: ran cargo fmt on crates/tugcast/build.rs to collapse multi-line chain per rustfmt
+
+**Files changed:**
+- .tugtool/tugplan-bun-pivot.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-16T17:16:17Z
+bead: tugtool-icp.2
+---
+
+## #step-1: Updated CI and release workflows: added oven-sh/setup-bun@v2 with pinned 1.3.x, node_modules cache keyed by bun.lock, and bun install --frozen-lockfile to build/clippy/release jobs
+
+**Files changed:**
+- .tugtool/tugplan-bun-pivot.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-16T17:10:53Z
+bead: tugtool-icp.1
+---
+
+## #step-0: Replaced npm/esbuild with Bun: updated build.rs (bun existence check, bun install, bun build), updated package.json scripts, removed devDependencies, deleted package-lock.json, generated bun.lock
+
+**Files changed:**
+- .tugtool/tugplan-bun-pivot.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-16T02:32:47Z
 ---
 

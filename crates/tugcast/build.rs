@@ -13,34 +13,38 @@ fn main() {
     let repo_root = manifest_dir.parent().unwrap().parent().unwrap();
     let tugdeck_dir = repo_root.join("tugdeck");
 
-    // Run npm install if node_modules doesn't exist
+    // Check that Bun is installed
+    let bun_check = Command::new("bun").arg("--version").output();
+    if bun_check.is_err() || !bun_check.unwrap().status.success() {
+        panic!("Bun is required to build tugdeck. Install it from https://bun.sh");
+    }
+
+    // Run bun install if node_modules doesn't exist
     if !tugdeck_dir.join("node_modules").exists() {
-        let status = Command::new("npm")
+        let status = Command::new("bun")
             .arg("install")
             .current_dir(&tugdeck_dir)
             .status()
-            .expect("failed to run npm install -- is Node.js installed?");
+            .expect("failed to run bun install -- is Bun installed? Install from https://bun.sh");
         if !status.success() {
-            panic!("npm install failed");
+            panic!("bun install failed");
         }
     }
 
-    // Run esbuild to bundle main.ts -> app.js
+    // Run bun build to bundle main.ts -> app.js
     let app_js = tugdeck_out.join("app.js");
-    let status = Command::new("npx")
+    let status = Command::new("bun")
         .args([
-            "esbuild",
+            "build",
             "src/main.ts",
-            "--bundle",
             &format!("--outfile={}", app_js.display()),
             "--minify",
-            "--target=es2020",
         ])
         .current_dir(&tugdeck_dir)
         .status()
-        .expect("failed to run esbuild -- is npx available?");
+        .expect("failed to run bun build");
     if !status.success() {
-        panic!("esbuild bundling failed");
+        panic!("bun build failed");
     }
 
     // Copy index.html to output
