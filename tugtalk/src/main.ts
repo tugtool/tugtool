@@ -10,6 +10,7 @@ import {
   isInterrupt,
   isPermissionMode,
 } from "./types.ts";
+import { SessionManager } from "./session.ts";
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -27,7 +28,7 @@ console.error = (...args: unknown[]) => {
 };
 
 // Parse CLI arguments
-let projectDir: string | undefined;
+let projectDir: string = process.cwd();
 const args = Bun.argv.slice(2); // Skip bun and script path
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--dir" && i + 1 < args.length) {
@@ -36,10 +37,10 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-console.log(`Starting tugtalk (projectDir: ${projectDir || "none"})`);
+console.log(`Starting tugtalk (projectDir: ${projectDir})`);
 
-// Session state (will be used in Step 1)
-let sessionId: string | null = null;
+// Session manager (initialized after protocol handshake)
+let sessionManager: SessionManager | null = null;
 
 // IPC loop
 async function main() {
@@ -55,29 +56,47 @@ async function main() {
         process.exit(1);
       }
 
-      // Generate a session ID for the handshake (real session creation in Step 1)
-      sessionId = crypto.randomUUID();
+      // Create session manager and initialize SDK session
+      sessionManager = new SessionManager(projectDir);
 
+      // Send protocol_ack first (with placeholder session_id)
       writeLine({
         type: "protocol_ack",
         version: 1,
-        session_id: sessionId,
+        session_id: "pending", // Will be replaced by session_init
+      });
+
+      // Initialize session (async - will emit session_init when ready)
+      sessionManager.initialize().catch((err) => {
+        console.error("Session initialization failed:", err);
+        writeLine({
+          type: "error",
+          message: `Session initialization failed: ${err}`,
+          recoverable: false,
+        });
+        process.exit(1);
       });
     } else if (isUserMessage(msg)) {
-      // TODO: implement in Step 1
-      console.log("Received user_message (not yet handled)");
+      if (sessionManager) {
+        sessionManager.handleUserMessage(msg).catch((err) => {
+          console.error("handleUserMessage failed:", err);
+          writeLine({
+            type: "error",
+            message: `Failed to handle user message: ${err}`,
+            recoverable: true,
+          });
+        });
+      } else {
+        console.error("User message received before session initialized");
+      }
     } else if (isToolApproval(msg)) {
-      // TODO: implement in Step 1
-      console.log("Received tool_approval (not yet handled)");
+      sessionManager?.handleToolApproval(msg);
     } else if (isQuestionAnswer(msg)) {
-      // TODO: implement in Step 1
-      console.log("Received question_answer (not yet handled)");
+      sessionManager?.handleQuestionAnswer(msg);
     } else if (isInterrupt(msg)) {
-      // TODO: implement in Step 1
-      console.log("Received interrupt (not yet handled)");
+      sessionManager?.handleInterrupt();
     } else if (isPermissionMode(msg)) {
-      // TODO: implement in Step 1
-      console.log(`Received permission_mode: ${msg.mode} (not yet handled)`);
+      sessionManager?.handlePermissionMode(msg);
     }
   }
 }

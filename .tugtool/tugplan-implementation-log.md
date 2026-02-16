@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-16T20:23:02Z
+bead: tugtool-kfp.2
+---
+
+## #step-1: Added session.ts (lifecycle, streaming, tool approval/question flows), permissions.ts (4 modes, dynamic switching), real SDK adapter, main.ts IPC wiring, 30 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-16T20:11:40Z
 bead: tugtool-kfp.1

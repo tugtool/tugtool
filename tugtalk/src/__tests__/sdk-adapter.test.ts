@@ -13,42 +13,36 @@ describe("sdk-adapter.ts", () => {
     expect(typeof adapter.setPermissionMode).toBe("function");
   });
 
-  test("createSession throws not implemented (Step 1)", async () => {
+  test("createSession returns AdapterSession (requires API key)", async () => {
+    // This test requires ANTHROPIC_API_KEY environment variable
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.log("Skipping createSession test (no API key)");
+      return;
+    }
+
     const adapter = createSDKAdapter();
-    await expect(adapter.createSession({ model: "claude-opus-4-20250514" })).rejects.toThrow(
-      "not yet implemented"
-    );
+    const session = await adapter.createSession({
+      model: "claude-opus-4-20250514",
+      cwd: process.cwd(),
+    });
+
+    expect(session).toBeDefined();
+    expect(typeof session.send).toBe("function");
+    expect(typeof session.stream).toBe("function");
+    expect(typeof session.close).toBe("function");
+
+    // Clean up
+    session.close();
   });
 
-  test("resumeSession throws not implemented (Step 1)", async () => {
+  test("deprecated methods throw helpful errors", async () => {
     const adapter = createSDKAdapter();
-    await expect(
-      adapter.resumeSession("test-session-id", { model: "claude-opus-4-20250514" })
-    ).rejects.toThrow("not yet implemented");
-  });
 
-  test("sendMessage throws not implemented (Step 1)", async () => {
-    const adapter = createSDKAdapter();
-    await expect(adapter.sendMessage("test-id", "hello")).rejects.toThrow(
-      "not yet implemented"
-    );
-  });
-
-  test("streamResponse throws not implemented (Step 1)", async () => {
-    const adapter = createSDKAdapter();
-    const gen = adapter.streamResponse("test-id");
-    await expect(gen.next()).rejects.toThrow("not yet implemented");
-  });
-
-  test("cancelTurn throws not implemented (Step 1)", async () => {
-    const adapter = createSDKAdapter();
-    await expect(adapter.cancelTurn("test-id")).rejects.toThrow("not yet implemented");
-  });
-
-  test("setPermissionMode throws not implemented (Step 1)", async () => {
-    const adapter = createSDKAdapter();
+    await expect(adapter.sendMessage("test-id", "hello")).rejects.toThrow("deprecated");
+    await expect(adapter.streamResponse("test-id").next()).rejects.toThrow("deprecated");
+    await expect(adapter.cancelTurn("test-id")).rejects.toThrow("deprecated");
     await expect(adapter.setPermissionMode("test-id", "default")).rejects.toThrow(
-      "not yet implemented"
+      "deprecated"
     );
   });
 });
