@@ -6,14 +6,13 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::timeout;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-static AUTH_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"tugcast:\s+(http://\S+)").unwrap()
-});
+static AUTH_URL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"tugcast:\s+(http://\S+)").unwrap());
 
 /// tugcode: Launcher binary for tugdeck dashboard
 #[derive(Parser, Debug)]
@@ -143,8 +142,7 @@ async fn shutdown_child(child: &mut tokio::process::Child) -> i32 {
 /// Wait for shutdown signal or child exit
 async fn wait_for_shutdown(child: &mut tokio::process::Child) -> i32 {
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
-    let mut sigterm =
-        signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
 
     tokio::select! {
         status = child.wait() => {
@@ -325,9 +323,11 @@ mod tests {
     #[test]
     fn test_auth_url_regex_does_not_match_log_lines() {
         assert!(AUTH_URL_REGEX.captures("INFO tugcast starting").is_none());
-        assert!(AUTH_URL_REGEX
-            .captures("2024-01-01 tugcast ready")
-            .is_none());
+        assert!(
+            AUTH_URL_REGEX
+                .captures("2024-01-01 tugcast ready")
+                .is_none()
+        );
         assert!(AUTH_URL_REGEX.captures("").is_none());
         assert!(AUTH_URL_REGEX.captures("some random text").is_none());
     }
