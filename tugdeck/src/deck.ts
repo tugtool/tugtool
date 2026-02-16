@@ -5,6 +5,7 @@
  * Phase 3: Card collapse/expand and layout persistence
  */
 
+import { createElement, ChevronUp, ChevronDown } from "lucide";
 import { FeedIdValue } from "./protocol";
 import { TugCard } from "./cards/card";
 import { TugConnection } from "./connection";
@@ -52,6 +53,9 @@ export class DeckManager {
   private collapsedSlots: Set<CardSlot> = new Set();
   private saveTimer: number | null = null;
 
+  // Drag state for resize debounce coordination
+  private _isDragging = false;
+
   constructor(container: HTMLElement, connection: TugConnection) {
     this.connection = connection;
 
@@ -83,6 +87,13 @@ export class DeckManager {
   }
 
   /**
+   * Public accessor for drag state
+   */
+  get isDragging(): boolean {
+    return this._isDragging;
+  }
+
+  /**
    * Register a card with the deck in a named slot
    */
   addCard(card: TugCard, slot: CardSlot): void {
@@ -106,7 +117,10 @@ export class DeckManager {
         if (header) {
           const btn = document.createElement("button");
           btn.className = "collapse-btn";
-          btn.textContent = this.collapsedSlots.has(slot) ? "+" : "-";
+          const icon = this.collapsedSlots.has(slot)
+            ? createElement(ChevronDown, { width: 14, height: 14 })
+            : createElement(ChevronUp, { width: 14, height: 14 });
+          btn.appendChild(icon);
           btn.addEventListener("click", () => this.toggleCollapse(slot));
           header.appendChild(btn);
 
@@ -144,10 +158,11 @@ export class DeckManager {
 
     slotEl.classList.add("collapsed");
 
-    // Update button text
+    // Update button icon
     const btn = slotEl.querySelector(".collapse-btn");
     if (btn) {
-      btn.textContent = "+";
+      btn.innerHTML = "";
+      btn.appendChild(createElement(ChevronDown, { width: 14, height: 14 }));
     }
 
     this.updateGridTracks();
@@ -159,10 +174,11 @@ export class DeckManager {
 
     slotEl.classList.remove("collapsed");
 
-    // Update button text
+    // Update button icon
     const btn = slotEl.querySelector(".collapse-btn");
     if (btn) {
-      btn.textContent = "-";
+      btn.innerHTML = "";
+      btn.appendChild(createElement(ChevronUp, { width: 14, height: 14 }));
     }
 
     this.updateGridTracks();
@@ -198,6 +214,7 @@ export class DeckManager {
       e.preventDefault();
       handle.setPointerCapture(e.pointerId);
       handle.classList.add("active");
+      this._isDragging = true;
       startX = e.clientX;
       startSplit = this.colSplit;
 
@@ -212,14 +229,15 @@ export class DeckManager {
 
         this.colSplit = newSplit;
         this.updateGridTracks();
-        this.handleResize();
       };
 
       const onUp = (e: PointerEvent) => {
+        this._isDragging = false;
         handle.releasePointerCapture(e.pointerId);
         handle.classList.remove("active");
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        this.handleResize();
         this.scheduleSave();
       };
 
@@ -236,6 +254,7 @@ export class DeckManager {
       e.preventDefault();
       handle.setPointerCapture(e.pointerId);
       handle.classList.add("active");
+      this._isDragging = true;
       startY = e.clientY;
       startSplits = [...this.rowSplits];
 
@@ -263,14 +282,15 @@ export class DeckManager {
 
         this.rowSplits = newSplits;
         this.updateGridTracks();
-        this.handleResize();
       };
 
       const onUp = (e: PointerEvent) => {
+        this._isDragging = false;
         handle.releasePointerCapture(e.pointerId);
         handle.classList.remove("active");
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        this.handleResize();
         this.scheduleSave();
       };
 

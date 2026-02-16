@@ -3,16 +3,17 @@
   height: 28px;
   line-height: 28px;
   padding: 0 8px;
-  background: #252526;
-  color: #cccccc;
+  background: var(--card);
+  color: var(--card-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid #3c3c3c;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   position: relative;
+  margin: -8px -8px 0 -8px;
 }
 
 .card-header .collapse-btn {
@@ -22,16 +23,17 @@
   transform: translateY(-50%);
   background: transparent;
   border: none;
-  color: #808080;
+  color: var(--muted-foreground);
   cursor: pointer;
-  font-size: 14px;
-  font-family: monospace;
   padding: 0 4px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-header .collapse-btn:hover {
-  color: #cccccc;
+  color: var(--card-foreground);
 }
 
 /* Files card */
@@ -39,8 +41,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .files-card .event-list {
@@ -62,9 +64,10 @@
 
 .files-card .event-icon {
   width: 14px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  font-weight: bold;
 }
 
 .files-card .event-label {
@@ -73,16 +76,16 @@
 }
 
 .files-card .event-created .event-icon {
-  color: #4ec9b0;
+  color: var(--success);
 } /* green */
 .files-card .event-modified .event-icon {
-  color: #dcdcaa;
+  color: var(--warning);
 } /* yellow */
 .files-card .event-removed .event-icon {
-  color: #f44747;
+  color: var(--destructive);
 } /* red */
 .files-card .event-renamed .event-icon {
-  color: #569cd6;
+  color: var(--accent);
 } /* blue */
 
 /* Git card */
@@ -90,8 +93,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .git-card .git-content {
@@ -110,20 +113,20 @@
 }
 
 .git-card .branch-badge {
-  background: #0e639c;
-  color: #ffffff;
+  background: var(--primary);
+  color: var(--primary-foreground);
   padding: 2px 8px;
   border-radius: 3px;
   font-size: 11px;
 }
 
 .git-card .ahead-behind {
-  color: #9cdcfe;
+  color: var(--info);
   font-size: 11px;
 }
 
 .git-card .head-message {
-  color: #808080;
+  color: var(--muted-foreground);
   font-size: 11px;
   margin-bottom: 8px;
   white-space: nowrap;
@@ -136,7 +139,7 @@
 }
 
 .git-card .section-title {
-  color: #808080;
+  color: var(--muted-foreground);
   font-size: 11px;
   margin-bottom: 2px;
   text-transform: uppercase;
@@ -151,9 +154,10 @@
 
 .git-card .file-status {
   width: 14px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  font-weight: bold;
 }
 
 .git-card .file-path {
@@ -163,17 +167,17 @@
 }
 
 .git-card .staged .file-status {
-  color: #4ec9b0;
+  color: var(--success);
 } /* green */
 .git-card .unstaged .file-status {
-  color: #dcdcaa;
+  color: var(--warning);
 } /* yellow */
 .git-card .untracked .file-status {
-  color: #808080;
+  color: var(--muted-foreground);
 } /* grey */
 
 .git-card .clean-status {
-  color: #4ec9b0;
+  color: var(--success);
   font-style: italic;
   padding: 4px 0;
 }
@@ -183,8 +187,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .stats-card .stats-content {
@@ -196,7 +200,7 @@
 .stats-card .stat-sub-card {
   margin-bottom: 8px;
   padding: 4px 0;
-  border-bottom: 1px solid #3c3c3c;
+  border-bottom: 1px solid var(--border);
 }
 
 .stats-card .stat-sub-card:last-child {
@@ -211,7 +215,7 @@
 }
 
 .stats-card .stat-name {
-  color: #808080;
+  color: var(--muted-foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 11px;
   text-transform: uppercase;
@@ -221,12 +225,12 @@
 .stats-card .stat-value {
   font-family: "Menlo", "Monaco", "Courier New", monospace;
   font-size: 12px;
-  color: #d4d4d4;
+  color: var(--foreground);
   text-align: right;
 }
 
 .stats-card .stat-na {
-  color: #808080;
+  color: var(--muted-foreground);
   font-style: italic;
 }
 
@@ -240,13 +244,20 @@
 .card-slot-git,
 .card-slot-files,
 .card-slot-stats {
-  border-left: 1px solid #3c3c3c;
+  border-left: 1px solid var(--border);
 }
 
 .card-slot-files {
-  border-top: 1px solid #3c3c3c;
+  border-top: 1px solid var(--border);
 }
 
 .card-slot-stats {
-  border-top: 1px solid #3c3c3c;
+  border-top: 1px solid var(--border);
+}
+
+/* SVG icon display to prevent inline spacing issues */
+.event-icon svg,
+.file-status svg,
+.collapse-btn svg {
+  display: block;
 }

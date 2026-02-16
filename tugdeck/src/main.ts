@@ -21,7 +21,9 @@ if (!container) {
 const deck = new DeckManager(container, connection);
 
 // Create and register cards in named slots
-deck.addCard(new TerminalCard(connection), "terminal");
+const terminalCard = new TerminalCard(connection);
+terminalCard.setDeckManager(deck);
+deck.addCard(terminalCard, "terminal");
 deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");

@@ -9,6 +9,45 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-16T18:24:17Z
+bead: tugtool-236.3
+---
+
+## #step-2: Added 2px grid gap and 8px card-slot padding with flush headers via negative margins. DeckManager exposes isDragging state. TerminalCard implements two-mode resize handling with rAF debounce and drag suppression for flash-free resize.
+
+**Files changed:**
+- .tugtool/tugplan-design-tokens-icons-polish.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-16T18:15:04Z
+bead: tugtool-236.2
+---
+
+## #step-1: Installed Lucide v0.564.0 and replaced all text-character icons with SVG icons using createElement API. Refactored innerHTML to programmatic DOM construction. Bundle size increased only 4KB.
+
+**Files changed:**
+- .tugtool/tugplan-design-tokens-icons-polish.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-16T18:05:04Z
+bead: tugtool-236.1
+---
+
+## #step-0: Created two-tier design token system (tokens.css) with 46 CSS custom properties. Replaced all hardcoded hex colors in cards.css, deck.css, index.html, terminal-card.ts, and stats-card.ts with semantic token references.
+
+**Files changed:**
+- .tugtool/tugplan-design-tokens-icons-polish.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-16T17:21:11Z
 ---
