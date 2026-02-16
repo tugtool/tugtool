@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-16T20:11:40Z
+bead: tugtool-kfp.1
+---
+
+## #step-0: Scaffolded tugtalk/ Bun/TypeScript project: IPC message types per Spec S01/S02, JSON-lines protocol, SDK adapter interface (6 methods), protocol handshake, 20 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-16T19:19:23Z
 ---
