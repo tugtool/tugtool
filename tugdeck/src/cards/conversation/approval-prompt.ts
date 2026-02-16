@@ -2,7 +2,7 @@
  * Approval prompt - renders tool approval request with Allow/Deny buttons
  */
 
-import { createElement, X } from "lucide";
+import { createElement, X, AlertTriangle } from "lucide";
 import { getToolIcon } from "./tool-card";
 
 export class ApprovalPrompt {
@@ -10,6 +10,9 @@ export class ApprovalPrompt {
   private actionsElement: HTMLElement;
   private onAllowCallback?: () => void;
   private onDenyCallback?: () => void;
+  private allowBtn?: HTMLButtonElement;
+  private denyBtn?: HTMLButtonElement;
+  private isStale = false;
 
   constructor(
     private toolName: string,
@@ -56,27 +59,27 @@ export class ApprovalPrompt {
     const actions = document.createElement("div");
     actions.className = "approval-prompt-actions";
 
-    const allowBtn = document.createElement("button");
-    allowBtn.className = "approval-prompt-allow";
-    allowBtn.textContent = "Allow";
-    allowBtn.addEventListener("click", () => {
+    this.allowBtn = document.createElement("button");
+    this.allowBtn.className = "approval-prompt-allow";
+    this.allowBtn.textContent = "Allow";
+    this.allowBtn.addEventListener("click", () => {
       if (this.onAllowCallback) {
         this.onAllowCallback();
       }
     });
 
-    const denyBtn = document.createElement("button");
-    denyBtn.className = "approval-prompt-deny";
-    denyBtn.textContent = "Deny";
-    denyBtn.addEventListener("click", () => {
+    this.denyBtn = document.createElement("button");
+    this.denyBtn.className = "approval-prompt-deny";
+    this.denyBtn.textContent = "Deny";
+    this.denyBtn.addEventListener("click", () => {
       this.showDenied();
       if (this.onDenyCallback) {
         this.onDenyCallback();
       }
     });
 
-    actions.appendChild(allowBtn);
-    actions.appendChild(denyBtn);
+    actions.appendChild(this.allowBtn);
+    actions.appendChild(this.denyBtn);
 
     container.appendChild(header);
     container.appendChild(preview);
@@ -112,6 +115,36 @@ export class ApprovalPrompt {
     deniedLabel.appendChild(text);
 
     this.actionsElement.appendChild(deniedLabel);
+  }
+
+  /**
+   * Mark this approval prompt as stale (session restarted)
+   */
+  markStale(): void {
+    if (this.isStale) return;
+    this.isStale = true;
+
+    // Add stale class
+    this.container.classList.add("approval-prompt-stale");
+
+    // Disable buttons
+    if (this.allowBtn) this.allowBtn.disabled = true;
+    if (this.denyBtn) this.denyBtn.disabled = true;
+
+    // Create stale overlay
+    const overlay = document.createElement("div");
+    overlay.className = "approval-prompt-stale-overlay";
+
+    const icon = createElement(AlertTriangle, { width: 16, height: 16 });
+    overlay.appendChild(icon);
+
+    const text = document.createElement("span");
+    text.textContent = "Session restarted -- this request is no longer active";
+    overlay.appendChild(text);
+
+    // Ensure container has position:relative
+    this.container.style.position = "relative";
+    this.container.appendChild(overlay);
   }
 
   /**

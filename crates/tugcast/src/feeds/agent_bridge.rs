@@ -104,6 +104,15 @@ pub async fn run_agent_bridge(
 ) {
     let mut crash_budget = CrashBudget::new(3, Duration::from_secs(60));
 
+    // Send project_info frame before starting the loop
+    let project_info_json = format!(
+        r#"{{"type":"project_info","project_dir":"{}"}}"#,
+        project_dir.display()
+    );
+    let project_info_frame = conversation_output_frame(project_info_json.as_bytes());
+    let _ = conversation_tx.send(project_info_frame.clone());
+    let _ = conversation_watch_tx.send(project_info_frame);
+
     loop {
         if crash_budget.is_exhausted() {
             error!("Crash budget exhausted, stopping agent bridge");
@@ -283,5 +292,20 @@ mod tests {
         // Without a real binary in PATH, should fall back to bun run
         let result = resolve_tugtalk_path(None, Path::new("/project"));
         assert!(result.to_str().unwrap().contains("tugtalk/src/main.ts"));
+    }
+
+    #[test]
+    fn test_project_info_frame_format() {
+        // Test that project_info JSON is formatted correctly
+        let project_dir = "/path/to/project";
+        let expected_json = format!(
+            r#"{{"type":"project_info","project_dir":"{}"}}"#,
+            project_dir
+        );
+
+        // Parse to verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&expected_json).unwrap();
+        assert_eq!(parsed["type"], "project_info");
+        assert_eq!(parsed["project_dir"], project_dir);
     }
 }

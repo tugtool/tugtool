@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-14
+date: 2025-02-16T23:40:46Z
+bead: tugtool-kfp.16
+---
+
+## #step-14: Session scoping (project hash, project_info frame), crash recovery (error banner, markStale overlays), permission mode selector, 344 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-13
 date: 2025-02-16T23:24:38Z
 bead: tugtool-kfp.15

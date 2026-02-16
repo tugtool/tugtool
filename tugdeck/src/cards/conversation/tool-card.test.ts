@@ -529,4 +529,43 @@ describe("tool-card", () => {
       expect(children[2].className).toBe("message message-assistant");
     });
   });
+
+  describe("markStale", () => {
+    test("markStale adds overlay and changes status", () => {
+      const toolCard = new ToolCard("Bash", "tool-stale-1", { command: "ls" });
+      const container = toolCard.render();
+
+      // Initial status should be running
+      expect(toolCard.getStatus()).toBe("running");
+
+      // Mark as stale
+      toolCard.markStale();
+
+      // Status should change to interrupted
+      expect(toolCard.getStatus()).toBe("interrupted");
+
+      // Overlay should be present
+      const overlay = container.querySelector(".tool-card-stale-overlay");
+      expect(overlay).not.toBeNull();
+      expect(overlay?.textContent).toContain("Session restarted");
+
+      // Container should have position:relative
+      expect(container.style.position).toBe("relative");
+    });
+
+    test("markStale is idempotent", () => {
+      const toolCard = new ToolCard("Read", "tool-stale-2", { file_path: "test.txt" });
+      const container = toolCard.render();
+
+      toolCard.markStale();
+      const firstOverlay = container.querySelector(".tool-card-stale-overlay");
+
+      toolCard.markStale();
+      const overlays = container.querySelectorAll(".tool-card-stale-overlay");
+
+      // Should only have one overlay after multiple calls
+      expect(overlays.length).toBe(1);
+      expect(overlays[0]).toBe(firstOverlay);
+    });
+  });
 });

@@ -17,6 +17,7 @@ import {
   Octagon,
   ChevronRight,
   ChevronDown,
+  AlertTriangle,
 } from "lucide";
 import { renderCodeBlock } from "./code-block";
 
@@ -49,6 +50,7 @@ export class ToolCard {
   private resultElement: HTMLElement;
   private isCollapsed = true;
   private status: ToolCardStatus = "running";
+  private isStale = false;
 
   constructor(
     private toolName: string,
@@ -290,6 +292,32 @@ export class ToolCard {
     terminal.className = "tool-card-result-terminal";
     terminal.textContent = output;
     this.resultElement.appendChild(terminal);
+  }
+
+  /**
+   * Mark this tool card as stale (session restarted)
+   */
+  markStale(): void {
+    if (this.isStale) return;
+    this.isStale = true;
+
+    // Update status to interrupted
+    this.updateStatus("interrupted");
+
+    // Create stale overlay
+    const overlay = document.createElement("div");
+    overlay.className = "tool-card-stale-overlay";
+
+    const icon = createElement(AlertTriangle, { width: 16, height: 16 });
+    overlay.appendChild(icon);
+
+    const text = document.createElement("span");
+    text.textContent = "Session restarted -- this request is no longer active";
+    overlay.appendChild(text);
+
+    // Ensure container has position:relative
+    this.container.style.position = "relative";
+    this.container.appendChild(overlay);
   }
 
   /**

@@ -2,7 +2,7 @@
  * Conversation card - displays assistant/user messages and input area
  */
 
-import { createElement, ArrowUp, Square, Octagon, Paperclip } from "lucide";
+import { createElement, ArrowUp, Square, Octagon, Paperclip, AlertTriangle } from "lucide";
 import { TugCard } from "./card";
 import { TugConnection } from "../connection";
 import { FeedId, encodeConversationInput } from "../protocol";
@@ -20,6 +20,9 @@ import {
   type TurnCancelled,
   type TurnComplete,
   type InterruptInput,
+  type PermissionModeInput,
+  type ErrorEvent,
+  type ProjectInfo,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
 import type { DeckManager } from "../deck";
@@ -55,6 +58,12 @@ export class ConversationCard implements TugCard {
   private dragCounter = 0;
   private streamingState = new StreamingState();
   private sessionCache: SessionCache;
+  private projectDir: string | null = null;
+  private projectHash: string | null = null;
+  private currentSessionId: string | null = null;
+  private errorState: "none" | "recoverable" | "fatal" = "none";
+  private errorBanner!: HTMLElement;
+  private permissionModeSelect!: HTMLSelectElement;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -84,7 +93,34 @@ export class ConversationCard implements TugCard {
     title.className = "card-title";
     title.textContent = "Conversation";
     header.appendChild(title);
+
+    // Permission mode selector (right-aligned)
+    this.permissionModeSelect = document.createElement("select");
+    this.permissionModeSelect.className = "permission-mode-select";
+    this.permissionModeSelect.innerHTML = `
+      <option value="default">Default</option>
+      <option value="acceptEdits" selected>Accept Edits</option>
+      <option value="bypassPermissions">Bypass Permissions</option>
+      <option value="plan">Plan</option>
+    `;
+    this.permissionModeSelect.addEventListener("change", () => {
+      const mode = this.permissionModeSelect.value as "default" | "acceptEdits" | "bypassPermissions" | "plan";
+      const msg: PermissionModeInput = {
+        type: "permission_mode",
+        mode,
+      };
+      const encoded = encodeConversationInput(msg);
+      this.connection.send(encoded);
+    });
+    header.appendChild(this.permissionModeSelect);
+
     this.container.appendChild(header);
+
+    // Error banner (initially hidden)
+    this.errorBanner = document.createElement("div");
+    this.errorBanner.className = "error-banner";
+    this.errorBanner.style.display = "none";
+    this.container.appendChild(this.errorBanner);
 
     // Message list (scrollable)
     this.messageList = document.createElement("div");
@@ -267,10 +303,14 @@ export class ConversationCard implements TugCard {
   }
 
   private handleOrderedEvent(event: ConversationEvent): void {
-    if (event.type === "assistant_text") {
+    if (event.type === "project_info") {
+      this.handleProjectInfo(event);
+    } else if (event.type === "session_init") {
+      this.handleSessionInit(event);
+    } else if (event.type === "assistant_text") {
       this.renderAssistantMessage(event);
     } else if (event.type === "error") {
-      this.renderError(event.message);
+      this.handleError(event);
     } else if (event.type === "tool_use") {
       this.renderToolUse(event);
     } else if (event.type === "tool_result") {
@@ -284,13 +324,129 @@ export class ConversationCard implements TugCard {
     } else if (event.type === "turn_cancelled") {
       this.handleTurnCancelled(event);
     }
-    // Other event types handled in later steps
   }
 
   private handleResync(): void {
     console.warn("Conversation message gap detected - resync triggered");
     // When resync happens, re-read cache and reconcile with live state
     this.loadCachedMessages();
+  }
+
+  private async handleProjectInfo(event: ProjectInfo): Promise<void> {
+    this.projectDir = event.project_dir;
+    this.projectHash = await this.computeProjectHash(event.project_dir);
+
+    // Create new SessionCache with project hash
+    if (this.sessionCache) {
+      this.sessionCache.close();
+    }
+    this.sessionCache = new SessionCache(this.projectHash);
+
+    // Load cached messages for this project
+    await this.loadCachedMessages();
+  }
+
+  private async computeProjectHash(dir: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(dir);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    return hashHex.slice(0, 16);
+  }
+
+  private handleSessionInit(event: { type: "session_init"; session_id: string }): void {
+    const prevSessionId = this.currentSessionId;
+
+    if (this.errorState === "recoverable") {
+      if (prevSessionId && prevSessionId === event.session_id) {
+        // Same session reconnected
+        this.showReconnectedNote();
+      } else if (prevSessionId) {
+        // Different session - add divider
+        this.showSessionDivider("Previous session ended. New session started.");
+      } else {
+        // First session after error
+        this.showReconnectedNote();
+      }
+      this.errorState = "none";
+    }
+
+    this.currentSessionId = event.session_id;
+  }
+
+  private handleError(event: ErrorEvent): void {
+    if (event.recoverable) {
+      this.errorState = "recoverable";
+      this.showErrorBanner("Conversation engine crashed. Reconnecting...", "recoverable");
+      this.markAllStale();
+    } else {
+      this.errorState = "fatal";
+      this.showErrorBanner("Conversation engine failed repeatedly. Please restart tugcode.", "fatal");
+    }
+  }
+
+  private showErrorBanner(message: string, type: "recoverable" | "fatal"): void {
+    this.errorBanner.innerHTML = "";
+    this.errorBanner.className = `error-banner error-banner-${type}`;
+
+    const icon = createElement(AlertTriangle, { width: 16, height: 16 });
+    this.errorBanner.appendChild(icon);
+
+    const text = document.createElement("span");
+    text.textContent = message;
+    this.errorBanner.appendChild(text);
+
+    this.errorBanner.style.display = "flex";
+  }
+
+  private hideErrorBanner(): void {
+    this.errorBanner.style.display = "none";
+  }
+
+  private showReconnectedNote(): void {
+    this.errorBanner.innerHTML = "";
+    this.errorBanner.className = "error-banner error-banner-reconnected";
+
+    const text = document.createElement("span");
+    text.textContent = "Session reconnected.";
+    this.errorBanner.appendChild(text);
+
+    this.errorBanner.style.display = "flex";
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      this.hideErrorBanner();
+    }, 3000);
+  }
+
+  private showSessionDivider(message: string): void {
+    const divider = document.createElement("div");
+    divider.className = "session-divider";
+    divider.textContent = message;
+    this.messageList.appendChild(divider);
+    this.scrollToBottom();
+  }
+
+  private markAllStale(): void {
+    // Mark all running tool cards as stale
+    for (const toolCard of this.toolCards.values()) {
+      if (toolCard.getStatus() === "running") {
+        toolCard.markStale();
+      }
+    }
+
+    // Mark all pending approvals as stale
+    for (const approval of this.pendingApprovals.values()) {
+      approval.markStale();
+    }
+
+    // Clear turn active state and reset button
+    this.turnActive = false;
+    this.updateButtonState();
+
+    // Re-enable input
+    this.setInputEnabled(true);
   }
 
   private collectCurrentMessages(): StoredMessage[] {
@@ -432,13 +588,6 @@ export class ConversationCard implements TugCard {
     this.scrollToBottom();
   }
 
-  private renderError(message: string): void {
-    const msgEl = document.createElement("div");
-    msgEl.className = "message message-error";
-    msgEl.textContent = `Error: ${message}`;
-    this.messageList.appendChild(msgEl);
-    this.scrollToBottom();
-  }
 
   private renderToolUse(event: ToolUse): void {
     // Create a new tool card

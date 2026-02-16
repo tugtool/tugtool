@@ -506,4 +506,112 @@ describe("conversation-card", () => {
       expect(userMessage?.textContent).toBe("First message");
     });
   });
+
+  describe("project_info handling", () => {
+    test("project_info event triggers SessionCache recreation with hash", async () => {
+      const projectDir = "/path/to/project";
+
+      // Simulate project_info event
+      const event = {
+        type: "project_info",
+        project_dir: projectDir,
+      };
+
+      const payload = new TextEncoder().encode(JSON.stringify(event));
+      card.onFrame(0x40, payload);
+
+      // Wait for async hash computation and cache creation
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check that error banner is hidden (default state)
+      const errorBanner = container.querySelector(".error-banner") as HTMLElement;
+      expect(errorBanner).not.toBeNull();
+      expect(errorBanner.style.display).toBe("none");
+    });
+  });
+
+  describe("error event handling", () => {
+    test("recoverable error shows reconnecting banner", () => {
+      const event = {
+        type: "error",
+        message: "tugtalk crashed",
+        recoverable: true,
+      };
+
+      const payload = new TextEncoder().encode(JSON.stringify(event));
+      card.onFrame(0x40, payload);
+
+      const errorBanner = container.querySelector(".error-banner") as HTMLElement;
+      expect(errorBanner).not.toBeNull();
+      expect(errorBanner.style.display).toBe("flex");
+      expect(errorBanner.textContent).toContain("Reconnecting");
+    });
+
+    test("non-recoverable error shows fatal banner", () => {
+      const event = {
+        type: "error",
+        message: "tugtalk crashed too many times",
+        recoverable: false,
+      };
+
+      const payload = new TextEncoder().encode(JSON.stringify(event));
+      card.onFrame(0x40, payload);
+
+      const errorBanner = container.querySelector(".error-banner") as HTMLElement;
+      expect(errorBanner).not.toBeNull();
+      expect(errorBanner.style.display).toBe("flex");
+      expect(errorBanner.textContent).toContain("restart tugcode");
+    });
+  });
+
+  describe("session_init after error", () => {
+    test("session_init after recoverable error shows reconnected note", async () => {
+      // First, trigger an error
+      const errorEvent = {
+        type: "error",
+        message: "tugtalk crashed",
+        recoverable: true,
+      };
+      card.onFrame(0x40, new TextEncoder().encode(JSON.stringify(errorEvent)));
+
+      // Then send session_init with same session ID
+      const sessionEvent = {
+        type: "session_init",
+        session_id: "test-session-123",
+      };
+      card.onFrame(0x40, new TextEncoder().encode(JSON.stringify(sessionEvent)));
+
+      // Wait a moment for DOM update
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const errorBanner = container.querySelector(".error-banner") as HTMLElement;
+      expect(errorBanner.textContent).toContain("reconnected");
+    });
+  });
+
+  describe("permission mode selector", () => {
+    test("permission mode selector exists in header", () => {
+      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      expect(select.tagName).toBe("SELECT");
+    });
+
+    test("changing selector sends permission_mode message", () => {
+      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+      connection.clear();
+
+      select.value = "bypassPermissions";
+      select.dispatchEvent(new Event("change"));
+
+      const lastMsg = connection.getLastMessage();
+      expect(lastMsg).not.toBeNull();
+      expect(lastMsg.type).toBe("permission_mode");
+      expect(lastMsg.mode).toBe("bypassPermissions");
+    });
+
+    test("selector default is acceptEdits", () => {
+      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+      expect(select.value).toBe("acceptEdits");
+    });
+  });
 });

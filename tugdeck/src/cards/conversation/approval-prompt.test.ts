@@ -232,4 +232,51 @@ describe("approval-prompt", () => {
       expect(preview?.textContent).toContain(longValue);
     });
   });
+
+  describe("markStale", () => {
+    test("markStale disables buttons and adds overlay", () => {
+      const prompt = new ApprovalPrompt("Bash", "req-stale-1", { command: "ls" });
+      const element = prompt.render();
+
+      const allowBtn = element.querySelector(".approval-prompt-allow") as HTMLButtonElement;
+      const denyBtn = element.querySelector(".approval-prompt-deny") as HTMLButtonElement;
+
+      // Initially buttons should be enabled
+      expect(allowBtn.disabled).toBe(false);
+      expect(denyBtn.disabled).toBe(false);
+
+      // Mark as stale
+      prompt.markStale();
+
+      // Buttons should be disabled
+      expect(allowBtn.disabled).toBe(true);
+      expect(denyBtn.disabled).toBe(true);
+
+      // Overlay should be present
+      const overlay = element.querySelector(".approval-prompt-stale-overlay");
+      expect(overlay).not.toBeNull();
+      expect(overlay?.textContent).toContain("Session restarted");
+
+      // Container should have stale class
+      expect(element.classList.contains("approval-prompt-stale")).toBe(true);
+
+      // Container should have position:relative
+      expect(element.style.position).toBe("relative");
+    });
+
+    test("markStale is idempotent", () => {
+      const prompt = new ApprovalPrompt("Read", "req-stale-2", { file_path: "test.txt" });
+      const element = prompt.render();
+
+      prompt.markStale();
+      const firstOverlay = element.querySelector(".approval-prompt-stale-overlay");
+
+      prompt.markStale();
+      const overlays = element.querySelectorAll(".approval-prompt-stale-overlay");
+
+      // Should only have one overlay after multiple calls
+      expect(overlays.length).toBe(1);
+      expect(overlays[0]).toBe(firstOverlay);
+    });
+  });
 });

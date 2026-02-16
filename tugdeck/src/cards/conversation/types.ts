@@ -92,6 +92,11 @@ export interface ErrorEvent {
   recoverable: boolean;
 }
 
+export interface ProjectInfo {
+  type: "project_info";
+  project_dir: string;
+}
+
 export type ConversationEvent =
   | ProtocolAck
   | SessionInit
@@ -102,7 +107,8 @@ export type ConversationEvent =
   | Question
   | TurnComplete
   | TurnCancelled
-  | ErrorEvent;
+  | ErrorEvent
+  | ProjectInfo;
 
 // Inbound message types (sent by tugdeck to tugtalk via 0x41)
 
@@ -189,7 +195,8 @@ export function isConversationEvent(obj: unknown): obj is ConversationEvent {
     typed.type === "question" ||
     typed.type === "turn_complete" ||
     typed.type === "turn_cancelled" ||
-    typed.type === "error"
+    typed.type === "error" ||
+    typed.type === "project_info"
   );
 }
 

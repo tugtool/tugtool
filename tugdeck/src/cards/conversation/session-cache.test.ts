@@ -332,4 +332,52 @@ describe("SessionCache", () => {
 
     cache2.close();
   });
+
+  test("different project hashes produce independent databases", async () => {
+    const cache1 = new SessionCache("project-hash-abc");
+    const cache2 = new SessionCache("project-hash-xyz");
+
+    const messages1: StoredMessage[] = [
+      {
+        msg_id: "msg-project-1",
+        seq: 1,
+        rev: 0,
+        status: "complete",
+        role: "user",
+        text: "Project 1 message",
+      },
+    ];
+
+    const messages2: StoredMessage[] = [
+      {
+        msg_id: "msg-project-2",
+        seq: 1,
+        rev: 0,
+        status: "complete",
+        role: "user",
+        text: "Project 2 message",
+      },
+    ];
+
+    // Write to both caches
+    cache1.writeMessages(messages1);
+    cache2.writeMessages(messages2);
+
+    // Wait for writes
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    // Read from each cache
+    const read1 = await cache1.readMessages();
+    const read2 = await cache2.readMessages();
+
+    // Each cache should only have its own messages
+    expect(read1).toHaveLength(1);
+    expect(read1[0].text).toBe("Project 1 message");
+
+    expect(read2).toHaveLength(1);
+    expect(read2[0].text).toBe("Project 2 message");
+
+    cache1.close();
+    cache2.close();
+  });
 });
