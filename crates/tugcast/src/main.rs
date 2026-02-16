@@ -9,7 +9,7 @@ mod integration_tests;
 
 use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 
@@ -44,14 +44,14 @@ async fn main() {
     match terminal::check_tmux_version().await {
         Ok(version) => info!("tmux version: {}", version),
         Err(e) => {
-            error!("tmux check failed: {}", e);
+            eprintln!("tugcast: error: tmux not found or version too old (requires 3.x+): {}", e);
             std::process::exit(1);
         }
     }
 
     // Ensure tmux session exists
     if let Err(e) = terminal::ensure_session(&cli.session).await {
-        error!("Failed to ensure tmux session: {}", e);
+        eprintln!("tugcast: error: failed to create tmux session '{}': {}", cli.session, e);
         std::process::exit(1);
     }
 
@@ -141,7 +141,7 @@ async fn main() {
 
     // Start server (blocks until shutdown)
     if let Err(e) = server::run_server(cli.port, feed_router, auth).await {
-        error!("Server error: {}", e);
+        eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
         std::process::exit(1);
     }
 

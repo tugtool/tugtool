@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-16T02:18:06Z
+bead: tugtool-p17.8
+---
+
+## #step-7: Added --version flag, improved about/long_about help text, replaced error!() with eprintln!() for clean user-facing errors, removed unused tracing::error import. 79 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-16T02:11:24Z
 bead: tugtool-p17.7
