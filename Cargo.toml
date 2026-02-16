@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/tugtool", "crates/tugtool-core", "crates/tugcast", "crates/tugcast-core"]
 
 [workspace.package]
-version = "0.5.18"
+version = "0.5.19"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
