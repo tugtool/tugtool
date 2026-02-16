@@ -1,34 +1,75 @@
 //! Data types for filesystem and git feeds
+//!
+//! This module provides the core data structures for snapshot feeds,
+//! serialized as JSON payloads in WebSocket frames.
 
 use serde::{Deserialize, Serialize};
 
 /// Filesystem event types
+///
+/// Represents changes detected by the filesystem watcher.
+/// Serialized with serde's `tag` attribute to produce tagged JSON
+/// format: `{"kind": "Created", "path": "..."}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum FsEvent {
-    Created { path: String },
-    Modified { path: String },
-    Removed { path: String },
-    Renamed { from: String, to: String },
+    /// File or directory was created
+    Created {
+        /// Relative path from the watched directory
+        path: String,
+    },
+    /// File or directory was modified
+    Modified {
+        /// Relative path from the watched directory
+        path: String,
+    },
+    /// File or directory was removed
+    Removed {
+        /// Relative path from the watched directory
+        path: String,
+    },
+    /// File or directory was renamed
+    Renamed {
+        /// Original path before rename
+        from: String,
+        /// New path after rename
+        to: String,
+    },
 }
 
 /// Git repository status snapshot
+///
+/// Represents the current state of a git repository, including branch info,
+/// tracking status, and working tree changes. Serialized as JSON with
+/// snake_case field names to match git porcelain output conventions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GitStatus {
+    /// Current branch name, or "(detached)" if HEAD is detached
     pub branch: String,
+    /// Number of commits ahead of upstream
     pub ahead: u32,
+    /// Number of commits behind upstream
     pub behind: u32,
+    /// Files staged for commit
     pub staged: Vec<FileStatus>,
+    /// Files with unstaged changes
     pub unstaged: Vec<FileStatus>,
+    /// Untracked files
     pub untracked: Vec<String>,
+    /// SHA of HEAD commit
     pub head_sha: String,
+    /// Subject line of HEAD commit
     pub head_message: String,
 }
 
 /// File status entry for git staging area
+///
+/// Represents a single file's status in the git working tree or index.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FileStatus {
+    /// Relative path from repository root
     pub path: String,
+    /// Git status code (M=modified, A=added, D=deleted, R=renamed, etc.)
     pub status: String,
 }
 

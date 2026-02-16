@@ -89,7 +89,7 @@ fn parse_porcelain_v2(output: &str) -> GitStatus {
 
                 // Split on tab to get new path and original path
                 let tab_parts: Vec<&str> = path_field.split('\t').collect();
-                let new_path = if tab_parts.len() >= 1 {
+                let new_path = if !tab_parts.is_empty() {
                     tab_parts[0]
                 } else {
                     path_field

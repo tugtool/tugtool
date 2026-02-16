@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-16T00:15:26Z
+bead: tugtool-nez.7
+---
+
+## #step-6: Added integration tests for JSON contracts and watch channels, improved documentation on all new public types, fixed clippy warnings. Full acceptance verification passed.
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-16T00:07:01Z
 bead: tugtool-nez.6

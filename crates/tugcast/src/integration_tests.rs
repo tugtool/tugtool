@@ -169,3 +169,99 @@ async fn test_tmux_version_check() {
         }
     }
 }
+
+/// Test that FsEvent JSON format matches TypeScript FsEvent interface
+#[test]
+fn test_fsevent_json_contract() {
+    use tugcast_core::types::FsEvent;
+
+    // Created event
+    let created = FsEvent::Created {
+        path: "src/main.rs".to_string(),
+    };
+    let json = serde_json::to_string(&created).unwrap();
+    assert_eq!(json, r#"{"kind":"Created","path":"src/main.rs"}"#);
+
+    // Modified event
+    let modified = FsEvent::Modified {
+        path: "README.md".to_string(),
+    };
+    let json = serde_json::to_string(&modified).unwrap();
+    assert_eq!(json, r#"{"kind":"Modified","path":"README.md"}"#);
+
+    // Removed event
+    let removed = FsEvent::Removed {
+        path: "old.txt".to_string(),
+    };
+    let json = serde_json::to_string(&removed).unwrap();
+    assert_eq!(json, r#"{"kind":"Removed","path":"old.txt"}"#);
+
+    // Renamed event
+    let renamed = FsEvent::Renamed {
+        from: "old.rs".to_string(),
+        to: "new.rs".to_string(),
+    };
+    let json = serde_json::to_string(&renamed).unwrap();
+    assert_eq!(json, r#"{"kind":"Renamed","from":"old.rs","to":"new.rs"}"#);
+}
+
+/// Test that GitStatus JSON format matches TypeScript GitStatus interface
+#[test]
+fn test_git_status_json_contract() {
+    use tugcast_core::types::{FileStatus, GitStatus};
+
+    let status = GitStatus {
+        branch: "main".to_string(),
+        ahead: 2,
+        behind: 1,
+        staged: vec![FileStatus {
+            path: "src/main.rs".to_string(),
+            status: "M".to_string(),
+        }],
+        unstaged: vec![],
+        untracked: vec!["temp.txt".to_string()],
+        head_sha: "abc123".to_string(),
+        head_message: "Initial commit".to_string(),
+    };
+
+    let json = serde_json::to_string(&status).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+    // Verify all fields are present with correct names (snake_case)
+    assert_eq!(parsed["branch"], "main");
+    assert_eq!(parsed["ahead"], 2);
+    assert_eq!(parsed["behind"], 1);
+    assert_eq!(parsed["staged"][0]["path"], "src/main.rs");
+    assert_eq!(parsed["staged"][0]["status"], "M");
+    assert_eq!(parsed["untracked"][0], "temp.txt");
+    assert_eq!(parsed["head_sha"], "abc123");
+    assert_eq!(parsed["head_message"], "Initial commit");
+}
+
+/// Test that snapshot watch channels provide immediate access to initial value
+#[tokio::test]
+async fn test_snapshot_watch_initial_value() {
+    use tugcast_core::{FeedId, Frame};
+
+    // Create watch channel with pre-loaded data
+    let test_payload = b"test data";
+    let initial_frame = Frame::new(FeedId::Filesystem, test_payload.to_vec());
+    let (tx, rx) = tokio::sync::watch::channel(initial_frame.clone());
+
+    // Clone receiver (simulates what router does per client)
+    let mut rx_clone = rx.clone();
+
+    // Borrow initial value (simulates what handle_client does on connect)
+    let frame = rx_clone.borrow().clone();
+    assert_eq!(frame.feed_id, FeedId::Filesystem);
+    assert_eq!(frame.payload, test_payload);
+
+    // Send update
+    let update_frame = Frame::new(FeedId::Filesystem, b"updated".to_vec());
+    tx.send(update_frame.clone()).unwrap();
+
+    // Wait for change notification
+    rx_clone.changed().await.unwrap();
+    let updated = rx_clone.borrow_and_update().clone();
+    assert_eq!(updated.payload, b"updated");
+}

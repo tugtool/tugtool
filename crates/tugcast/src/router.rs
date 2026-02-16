@@ -161,15 +161,14 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
                 // Send initial snapshots for all watch channels
                 for watch_rx in &router.snapshot_watches {
                     let frame = watch_rx.borrow().clone();
-                    if !frame.payload.is_empty() {
-                        if socket
+                    if !frame.payload.is_empty()
+                        && socket
                             .send(Message::Binary(frame.encode().into()))
                             .await
                             .is_err()
-                        {
-                            info!("Client disconnected during initial snapshot send");
-                            return;
-                        }
+                    {
+                        info!("Client disconnected during initial snapshot send");
+                        return;
                     }
                 }
 
