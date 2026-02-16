@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-16T17:10:53Z
+bead: tugtool-icp.1
+---
+
+## #step-0: Replaced npm/esbuild with Bun: updated build.rs (bun existence check, bun install, bun build), updated package.json scripts, removed devDependencies, deleted package-lock.json, generated bun.lock
+
+**Files changed:**
+- .tugtool/tugplan-bun-pivot.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-16T02:32:47Z
 ---
