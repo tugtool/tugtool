@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-16T19:04:17Z
+bead: tugtool-zlm.2
+---
+
+## #step-1: Added child process spawning (spawn_tugcast), auth URL regex extraction (extract_auth_url), background stdout forwarding, and updated main function. 11 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugcode-launcher.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-16T18:59:00Z
 bead: tugtool-zlm.1

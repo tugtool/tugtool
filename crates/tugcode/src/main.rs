@@ -1,5 +1,14 @@
 use clap::Parser;
+use regex::Regex;
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::LazyLock;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+
+static AUTH_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"tugcast:\s+(http://\S+)").unwrap()
+});
 
 /// tugcode: Launcher binary for tugdeck dashboard
 #[derive(Parser, Debug)]
@@ -27,13 +36,101 @@ impl Cli {
     }
 }
 
+/// Spawn tugcast as a child process with stdout piped and stderr inherited
+fn spawn_tugcast(
+    session: &str,
+    port: u16,
+    dir: &std::path::Path,
+) -> std::io::Result<tokio::process::Child> {
+    Command::new("tugcast")
+        .arg("--session")
+        .arg(session)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--dir")
+        .arg(dir.to_string_lossy().as_ref())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+}
+
+/// Extract auth URL from tugcast's stdout by reading lines and checking against regex
+async fn extract_auth_url(
+    stdout: tokio::process::ChildStdout,
+) -> Result<(String, BufReader<tokio::process::ChildStdout>), String> {
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                // EOF before URL found
+                return Err("tugcast exited before printing auth URL".to_string());
+            }
+            Ok(_) => {
+                // Forward the line to stdout (including the URL line per D05)
+                print!("{}", line);
+
+                // Check if this line matches the auth URL pattern
+                if let Some(caps) = AUTH_URL_REGEX.captures(&line) {
+                    let url = caps.get(1).unwrap().as_str().to_string();
+                    return Ok((url, reader));
+                }
+            }
+            Err(e) => {
+                return Err(format!("error reading tugcast output: {}", e));
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    println!("tugcode starting with:");
-    println!("  session: {}", cli.session);
-    println!("  port: {}", cli.port);
-    println!("  dir: {}", cli.dir.display());
+
+    // Spawn tugcast child process
+    let mut child = match spawn_tugcast(&cli.session, cli.port, &cli.dir) {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!("tugcode: failed to start tugcast: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Take stdout for URL extraction (must happen before waiting)
+    let stdout = child.stdout.take().expect("stdout was piped");
+
+    // Extract auth URL from tugcast output
+    match extract_auth_url(stdout).await {
+        Ok((url, reader)) => {
+            println!("tugcode: auth URL: {}", url);
+            // Forward remaining stdout in background
+            tokio::spawn(async move {
+                let mut reader = reader;
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => print!("{}", line),
+                    }
+                }
+            });
+        }
+        Err(e) => {
+            eprintln!("tugcode: {}", e);
+            // Wait for child and propagate exit code
+            let status = child.wait().await.ok();
+            let code = status.and_then(|s| s.code()).unwrap_or(1);
+            std::process::exit(code);
+        }
+    }
+
+    // For now, just wait for the child to exit (signal handling comes in step 2)
+    let status = child.wait().await.expect("failed to wait on tugcast");
+    let code = status.code().unwrap_or(1);
+    std::process::exit(code);
 }
 
 #[cfg(test)]
@@ -105,5 +202,65 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn test_auth_url_regex_matches_standard_url() {
+        let line = "tugcast: http://127.0.0.1:7890/auth?token=abc123def456";
+        let caps = AUTH_URL_REGEX.captures(line);
+        assert!(caps.is_some(), "regex should match standard auth URL line");
+        let url = caps.unwrap().get(1).unwrap().as_str();
+        assert_eq!(url, "http://127.0.0.1:7890/auth?token=abc123def456");
+    }
+
+    #[test]
+    fn test_auth_url_regex_captures_full_url() {
+        let line = "tugcast: http://127.0.0.1:8080/auth?token=deadbeef0123456789abcdef";
+        let caps = AUTH_URL_REGEX.captures(line).unwrap();
+        let url = caps.get(1).unwrap().as_str();
+        assert_eq!(
+            url,
+            "http://127.0.0.1:8080/auth?token=deadbeef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_auth_url_regex_does_not_match_log_lines() {
+        assert!(AUTH_URL_REGEX.captures("INFO tugcast starting").is_none());
+        assert!(AUTH_URL_REGEX
+            .captures("2024-01-01 tugcast ready")
+            .is_none());
+        assert!(AUTH_URL_REGEX.captures("").is_none());
+        assert!(AUTH_URL_REGEX.captures("some random text").is_none());
+    }
+
+    #[test]
+    fn test_auth_url_regex_various_ports() {
+        // Port 80
+        let caps = AUTH_URL_REGEX
+            .captures("tugcast: http://127.0.0.1:80/auth?token=abc")
+            .unwrap();
+        assert_eq!(
+            caps.get(1).unwrap().as_str(),
+            "http://127.0.0.1:80/auth?token=abc"
+        );
+
+        // Port 8080
+        let caps = AUTH_URL_REGEX
+            .captures("tugcast: http://127.0.0.1:8080/auth?token=abc")
+            .unwrap();
+        assert_eq!(
+            caps.get(1).unwrap().as_str(),
+            "http://127.0.0.1:8080/auth?token=abc"
+        );
+
+        // Port 7890 (default)
+        let caps = AUTH_URL_REGEX
+            .captures("tugcast: http://127.0.0.1:7890/auth?token=abc")
+            .unwrap();
+        assert_eq!(
+            caps.get(1).unwrap().as_str(),
+            "http://127.0.0.1:7890/auth?token=abc"
+        );
     }
 }
