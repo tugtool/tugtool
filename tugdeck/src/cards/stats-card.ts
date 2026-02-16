@@ -8,6 +8,13 @@ import { FeedId, FeedIdValue } from "../protocol";
 import { TugCard } from "./card";
 
 /**
+ * Helper function to read CSS token values
+ */
+function getCSSToken(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/**
  * Sparkline chart renderer using Canvas 2D
  */
 class Sparkline {
@@ -17,7 +24,7 @@ class Sparkline {
   private color: string;
   private bufferSize: number;
 
-  constructor(canvas: HTMLCanvasElement, bufferSize: number = 60, color: string = "#4ec9b0") {
+  constructor(canvas: HTMLCanvasElement, bufferSize: number = 60, color: string) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
     this.color = color;
@@ -186,13 +193,13 @@ export class StatsCard implements TugCard {
     this.container.appendChild(this.content);
 
     // Create sub-cards
-    this.processInfo = new SubCard("CPU / Memory", "#4ec9b0");
+    this.processInfo = new SubCard("CPU / Memory", getCSSToken("--chart-1"));
     this.processInfo.mount(this.content);
 
-    this.tokenUsage = new SubCard("Token Usage", "#569cd6");
+    this.tokenUsage = new SubCard("Token Usage", getCSSToken("--chart-2"));
     this.tokenUsage.mount(this.content);
 
-    this.buildStatus = new SubCard("Build Status", "#dcdcaa");
+    this.buildStatus = new SubCard("Build Status", getCSSToken("--chart-3"));
     this.buildStatus.mount(this.content);
   }
 

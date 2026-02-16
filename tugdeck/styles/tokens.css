@@ -1,0 +1,65 @@
+/**
+ * Design Token System
+ *
+ * Two-tier architecture:
+ * - Tier 1: Palette tokens (raw color values)
+ * - Tier 2: Semantic tokens (purpose-driven references to palette)
+ *
+ * Components should ONLY use semantic tokens, never palette tokens directly.
+ */
+
+:root {
+  /* Tier 1: Palette Tokens */
+  --palette-gray-1: #1e1e1e;
+  --palette-gray-2: #252526;
+  --palette-gray-3: #2d2d2d;
+  --palette-gray-4: #3c3c3c;
+  --palette-gray-5: #808080;
+  --palette-gray-6: #cccccc;
+  --palette-gray-7: #d4d4d4;
+  --palette-gray-8: #ffffff;
+  --palette-blue-1: #0e639c;
+  --palette-blue-2: #569cd6;
+  --palette-blue-3: #9cdcfe;
+  --palette-green: #4ec9b0;
+  --palette-yellow: #dcdcaa;
+  --palette-red: #f44747;
+  --palette-orange: #ce9178;
+  --palette-purple: #c586c0;
+
+  /* Tier 2: Semantic Tokens */
+  --background: var(--palette-gray-1);
+  --foreground: var(--palette-gray-7);
+  --card: var(--palette-gray-2);
+  --card-foreground: var(--palette-gray-6);
+  --muted: var(--palette-gray-3);
+  --muted-foreground: var(--palette-gray-5);
+  --popover: var(--palette-gray-3);
+  --popover-foreground: var(--palette-gray-7);
+  --border: var(--palette-gray-4);
+  --border-muted: var(--palette-gray-3);
+  --input: var(--palette-gray-4);
+  --ring: var(--palette-blue-2);
+  --primary: var(--palette-blue-1);
+  --primary-foreground: var(--palette-gray-8);
+  --secondary: var(--palette-gray-3);
+  --secondary-foreground: var(--palette-gray-7);
+  --accent: var(--palette-blue-2);
+  --accent-foreground: var(--palette-gray-1);
+  --success: var(--palette-green);
+  --success-foreground: var(--palette-gray-1);
+  --warning: var(--palette-yellow);
+  --warning-foreground: var(--palette-gray-1);
+  --destructive: var(--palette-red);
+  --destructive-foreground: var(--palette-gray-8);
+  --info: var(--palette-blue-3);
+  --info-foreground: var(--palette-gray-1);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-lg: 8px;
+  --chart-1: var(--palette-green);
+  --chart-2: var(--palette-blue-2);
+  --chart-3: var(--palette-yellow);
+  --chart-4: var(--palette-red);
+  --chart-5: var(--palette-purple);
+}

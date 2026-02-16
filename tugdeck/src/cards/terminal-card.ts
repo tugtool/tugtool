@@ -27,14 +27,18 @@ export class TerminalCard implements TugCard {
   }
 
   mount(container: HTMLElement): void {
+    // Read CSS tokens for terminal theme
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
+    const fg = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim();
+
     // Create terminal with theme matching the dark background
     this.terminal = new Terminal({
       cursorBlink: true,
       fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
       fontSize: 14,
       theme: {
-        background: "#1e1e1e",
-        foreground: "#d4d4d4",
+        background: bg,
+        foreground: fg,
       },
     });
 
