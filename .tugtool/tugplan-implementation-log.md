@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-8
+date: 2025-02-16T22:25:21Z
+bead: tugtool-kfp.10
+---
+
+## #step-8: Added ApprovalPrompt (warning border, Allow/Deny buttons, input blocking, denied state), wired tool_approval_request/tool_approval IPC, 17 tests, 125 total passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-7-summary
 date: 2025-02-16T22:16:05Z
 bead: tugtool-kfp.9

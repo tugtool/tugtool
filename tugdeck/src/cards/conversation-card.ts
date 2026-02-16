@@ -13,11 +13,14 @@ import {
   type UserMessageInput,
   type ToolUse,
   type ToolResult,
+  type ToolApprovalRequest,
+  type ToolApprovalInput,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
 import type { DeckManager } from "../deck";
 import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-renderer";
 import { ToolCard } from "./conversation/tool-card";
+import { ApprovalPrompt } from "./conversation/approval-prompt";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -25,9 +28,11 @@ export class ConversationCard implements TugCard {
   private container!: HTMLElement;
   private messageList!: HTMLElement;
   private textarea!: HTMLTextAreaElement;
+  private sendBtn!: HTMLButtonElement;
   private orderingBuffer: MessageOrderingBuffer;
   private deckManager?: DeckManager;
   private toolCards: Map<string, ToolCard> = new Map();
+  private pendingApprovals: Map<string, ApprovalPrompt> = new Map();
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -84,14 +89,14 @@ export class ConversationCard implements TugCard {
       }
     });
 
-    const sendBtn = document.createElement("button");
-    sendBtn.className = "send-btn";
+    this.sendBtn = document.createElement("button");
+    this.sendBtn.className = "send-btn";
     const icon = createElement(ArrowUp, { width: 20, height: 20 });
-    sendBtn.appendChild(icon);
-    sendBtn.addEventListener("click", () => this.handleSend());
+    this.sendBtn.appendChild(icon);
+    this.sendBtn.addEventListener("click", () => this.handleSend());
 
     inputArea.appendChild(this.textarea);
-    inputArea.appendChild(sendBtn);
+    inputArea.appendChild(this.sendBtn);
     this.container.appendChild(inputArea);
 
     parent.appendChild(this.container);
@@ -113,6 +118,8 @@ export class ConversationCard implements TugCard {
       this.renderToolUse(event);
     } else if (event.type === "tool_result") {
       this.renderToolResult(event);
+    } else if (event.type === "tool_approval_request") {
+      this.renderApprovalRequest(event);
     }
     // Other event types handled in later steps
   }
@@ -212,6 +219,83 @@ export class ConversationCard implements TugCard {
     toolCard.updateResult(event.output, event.is_error);
 
     this.scrollToBottom();
+  }
+
+  private renderApprovalRequest(event: ToolApprovalRequest): void {
+    // Create approval prompt
+    const prompt = new ApprovalPrompt(event.tool_name, event.request_id, event.input);
+
+    // Set callbacks
+    prompt.setCallbacks(
+      // On Allow
+      () => {
+        // Send approval with "allow" decision
+        const approval: ToolApprovalInput = {
+          type: "tool_approval",
+          request_id: event.request_id,
+          decision: "allow",
+        };
+        const encoded = encodeConversationInput(approval);
+        this.connection.send(encoded);
+
+        // Remove approval prompt from DOM
+        const promptEl = prompt.render();
+        promptEl.remove();
+
+        // Create a ToolCard to show the tool execution
+        const toolCard = new ToolCard(event.tool_name, event.request_id, event.input);
+        this.messageList.appendChild(toolCard.render());
+        this.toolCards.set(event.request_id, toolCard);
+
+        // Re-enable input
+        this.setInputEnabled(true);
+
+        // Remove from pending map
+        this.pendingApprovals.delete(event.request_id);
+
+        this.scrollToBottom();
+      },
+      // On Deny
+      () => {
+        // Send approval with "deny" decision
+        const approval: ToolApprovalInput = {
+          type: "tool_approval",
+          request_id: event.request_id,
+          decision: "deny",
+        };
+        const encoded = encodeConversationInput(approval);
+        this.connection.send(encoded);
+
+        // Re-enable input
+        this.setInputEnabled(true);
+
+        // Remove from pending map
+        this.pendingApprovals.delete(event.request_id);
+
+        // Note: prompt.showDenied() is already called by the Deny button handler
+      }
+    );
+
+    // Append to message list
+    this.messageList.appendChild(prompt.render());
+    this.pendingApprovals.set(event.request_id, prompt);
+
+    // Disable input while waiting for approval
+    this.setInputEnabled(false);
+
+    this.scrollToBottom();
+  }
+
+  private setInputEnabled(enabled: boolean): void {
+    if (enabled) {
+      this.textarea.disabled = false;
+      this.textarea.placeholder = "Type a message...";
+      this.sendBtn.disabled = false;
+    } else {
+      this.textarea.disabled = true;
+      this.textarea.placeholder = "Waiting for tool approval...";
+      this.sendBtn.disabled = true;
+    }
   }
 
   private scrollToBottom(): void {
