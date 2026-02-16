@@ -3,6 +3,9 @@
  * Using happy-dom for DOM environment
  */
 
+// Import fake-indexeddb polyfill first (before happy-dom)
+import "fake-indexeddb/auto";
+
 import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { Window } from "happy-dom";
 
@@ -468,6 +471,39 @@ describe("conversation-card", () => {
 
       // After send, attachments should be cleared
       expect(handler.hasPending()).toBe(false);
+    });
+  });
+
+  describe("session cache", () => {
+    test("page reload simulation - cached messages render instantly", async () => {
+      // Session 1: Send messages
+      const textarea1 = container.querySelector("textarea") as HTMLTextAreaElement;
+      const sendBtn1 = container.querySelector(".send-btn") as HTMLButtonElement;
+
+      textarea1.value = "First message";
+      sendBtn1.click();
+
+      // Wait for cache write debounce
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      // Session 2: Simulate page reload
+      document.body.innerHTML = "";
+      const container2 = document.createElement("div");
+      document.body.appendChild(container2);
+
+      const connection2 = new MockConnection();
+      const card2 = new ConversationCard(connection2 as any);
+      card2.mount(container2);
+
+      // Wait for cache read to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check that cached message rendered
+      const messageList = container2.querySelector(".message-list");
+      const userMessage = messageList?.querySelector(".message-user");
+
+      expect(userMessage).not.toBeNull();
+      expect(userMessage?.textContent).toBe("First message");
     });
   });
 });

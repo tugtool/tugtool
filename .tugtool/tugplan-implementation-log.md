@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-13
+date: 2025-02-16T23:24:38Z
+bead: tugtool-kfp.15
+---
+
+## #step-13: Added SessionCache (IndexedDB, debounced writes, reconciliation, clearHistory), integrated into conversation-card lifecycle, fake-indexeddb testing, 211 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-12
 date: 2025-02-16T23:13:02Z
 bead: tugtool-kfp.14

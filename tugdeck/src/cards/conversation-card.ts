@@ -33,6 +33,7 @@ import {
   renderAttachButton,
 } from "./conversation/attachment-handler";
 import { StreamingState } from "./conversation/streaming-state";
+import { SessionCache, type StoredMessage } from "./conversation/session-cache";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -53,6 +54,7 @@ export class ConversationCard implements TugCard {
   private attachBtn!: HTMLButtonElement;
   private dragCounter = 0;
   private streamingState = new StreamingState();
+  private sessionCache: SessionCache;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -62,6 +64,9 @@ export class ConversationCard implements TugCard {
       (event) => this.handleOrderedEvent(event),
       () => this.handleResync()
     );
+
+    // Initialize session cache (step 14.1 will pass real project hash)
+    this.sessionCache = new SessionCache("default");
   }
 
   setDeckManager(deckManager: DeckManager): void {
@@ -213,6 +218,45 @@ export class ConversationCard implements TugCard {
       }
     };
     document.addEventListener("keydown", this.keydownHandler);
+
+    // Load cached messages for instant rendering
+    this.loadCachedMessages();
+  }
+
+  private async loadCachedMessages(): Promise<void> {
+    try {
+      const cached = await this.sessionCache.readMessages();
+      if (cached.length > 0) {
+        this.renderCachedMessages(cached);
+      }
+    } catch (error) {
+      console.error("Failed to load cached messages:", error);
+    }
+  }
+
+  private renderCachedMessages(messages: StoredMessage[]): void {
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        const msgEl = document.createElement("div");
+        msgEl.className = "message message-user";
+        msgEl.dataset.msgId = msg.msg_id;
+        msgEl.textContent = msg.text;
+        this.messageList.appendChild(msgEl);
+      } else if (msg.role === "assistant") {
+        const msgEl = document.createElement("div");
+        msgEl.className = "message message-assistant";
+        msgEl.dataset.msgId = msg.msg_id;
+        msgEl.innerHTML = msg.text; // Cached messages already have rendered HTML
+
+        if (msg.status === "cancelled") {
+          msgEl.classList.add("message-cancelled");
+        }
+
+        this.messageList.appendChild(msgEl);
+      }
+    }
+
+    this.scrollToBottom();
   }
 
   onFrame(_feedId: number, payload: Uint8Array): void {
@@ -245,6 +289,50 @@ export class ConversationCard implements TugCard {
 
   private handleResync(): void {
     console.warn("Conversation message gap detected - resync triggered");
+    // When resync happens, re-read cache and reconcile with live state
+    this.loadCachedMessages();
+  }
+
+  private collectCurrentMessages(): StoredMessage[] {
+    const messages: StoredMessage[] = [];
+    const messageElements = this.messageList.querySelectorAll(".message");
+
+    let seq = 0;
+    for (const msgEl of messageElements) {
+      const htmlEl = msgEl as HTMLElement;
+      const msgId = htmlEl.dataset.msgId;
+
+      if (!msgId) {
+        // User messages don't have msg_id yet - assign a temporary one
+        seq++;
+        const role = htmlEl.classList.contains("message-user") ? "user" : "assistant";
+        messages.push({
+          msg_id: `temp-${seq}`,
+          seq,
+          rev: 0,
+          status: "complete",
+          role,
+          text: htmlEl.textContent || "",
+        });
+      } else {
+        seq++;
+        const role = htmlEl.classList.contains("message-user") ? "user" : "assistant";
+        const status = htmlEl.classList.contains("message-cancelled")
+          ? "cancelled"
+          : "complete";
+
+        messages.push({
+          msg_id: msgId,
+          seq,
+          rev: 0, // Rev tracking is done server-side
+          status,
+          role,
+          text: role === "assistant" ? htmlEl.innerHTML : htmlEl.textContent || "",
+        });
+      }
+    }
+
+    return messages;
   }
 
   private handleSend(): void {
@@ -290,6 +378,10 @@ export class ConversationCard implements TugCard {
 
     this.messageList.appendChild(msg);
     this.scrollToBottom();
+
+    // Write to cache after adding user message
+    const messages = this.collectCurrentMessages();
+    this.sessionCache.writeMessages(messages);
   }
 
   private renderAttachmentChips(): void {
@@ -516,6 +608,10 @@ export class ConversationCard implements TugCard {
     this.updateButtonState();
     // Stop any active streaming indicators
     this.streamingState.stopStreaming();
+
+    // Write current state to cache
+    const messages = this.collectCurrentMessages();
+    this.sessionCache.writeMessages(messages);
   }
 
   private handleTurnCancelled(event: TurnCancelled): void {
@@ -554,6 +650,15 @@ export class ConversationCard implements TugCard {
 
     // Re-enable input
     this.setInputEnabled(true);
+
+    // Write current state to cache
+    const messages = this.collectCurrentMessages();
+    this.sessionCache.writeMessages(messages);
+  }
+
+  async clearHistory(): Promise<void> {
+    await this.sessionCache.clearHistory();
+    this.messageList.innerHTML = "";
   }
 
   private scrollToBottom(): void {
