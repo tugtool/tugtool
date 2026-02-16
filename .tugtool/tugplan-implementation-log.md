@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-16T01:26:16Z
+bead: tugtool-p17.1
+---
+
+## #step-0: Added four Stats FeedId variants (0x30-0x33) to protocol.rs, StatSnapshot struct to types.rs, re-export in lib.rs, and TypeScript constants in protocol.ts. All 39 tugcast-core tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-16T00:19:55Z
 ---
