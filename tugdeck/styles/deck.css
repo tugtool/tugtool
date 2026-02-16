@@ -86,3 +86,12 @@
   font-size: 14px;
   text-align: center;
 }
+
+/* Card collapse */
+.card-slot.collapsed {
+  overflow: hidden;
+}
+
+.card-slot.collapsed .card-header ~ * {
+  display: none;
+}

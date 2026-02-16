@@ -11,6 +11,9 @@ export interface TugCard {
   /** Feed IDs this card subscribes to */
   readonly feedIds: readonly FeedIdValue[];
 
+  /** Whether this card can be collapsed. Defaults to true if not specified. */
+  readonly collapsible?: boolean;
+
   /** Mount the card into a container element */
   mount(container: HTMLElement): void;
 

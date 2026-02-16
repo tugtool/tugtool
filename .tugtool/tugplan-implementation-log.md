@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-16T02:05:52Z
+bead: tugtool-p17.6
+---
+
+## #step-5: Added card collapse/expand to DeckManager with button injection, grid track updates (28px collapsed, 1fr expanded), and localStorage layout persistence (500ms debounce). Terminal card marked non-collapsible. 75 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-16T01:57:43Z
 bead: tugtool-p17.5

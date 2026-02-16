@@ -2,6 +2,7 @@
  * Deck manager for card layout and frame dispatch
  *
  * Phase 2: CSS Grid multi-card layout with drag-handle resize
+ * Phase 3: Card collapse/expand and layout persistence
  */
 
 import { FeedIdValue } from "./protocol";
@@ -14,10 +15,28 @@ export type CardSlot = "terminal" | "git" | "files" | "stats";
 /** Minimum card dimension in pixels */
 const MIN_CARD_SIZE = 100;
 
+/** localStorage key for layout persistence */
+const LAYOUT_STORAGE_KEY = "tugdeck-layout";
+
+/** Layout state version for schema migration */
+const LAYOUT_VERSION = 1;
+
+/** Debounce delay for saving layout */
+const SAVE_DEBOUNCE_MS = 500;
+
+/** Layout state persisted to localStorage */
+interface LayoutState {
+  version: number;
+  colSplit: number;
+  rowSplits: number[];
+  collapsed: string[]; // CardSlot names of collapsed cards
+}
+
 /**
  * Manages card layout and frame dispatch.
  *
  * Creates a CSS Grid layout with named card slots and drag handles for resize.
+ * Supports card collapse/expand and persists layout to localStorage.
  */
 export class DeckManager {
   private cards: Map<CardSlot, TugCard> = new Map();
@@ -28,6 +47,10 @@ export class DeckManager {
   // Grid track state (in fr units, relative)
   private colSplit = 0.667; // 2fr / (2fr + 1fr) = 0.667
   private rowSplits = [1 / 3, 2 / 3]; // equal thirds
+
+  // Collapse/expand state
+  private collapsedSlots: Set<CardSlot> = new Set();
+  private saveTimer: number | null = null;
 
   constructor(container: HTMLElement, connection: TugConnection) {
     this.connection = connection;
@@ -48,7 +71,10 @@ export class DeckManager {
     // Create drag handles
     this.createDragHandles();
 
-    // Update grid tracks from initial state
+    // Load saved layout state
+    this.loadLayout();
+
+    // Update grid tracks from loaded or initial state
     this.updateGridTracks();
 
     // Listen for window resize
@@ -73,7 +99,74 @@ export class DeckManager {
     const slotEl = this.slots.get(slot);
     if (slotEl) {
       card.mount(slotEl);
+
+      // Add collapse button if card is collapsible
+      if (card.collapsible !== false) {
+        const header = slotEl.querySelector(".card-header");
+        if (header) {
+          const btn = document.createElement("button");
+          btn.className = "collapse-btn";
+          btn.textContent = this.collapsedSlots.has(slot) ? "+" : "-";
+          btn.addEventListener("click", () => this.toggleCollapse(slot));
+          header.appendChild(btn);
+
+          // Apply collapsed state if this slot was collapsed on load
+          if (this.collapsedSlots.has(slot)) {
+            this.applyCollapse(slot);
+          }
+        }
+      }
     }
+  }
+
+  private toggleCollapse(slot: CardSlot): void {
+    if (this.collapsedSlots.has(slot)) {
+      this.expandCard(slot);
+    } else {
+      this.collapseCard(slot);
+    }
+    this.scheduleSave();
+  }
+
+  private collapseCard(slot: CardSlot): void {
+    this.collapsedSlots.add(slot);
+    this.applyCollapse(slot);
+  }
+
+  private expandCard(slot: CardSlot): void {
+    this.collapsedSlots.delete(slot);
+    this.applyExpand(slot);
+  }
+
+  private applyCollapse(slot: CardSlot): void {
+    const slotEl = this.slots.get(slot);
+    if (!slotEl) return;
+
+    slotEl.classList.add("collapsed");
+
+    // Update button text
+    const btn = slotEl.querySelector(".collapse-btn");
+    if (btn) {
+      btn.textContent = "+";
+    }
+
+    this.updateGridTracks();
+  }
+
+  private applyExpand(slot: CardSlot): void {
+    const slotEl = this.slots.get(slot);
+    if (!slotEl) return;
+
+    slotEl.classList.remove("collapsed");
+
+    // Update button text
+    const btn = slotEl.querySelector(".collapse-btn");
+    if (btn) {
+      btn.textContent = "-";
+    }
+
+    this.updateGridTracks();
+    this.handleResize();
   }
 
   private createDragHandles(): void {
@@ -127,6 +220,7 @@ export class DeckManager {
         handle.classList.remove("active");
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        this.scheduleSave();
       };
 
       handle.addEventListener("pointermove", onMove);
@@ -177,6 +271,7 @@ export class DeckManager {
         handle.classList.remove("active");
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        this.scheduleSave();
       };
 
       handle.addEventListener("pointermove", onMove);
@@ -190,10 +285,25 @@ export class DeckManager {
     const colRight = ((1 - this.colSplit) * 100).toFixed(2) + "%";
     this.gridContainer.style.gridTemplateColumns = `${colLeft} ${colRight}`;
 
-    const row1 = (this.rowSplits[0] * 100).toFixed(2) + "%";
-    const row2 = ((this.rowSplits[1] - this.rowSplits[0]) * 100).toFixed(2) + "%";
-    const row3 = ((1 - this.rowSplits[1]) * 100).toFixed(2) + "%";
-    this.gridContainer.style.gridTemplateRows = `${row1} ${row2} ${row3}`;
+    // Right column slots in order
+    const rightSlots: CardSlot[] = ["git", "files", "stats"];
+
+    // Calculate row tracks, accounting for collapsed cards
+    const hasCollapsed = rightSlots.some((s) => this.collapsedSlots.has(s));
+
+    if (hasCollapsed) {
+      // Use fixed height for collapsed, 1fr for expanded
+      const rowTracks = rightSlots.map((slot) => {
+        return this.collapsedSlots.has(slot) ? "28px" : "1fr";
+      });
+      this.gridContainer.style.gridTemplateRows = rowTracks.join(" ");
+    } else {
+      // Use percentage-based splits when all expanded
+      const row1 = (this.rowSplits[0] * 100).toFixed(2) + "%";
+      const row2 = ((this.rowSplits[1] - this.rowSplits[0]) * 100).toFixed(2) + "%";
+      const row3 = ((1 - this.rowSplits[1]) * 100).toFixed(2) + "%";
+      this.gridContainer.style.gridTemplateRows = `${row1} ${row2} ${row3}`;
+    }
 
     // Position drag handles
     this.positionHandles();
@@ -219,6 +329,76 @@ export class DeckManager {
     }
   }
 
+  private saveLayout(): void {
+    try {
+      const state: LayoutState = {
+        version: LAYOUT_VERSION,
+        colSplit: this.colSplit,
+        rowSplits: this.rowSplits,
+        collapsed: Array.from(this.collapsedSlots),
+      };
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn("tugdeck: failed to save layout to localStorage", e);
+    }
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+    }
+    this.saveTimer = window.setTimeout(() => {
+      this.saveLayout();
+      this.saveTimer = null;
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  private loadLayout(): void {
+    try {
+      const json = localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (!json) {
+        return; // Use defaults
+      }
+
+      const state = JSON.parse(json) as LayoutState;
+
+      // Verify version
+      if (state.version !== LAYOUT_VERSION) {
+        console.warn("tugdeck: layout version mismatch, using defaults");
+        return;
+      }
+
+      // Validate and apply colSplit
+      if (
+        typeof state.colSplit === "number" &&
+        state.colSplit >= 0.1 &&
+        state.colSplit <= 0.9
+      ) {
+        this.colSplit = state.colSplit;
+      }
+
+      // Validate and apply rowSplits
+      if (
+        Array.isArray(state.rowSplits) &&
+        state.rowSplits.length === 2 &&
+        state.rowSplits[0] >= 0.1 &&
+        state.rowSplits[1] >= state.rowSplits[0] + 0.1 &&
+        state.rowSplits[1] <= 0.9
+      ) {
+        this.rowSplits = state.rowSplits;
+      }
+
+      // Validate and apply collapsed state
+      if (Array.isArray(state.collapsed)) {
+        const validSlots: CardSlot[] = ["git", "files", "stats"];
+        const filtered = state.collapsed.filter((s) => validSlots.includes(s as CardSlot));
+        this.collapsedSlots = new Set(filtered as CardSlot[]);
+      }
+    } catch (e) {
+      console.warn("tugdeck: failed to load layout from localStorage", e);
+    }
+  }
+
   private handleResize(): void {
     for (const [slot, card] of this.cards) {
       const slotEl = this.slots.get(slot);
@@ -229,6 +409,11 @@ export class DeckManager {
   }
 
   destroy(): void {
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+
     for (const card of this.cards.values()) {
       card.destroy();
     }

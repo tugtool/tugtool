@@ -12,6 +12,26 @@
   letter-spacing: 0.5px;
   border-bottom: 1px solid #3c3c3c;
   flex-shrink: 0;
+  position: relative;
+}
+
+.card-header .collapse-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #808080;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: monospace;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.card-header .collapse-btn:hover {
+  color: #cccccc;
 }
 
 /* Files card */

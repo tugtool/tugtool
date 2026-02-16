@@ -14,6 +14,7 @@ import { TugCard } from "./card";
 
 export class TerminalCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.TERMINAL_OUTPUT];
+  readonly collapsible = false;
 
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
