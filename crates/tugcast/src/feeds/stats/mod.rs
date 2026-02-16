@@ -2,9 +2,6 @@
 //!
 //! This module implements the stats collection system with pluggable collectors.
 //! Each collector runs as a separate SnapshotFeed with its own FeedId and watch channel.
-//!
-//! Note: These items will be used in step-2 when stats feeds are wired into main.rs.
-//! Until then, they're marked as allowed dead code to prevent warnings.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,18 +13,14 @@ pub mod build_status;
 pub mod process_info;
 pub mod token_usage;
 
-#[allow(unused_imports)]
 pub use build_status::BuildStatusCollector;
-#[allow(unused_imports)]
 pub use process_info::ProcessInfoCollector;
-#[allow(unused_imports)]
 pub use token_usage::TokenUsageCollector;
 
 /// A pluggable stats collector that produces periodic snapshots.
 ///
 /// Each collector runs on its own timer and produces a JSON value
 /// representing its current measurement.
-#[allow(dead_code)]
 pub trait StatCollector: Send + Sync {
     /// Unique name for this collector (e.g., "process_info")
     fn name(&self) -> &str;
@@ -47,14 +40,12 @@ pub trait StatCollector: Send + Sync {
 }
 
 /// Manages lifecycle of multiple stat collectors and produces aggregate feed.
-#[allow(dead_code)]
 pub struct StatsRunner {
     collectors: Vec<Arc<dyn StatCollector>>,
 }
 
 impl StatsRunner {
     /// Create a new StatsRunner with the given collectors.
-    #[allow(dead_code)]
     pub fn new(collectors: Vec<Arc<dyn StatCollector>>) -> Self {
         Self { collectors }
     }
@@ -69,7 +60,6 @@ impl StatsRunner {
     /// * `aggregate_tx` - Watch sender for the aggregate feed (FeedId::Stats)
     /// * `individual_txs` - Watch senders for individual collector feeds (must match order of collectors)
     /// * `cancel` - Cancellation token to stop all tasks
-    #[allow(dead_code)]
     pub async fn run(
         self,
         aggregate_tx: watch::Sender<Frame>,

@@ -8,14 +8,12 @@ use std::time::Duration;
 use tugcast_core::FeedId;
 
 /// Collects build status by monitoring the target/ directory modification time.
-#[allow(dead_code)]
 pub struct BuildStatusCollector {
     target_dir: PathBuf,
 }
 
 impl BuildStatusCollector {
     /// Create a new BuildStatusCollector for the given target directory.
-    #[allow(dead_code)]
     pub fn new(target_dir: PathBuf) -> Self {
         Self { target_dir }
     }

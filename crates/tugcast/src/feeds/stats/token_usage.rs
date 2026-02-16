@@ -16,7 +16,6 @@ use tugcast_core::FeedId;
 /// "X/Y tokens (Z%)" or similar patterns showing input/output/total tokens
 ///
 /// This collector is fragile by design and returns Value::Null on parse failure.
-#[allow(dead_code)]
 pub struct TokenUsageCollector {
     session: String,
     warned: AtomicBool,
@@ -24,7 +23,6 @@ pub struct TokenUsageCollector {
 
 impl TokenUsageCollector {
     /// Create a new TokenUsageCollector for the given tmux session.
-    #[allow(dead_code)]
     pub fn new(session: String) -> Self {
         Self {
             session,
@@ -38,7 +36,6 @@ impl TokenUsageCollector {
     /// - "15000/8000 tokens" (input/output format)
     /// - "23000 tokens" (total format)
     /// - "(45.2%)" (context window percentage)
-    #[allow(dead_code)]
     fn parse_token_usage(output: &str) -> Option<serde_json::Value> {
         // Pattern 1: Look for "X/Y tokens" format (input/output)
         let input_output_re = Regex::new(r"(\d+)/(\d+)\s+tokens?").ok()?;

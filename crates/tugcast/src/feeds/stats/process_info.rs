@@ -9,7 +9,6 @@ use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tugcast_core::FeedId;
 
 /// Collects process information stats (CPU, memory, uptime) for the current process.
-#[allow(dead_code)]
 pub struct ProcessInfoCollector {
     system: Mutex<System>,
     pid: Pid,
@@ -18,7 +17,6 @@ pub struct ProcessInfoCollector {
 
 impl ProcessInfoCollector {
     /// Create a new ProcessInfoCollector for the current process.
-    #[allow(dead_code)]
     pub fn new() -> Self {
         let mut system = System::new();
         let pid = Pid::from_u32(std::process::id());
