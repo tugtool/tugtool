@@ -16,7 +16,9 @@ use tugcast_core::{FeedId, Frame, SnapshotFeed, StreamFeed};
 use crate::auth::new_shared_auth_state;
 use crate::feeds::filesystem::FilesystemFeed;
 use crate::feeds::git::GitFeed;
-use crate::feeds::stats::{BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector};
+use crate::feeds::stats::{
+    BuildStatusCollector, ProcessInfoCollector, StatsRunner, TokenUsageCollector,
+};
 use crate::feeds::terminal::{self, TerminalFeed};
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
 use std::sync::Arc;
@@ -44,14 +46,20 @@ async fn main() {
     match terminal::check_tmux_version().await {
         Ok(version) => info!("tmux version: {}", version),
         Err(e) => {
-            eprintln!("tugcast: error: tmux not found or version too old (requires 3.x+): {}", e);
+            eprintln!(
+                "tugcast: error: tmux not found or version too old (requires 3.x+): {}",
+                e
+            );
             std::process::exit(1);
         }
     }
 
     // Ensure tmux session exists
     if let Err(e) = terminal::ensure_session(&cli.session).await {
-        eprintln!("tugcast: error: failed to create tmux session '{}': {}", cli.session, e);
+        eprintln!(
+            "tugcast: error: failed to create tmux session '{}': {}",
+            cli.session, e
+        );
         std::process::exit(1);
     }
 
@@ -88,16 +96,22 @@ async fn main() {
     let git_feed = GitFeed::new(watch_dir.clone());
 
     // Create stats collectors
-    let process_info = Arc::new(ProcessInfoCollector::new()) as Arc<dyn crate::feeds::stats::StatCollector>;
-    let token_usage = Arc::new(TokenUsageCollector::new(cli.session.clone())) as Arc<dyn crate::feeds::stats::StatCollector>;
+    let process_info =
+        Arc::new(ProcessInfoCollector::new()) as Arc<dyn crate::feeds::stats::StatCollector>;
+    let token_usage = Arc::new(TokenUsageCollector::new(cli.session.clone()))
+        as Arc<dyn crate::feeds::stats::StatCollector>;
     let target_dir = watch_dir.join("target");
-    let build_status = Arc::new(BuildStatusCollector::new(target_dir)) as Arc<dyn crate::feeds::stats::StatCollector>;
+    let build_status = Arc::new(BuildStatusCollector::new(target_dir))
+        as Arc<dyn crate::feeds::stats::StatCollector>;
 
     // Create watch channels for stats feeds
     let (stats_agg_tx, stats_agg_rx) = watch::channel(Frame::new(FeedId::Stats, vec![]));
-    let (stats_proc_tx, stats_proc_rx) = watch::channel(Frame::new(FeedId::StatsProcessInfo, vec![]));
-    let (stats_token_tx, stats_token_rx) = watch::channel(Frame::new(FeedId::StatsTokenUsage, vec![]));
-    let (stats_build_tx, stats_build_rx) = watch::channel(Frame::new(FeedId::StatsBuildStatus, vec![]));
+    let (stats_proc_tx, stats_proc_rx) =
+        watch::channel(Frame::new(FeedId::StatsProcessInfo, vec![]));
+    let (stats_token_tx, stats_token_rx) =
+        watch::channel(Frame::new(FeedId::StatsTokenUsage, vec![]));
+    let (stats_build_tx, stats_build_rx) =
+        watch::channel(Frame::new(FeedId::StatsBuildStatus, vec![]));
 
     // Create feed router
     let feed_router = FeedRouter::new(
@@ -105,7 +119,14 @@ async fn main() {
         input_tx,
         cli.session.clone(),
         auth.clone(),
-        vec![fs_watch_rx, git_watch_rx, stats_agg_rx, stats_proc_rx, stats_token_rx, stats_build_rx],
+        vec![
+            fs_watch_rx,
+            git_watch_rx,
+            stats_agg_rx,
+            stats_proc_rx,
+            stats_token_rx,
+            stats_build_rx,
+        ],
     );
 
     // Start terminal feed in background task
@@ -131,7 +152,13 @@ async fn main() {
     let stats_cancel = cancel.clone();
     let stats_runner = StatsRunner::new(vec![process_info, token_usage, build_status]);
     tokio::spawn(async move {
-        stats_runner.run(stats_agg_tx, vec![stats_proc_tx, stats_token_tx, stats_build_tx], stats_cancel).await;
+        stats_runner
+            .run(
+                stats_agg_tx,
+                vec![stats_proc_tx, stats_token_tx, stats_build_tx],
+                stats_cancel,
+            )
+            .await;
     });
 
     // Open browser if --open flag
@@ -141,7 +168,10 @@ async fn main() {
 
     // Start server (blocks until shutdown)
     if let Err(e) = server::run_server(cli.port, feed_router, auth).await {
-        eprintln!("tugcast: error: failed to bind to 127.0.0.1:{}: {}", cli.port, e);
+        eprintln!(
+            "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
+            cli.port, e
+        );
         std::process::exit(1);
     }
 

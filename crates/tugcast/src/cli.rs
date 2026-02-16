@@ -117,11 +117,17 @@ mod tests {
         let result = Cli::try_parse_from(["tugcast", "--help"]);
         let err = result.unwrap_err();
         let help_text = err.to_string();
-        assert!(help_text.contains("--session"), "help should contain --session");
+        assert!(
+            help_text.contains("--session"),
+            "help should contain --session"
+        );
         assert!(help_text.contains("--port"), "help should contain --port");
         assert!(help_text.contains("--dir"), "help should contain --dir");
         assert!(help_text.contains("--open"), "help should contain --open");
-        assert!(help_text.contains("--version"), "help should contain --version");
+        assert!(
+            help_text.contains("--version"),
+            "help should contain --version"
+        );
     }
 
     #[test]

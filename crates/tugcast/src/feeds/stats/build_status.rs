@@ -84,11 +84,7 @@ impl StatCollector for BuildStatusCollector {
         };
 
         // Determine status: "building" if modified within 10 seconds, "idle" otherwise
-        let status = if secs_ago <= 10 {
-            "building"
-        } else {
-            "idle"
-        };
+        let status = if secs_ago <= 10 { "building" } else { "idle" };
 
         serde_json::json!({
             "name": "build_status",

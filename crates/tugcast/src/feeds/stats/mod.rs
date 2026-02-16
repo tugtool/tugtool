@@ -290,7 +290,10 @@ mod tests {
         })
         .await;
 
-        assert!(result.is_ok(), "Aggregate frame should arrive within 2 seconds");
+        assert!(
+            result.is_ok(),
+            "Aggregate frame should arrive within 2 seconds"
+        );
         let frame = result.unwrap();
 
         // Verify it's a valid StatSnapshot

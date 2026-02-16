@@ -306,18 +306,20 @@ async fn test_stats_feed_delivery() {
     let stats_agg_payload = serde_json::to_vec(&stats_agg_json).unwrap();
 
     // Create watch channels
-    let (_stats_agg_tx, stats_agg_rx) = tokio::sync::watch::channel(
-        Frame::new(FeedId::Stats, stats_agg_payload.clone())
-    );
-    let (_stats_proc_tx, stats_proc_rx) = tokio::sync::watch::channel(
-        Frame::new(FeedId::StatsProcessInfo, process_info_payload.clone())
-    );
-    let (_stats_token_tx, stats_token_rx) = tokio::sync::watch::channel(
-        Frame::new(FeedId::StatsTokenUsage, token_usage_payload.clone())
-    );
-    let (_stats_build_tx, stats_build_rx) = tokio::sync::watch::channel(
-        Frame::new(FeedId::StatsBuildStatus, build_status_payload.clone())
-    );
+    let (_stats_agg_tx, stats_agg_rx) =
+        tokio::sync::watch::channel(Frame::new(FeedId::Stats, stats_agg_payload.clone()));
+    let (_stats_proc_tx, stats_proc_rx) = tokio::sync::watch::channel(Frame::new(
+        FeedId::StatsProcessInfo,
+        process_info_payload.clone(),
+    ));
+    let (_stats_token_tx, stats_token_rx) = tokio::sync::watch::channel(Frame::new(
+        FeedId::StatsTokenUsage,
+        token_usage_payload.clone(),
+    ));
+    let (_stats_build_tx, stats_build_rx) = tokio::sync::watch::channel(Frame::new(
+        FeedId::StatsBuildStatus,
+        build_status_payload.clone(),
+    ));
 
     // Verify that watch receivers provide immediate access to initial values
     let agg_frame = stats_agg_rx.borrow().clone();
