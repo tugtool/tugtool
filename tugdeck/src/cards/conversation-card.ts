@@ -11,10 +11,13 @@ import {
   type ConversationEvent,
   type AssistantText,
   type UserMessageInput,
+  type ToolUse,
+  type ToolResult,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
 import type { DeckManager } from "../deck";
 import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-renderer";
+import { ToolCard } from "./conversation/tool-card";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -24,6 +27,7 @@ export class ConversationCard implements TugCard {
   private textarea!: HTMLTextAreaElement;
   private orderingBuffer: MessageOrderingBuffer;
   private deckManager?: DeckManager;
+  private toolCards: Map<string, ToolCard> = new Map();
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -105,6 +109,10 @@ export class ConversationCard implements TugCard {
       this.renderAssistantMessage(event);
     } else if (event.type === "error") {
       this.renderError(event.message);
+    } else if (event.type === "tool_use") {
+      this.renderToolUse(event);
+    } else if (event.type === "tool_result") {
+      this.renderToolResult(event);
     }
     // Other event types handled in later steps
   }
@@ -177,6 +185,32 @@ export class ConversationCard implements TugCard {
     msgEl.className = "message message-error";
     msgEl.textContent = `Error: ${message}`;
     this.messageList.appendChild(msgEl);
+    this.scrollToBottom();
+  }
+
+  private renderToolUse(event: ToolUse): void {
+    // Create a new tool card
+    const toolCard = new ToolCard(event.tool_name, event.tool_use_id, event.input);
+    this.toolCards.set(event.tool_use_id, toolCard);
+
+    // Append to message list
+    this.messageList.appendChild(toolCard.render());
+    this.scrollToBottom();
+  }
+
+  private renderToolResult(event: ToolResult): void {
+    // Find the corresponding tool card
+    const toolCard = this.toolCards.get(event.tool_use_id);
+    if (!toolCard) {
+      console.warn("Received tool_result for unknown tool_use_id:", event.tool_use_id);
+      return;
+    }
+
+    // Update status and result
+    const status = event.is_error ? "failure" : "success";
+    toolCard.updateStatus(status);
+    toolCard.updateResult(event.output, event.is_error);
+
     this.scrollToBottom();
   }
 

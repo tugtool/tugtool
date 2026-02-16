@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-16T22:10:04Z
+bead: tugtool-kfp.8
+---
+
+## #step-7: Added ToolCard (collapsible, icon mapping, status indicators, input/result sections, syntax highlighting for Read, terminal for Bash), 26 tests, 102 total passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-16T21:58:25Z
 bead: tugtool-kfp.7
