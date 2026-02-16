@@ -10,7 +10,7 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
 use tracing::{debug, error, info, warn};
 
@@ -44,6 +44,7 @@ pub struct FeedRouter {
     input_tx: mpsc::Sender<Frame>,
     session: String,
     auth: SharedAuthState,
+    snapshot_watches: Vec<watch::Receiver<Frame>>,
 }
 
 impl FeedRouter {
@@ -53,12 +54,14 @@ impl FeedRouter {
         input_tx: mpsc::Sender<Frame>,
         session: String,
         auth: SharedAuthState,
+        snapshot_watches: Vec<watch::Receiver<Frame>>,
     ) -> Self {
         Self {
             terminal_tx,
             input_tx,
             session,
             auth,
+            snapshot_watches,
         }
     }
 
@@ -155,11 +158,50 @@ async fn handle_client(mut socket: WebSocket, router: FeedRouter) {
             ClientState::Live => {
                 info!("Client in LIVE state");
 
+                // Send initial snapshots for all watch channels
+                for watch_rx in &router.snapshot_watches {
+                    let frame = watch_rx.borrow().clone();
+                    if !frame.payload.is_empty()
+                        && socket
+                            .send(Message::Binary(frame.encode().into()))
+                            .await
+                            .is_err()
+                    {
+                        info!("Client disconnected during initial snapshot send");
+                        return;
+                    }
+                }
+
+                // Create a channel for merged snapshot updates
+                let (snap_tx, mut snap_rx) = mpsc::channel::<Frame>(16);
+
+                // Spawn a task per snapshot watch to forward updates
+                for mut watch_rx in router.snapshot_watches.clone() {
+                    let snap_tx_clone = snap_tx.clone();
+                    tokio::spawn(async move {
+                        while watch_rx.changed().await.is_ok() {
+                            let frame = watch_rx.borrow_and_update().clone();
+                            if snap_tx_clone.send(frame).await.is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                drop(snap_tx); // Drop original sender so channel closes when tasks end
+
                 let mut heartbeat_interval = time::interval(HEARTBEAT_INTERVAL);
                 let mut last_heartbeat = Instant::now();
 
                 loop {
                     tokio::select! {
+                        // Receive snapshot feed update
+                        Some(frame) = snap_rx.recv() => {
+                            if socket.send(Message::Binary(frame.encode().into())).await.is_err() {
+                                info!("Client disconnected");
+                                return;
+                            }
+                        }
+
                         // Receive frame from broadcast channel
                         result = broadcast_rx.recv() => {
                             match result {

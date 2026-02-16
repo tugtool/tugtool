@@ -61,8 +61,20 @@ fn main() {
             .expect("failed to write placeholder app.css");
     }
 
+    // Copy deck.css and cards.css to output
+    let deck_css = tugdeck_dir.join("styles/deck.css");
+    if deck_css.exists() {
+        fs::copy(&deck_css, tugdeck_out.join("deck.css")).expect("failed to copy deck.css");
+    }
+
+    let cards_css = tugdeck_dir.join("styles/cards.css");
+    if cards_css.exists() {
+        fs::copy(&cards_css, tugdeck_out.join("cards.css")).expect("failed to copy cards.css");
+    }
+
     // Set rerun-if-changed for cargo caching
     println!("cargo:rerun-if-changed=../../tugdeck/src/");
     println!("cargo:rerun-if-changed=../../tugdeck/index.html");
     println!("cargo:rerun-if-changed=../../tugdeck/package.json");
+    println!("cargo:rerun-if-changed=../../tugdeck/styles/");
 }

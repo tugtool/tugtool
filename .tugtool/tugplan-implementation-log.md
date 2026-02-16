@@ -10,6 +10,109 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-16T00:19:55Z
+---
+
+## audit-fix: Audit fix: applied cargo fmt to fix .args() formatting in git.rs
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-16T00:15:26Z
+bead: tugtool-nez.7
+---
+
+## #step-6: Added integration tests for JSON contracts and watch channels, improved documentation on all new public types, fixed clippy warnings. Full acceptance verification passed.
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-16T00:07:01Z
+bead: tugtool-nez.6
+---
+
+## #step-5: Created CSS Grid multi-card layout with deck.css/cards.css, rewrote DeckManager with named card slots and drag-handle resize, wired all four cards in main.ts, updated build.rs for CSS bundling
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-15T23:58:12Z
+bead: tugtool-nez.5
+---
+
+## #step-4: Added FILESYSTEM/GIT FeedId constants to protocol.ts, created FilesCard, GitCard, and StatsCard TypeScript card implementations
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-15T23:51:31Z
+bead: tugtool-nez.4
+---
+
+## #step-3: Wired filesystem and git snapshot feeds into FeedRouter and main.rs with per-client watch forwarding, initial snapshot send on connect, and dead_code cleanup
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-15T23:42:41Z
+bead: tugtool-nez.3
+---
+
+## #step-2: Created GitFeed struct implementing SnapshotFeed with porcelain v2 parsing, 2-second polling interval, PartialEq change detection, and comprehensive test coverage
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-15T23:35:44Z
+bead: tugtool-nez.2
+---
+
+## #step-1: Created FilesystemFeed struct implementing SnapshotFeed with notify watcher, gitignore filtering, manual 100ms debounce, and comprehensive test coverage
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-15T23:24:56Z
+bead: tugtool-nez.1
+---
+
+## #step-0: Added Filesystem and Git FeedId variants to protocol.rs, created types.rs with FsEvent/GitStatus/FileStatus data types, added serde_json dependency, updated lib.rs exports
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-15T22:02:13Z
 ---
 

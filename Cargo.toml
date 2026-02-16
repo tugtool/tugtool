@@ -46,6 +46,10 @@ tokio-util = "0.7"
 # PTY management
 pty-process = { version = "0.5", features = ["async"] }
 
+# Filesystem watching
+notify = "8"
+ignore = "0.4"
+
 # Random generation
 rand = "0.10"
 
