@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-16T01:57:43Z
+bead: tugtool-p17.5
+---
+
+## #step-4: Added WebSocket reconnection with exponential backoff (2s→30s cap), ConnectionState tracking, disconnect banner with countdown, and intentionalClose flag. Updated connection.ts, deck.css, index.html. 75 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-16T01:51:28Z
 bead: tugtool-p17.4
