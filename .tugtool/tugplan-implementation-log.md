@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-16T01:51:28Z
+bead: tugtool-p17.4
+---
+
+## #step-3: Rewrote stats-card.ts with Sparkline (Canvas 2D ring buffer), SubCard helper, and StatsCard with three color-coded sub-cards. Updated cards.css. esbuild bundles successfully, 75 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-16T01:45:24Z
 bead: tugtool-p17.3
