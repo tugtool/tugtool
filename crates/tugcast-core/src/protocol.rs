@@ -26,6 +26,14 @@ pub enum FeedId {
     Filesystem = 0x10,
     /// Git status snapshot (tugcast -> tugdeck)
     Git = 0x20,
+    /// Aggregate stats snapshot (tugcast -> tugdeck)
+    Stats = 0x30,
+    /// Process info stats (tugcast -> tugdeck)
+    StatsProcessInfo = 0x31,
+    /// Token usage stats (tugcast -> tugdeck)
+    StatsTokenUsage = 0x32,
+    /// Build status stats (tugcast -> tugdeck)
+    StatsBuildStatus = 0x33,
     /// Heartbeat/keepalive frames (bidirectional)
     Heartbeat = 0xFF,
 }
@@ -41,6 +49,10 @@ impl FeedId {
             0x02 => Some(FeedId::TerminalResize),
             0x10 => Some(FeedId::Filesystem),
             0x20 => Some(FeedId::Git),
+            0x30 => Some(FeedId::Stats),
+            0x31 => Some(FeedId::StatsProcessInfo),
+            0x32 => Some(FeedId::StatsTokenUsage),
+            0x33 => Some(FeedId::StatsBuildStatus),
             0xFF => Some(FeedId::Heartbeat),
             _ => None,
         }
@@ -168,9 +180,13 @@ mod tests {
         assert_eq!(FeedId::from_byte(0x02), Some(FeedId::TerminalResize));
         assert_eq!(FeedId::from_byte(0x10), Some(FeedId::Filesystem));
         assert_eq!(FeedId::from_byte(0x20), Some(FeedId::Git));
+        assert_eq!(FeedId::from_byte(0x30), Some(FeedId::Stats));
+        assert_eq!(FeedId::from_byte(0x31), Some(FeedId::StatsProcessInfo));
+        assert_eq!(FeedId::from_byte(0x32), Some(FeedId::StatsTokenUsage));
+        assert_eq!(FeedId::from_byte(0x33), Some(FeedId::StatsBuildStatus));
         assert_eq!(FeedId::from_byte(0xFF), Some(FeedId::Heartbeat));
         assert_eq!(FeedId::from_byte(0x03), None);
-        assert_eq!(FeedId::from_byte(0x30), None);
+        assert_eq!(FeedId::from_byte(0x34), None);
     }
 
     #[test]
@@ -180,6 +196,10 @@ mod tests {
         assert_eq!(FeedId::TerminalResize.as_byte(), 0x02);
         assert_eq!(FeedId::Filesystem.as_byte(), 0x10);
         assert_eq!(FeedId::Git.as_byte(), 0x20);
+        assert_eq!(FeedId::Stats.as_byte(), 0x30);
+        assert_eq!(FeedId::StatsProcessInfo.as_byte(), 0x31);
+        assert_eq!(FeedId::StatsTokenUsage.as_byte(), 0x32);
+        assert_eq!(FeedId::StatsBuildStatus.as_byte(), 0x33);
         assert_eq!(FeedId::Heartbeat.as_byte(), 0xFF);
     }
 
@@ -371,5 +391,64 @@ mod tests {
         let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
         assert_eq!(decoded.payload, b"test");
         assert_eq!(bytes_consumed, HEADER_SIZE + 4);
+    }
+
+    #[test]
+    fn test_round_trip_stats() {
+        let original = Frame::new(
+            FeedId::Stats,
+            b"{\"collectors\":{},\"timestamp\":\"2026-02-15T10:30:05Z\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats_process_info() {
+        let original = Frame::new(
+            FeedId::StatsProcessInfo,
+            b"{\"name\":\"process_info\",\"pid\":12345}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats_token_usage() {
+        let original = Frame::new(
+            FeedId::StatsTokenUsage,
+            b"{\"name\":\"token_usage\",\"total_tokens\":23000}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_stats_build_status() {
+        let original = Frame::new(
+            FeedId::StatsBuildStatus,
+            b"{\"name\":\"build_status\",\"status\":\"idle\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_golden_stats_frame() {
+        let frame = Frame::new(FeedId::Stats, b"{}".to_vec());
+        let encoded = frame.encode();
+        // Expected wire format:
+        // [0x30] - Stats
+        // [0x00, 0x00, 0x00, 0x02] - length 2 (big-endian)
+        // [0x7b, 0x7d] - "{}"
+        assert_eq!(encoded, vec![0x30, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]);
     }
 }

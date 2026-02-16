@@ -14,6 +14,10 @@ export const FeedId = {
   TERMINAL_RESIZE: 0x02,
   FILESYSTEM: 0x10,
   GIT: 0x20,
+  STATS: 0x30,
+  STATS_PROCESS_INFO: 0x31,
+  STATS_TOKEN_USAGE: 0x32,
+  STATS_BUILD_STATUS: 0x33,
   HEARTBEAT: 0xff,
 } as const;
 

@@ -3,7 +3,7 @@
 //! Implements single-use token authentication with HttpOnly session cookies.
 //! The flow:
 //! 1. Server generates a random 32-byte token at startup
-//! 2. Client exchanges token once via GET /auth?token=<T>
+//! 2. Client exchanges token once via GET /auth?token=TOKEN
 //! 3. Server validates token, creates session, sets HttpOnly cookie, invalidates token
 //! 4. All subsequent requests authenticated via session cookie
 

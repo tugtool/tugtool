@@ -4,7 +4,11 @@ use std::path::PathBuf;
 /// tugcast: WebSocket terminal bridge for tmux sessions
 #[derive(Parser, Debug)]
 #[command(name = "tugcast")]
-#[command(about = "Attach to a tmux session and serve it over WebSocket", long_about = None)]
+#[command(version)]
+#[command(
+    about = "Attach to a tmux session and serve a live dashboard over WebSocket",
+    long_about = "tugcast attaches to a tmux session and serves a live dashboard over WebSocket.\n\nIt provides real-time terminal output, filesystem events, git status, and system\nstats to the tugdeck browser frontend. Multiple data feeds run concurrently:\nterminal I/O, filesystem watching, git polling, and stats collection.\n\nUsage:\n  tugcast                        Start with defaults (session: cc0, port: 7890)\n  tugcast --session dev --port 8080  Custom session and port\n  tugcast --dir /path/to/project     Watch a specific directory\n  tugcast --open                     Auto-open browser after starting"
+)]
 pub struct Cli {
     /// Tmux session name to attach to (created if it doesn't exist)
     #[arg(long, default_value = "cc0")]
@@ -86,5 +90,55 @@ mod tests {
         assert_eq!(cli.port, 9000);
         assert_eq!(cli.dir, PathBuf::from("/workspace"));
         assert!(cli.open);
+    }
+
+    #[test]
+    fn test_version_flag() {
+        // --version should cause an early exit with version info
+        let result = Cli::try_parse_from(["tugcast", "--version"]);
+        // clap returns an Err with kind DisplayVersion for --version
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn test_help_flag() {
+        // --help should cause an early exit with help info
+        let result = Cli::try_parse_from(["tugcast", "--help"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn test_help_contains_flags() {
+        // Verify help output contains expected flag names
+        let result = Cli::try_parse_from(["tugcast", "--help"]);
+        let err = result.unwrap_err();
+        let help_text = err.to_string();
+        assert!(
+            help_text.contains("--session"),
+            "help should contain --session"
+        );
+        assert!(help_text.contains("--port"), "help should contain --port");
+        assert!(help_text.contains("--dir"), "help should contain --dir");
+        assert!(help_text.contains("--open"), "help should contain --open");
+        assert!(
+            help_text.contains("--version"),
+            "help should contain --version"
+        );
+    }
+
+    #[test]
+    fn test_version_contains_version_string() {
+        let result = Cli::try_parse_from(["tugcast", "--version"]);
+        let err = result.unwrap_err();
+        let version_text = err.to_string();
+        // Should contain the package version from Cargo.toml
+        assert!(
+            version_text.contains(env!("CARGO_PKG_VERSION")),
+            "version output should contain the package version"
+        );
     }
 }

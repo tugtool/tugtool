@@ -27,6 +27,9 @@ thiserror = { workspace = true }
 libc = { workspace = true }
 notify = { workspace = true }
 ignore = { workspace = true }
+sysinfo = { workspace = true }
+regex = { workspace = true }
+chrono = { workspace = true }
 tugcast-core = { path = "../tugcast-core" }
 
 [dev-dependencies]

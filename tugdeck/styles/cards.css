@@ -12,6 +12,26 @@
   letter-spacing: 0.5px;
   border-bottom: 1px solid #3c3c3c;
   flex-shrink: 0;
+  position: relative;
+}
+
+.card-header .collapse-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #808080;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: monospace;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.card-header .collapse-btn:hover {
+  color: #cccccc;
 }
 
 /* Files card */
@@ -158,7 +178,7 @@
   padding: 4px 0;
 }
 
-/* Stats card (stub) */
+/* Stats card */
 .stats-card {
   display: flex;
   flex-direction: column;
@@ -167,15 +187,53 @@
   color: #d4d4d4;
 }
 
-.stats-card .placeholder {
+.stats-card .stats-content {
   flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+}
+
+.stats-card .stat-sub-card {
+  margin-bottom: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.stats-card .stat-sub-card:last-child {
+  border-bottom: none;
+}
+
+.stats-card .stat-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.stats-card .stat-name {
   color: #808080;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.stats-card .stat-value {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+  text-align: right;
+}
+
+.stats-card .stat-na {
+  color: #808080;
   font-style: italic;
+}
+
+.stats-card .sparkline-canvas {
+  width: 100%;
+  height: 32px;
+  display: block;
 }
 
 /* Card slot borders (visual separation) */
