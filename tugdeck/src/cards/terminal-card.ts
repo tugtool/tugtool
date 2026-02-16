@@ -12,6 +12,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { FeedId, FeedIdValue, resizeFrame } from "../protocol";
 import { TugConnection } from "../connection";
 import { TugCard } from "./card";
+import type { DeckManager } from "../deck";
 
 export class TerminalCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.TERMINAL_OUTPUT];
@@ -21,9 +22,15 @@ export class TerminalCard implements TugCard {
   private fitAddon: FitAddon | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private connection: TugConnection;
+  private resizeDebounceId: number | null = null;
+  private deckManager: DeckManager | null = null;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
+  }
+
+  setDeckManager(dm: DeckManager): void {
+    this.deckManager = dm;
   }
 
   mount(container: HTMLElement): void {
@@ -65,10 +72,21 @@ export class TerminalCard implements TugCard {
 
     // Use ResizeObserver to fit when the container gets dimensions
     // (fires on initial layout and on subsequent resizes)
+    // Suppress fit during active drag to prevent flashing
     this.resizeObserver = new ResizeObserver(() => {
-      if (this.fitAddon) {
-        this.fitAddon.fit();
+      // During active drag, suppress fit() entirely
+      if (this.deckManager?.isDragging) {
+        return;
       }
+      if (this.resizeDebounceId !== null) {
+        cancelAnimationFrame(this.resizeDebounceId);
+      }
+      this.resizeDebounceId = requestAnimationFrame(() => {
+        if (this.fitAddon) {
+          this.fitAddon.fit();
+        }
+        this.resizeDebounceId = null;
+      });
     });
     this.resizeObserver.observe(container);
 
@@ -92,6 +110,12 @@ export class TerminalCard implements TugCard {
   }
 
   onResize(_width: number, _height: number): void {
+    // During active drag, suppress fit() entirely -- the single
+    // handleResize() call on pointerup will trigger this method
+    // with isDragging === false for the final fit.
+    if (this.deckManager?.isDragging) {
+      return;
+    }
     if (this.fitAddon && this.terminal) {
       this.fitAddon.fit();
       // Always send current size — fit may not trigger terminal.onResize
@@ -103,6 +127,10 @@ export class TerminalCard implements TugCard {
   }
 
   destroy(): void {
+    if (this.resizeDebounceId !== null) {
+      cancelAnimationFrame(this.resizeDebounceId);
+      this.resizeDebounceId = null;
+    }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;

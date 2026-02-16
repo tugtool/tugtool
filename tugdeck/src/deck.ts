@@ -53,6 +53,9 @@ export class DeckManager {
   private collapsedSlots: Set<CardSlot> = new Set();
   private saveTimer: number | null = null;
 
+  // Drag state for resize debounce coordination
+  private _isDragging = false;
+
   constructor(container: HTMLElement, connection: TugConnection) {
     this.connection = connection;
 
@@ -81,6 +84,13 @@ export class DeckManager {
     // Listen for window resize
     window.addEventListener("resize", () => this.handleResize());
     connection.onOpen(() => this.handleResize());
+  }
+
+  /**
+   * Public accessor for drag state
+   */
+  get isDragging(): boolean {
+    return this._isDragging;
   }
 
   /**
@@ -204,6 +214,7 @@ export class DeckManager {
       e.preventDefault();
       handle.setPointerCapture(e.pointerId);
       handle.classList.add("active");
+      this._isDragging = true;
       startX = e.clientX;
       startSplit = this.colSplit;
 
@@ -218,14 +229,15 @@ export class DeckManager {
 
         this.colSplit = newSplit;
         this.updateGridTracks();
-        this.handleResize();
       };
 
       const onUp = (e: PointerEvent) => {
+        this._isDragging = false;
         handle.releasePointerCapture(e.pointerId);
         handle.classList.remove("active");
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        this.handleResize();
         this.scheduleSave();
       };
 
@@ -242,6 +254,7 @@ export class DeckManager {
       e.preventDefault();
       handle.setPointerCapture(e.pointerId);
       handle.classList.add("active");
+      this._isDragging = true;
       startY = e.clientY;
       startSplits = [...this.rowSplits];
 
@@ -269,14 +282,15 @@ export class DeckManager {
 
         this.rowSplits = newSplits;
         this.updateGridTracks();
-        this.handleResize();
       };
 
       const onUp = (e: PointerEvent) => {
+        this._isDragging = false;
         handle.releasePointerCapture(e.pointerId);
         handle.classList.remove("active");
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
+        this.handleResize();
         this.scheduleSave();
       };
 

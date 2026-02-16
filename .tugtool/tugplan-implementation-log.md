@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-16T18:24:17Z
+bead: tugtool-236.3
+---
+
+## #step-2: Added 2px grid gap and 8px card-slot padding with flush headers via negative margins. DeckManager exposes isDragging state. TerminalCard implements two-mode resize handling with rAF debounce and drag suppression for flash-free resize.
+
+**Files changed:**
+- .tugtool/tugplan-design-tokens-icons-polish.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-16T18:15:04Z
 bead: tugtool-236.2
