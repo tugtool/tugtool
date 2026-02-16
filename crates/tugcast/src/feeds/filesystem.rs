@@ -77,15 +77,14 @@ fn is_ignored(path: &Path, watch_dir: &Path, gitignore: &Gitignore) -> bool {
         return true;
     }
 
-    // For files, also check if any parent directory is ignored
-    if !is_dir {
-        for ancestor in relative.ancestors().skip(1) {
-            if ancestor == Path::new("") {
-                break;
-            }
-            if gitignore.matched(ancestor, true).is_ignore() {
-                return true;
-            }
+    // Check if any parent directory is ignored (matched() does not propagate
+    // directory-level ignores to children, so we must walk up explicitly)
+    for ancestor in relative.ancestors().skip(1) {
+        if ancestor == Path::new("") {
+            break;
+        }
+        if gitignore.matched(ancestor, true).is_ignore() {
+            return true;
         }
     }
 

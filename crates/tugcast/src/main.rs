@@ -69,8 +69,13 @@ async fn main() {
     let feed = TerminalFeed::new(cli.session.clone());
     let input_tx = feed.input_sender();
 
-    // Resolve watch directory to absolute path
-    let watch_dir = cli.dir.canonicalize().unwrap_or_else(|_| cli.dir.clone());
+    // Resolve watch directory to absolute path without resolving symlinks,
+    // so that paths from notify match our prefix for strip_prefix filtering.
+    let watch_dir = if cli.dir.is_absolute() {
+        cli.dir.clone()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&cli.dir)
+    };
 
     // Create filesystem feed and watch channel
     let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::Filesystem, vec![]));
