@@ -138,7 +138,13 @@ fn parse_porcelain_v2(output: &str) -> GitStatus {
 /// Fetch the HEAD commit message
 async fn fetch_head_message(repo_dir: &Path) -> String {
     let output = Command::new("git")
-        .args(["-C", &repo_dir.to_string_lossy(), "log", "-1", "--format=%s"])
+        .args([
+            "-C",
+            &repo_dir.to_string_lossy(),
+            "log",
+            "-1",
+            "--format=%s",
+        ])
         .output()
         .await;
 

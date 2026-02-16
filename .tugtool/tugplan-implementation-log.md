@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-16T00:19:55Z
+---
+
+## audit-fix: Audit fix: applied cargo fmt to fix .args() formatting in git.rs
+
+**Files changed:**
+- .tugtool/tugplan-multi-card-deck.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-16T00:15:26Z
 bead: tugtool-nez.7
