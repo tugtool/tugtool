@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-16T02:11:24Z
+bead: tugtool-p17.7
+---
+
+## #step-6: Added @xterm/addon-webgl@0.19.0 dependency and progressive WebGL activation in terminal-card.ts. Silent fallback to canvas renderer on failure. Bundle size increased from ~480kb to ~648kb. 75 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-16T02:05:52Z
 bead: tugtool-p17.6

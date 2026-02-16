@@ -7,6 +7,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
 
 import { FeedId, FeedIdValue, resizeFrame } from "../protocol";
 import { TugConnection } from "../connection";
@@ -44,6 +45,19 @@ export class TerminalCard implements TugCard {
 
     // Open terminal in container
     this.terminal.open(container);
+
+    // Attempt WebGL progressive enhancement
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+        console.log("tugdeck: WebGL context lost, falling back to canvas");
+      });
+      this.terminal.loadAddon(webglAddon);
+      console.log("tugdeck: WebGL renderer activated");
+    } catch {
+      console.log("tugdeck: WebGL not available, using canvas renderer");
+    }
 
     // Use ResizeObserver to fit when the container gets dimensions
     // (fires on initial layout and on subsequent resizes)
