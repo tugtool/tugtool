@@ -2,6 +2,7 @@
 //!
 //! Watches a directory for filesystem events and broadcasts them as FsEvent snapshots.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc as std_mpsc;
 use std::time::Duration;
@@ -63,6 +64,11 @@ fn is_ignored(path: &Path, watch_dir: &Path, gitignore: &Gitignore) -> bool {
         Err(_) => path,
     };
 
+    // Always ignore the .git directory itself
+    if relative.starts_with(".git") {
+        return true;
+    }
+
     // Check if this path is a directory by checking filesystem, or assume file if not exists
     let is_dir = path.is_dir();
 
@@ -102,6 +108,41 @@ fn is_fsevent_ignored(event: &FsEvent, watch_dir: &Path, gitignore: &Gitignore) 
     }
 }
 
+/// Remove redundant Modified events from a batch.
+///
+/// macOS FSEvents fires modify events for parent directories when their contents
+/// change, and also fires redundant modify events alongside create/remove events
+/// for the same file. This function drops Modified events for any path that also
+/// has a Created or Removed event in the same batch, and drops Modified events
+/// for paths that look like directories (end with "" which is the watch root).
+fn deduplicate_batch(batch: &mut Vec<FsEvent>) {
+    // Collect paths that have a Created, Removed, or Renamed event
+    let mut non_modify_paths: HashSet<String> = HashSet::new();
+    for ev in batch.iter() {
+        match ev {
+            FsEvent::Created { path } | FsEvent::Removed { path } => {
+                non_modify_paths.insert(path.clone());
+            }
+            FsEvent::Renamed { from, to } => {
+                non_modify_paths.insert(from.clone());
+                non_modify_paths.insert(to.clone());
+            }
+            FsEvent::Modified { .. } => {}
+        }
+    }
+
+    // Drop Modified events for paths that already have create/remove/rename,
+    // and drop Modified events for the watch root (empty path = directory itself)
+    batch.retain(|ev| {
+        if let FsEvent::Modified { path } = ev {
+            if path.is_empty() || non_modify_paths.contains(path.as_str()) {
+                return false;
+            }
+        }
+        true
+    });
+}
+
 /// Convert notify Event to FsEvent values
 fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
     let to_relative = |p: &Path| -> String {
@@ -120,9 +161,10 @@ fn convert_event(event: &Event, watch_dir: &Path) -> Vec<FsEvent> {
             })
             .collect(),
 
-        EventKind::Modify(ModifyKind::Data(_))
-        | EventKind::Modify(ModifyKind::Any)
-        | EventKind::Modify(ModifyKind::Metadata(_)) => event
+        // Only Data changes are real file modifications.
+        // Metadata (timestamps, permissions) and Any (ambiguous, often directory
+        // listing changes) are noise — they fire alongside Create/Remove events.
+        EventKind::Modify(ModifyKind::Data(_)) => event
             .paths
             .iter()
             .map(|p| FsEvent::Modified {
@@ -266,7 +308,8 @@ impl SnapshotFeed for FilesystemFeed {
                     }
                 }
 
-                // Flush batch
+                // Deduplicate and flush batch
+                deduplicate_batch(&mut batch);
                 if !batch.is_empty() {
                     let json = serde_json::to_vec(&batch).unwrap_or_default();
                     let frame = Frame::new(FeedId::Filesystem, json);

@@ -54,7 +54,11 @@ export class FilesCard implements TugCard {
       return;
     }
 
-    // Render each event, prepend to list (newest first)
+    // Autoscroll: check if user is already at the bottom before appending
+    const el = this.eventList;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+
+    // Render each event, append to list (newest at bottom)
     for (const event of events) {
       const entry = document.createElement("div");
       entry.className = `event-entry event-${event.kind.toLowerCase()}`;
@@ -63,12 +67,17 @@ export class FilesCard implements TugCard {
       const label = this.labelForEvent(event);
 
       entry.innerHTML = `<span class="event-icon">${icon}</span><span class="event-label">${label}</span>`;
-      this.eventList.prepend(entry);
+      el.appendChild(entry);
     }
 
-    // Cap visible entries
-    while (this.eventList.children.length > MAX_VISIBLE_ENTRIES) {
-      this.eventList.removeChild(this.eventList.lastChild!);
+    // Cap visible entries (remove oldest from top)
+    while (el.children.length > MAX_VISIBLE_ENTRIES) {
+      el.removeChild(el.firstChild!);
+    }
+
+    // Autoscroll if user was at the bottom
+    if (atBottom) {
+      el.scrollTop = el.scrollHeight;
     }
   }
 
