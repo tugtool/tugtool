@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-10
+date: 2025-02-16T22:48:42Z
+bead: tugtool-kfp.12
+---
+
+## #step-10: Added interrupt support (Ctrl-C/Escape, stop button, cancelled styling, tool card interrupted transition), 15 new conversation-card tests, 159 total passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-9
 date: 2025-02-16T22:34:42Z
 bead: tugtool-kfp.11

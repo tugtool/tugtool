@@ -174,6 +174,13 @@ export class ToolCard {
   }
 
   /**
+   * Get the current status
+   */
+  getStatus(): ToolCardStatus {
+    return this.status;
+  }
+
+  /**
    * Update the tool status
    */
   updateStatus(status: ToolCardStatus): void {

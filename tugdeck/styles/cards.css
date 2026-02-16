@@ -953,3 +953,25 @@
   font-size: 13px;
   margin-top: 8px;
 }
+
+/* Turn cancelled / interrupt styles */
+.message-cancelled {
+  opacity: 0.5;
+}
+
+.message-cancelled-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--warning);
+  margin-top: 8px;
+}
+
+.message-cancelled-label svg {
+  display: block;
+}
+
+.send-btn.stop-mode {
+  background: var(--destructive);
+}

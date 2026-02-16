@@ -2,7 +2,7 @@
  * Conversation card - displays assistant/user messages and input area
  */
 
-import { createElement, ArrowUp } from "lucide";
+import { createElement, ArrowUp, Square, Octagon } from "lucide";
 import { TugCard } from "./card";
 import { TugConnection } from "../connection";
 import { FeedId, encodeConversationInput } from "../protocol";
@@ -17,6 +17,9 @@ import {
   type ToolApprovalInput,
   type Question,
   type QuestionAnswerInput,
+  type TurnCancelled,
+  type TurnComplete,
+  type InterruptInput,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
 import type { DeckManager } from "../deck";
@@ -37,6 +40,8 @@ export class ConversationCard implements TugCard {
   private toolCards: Map<string, ToolCard> = new Map();
   private pendingApprovals: Map<string, ApprovalPrompt> = new Map();
   private pendingQuestions: Map<string, QuestionCard> = new Map();
+  private turnActive = false;
+  private keydownHandler?: (e: KeyboardEvent) => void;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -97,13 +102,27 @@ export class ConversationCard implements TugCard {
     this.sendBtn.className = "send-btn";
     const icon = createElement(ArrowUp, { width: 20, height: 20 });
     this.sendBtn.appendChild(icon);
-    this.sendBtn.addEventListener("click", () => this.handleSend());
+    this.sendBtn.addEventListener("click", () => {
+      if (this.turnActive) {
+        this.sendInterrupt();
+      } else {
+        this.handleSend();
+      }
+    });
 
     inputArea.appendChild(this.textarea);
     inputArea.appendChild(this.sendBtn);
     this.container.appendChild(inputArea);
 
     parent.appendChild(this.container);
+
+    // Add keyboard listener for Ctrl-C and Escape
+    this.keydownHandler = (e: KeyboardEvent) => {
+      if (this.turnActive && ((e.ctrlKey && e.key === "c") || e.key === "Escape")) {
+        this.sendInterrupt();
+      }
+    };
+    document.addEventListener("keydown", this.keydownHandler);
   }
 
   onFrame(_feedId: number, payload: Uint8Array): void {
@@ -126,6 +145,10 @@ export class ConversationCard implements TugCard {
       this.renderApprovalRequest(event);
     } else if (event.type === "question") {
       this.renderQuestion(event);
+    } else if (event.type === "turn_complete") {
+      this.handleTurnComplete(event);
+    } else if (event.type === "turn_cancelled") {
+      this.handleTurnCancelled(event);
     }
     // Other event types handled in later steps
   }
@@ -154,6 +177,10 @@ export class ConversationCard implements TugCard {
     this.textarea.value = "";
     this.textarea.style.height = "auto";
     this.textarea.focus();
+
+    // Mark turn as active
+    this.turnActive = true;
+    this.updateButtonState();
   }
 
   private renderUserMessage(text: string): void {
@@ -338,6 +365,70 @@ export class ConversationCard implements TugCard {
       this.textarea.placeholder = placeholder;
       this.sendBtn.disabled = true;
     }
+  }
+
+  private sendInterrupt(): void {
+    const interrupt: InterruptInput = {
+      type: "interrupt",
+    };
+    const encoded = encodeConversationInput(interrupt);
+    this.connection.send(encoded);
+  }
+
+  private updateButtonState(): void {
+    // Update button icon based on turnActive state
+    this.sendBtn.innerHTML = "";
+    if (this.turnActive) {
+      // Show stop button (Square icon)
+      const stopIcon = createElement(Square, { width: 20, height: 20 });
+      this.sendBtn.appendChild(stopIcon);
+      this.sendBtn.classList.add("stop-mode");
+    } else {
+      // Show send button (ArrowUp icon)
+      const sendIcon = createElement(ArrowUp, { width: 20, height: 20 });
+      this.sendBtn.appendChild(sendIcon);
+      this.sendBtn.classList.remove("stop-mode");
+    }
+  }
+
+  private handleTurnComplete(event: TurnComplete): void {
+    this.turnActive = false;
+    this.updateButtonState();
+  }
+
+  private handleTurnCancelled(event: TurnCancelled): void {
+    this.turnActive = false;
+    this.updateButtonState();
+
+    // Find assistant message by msg_id
+    const msgEl = this.messageList.querySelector(`[data-msg-id="${event.msg_id}"]`) as HTMLElement;
+    if (msgEl) {
+      // Add cancelled styling
+      msgEl.classList.add("message-cancelled");
+
+      // Add interrupted label
+      const label = document.createElement("div");
+      label.className = "message-cancelled-label";
+
+      const icon = createElement(Octagon, { width: 16, height: 16 });
+      label.appendChild(icon);
+
+      const text = document.createElement("span");
+      text.textContent = "Interrupted";
+      label.appendChild(text);
+
+      msgEl.appendChild(label);
+    }
+
+    // Update any running tool cards to interrupted state
+    for (const toolCard of this.toolCards.values()) {
+      if (toolCard.getStatus() === "running") {
+        toolCard.updateStatus("interrupted");
+      }
+    }
+
+    // Re-enable input
+    this.setInputEnabled(true);
   }
 
   private scrollToBottom(): void {
