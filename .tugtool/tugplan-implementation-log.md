@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-16T21:04:35Z
+bead: tugtool-kfp.3
+---
+
+## #step-2: Added conversation feed IDs (0x40/0x41) to protocol, agent_bridge.rs (tugtalk spawn, crash budget, relay loop), conversation.rs helpers, FeedRouter integration, CLI --tugtalk-path arg, 131 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-16T20:23:02Z
 bead: tugtool-kfp.2
