@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-12
+date: 2025-02-16T23:13:02Z
+bead: tugtool-kfp.14
+---
+
+## #step-12: Added StreamingState (cursor, activity border, text updates), integrated into conversation-card message lifecycle, 17 tests, 202 total passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-11
 date: 2025-02-16T23:03:16Z
 bead: tugtool-kfp.13

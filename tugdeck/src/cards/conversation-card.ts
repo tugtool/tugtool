@@ -32,6 +32,7 @@ import {
   renderAttachmentChips,
   renderAttachButton,
 } from "./conversation/attachment-handler";
+import { StreamingState } from "./conversation/streaming-state";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -51,6 +52,7 @@ export class ConversationCard implements TugCard {
   private attachChipsContainer!: HTMLElement;
   private attachBtn!: HTMLButtonElement;
   private dragCounter = 0;
+  private streamingState = new StreamingState();
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -314,20 +316,26 @@ export class ConversationCard implements TugCard {
       this.messageList.appendChild(msgEl);
     }
 
-    // Update text content with Markdown rendering
-    msgEl.innerHTML = renderMarkdown(event.text);
+    const renderedHtml = renderMarkdown(event.text);
+
+    if (event.is_partial) {
+      // Start streaming if not already streaming
+      if (!this.streamingState.isStreaming()) {
+        this.streamingState.startStreaming(msgEl);
+      }
+      // Update text and re-append cursor
+      this.streamingState.updateText(msgEl, renderedHtml);
+    } else {
+      // Complete message - stop streaming
+      this.streamingState.stopStreaming(msgEl);
+      // Update text content normally
+      msgEl.innerHTML = renderedHtml;
+    }
 
     // Enhance code blocks with syntax highlighting (async, fire-and-forget)
     enhanceCodeBlocks(msgEl).catch(error => {
       console.error("Failed to enhance code blocks:", error);
     });
-
-    // Add status indicator for partial
-    if (event.is_partial) {
-      msgEl.classList.add("partial");
-    } else {
-      msgEl.classList.remove("partial");
-    }
 
     this.scrollToBottom();
   }
@@ -506,11 +514,16 @@ export class ConversationCard implements TugCard {
   private handleTurnComplete(event: TurnComplete): void {
     this.turnActive = false;
     this.updateButtonState();
+    // Stop any active streaming indicators
+    this.streamingState.stopStreaming();
   }
 
   private handleTurnCancelled(event: TurnCancelled): void {
     this.turnActive = false;
     this.updateButtonState();
+
+    // Stop any active streaming indicators before adding cancelled styling
+    this.streamingState.stopStreaming();
 
     // Find assistant message by msg_id
     const msgEl = this.messageList.querySelector(`[data-msg-id="${event.msg_id}"]`) as HTMLElement;

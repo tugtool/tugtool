@@ -302,15 +302,35 @@
   padding: 8px 0;
 }
 
-.conversation-card .message-assistant.partial::after {
-  content: '▊';
-  animation: blink 1s infinite;
+/* Streaming cursor - thin accent bar at end of streaming text */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
   margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
 }
 
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+/* Activity border - pulsing accent box-shadow during streaming */
+.message-assistant.streaming-active {
+  box-shadow: inset 2px 0 0 var(--accent);
+  animation: activity-pulse 2s ease-in-out infinite;
+}
+
+@keyframes activity-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .conversation-card .message-error {
