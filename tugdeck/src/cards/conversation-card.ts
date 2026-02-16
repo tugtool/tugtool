@@ -15,12 +15,15 @@ import {
   type ToolResult,
   type ToolApprovalRequest,
   type ToolApprovalInput,
+  type Question,
+  type QuestionAnswerInput,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
 import type { DeckManager } from "../deck";
 import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-renderer";
 import { ToolCard } from "./conversation/tool-card";
 import { ApprovalPrompt } from "./conversation/approval-prompt";
+import { QuestionCard } from "./conversation/question-card";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -33,6 +36,7 @@ export class ConversationCard implements TugCard {
   private deckManager?: DeckManager;
   private toolCards: Map<string, ToolCard> = new Map();
   private pendingApprovals: Map<string, ApprovalPrompt> = new Map();
+  private pendingQuestions: Map<string, QuestionCard> = new Map();
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -120,6 +124,8 @@ export class ConversationCard implements TugCard {
       this.renderToolResult(event);
     } else if (event.type === "tool_approval_request") {
       this.renderApprovalRequest(event);
+    } else if (event.type === "question") {
+      this.renderQuestion(event);
     }
     // Other event types handled in later steps
   }
@@ -286,6 +292,38 @@ export class ConversationCard implements TugCard {
     this.scrollToBottom();
   }
 
+  private renderQuestion(event: Question): void {
+    // Create question card
+    const questionCard = new QuestionCard(event.request_id, event.questions);
+
+    // Set callback
+    questionCard.setCallbacks((answers) => {
+      // Send question_answer
+      const response: QuestionAnswerInput = {
+        type: "question_answer",
+        request_id: event.request_id,
+        answers,
+      };
+      const encoded = encodeConversationInput(response);
+      this.connection.send(encoded);
+
+      // Re-enable input
+      this.setInputEnabled(true);
+
+      // Remove from pending map
+      this.pendingQuestions.delete(event.request_id);
+    });
+
+    // Append to message list
+    this.messageList.appendChild(questionCard.render());
+    this.pendingQuestions.set(event.request_id, questionCard);
+
+    // Disable input while waiting for answer
+    this.setInputEnabled(false);
+
+    this.scrollToBottom();
+  }
+
   private setInputEnabled(enabled: boolean): void {
     if (enabled) {
       this.textarea.disabled = false;
@@ -293,7 +331,11 @@ export class ConversationCard implements TugCard {
       this.sendBtn.disabled = false;
     } else {
       this.textarea.disabled = true;
-      this.textarea.placeholder = "Waiting for tool approval...";
+      // Check if we're waiting for approval or answer
+      const placeholder = this.pendingApprovals.size > 0
+        ? "Waiting for tool approval..."
+        : "Waiting for answer...";
+      this.textarea.placeholder = placeholder;
       this.sendBtn.disabled = true;
     }
   }

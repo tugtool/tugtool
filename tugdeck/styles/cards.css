@@ -835,3 +835,121 @@
 .approval-prompt-denied-label svg {
   display: block;
 }
+
+/* Question card styles */
+.question-card {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  margin: 4px 0;
+  padding: 12px;
+}
+
+.question-card-question {
+  margin-bottom: 16px;
+}
+
+.question-card-question:last-of-type {
+  margin-bottom: 12px;
+}
+
+.question-card-text {
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.question-card-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.question-card-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.question-card-option input[type="radio"],
+.question-card-option input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin-top: 3px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.question-card-option-content {
+  flex: 1;
+}
+
+.question-card-option-label {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.question-card-option-description {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.question-card-other {
+  margin-top: 8px;
+}
+
+.question-card-other-input,
+.question-card-text-input input {
+  width: 100%;
+  background: var(--muted);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.question-card-other-input:focus,
+.question-card-text-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.question-card-text-input {
+  margin-bottom: 12px;
+}
+
+.question-card-submit {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.question-card-submit:hover {
+  opacity: 0.9;
+}
+
+.question-card-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.question-card.submitted {
+  opacity: 0.8;
+}
+
+.question-card-answer-highlight {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 13px;
+  margin-top: 8px;
+}

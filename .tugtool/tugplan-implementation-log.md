@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-9
+date: 2025-02-16T22:34:42Z
+bead: tugtool-kfp.11
+---
+
+## #step-9: Added QuestionCard (radio/checkbox/text, Other input, Submit, submitted state, answer highlighting), wired question/question_answer IPC, 19 tests, 144 total passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-8
 date: 2025-02-16T22:25:21Z
 bead: tugtool-kfp.10
