@@ -38,7 +38,6 @@ async fn main() {
         session = %cli.session,
         port = cli.port,
         dir = ?cli.dir,
-        open = cli.open,
         "tugcast starting"
     );
 
@@ -160,11 +159,6 @@ async fn main() {
             )
             .await;
     });
-
-    // Open browser if --open flag
-    if cli.open {
-        server::open_browser(&auth_url);
-    }
 
     // Start server (blocks until shutdown)
     if let Err(e) = server::run_server(cli.port, feed_router, auth).await {

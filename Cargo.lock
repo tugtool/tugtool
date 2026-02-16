@@ -1803,6 +1803,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tugcode"
+version = "0.5.19"
+dependencies = [
+ "clap",
+ "libc",
+ "regex",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tugtool"
 version = "0.5.19"
 dependencies = [
