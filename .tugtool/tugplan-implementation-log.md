@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-11
+date: 2025-02-16T23:03:16Z
+bead: tugtool-kfp.13
+---
+
+## #step-11: Added file attachments (drag-drop, paste, file picker), processFile (image/text/binary), attachment chips, Spec S03 payload, 26 tests, 185 total passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-10
 date: 2025-02-16T22:48:42Z
 bead: tugtool-kfp.12

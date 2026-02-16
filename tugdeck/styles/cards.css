@@ -975,3 +975,100 @@
 .send-btn.stop-mode {
   background: var(--destructive);
 }
+
+/* Attachment handling styles */
+.conversation-card.drag-over {
+  border: 2px dashed var(--accent);
+}
+
+.attachment-chips-container {
+  padding: 0 12px;
+  min-height: 0;
+}
+
+.attachment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.attachment-chip {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.attachment-chip-icon {
+  color: var(--muted-foreground);
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.attachment-chip-icon svg {
+  display: block;
+}
+
+.attachment-chip-name {
+  color: var(--foreground);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.attachment-chip-remove:hover {
+  color: var(--destructive);
+}
+
+.attachment-chip-remove svg {
+  display: block;
+}
+
+.attach-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.attach-btn:hover {
+  color: var(--foreground);
+  border-color: var(--foreground);
+}
+
+.attach-btn svg {
+  display: block;
+}
+
+.message-user .attachment-chips {
+  margin-top: 8px;
+}

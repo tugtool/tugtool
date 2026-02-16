@@ -2,7 +2,7 @@
  * Conversation card - displays assistant/user messages and input area
  */
 
-import { createElement, ArrowUp, Square, Octagon } from "lucide";
+import { createElement, ArrowUp, Square, Octagon, Paperclip } from "lucide";
 import { TugCard } from "./card";
 import { TugConnection } from "../connection";
 import { FeedId, encodeConversationInput } from "../protocol";
@@ -27,6 +27,11 @@ import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-render
 import { ToolCard } from "./conversation/tool-card";
 import { ApprovalPrompt } from "./conversation/approval-prompt";
 import { QuestionCard } from "./conversation/question-card";
+import {
+  AttachmentHandler,
+  renderAttachmentChips,
+  renderAttachButton,
+} from "./conversation/attachment-handler";
 
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
@@ -42,6 +47,10 @@ export class ConversationCard implements TugCard {
   private pendingQuestions: Map<string, QuestionCard> = new Map();
   private turnActive = false;
   private keydownHandler?: (e: KeyboardEvent) => void;
+  private attachmentHandler = new AttachmentHandler();
+  private attachChipsContainer!: HTMLElement;
+  private attachBtn!: HTMLButtonElement;
+  private dragCounter = 0;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -75,6 +84,11 @@ export class ConversationCard implements TugCard {
     this.messageList.className = "message-list";
     this.container.appendChild(this.messageList);
 
+    // Attachment chips container (between message list and input)
+    this.attachChipsContainer = document.createElement("div");
+    this.attachChipsContainer.className = "attachment-chips-container";
+    this.container.appendChild(this.attachChipsContainer);
+
     // Input area
     const inputArea = document.createElement("div");
     inputArea.className = "conversation-input-area";
@@ -98,6 +112,37 @@ export class ConversationCard implements TugCard {
       }
     });
 
+    // Clipboard paste for images
+    this.textarea.addEventListener("paste", async (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            try {
+              await this.attachmentHandler.addFile(file);
+            } catch (error) {
+              console.error("Failed to attach pasted image:", error);
+            }
+          }
+        }
+      }
+    });
+
+    // Attach button
+    this.attachBtn = renderAttachButton(async (files) => {
+      for (const file of Array.from(files)) {
+        try {
+          await this.attachmentHandler.addFile(file);
+        } catch (error) {
+          console.error(`Failed to attach ${file.name}:`, error);
+        }
+      }
+    });
+
     this.sendBtn = document.createElement("button");
     this.sendBtn.className = "send-btn";
     const icon = createElement(ArrowUp, { width: 20, height: 20 });
@@ -111,10 +156,53 @@ export class ConversationCard implements TugCard {
     });
 
     inputArea.appendChild(this.textarea);
+    inputArea.appendChild(this.attachBtn);
     inputArea.appendChild(this.sendBtn);
     this.container.appendChild(inputArea);
 
     parent.appendChild(this.container);
+
+    // Drag-and-drop listeners
+    this.container.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      this.dragCounter++;
+      this.container.classList.add("drag-over");
+    });
+
+    this.container.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      this.dragCounter++;
+      this.container.classList.add("drag-over");
+    });
+
+    this.container.addEventListener("dragleave", () => {
+      this.dragCounter--;
+      if (this.dragCounter === 0) {
+        this.container.classList.remove("drag-over");
+      }
+    });
+
+    this.container.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      this.dragCounter = 0;
+      this.container.classList.remove("drag-over");
+
+      const files = e.dataTransfer?.files;
+      if (files) {
+        for (const file of Array.from(files)) {
+          try {
+            await this.attachmentHandler.addFile(file);
+          } catch (error) {
+            console.error(`Failed to attach ${file.name}:`, error);
+          }
+        }
+      }
+    });
+
+    // Attachment handler update callback
+    this.attachmentHandler.onUpdate = () => {
+      this.renderAttachmentChips();
+    };
 
     // Add keyboard listener for Ctrl-C and Escape
     this.keydownHandler = (e: KeyboardEvent) => {
@@ -161,34 +249,58 @@ export class ConversationCard implements TugCard {
     const text = this.textarea.value.trim();
     if (!text) return;
 
-    // Render user bubble locally
-    this.renderUserMessage(text);
+    // Get attachments
+    const attachments = this.attachmentHandler.getAttachments();
+
+    // Render user bubble locally with attachments
+    this.renderUserMessage(text, attachments);
 
     // Send via conversation input feed (0x41)
     const msg: UserMessageInput = {
       type: "user_message",
       text,
-      attachments: [],
+      attachments,
     };
     const encoded = encodeConversationInput(msg);
     this.connection.send(encoded);
 
-    // Clear input
+    // Clear input and attachments
     this.textarea.value = "";
     this.textarea.style.height = "auto";
     this.textarea.focus();
+    this.attachmentHandler.clear();
 
     // Mark turn as active
     this.turnActive = true;
     this.updateButtonState();
   }
 
-  private renderUserMessage(text: string): void {
+  private renderUserMessage(text: string, attachments: any[] = []): void {
     const msg = document.createElement("div");
     msg.className = "message message-user";
     msg.textContent = text;
+
+    // Add read-only attachment chips if present
+    if (attachments.length > 0) {
+      const chips = renderAttachmentChips(attachments, { removable: false });
+      msg.appendChild(chips);
+    }
+
     this.messageList.appendChild(msg);
     this.scrollToBottom();
+  }
+
+  private renderAttachmentChips(): void {
+    const attachments = this.attachmentHandler.getAttachments();
+    this.attachChipsContainer.innerHTML = "";
+
+    if (attachments.length > 0) {
+      const chips = renderAttachmentChips(attachments, {
+        removable: true,
+        onRemove: (index) => this.attachmentHandler.removeAttachment(index),
+      });
+      this.attachChipsContainer.appendChild(chips);
+    }
   }
 
   private renderAssistantMessage(event: AssistantText): void {

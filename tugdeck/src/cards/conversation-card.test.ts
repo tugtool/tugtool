@@ -75,7 +75,7 @@ describe("conversation-card", () => {
     test("Ctrl-C sends interrupt when turn active", () => {
       // Simulate sending a message to activate turn
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Test message";
       sendBtn.click();
@@ -118,7 +118,7 @@ describe("conversation-card", () => {
     test("Escape sends interrupt when turn active", () => {
       // Activate turn
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Test message";
       sendBtn.click();
@@ -155,7 +155,7 @@ describe("conversation-card", () => {
 
   describe("button state during turn", () => {
     test("button shows ArrowUp icon when idle", () => {
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       // Check for send button (not stop mode)
       expect(sendBtn.classList.contains("stop-mode")).toBe(false);
@@ -167,7 +167,7 @@ describe("conversation-card", () => {
     test("button shows Square icon during active turn", () => {
       // Activate turn
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Test message";
       sendBtn.click();
@@ -179,7 +179,7 @@ describe("conversation-card", () => {
     test("button click sends interrupt when turn active", () => {
       // Activate turn
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Test message";
       sendBtn.click();
@@ -196,7 +196,7 @@ describe("conversation-card", () => {
 
     test("button click sends message when turn not active", () => {
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       connection.clear();
       
@@ -214,7 +214,7 @@ describe("conversation-card", () => {
     test("turn_cancelled restores button to send mode", () => {
       // Activate turn
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Test";
       sendBtn.click();
@@ -229,7 +229,7 @@ describe("conversation-card", () => {
 
     test("input re-enables after turn ends", () => {
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       // Initially enabled
       expect(textarea.disabled).toBe(false);
@@ -246,7 +246,7 @@ describe("conversation-card", () => {
   describe("message rendering", () => {
     test("user message renders correctly", () => {
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Hello world";
       sendBtn.click();
@@ -260,7 +260,7 @@ describe("conversation-card", () => {
 
     test("textarea clears after sending message", () => {
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
       
       textarea.value = "Test message";
       sendBtn.click();
@@ -312,27 +312,162 @@ describe("conversation-card", () => {
   describe("integration", () => {
     test("full send-interrupt-restore cycle", () => {
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-      const sendBtn = container.querySelector("button") as HTMLButtonElement;
-      
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
+
       // Initial state
       expect(sendBtn.classList.contains("stop-mode")).toBe(false);
-      
+
       // Send message
       textarea.value = "Test";
       sendBtn.click();
-      
+
       // Turn active
       expect(sendBtn.classList.contains("stop-mode")).toBe(true);
-      
+
       connection.clear();
-      
+
       // Send interrupt
       sendBtn.click();
-      
+
       // Verify interrupt sent
       const lastMsg = connection.getLastMessage();
       expect(lastMsg).not.toBeNull();
       expect(lastMsg.type).toBe("interrupt");
+    });
+  });
+
+  describe("attachments", () => {
+    test("attachments are included in sent user_message", async () => {
+      // Access the private attachmentHandler via the card instance
+      const handler = (card as any).attachmentHandler;
+
+      // Add a text file attachment
+      const file = new File(["test content"], "test.txt", { type: "text/plain" });
+      await handler.addFile(file);
+
+      // Send message
+      const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
+
+      connection.clear();
+      textarea.value = "Message with attachment";
+      sendBtn.click();
+
+      // Verify message includes attachments
+      const lastMsg = connection.getLastMessage();
+      expect(lastMsg).not.toBeNull();
+      expect(lastMsg.type).toBe("user_message");
+      expect(lastMsg.text).toBe("Message with attachment");
+      expect(lastMsg.attachments).toBeTruthy();
+      expect(lastMsg.attachments.length).toBe(1);
+      expect(lastMsg.attachments[0].filename).toBe("test.txt");
+      expect(lastMsg.attachments[0].content).toBe("test content");
+    });
+
+    test("pending attachments cleared after send", async () => {
+      const handler = (card as any).attachmentHandler;
+
+      // Add attachment
+      const file = new File(["test"], "test.txt", { type: "text/plain" });
+      await handler.addFile(file);
+
+      expect(handler.hasPending()).toBe(true);
+
+      // Send message
+      const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
+
+      textarea.value = "Test";
+      sendBtn.click();
+
+      // Attachments should be cleared
+      expect(handler.hasPending()).toBe(false);
+      expect(handler.getAttachments().length).toBe(0);
+    });
+
+    test("attachment chips render in UI before send", async () => {
+      const handler = (card as any).attachmentHandler;
+
+      // Add attachment
+      const file = new File(["test"], "test.txt", { type: "text/plain" });
+      await handler.addFile(file);
+
+      // Trigger UI update
+      if (handler.onUpdate) {
+        handler.onUpdate();
+      }
+
+      // Check for attachment chips container
+      const chipsContainer = container.querySelector(".attachment-chips-container");
+      expect(chipsContainer).not.toBeNull();
+
+      // Check for attachment chip
+      const chip = chipsContainer?.querySelector(".attachment-chip");
+      expect(chip).not.toBeNull();
+      expect(chip?.querySelector(".attachment-chip-name")?.textContent).toBe("test.txt");
+    });
+
+    test("user message bubble shows attachment chips", async () => {
+      const handler = (card as any).attachmentHandler;
+
+      // Add attachment
+      const file = new File(["test"], "test.txt", { type: "text/plain" });
+      await handler.addFile(file);
+
+      // Send message
+      const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
+
+      textarea.value = "Message with file";
+      sendBtn.click();
+
+      // Check user message has attachment chips
+      const messageList = container.querySelector(".message-list");
+      const userMessage = messageList?.querySelector(".message-user");
+      expect(userMessage).not.toBeNull();
+
+      // Check for attachment chips inside the message bubble
+      const chips = userMessage?.querySelector(".attachment-chips");
+      expect(chips).not.toBeNull();
+
+      const chip = chips?.querySelector(".attachment-chip");
+      expect(chip).not.toBeNull();
+      expect(chip?.querySelector(".attachment-chip-name")?.textContent).toBe("test.txt");
+    });
+
+    test("empty message with attachment does not send", async () => {
+      const handler = (card as any).attachmentHandler;
+
+      // Add attachment
+      const file = new File(["test"], "test.txt", { type: "text/plain" });
+      await handler.addFile(file);
+
+      // Try to send with empty text
+      const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+      const sendBtn = container.querySelector(".send-btn") as HTMLButtonElement;
+
+      connection.clear();
+      textarea.value = ""; // Empty text
+      sendBtn.click();
+
+      // Message should NOT be sent (text is required per handleSend logic)
+      expect(connection.sentMessages.length).toBe(0);
+
+      // Attachment should still be pending
+      expect(handler.hasPending()).toBe(true);
+
+      // But if we add text, it should work
+      textarea.value = "Here's a file";
+      sendBtn.click();
+
+      const lastMsg = connection.getLastMessage();
+      expect(lastMsg).not.toBeNull();
+      expect(lastMsg.type).toBe("user_message");
+      expect(lastMsg.attachments.length).toBe(1); // Attachment is now sent
+      expect(lastMsg.attachments[0].filename).toBe("test.txt");
+
+      // After send, attachments should be cleared
+      expect(handler.hasPending()).toBe(false);
     });
   });
 });
