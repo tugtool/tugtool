@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-16T19:09:54Z
+bead: tugtool-zlm.3
+---
+
+## #step-2: Added browser opening (open_browser), signal handling (wait_for_shutdown, shutdown_child), tracing initialization, and wired complete main function. 12 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugcode-launcher.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-16T19:04:17Z
 bead: tugtool-zlm.2

@@ -3,8 +3,13 @@ use regex::Regex;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::LazyLock;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::timeout;
+use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 static AUTH_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"tugcast:\s+(http://\S+)").unwrap()
@@ -85,9 +90,100 @@ async fn extract_auth_url(
     }
 }
 
+/// Open the auth URL in the system browser
+fn open_browser(url: &str) {
+    #[cfg(target_os = "macos")]
+    let command = "open";
+
+    #[cfg(target_os = "linux")]
+    let command = "xdg-open";
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        info!(
+            "auto-open not supported on this platform, open manually: {}",
+            url
+        );
+        return;
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        match std::process::Command::new(command).arg(url).spawn() {
+            Ok(_) => info!("opened browser to {}", url),
+            Err(e) => eprintln!("tugcode: warning: failed to open browser: {}", e),
+        }
+    }
+}
+
+/// Shutdown the child process gracefully with SIGTERM, then SIGKILL if needed
+async fn shutdown_child(child: &mut tokio::process::Child) -> i32 {
+    if let Some(pid) = child.id() {
+        // Send SIGTERM to child for graceful shutdown
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+
+        // Wait up to 3 seconds for graceful exit
+        match timeout(Duration::from_secs(3), child.wait()).await {
+            Ok(Ok(status)) => return status.code().unwrap_or(1),
+            _ => {
+                // Child did not exit in time, send SIGKILL
+                info!("tugcast did not exit after SIGTERM, sending SIGKILL");
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGKILL);
+                }
+                let _ = child.wait().await;
+            }
+        }
+    }
+    1
+}
+
+/// Wait for shutdown signal or child exit
+async fn wait_for_shutdown(child: &mut tokio::process::Child) -> i32 {
+    let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
+    let mut sigterm =
+        signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+
+    tokio::select! {
+        status = child.wait() => {
+            // Child exited on its own
+            match status {
+                Ok(s) => s.code().unwrap_or(1),
+                Err(e) => {
+                    eprintln!("tugcode: error waiting for tugcast: {}", e);
+                    1
+                }
+            }
+        }
+        _ = sigint.recv() => {
+            info!("received SIGINT, shutting down tugcast");
+            shutdown_child(child).await
+        }
+        _ = sigterm.recv() => {
+            info!("received SIGTERM, shutting down tugcast");
+            shutdown_child(child).await
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    // Initialize tracing with RUST_LOG support
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let cli = Cli::parse();
+
+    info!(
+        session = %cli.session,
+        port = cli.port,
+        dir = ?cli.dir,
+        "tugcode starting"
+    );
 
     // Spawn tugcast child process
     let mut child = match spawn_tugcast(&cli.session, cli.port, &cli.dir) {
@@ -98,13 +194,17 @@ async fn main() {
         }
     };
 
-    // Take stdout for URL extraction (must happen before waiting)
+    // Take stdout for URL extraction
     let stdout = child.stdout.take().expect("stdout was piped");
 
     // Extract auth URL from tugcast output
     match extract_auth_url(stdout).await {
         Ok((url, reader)) => {
-            println!("tugcode: auth URL: {}", url);
+            info!("auth URL: {}", url);
+
+            // Open browser
+            open_browser(&url);
+
             // Forward remaining stdout in background
             tokio::spawn(async move {
                 let mut reader = reader;
@@ -120,16 +220,14 @@ async fn main() {
         }
         Err(e) => {
             eprintln!("tugcode: {}", e);
-            // Wait for child and propagate exit code
             let status = child.wait().await.ok();
             let code = status.and_then(|s| s.code()).unwrap_or(1);
             std::process::exit(code);
         }
     }
 
-    // For now, just wait for the child to exit (signal handling comes in step 2)
-    let status = child.wait().await.expect("failed to wait on tugcast");
-    let code = status.code().unwrap_or(1);
+    // Wait for shutdown signal or child exit
+    let code = wait_for_shutdown(&mut child).await;
     std::process::exit(code);
 }
 
@@ -262,5 +360,12 @@ mod tests {
             caps.get(1).unwrap().as_str(),
             "http://127.0.0.1:7890/auth?token=abc"
         );
+    }
+
+    #[test]
+    fn test_open_browser_compiles() {
+        // Verify open_browser function exists and compiles on this platform.
+        // We do NOT actually call it to avoid spawning a real browser in tests.
+        let _fn_ptr: fn(&str) = open_browser;
     }
 }
