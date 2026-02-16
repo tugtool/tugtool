@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-8
+date: 2025-02-16T02:28:11Z
+bead: tugtool-p17.9
+---
+
+## #step-8: Added stats feed delivery and reconnection integration tests. Fixed auth.rs rustdoc warning (<T> → TOKEN). 496 tests pass, clippy clean, cargo doc clean. Phase 3 complete.
+
+**Files changed:**
+- .tugtool/tugplan-stats-polish-resilience.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-16T02:18:06Z
 bead: tugtool-p17.8
