@@ -76,6 +76,11 @@ fn main() {
         fs::copy(&cards_css, tugdeck_out.join("cards.css")).expect("failed to copy cards.css");
     }
 
+    let tokens_css = tugdeck_dir.join("styles/tokens.css");
+    if tokens_css.exists() {
+        fs::copy(&tokens_css, tugdeck_out.join("tokens.css")).expect("failed to copy tokens.css");
+    }
+
     // Set rerun-if-changed for cargo caching
     println!("cargo:rerun-if-changed=../../tugdeck/src/");
     println!("cargo:rerun-if-changed=../../tugdeck/index.html");

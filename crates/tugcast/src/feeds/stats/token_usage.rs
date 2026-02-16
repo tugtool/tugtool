@@ -100,10 +100,10 @@ impl StatCollector for TokenUsageCollector {
             Ok(o) => o,
             Err(e) => {
                 if !self.warned.swap(true, Ordering::Relaxed) {
-                    tracing::warn!(
+                    tracing::debug!(
                         session = %self.session,
                         error = ?e,
-                        "Failed to run tmux capture-pane (first warning only)"
+                        "Failed to run tmux capture-pane"
                     );
                 }
                 return serde_json::Value::Null;
@@ -112,10 +112,10 @@ impl StatCollector for TokenUsageCollector {
 
         if !output.status.success() {
             if !self.warned.swap(true, Ordering::Relaxed) {
-                tracing::warn!(
+                tracing::debug!(
                     session = %self.session,
                     status = ?output.status,
-                    "tmux capture-pane failed (first warning only)"
+                    "tmux capture-pane failed"
                 );
             }
             return serde_json::Value::Null;
@@ -125,9 +125,9 @@ impl StatCollector for TokenUsageCollector {
             Ok(t) => t,
             Err(e) => {
                 if !self.warned.swap(true, Ordering::Relaxed) {
-                    tracing::warn!(
+                    tracing::debug!(
                         error = ?e,
-                        "tmux output is not valid UTF-8 (first warning only)"
+                        "tmux output is not valid UTF-8"
                     );
                 }
                 return serde_json::Value::Null;
@@ -142,9 +142,7 @@ impl StatCollector for TokenUsageCollector {
             }
             None => {
                 if !self.warned.swap(true, Ordering::Relaxed) {
-                    tracing::warn!(
-                        "Failed to parse token usage from tmux output (first warning only)"
-                    );
+                    tracing::debug!("Failed to parse token usage from tmux output");
                 }
                 serde_json::Value::Null
             }

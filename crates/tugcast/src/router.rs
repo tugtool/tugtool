@@ -81,13 +81,13 @@ pub async fn ws_handler(
 ) -> Response {
     // Validate session cookie
     if !auth::validate_request_session(&headers, &router.auth) {
-        warn!("WebSocket upgrade rejected: invalid session");
+        debug!("WebSocket upgrade rejected: invalid session");
         return (StatusCode::FORBIDDEN, "Invalid or expired session").into_response();
     }
 
     // Validate origin
     if !auth::check_request_origin(&headers, &router.auth) {
-        warn!("WebSocket upgrade rejected: invalid origin");
+        debug!("WebSocket upgrade rejected: invalid origin");
         return (StatusCode::FORBIDDEN, "Invalid origin").into_response();
     }
 
