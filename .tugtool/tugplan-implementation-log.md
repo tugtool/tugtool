@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-16T17:16:17Z
+bead: tugtool-icp.2
+---
+
+## #step-1: Updated CI and release workflows: added oven-sh/setup-bun@v2 with pinned 1.3.x, node_modules cache keyed by bun.lock, and bun install --frozen-lockfile to build/clippy/release jobs
+
+**Files changed:**
+- .tugtool/tugplan-bun-pivot.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-16T17:10:53Z
 bead: tugtool-icp.1
