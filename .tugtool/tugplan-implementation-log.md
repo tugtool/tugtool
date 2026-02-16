@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-16T21:45:37Z
+bead: tugtool-kfp.6
+---
+
+## #step-5: Added Markdown rendering pipeline (marked -> DOMPurify -> .conversation-prose), D05 allowlist config, CSP meta tag, prose CSS styles, 29 sanitization tests, 56 total tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-16T21:33:55Z
 bead: tugtool-kfp.5

@@ -300,7 +300,6 @@
   color: var(--foreground);
   width: 100%;
   padding: 8px 0;
-  white-space: pre-wrap;
 }
 
 .conversation-card .message-assistant.partial::after {
@@ -372,4 +371,122 @@
 
 .conversation-card .send-btn:active {
   opacity: 0.8;
+}
+
+/* Conversation prose styles - Markdown rendering */
+.conversation-prose {
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.conversation-prose h1,
+.conversation-prose h2,
+.conversation-prose h3,
+.conversation-prose h4,
+.conversation-prose h5,
+.conversation-prose h6 {
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.conversation-prose h1 {
+  font-size: 1.25em;
+}
+
+.conversation-prose h2 {
+  font-size: 1.125em;
+}
+
+.conversation-prose h3,
+.conversation-prose h4,
+.conversation-prose h5,
+.conversation-prose h6 {
+  font-size: 1em;
+}
+
+.conversation-prose p {
+  margin: 0.75em 0;
+}
+
+.conversation-prose strong {
+  font-weight: 600;
+}
+
+.conversation-prose em {
+  font-style: italic;
+}
+
+.conversation-prose del {
+  text-decoration: line-through;
+}
+
+.conversation-prose sup {
+  font-size: 0.8em;
+  vertical-align: super;
+}
+
+.conversation-prose sub {
+  font-size: 0.8em;
+  vertical-align: sub;
+}
+
+.conversation-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.conversation-prose ul,
+.conversation-prose ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.conversation-prose li {
+  margin: 0.25em 0;
+}
+
+.conversation-prose :not(pre) > code {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.9em;
+  background: var(--muted);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.conversation-prose pre {
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+
+.conversation-prose blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  margin: 0.75em 0;
+}
+
+.conversation-prose table {
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  margin: 0.75em 0;
+}
+
+.conversation-prose th,
+.conversation-prose td {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+}
+
+.conversation-prose th {
+  font-weight: 600;
+  background: var(--muted);
+}
+
+.conversation-prose img {
+  max-width: 100%;
+  border-radius: var(--radius);
 }
