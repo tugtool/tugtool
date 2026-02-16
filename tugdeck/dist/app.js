@@ -46,6 +46,15 @@ function resizeFrame(cols, rows) {
     payload: new TextEncoder().encode(json)
   };
 }
+function encodeConversationInput(msg) {
+  const json = JSON.stringify(msg);
+  const payload = new TextEncoder().encode(json);
+  const frame = {
+    feedId: FeedId.CONVERSATION_INPUT,
+    payload
+  };
+  return encodeFrame(frame);
+}
 
 // src/connection.ts
 var HEARTBEAT_INTERVAL_MS = 15000;
@@ -272,6 +281,10 @@ var Activity = [
     }
   ]
 ];
+var ArrowUp = [
+  ["path", { d: "m5 12 7-7 7 7" }],
+  ["path", { d: "M12 19V5" }]
+];
 var ChevronDown = [["path", { d: "m6 9 6 6 6-6" }]];
 var ChevronUp = [["path", { d: "m18 15-6-6-6 6" }]];
 var CircleCheck = [
@@ -361,6 +374,7 @@ var Hammer = [
   ]
 ];
 var $Activity = Activity;
+var $ArrowUp = ArrowUp;
 var $ChevronDown = ChevronDown;
 var $ChevronUp = ChevronUp;
 var $CircleCheck = CircleCheck;
@@ -378,7 +392,7 @@ var $createElement = createElement;
 // src/deck.ts
 var MIN_CARD_SIZE = 100;
 var LAYOUT_STORAGE_KEY = "tugdeck-layout";
-var LAYOUT_VERSION = 1;
+var LAYOUT_VERSION = 2;
 var SAVE_DEBOUNCE_MS = 500;
 
 class DeckManager {
@@ -387,7 +401,7 @@ class DeckManager {
   gridContainer;
   connection;
   colSplit = 0.667;
-  rowSplits = [1 / 3, 2 / 3];
+  rowSplits = [0.25, 0.5, 0.75];
   collapsedSlots = new Set;
   saveTimer = null;
   _isDragging = false;
@@ -396,7 +410,7 @@ class DeckManager {
     this.gridContainer = document.createElement("div");
     this.gridContainer.className = "deck-grid";
     container.appendChild(this.gridContainer);
-    for (const name of ["terminal", "git", "files", "stats"]) {
+    for (const name of ["conversation", "terminal", "git", "files", "stats"]) {
       const slot = document.createElement("div");
       slot.className = `card-slot card-slot-${name}`;
       this.gridContainer.appendChild(slot);
@@ -493,6 +507,11 @@ class DeckManager {
     rowHandle2.dataset.index = "1";
     this.gridContainer.appendChild(rowHandle2);
     this.setupRowDrag(rowHandle2, 1);
+    const rowHandle3 = document.createElement("div");
+    rowHandle3.className = "drag-handle drag-handle-row";
+    rowHandle3.dataset.index = "2";
+    this.gridContainer.appendChild(rowHandle3);
+    this.setupRowDrag(rowHandle3, 2);
   }
   setupColDrag(handle) {
     let startX = 0;
@@ -544,8 +563,10 @@ class DeckManager {
         const minFraction = MIN_CARD_SIZE / totalHeight;
         if (index === 0) {
           newSplits[0] = Math.max(minFraction, Math.min(newSplits[1] - minFraction, startSplits[0] + delta));
+        } else if (index === 1) {
+          newSplits[1] = Math.max(newSplits[0] + minFraction, Math.min(newSplits[2] - minFraction, startSplits[1] + delta));
         } else {
-          newSplits[1] = Math.max(newSplits[0] + minFraction, Math.min(1 - minFraction, startSplits[1] + delta));
+          newSplits[2] = Math.max(newSplits[1] + minFraction, Math.min(1 - minFraction, startSplits[2] + delta));
         }
         this.rowSplits = newSplits;
         this.updateGridTracks();
@@ -567,7 +588,7 @@ class DeckManager {
     const colLeft = (this.colSplit * 100).toFixed(2) + "%";
     const colRight = ((1 - this.colSplit) * 100).toFixed(2) + "%";
     this.gridContainer.style.gridTemplateColumns = `${colLeft} ${colRight}`;
-    const rightSlots = ["git", "files", "stats"];
+    const rightSlots = ["terminal", "git", "files", "stats"];
     const hasCollapsed = rightSlots.some((s) => this.collapsedSlots.has(s));
     if (hasCollapsed) {
       const rowTracks = rightSlots.map((slot) => {
@@ -577,8 +598,9 @@ class DeckManager {
     } else {
       const row1 = (this.rowSplits[0] * 100).toFixed(2) + "%";
       const row2 = ((this.rowSplits[1] - this.rowSplits[0]) * 100).toFixed(2) + "%";
-      const row3 = ((1 - this.rowSplits[1]) * 100).toFixed(2) + "%";
-      this.gridContainer.style.gridTemplateRows = `${row1} ${row2} ${row3}`;
+      const row3 = ((this.rowSplits[2] - this.rowSplits[1]) * 100).toFixed(2) + "%";
+      const row4 = ((1 - this.rowSplits[2]) * 100).toFixed(2) + "%";
+      this.gridContainer.style.gridTemplateRows = `${row1} ${row2} ${row3} ${row4}`;
     }
     this.positionHandles();
   }
@@ -587,6 +609,7 @@ class DeckManager {
     const colHandle = handles[0];
     const rowHandle1 = handles[1];
     const rowHandle2 = handles[2];
+    const rowHandle3 = handles[3];
     if (colHandle) {
       colHandle.style.left = `calc(${(this.colSplit * 100).toFixed(2)}% - 3px)`;
     }
@@ -597,6 +620,10 @@ class DeckManager {
     if (rowHandle2) {
       rowHandle2.style.top = `calc(${(this.rowSplits[1] * 100).toFixed(2)}% - 3px)`;
       rowHandle2.style.left = `${(this.colSplit * 100).toFixed(2)}%`;
+    }
+    if (rowHandle3) {
+      rowHandle3.style.top = `calc(${(this.rowSplits[2] * 100).toFixed(2)}% - 3px)`;
+      rowHandle3.style.left = `${(this.colSplit * 100).toFixed(2)}%`;
     }
   }
   saveLayout() {
@@ -628,6 +655,23 @@ class DeckManager {
         return;
       }
       const state = JSON.parse(json);
+      if (state.version === 1) {
+        console.info("tugdeck: migrating layout from v1 to v2");
+        const oldSplits = state.rowSplits || [1 / 3, 2 / 3];
+        this.rowSplits = [
+          0.25,
+          0.25 + oldSplits[0] * 0.75,
+          0.25 + oldSplits[1] * 0.75
+        ];
+        this.colSplit = state.colSplit || 0.667;
+        if (Array.isArray(state.collapsed)) {
+          const validSlots = ["conversation", "terminal", "git", "files", "stats"];
+          const filtered = state.collapsed.filter((s) => validSlots.includes(s));
+          this.collapsedSlots = new Set(filtered);
+        }
+        this.scheduleSave();
+        return;
+      }
       if (state.version !== LAYOUT_VERSION) {
         console.warn("tugdeck: layout version mismatch, using defaults");
         return;
@@ -635,11 +679,11 @@ class DeckManager {
       if (typeof state.colSplit === "number" && state.colSplit >= 0.1 && state.colSplit <= 0.9) {
         this.colSplit = state.colSplit;
       }
-      if (Array.isArray(state.rowSplits) && state.rowSplits.length === 2 && state.rowSplits[0] >= 0.1 && state.rowSplits[1] >= state.rowSplits[0] + 0.1 && state.rowSplits[1] <= 0.9) {
+      if (Array.isArray(state.rowSplits) && state.rowSplits.length === 3 && state.rowSplits[0] >= 0.1 && state.rowSplits[1] >= state.rowSplits[0] + 0.1 && state.rowSplits[2] >= state.rowSplits[1] + 0.1 && state.rowSplits[2] <= 0.9) {
         this.rowSplits = state.rowSplits;
       }
       if (Array.isArray(state.collapsed)) {
-        const validSlots = ["git", "files", "stats"];
+        const validSlots = ["conversation", "terminal", "git", "files", "stats"];
         const filtered = state.collapsed.filter((s) => validSlots.includes(s));
         this.collapsedSlots = new Set(filtered);
       }
@@ -665,6 +709,232 @@ class DeckManager {
     }
     this.cards.clear();
   }
+}
+
+// src/cards/conversation/types.ts
+function isConversationEvent(obj) {
+  if (typeof obj !== "object" || obj === null)
+    return false;
+  const typed = obj;
+  return typed.type === "protocol_ack" || typed.type === "session_init" || typed.type === "assistant_text" || typed.type === "tool_use" || typed.type === "tool_result" || typed.type === "tool_approval_request" || typed.type === "question" || typed.type === "turn_complete" || typed.type === "turn_cancelled" || typed.type === "error";
+}
+function parseConversationEvent(payload) {
+  try {
+    const text = new TextDecoder().decode(payload);
+    const parsed = JSON.parse(text);
+    return isConversationEvent(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// src/cards/conversation/ordering.ts
+var GAP_TIMEOUT_MS = 5000;
+function hasMessageIdentity(event) {
+  return "msg_id" in event && "seq" in event;
+}
+
+class MessageOrderingBuffer {
+  nextExpectedSeq = 0;
+  buffer = new Map;
+  seen = new Set;
+  gapTimer = null;
+  onMessage;
+  onResync;
+  constructor(onMessage, onResync) {
+    this.onMessage = onMessage;
+    this.onResync = onResync;
+  }
+  push(event) {
+    if (!hasMessageIdentity(event)) {
+      this.onMessage(event);
+      return;
+    }
+    const { msg_id, seq } = event;
+    const dedupKey = `${msg_id}:${seq}`;
+    const isPartialUpdate = "rev" in event && typeof event.rev === "number" && "is_partial" in event && event.is_partial === true;
+    if (this.seen.has(dedupKey)) {
+      if (!isPartialUpdate) {
+        return;
+      }
+    } else {
+      this.seen.add(dedupKey);
+    }
+    if (seq === this.nextExpectedSeq) {
+      this.deliver(event);
+      if (!isPartialUpdate) {
+        this.nextExpectedSeq++;
+        this.flushBuffer();
+      }
+    } else if (seq > this.nextExpectedSeq) {
+      this.buffer.set(seq, event);
+      this.startGapTimer();
+    }
+  }
+  deliver(event) {
+    this.onMessage(event);
+  }
+  flushBuffer() {
+    while (this.buffer.has(this.nextExpectedSeq)) {
+      const event = this.buffer.get(this.nextExpectedSeq);
+      this.buffer.delete(this.nextExpectedSeq);
+      this.deliver(event);
+      this.nextExpectedSeq++;
+    }
+    if (this.buffer.size === 0 && this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+      this.gapTimer = null;
+    }
+  }
+  startGapTimer() {
+    if (this.gapTimer !== null) {
+      return;
+    }
+    this.gapTimer = setTimeout(() => {
+      if (this.buffer.size > 0) {
+        const bufferedSeqs = Array.from(this.buffer.keys()).sort((a, b) => a - b);
+        const lowestBuffered = bufferedSeqs[0];
+        this.nextExpectedSeq = lowestBuffered;
+        this.flushBuffer();
+        this.onResync();
+      }
+      this.gapTimer = null;
+    }, GAP_TIMEOUT_MS);
+  }
+  reset() {
+    this.nextExpectedSeq = 0;
+    this.buffer.clear();
+    this.seen.clear();
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+      this.gapTimer = null;
+    }
+  }
+}
+
+// src/cards/conversation-card.ts
+class ConversationCard {
+  feedIds = [FeedId.CONVERSATION_OUTPUT];
+  connection;
+  container;
+  messageList;
+  textarea;
+  orderingBuffer;
+  deckManager;
+  constructor(connection) {
+    this.connection = connection;
+    this.orderingBuffer = new MessageOrderingBuffer((event) => this.handleOrderedEvent(event), () => this.handleResync());
+  }
+  setDeckManager(deckManager) {
+    this.deckManager = deckManager;
+  }
+  mount(parent) {
+    this.container = document.createElement("div");
+    this.container.className = "conversation-card";
+    const header = document.createElement("div");
+    header.className = "card-header";
+    const title = document.createElement("span");
+    title.className = "card-title";
+    title.textContent = "Conversation";
+    header.appendChild(title);
+    this.container.appendChild(header);
+    this.messageList = document.createElement("div");
+    this.messageList.className = "message-list";
+    this.container.appendChild(this.messageList);
+    const inputArea = document.createElement("div");
+    inputArea.className = "conversation-input-area";
+    this.textarea = document.createElement("textarea");
+    this.textarea.className = "conversation-input";
+    this.textarea.placeholder = "Type a message...";
+    this.textarea.rows = 1;
+    this.textarea.addEventListener("input", () => {
+      this.textarea.style.height = "auto";
+      this.textarea.style.height = Math.min(this.textarea.scrollHeight, 200) + "px";
+    });
+    this.textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        this.handleSend();
+      }
+    });
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "send-btn";
+    const icon = $createElement($ArrowUp, { width: 20, height: 20 });
+    sendBtn.appendChild(icon);
+    sendBtn.addEventListener("click", () => this.handleSend());
+    inputArea.appendChild(this.textarea);
+    inputArea.appendChild(sendBtn);
+    this.container.appendChild(inputArea);
+    parent.appendChild(this.container);
+  }
+  onFrame(_feedId, payload) {
+    const event = parseConversationEvent(payload);
+    if (event) {
+      this.orderingBuffer.push(event);
+    }
+  }
+  handleOrderedEvent(event) {
+    if (event.type === "assistant_text") {
+      this.renderAssistantMessage(event);
+    } else if (event.type === "error") {
+      this.renderError(event.message);
+    }
+  }
+  handleResync() {
+    console.warn("Conversation message gap detected - resync triggered");
+  }
+  handleSend() {
+    const text = this.textarea.value.trim();
+    if (!text)
+      return;
+    this.renderUserMessage(text);
+    const msg = {
+      type: "user_message",
+      text,
+      attachments: []
+    };
+    const encoded = encodeConversationInput(msg);
+    this.connection.send(encoded);
+    this.textarea.value = "";
+    this.textarea.style.height = "auto";
+    this.textarea.focus();
+  }
+  renderUserMessage(text) {
+    const msg = document.createElement("div");
+    msg.className = "message message-user";
+    msg.textContent = text;
+    this.messageList.appendChild(msg);
+    this.scrollToBottom();
+  }
+  renderAssistantMessage(event) {
+    let msgEl = this.messageList.querySelector(`[data-msg-id="${event.msg_id}"]`);
+    if (!msgEl) {
+      msgEl = document.createElement("div");
+      msgEl.className = "message message-assistant";
+      msgEl.dataset.msgId = event.msg_id;
+      this.messageList.appendChild(msgEl);
+    }
+    msgEl.textContent = event.text;
+    if (event.is_partial) {
+      msgEl.classList.add("partial");
+    } else {
+      msgEl.classList.remove("partial");
+    }
+    this.scrollToBottom();
+  }
+  renderError(message) {
+    const msgEl = document.createElement("div");
+    msgEl.className = "message message-error";
+    msgEl.textContent = `Error: ${message}`;
+    this.messageList.appendChild(msgEl);
+    this.scrollToBottom();
+  }
+  scrollToBottom() {
+    if (!this.deckManager?.isDragging) {
+      this.messageList.scrollTop = this.messageList.scrollHeight;
+    }
+  }
+  resize() {}
 }
 
 // node_modules/@xterm/xterm/lib/xterm.mjs
@@ -14746,6 +15016,9 @@ if (!container) {
   throw new Error("deck-container element not found");
 }
 var deck = new DeckManager(container, connection);
+var conversationCard = new ConversationCard(connection);
+conversationCard.setDeckManager(deck);
+deck.addCard(conversationCard, "conversation");
 var terminalCard = new TerminalCard(connection);
 terminalCard.setDeckManager(deck);
 deck.addCard(terminalCard, "terminal");

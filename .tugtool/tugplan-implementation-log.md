@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-16T21:33:55Z
+bead: tugtool-kfp.5
+---
+
+## #step-4: Added ConversationCard (message list, user/assistant bubbles, input area, 0x41 send), restructured deck to conversation-primary layout, v1-to-v2 migration, 3rd drag handle, 24 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-16T21:14:58Z
 bead: tugtool-kfp.4
