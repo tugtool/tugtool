@@ -142,9 +142,9 @@ Bun's bundler handles TypeScript natively with zero configuration. No tsconfig.j
 
 ---
 
-## 5. Phase 5: Terminal Polish + Design System
+## 5. Phase 5: Design Tokens, Icons & Terminal Polish
 
-**Goal:** Fix visual issues, establish a design token system (shadcn/ui convention) and icon library (Lucide), and replace the fixed CSS Grid with a full Adobe-style dockable panel system. Cards become first-class objects: dockable to edges and to each other, tabbable together, floatable over the canvas, resizable, movable, each with a custom header menu. A single "tug" menu in the top-right corner adds new cards. The dashboard should feel like a professional workspace — clean, spacious, and fully user-configurable.
+**Goal:** Fix visual issues, establish a design token system (shadcn/ui convention) and icon library (Lucide). This phase delivers the foundational styling infrastructure that all subsequent UI work depends on — semantic color tokens, consistent iconography, and basic terminal polish. The panel system (Phase 8) follows after the conversation frontend proves core value.
 
 ### 5.1 Terminal Padding
 
@@ -378,7 +378,26 @@ import { FilePlus, FileEdit, FileX, FileSymlink } from "lucide";
 
 All icons inherit `currentColor` from their parent element, so they automatically use the correct semantic token color without additional styling.
 
-### 5.7 Panel System (Dockable Cards)
+### Verification (Phase 5)
+
+- Terminal text has visible padding on all sides
+- All cards have consistent internal padding
+- Dragging resize handles does not cause terminal flashing
+- Moving the browser window does not cause terminal flashing
+- Grid has clean visual separation between cards
+- All existing functionality preserved (resize, collapse, etc.)
+- Zero hardcoded hex values remain in CSS files (all replaced by `var(--token)`)
+- Zero hardcoded hex values remain in TypeScript files (read from CSS tokens)
+- All text-character icons replaced with Lucide SVG icons
+- Icons inherit `currentColor` and scale correctly at all card sizes
+
+---
+
+## 8. Phase 8: Panel System
+
+**Goal:** Replace the fixed CSS Grid with a full Adobe-style dockable panel system. Cards become first-class objects: dockable to edges and to each other, tabbable together, floatable over the canvas, resizable, movable, each with a custom header menu. A single "tug" menu in the top-right corner adds new cards. This phase ships **after** Phase 7 (Conversation Frontend) to ensure core conversation value is proven before investing in heavy UI infrastructure.
+
+### Panel System (Dockable Cards)
 
 The current deck is a fixed CSS Grid — terminal left, three cards right, drag handles between them. This works for four cards in a predetermined arrangement. It breaks as soon as the user wants to rearrange cards, float a card over the canvas, tab two cards together, or add a new card type (like the conversation card). Before Phase 7 adds the conversation card, we need a real panel system.
 
@@ -651,18 +670,8 @@ The deck container (`#deck-container`) is the canvas. It has:
 
 When all cards are floating or closed, the canvas is visible as an empty dark background — this is intentional. The canvas is the ground truth; cards are objects placed on it.
 
-### Verification
+### Verification (Phase 8)
 
-- Terminal text has visible padding on all sides
-- All cards have consistent internal padding
-- Dragging resize handles does not cause terminal flashing
-- Moving the browser window does not cause terminal flashing
-- Grid has clean visual separation between cards
-- All existing functionality preserved (resize, collapse, etc.)
-- Zero hardcoded hex values remain in CSS files (all replaced by `var(--token)`)
-- Zero hardcoded hex values remain in TypeScript files (read from CSS tokens)
-- All text-character icons replaced with Lucide SVG icons
-- Icons inherit `currentColor` and scale correctly at all card sizes
 - Cards can be dragged from one dock zone to another
 - Cards can be tabbed together by dropping on a tab bar
 - Cards can be floated by dragging away from all dock zones
@@ -681,7 +690,7 @@ When all cards are floating or closed, the canvas is visible as an empty dark ba
 
 ## 6. Phase 6: tugcode Launcher
 
-**Goal:** A single command that starts everything and opens the browser. Close the browser, everything shuts down.
+**Goal:** A single command that starts everything and opens the browser. The user controls lifetime explicitly with Ctrl-C.
 
 ### 6.1 User Experience
 
@@ -705,10 +714,10 @@ What happens when you run `tugcode`:
 2. Starts `tugcast` as a child process, captures its stdout
 3. Parses the auth URL from tugcast's startup output
 4. Opens the auth URL in the system default browser
-5. Monitors WebSocket connections via tugcast
-6. When the last WebSocket client disconnects (browser closed), sends SIGTERM to tugcast and exits
+5. Waits for Ctrl-C (SIGINT)
+6. On Ctrl-C: sends SIGTERM to tugcast → tugcast sends SIGTERM to tugtalk → all exit cleanly
 
-The tmux session survives. Running `tugcode` again reattaches.
+The tmux session survives. Running `tugcode` again reattaches. The browser can be closed and reopened at any time — tugcast keeps running until tugcode is explicitly stopped.
 
 ### 6.2 Implementation: Rust Binary
 
@@ -719,7 +728,7 @@ tugcode is a new Rust binary crate at `crates/tugcode/`. It lives in the same wo
 - Cross-platform browser opening (`open` on macOS, `xdg-open` on Linux)
 - Parsing tugcast's stdout reliably (regex for the auth URL)
 - Monitoring child process lifecycle
-- Coordinating shutdown: "last client disconnected" requires knowing WebSocket state
+- Coordinating SIGTERM propagation to child processes on Ctrl-C
 
 ### 6.3 Communication Between tugcode and tugcast
 
@@ -731,13 +740,11 @@ tugcast: http://127.0.0.1:7890/auth?token=a3f8...c912
 
 tugcode parses this line, extracts the URL, and opens it.
 
-For shutdown coordination, tugcast needs to signal when the last client disconnects. Options:
+**Lifecycle management.** tugcode is the parent process and manages all child lifetimes directly:
 
-**Option A: Exit on idle.** tugcast gains a `--exit-on-idle <seconds>` flag. When the last WebSocket client disconnects, tugcast waits N seconds and exits if no new client connects. tugcode detects the child process exit and exits itself.
-
-**Option B: Control socket.** tugcast opens a Unix domain socket for control messages. tugcode monitors it for client count changes. More complex, more flexible.
-
-Recommend **Option A** for simplicity. `tugcode` passes `--exit-on-idle 5` to tugcast. If the user closes the browser tab, tugcast waits 5 seconds (allowing for page refreshes), then exits. tugcode detects the exit and terminates cleanly.
+- **Running:** tugcode stays alive until the user presses Ctrl-C. The browser can be closed and reopened freely — tugcast keeps serving, and refreshing the page reconnects the WebSocket.
+- **Shutdown:** On Ctrl-C, tugcode sends SIGTERM to tugcast → tugcast sends SIGTERM to tugtalk → all processes exit cleanly. The tmux session survives.
+- **No idle timeout.** There is no automatic shutdown when the browser disconnects. The user controls lifetime explicitly. This avoids losing work when laptops sleep, tabs reload, or network blips cause momentary disconnects.
 
 ### 6.4 Crate Structure
 
@@ -753,12 +760,12 @@ Dependencies: `clap` (CLI), `tokio` (async child process), `regex` (URL parsing 
 ### Verification
 
 - `tugcode` starts tugcast, opens browser, dashboard loads
-- Closing the browser tab causes tugcast to exit after idle timeout
-- tugcode exits cleanly after tugcast exits
+- Closing the browser tab does not kill tugcast — page can be reopened by navigating to the URL
+- Refreshing the browser page reconnects the WebSocket and restores state
 - tmux session survives after tugcode exits
 - `tugcode --session existing-session` reattaches correctly
 - `tugcode --dir /path/to/project` passes through to tugcast
-- Ctrl-C on tugcode kills tugcast cleanly
+- Ctrl-C on tugcode sends SIGTERM to tugcast → tugcast sends SIGTERM to tugtalk → all exit cleanly
 
 ---
 
@@ -908,6 +915,30 @@ Communication is JSON-lines over stdin (tugcast → tugtalk) and stdout (tugtalk
 
 The conversation feed is special: it uses both watch (for the full conversation state on reconnect) and broadcast (for real-time streaming of partial responses).
 
+#### Message Identity & Ordering
+
+Every message in the conversation feed has a canonical identity for deduplication, ordering, and reconciliation:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `msg_id` | string | Unique message identifier (UUID v4), assigned by tugtalk when the message is created |
+| `seq` | integer | Monotonically increasing sequence number per session, starts at 0, gap-free. Assigned once per message — **stable across all partial updates** of that message. |
+| `rev` | integer | Revision counter within a message, starts at 0. Increments on each partial update. A complete message has its final `rev`. |
+| `blocks` | array | Ordered list of content blocks, each with a `block_index` (0-based within the message) |
+| `status` | enum | `partial` (streaming), `complete` (final), `cancelled` (interrupted) |
+
+**Ordering guarantee:** `seq` numbers are gap-free within a session. If tugdeck receives seq 5 before seq 4 (e.g., due to a race between broadcast and watch channels), it buffers seq 5 and waits for seq 4. Messages are rendered in `seq` order, never arrival order.
+
+**Buffering timeout:** If a gap persists for more than 5 seconds (e.g., seq 4 never arrives due to a dropped event or producer restart), tugdeck abandons the buffer and requests a full state resync via the watch channel (0x40). The buffered out-of-order messages are discarded and replaced by the authoritative watch snapshot. This prevents indefinite render stalls.
+
+**Streaming updates:** While Claude is generating a response, tugtalk emits partial messages with the same `msg_id` and `seq` but incrementing `rev` (0, 1, 2, ...) and `status: "partial"`. Each partial update contains the full accumulated content up to that point (not a delta). tugdeck renders the highest `rev` seen for each `msg_id`. The final update has `status: "complete"`. Because `seq` is stable across partials, the ordering guarantee applies to messages, not revisions — revisions only compete within a single message.
+
+**Block identity:** Within a message, blocks are identified by `msg_id` + `block_index`. This allows surgical updates — e.g., a tool result block can be updated independently when the tool completes, without re-rendering the entire message.
+
+**Deduplication rules:**
+- **Complete messages:** tugdeck maintains a set of seen `(msg_id, seq)` pairs. Duplicate deliveries (possible on reconnect when both watch snapshot and broadcast overlap) are silently dropped.
+- **Partial updates:** For a given `msg_id`, tugdeck tracks the highest `rev` rendered. A partial with `rev` <= the current rendered rev is dropped (stale). A partial with a higher `rev` replaces the current rendering. This means out-of-order partials are harmless — the latest content always wins.
+
 ### 7.4 Conversation Card (tugdeck)
 
 The conversation card is the primary interaction surface. It replaces the terminal as the main way to interact with Claude.
@@ -956,7 +987,7 @@ The conversation card is the primary interaction surface. It replaces the termin
 
 #### Formatting & Styling Specification
 
-Every element rendered in the conversation card maps to semantic tokens from Phase 5.5, uses Lucide icons from Phase 5.6, and follows the patterns below. The goal: Claude's responses should feel like a native application UI, not a raw text dump.
+Every element rendered in the conversation card maps to semantic tokens from Phase 5, uses Lucide icons from Phase 5, and follows the patterns below. The goal: Claude's responses should feel like a native application UI, not a raw text dump.
 
 ##### Message Containers
 
@@ -1073,6 +1104,19 @@ Assistant text blocks are rendered as Markdown → HTML using **marked** (minima
   background: none;
 }
 ```
+
+**Markdown safety policy:** Model output and tool results are **untrusted content**. Strictly no raw HTML rendering — all HTML tags are stripped, no "safe subset" allowlist. The defense is layered:
+
+1. **DOMPurify (primary):** All marked output is piped through DOMPurify before DOM insertion via `innerHTML`. DOMPurify is configured to strip **all** HTML tags and attributes — not the default safe-subset behavior:
+
+   ```typescript
+   DOMPurify.sanitize(html, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+   ```
+
+   This means any `<script>`, `<img onerror=...>`, `javascript:` URL, or inline event handler in model/tool output is reduced to its text content. This is the authoritative safety boundary.
+2. **CSP (defense-in-depth):** tugdeck's HTML sets a Content-Security-Policy meta tag: `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:;` — this blocks any injected script from executing even if it somehow bypasses DOMPurify.
+
+Note: `marked` itself does **not** strip or escape raw HTML by default. The `{gfm: true, breaks: true}` configuration enables GitHub-Flavored Markdown and soft line breaks — it has no effect on HTML sanitization. Do not rely on marked for safety; DOMPurify is the sole sanitizer.
 
 This is intentionally minimal. No `max-width` prose constraints — the conversation card width is the constraint. No typographic scale — headings are de-emphasized because Claude's responses are conversational, not documents.
 
@@ -1269,6 +1313,17 @@ While Claude is responding or executing tools, the user can interrupt at any tim
 - **Behavior:** tugtalk cancels the in-progress Agent SDK turn. Any partial response is preserved and rendered with a "cancelled" indicator. The conversation remains in a valid state — the user can immediately send a new message.
 - **During tool execution:** If Claude is mid-tool-use (e.g. a long-running Bash command), the interrupt cancels the tool and the turn. The tool result shows as cancelled.
 
+**Cancellation contract:** Tool cancellation is **best-effort**, not guaranteed-atomic. The strategy varies by tool type:
+
+| Tool | Cancellation behavior |
+|------|----------------------|
+| **Read, Glob, Grep** | Effectively instant — SDK request is cancelled, no side effects |
+| **Edit, Write** | Best-effort — if the write is in-flight, the file may be partially written. The user sees a "cancelled" indicator and should inspect the file. |
+| **Bash** | tugtalk sends SIGTERM to the child process. If the process does not exit within 3 seconds, SIGKILL follows. Partial stdout is captured and included in the tool result. |
+| **WebFetch, WebSearch** | HTTP request is aborted. No side effects. |
+
+After interrupt, the conversation is always in a valid state at the protocol level. However, external side effects from partially-executed tools (e.g., a half-written file from Write, or a partially-completed shell command from Bash) are the user's responsibility to inspect. The conversation card marks the interrupted turn clearly so the user knows which tool was in-flight.
+
 ### 7.5 Startup Flow (with tugcode)
 
 ```
@@ -1293,7 +1348,7 @@ tugcode
 
 ### 7.6 Default Layout (Updated)
 
-With the panel system from Phase 5.7, the conversation card takes the dominant left-side position. The default layout tree:
+With the panel system from Phase 8, the conversation card takes the dominant left-side position. The default layout tree:
 
 ```
 root: SplitNode(horizontal)
@@ -1319,7 +1374,7 @@ root: SplitNode(horizontal)
 └────────────────────────────────────────────┘
 ```
 
-This is the default, but the user can rearrange freely: tab the terminal with git, float the stats card, dock conversation and terminal side-by-side, or any other arrangement. The layout persists to localStorage via the Phase 5.7 serialization system.
+This is the default, but the user can rearrange freely: tab the terminal with git, float the stats card, dock conversation and terminal side-by-side, or any other arrangement. The layout persists to localStorage via the Phase 8 serialization system.
 
 ### 7.7 Session Management
 
@@ -1331,19 +1386,65 @@ The Agent SDK V2 session is long-lived. It persists across:
 Session lifecycle:
 1. `tugcode` starts → tugtalk creates a new session (or resumes if a session ID exists)
 2. User converses through tugdeck
-3. User closes browser → tugcast idle timeout → tugcast exits → tugcode exits → tugtalk exits
-4. User runs `tugcode` again → tugtalk resumes the session → conversation continues
+3. User closes browser → nothing happens. tugcast and tugtalk keep running. User can reopen the browser and reconnect.
+4. User presses Ctrl-C on tugcode → SIGTERM chain → all processes exit
+5. User runs `tugcode` again → tugtalk resumes the session → conversation continues
 
 #### Conversation Cache (IndexedDB)
 
 tugdeck maintains a local cache of the conversation history in IndexedDB. This provides instant rendering on page load, before the WebSocket connects or the Agent SDK session resumes.
 
-- **On every update:** tugdeck writes the current message list to IndexedDB (debounced 1s).
+- **On every update:** tugdeck writes the current message list to IndexedDB (debounced 1s). Each message is keyed by `msg_id` with its `seq` number.
 - **On page load:** tugdeck reads the cache and renders it immediately. The user sees their conversation before the WebSocket is even open.
-- **On session resume:** When tugtalk resumes and the watch channel (0x40) delivers authoritative state, tugdeck silently replaces the cached rendering with the live state. In practice, they are identical.
+- **On session resume:** When tugtalk resumes and the watch channel (0x40) delivers authoritative state, tugdeck runs the reconciliation algorithm (see below) to merge cached and live state with minimal DOM churn.
 - **On session resume failure:** If tugtalk cannot resume (session expired, API error), it starts a new session. tugdeck shows a divider: "Previous session ended. New session started." The cached conversation stays visible above the divider as read-only context.
 
 IndexedDB is used instead of localStorage because conversations with code blocks, tool results, and images can easily exceed localStorage's ~5MB limit.
+
+**Reconciliation algorithm:** When the watch snapshot arrives, tugdeck reconciles it with the cached rendering:
+
+1. Walk both lists (cached and authoritative) in `seq` order.
+2. For each message in the authoritative list:
+   - If `msg_id` matches the cached message at the same position and content is identical → keep the existing DOM node (no re-render).
+   - If `msg_id` matches but content differs (e.g., a partial message that is now complete) → update in place.
+   - If `msg_id` is new (not in cache) → insert at the correct position.
+3. Any cached messages not present in the authoritative list are removed (this handles messages from a session that was rolled back or expired).
+4. After reconciliation, tugdeck writes the authoritative state to IndexedDB, replacing the stale cache.
+
+In practice, steps 2-3 rarely trigger because the cache and authoritative state are almost always identical. The algorithm exists as a correctness guarantee, not a hot path.
+
+**Retention & privacy:** Cached conversations are scoped by project directory (see Session Scoping below). Each project gets its own IndexedDB database (`tugdeck-<project-hash>`). tugdeck provides a "Clear history" action in the conversation card menu that deletes the IndexedDB database for the current project. There is no automatic expiration — the user controls retention explicitly. No conversation data is sent to any server other than the Anthropic API (which is inherent to the Claude session).
+
+#### Session Scoping
+
+Sessions are scoped by **project directory** — the `--dir` argument to tugcode (defaults to the current working directory). Each project gets its own session:
+
+| Scoping dimension | How it's handled |
+|-------------------|-----------------|
+| **Project directory** | tugtalk stores the session ID in `.tugtool/.session`. Different directories = different sessions. |
+| **IndexedDB cache** | Keyed by a hash of the project directory path. No cross-project data bleed. |
+| **Permission mode** | Runtime setting, not part of session scope. Switching modes mid-conversation is supported. |
+| **User identity** | Implicit from the `ANTHROPIC_API_KEY` environment variable. No multi-user support needed. |
+
+This means: running `tugcode` in `/project-a` and `tugcode` in `/project-b` produces two completely independent sessions with separate conversation histories.
+
+#### Crash Recovery
+
+If tugtalk crashes mid-turn (segfault, OOM, unhandled exception):
+
+1. **tugcast detects the crash.** tugtalk is a child process of tugcast. When it exits unexpectedly, tugcast captures the exit code.
+2. **Error event sent to tugdeck.** tugcast emits an error event on the conversation feed (0x40): `{"type": "error", "message": "Conversation engine crashed. Reconnecting...", "recoverable": true}`.
+3. **tugdeck shows an error banner.** The banner appears inline in the conversation with `AlertTriangle` icon and the error message.
+4. **tugcast restarts tugtalk.** After a 1-second delay, tugcast spawns a new tugtalk process.
+5. **tugtalk attempts session resume.** It reads the session ID from `.tugtool/.session` and calls `resumeSession(sessionId)`.
+6. **On successful resume:** The watch channel delivers authoritative state. tugdeck reconciles and the conversation continues. A subtle note appears: "Session reconnected."
+7. **On failed resume:** tugtalk starts a fresh session and writes the new session ID. tugdeck shows the divider: "Previous session ended. New session started." The cached conversation stays visible above.
+
+**What is lost:** The in-flight turn at the time of the crash is lost. No turn replay is attempted — the complexity of replaying a partially-executed turn with side effects (tool calls, file writes) is not worth the risk. The user can re-send their last message if they want to retry.
+
+**Stale UI cleanup:** After a crash, any pending tool approval prompts or running tool cards in tugdeck are explicitly marked stale. A visual overlay appears on each affected card: `AlertTriangle` icon + "Session restarted — this request is no longer active" in `var(--muted-foreground)`. Action buttons (Allow/Deny, Submit) are disabled. This prevents the user from interacting with prompts that no longer correspond to a live tool request in tugtalk.
+
+**Crash budget:** If tugtalk crashes 3 times within 60 seconds, tugcast stops restarting and sends a fatal error event. The user sees: "Conversation engine failed repeatedly. Please restart tugcode." This prevents infinite crash loops.
 
 ### 7.8 Permission Model
 
@@ -1356,65 +1457,78 @@ Permission modes control which tools require user approval. Switching modes is *
 | `bypassPermissions` | All tools auto-approved (dangerous, for trusted environments) |
 | `plan` | Same as `default`, plus plan-mode flag on the session |
 
-tugdeck lets the user choose the permission mode from the conversation card header menu (see card menu in 5.7). The default is `acceptEdits` (matches Claude Code's typical interactive mode). Switching mid-conversation takes effect immediately on the next tool call — no restart, no context loss.
+tugdeck lets the user choose the permission mode from the conversation card header menu (see card menu in Phase 8). The default is `acceptEdits` (matches Claude Code's typical interactive mode). Switching mid-conversation takes effect immediately on the next tool call — no restart, no context loss.
+
+**SDK validation note:** This design assumes permission mode changes are purely local to tugtalk's `canUseTool` callback and do not require SDK session-level changes. If the Agent SDK V2 introduces session-level permission semantics that influence planning or tool selection behavior beyond the callback, tugtalk may need to create a new session on mode switch. The adapter layer (see Risks) isolates the rest of the system from this possibility. Verify this assumption against the SDK documentation when V2 stabilizes.
 
 ### 7.9 Risks
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|-----------|------------|
 | Agent SDK V2 is unstable preview | high | medium | Pin to specific version, wrap API surface in an adapter layer, monitor changelog |
+| XSS via model/tool output in Markdown rendering | high | low | DOMPurify with `ALLOWED_TAGS: []` strips all HTML (sole sanitizer; marked does not sanitize). CSP meta tag as defense-in-depth. |
+| Conversation state consistency (ordering, dedup) | high | medium | Message identity model with `msg_id` + `seq` numbers, gap-free ordering guarantee, reconciliation algorithm on reconnect |
+| tugtalk crash mid-turn loses in-flight work | medium | medium | Auto-restart with 1s delay, session resume, IndexedDB cache preserves history. Crash budget (3 in 60s) prevents loops. No turn replay — complexity not worth risk. |
+| Dynamic permission switching depends on SDK behavior | medium | low | Adapter layer isolates assumption. If SDK introduces session-level permission semantics, tugtalk can create new session on switch. Verify when V2 stabilizes. |
 | IPC overhead for real-time streaming | low | low | JSON-lines is fast enough for text streaming; benchmark to confirm |
-| Conversation card rendering complexity | medium | medium | marked for Markdown, Shiki for syntax highlighting (17 languages initially, lazy-load rest). Proven tools, no custom parsers. |
-| Session resumption failures | medium | low | Store session ID persistently. IndexedDB cache provides instant rendering on reload. If resume fails, start a new session with a divider; cached history stays visible. |
+| Conversation card rendering complexity | medium | medium | marked + DOMPurify for Markdown, Shiki for syntax highlighting (17 languages initially, lazy-load rest). Proven tools, no custom parsers. |
+| Session resumption failures | medium | low | Store session ID in `.tugtool/.session`. IndexedDB cache provides instant rendering on reload. Reconciliation algorithm handles divergence. If resume fails, start a new session with divider; cached history stays visible. |
 | ANTHROPIC_API_KEY management | medium | low | tugtalk reads from environment variable (same as Claude Code). tugcode could prompt if missing. |
 | Agent SDK breaking changes before V2 stabilizes | high | medium | The adapter layer in tugtalk isolates the rest of the system from SDK API changes. |
+| Bun build.rs bootstrapping non-hermetic in CI | low | medium | Enforce `bun install --frozen-lockfile` in CI. Cache `node_modules` in CI. Pin Bun version in CI config. |
 
 ---
 
-## 8. Implementation Order
+## 9. Implementation Order
+
+Phases are sequenced so that **core conversation value ships before heavy UI infrastructure**. Phase 5 establishes the styling foundation. Phase 7 delivers the conversation frontend. Phase 8 adds the panel system after conversation is proven.
 
 ```
 Phase 4: Bun Pivot
   └── 1 step: replace npm/esbuild with bun in build.rs, update CI
 
-Phase 5: Terminal Polish + Design System
+Phase 5: Design Tokens, Icons & Terminal Polish
   ├── Step 0: Design token system (CSS custom properties, migrate all hardcoded colors)
   ├── Step 1: Lucide icons (replace text-character icons, add to card chrome)
-  ├── Step 2: Terminal polish (padding, resize debounce, grid gap)
-  ├── Step 3: Layout tree data structure (SplitNode, TabNode, serialization, v1→v2 migration)
-  ├── Step 4: Tree renderer (nested flex containers from layout tree, sash resizing)
-  ├── Step 5: Tab groups (tab bar rendering, tab reordering, tab close)
-  ├── Step 6: Drag-and-drop dock targeting (zone detection, blue overlay, tree mutation)
-  ├── Step 7: Floating panels (undock, re-dock, move, resize, z-order)
-  ├── Step 8: Card header bar (icon, title, menu button, collapse, close)
-  ├── Step 9: Per-card menus (Terminal, Git, Files, Stats dropdown menus)
-  └── Step 10: Tug menu (top-right logo button, add cards, reset/save/load layout)
+  └── Step 2: Terminal polish (padding, resize debounce, grid gap)
 
 Phase 6: tugcode Launcher
-  └── 2 steps: tugcast --exit-on-idle flag, then tugcode binary
+  ├── Step 0: tugcode binary (start tugcast, parse URL, open browser, signal-wait loop)
+  └── Step 1: SIGTERM propagation (tugcode → tugcast now; extends to tugtalk in Phase 7 Step 2)
 
 Phase 7: Conversation Frontend
   ├── Step 0: Scaffold tugtalk (Bun project, Agent SDK dependency, IPC skeleton)
   ├── Step 1: Implement tugtalk session management (create, resume, send, stream)
-  ├── Step 2: Implement IPC bridge in tugcast (spawn tugtalk, relay messages)
-  ├── Step 3: Add conversation feed IDs (0x40, 0x41) to protocol
+  ├── Step 2: Implement IPC bridge in tugcast (spawn tugtalk, relay messages, crash restart)
+  ├── Step 3: Add conversation feed IDs (0x40, 0x41) + message identity model to protocol
   ├── Step 4: Conversation card shell (message list, input area, user bubbles)
-  ├── Step 5: Markdown rendering with marked + prose styles
+  ├── Step 5: Markdown rendering with marked + DOMPurify + prose styles
   ├── Step 6: Code blocks with Shiki syntax highlighting + copy button
   ├── Step 7: Tool use cards (collapsible, status indicators, Lucide icons)
   ├── Step 8: Tool approval prompts (Allow/Deny, input area blocking)
   ├── Step 9: Clarifying question cards (radio/checkbox, submit)
-  ├── Step 10: Implement interrupt (Ctrl-C / stop button → cancel in-progress turn)
+  ├── Step 10: Implement interrupt (Ctrl-C / stop button → cancel with per-tool contract)
   ├── Step 11: File drop, clipboard paste, and attachment handling
   ├── Step 12: Streaming state (cursor, stop button, activity indicator)
-  ├── Step 13: IndexedDB conversation cache (instant render on reload, session resume reconciliation)
-  ├── Step 14: Default layout preset (conversation primary, terminal visible in right column)
-  └── Step 15: End-to-end integration and acceptance
+  ├── Step 13: IndexedDB conversation cache (instant render, reconciliation algorithm)
+  ├── Step 14: Session scoping by project directory + crash recovery
+  ├── Step 15: Default layout preset (conversation primary, terminal visible in right column)
+  └── Step 16: End-to-end integration and acceptance
+
+Phase 8: Panel System (ships after Phase 7)
+  ├── Step 0: Layout tree data structure (SplitNode, TabNode, serialization, v1→v2 migration)
+  ├── Step 1: Tree renderer (nested flex containers from layout tree, sash resizing)
+  ├── Step 2: Tab groups (tab bar rendering, tab reordering, tab close)
+  ├── Step 3: Drag-and-drop dock targeting (zone detection, blue overlay, tree mutation)
+  ├── Step 4: Floating panels (undock, re-dock, move, resize, z-order)
+  ├── Step 5: Card header bar (icon, title, menu button, collapse, close)
+  ├── Step 6: Per-card menus (Terminal, Git, Files, Stats, Conversation dropdown menus)
+  └── Step 7: Tug menu (top-right logo button, add cards, reset/save/load layout)
 ```
 
 ---
 
-## 9. Key Dependencies (New)
+## 10. Key Dependencies (New)
 
 ### tugtalk (Bun/TypeScript)
 
@@ -1437,23 +1551,70 @@ Phase 7: Conversation Frontend
 |---------|---------|
 | `lucide` | SVG icon library (tree-shakeable, shadcn-compatible) |
 | `marked` | Markdown → HTML rendering for conversation messages |
+| `dompurify` | HTML sanitization for model/tool output (XSS defense-in-depth) |
 | `shiki` | Syntax highlighting using VS Code TextMate grammars |
 
 ---
 
-## 10. Resolved Questions
+## 11. Success Metrics
 
-1. ~~**Markdown renderer.**~~ **Resolved:** `marked` — minimal, fast, no plugins needed. Prose styles are custom CSS scoped to `.conversation-prose`.
+| Phase | Metric | Target |
+|-------|--------|--------|
+| **Phase 4** | Build time regression vs. npm/esbuild | < 10% slower |
+| **Phase 4** | Bundle size vs. esbuild output | Within 10% |
+| **Phase 5** | Hardcoded hex values remaining | 0 in CSS, 0 in TypeScript |
+| **Phase 5** | Text-character icons remaining | 0 (all replaced with Lucide) |
+| **Phase 7** | First message → first response token (after session established) | < 2 seconds |
+| **Phase 7** | Cached conversation render on page load (IndexedDB → DOM) | < 200ms |
+| **Phase 7** | Streaming text render frame rate | 60fps (no dropped frames during token-by-token render) |
+| **Phase 7** | Reconnect correctness | 0 reconciliation mismatches per 100 reconnects |
+| **Phase 7** | Crash-free session rate | > 99% of sessions complete without tugtalk crash |
+| **Phase 7** | Reconciliation DOM churn on reconnect | < 5% of message nodes re-rendered (typical case: 0%) |
+| **Phase 8** | Layout save/restore round-trip | < 50ms |
+| **Phase 8** | Drag feedback frame rate | 60fps (overlay tracks cursor without lag) |
+
+**Measurement methodology:**
+
+*Browser instrumentation (runtime metrics):*
+- **UI latency** (first token, cache render, layout round-trip): measured with `performance.now()` in development builds. Report p50 and p95 over 20 runs.
+- **Frame rate** (streaming render, drag feedback): measured with Chrome DevTools Performance panel. A "dropped frame" is any frame exceeding 16.67ms. Report worst-case frame time over a 10-second capture.
+- **DOM churn**: instrumented via a `MutationObserver` that counts node insertions/removals during reconciliation. Report as percentage of total message nodes touched.
+
+*CI pipeline (build metrics):*
+- **Build time**: measured by CI step timing (`time cargo build`, `time bun build`). Baseline captured before Bun pivot; regressions beyond target fail the build.
+- **Bundle size**: CI reports output file size. Regressions beyond target fail the build.
+
+*Test harness (correctness metrics):*
+- **Reconnect correctness**: automated harness simulates disconnects, tab reloads, and tugtalk crashes. Correctness verified by diffing the DOM snapshot before disconnect against after reconnect — any structural mismatch counts as a failure. Run 100 iterations per release.
+- **Crash-free rate**: tracked over sustained test sessions (1 hour continuous use, 100 sessions). A crash is any unexpected tugtalk exit.
+
+---
+
+## 12. Resolved Questions
+
+1. ~~**Markdown renderer.**~~ **Resolved:** `marked` for Markdown-to-HTML, `DOMPurify` as the sole sanitizer (marked does not strip HTML by default). CSP meta tag as defense-in-depth. Strictly no raw HTML rendering — all tags stripped. Prose styles are custom CSS scoped to `.conversation-prose`.
 
 2. ~~**Code syntax highlighting.**~~ **Resolved:** Shiki — uses VS Code TextMate grammars directly, produces pre-tokenized HTML, supports custom themes via CSS custom properties. Exact same highlighting as the editor.
 
-3. ~~**Conversation persistence across tugcode restarts.**~~ **Resolved:** IndexedDB as a read-only cache. tugdeck writes the current message list to IndexedDB on every conversation update (debounced). On page load, the cached conversation renders immediately — before the WebSocket connects. When tugtalk resumes the Agent SDK session and the watch channel (0x40) delivers authoritative state, tugdeck silently replaces the cached rendering. If session resume fails, a divider appears: "Previous session ended. New session started." The cached conversation stays visible above the divider as read-only context. localStorage is too small for conversations with code blocks and images; IndexedDB has no practical size limit.
+3. ~~**Conversation persistence across tugcode restarts.**~~ **Resolved:** IndexedDB cache with reconciliation. tugdeck writes messages (keyed by `msg_id`, ordered by `seq`) to IndexedDB on every update. On page load, the cached conversation renders immediately. When the watch channel delivers authoritative state, the reconciliation algorithm walks both lists in `seq` order, keeping matching DOM nodes and updating only what differs. If session resume fails, a divider appears and cached history stays visible. IndexedDB is scoped per project directory to prevent cross-project data bleed.
 
-4. ~~**Permission mode switching.**~~ **Resolved:** Dynamic switching via tugtalk's `canUseTool` callback — no new session needed. The callback lives in tugtalk, not in the Agent SDK session. tugtalk changes its local approval logic when the user switches modes: `default` (forward all tool requests for approval), `acceptEdits` (auto-approve Read/Edit/Write/Glob/Grep, forward Bash), `bypassPermissions` (auto-approve everything), `plan` (same as default + plan-mode flag). The Agent SDK session stays alive and full conversation context is preserved. Creating a new session would discard context — unacceptable for a multi-turn conversation tool.
+4. ~~**Permission mode switching.**~~ **Resolved:** Dynamic switching via tugtalk's `canUseTool` callback — no new session needed. The callback lives in tugtalk, not in the Agent SDK session. Switching is instant and preserves full conversation context. SDK validation note: if V2 introduces session-level permission semantics, the adapter layer isolates the impact.
 
-5. ~~**Terminal card role.**~~ **Resolved:** Visible in the right column, not collapsed, in the default layout. The terminal is useful as a companion — watching builds, git output, manual commands. The default layout puts it at ~33% width in the right column, giving it presence without competing with the conversation card. The panel system (5.7) makes this a non-issue for experienced users: they dock, tab, float, collapse, or close the terminal to taste, and the layout persists.
+5. ~~**Terminal card role.**~~ **Resolved:** Visible in the right column, not collapsed, in the default layout. The terminal is useful as a companion — watching builds, git output, manual commands. The default layout puts it at ~33% width in the right column, giving it presence without competing with the conversation card. The panel system (Phase 8) makes this a non-issue for experienced users: they dock, tab, float, collapse, or close the terminal to taste, and the layout persists.
 
-6. ~~**Shiki bundle size.**~~ **Resolved:** Curated initial set of 17 languages, lazy-load the rest. Use `createHighlighter({ langs: [...] })` with: TypeScript, JavaScript, Python, Rust, Shell/Bash, JSON, CSS, HTML, Markdown, Go, Java, C, C++, SQL, YAML, TOML, Dockerfile. When Claude sends a code block with an unlisted language, attempt dynamic load via `highlighter.loadLanguage()`. Fall back to plain monospace (`var(--foreground)` on `var(--muted)`) if the grammar isn't available — no highlighting is better than broken highlighting. Measure and report initial bundle size after this selection.
+6. ~~**Shiki bundle size.**~~ **Resolved:** Curated initial set of 17 languages, lazy-load the rest. Fall back to plain monospace if a grammar isn't available — no highlighting is better than broken highlighting.
+
+7. ~~**Message identity model.**~~ **Resolved:** Every message has a `msg_id` (UUID v4) and `seq` (monotonically increasing integer, gap-free per session). Blocks within messages are identified by `msg_id` + `block_index`. Streaming updates reuse the same `msg_id` with `status: "partial"` → `"complete"`. Deduplication via `(msg_id, seq)` set. See section 7.3.
+
+8. ~~**Markdown safety policy.**~~ **Resolved:** DOMPurify with `ALLOWED_TAGS: [], ALLOWED_ATTR: []` is the sole sanitizer — strips all HTML tags from model/tool output. marked does not sanitize by default and is not relied upon for safety. CSP meta tag as defense-in-depth. See section 7.4.
+
+9. ~~**Process lifecycle.**~~ **Resolved:** No idle timeout. tugcode stays alive until Ctrl-C. Browser can be closed and reopened freely. SIGTERM propagation chain: tugcode → tugcast → tugtalk. See section 6.3.
+
+10. ~~**Session scoping.**~~ **Resolved:** Sessions are scoped by project directory. Session ID stored in `.tugtool/.session`. IndexedDB cache keyed by project directory hash. Permission mode is a runtime setting, not part of session scope. See section 7.7.
+
+11. ~~**Crash recovery.**~~ **Resolved:** tugcast auto-restarts tugtalk with 1s delay. tugtalk attempts session resume. In-flight turn is lost (no replay). Crash budget: 3 crashes in 60s → fatal error. See section 7.7.
+
+12. ~~**Accessibility.**~~ **Deferred.** Keyboard-only docking, screen-reader labels, and contrast checks will be addressed as a dedicated pass after core functionality ships.
 
 ---
 
