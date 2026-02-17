@@ -482,7 +482,7 @@ describe("routeTopLevelEvent", () => {
     }
   });
 
-  // Step 3 new tests
+  // Step 3 new tests (updated in Step 6 audit with new fields)
   test("system/init produces SystemMetadata IPC with all section 3a fields", () => {
     const event = {
       type: "system",
@@ -496,7 +496,11 @@ describe("routeTopLevelEvent", () => {
       plugins: [],
       agents: [],
       skills: [],
+      mcp_servers: [{ name: "my-mcp" }],
       claude_code_version: "2.1.38",
+      output_style: "auto",
+      fast_mode_state: "disabled",
+      apiKeySource: "env",
     };
     const result = routeTopLevelEvent(event, baseCtx);
     const sysMsg = result.messages.find((m: any) => m.type === "system_metadata") as any;
@@ -508,6 +512,11 @@ describe("routeTopLevelEvent", () => {
     expect(sysMsg.permissionMode).toBe("acceptEdits");
     expect(sysMsg.slash_commands).toEqual([{ name: "/cost" }]);
     expect(sysMsg.version).toBe("2.1.38");
+    // New fields added in Step 6 audit
+    expect(sysMsg.mcp_servers).toEqual([{ name: "my-mcp" }]);
+    expect(sysMsg.output_style).toBe("auto");
+    expect(sysMsg.fast_mode_state).toBe("disabled");
+    expect(sysMsg.apiKeySource).toBe("env");
   });
 
   test("result/success produces CostUpdate IPC with cost fields", () => {
@@ -1550,5 +1559,101 @@ describe("handleUserMessage integration", () => {
     const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
     const slashOutput = textMsgs.find((m: any) => m.text.includes("slash output text"));
     expect(slashOutput).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 6 audit fixup tests
+// ---------------------------------------------------------------------------
+
+describe("ControlRequestForward blocked_path and tool_use_id (Step 6)", () => {
+  test("control_request with blocked_path and tool_use_id forwards them in IPC", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-blocked-" + Date.now());
+
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "control_request",
+        request_id: "req-blocked-1",
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "Write",
+          input: { path: "/etc/passwd" },
+          blocked_path: "/etc/passwd",
+          tool_use_id: "tu-write-blocked",
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "write to etc", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    const forward = ipcMessages.find((m: any) => m.type === "control_request_forward") as any;
+    expect(forward).toBeDefined();
+    expect(forward.request_id).toBe("req-blocked-1");
+    expect(forward.blocked_path).toBe("/etc/passwd");
+    expect(forward.tool_use_id).toBe("tu-write-blocked");
+  });
+
+  test("control_request without blocked_path/tool_use_id still produces valid forward", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-noblocked-" + Date.now());
+
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "control_request",
+        request_id: "req-no-extra-1",
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "Read",
+          input: { path: "/safe.ts" },
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "read file", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    const forward = ipcMessages.find((m: any) => m.type === "control_request_forward") as any;
+    expect(forward).toBeDefined();
+    expect(forward.blocked_path).toBeUndefined();
+    expect(forward.tool_use_id).toBeUndefined();
+  });
+});
+
+describe("handlePermissionMode control_request (Step 6)", () => {
+  test("handlePermissionMode sends set_permission_mode control_request to stdin", () => {
+    const manager = new SessionManager("/tmp/tugtalk-perm-ctrl-" + Date.now());
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handlePermissionMode({ type: "permission_mode", mode: "bypassPermissions" });
+
+    // Must have written a control_request
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_request");
+    expect(parsed.request.subtype).toBe("set_permission_mode");
+    expect(parsed.request.mode).toBe("bypassPermissions");
+
+    // Local state must also be updated
+    expect((manager as any).permissionManager.getMode()).toBe("bypassPermissions");
+  });
+
+  test("handlePermissionMode without active process only updates local state", () => {
+    const manager = new SessionManager("/tmp/tugtalk-perm-noproc-" + Date.now());
+    // No claudeProcess set -- should not throw, just update local state
+    expect(() => {
+      manager.handlePermissionMode({ type: "permission_mode", mode: "plan" });
+    }).not.toThrow();
+    expect((manager as any).permissionManager.getMode()).toBe("plan");
   });
 });

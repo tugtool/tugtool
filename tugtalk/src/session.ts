@@ -255,7 +255,11 @@ export function routeTopLevelEvent(
           plugins: event.plugins,
           agents: event.agents,
           skills: event.skills,
+          mcp_servers: event.mcp_servers,
           claude_code_version: event.claude_code_version,
+          output_style: event.output_style,
+          fast_mode_state: event.fast_mode_state,
+          apiKeySource: event.apiKeySource,
         };
         // Emit SystemMetadata IPC so the frontend can populate settings and help panels.
         const sysMsg: SystemMetadata = {
@@ -269,7 +273,11 @@ export function routeTopLevelEvent(
           plugins: (event.plugins as unknown[]) || [],
           agents: (event.agents as unknown[]) || [],
           skills: (event.skills as unknown[]) || [],
+          mcp_servers: (event.mcp_servers as unknown[]) || [],
           version: (event.claude_code_version as string) || "",
+          output_style: (event.output_style as string) || "",
+          fast_mode_state: (event.fast_mode_state as string) || "",
+          apiKeySource: (event.apiKeySource as string) || "",
           ipc_version: 2,
         };
         messages.push(sysMsg);
@@ -877,6 +885,8 @@ export class SessionManager {
               input: (request.input as Record<string, unknown>) || {},
               decision_reason: request.decision_reason as string | undefined,
               permission_suggestions: request.permission_suggestions as unknown[] | undefined,
+              blocked_path: request.blocked_path as string | undefined,
+              tool_use_id: request.tool_use_id as string | undefined,
               is_question: isQuestion,
               ipc_version: 2,
             };
@@ -978,11 +988,22 @@ export class SessionManager {
   }
 
   /**
-   * Handle permission_mode: update permission manager.
+   * Handle permission_mode: update local permission manager and notify the CLI.
+   * Sends a set_permission_mode control_request to the running CLI process so
+   * it can apply the new mode without restarting.
    */
   handlePermissionMode(msg: PermissionModeMessage): void {
     console.log(`Setting permission mode: ${msg.mode}`);
     this.permissionManager.setMode(msg.mode);
+
+    // Also notify the CLI process of the mode change.
+    if (this.claudeProcess) {
+      const stdin = this.claudeProcess.stdin;
+      sendControlRequest(stdin, generateRequestId(), {
+        subtype: "set_permission_mode",
+        mode: msg.mode,
+      });
+    }
   }
 
   /**

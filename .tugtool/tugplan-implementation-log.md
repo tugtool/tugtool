@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-17T20:36:35Z
+bead: tugtool-jdn.7
+---
+
+## #step-6: Protocol conformance audit: added 4 missing fields to SystemMetadata IPC, 2 optional fields to ControlRequestForward, wired handlePermissionMode to send set_permission_mode control_request to CLI, added 5 tests, 141 tests passing across 6 files
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-17T20:29:38Z
 bead: tugtool-jdn.6

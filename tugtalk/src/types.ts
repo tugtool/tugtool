@@ -181,6 +181,8 @@ export interface ControlRequestForward {
   input: Record<string, unknown>;
   decision_reason?: string;
   permission_suggestions?: unknown[];
+  blocked_path?: string;
+  tool_use_id?: string;
   is_question: boolean;
   ipc_version: number;
 }
@@ -199,7 +201,11 @@ export interface SystemMetadata {
   plugins: unknown[];
   agents: unknown[];
   skills: unknown[];
+  mcp_servers: unknown[];
   version: string;
+  output_style: string;
+  fast_mode_state: string;
+  apiKeySource: string;
   ipc_version: number;
 }
 

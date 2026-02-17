@@ -191,7 +191,7 @@ describe("outbound message types", () => {
     expect(msg.ipc_version).toBe(2);
   });
 
-  test("SystemMetadata has cwd field", () => {
+  test("SystemMetadata has cwd field and new protocol fields", () => {
     const msg: SystemMetadata = {
       type: "system_metadata",
       session_id: "sess-1",
@@ -203,10 +203,35 @@ describe("outbound message types", () => {
       plugins: [],
       agents: [],
       skills: [],
+      mcp_servers: [],
       version: "2.1.38",
+      output_style: "auto",
+      fast_mode_state: "disabled",
+      apiKeySource: "env",
       ipc_version: 2,
     };
     expect(msg.cwd).toBe("/my/project");
+    expect(msg.mcp_servers).toEqual([]);
+    expect(msg.output_style).toBe("auto");
+    expect(msg.fast_mode_state).toBe("disabled");
+    expect(msg.apiKeySource).toBe("env");
+    expect(msg.ipc_version).toBe(2);
+  });
+
+  test("ControlRequestForward has blocked_path and tool_use_id optional fields", () => {
+    const msg: ControlRequestForward = {
+      type: "control_request_forward",
+      request_id: "req-blocked",
+      tool_name: "Write",
+      input: { path: "/etc/passwd" },
+      blocked_path: "/etc/passwd",
+      tool_use_id: "tu-write-1",
+      is_question: false,
+      ipc_version: 2,
+    };
+    expect(msg.blocked_path).toBe("/etc/passwd");
+    expect(msg.tool_use_id).toBe("tu-write-1");
+    expect(msg.is_question).toBe(false);
     expect(msg.ipc_version).toBe(2);
   });
 
