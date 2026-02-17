@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-17T20:00:26Z
+bead: tugtool-jdn.3
+---
+
+## #step-2: Created protocol-types.ts (SystemInitMessage, ResultMessage, ControlRequestMessage, PermissionSuggestion, etc.), control.ts (sendControlRequest/Response, formatPermissionAllow/Deny/QuestionAnswer), added 6 new IPC types to types.ts, rewrote handleToolApproval/handleQuestionAnswer/handleInterrupt for control protocol, added structured tool result parsing (PN-3/PN-4/PN-13), 56 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-17T19:43:14Z
 bead: tugtool-jdn.2

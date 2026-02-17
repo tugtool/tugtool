@@ -2,12 +2,24 @@
 
 import { PermissionManager } from "./permissions.ts";
 import { writeLine } from "./ipc.ts";
+import {
+  sendControlRequest,
+  sendControlResponse,
+  formatPermissionAllow,
+  formatPermissionDeny,
+  formatQuestionAnswer,
+  generateRequestId,
+} from "./control.ts";
 import type {
   UserMessage,
   ToolApproval,
   QuestionAnswer,
   PermissionModeMessage,
   OutboundMessage,
+  ThinkingText,
+  CompactBoundary,
+  ControlRequestForward,
+  ControlRequestCancel,
 } from "./types.ts";
 import { mkdir, exists } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
@@ -41,7 +53,6 @@ export interface ClaudeSpawnConfig {
  */
 export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
   // Validate session flag combinations per D10.
-  // Only one of sessionId, continue, or sessionIdOverride may be set.
   const sessionFlagCount = [
     !!config.sessionId,
     !!config.continue,
@@ -51,7 +62,6 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
     throw new Error("Only one of sessionId, continue, or sessionIdOverride may be set");
   }
 
-  // forkSession requires a base session to fork from (sessionId or continue).
   if (config.forkSession && !config.sessionId && !config.continue) {
     throw new Error("forkSession requires either sessionId or continue to be set");
   }
@@ -98,8 +108,6 @@ export interface EventMappingContext {
 
 /**
  * Result of mapping a single stream-json (inner) event to IPC outbound messages.
- * Note: sessionId was removed -- session capture now happens in routeTopLevelEvent
- * via the top-level system/init event.
  */
 export interface EventMappingResult {
   messages: OutboundMessage[];
@@ -131,15 +139,13 @@ export interface TopLevelRoutingResult {
   messages: OutboundMessage[];
   gotResult: boolean;
   sessionId?: string;
-  // If set, the caller should delegate to mapStreamEvent() for inner processing.
   streamEvent?: Record<string, unknown>;
-  // If set, the caller should handle the permission/question control flow.
   controlRequest?: Record<string, unknown>;
-  // Preserved from all 5 message types per PN-8 (#pn-parent-tool-use-id-scope).
+  // Set when a control_cancel_request is received; event loop uses this to
+  // remove the matching entry from pendingControlRequests.
+  cancelledRequestId?: string;
   parentToolUseId?: string;
-  // Cost/usage metadata from result events, emitted as CostUpdate in Step 3.
   resultMetadata?: ResultMetadata;
-  // Raw system init metadata for SystemMetadata emission in Step 3.
   systemMetadata?: Record<string, unknown>;
 }
 
@@ -157,6 +163,7 @@ export function routeTopLevelEvent(
   let sessionId: string | undefined;
   let streamEvent: Record<string, unknown> | undefined;
   let controlRequest: Record<string, unknown> | undefined;
+  let cancelledRequestId: string | undefined;
   let parentToolUseId: string | undefined;
   let resultMetadata: ResultMetadata | undefined;
   let systemMetadata: Record<string, unknown> | undefined;
@@ -173,12 +180,10 @@ export function routeTopLevelEvent(
     case "system": {
       const subtype = event.subtype as string | undefined;
       if (subtype === "init") {
-        // Capture session_id from system/init per D04 (#d04-session-id-capture).
         const sid = event.session_id as string | undefined;
         if (sid) {
           sessionId = sid;
         }
-        // Store raw system metadata for SystemMetadata emission in Step 3.
         systemMetadata = {
           tools: event.tools,
           model: event.model,
@@ -191,20 +196,18 @@ export function routeTopLevelEvent(
           claude_code_version: event.claude_code_version,
         };
       } else if (subtype === "compact_boundary") {
-        // Emit compact boundary marker. CompactBoundary type defined in Step 2.1.
-        messages.push({ type: "compact_boundary" } as unknown as OutboundMessage);
+        const marker: CompactBoundary = { type: "compact_boundary" };
+        messages.push(marker);
       }
       break;
     }
 
     case "assistant": {
-      // Complete assistant turn message per D03.
       const message = event.message as Record<string, unknown> | undefined;
       const content = (message?.content as Array<Record<string, unknown>>) || [];
 
       for (const block of content) {
         if (block.type === "text") {
-          // Complete assistant text block.
           messages.push({
             type: "assistant_text",
             msg_id: ctx.msgId,
@@ -215,7 +218,6 @@ export function routeTopLevelEvent(
             status: "complete",
           });
         } else if (block.type === "tool_use") {
-          // Tool use block within assistant message.
           messages.push({
             type: "tool_use",
             msg_id: ctx.msgId,
@@ -225,64 +227,113 @@ export function routeTopLevelEvent(
             input: (block.input as object) || {},
           });
         } else if (block.type === "thinking") {
-          // Extended thinking block per D12 (#d12-extended-thinking).
-          // ThinkingText type defined in Step 2.1; cast for now.
-          messages.push({
+          const thinkingMsg: ThinkingText = {
             type: "thinking_text",
             msg_id: ctx.msgId,
             seq: ctx.seq,
             text: (block.text as string) || "",
             is_partial: false,
             status: "complete",
-          } as unknown as OutboundMessage);
+          };
+          messages.push(thinkingMsg);
         }
       }
       break;
     }
 
     case "user": {
-      // Top-level user message; contains tool_result blocks from resolved tool calls.
       const message = event.message as Record<string, unknown> | undefined;
       const content = (message?.content as Array<Record<string, unknown>>) || [];
 
+      let firstToolUseId: string | undefined;
+
       for (const block of content) {
         if (block.type === "tool_result") {
-          // Basic tool_result routing. Structured/slash extraction deferred to Step 2.3.
           const blockContent = block.content;
           let output = "";
           if (typeof blockContent === "string") {
-            output = blockContent;
+            // Per PN-3: strip <tool_use_error> tags when is_error is true.
+            if (block.is_error === true && blockContent.includes("<tool_use_error>")) {
+              output = blockContent
+                .replace(/<tool_use_error>/g, "")
+                .replace(/<\/tool_use_error>/g, "")
+                .trim();
+            } else {
+              output = blockContent;
+            }
           } else if (Array.isArray(blockContent)) {
-            // Content may be an array of content blocks; extract text blocks.
             output = (blockContent as Array<Record<string, unknown>>)
               .filter((b) => b.type === "text")
               .map((b) => b.text as string)
               .join("");
           }
+          const toolUseId = (block.tool_use_id as string) || "";
+          if (!firstToolUseId) {
+            firstToolUseId = toolUseId;
+          }
           messages.push({
             type: "tool_result",
-            tool_use_id: (block.tool_use_id as string) || "",
+            tool_use_id: toolUseId,
             output,
             is_error: block.is_error === true,
           });
+        }
+      }
+
+      // Check outer event for tool_use_result (structured result) per PN-4.
+      const toolUseResult = event.tool_use_result as Record<string, unknown> | undefined;
+      if (toolUseResult && firstToolUseId) {
+        messages.push({
+          type: "tool_use_structured",
+          tool_use_id: firstToolUseId,
+          tool_name: (toolUseResult.toolName as string) || "",
+          structured_result: toolUseResult,
+        });
+      }
+
+      // Handle isReplay + slash command output per PN-13.
+      if (event.isReplay === true) {
+        for (const block of content) {
+          if (block.type === "tool_result") {
+            const blockContent = block.content;
+            if (typeof blockContent === "string") {
+              const stdoutMatch = blockContent.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+              if (stdoutMatch) {
+                messages.push({
+                  type: "assistant_text",
+                  msg_id: ctx.msgId,
+                  seq: ctx.seq,
+                  rev: ctx.rev,
+                  text: stdoutMatch[1],
+                  is_partial: false,
+                  status: "complete",
+                });
+              }
+              const stderrMatch = blockContent.match(/<local-command-stderr>([\s\S]*?)<\/local-command-stderr>/);
+              if (stderrMatch) {
+                messages.push({
+                  type: "error",
+                  message: stderrMatch[1],
+                  recoverable: true,
+                });
+              }
+            }
+          }
         }
       }
       break;
     }
 
     case "result": {
-      // Turn complete per D03. Extract subtype and cost metadata.
       gotResult = true;
       const subtype = (event.subtype as string) || "error";
       const resultText = event.result as string | undefined;
 
-      // Detect API errors per PN-2 (#pn-api-error-subtype).
       let isApiError = false;
       if (subtype === "success" && typeof resultText === "string" && resultText.startsWith("API Error:")) {
         isApiError = true;
       }
 
-      // Store cost/usage metadata for CostUpdate emission in Step 3.
       resultMetadata = {
         subtype,
         total_cost_usd: event.total_cost_usd as number | undefined,
@@ -295,7 +346,6 @@ export function routeTopLevelEvent(
         is_api_error: isApiError || undefined,
       };
 
-      // If result has text content, emit assistant_text before turn_complete.
       if (typeof resultText === "string" && resultText.length > 0) {
         messages.push({
           type: "assistant_text",
@@ -308,8 +358,6 @@ export function routeTopLevelEvent(
         });
       }
 
-      // Map subtype to "success" or "error" for backward compatibility.
-      // Detailed subtype stored in resultMetadata.
       const resultValue = subtype === "success" ? "success" : "error";
       messages.push({
         type: "turn_complete",
@@ -321,31 +369,38 @@ export function routeTopLevelEvent(
     }
 
     case "stream_event": {
-      // Unwrap the inner event for mapStreamEvent() delegation per D03.
       streamEvent = event.event as Record<string, unknown> | undefined;
       break;
     }
 
     case "control_request": {
-      // Return for event loop handling (full flow in Step 2).
       controlRequest = event;
       break;
     }
 
     case "control_response": {
-      // Acknowledgment of our outbound control request; no IPC emission needed.
       console.log(`Received control_response: ${JSON.stringify(event)}`);
       break;
     }
 
     case "keep_alive": {
-      // Heartbeat; produce nothing.
       break;
     }
 
     case "control_cancel_request": {
-      // Log the cancellation (actual dialog cancellation handled in Step 2).
-      console.log(`Received control_cancel_request: ${JSON.stringify(event)}`);
+      // Extract the request_id being cancelled so the event loop can clean up
+      // pendingControlRequests, and emit a cancel IPC so the UI dismisses the dialog.
+      const cancelId = event.request_id as string | undefined;
+      if (cancelId) {
+        cancelledRequestId = cancelId;
+        const cancelMsg: ControlRequestCancel = {
+          type: "control_request_cancel",
+          request_id: cancelId,
+        };
+        messages.push(cancelMsg);
+      } else {
+        console.log(`Received control_cancel_request with no request_id: ${JSON.stringify(event)}`);
+      }
       break;
     }
 
@@ -361,6 +416,7 @@ export function routeTopLevelEvent(
     sessionId,
     streamEvent,
     controlRequest,
+    cancelledRequestId,
     parentToolUseId,
     resultMetadata,
     systemMetadata,
@@ -369,11 +425,8 @@ export function routeTopLevelEvent(
 
 /**
  * Map a single stream-json inner event (from stream_event wrapper) to IPC messages.
- * Exported for unit testing per Step 1 strategy.
+ * Exported for unit testing.
  * Per Table T01 (#t01-event-mapping).
- *
- * Note: session_id capture and assistant/result handling have been removed --
- * they are now handled by routeTopLevelEvent() at the top level.
  */
 export function mapStreamEvent(
   event: Record<string, unknown>,
@@ -388,7 +441,6 @@ export function mapStreamEvent(
   const eventType = event.type as string | undefined;
 
   if (eventType === "content_block_start") {
-    // Extract tool name from content_block_start/tool_use per PN-16 (#pn-block-start-tool-name).
     const contentBlock = event.content_block as Record<string, unknown> | undefined;
     if (contentBlock?.type === "tool_use") {
       messages.push({
@@ -401,7 +453,6 @@ export function mapStreamEvent(
       });
     }
   } else if (eventType === "content_block_delta") {
-    // Streaming text/thinking delta per Table T01.
     const delta = event.delta as Record<string, unknown> | undefined;
     if (delta?.type === "text_delta" && typeof delta.text === "string") {
       partialText += delta.text;
@@ -415,19 +466,17 @@ export function mapStreamEvent(
         status: "partial",
       });
     } else if (delta?.type === "thinking_delta" && typeof delta.text === "string") {
-      // Extended thinking delta per D12 (#d12-extended-thinking).
-      // ThinkingText type defined in Step 2.1; cast for now.
-      messages.push({
+      const thinkingMsg: ThinkingText = {
         type: "thinking_text",
         msg_id: ctx.msgId,
         seq: ctx.seq,
         text: delta.text,
         is_partial: true,
         status: "partial",
-      } as unknown as OutboundMessage);
+      };
+      messages.push(thinkingMsg);
     }
   } else if (eventType === "tool_use") {
-    // Direct tool_use event per Table T01.
     messages.push({
       type: "tool_use",
       msg_id: ctx.msgId,
@@ -437,7 +486,6 @@ export function mapStreamEvent(
       input: (event.input as object) || {},
     });
   } else if (eventType === "tool_result" || eventType === "tool_progress") {
-    // Tool result/progress per Table T01.
     messages.push({
       type: "tool_result",
       tool_use_id: (event.tool_use_id as string) || "",
@@ -445,8 +493,6 @@ export function mapStreamEvent(
       is_error: event.is_error === true,
     });
   }
-  // content_block_stop, message_start, message_delta, message_stop, user (replay)
-  // are internal tracking events -- no IPC message emitted.
 
   return { messages, newRev, partialText, gotResult };
 }
@@ -467,8 +513,12 @@ export class SessionManager {
   private interrupted: boolean = false;
   private permissionManager = new PermissionManager();
   private seq: number = 0;
+  // Legacy pending maps kept but no longer used for Promise-based resolution.
+  // Control flow is now via control_response writes to stdin per D05.
   private pendingApprovals = new Map<string, PendingRequest<"allow" | "deny">>();
   private pendingQuestions = new Map<string, PendingRequest<Record<string, string>>>();
+  // Stores raw control_requests by request_id for correlation with IPC messages.
+  private pendingControlRequests = new Map<string, Record<string, unknown>>();
   private currentMsgId: string | null = null;
   private currentRev: number = 0;
   private sessionIdPersisted: boolean = false;
@@ -488,7 +538,6 @@ export class SessionManager {
 
   /**
    * Spawn the claude CLI process with stream-json flags per Spec S01.
-   * Uses buildClaudeArgs() for argument construction.
    */
   private spawnClaude(sessionId: string | null): ReturnType<typeof Bun.spawn> {
     const claudePath = Bun.which("claude");
@@ -523,7 +572,6 @@ export class SessionManager {
     }
 
     while (true) {
-      // Check if we have a complete line in the buffer
       const lineEnd = this.stdoutBuffer.indexOf("\n");
       if (lineEnd >= 0) {
         const line = this.stdoutBuffer.slice(0, lineEnd).trim();
@@ -531,21 +579,17 @@ export class SessionManager {
         if (line.length > 0) {
           return line;
         }
-        // Empty line, continue reading
         continue;
       }
 
-      // Read more data from the stream
       let result: ReadableStreamReadResult<Uint8Array>;
       try {
         result = await this.stdoutReader.read();
       } catch {
-        // Stream error - treat as end of stream
         return null;
       }
 
       if (result.done) {
-        // Stream ended - return any remaining buffered content
         const remaining = this.stdoutBuffer.trim();
         this.stdoutBuffer = "";
         return remaining.length > 0 ? remaining : null;
@@ -557,7 +601,6 @@ export class SessionManager {
 
   /**
    * Initialize session: try to resume from persisted ID, fall back to create new.
-   * Per D01/D02/D05.
    */
   async initialize(): Promise<void> {
     const existingId = await this.readSessionId();
@@ -572,8 +615,6 @@ export class SessionManager {
     this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
     this.stdoutBuffer = "";
 
-    // Emit session_init with existing ID or "pending" for new sessions.
-    // The real session ID will be captured from the system/init event during first message.
     const initId = existingId || "pending";
     writeLine({
       type: "session_init",
@@ -587,16 +628,13 @@ export class SessionManager {
   }
 
   /**
-   * Handle user_message: write to claude stdin, read and route top-level events,
-   * delegate stream_event payloads to mapStreamEvent().
-   * Two-tier routing per D03 (#d03-event-routing).
+   * Handle user_message: write to claude stdin, two-tier event routing.
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
     if (!this.claudeProcess) {
       throw new Error("Session not initialized");
     }
 
-    // Assign message ID and reset revision counter
     this.currentMsgId = this.newMsgId();
     this.currentRev = 0;
     const seq = this.nextSeq();
@@ -605,8 +643,6 @@ export class SessionManager {
     let partialText = "";
     let gotResult = false;
 
-    // Write user message as stream-json input per Table T02 / D02 protocol reference.
-    // Format: {type: "user", session_id: "", message: {role: "user", content: [...]}, parent_tool_use_id: null}
     const userInput = JSON.stringify({
       type: "user",
       session_id: "",
@@ -620,14 +656,11 @@ export class SessionManager {
     stdin.write(userInput);
     stdin.flush();
 
-    // Read and process stream-json events until result event.
-    // Two-tier routing: routeTopLevelEvent() first, then mapStreamEvent() for stream_events.
     try {
       while (true) {
         const line = await this.readNextLine();
 
         if (line === null) {
-          // Stream ended
           if (this.interrupted) {
             writeLine({
               type: "turn_cancelled",
@@ -662,7 +695,7 @@ export class SessionManager {
         // Tier 1: route the top-level message type.
         const routeResult = routeTopLevelEvent(event, ctx);
 
-        // Persist session_id if captured from system/init event per D04.
+        // Persist session_id from system/init per D04.
         if (routeResult.sessionId && !this.sessionIdPersisted) {
           this.sessionIdPersisted = true;
           this.persistSessionId(routeResult.sessionId).catch((err: unknown) =>
@@ -675,7 +708,7 @@ export class SessionManager {
           writeLine(ipcMsg);
         }
 
-        // Tier 2: if router returned a stream_event, delegate to mapStreamEvent().
+        // Tier 2: delegate stream_event inner payload to mapStreamEvent().
         if (routeResult.streamEvent) {
           const streamResult = mapStreamEvent(routeResult.streamEvent, ctx, partialText);
           for (const ipcMsg of streamResult.messages) {
@@ -683,12 +716,41 @@ export class SessionManager {
           }
           this.currentRev = streamResult.newRev;
           partialText = streamResult.partialText;
-          // stream_events do not set gotResult; only top-level result events do.
         }
 
-        // Log pending control_request (full handling in Step 2).
+        // Handle control_request: emit ControlRequestForward and store for correlation.
         if (routeResult.controlRequest) {
-          console.log(`Received control_request (handling deferred to Step 2): ${JSON.stringify(routeResult.controlRequest)}`);
+          const cr = routeResult.controlRequest;
+          const requestId = cr.request_id as string;
+          const request = cr.request as Record<string, unknown> | undefined;
+          const subtype = request?.subtype as string | undefined;
+
+          if (subtype === "can_use_tool" && requestId && request) {
+            this.pendingControlRequests.set(requestId, cr);
+
+            const toolName = (request.tool_name as string) || "";
+            const isQuestion = toolName === "AskUserQuestion";
+
+            const forward: ControlRequestForward = {
+              type: "control_request_forward",
+              request_id: requestId,
+              tool_name: toolName,
+              input: (request.input as Record<string, unknown>) || {},
+              decision_reason: request.decision_reason as string | undefined,
+              permission_suggestions: request.permission_suggestions as unknown[] | undefined,
+              is_question: isQuestion,
+            };
+            writeLine(forward);
+          } else {
+            console.log(`Unhandled control_request subtype=${subtype ?? "unknown"}`);
+          }
+          // DO NOT break -- the turn continues after control_response is sent.
+        }
+
+        // Handle control_cancel_request: clean up pending entry and the IPC cancel
+        // message was already emitted by routeTopLevelEvent via messages[].
+        if (routeResult.cancelledRequestId) {
+          this.pendingControlRequests.delete(routeResult.cancelledRequestId);
         }
 
         gotResult = routeResult.gotResult;
@@ -706,42 +768,81 @@ export class SessionManager {
   }
 
   /**
-   * Handle tool_approval: resolve pending approval promise.
+   * Handle tool_approval: send control_response to claude stdin per D05/D06.
+   * Uses "behavior" not "decision" per PN-1.
    */
   handleToolApproval(msg: ToolApproval): void {
-    const pending = this.pendingApprovals.get(msg.request_id);
-    if (pending) {
-      pending.resolve(msg.decision);
-      this.pendingApprovals.delete(msg.request_id);
-    } else {
-      console.error(`No pending approval for request_id: ${msg.request_id}`);
+    if (!this.claudeProcess) {
+      console.error("handleToolApproval called with no active claude process");
+      return;
     }
+
+    const pending = this.pendingControlRequests.get(msg.request_id);
+    if (!pending) {
+      console.error(`No pending control_request for request_id: ${msg.request_id}`);
+      return;
+    }
+
+    const stdin = this.claudeProcess.stdin;
+    const pendingRequest = pending.request as Record<string, unknown> | undefined;
+    const originalInput = (pendingRequest?.input as Record<string, unknown>) || {};
+
+    if (msg.decision === "allow") {
+      const response = formatPermissionAllow(
+        msg.request_id,
+        msg.updatedInput || originalInput
+      );
+      sendControlResponse(stdin, response);
+    } else {
+      const response = formatPermissionDeny(
+        msg.request_id,
+        msg.message || "User denied"
+      );
+      sendControlResponse(stdin, response);
+    }
+
+    this.pendingControlRequests.delete(msg.request_id);
   }
 
   /**
-   * Handle question_answer: resolve pending question promise.
+   * Handle question_answer: send control_response with answers per D05.
    */
   handleQuestionAnswer(msg: QuestionAnswer): void {
-    const pending = this.pendingQuestions.get(msg.request_id);
-    if (pending) {
-      pending.resolve(msg.answers);
-      this.pendingQuestions.delete(msg.request_id);
-    } else {
-      console.error(`No pending question for request_id: ${msg.request_id}`);
+    if (!this.claudeProcess) {
+      console.error("handleQuestionAnswer called with no active claude process");
+      return;
     }
+
+    const pending = this.pendingControlRequests.get(msg.request_id);
+    if (!pending) {
+      console.error(`No pending control_request for request_id: ${msg.request_id}`);
+      return;
+    }
+
+    const stdin = this.claudeProcess.stdin;
+    const pendingRequest = pending.request as Record<string, unknown> | undefined;
+    const originalInput = (pendingRequest?.input as Record<string, unknown>) || {};
+
+    const response = formatQuestionAnswer(msg.request_id, originalInput, msg.answers);
+    sendControlResponse(stdin, response);
+
+    this.pendingControlRequests.delete(msg.request_id);
   }
 
   /**
-   * Handle interrupt: send SIGINT to claude process per D09.
+   * Handle interrupt: send interrupt control_request per D07.
+   * Uses control protocol instead of SIGINT for graceful interruption.
    */
   handleInterrupt(): void {
-    if (this.claudeProcess) {
-      console.log("Interrupting current turn via SIGINT");
-      this.interrupted = true;
-      this.claudeProcess.kill("SIGINT");
-    } else {
+    if (!this.claudeProcess) {
       console.log("No active claude process to interrupt");
+      return;
     }
+
+    console.log("Interrupting current turn via control_request interrupt");
+    this.interrupted = true;
+    const stdin = this.claudeProcess.stdin;
+    sendControlRequest(stdin, generateRequestId(), { subtype: "interrupt" });
   }
 
   /**
@@ -750,6 +851,18 @@ export class SessionManager {
   handlePermissionMode(msg: PermissionModeMessage): void {
     console.log(`Setting permission mode: ${msg.mode}`);
     this.permissionManager.setMode(msg.mode);
+  }
+
+  /**
+   * Handle model change: send set_model control_request to claude stdin.
+   */
+  handleModelChange(model: string): void {
+    if (!this.claudeProcess) {
+      console.log("No active claude process for model change");
+      return;
+    }
+    const stdin = this.claudeProcess.stdin;
+    sendControlRequest(stdin, generateRequestId(), { subtype: "set_model", model });
   }
 
   /**
@@ -779,25 +892,20 @@ export class SessionManager {
 
   /**
    * Resolve the tugtool repo root from the binary location.
-   * Compiled binary: <repo>/target/{profile}/tugtalk -> repo is 3 levels up.
-   * Bun run: script is at <repo>/tugtalk/src/main.ts -> repo is 3 levels up from script.
    */
   private getTugtoolRoot(): string {
     const execPath = process.execPath;
     if (execPath.includes("/target/")) {
-      // Compiled binary at <repo>/target/{profile}/tugtalk
       const root = resolve(dirname(execPath), "../..");
       console.log(`Tugtool root (from binary): ${root}`);
       return root;
     }
-    // Running via bun run -- script path is in argv[1]: <repo>/tugtalk/src/main.ts
     const scriptPath = process.argv[1];
     if (scriptPath) {
       const root = resolve(dirname(scriptPath), "../..");
       console.log(`Tugtool root (from script): ${root}`);
       return root;
     }
-    // Fallback to projectDir
     console.log(`Tugtool root (fallback to projectDir): ${this.projectDir}`);
     return this.projectDir;
   }

@@ -521,3 +521,413 @@ describe("mapStreamEvent (updated)", () => {
     expect("sessionId" in result).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Step 2.2: Control protocol wiring tests
+// ---------------------------------------------------------------------------
+
+describe("control protocol (Step 2.2)", () => {
+  test("control_request with can_use_tool emits ControlRequestForward IPC", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-test-" + Date.now());
+
+    // Inject mock with: a control_request event then a result event (to end the turn).
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "control_request",
+        request_id: "req-ctrl-1",
+        request: { subtype: "can_use_tool", tool_name: "Write", input: { path: "/foo.ts" } },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    // Spy on stdin to suppress control_response writes from breaking the test
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "do something", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    const forwards = ipcMessages.filter((m: any) => m.type === "control_request_forward");
+    expect(forwards.length).toBe(1);
+    expect((forwards[0] as any).request_id).toBe("req-ctrl-1");
+    expect((forwards[0] as any).tool_name).toBe("Write");
+    expect((forwards[0] as any).is_question).toBe(false);
+  });
+
+  test("control_request with AskUserQuestion emits ControlRequestForward with is_question: true", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-question-" + Date.now());
+
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "control_request",
+        request_id: "req-q-1",
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "AskUserQuestion",
+          input: { questions: [{ question: "Which file?" }] },
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "ask me", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    const forwards = ipcMessages.filter((m: any) => m.type === "control_request_forward");
+    expect(forwards.length).toBe(1);
+    expect((forwards[0] as any).is_question).toBe(true);
+  });
+
+  test("handleToolApproval allow sends correct control_response to stdin", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-allow-" + Date.now());
+
+    // Populate pendingControlRequests directly.
+    const pendingCR = {
+      type: "control_request",
+      request_id: "req-allow-1",
+      request: { subtype: "can_use_tool", tool_name: "Write", input: { path: "/bar.ts" } },
+    };
+    (manager as any).pendingControlRequests.set("req-allow-1", pendingCR);
+
+    // Set up a mock process with stdin spy.
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleToolApproval({
+      type: "tool_approval",
+      request_id: "req-allow-1",
+      decision: "allow",
+    });
+
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_response");
+    const response = parsed.response;
+    expect(response.subtype).toBe("success");
+    expect(response.request_id).toBe("req-allow-1");
+    // CRITICAL: "behavior" not "decision" per PN-1
+    expect(response.response.behavior).toBe("allow");
+    expect("decision" in response.response).toBe(false);
+    // Pending request should be removed
+    expect((manager as any).pendingControlRequests.has("req-allow-1")).toBe(false);
+  });
+
+  test("handleToolApproval deny sends correct control_response to stdin", () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-deny-" + Date.now());
+
+    const pendingCR = {
+      type: "control_request",
+      request_id: "req-deny-1",
+      request: { subtype: "can_use_tool", tool_name: "Write", input: {} },
+    };
+    (manager as any).pendingControlRequests.set("req-deny-1", pendingCR);
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleToolApproval({
+      type: "tool_approval",
+      request_id: "req-deny-1",
+      decision: "deny",
+      message: "Not allowed",
+    });
+
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_response");
+    expect(parsed.response.response.behavior).toBe("deny");
+    expect(parsed.response.response.message).toBe("Not allowed");
+  });
+
+  test("handleQuestionAnswer sends control_response with answers in updatedInput", () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-qa-" + Date.now());
+
+    const pendingCR = {
+      type: "control_request",
+      request_id: "req-qa-1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "AskUserQuestion",
+        input: { questions: [{ question: "Pick a color?" }] },
+      },
+    };
+    (manager as any).pendingControlRequests.set("req-qa-1", pendingCR);
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleQuestionAnswer({
+      type: "question_answer",
+      request_id: "req-qa-1",
+      answers: { answer_0: "Red" },
+    });
+
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_response");
+    expect(parsed.response.response.behavior).toBe("allow");
+    expect(parsed.response.response.updatedInput.answer_0).toBe("Red");
+    expect((manager as any).pendingControlRequests.has("req-qa-1")).toBe(false);
+  });
+
+  test("handleInterrupt sends control_request with subtype interrupt (not SIGINT)", () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-interrupt-" + Date.now());
+
+    const writtenData: string[] = [];
+    let killCalled = false;
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+      kill: () => { killCalled = true; },
+    };
+
+    manager.handleInterrupt();
+
+    expect((manager as any).interrupted).toBe(true);
+    // Must use control protocol, not SIGINT
+    expect(killCalled).toBe(false);
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_request");
+    expect(parsed.request.subtype).toBe("interrupt");
+    expect(parsed.request_id.startsWith("ctrl-")).toBe(true);
+  });
+
+  test("control_cancel_request cancels pending permission", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-cancel-" + Date.now());
+
+    // Inject: a control_request to populate pendingControlRequests, then a
+    // control_cancel_request for the same id, then a result to end the turn.
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "control_request",
+        request_id: "req-cancel-1",
+        request: { subtype: "can_use_tool", tool_name: "Write", input: { path: "/x.ts" } },
+      },
+      {
+        type: "control_cancel_request",
+        request_id: "req-cancel-1",
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    // Suppress any stdin writes (control_request_forward ack etc.)
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "do something", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    // A control_request_cancel IPC must be emitted so the frontend dismisses the dialog.
+    const cancels = ipcMessages.filter((m: any) => m.type === "control_request_cancel");
+    expect(cancels.length).toBe(1);
+    expect((cancels[0] as any).request_id).toBe("req-cancel-1");
+
+    // The pending entry must have been removed from pendingControlRequests.
+    expect((manager as any).pendingControlRequests.has("req-cancel-1")).toBe(false);
+  });
+
+  test("handleModelChange sends control_request with subtype set_model", () => {
+    const manager = new SessionManager("/tmp/tugtalk-ctrl-model-" + Date.now());
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleModelChange("claude-haiku-3-5");
+
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_request");
+    expect(parsed.request.subtype).toBe("set_model");
+    expect(parsed.request.model).toBe("claude-haiku-3-5");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Step 2.3: Structured tool result and user message parsing tests
+// ---------------------------------------------------------------------------
+
+describe("structured tool results and user message parsing (Step 2.3)", () => {
+  test("user message with is_error and tool_use_error tags strips tags per PN-3", () => {
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-err",
+            content: "<tool_use_error>File not found: /foo.ts</tool_use_error>",
+            is_error: true,
+          },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const tr = result.messages.find((m: any) => m.type === "tool_result") as any;
+    expect(tr).toBeDefined();
+    expect(tr.is_error).toBe(true);
+    // Tags should be stripped from output
+    expect(tr.output).not.toContain("<tool_use_error>");
+    expect(tr.output).not.toContain("</tool_use_error>");
+    expect(tr.output).toBe("File not found: /foo.ts");
+  });
+
+  test("user message with tool_use_result on OUTER message emits ToolUseStructured per PN-4", () => {
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "tu-structured", content: "raw output", is_error: false },
+        ],
+      },
+      tool_use_result: {
+        toolName: "Read",
+        filePath: "/a.ts",
+        content: "file contents",
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const structured = result.messages.find((m: any) => m.type === "tool_use_structured") as any;
+    expect(structured).toBeDefined();
+    expect(structured.tool_use_id).toBe("tu-structured");
+    expect(structured.tool_name).toBe("Read");
+    expect(structured.structured_result.filePath).toBe("/a.ts");
+  });
+
+  test("user message with tool_use_result (Edit) has structuredPatch", () => {
+    const editResult = {
+      toolName: "Edit",
+      filePath: "/b.ts",
+      oldString: "foo",
+      newString: "bar",
+      originalFile: null,
+      structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-foo", "+bar"] }],
+    };
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "tu-edit", content: "Applied patch", is_error: false },
+        ],
+      },
+      tool_use_result: editResult,
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const structured = result.messages.find((m: any) => m.type === "tool_use_structured") as any;
+    expect(structured).toBeDefined();
+    expect(structured.structured_result.structuredPatch).toHaveLength(1);
+    expect(structured.structured_result.structuredPatch[0].lines).toEqual(["-foo", "+bar"]);
+  });
+
+  test("user message with tool_use_result (Write/create) has type create", () => {
+    const writeResult = {
+      toolName: "Write",
+      type: "create",
+      filePath: "/new.ts",
+      content: "export {};\n",
+      structuredPatch: [],
+      originalFile: null,
+    };
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "tu-write", content: "Created", is_error: false },
+        ],
+      },
+      tool_use_result: writeResult,
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const structured = result.messages.find((m: any) => m.type === "tool_use_structured") as any;
+    expect(structured).toBeDefined();
+    expect(structured.structured_result.type).toBe("create");
+    expect(structured.structured_result.filePath).toBe("/new.ts");
+  });
+
+  test("user message with isReplay + local-command-stdout extracts output", () => {
+    const event = {
+      type: "user",
+      isReplay: true,
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-cmd",
+            content: "<local-command-stdout>hello world\n</local-command-stdout>",
+            is_error: false,
+          },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const textMsgs = result.messages.filter((m: any) => m.type === "assistant_text");
+    // First message from tool_result processing, second from isReplay extraction
+    const replayText = textMsgs.find((m: any) => m.text.includes("hello world"));
+    expect(replayText).toBeDefined();
+    expect((replayText as any).text).toContain("hello world");
+  });
+
+  test("user message with isReplay + local-command-stderr extracts error", () => {
+    const event = {
+      type: "user",
+      isReplay: true,
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-err-cmd",
+            content: "<local-command-stderr>command not found: foo</local-command-stderr>",
+            is_error: false,
+          },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const errors = result.messages.filter((m: any) => m.type === "error");
+    expect(errors.length).toBeGreaterThan(0);
+    expect((errors[0] as any).message).toContain("command not found: foo");
+  });
+
+  test("user message with isReplay + regular text is not re-emitted", () => {
+    const event = {
+      type: "user",
+      isReplay: true,
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-replay",
+            content: "just regular tool output",
+            is_error: false,
+          },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    // Only one tool_result message; no extra assistant_text or error from isReplay
+    const toolResults = result.messages.filter((m: any) => m.type === "tool_result");
+    const textMsgs = result.messages.filter((m: any) => m.type === "assistant_text");
+    expect(toolResults.length).toBe(1);
+    // No stdout/stderr tags means no additional extraction
+    expect(textMsgs.length).toBe(0);
+  });
+});
