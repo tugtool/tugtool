@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-17T15:06:21Z
+bead: tugtool-9cr.3
+---
+
+## #step-2: Verification step: confirmed zero SDK references, all deleted files absent, 50 TS tests pass, 520 Rust tests pass, cargo build succeeds, bun build --compile succeeds, no TODO/FIXME comments remain.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-stream-pivot.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-17T15:01:39Z
 bead: tugtool-9cr.2
