@@ -75,9 +75,11 @@ async fn main() {
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
 
     // Create conversation channels
-    let (conversation_tx, _) = broadcast::channel(feeds::conversation::CONVERSATION_BROADCAST_CAPACITY);
+    let (conversation_tx, _) =
+        broadcast::channel(feeds::conversation::CONVERSATION_BROADCAST_CAPACITY);
     let (conversation_input_tx, conversation_input_rx) = mpsc::channel(256);
-    let (conversation_watch_tx, conversation_watch_rx) = watch::channel(Frame::new(FeedId::ConversationOutput, vec![]));
+    let (conversation_watch_tx, conversation_watch_rx) =
+        watch::channel(Frame::new(FeedId::ConversationOutput, vec![]));
 
     // Create terminal feed
     let feed = TerminalFeed::new(cli.session.clone());
@@ -144,10 +146,8 @@ async fn main() {
     });
 
     // Resolve tugtalk path and start agent bridge
-    let tugtalk_path = feeds::agent_bridge::resolve_tugtalk_path(
-        cli.tugtalk_path.as_deref(),
-        &watch_dir,
-    );
+    let tugtalk_path =
+        feeds::agent_bridge::resolve_tugtalk_path(cli.tugtalk_path.as_deref(), &watch_dir);
     let agent_cancel = cancel.clone();
     let agent_tx = conversation_tx.clone();
     let agent_watch_dir = watch_dir.clone();

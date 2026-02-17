@@ -127,12 +127,12 @@ pub async fn run_agent_bridge(
 
         // Determine command based on path
         let (cmd, args) = if tugtalk_path.extension().and_then(|s| s.to_str()) == Some("ts") {
-            ("bun", vec!["run".to_string(), tugtalk_path.display().to_string()])
-        } else {
             (
-                tugtalk_path.to_str().unwrap_or("tugtalk"),
-                vec![],
+                "bun",
+                vec!["run".to_string(), tugtalk_path.display().to_string()],
             )
+        } else {
+            (tugtalk_path.to_str().unwrap_or("tugtalk"), vec![])
         };
 
         let mut child = match Command::new(cmd)
@@ -168,7 +168,8 @@ pub async fn run_agent_bridge(
         }
 
         // Read protocol_ack
-        let ack_result = tokio::time::timeout(Duration::from_secs(5), stdout_reader.next_line()).await;
+        let ack_result =
+            tokio::time::timeout(Duration::from_secs(5), stdout_reader.next_line()).await;
         match ack_result {
             Ok(Ok(Some(line))) => {
                 if !line.contains("\"type\":\"protocol_ack\"") {
