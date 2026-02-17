@@ -9,6 +9,45 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-17T15:06:21Z
+bead: tugtool-9cr.3
+---
+
+## #step-2: Verification step: confirmed zero SDK references, all deleted files absent, 50 TS tests pass, 520 Rust tests pass, cargo build succeeds, bun build --compile succeeds, no TODO/FIXME comments remain.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-stream-pivot.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-17T15:01:39Z
+bead: tugtool-9cr.2
+---
+
+## #step-1: Extract buildClaudeArgs() and mapStreamEvent() as exported pure functions. Add 29 tests: CLI arg construction (new/resumed sessions, all permission modes), stream-json event mapping (all event types), interrupt turn_cancelled, unexpected exit error, full IPC round-trip integration with mocked subprocess.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-stream-pivot.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-17T14:44:27Z
+bead: tugtool-9cr.1
+---
+
+## #step-0: Replace SDK with direct CLI spawning via Bun.spawn. Delete sdk-adapter.ts, remove @anthropic-ai/claude-agent-sdk dependency, simplify permissions.ts, rewrite session.ts with stream-json flags.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-stream-pivot.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-17T02:54:56Z
 bead: tugtool-1tg.4

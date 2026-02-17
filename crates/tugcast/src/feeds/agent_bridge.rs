@@ -85,8 +85,8 @@ pub fn resolve_tugtalk_path(cli_override: Option<&Path>, project_dir: &Path) -> 
     // If "tugtalk" is in PATH, Command::new will find it
     // For now, we skip explicit PATH lookup and go straight to fallback
 
-    // Fallback to bun run
-    warn!("tugtalk binary not found, falling back to bun run");
+    // Fallback to bun run (for development without cargo build)
+    info!("tugtalk binary not found, falling back to bun run");
     project_dir.join("tugtalk/src/main.ts")
 }
 
