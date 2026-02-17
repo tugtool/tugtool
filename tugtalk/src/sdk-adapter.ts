@@ -26,6 +26,8 @@ export interface AdapterSessionOptions {
   canUseTool?: (toolName: string, input: unknown) => Promise<{ behavior: "allow" | "deny"; message?: string }>;
   allowedTools?: string[];
   onStderr?: (data: string) => void;
+  pathToClaudeCodeExecutable?: string;
+  plugins?: { type: "local"; path: string }[];
 }
 
 /**
@@ -40,15 +42,23 @@ export function createSDKAdapter() {
     async createSession(options: AdapterSessionOptions): Promise<AdapterSession> {
       const sdkOptions: any = {
         model: options.model,
-        env: options.cwd ? { ...process.env, PWD: options.cwd } : undefined,
+        cwd: options.cwd,
+        permissionMode: options.permissionMode,
+        includePartialMessages: true,
       };
 
-      // Map canUseTool callback if provided
+      if (options.pathToClaudeCodeExecutable) {
+        sdkOptions.pathToClaudeCodeExecutable = options.pathToClaudeCodeExecutable;
+      }
+
+      if (options.plugins) {
+        sdkOptions.plugins = options.plugins;
+      }
+
       if (options.canUseTool) {
         sdkOptions.canUseTool = options.canUseTool;
       }
 
-      // Map onStderr callback if provided
       if (options.onStderr) {
         sdkOptions.stderr = options.onStderr;
       }
@@ -78,15 +88,23 @@ export function createSDKAdapter() {
     ): Promise<AdapterSession> {
       const sdkOptions: any = {
         model: options.model,
-        env: options.cwd ? { ...process.env, PWD: options.cwd } : undefined,
+        cwd: options.cwd,
+        permissionMode: options.permissionMode,
+        includePartialMessages: true,
       };
 
-      // Map canUseTool callback if provided
+      if (options.pathToClaudeCodeExecutable) {
+        sdkOptions.pathToClaudeCodeExecutable = options.pathToClaudeCodeExecutable;
+      }
+
+      if (options.plugins) {
+        sdkOptions.plugins = options.plugins;
+      }
+
       if (options.canUseTool) {
         sdkOptions.canUseTool = options.canUseTool;
       }
 
-      // Map onStderr callback if provided
       if (options.onStderr) {
         sdkOptions.stderr = options.onStderr;
       }
@@ -101,39 +119,5 @@ export function createSDKAdapter() {
       };
     },
 
-    /**
-     * Send a message to the current session.
-     * Note: This method is deprecated in favor of using session.send() directly.
-     */
-    async sendMessage(sessionId: string, message: string): Promise<void> {
-      throw new Error("sendMessage is deprecated - use session.send() directly");
-    },
-
-    /**
-     * Stream responses from the current session.
-     * Note: This method is deprecated in favor of using session.stream() directly.
-     */
-    async *streamResponse(sessionId: string): AsyncGenerator<unknown, void, unknown> {
-      throw new Error("streamResponse is deprecated - use session.stream() directly");
-    },
-
-    /**
-     * Cancel the current turn.
-     * Note: This method is deprecated - use AbortController instead.
-     */
-    async cancelTurn(sessionId: string): Promise<void> {
-      throw new Error("cancelTurn is deprecated - use AbortController instead");
-    },
-
-    /**
-     * Set permission mode for the session.
-     * Note: This is handled by the PermissionManager in session.ts.
-     */
-    async setPermissionMode(
-      sessionId: string,
-      mode: "default" | "acceptEdits" | "bypassPermissions" | "plan"
-    ): Promise<void> {
-      throw new Error("setPermissionMode is deprecated - use PermissionManager instead");
-    },
   };
 }

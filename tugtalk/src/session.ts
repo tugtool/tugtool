@@ -10,7 +10,7 @@ import type {
   PermissionModeMessage,
 } from "./types.ts";
 import { mkdir, exists } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname, resolve } from "node:path";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -31,6 +31,7 @@ export class SessionManager {
   private projectDir: string;
   private currentMsgId: string | null = null;
   private currentRev: number = 0;
+  private sessionIdPersisted: boolean = false;
 
   constructor(projectDir: string) {
     this.projectDir = projectDir;
@@ -49,41 +50,46 @@ export class SessionManager {
    */
   async initialize(): Promise<void> {
     const existingId = await this.readSessionId();
+    const claudePath = Bun.which("claude");
+    if (!claudePath) {
+      throw new Error("claude CLI not found on PATH");
+    }
+    console.log(`Using claude CLI at: ${claudePath}`);
+    const sessionOpts = {
+      model: "claude-opus-4-6",
+      cwd: this.projectDir,
+      permissionMode: this.permissionManager.getMode(),
+      canUseTool: this.createCanUseToolCallback(),
+      onStderr: (data: string) => console.error("[sdk stderr]", data),
+      pathToClaudeCodeExecutable: claudePath,
+      plugins: [{ type: "local" as const, path: this.getTugtoolRoot() }],
+    };
 
     try {
       if (existingId) {
         console.log(`Attempting to resume session: ${existingId}`);
-        this.session = await this.adapter.resumeSession(existingId, {
-          model: "claude-opus-4-6",
-          cwd: this.projectDir,
-          permissionMode: this.permissionManager.getMode(),
-          canUseTool: this.createCanUseToolCallback(),
-          onStderr: (data: string) => console.error("[sdk stderr]", data),
-        });
-        console.log(`Resumed session: ${this.session.sessionId}`);
+        this.session = await this.adapter.resumeSession(existingId, sessionOpts);
+        console.log(`Resumed session: ${existingId}`);
       } else {
         throw new Error("No existing session");
       }
     } catch (err) {
       console.log(`Resume failed, creating new session: ${err}`);
-      this.session = await this.adapter.createSession({
-        model: "claude-opus-4-6",
-        cwd: this.projectDir,
-        permissionMode: this.permissionManager.getMode(),
-        canUseTool: this.createCanUseToolCallback(),
-        onStderr: (data: string) => console.error("[sdk stderr]", data),
-      });
-      console.log(`Created new session: ${this.session.sessionId}`);
+      this.session = await this.adapter.createSession(sessionOpts);
+      console.log("Created new session (ID available after first message)");
     }
 
-    // Persist session ID
-    await this.persistSessionId(this.session.sessionId);
-
-    // Emit session_init
+    // Emit session_init — sessionId may be empty for new sessions until
+    // the first streamed message arrives (SDK populates it lazily).
+    // We'll persist the real ID once we see it in handleUserMessage.
+    const initId = this.session.sessionId || "pending";
     writeLine({
       type: "session_init",
-      session_id: this.session.sessionId,
+      session_id: initId,
     });
+    if (initId !== "pending") {
+      await this.persistSessionId(initId);
+    }
   }
 
   /**
@@ -108,33 +114,51 @@ export class SessionManager {
 
       // Stream responses
       for await (const event of this.session.stream()) {
-        // Handle different SDK message types
-        if (this.isTextDelta(event)) {
-          // Streaming text update
-          writeLine({
-            type: "assistant_text",
-            msg_id: this.currentMsgId,
-            seq,
-            rev: this.currentRev++,
-            text: this.extractTextDelta(event),
-            is_partial: true,
-            status: "partial",
-          });
-        } else if (this.isCompleteMessage(event)) {
-          // Final message
+        const e = event as any;
+
+        // Capture session_id from any message (SDK populates lazily)
+        if (e?.session_id && !this.sessionIdPersisted) {
+          this.sessionIdPersisted = true;
+          this.persistSessionId(e.session_id).catch((err: unknown) =>
+            console.error("Failed to persist session ID:", err)
+          );
+        }
+
+        if (e?.type === "stream_event") {
+          // Streaming text delta (requires includePartialMessages: true)
+          const delta = e?.event?.delta;
+          if (delta?.type === "text_delta" && delta?.text) {
+            writeLine({
+              type: "assistant_text",
+              msg_id: this.currentMsgId,
+              seq,
+              rev: this.currentRev++,
+              text: delta.text,
+              is_partial: true,
+              status: "partial",
+            });
+          }
+        } else if (e?.type === "assistant") {
+          // Complete assistant message — text is at e.message.content
+          const content = e?.message?.content || [];
+          const text = content
+            .filter((block: any) => block.type === "text")
+            .map((block: any) => block.text)
+            .join("");
+
           writeLine({
             type: "assistant_text",
             msg_id: this.currentMsgId,
             seq,
             rev: this.currentRev,
-            text: this.extractCompleteText(event),
+            text,
             is_partial: false,
             status: "complete",
           });
 
-          // Extract tool uses
-          const toolUses = this.extractToolUses(event);
-          for (const tool of toolUses) {
+          // Extract tool uses from the same message content
+          const toolBlocks = content.filter((block: any) => block.type === "tool_use");
+          for (const tool of toolBlocks) {
             writeLine({
               type: "tool_use",
               msg_id: this.currentMsgId,
@@ -144,21 +168,38 @@ export class SessionManager {
               input: tool.input,
             });
           }
-        } else if (this.isToolResult(event)) {
+        } else if (e?.type === "tool_progress") {
           writeLine({
             type: "tool_result",
-            tool_use_id: this.extractToolResultId(event),
-            output: this.extractToolResultOutput(event),
-            is_error: this.isToolResultError(event),
+            tool_use_id: e?.tool_use_id || "",
+            output: e?.output || "",
+            is_error: e?.is_error === true,
           });
-        } else if (this.isTurnComplete(event)) {
+        } else if (e?.type === "result") {
+          // Emit result text if present (e.g. slash command output)
+          const resultText = e?.result;
+          if (typeof resultText === "string" && resultText.length > 0) {
+            writeLine({
+              type: "assistant_text",
+              msg_id: this.currentMsgId,
+              seq,
+              rev: this.currentRev++,
+              text: resultText,
+              is_partial: false,
+              status: "complete",
+            });
+          }
+
+          const result = e?.subtype === "success" ? "success" : "error";
           writeLine({
             type: "turn_complete",
             msg_id: this.currentMsgId,
             seq,
-            result: "success",
+            result,
           });
           break;
+        } else {
+          console.log(`Unhandled event type=${e?.type} subtype=${e?.subtype ?? "none"}`);
         }
       }
     } catch (err) {
@@ -277,61 +318,29 @@ export class SessionManager {
     return null;
   }
 
-  // SDK message type guards and extractors (simplified stubs for Step 1)
-  // Real implementation will need to map actual SDK types from @anthropic-ai/claude-agent-sdk
-
-  private isTextDelta(event: unknown): boolean {
-    const e = event as any;
-    return e?.type === "stream_event" && e?.event?.type === "content_block_delta";
+  /**
+   * Resolve the tugtool repo root from the binary location.
+   * Compiled binary: <repo>/target/{profile}/tugtalk → repo is 3 levels up.
+   * Bun run: script is at <repo>/tugtalk/src/main.ts → repo is 3 levels up from script.
+   */
+  private getTugtoolRoot(): string {
+    const execPath = process.execPath;
+    if (execPath.includes("/target/")) {
+      // Compiled binary at <repo>/target/{profile}/tugtalk
+      const root = resolve(dirname(execPath), "../..");
+      console.log(`Tugtool root (from binary): ${root}`);
+      return root;
+    }
+    // Running via bun run — script path is in argv[1]: <repo>/tugtalk/src/main.ts
+    const scriptPath = process.argv[1];
+    if (scriptPath) {
+      const root = resolve(dirname(scriptPath), "../..");
+      console.log(`Tugtool root (from script): ${root}`);
+      return root;
+    }
+    // Fallback to projectDir
+    console.log(`Tugtool root (fallback to projectDir): ${this.projectDir}`);
+    return this.projectDir;
   }
 
-  private extractTextDelta(event: unknown): string {
-    const e = event as any;
-    return e?.event?.delta?.text || "";
-  }
-
-  private isCompleteMessage(event: unknown): boolean {
-    const e = event as any;
-    return e?.type === "assistant";
-  }
-
-  private extractCompleteText(event: unknown): string {
-    const e = event as any;
-    return e?.content?.[0]?.text || "";
-  }
-
-  private extractToolUses(event: unknown): Array<{ name: string; id: string; input: object }> {
-    const e = event as any;
-    const toolBlocks = (e?.content || []).filter((block: any) => block.type === "tool_use");
-    return toolBlocks.map((block: any) => ({
-      name: block.name,
-      id: block.id,
-      input: block.input,
-    }));
-  }
-
-  private isToolResult(event: unknown): boolean {
-    const e = event as any;
-    return e?.type === "tool_progress";
-  }
-
-  private extractToolResultId(event: unknown): string {
-    const e = event as any;
-    return e?.tool_use_id || "";
-  }
-
-  private extractToolResultOutput(event: unknown): string {
-    const e = event as any;
-    return e?.output || "";
-  }
-
-  private isToolResultError(event: unknown): boolean {
-    const e = event as any;
-    return e?.is_error === true;
-  }
-
-  private isTurnComplete(event: unknown): boolean {
-    const e = event as any;
-    return e?.type === "result";
-  }
 }

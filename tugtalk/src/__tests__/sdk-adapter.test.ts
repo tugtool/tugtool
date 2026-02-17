@@ -2,15 +2,11 @@ import { describe, test, expect, mock } from "bun:test";
 import { createSDKAdapter } from "../sdk-adapter.ts";
 
 describe("sdk-adapter.ts", () => {
-  test("createSDKAdapter returns expected interface with all 6 methods", () => {
+  test("createSDKAdapter returns expected interface", () => {
     const adapter = createSDKAdapter();
     expect(adapter).toBeDefined();
     expect(typeof adapter.createSession).toBe("function");
     expect(typeof adapter.resumeSession).toBe("function");
-    expect(typeof adapter.sendMessage).toBe("function");
-    expect(typeof adapter.streamResponse).toBe("function");
-    expect(typeof adapter.cancelTurn).toBe("function");
-    expect(typeof adapter.setPermissionMode).toBe("function");
   });
 
   test("createSession returns AdapterSession (requires API key)", async () => {
@@ -35,23 +31,10 @@ describe("sdk-adapter.ts", () => {
     session.close();
   });
 
-  test("deprecated methods throw helpful errors", async () => {
-    const adapter = createSDKAdapter();
-
-    await expect(adapter.sendMessage("test-id", "hello")).rejects.toThrow("deprecated");
-    await expect(adapter.streamResponse("test-id").next()).rejects.toThrow("deprecated");
-    await expect(adapter.cancelTurn("test-id")).rejects.toThrow("deprecated");
-    await expect(adapter.setPermissionMode("test-id", "default")).rejects.toThrow(
-      "deprecated"
-    );
-  });
-
-  describe("env merging regression tests", () => {
-    test("env merging includes process.env when cwd is set", async () => {
-      // Capture what gets passed to the SDK
+  describe("SDK option passthrough", () => {
+    test("cwd is passed directly to SDK", async () => {
       let capturedOptions: any = null;
 
-      // Mock the SDK module to intercept calls
       const fakeSession = {
         sessionId: "fake-session-id",
         send: async () => {},
@@ -70,28 +53,21 @@ describe("sdk-adapter.ts", () => {
         },
       }));
 
-      // Dynamically import to get the mocked version
       const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
       const adapter = createMockedAdapter();
 
-      // Call createSession with cwd set
       await adapter.createSession({
         model: "claude-opus-4-6",
         cwd: "/test/dir",
       });
 
-      // Verify env was constructed correctly
-      expect(capturedOptions.env).toBeDefined();
-      expect(capturedOptions.env.PWD).toBe("/test/dir");
-      expect(capturedOptions.env.PATH).toBeDefined();
-      expect(capturedOptions.env.HOME).toBeDefined();
+      expect(capturedOptions.cwd).toBe("/test/dir");
+      expect(capturedOptions.includePartialMessages).toBe(true);
     });
 
-    test("env is undefined when cwd is not set", async () => {
-      // Capture what gets passed to the SDK
+    test("cwd is undefined when not set", async () => {
       let capturedOptions: any = null;
 
-      // Mock the SDK module
       const fakeSession = {
         sessionId: "fake-session-id",
         send: async () => {},
@@ -110,24 +86,19 @@ describe("sdk-adapter.ts", () => {
         },
       }));
 
-      // Dynamically import to get the mocked version
       const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
       const adapter = createMockedAdapter();
 
-      // Call createSession without cwd
       await adapter.createSession({
         model: "claude-opus-4-6",
       });
 
-      // Verify env is undefined
-      expect(capturedOptions.env).toBeUndefined();
+      expect(capturedOptions.cwd).toBeUndefined();
     });
 
-    test("onStderr callback is passed through to SDK as stderr", async () => {
-      // Capture what gets passed to the SDK
+    test("permissionMode is passed through", async () => {
       let capturedOptions: any = null;
 
-      // Mock the SDK module
       const fakeSession = {
         sessionId: "fake-session-id",
         send: async () => {},
@@ -146,20 +117,48 @@ describe("sdk-adapter.ts", () => {
         },
       }));
 
-      // Dynamically import to get the mocked version
       const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
       const adapter = createMockedAdapter();
 
-      // Create a callback to pass
+      await adapter.createSession({
+        model: "claude-opus-4-6",
+        permissionMode: "acceptEdits",
+      });
+
+      expect(capturedOptions.permissionMode).toBe("acceptEdits");
+    });
+
+    test("onStderr callback is passed through as stderr", async () => {
+      let capturedOptions: any = null;
+
+      const fakeSession = {
+        sessionId: "fake-session-id",
+        send: async () => {},
+        stream: async function* () {},
+        close: () => {},
+      };
+
+      mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+        unstable_v2_createSession: (opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+        unstable_v2_resumeSession: (id: string, opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+      }));
+
+      const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
+      const adapter = createMockedAdapter();
+
       const stderrCallback = (data: string) => {};
 
-      // Call createSession with onStderr
       await adapter.createSession({
         model: "claude-opus-4-6",
         onStderr: stderrCallback,
       });
 
-      // Verify onStderr was passed through as stderr
       expect(capturedOptions.stderr).toBe(stderrCallback);
     });
   });
