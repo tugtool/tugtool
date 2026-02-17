@@ -148,12 +148,13 @@ describe("buildClaudeArgs", () => {
     expect(args).toContain("claude-opus-4-6");
     expect(args).toContain("--permission-mode");
     expect(args).toContain("acceptEdits");
-    expect(args).toContain("-p");
+    expect(args).toContain("--verbose");
+    expect(args).not.toContain("-p");
     expect(args).not.toContain("--resume");
     expect(args).not.toContain("--session-id");
   });
 
-  test("resumed session includes --resume --session-id, not -p", () => {
+  test("resumed session includes --resume <sessionId>, not -p", () => {
     const args = buildClaudeArgs({
       pluginDir: "/repo/root",
       model: "claude-opus-4-6",
@@ -162,8 +163,10 @@ describe("buildClaudeArgs", () => {
     });
 
     expect(args).toContain("--resume");
-    expect(args).toContain("--session-id");
-    expect(args).toContain("sess-abc-123");
+    const resumeIdx = args.indexOf("--resume");
+    expect(args[resumeIdx + 1]).toBe("sess-abc-123");
+    expect(args).toContain("--verbose");
+    expect(args).not.toContain("--session-id");
     expect(args).not.toContain("-p");
   });
 
@@ -212,7 +215,7 @@ describe("buildClaudeArgs", () => {
     expect(args[inputFmtIdx + 1]).toBe("stream-json");
   });
 
-  test("--session-id value matches provided sessionId", () => {
+  test("--resume value matches provided sessionId", () => {
     const args = buildClaudeArgs({
       pluginDir: "/repo",
       model: "claude-opus-4-6",
@@ -220,9 +223,9 @@ describe("buildClaudeArgs", () => {
       sessionId: "my-session-id-xyz",
     });
 
-    const sessionIdIdx = args.indexOf("--session-id");
-    expect(sessionIdIdx).toBeGreaterThan(-1);
-    expect(args[sessionIdIdx + 1]).toBe("my-session-id-xyz");
+    const resumeIdx = args.indexOf("--resume");
+    expect(resumeIdx).toBeGreaterThan(-1);
+    expect(args[resumeIdx + 1]).toBe("my-session-id-xyz");
   });
 });
 
@@ -529,13 +532,15 @@ function makeMockSubprocess(stdoutLines: unknown[]): {
 
   const mockReader = stream.getReader();
 
-  // No-op WritableStream for stdin
-  const noopWritable = new WritableStream<Uint8Array>({
-    write() {},
-  });
+  // Mock FileSink for stdin (Bun.spawn returns a FileSink, not a WritableStream)
+  const mockStdin = {
+    write(_data: unknown) {},
+    flush() {},
+    end() {},
+  };
 
   const mockProcess: Record<string, unknown> = {
-    stdin: noopWritable,
+    stdin: mockStdin,
     stdout: stream, // not used by SessionManager once reader is injected
     kill: (_signal: string) => {},
   };

@@ -40,6 +40,7 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
   const args: string[] = [
     "--output-format", "stream-json",
     "--input-format", "stream-json",
+    "--verbose",
     "--include-partial-messages",
     "--replay-user-messages",
     "--plugin-dir", config.pluginDir,
@@ -48,9 +49,7 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
   ];
 
   if (config.sessionId) {
-    args.push("--resume", "--session-id", config.sessionId);
-  } else {
-    args.push("-p");
+    args.push("--resume", config.sessionId);
   }
 
   return args;
@@ -349,13 +348,9 @@ export class SessionManager {
 
     // Write user message as stream-json input per Table T02
     const userInput = JSON.stringify({ type: "user_message", text: msg.text }) + "\n";
-    const writer = this.claudeProcess.stdin as WritableStream<Uint8Array>;
-    const streamWriter = writer.getWriter();
-    try {
-      await streamWriter.write(new TextEncoder().encode(userInput));
-    } finally {
-      streamWriter.releaseLock();
-    }
+    const stdin = this.claudeProcess.stdin;
+    stdin.write(userInput);
+    stdin.flush();
 
     // Read and process stream-json events until result event
     try {
