@@ -103,7 +103,11 @@ fn main() {
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     let target_profile_dir = out_dir
         .ancestors()
-        .find(|p| p.file_name().map(|f| f == profile.as_str()).unwrap_or(false))
+        .find(|p| {
+            p.file_name()
+                .map(|f| f == profile.as_str())
+                .unwrap_or(false)
+        })
         .expect("could not find target profile directory from OUT_DIR")
         .to_path_buf();
 

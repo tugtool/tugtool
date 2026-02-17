@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-17T20:42:39Z
+---
+
+## audit-fix: CI fix: ran cargo fmt to fix pre-existing closure formatting in crates/tugcast/build.rs
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-17T20:36:35Z
 bead: tugtool-jdn.7
