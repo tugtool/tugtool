@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-17T01:59:33Z
+bead: tugtool-0c5.3
+---
+
+## #step-2: End-to-end verification: all builds clean, all tests pass (254 tugdeck + 30 tugtalk + 520 Rust), tugcast starts with tugtalk via bun-run fallback showing Protocol handshake successful. Browser-based round-trip deferred to manual testing.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-wiring.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-17T01:54:05Z
 bead: tugtool-0c5.2
