@@ -58,6 +58,7 @@ export class SessionManager {
           cwd: this.projectDir,
           permissionMode: this.permissionManager.getMode(),
           canUseTool: this.createCanUseToolCallback(),
+          onStderr: (data: string) => console.error("[sdk stderr]", data),
         });
         console.log(`Resumed session: ${this.session.sessionId}`);
       } else {
@@ -70,6 +71,7 @@ export class SessionManager {
         cwd: this.projectDir,
         permissionMode: this.permissionManager.getMode(),
         canUseTool: this.createCanUseToolCallback(),
+        onStderr: (data: string) => console.error("[sdk stderr]", data),
       });
       console.log(`Created new session: ${this.session.sessionId}`);
     }

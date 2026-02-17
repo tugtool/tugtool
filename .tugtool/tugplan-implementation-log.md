@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-17T02:54:56Z
+bead: tugtool-1tg.4
+---
+
+## #step-3: Added onStderr callback to AdapterSessionOptions interface and wired it to SDK stderr field in both createSession and resumeSession. Session.ts provides callback logging to console.error with [sdk stderr] prefix. Added passthrough test.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-17T02:47:53Z
 bead: tugtool-1tg.3

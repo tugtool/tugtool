@@ -122,5 +122,45 @@ describe("sdk-adapter.ts", () => {
       // Verify env is undefined
       expect(capturedOptions.env).toBeUndefined();
     });
+
+    test("onStderr callback is passed through to SDK as stderr", async () => {
+      // Capture what gets passed to the SDK
+      let capturedOptions: any = null;
+
+      // Mock the SDK module
+      const fakeSession = {
+        sessionId: "fake-session-id",
+        send: async () => {},
+        stream: async function* () {},
+        close: () => {},
+      };
+
+      mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+        unstable_v2_createSession: (opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+        unstable_v2_resumeSession: (id: string, opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+      }));
+
+      // Dynamically import to get the mocked version
+      const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
+      const adapter = createMockedAdapter();
+
+      // Create a callback to pass
+      const stderrCallback = (data: string) => {};
+
+      // Call createSession with onStderr
+      await adapter.createSession({
+        model: "claude-opus-4-6",
+        onStderr: stderrCallback,
+      });
+
+      // Verify onStderr was passed through as stderr
+      expect(capturedOptions.stderr).toBe(stderrCallback);
+    });
   });
 });

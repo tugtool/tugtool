@@ -25,6 +25,7 @@ export interface AdapterSessionOptions {
   permissionMode?: "default" | "acceptEdits" | "bypassPermissions" | "plan";
   canUseTool?: (toolName: string, input: unknown) => Promise<{ behavior: "allow" | "deny"; message?: string }>;
   allowedTools?: string[];
+  onStderr?: (data: string) => void;
 }
 
 /**
@@ -45,6 +46,11 @@ export function createSDKAdapter() {
       // Map canUseTool callback if provided
       if (options.canUseTool) {
         sdkOptions.canUseTool = options.canUseTool;
+      }
+
+      // Map onStderr callback if provided
+      if (options.onStderr) {
+        sdkOptions.stderr = options.onStderr;
       }
 
       const session = unstable_v2_createSession(sdkOptions);
@@ -78,6 +84,11 @@ export function createSDKAdapter() {
       // Map canUseTool callback if provided
       if (options.canUseTool) {
         sdkOptions.canUseTool = options.canUseTool;
+      }
+
+      // Map onStderr callback if provided
+      if (options.onStderr) {
+        sdkOptions.stderr = options.onStderr;
       }
 
       const session = unstable_v2_resumeSession(sessionId, sdkOptions);
