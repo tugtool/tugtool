@@ -20,9 +20,15 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (input_tx, _) = tokio::sync::mpsc::channel(256);
 
+    // Create dummy conversation channels for testing
+    let (conversation_tx, _) = broadcast::channel(1024);
+    let (conversation_input_tx, _) = tokio::sync::mpsc::channel(256);
+
     let feed_router = FeedRouter::new(
         terminal_tx,
         input_tx,
+        conversation_tx,
+        conversation_input_tx,
         "test-dummy".to_string(),
         auth.clone(),
         vec![], // No snapshot feeds for auth/WebSocket tests

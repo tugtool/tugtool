@@ -1,5 +1,6 @@
 import { TugConnection } from "./connection";
 import { DeckManager } from "./deck";
+import { ConversationCard } from "./cards/conversation-card";
 import { TerminalCard } from "./cards/terminal-card";
 import { FilesCard } from "./cards/files-card";
 import { GitCard } from "./cards/git-card";
@@ -21,6 +22,10 @@ if (!container) {
 const deck = new DeckManager(container, connection);
 
 // Create and register cards in named slots
+const conversationCard = new ConversationCard(connection);
+conversationCard.setDeckManager(deck);
+deck.addCard(conversationCard, "conversation");
+
 const terminalCard = new TerminalCard(connection);
 terminalCard.setDeckManager(deck);
 deck.addCard(terminalCard, "terminal");

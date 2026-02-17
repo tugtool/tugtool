@@ -261,3 +261,886 @@
 .collapse-btn svg {
   display: block;
 }
+
+/* Conversation card */
+.conversation-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.conversation-card .message-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.conversation-card .message {
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+.conversation-card .message-user {
+  align-self: flex-end;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  max-width: 80%;
+}
+
+.conversation-card .message-assistant {
+  align-self: flex-start;
+  background: var(--background);
+  color: var(--foreground);
+  width: 100%;
+  padding: 8px 0;
+}
+
+/* Streaming cursor - thin accent bar at end of streaming text */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Activity border - pulsing accent box-shadow during streaming */
+.message-assistant.streaming-active {
+  box-shadow: inset 2px 0 0 var(--accent);
+  animation: activity-pulse 2s ease-in-out infinite;
+}
+
+@keyframes activity-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.conversation-card .message-error {
+  align-self: center;
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.conversation-card .conversation-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.conversation-card .conversation-input {
+  flex: 1;
+  min-height: 36px;
+  max-height: 200px;
+  padding: 8px 12px;
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  resize: none;
+  overflow-y: auto;
+}
+
+.conversation-card .conversation-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.conversation-card .send-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s;
+}
+
+.conversation-card .send-btn:hover {
+  opacity: 0.9;
+}
+
+.conversation-card .send-btn:active {
+  opacity: 0.8;
+}
+
+/* Conversation prose styles - Markdown rendering */
+.conversation-prose {
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.conversation-prose h1,
+.conversation-prose h2,
+.conversation-prose h3,
+.conversation-prose h4,
+.conversation-prose h5,
+.conversation-prose h6 {
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.conversation-prose h1 {
+  font-size: 1.25em;
+}
+
+.conversation-prose h2 {
+  font-size: 1.125em;
+}
+
+.conversation-prose h3,
+.conversation-prose h4,
+.conversation-prose h5,
+.conversation-prose h6 {
+  font-size: 1em;
+}
+
+.conversation-prose p {
+  margin: 0.75em 0;
+}
+
+.conversation-prose strong {
+  font-weight: 600;
+}
+
+.conversation-prose em {
+  font-style: italic;
+}
+
+.conversation-prose del {
+  text-decoration: line-through;
+}
+
+.conversation-prose sup {
+  font-size: 0.8em;
+  vertical-align: super;
+}
+
+.conversation-prose sub {
+  font-size: 0.8em;
+  vertical-align: sub;
+}
+
+.conversation-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.conversation-prose ul,
+.conversation-prose ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.conversation-prose li {
+  margin: 0.25em 0;
+}
+
+.conversation-prose :not(pre) > code {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.9em;
+  background: var(--muted);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.conversation-prose pre {
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+
+.conversation-prose blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  margin: 0.75em 0;
+}
+
+.conversation-prose table {
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  margin: 0.75em 0;
+}
+
+.conversation-prose th,
+.conversation-prose td {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+}
+
+.conversation-prose th {
+  font-weight: 600;
+  background: var(--muted);
+}
+
+.conversation-prose img {
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+
+/* Code block container styles */
+.code-block-container {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0.75em 0;
+}
+
+.code-block-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+
+.code-block-language {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-transform: uppercase;
+}
+
+.code-block-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s;
+}
+
+.code-block-copy-btn:hover {
+  color: var(--foreground);
+}
+
+.code-block-copy-btn.copied {
+  color: var(--success);
+}
+
+.code-block-code {
+  overflow-x: auto;
+  padding: 12px;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.code-block-code pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.code-block-code code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.code-block-fallback {
+  overflow-x: auto;
+  padding: 12px;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+/* Tool card styles */
+.tool-card {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tool-card-header:hover {
+  background: var(--card);
+}
+
+.tool-card-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--card-foreground);
+  display: flex;
+  align-items: center;
+}
+
+.tool-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--card-foreground);
+  white-space: nowrap;
+}
+
+.tool-card-summary {
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-card-status {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.tool-card-status.running {
+  color: var(--accent);
+}
+
+.tool-card-status.running svg {
+  animation: tool-spin 1s linear infinite;
+}
+
+.tool-card-status.success {
+  color: var(--success);
+}
+
+.tool-card-status.failure {
+  color: var(--destructive);
+}
+
+.tool-card-status.interrupted {
+  color: var(--warning);
+}
+
+.tool-card-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  transition: transform 0.15s;
+}
+
+.tool-card-content {
+  padding: 0 12px 12px 12px;
+}
+
+.tool-card-content.collapsed {
+  display: none;
+}
+
+.tool-card-input {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-bottom: 8px;
+}
+
+.tool-card-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.tool-card-input-key {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.tool-card-input-value {
+  color: var(--foreground);
+  word-break: break-all;
+}
+
+.tool-card-result {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 12px;
+}
+
+.tool-card-result.error {
+  color: var(--destructive);
+}
+
+.tool-card-result-terminal {
+  color: var(--foreground);
+  background: var(--background);
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-card-show-all {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  text-decoration: underline;
+}
+
+.tool-card-show-all:hover {
+  color: var(--primary);
+}
+
+@keyframes tool-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tool-card-icon svg,
+.tool-card-status svg,
+.tool-card-chevron svg {
+  display: block;
+}
+
+/* Approval prompt styles */
+.approval-prompt {
+  border: 2px solid var(--warning);
+  border-radius: var(--radius);
+  margin: 4px 0;
+  padding: 12px;
+  background: var(--muted);
+}
+
+.approval-prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.approval-prompt-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--card-foreground);
+  display: flex;
+  align-items: center;
+}
+
+.approval-prompt-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--card-foreground);
+}
+
+.approval-prompt-preview {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 12px;
+  background: var(--background);
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  color: var(--foreground);
+  white-space: pre-wrap;
+}
+
+.approval-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.approval-prompt-allow {
+  background: var(--success);
+  color: var(--success-foreground);
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.approval-prompt-deny {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.approval-prompt-allow:hover,
+.approval-prompt-deny:hover {
+  opacity: 0.9;
+}
+
+.approval-prompt-denied {
+  opacity: 0.6;
+}
+
+.approval-prompt-denied-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--destructive);
+  font-size: 13px;
+}
+
+.conversation-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.approval-prompt-icon svg,
+.approval-prompt-denied-label svg {
+  display: block;
+}
+
+/* Question card styles */
+.question-card {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  margin: 4px 0;
+  padding: 12px;
+}
+
+.question-card-question {
+  margin-bottom: 16px;
+}
+
+.question-card-question:last-of-type {
+  margin-bottom: 12px;
+}
+
+.question-card-text {
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.question-card-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.question-card-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.question-card-option input[type="radio"],
+.question-card-option input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin-top: 3px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.question-card-option-content {
+  flex: 1;
+}
+
+.question-card-option-label {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.question-card-option-description {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.question-card-other {
+  margin-top: 8px;
+}
+
+.question-card-other-input,
+.question-card-text-input input {
+  width: 100%;
+  background: var(--muted);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.question-card-other-input:focus,
+.question-card-text-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.question-card-text-input {
+  margin-bottom: 12px;
+}
+
+.question-card-submit {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.question-card-submit:hover {
+  opacity: 0.9;
+}
+
+.question-card-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.question-card.submitted {
+  opacity: 0.8;
+}
+
+.question-card-answer-highlight {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+/* Turn cancelled / interrupt styles */
+.message-cancelled {
+  opacity: 0.5;
+}
+
+.message-cancelled-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--warning);
+  margin-top: 8px;
+}
+
+.message-cancelled-label svg {
+  display: block;
+}
+
+.send-btn.stop-mode {
+  background: var(--destructive);
+}
+
+/* Attachment handling styles */
+.conversation-card.drag-over {
+  border: 2px dashed var(--accent);
+}
+
+.attachment-chips-container {
+  padding: 0 12px;
+  min-height: 0;
+}
+
+.attachment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.attachment-chip {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.attachment-chip-icon {
+  color: var(--muted-foreground);
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.attachment-chip-icon svg {
+  display: block;
+}
+
+.attachment-chip-name {
+  color: var(--foreground);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.attachment-chip-remove:hover {
+  color: var(--destructive);
+}
+
+.attachment-chip-remove svg {
+  display: block;
+}
+
+.attach-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.attach-btn:hover {
+  color: var(--foreground);
+  border-color: var(--foreground);
+}
+
+.attach-btn svg {
+  display: block;
+}
+
+.message-user .attachment-chips {
+  margin-top: 8px;
+}
+
+/* Error banner styles */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  margin: 0 0 4px 0;
+}
+
+.error-banner-recoverable {
+  background: var(--warning);
+  color: var(--warning-foreground);
+}
+
+.error-banner-fatal {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.error-banner-reconnected {
+  background: var(--success);
+  color: var(--success-foreground);
+}
+
+.error-banner svg {
+  display: block;
+}
+
+/* Permission mode selector */
+.permission-mode-select {
+  position: absolute;
+  right: 28px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+/* Session divider */
+.session-divider {
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}

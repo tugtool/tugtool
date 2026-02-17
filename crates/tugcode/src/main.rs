@@ -40,13 +40,24 @@ impl Cli {
     }
 }
 
+/// Resolve the tugcast binary path: look next to the current executable first, then fall back to PATH
+fn resolve_tugcast_path() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        let sibling = exe.parent().unwrap_or(exe.as_path()).join("tugcast");
+        if sibling.exists() {
+            return sibling;
+        }
+    }
+    PathBuf::from("tugcast")
+}
+
 /// Spawn tugcast as a child process with stdout piped and stderr inherited
 fn spawn_tugcast(
     session: &str,
     port: u16,
     dir: &std::path::Path,
 ) -> std::io::Result<tokio::process::Child> {
-    Command::new("tugcast")
+    Command::new(resolve_tugcast_path())
         .arg("--session")
         .arg(session)
         .arg("--port")

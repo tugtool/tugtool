@@ -34,6 +34,10 @@ pub enum FeedId {
     StatsTokenUsage = 0x32,
     /// Build status stats (tugcast -> tugdeck)
     StatsBuildStatus = 0x33,
+    /// Conversation output stream (tugcast -> tugdeck)
+    ConversationOutput = 0x40,
+    /// Conversation input stream (tugdeck -> tugcast)
+    ConversationInput = 0x41,
     /// Heartbeat/keepalive frames (bidirectional)
     Heartbeat = 0xFF,
 }
@@ -53,6 +57,8 @@ impl FeedId {
             0x31 => Some(FeedId::StatsProcessInfo),
             0x32 => Some(FeedId::StatsTokenUsage),
             0x33 => Some(FeedId::StatsBuildStatus),
+            0x40 => Some(FeedId::ConversationOutput),
+            0x41 => Some(FeedId::ConversationInput),
             0xFF => Some(FeedId::Heartbeat),
             _ => None,
         }
@@ -184,6 +190,8 @@ mod tests {
         assert_eq!(FeedId::from_byte(0x31), Some(FeedId::StatsProcessInfo));
         assert_eq!(FeedId::from_byte(0x32), Some(FeedId::StatsTokenUsage));
         assert_eq!(FeedId::from_byte(0x33), Some(FeedId::StatsBuildStatus));
+        assert_eq!(FeedId::from_byte(0x40), Some(FeedId::ConversationOutput));
+        assert_eq!(FeedId::from_byte(0x41), Some(FeedId::ConversationInput));
         assert_eq!(FeedId::from_byte(0xFF), Some(FeedId::Heartbeat));
         assert_eq!(FeedId::from_byte(0x03), None);
         assert_eq!(FeedId::from_byte(0x34), None);
@@ -200,6 +208,8 @@ mod tests {
         assert_eq!(FeedId::StatsProcessInfo.as_byte(), 0x31);
         assert_eq!(FeedId::StatsTokenUsage.as_byte(), 0x32);
         assert_eq!(FeedId::StatsBuildStatus.as_byte(), 0x33);
+        assert_eq!(FeedId::ConversationOutput.as_byte(), 0x40);
+        assert_eq!(FeedId::ConversationInput.as_byte(), 0x41);
         assert_eq!(FeedId::Heartbeat.as_byte(), 0xFF);
     }
 
@@ -450,5 +460,29 @@ mod tests {
         // [0x00, 0x00, 0x00, 0x02] - length 2 (big-endian)
         // [0x7b, 0x7d] - "{}"
         assert_eq!(encoded, vec![0x30, 0x00, 0x00, 0x00, 0x02, 0x7b, 0x7d]);
+    }
+
+    #[test]
+    fn test_round_trip_conversation_output() {
+        let original = Frame::new(
+            FeedId::ConversationOutput,
+            b"{\"type\":\"assistant_text\",\"msg_id\":\"123\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
+    }
+
+    #[test]
+    fn test_round_trip_conversation_input() {
+        let original = Frame::new(
+            FeedId::ConversationInput,
+            b"{\"type\":\"user_message\",\"text\":\"hello\"}".to_vec(),
+        );
+        let encoded = original.encode();
+        let (decoded, bytes_consumed) = Frame::decode(&encoded).unwrap();
+        assert_eq!(decoded, original);
+        assert_eq!(bytes_consumed, encoded.len());
     }
 }

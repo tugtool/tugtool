@@ -11,7 +11,7 @@ import { TugCard } from "./cards/card";
 import { TugConnection } from "./connection";
 
 /** Card slot names matching CSS grid areas */
-export type CardSlot = "terminal" | "git" | "files" | "stats";
+export type CardSlot = "conversation" | "terminal" | "git" | "files" | "stats";
 
 /** Minimum card dimension in pixels */
 const MIN_CARD_SIZE = 100;
@@ -20,7 +20,7 @@ const MIN_CARD_SIZE = 100;
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
 
 /** Layout state version for schema migration */
-const LAYOUT_VERSION = 1;
+const LAYOUT_VERSION = 2;
 
 /** Debounce delay for saving layout */
 const SAVE_DEBOUNCE_MS = 500;
@@ -47,7 +47,7 @@ export class DeckManager {
 
   // Grid track state (in fr units, relative)
   private colSplit = 0.667; // 2fr / (2fr + 1fr) = 0.667
-  private rowSplits = [1 / 3, 2 / 3]; // equal thirds
+  private rowSplits = [0.25, 0.5, 0.75]; // equal quarters for 4 rows
 
   // Collapse/expand state
   private collapsedSlots: Set<CardSlot> = new Set();
@@ -64,8 +64,8 @@ export class DeckManager {
     this.gridContainer.className = "deck-grid";
     container.appendChild(this.gridContainer);
 
-    // Create named card slot elements
-    for (const name of ["terminal", "git", "files", "stats"] as CardSlot[]) {
+    // Create named card slot elements (conversation first)
+    for (const name of ["conversation", "terminal", "git", "files", "stats"] as CardSlot[]) {
       const slot = document.createElement("div");
       slot.className = `card-slot card-slot-${name}`;
       this.gridContainer.appendChild(slot);
@@ -186,13 +186,13 @@ export class DeckManager {
   }
 
   private createDragHandles(): void {
-    // Column drag handle (between terminal and right column)
+    // Column drag handle (between conversation and right column)
     const colHandle = document.createElement("div");
     colHandle.className = "drag-handle drag-handle-col";
     this.gridContainer.appendChild(colHandle);
     this.setupColDrag(colHandle);
 
-    // Row drag handles (between git/files and files/stats)
+    // Row drag handles (between terminal/git, git/files, files/stats)
     const rowHandle1 = document.createElement("div");
     rowHandle1.className = "drag-handle drag-handle-row";
     rowHandle1.dataset.index = "0";
@@ -204,6 +204,12 @@ export class DeckManager {
     rowHandle2.dataset.index = "1";
     this.gridContainer.appendChild(rowHandle2);
     this.setupRowDrag(rowHandle2, 1);
+
+    const rowHandle3 = document.createElement("div");
+    rowHandle3.className = "drag-handle drag-handle-row";
+    rowHandle3.dataset.index = "2";
+    this.gridContainer.appendChild(rowHandle3);
+    this.setupRowDrag(rowHandle3, 2);
   }
 
   private setupColDrag(handle: HTMLElement): void {
@@ -267,16 +273,22 @@ export class DeckManager {
         const minFraction = MIN_CARD_SIZE / totalHeight;
 
         if (index === 0) {
-          // Moving boundary between row 0 (git) and row 1 (files)
+          // Moving boundary between row 0 (terminal) and row 1 (git)
           newSplits[0] = Math.max(
             minFraction,
             Math.min(newSplits[1] - minFraction, startSplits[0] + delta)
           );
-        } else {
-          // Moving boundary between row 1 (files) and row 2 (stats)
+        } else if (index === 1) {
+          // Moving boundary between row 1 (git) and row 2 (files)
           newSplits[1] = Math.max(
             newSplits[0] + minFraction,
-            Math.min(1 - minFraction, startSplits[1] + delta)
+            Math.min(newSplits[2] - minFraction, startSplits[1] + delta)
+          );
+        } else {
+          // Moving boundary between row 2 (files) and row 3 (stats)
+          newSplits[2] = Math.max(
+            newSplits[1] + minFraction,
+            Math.min(1 - minFraction, startSplits[2] + delta)
           );
         }
 
@@ -305,8 +317,8 @@ export class DeckManager {
     const colRight = ((1 - this.colSplit) * 100).toFixed(2) + "%";
     this.gridContainer.style.gridTemplateColumns = `${colLeft} ${colRight}`;
 
-    // Right column slots in order
-    const rightSlots: CardSlot[] = ["git", "files", "stats"];
+    // Right column slots in order (4 rows now)
+    const rightSlots: CardSlot[] = ["terminal", "git", "files", "stats"];
 
     // Calculate row tracks, accounting for collapsed cards
     const hasCollapsed = rightSlots.some((s) => this.collapsedSlots.has(s));
@@ -318,11 +330,12 @@ export class DeckManager {
       });
       this.gridContainer.style.gridTemplateRows = rowTracks.join(" ");
     } else {
-      // Use percentage-based splits when all expanded
+      // Use percentage-based splits when all expanded (4 rows)
       const row1 = (this.rowSplits[0] * 100).toFixed(2) + "%";
       const row2 = ((this.rowSplits[1] - this.rowSplits[0]) * 100).toFixed(2) + "%";
-      const row3 = ((1 - this.rowSplits[1]) * 100).toFixed(2) + "%";
-      this.gridContainer.style.gridTemplateRows = `${row1} ${row2} ${row3}`;
+      const row3 = ((this.rowSplits[2] - this.rowSplits[1]) * 100).toFixed(2) + "%";
+      const row4 = ((1 - this.rowSplits[2]) * 100).toFixed(2) + "%";
+      this.gridContainer.style.gridTemplateRows = `${row1} ${row2} ${row3} ${row4}`;
     }
 
     // Position drag handles
@@ -334,6 +347,7 @@ export class DeckManager {
     const colHandle = handles[0] as HTMLElement;
     const rowHandle1 = handles[1] as HTMLElement;
     const rowHandle2 = handles[2] as HTMLElement;
+    const rowHandle3 = handles[3] as HTMLElement;
 
     if (colHandle) {
       colHandle.style.left = `calc(${(this.colSplit * 100).toFixed(2)}% - 3px)`;
@@ -346,6 +360,10 @@ export class DeckManager {
     if (rowHandle2) {
       rowHandle2.style.top = `calc(${(this.rowSplits[1] * 100).toFixed(2)}% - 3px)`;
       rowHandle2.style.left = `${(this.colSplit * 100).toFixed(2)}%`;
+    }
+    if (rowHandle3) {
+      rowHandle3.style.top = `calc(${(this.rowSplits[2] * 100).toFixed(2)}% - 3px)`;
+      rowHandle3.style.left = `${(this.colSplit * 100).toFixed(2)}%`;
     }
   }
 
@@ -382,6 +400,30 @@ export class DeckManager {
 
       const state = JSON.parse(json) as LayoutState;
 
+      // Migrate v1 to v2
+      if (state.version === 1) {
+        console.info("tugdeck: migrating layout from v1 to v2");
+        // v1 had 2-element rowSplits for git/files/stats (3 rows)
+        // v2 has 3-element rowSplits for terminal/git/files/stats (4 rows)
+        // Prepend 0.25 and scale existing into remaining 75%
+        const oldSplits = state.rowSplits || [1/3, 2/3];
+        this.rowSplits = [
+          0.25,
+          0.25 + oldSplits[0] * 0.75,
+          0.25 + oldSplits[1] * 0.75
+        ];
+        this.colSplit = state.colSplit || 0.667;
+        // Keep collapsed state if valid
+        if (Array.isArray(state.collapsed)) {
+          const validSlots: CardSlot[] = ["conversation", "terminal", "git", "files", "stats"];
+          const filtered = state.collapsed.filter((s) => validSlots.includes(s as CardSlot));
+          this.collapsedSlots = new Set(filtered as CardSlot[]);
+        }
+        // Save migrated layout
+        this.scheduleSave();
+        return;
+      }
+
       // Verify version
       if (state.version !== LAYOUT_VERSION) {
         console.warn("tugdeck: layout version mismatch, using defaults");
@@ -397,20 +439,21 @@ export class DeckManager {
         this.colSplit = state.colSplit;
       }
 
-      // Validate and apply rowSplits
+      // Validate and apply rowSplits (3 elements for v2)
       if (
         Array.isArray(state.rowSplits) &&
-        state.rowSplits.length === 2 &&
+        state.rowSplits.length === 3 &&
         state.rowSplits[0] >= 0.1 &&
         state.rowSplits[1] >= state.rowSplits[0] + 0.1 &&
-        state.rowSplits[1] <= 0.9
+        state.rowSplits[2] >= state.rowSplits[1] + 0.1 &&
+        state.rowSplits[2] <= 0.9
       ) {
         this.rowSplits = state.rowSplits;
       }
 
       // Validate and apply collapsed state
       if (Array.isArray(state.collapsed)) {
-        const validSlots: CardSlot[] = ["git", "files", "stats"];
+        const validSlots: CardSlot[] = ["conversation", "terminal", "git", "files", "stats"];
         const filtered = state.collapsed.filter((s) => validSlots.includes(s as CardSlot));
         this.collapsedSlots = new Set(filtered as CardSlot[]);
       }

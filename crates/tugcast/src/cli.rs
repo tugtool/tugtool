@@ -21,6 +21,10 @@ pub struct Cli {
     /// Working directory for the tmux session
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
+
+    /// Path to tugtalk binary (overrides auto-detection)
+    #[arg(long)]
+    pub tugtalk_path: Option<PathBuf>,
 }
 
 impl Cli {
@@ -133,5 +137,17 @@ mod tests {
         // --open flag was removed; verify it is no longer recognized
         let result = Cli::try_parse_from(["tugcast", "--open"]);
         assert!(result.is_err(), "--open should no longer be a valid flag");
+    }
+
+    #[test]
+    fn test_tugtalk_path_override() {
+        let cli = Cli::try_parse_from(["tugcast", "--tugtalk-path", "/custom/tugtalk"]).unwrap();
+        assert_eq!(cli.tugtalk_path, Some(PathBuf::from("/custom/tugtalk")));
+    }
+
+    #[test]
+    fn test_default_tugtalk_path_none() {
+        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
+        assert_eq!(cli.tugtalk_path, None);
     }
 }
