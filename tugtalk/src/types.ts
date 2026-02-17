@@ -30,6 +30,10 @@ export interface ToolApproval {
   type: "tool_approval";
   request_id: string;
   decision: "allow" | "deny";
+  // Present when decision === "allow"; caller may override tool input.
+  updatedInput?: Record<string, unknown>;
+  // Present when decision === "deny"; human-readable reason.
+  message?: string;
 }
 
 export interface QuestionAnswer {
@@ -44,7 +48,17 @@ export interface Interrupt {
 
 export interface PermissionModeMessage {
   type: "permission_mode";
-  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan";
+  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "delegate";
+}
+
+export interface ModelChange {
+  type: "model_change";
+  model: string;
+}
+
+export interface SessionCommand {
+  type: "session_command";
+  command: "fork" | "continue" | "new";
 }
 
 export type InboundMessage =
@@ -53,18 +67,24 @@ export type InboundMessage =
   | ToolApproval
   | QuestionAnswer
   | Interrupt
-  | PermissionModeMessage;
+  | PermissionModeMessage
+  | ModelChange
+  | SessionCommand;
 
 // Outbound message types (tugtalk stdout to tugcast) - Spec S02
+// ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
+
 export interface ProtocolAck {
   type: "protocol_ack";
   version: number;
   session_id: string;
+  ipc_version: number;
 }
 
 export interface SessionInit {
   type: "session_init";
   session_id: string;
+  ipc_version: number;
 }
 
 export interface AssistantText {
@@ -75,6 +95,7 @@ export interface AssistantText {
   text: string;
   is_partial: boolean;
   status: string;
+  ipc_version: number;
 }
 
 export interface ToolUse {
@@ -84,6 +105,7 @@ export interface ToolUse {
   tool_name: string;
   tool_use_id: string;
   input: object;
+  ipc_version: number;
 }
 
 export interface ToolResult {
@@ -91,6 +113,7 @@ export interface ToolResult {
   tool_use_id: string;
   output: string;
   is_error: boolean;
+  ipc_version: number;
 }
 
 export interface ToolApprovalRequest {
@@ -98,12 +121,14 @@ export interface ToolApprovalRequest {
   request_id: string;
   tool_name: string;
   input: object;
+  ipc_version: number;
 }
 
 export interface Question {
   type: "question";
   request_id: string;
   questions: QuestionDef[];
+  ipc_version: number;
 }
 
 export interface TurnComplete {
@@ -111,6 +136,7 @@ export interface TurnComplete {
   msg_id: string;
   seq: number;
   result: string;
+  ipc_version: number;
 }
 
 export interface TurnCancelled {
@@ -118,12 +144,111 @@ export interface TurnCancelled {
   msg_id: string;
   seq: number;
   partial_result: string;
+  ipc_version: number;
 }
 
 export interface ErrorEvent {
   type: "error";
   message: string;
   recoverable: boolean;
+  ipc_version: number;
+}
+
+// ---------------------------------------------------------------------------
+// New outbound IPC types (Step 2.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extended thinking text stream per D12 (#d12-extended-thinking).
+ */
+export interface ThinkingText {
+  type: "thinking_text";
+  msg_id: string;
+  seq: number;
+  text: string;
+  is_partial: boolean;
+  status: string;
+  ipc_version: number;
+}
+
+/**
+ * Forwarded control_request from claude stdout to tugcast frontend.
+ */
+export interface ControlRequestForward {
+  type: "control_request_forward";
+  request_id: string;
+  tool_name: string;
+  input: Record<string, unknown>;
+  decision_reason?: string;
+  permission_suggestions?: unknown[];
+  blocked_path?: string;
+  tool_use_id?: string;
+  is_question: boolean;
+  ipc_version: number;
+}
+
+/**
+ * System init metadata forwarded to tugcast for UI population.
+ */
+export interface SystemMetadata {
+  type: "system_metadata";
+  session_id: string;
+  cwd: string;
+  tools: unknown[];
+  model: string;
+  permissionMode: string;
+  slash_commands: unknown[];
+  plugins: unknown[];
+  agents: unknown[];
+  skills: unknown[];
+  mcp_servers: unknown[];
+  version: string;
+  output_style: string;
+  fast_mode_state: string;
+  apiKeySource: string;
+  ipc_version: number;
+}
+
+/**
+ * Cost and usage summary emitted after each turn completes per PN-19.
+ */
+export interface CostUpdate {
+  type: "cost_update";
+  total_cost_usd: number;
+  num_turns: number;
+  duration_ms: number;
+  duration_api_ms: number;
+  usage: Record<string, unknown>;
+  modelUsage: Record<string, unknown>;
+  ipc_version: number;
+}
+
+/**
+ * Compact context boundary marker.
+ */
+export interface CompactBoundary {
+  type: "compact_boundary";
+  ipc_version: number;
+}
+
+/**
+ * Structured tool result for rich UI display per D11/PN-4.
+ */
+export interface ToolUseStructured {
+  type: "tool_use_structured";
+  tool_use_id: string;
+  tool_name: string;
+  structured_result: Record<string, unknown>;
+  ipc_version: number;
+}
+
+/**
+ * Cancellation notice for a pending permission or question dialog.
+ */
+export interface ControlRequestCancel {
+  type: "control_request_cancel";
+  request_id: string;
+  ipc_version: number;
 }
 
 export type OutboundMessage =
@@ -136,7 +261,14 @@ export type OutboundMessage =
   | Question
   | TurnComplete
   | TurnCancelled
-  | ErrorEvent;
+  | ErrorEvent
+  | ThinkingText
+  | ControlRequestForward
+  | SystemMetadata
+  | CostUpdate
+  | CompactBoundary
+  | ToolUseStructured
+  | ControlRequestCancel;
 
 // Type guards
 export function isInboundMessage(msg: unknown): msg is InboundMessage {
@@ -148,7 +280,9 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "tool_approval" ||
     typed.type === "question_answer" ||
     typed.type === "interrupt" ||
-    typed.type === "permission_mode"
+    typed.type === "permission_mode" ||
+    typed.type === "model_change" ||
+    typed.type === "session_command"
   );
 }
 
@@ -174,4 +308,12 @@ export function isInterrupt(msg: InboundMessage): msg is Interrupt {
 
 export function isPermissionMode(msg: InboundMessage): msg is PermissionModeMessage {
   return msg.type === "permission_mode";
+}
+
+export function isModelChange(msg: InboundMessage): msg is ModelChange {
+  return msg.type === "model_change";
+}
+
+export function isSessionCommand(msg: InboundMessage): msg is SessionCommand {
+  return msg.type === "session_command";
 }

@@ -9,6 +9,8 @@ import {
   isQuestionAnswer,
   isInterrupt,
   isPermissionMode,
+  isModelChange,
+  isSessionCommand,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 
@@ -42,6 +44,20 @@ console.log(`Starting tugtalk (projectDir: ${projectDir})`);
 // Session manager (initialized after protocol handshake)
 let sessionManager: SessionManager | null = null;
 
+// Graceful SIGTERM handler: close stdin and kill claude process.
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down");
+  if (sessionManager) {
+    sessionManager.shutdown().catch((err) => {
+      console.error("Shutdown error:", err);
+    }).finally(() => {
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+});
+
 // IPC loop
 async function main() {
   for await (const msg of readLine()) {
@@ -52,6 +68,7 @@ async function main() {
           type: "error",
           message: `Unsupported protocol version: ${msg.version}`,
           recoverable: false,
+          ipc_version: 2,
         });
         process.exit(1);
       }
@@ -64,6 +81,7 @@ async function main() {
         type: "protocol_ack",
         version: 1,
         session_id: "pending", // Will be replaced by session_init
+        ipc_version: 2,
       });
 
       // Initialize session (blocks loop until ready, emits session_init)
@@ -75,6 +93,7 @@ async function main() {
           type: "error",
           message: `Session initialization failed: ${err}`,
           recoverable: false,
+          ipc_version: 2,
         });
         process.exit(1);
       }
@@ -86,6 +105,7 @@ async function main() {
             type: "error",
             message: `Failed to handle user message: ${err}`,
             recoverable: true,
+            ipc_version: 2,
           });
         });
       } else {
@@ -99,6 +119,20 @@ async function main() {
       sessionManager?.handleInterrupt();
     } else if (isPermissionMode(msg)) {
       sessionManager?.handlePermissionMode(msg);
+    } else if (isModelChange(msg)) {
+      sessionManager?.handleModelChange(msg.model);
+    } else if (isSessionCommand(msg)) {
+      if (sessionManager) {
+        sessionManager.handleSessionCommand(msg.command).catch((err) => {
+          console.error("Session command failed:", err);
+          writeLine({
+            type: "error",
+            message: `Session command failed: ${err}`,
+            recoverable: true,
+            ipc_version: 2,
+          });
+        });
+      }
     }
   }
 }

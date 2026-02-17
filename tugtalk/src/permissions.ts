@@ -1,6 +1,6 @@
 // Permission mode management for CLI --permission-mode flag
 
-export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
+export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "delegate";
 
 /**
  * Manages permission mode state.

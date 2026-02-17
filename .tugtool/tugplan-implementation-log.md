@@ -9,6 +9,109 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-17T20:42:39Z
+---
+
+## audit-fix: CI fix: ran cargo fmt to fix pre-existing closure formatting in crates/tugcast/build.rs
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-17T20:36:35Z
+bead: tugtool-jdn.7
+---
+
+## #step-6: Protocol conformance audit: added 4 missing fields to SystemMetadata IPC, 2 optional fields to ControlRequestForward, wired handlePermissionMode to send set_permission_mode control_request to CLI, added 5 tests, 141 tests passing across 6 files
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-17T20:29:38Z
+bead: tugtool-jdn.6
+---
+
+## #step-5: Test-only step: added 25 new tests covering dontAsk/delegate permission modes, model_change/session_command IPC validation, inbound routing type guards, outbound type shape validation with ipc_version:2. 136 tests passing across 6 files, no source code changes
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-17T20:20:50Z
+bead: tugtool-jdn.5
+---
+
+## #step-4: Added buildContentBlocks() for mixed text+image attachments (PN-12 validation), session management methods (fork/continue/new with killAndCleanup), ModelChange and SessionCommand inbound IPC types with main.ts routing, made ipc_version required on all 17 outbound interfaces with ipc_version:2 at all ~31 construction sites, SIGTERM handler, 92 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-17T20:07:39Z
+bead: tugtool-jdn.4
+---
+
+## #step-3: Created web-components.ts with 14 UI component interfaces, added SystemMetadata IPC emission from system/init, added CostUpdate IPC emission from result (before turn_complete per PN-19), updated existing tests and added 3 new tests, 59 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-17T20:00:26Z
+bead: tugtool-jdn.3
+---
+
+## #step-2: Created protocol-types.ts (SystemInitMessage, ResultMessage, ControlRequestMessage, PermissionSuggestion, etc.), control.ts (sendControlRequest/Response, formatPermissionAllow/Deny/QuestionAnswer), added 6 new IPC types to types.ts, rewrote handleToolApproval/handleQuestionAnswer/handleInterrupt for control protocol, added structured tool result parsing (PN-3/PN-4/PN-13), 56 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-17T19:43:14Z
+bead: tugtool-jdn.2
+---
+
+## #step-1: Added routeTopLevelEvent() handling system/assistant/user/result/stream_event/control/keep_alive types, refactored event loop for two-tier routing, added thinking_delta and content_block_start tool_use support, 21 new tests (33 total)
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-17T19:34:55Z
+bead: tugtool-jdn.1
+---
+
+## #step-0: Fixed CLI spawn arguments (added --permission-prompt-tool stdio, session flags), corrected stdin message format to protocol envelope, added dontAsk/delegate to PermissionMode types, replaced tests with 12 Step 0 tests
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-17T15:06:21Z
 bead: tugtool-9cr.3
