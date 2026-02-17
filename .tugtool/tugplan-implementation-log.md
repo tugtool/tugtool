@@ -9,6 +9,45 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-17T01:59:33Z
+bead: tugtool-0c5.3
+---
+
+## #step-2: End-to-end verification: all builds clean, all tests pass (254 tugdeck + 30 tugtalk + 520 Rust), tugcast starts with tugtalk via bun-run fallback showing Protocol handshake successful. Browser-based round-trip deferred to manual testing.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-wiring.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-17T01:54:05Z
+bead: tugtool-0c5.2
+---
+
+## #step-1: Fixed send() API mismatch: all 6 call-sites in conversation-card.ts now use send(FeedId.CONVERSATION_INPUT, payload). Updated MockConnection in conversation-card.test.ts, e2e-integration.test.ts, and session-integration.test.ts. 254 tugdeck tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-wiring.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-17T01:48:16Z
+bead: tugtool-0c5.1
+---
+
+## #step-0: Diagnostic verification: ConversationCard mounted in main.ts, send() API mismatch confirmed (6 call-sites use 1-arg instead of 2-arg), tugtalk exists and tests pass (30/30), tugcast builds clean, tugdeck builds clean. Dependencies installed in both tugdeck and tugtalk.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-wiring.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-17T00:25:02Z
 ---

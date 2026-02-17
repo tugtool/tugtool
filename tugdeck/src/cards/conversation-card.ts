@@ -5,7 +5,7 @@
 import { createElement, ArrowUp, Square, Octagon, Paperclip, AlertTriangle } from "lucide";
 import { TugCard } from "./card";
 import { TugConnection } from "../connection";
-import { FeedId, encodeConversationInput } from "../protocol";
+import { FeedId } from "../protocol";
 import {
   parseConversationEvent,
   type ConversationEvent,
@@ -109,8 +109,8 @@ export class ConversationCard implements TugCard {
         type: "permission_mode",
         mode,
       };
-      const encoded = encodeConversationInput(msg);
-      this.connection.send(encoded);
+      const payload = new TextEncoder().encode(JSON.stringify(msg));
+      this.connection.send(FeedId.CONVERSATION_INPUT, payload);
     });
     header.appendChild(this.permissionModeSelect);
 
@@ -510,8 +510,8 @@ export class ConversationCard implements TugCard {
       text,
       attachments,
     };
-    const encoded = encodeConversationInput(msg);
-    this.connection.send(encoded);
+    const payload = new TextEncoder().encode(JSON.stringify(msg));
+    this.connection.send(FeedId.CONVERSATION_INPUT, payload);
 
     // Clear input and attachments
     this.textarea.value = "";
@@ -632,8 +632,8 @@ export class ConversationCard implements TugCard {
           request_id: event.request_id,
           decision: "allow",
         };
-        const encoded = encodeConversationInput(approval);
-        this.connection.send(encoded);
+        const payload = new TextEncoder().encode(JSON.stringify(approval));
+        this.connection.send(FeedId.CONVERSATION_INPUT, payload);
 
         // Remove approval prompt from DOM
         const promptEl = prompt.render();
@@ -660,8 +660,8 @@ export class ConversationCard implements TugCard {
           request_id: event.request_id,
           decision: "deny",
         };
-        const encoded = encodeConversationInput(approval);
-        this.connection.send(encoded);
+        const payload = new TextEncoder().encode(JSON.stringify(approval));
+        this.connection.send(FeedId.CONVERSATION_INPUT, payload);
 
         // Re-enable input
         this.setInputEnabled(true);
@@ -695,8 +695,8 @@ export class ConversationCard implements TugCard {
         request_id: event.request_id,
         answers,
       };
-      const encoded = encodeConversationInput(response);
-      this.connection.send(encoded);
+      const payload = new TextEncoder().encode(JSON.stringify(response));
+      this.connection.send(FeedId.CONVERSATION_INPUT, payload);
 
       // Re-enable input
       this.setInputEnabled(true);
@@ -735,8 +735,8 @@ export class ConversationCard implements TugCard {
     const interrupt: InterruptInput = {
       type: "interrupt",
     };
-    const encoded = encodeConversationInput(interrupt);
-    this.connection.send(encoded);
+    const payload = new TextEncoder().encode(JSON.stringify(interrupt));
+    this.connection.send(FeedId.CONVERSATION_INPUT, payload);
   }
 
   private updateButtonState(): void {
