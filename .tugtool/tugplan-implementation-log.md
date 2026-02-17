@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-17T19:43:14Z
+bead: tugtool-jdn.2
+---
+
+## #step-1: Added routeTopLevelEvent() handling system/assistant/user/result/stream_event/control/keep_alive types, refactored event loop for two-tier routing, added thinking_delta and content_block_start tool_use support, 21 new tests (33 total)
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-17T19:34:55Z
 bead: tugtool-jdn.1

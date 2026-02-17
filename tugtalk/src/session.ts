@@ -88,7 +88,7 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
 }
 
 /**
- * Context passed to mapStreamEvent for IPC message construction.
+ * Context passed to mapStreamEvent and routeTopLevelEvent for IPC message construction.
  */
 export interface EventMappingContext {
   msgId: string;
@@ -97,20 +97,283 @@ export interface EventMappingContext {
 }
 
 /**
- * Result of mapping a single stream-json event to IPC outbound messages.
+ * Result of mapping a single stream-json (inner) event to IPC outbound messages.
+ * Note: sessionId was removed -- session capture now happens in routeTopLevelEvent
+ * via the top-level system/init event.
  */
 export interface EventMappingResult {
   messages: OutboundMessage[];
   newRev: number;
   partialText: string;
   gotResult: boolean;
-  sessionId?: string;
 }
 
 /**
- * Map a single stream-json event to zero or more IPC outbound messages.
+ * Result metadata from a result event, stored for CostUpdate emission (Step 3).
+ */
+export interface ResultMetadata {
+  subtype: string;
+  total_cost_usd?: number;
+  num_turns?: number;
+  duration_ms?: number;
+  duration_api_ms?: number;
+  usage?: Record<string, unknown>;
+  modelUsage?: Record<string, unknown>;
+  permission_denials?: unknown[];
+  is_api_error?: boolean;
+}
+
+/**
+ * Result of routing a single top-level stdout message to IPC outbound messages.
+ * Per D03 (#d03-event-routing) two-tier routing architecture.
+ */
+export interface TopLevelRoutingResult {
+  messages: OutboundMessage[];
+  gotResult: boolean;
+  sessionId?: string;
+  // If set, the caller should delegate to mapStreamEvent() for inner processing.
+  streamEvent?: Record<string, unknown>;
+  // If set, the caller should handle the permission/question control flow.
+  controlRequest?: Record<string, unknown>;
+  // Preserved from all 5 message types per PN-8 (#pn-parent-tool-use-id-scope).
+  parentToolUseId?: string;
+  // Cost/usage metadata from result events, emitted as CostUpdate in Step 3.
+  resultMetadata?: ResultMetadata;
+  // Raw system init metadata for SystemMetadata emission in Step 3.
+  systemMetadata?: Record<string, unknown>;
+}
+
+/**
+ * Route a single top-level stdout message to IPC outbound messages.
+ * Handles all 8+ top-level message types per D03.
+ * Exported for unit testing.
+ */
+export function routeTopLevelEvent(
+  event: Record<string, unknown>,
+  ctx: EventMappingContext
+): TopLevelRoutingResult {
+  const messages: OutboundMessage[] = [];
+  let gotResult = false;
+  let sessionId: string | undefined;
+  let streamEvent: Record<string, unknown> | undefined;
+  let controlRequest: Record<string, unknown> | undefined;
+  let parentToolUseId: string | undefined;
+  let resultMetadata: ResultMetadata | undefined;
+  let systemMetadata: Record<string, unknown> | undefined;
+
+  // parent_tool_use_id is present on all 5 message types per PN-8.
+  const rawParentId = event.parent_tool_use_id;
+  if (typeof rawParentId === "string" && rawParentId.length > 0) {
+    parentToolUseId = rawParentId;
+  }
+
+  const eventType = event.type as string | undefined;
+
+  switch (eventType) {
+    case "system": {
+      const subtype = event.subtype as string | undefined;
+      if (subtype === "init") {
+        // Capture session_id from system/init per D04 (#d04-session-id-capture).
+        const sid = event.session_id as string | undefined;
+        if (sid) {
+          sessionId = sid;
+        }
+        // Store raw system metadata for SystemMetadata emission in Step 3.
+        systemMetadata = {
+          tools: event.tools,
+          model: event.model,
+          permissionMode: event.permissionMode,
+          cwd: event.cwd,
+          slash_commands: event.slash_commands,
+          plugins: event.plugins,
+          agents: event.agents,
+          skills: event.skills,
+          claude_code_version: event.claude_code_version,
+        };
+      } else if (subtype === "compact_boundary") {
+        // Emit compact boundary marker. CompactBoundary type defined in Step 2.1.
+        messages.push({ type: "compact_boundary" } as unknown as OutboundMessage);
+      }
+      break;
+    }
+
+    case "assistant": {
+      // Complete assistant turn message per D03.
+      const message = event.message as Record<string, unknown> | undefined;
+      const content = (message?.content as Array<Record<string, unknown>>) || [];
+
+      for (const block of content) {
+        if (block.type === "text") {
+          // Complete assistant text block.
+          messages.push({
+            type: "assistant_text",
+            msg_id: ctx.msgId,
+            seq: ctx.seq,
+            rev: ctx.rev,
+            text: (block.text as string) || "",
+            is_partial: false,
+            status: "complete",
+          });
+        } else if (block.type === "tool_use") {
+          // Tool use block within assistant message.
+          messages.push({
+            type: "tool_use",
+            msg_id: ctx.msgId,
+            seq: ctx.seq,
+            tool_name: (block.name as string) || "",
+            tool_use_id: (block.id as string) || "",
+            input: (block.input as object) || {},
+          });
+        } else if (block.type === "thinking") {
+          // Extended thinking block per D12 (#d12-extended-thinking).
+          // ThinkingText type defined in Step 2.1; cast for now.
+          messages.push({
+            type: "thinking_text",
+            msg_id: ctx.msgId,
+            seq: ctx.seq,
+            text: (block.text as string) || "",
+            is_partial: false,
+            status: "complete",
+          } as unknown as OutboundMessage);
+        }
+      }
+      break;
+    }
+
+    case "user": {
+      // Top-level user message; contains tool_result blocks from resolved tool calls.
+      const message = event.message as Record<string, unknown> | undefined;
+      const content = (message?.content as Array<Record<string, unknown>>) || [];
+
+      for (const block of content) {
+        if (block.type === "tool_result") {
+          // Basic tool_result routing. Structured/slash extraction deferred to Step 2.3.
+          const blockContent = block.content;
+          let output = "";
+          if (typeof blockContent === "string") {
+            output = blockContent;
+          } else if (Array.isArray(blockContent)) {
+            // Content may be an array of content blocks; extract text blocks.
+            output = (blockContent as Array<Record<string, unknown>>)
+              .filter((b) => b.type === "text")
+              .map((b) => b.text as string)
+              .join("");
+          }
+          messages.push({
+            type: "tool_result",
+            tool_use_id: (block.tool_use_id as string) || "",
+            output,
+            is_error: block.is_error === true,
+          });
+        }
+      }
+      break;
+    }
+
+    case "result": {
+      // Turn complete per D03. Extract subtype and cost metadata.
+      gotResult = true;
+      const subtype = (event.subtype as string) || "error";
+      const resultText = event.result as string | undefined;
+
+      // Detect API errors per PN-2 (#pn-api-error-subtype).
+      let isApiError = false;
+      if (subtype === "success" && typeof resultText === "string" && resultText.startsWith("API Error:")) {
+        isApiError = true;
+      }
+
+      // Store cost/usage metadata for CostUpdate emission in Step 3.
+      resultMetadata = {
+        subtype,
+        total_cost_usd: event.total_cost_usd as number | undefined,
+        num_turns: event.num_turns as number | undefined,
+        duration_ms: event.duration_ms as number | undefined,
+        duration_api_ms: event.duration_api_ms as number | undefined,
+        usage: event.usage as Record<string, unknown> | undefined,
+        modelUsage: event.modelUsage as Record<string, unknown> | undefined,
+        permission_denials: event.permission_denials as unknown[] | undefined,
+        is_api_error: isApiError || undefined,
+      };
+
+      // If result has text content, emit assistant_text before turn_complete.
+      if (typeof resultText === "string" && resultText.length > 0) {
+        messages.push({
+          type: "assistant_text",
+          msg_id: ctx.msgId,
+          seq: ctx.seq,
+          rev: ctx.rev,
+          text: resultText,
+          is_partial: false,
+          status: "complete",
+        });
+      }
+
+      // Map subtype to "success" or "error" for backward compatibility.
+      // Detailed subtype stored in resultMetadata.
+      const resultValue = subtype === "success" ? "success" : "error";
+      messages.push({
+        type: "turn_complete",
+        msg_id: ctx.msgId,
+        seq: ctx.seq,
+        result: resultValue,
+      });
+      break;
+    }
+
+    case "stream_event": {
+      // Unwrap the inner event for mapStreamEvent() delegation per D03.
+      streamEvent = event.event as Record<string, unknown> | undefined;
+      break;
+    }
+
+    case "control_request": {
+      // Return for event loop handling (full flow in Step 2).
+      controlRequest = event;
+      break;
+    }
+
+    case "control_response": {
+      // Acknowledgment of our outbound control request; no IPC emission needed.
+      console.log(`Received control_response: ${JSON.stringify(event)}`);
+      break;
+    }
+
+    case "keep_alive": {
+      // Heartbeat; produce nothing.
+      break;
+    }
+
+    case "control_cancel_request": {
+      // Log the cancellation (actual dialog cancellation handled in Step 2).
+      console.log(`Received control_cancel_request: ${JSON.stringify(event)}`);
+      break;
+    }
+
+    default: {
+      console.log(`Unhandled top-level event type=${eventType ?? "unknown"}`);
+      break;
+    }
+  }
+
+  return {
+    messages,
+    gotResult,
+    sessionId,
+    streamEvent,
+    controlRequest,
+    parentToolUseId,
+    resultMetadata,
+    systemMetadata,
+  };
+}
+
+/**
+ * Map a single stream-json inner event (from stream_event wrapper) to IPC messages.
  * Exported for unit testing per Step 1 strategy.
  * Per Table T01 (#t01-event-mapping).
+ *
+ * Note: session_id capture and assistant/result handling have been removed --
+ * they are now handled by routeTopLevelEvent() at the top level.
  */
 export function mapStreamEvent(
   event: Record<string, unknown>,
@@ -121,18 +384,24 @@ export function mapStreamEvent(
   let newRev = ctx.rev;
   let partialText = accumulatedPartialText;
   let gotResult = false;
-  let sessionId: string | undefined;
 
   const eventType = event.type as string | undefined;
 
-  // Capture session_id from any event that has it
-  const eventSessionId = event.session_id as string | undefined;
-  if (eventSessionId) {
-    sessionId = eventSessionId;
-  }
-
-  if (eventType === "content_block_delta") {
-    // Streaming text delta per Table T01
+  if (eventType === "content_block_start") {
+    // Extract tool name from content_block_start/tool_use per PN-16 (#pn-block-start-tool-name).
+    const contentBlock = event.content_block as Record<string, unknown> | undefined;
+    if (contentBlock?.type === "tool_use") {
+      messages.push({
+        type: "tool_use",
+        msg_id: ctx.msgId,
+        seq: ctx.seq,
+        tool_name: (contentBlock.name as string) || "",
+        tool_use_id: (contentBlock.id as string) || "",
+        input: {},
+      });
+    }
+  } else if (eventType === "content_block_delta") {
+    // Streaming text/thinking delta per Table T01.
     const delta = event.delta as Record<string, unknown> | undefined;
     if (delta?.type === "text_delta" && typeof delta.text === "string") {
       partialText += delta.text;
@@ -145,40 +414,20 @@ export function mapStreamEvent(
         is_partial: true,
         status: "partial",
       });
-    }
-  } else if (eventType === "assistant") {
-    // Complete assistant message per Table T01
-    const message = event.message as Record<string, unknown> | undefined;
-    const content = (message?.content as Array<Record<string, unknown>>) || [];
-    const text = content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text as string)
-      .join("");
-
-    messages.push({
-      type: "assistant_text",
-      msg_id: ctx.msgId,
-      seq: ctx.seq,
-      rev: newRev,
-      text,
-      is_partial: false,
-      status: "complete",
-    });
-
-    // Extract tool uses from message content
-    const toolBlocks = content.filter((block) => block.type === "tool_use");
-    for (const tool of toolBlocks) {
+    } else if (delta?.type === "thinking_delta" && typeof delta.text === "string") {
+      // Extended thinking delta per D12 (#d12-extended-thinking).
+      // ThinkingText type defined in Step 2.1; cast for now.
       messages.push({
-        type: "tool_use",
+        type: "thinking_text",
         msg_id: ctx.msgId,
         seq: ctx.seq,
-        tool_name: tool.name as string,
-        tool_use_id: tool.id as string,
-        input: tool.input as object,
-      });
+        text: delta.text,
+        is_partial: true,
+        status: "partial",
+      } as unknown as OutboundMessage);
     }
   } else if (eventType === "tool_use") {
-    // Direct tool_use event per Table T01
+    // Direct tool_use event per Table T01.
     messages.push({
       type: "tool_use",
       msg_id: ctx.msgId,
@@ -188,41 +437,18 @@ export function mapStreamEvent(
       input: (event.input as object) || {},
     });
   } else if (eventType === "tool_result" || eventType === "tool_progress") {
-    // Tool result/progress per Table T01
+    // Tool result/progress per Table T01.
     messages.push({
       type: "tool_result",
       tool_use_id: (event.tool_use_id as string) || "",
       output: (event.output as string) || "",
       is_error: event.is_error === true,
     });
-  } else if (eventType === "result") {
-    // Turn complete per Table T01
-    const resultText = event.result as string | undefined;
-    if (typeof resultText === "string" && resultText.length > 0) {
-      messages.push({
-        type: "assistant_text",
-        msg_id: ctx.msgId,
-        seq: ctx.seq,
-        rev: newRev++,
-        text: resultText,
-        is_partial: false,
-        status: "complete",
-      });
-    }
-
-    const result = event.subtype === "success" ? "success" : "error";
-    messages.push({
-      type: "turn_complete",
-      msg_id: ctx.msgId,
-      seq: ctx.seq,
-      result,
-    });
-    gotResult = true;
   }
-  // Other event types (content_block_start, content_block_stop, message_start,
-  // message_delta, message_stop) are internal tracking events -- no IPC message emitted.
+  // content_block_stop, message_start, message_delta, message_stop, user (replay)
+  // are internal tracking events -- no IPC message emitted.
 
-  return { messages, newRev, partialText, gotResult, sessionId };
+  return { messages, newRev, partialText, gotResult };
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +573,7 @@ export class SessionManager {
     this.stdoutBuffer = "";
 
     // Emit session_init with existing ID or "pending" for new sessions.
-    // The real session ID will be captured from stream events during first message.
+    // The real session ID will be captured from the system/init event during first message.
     const initId = existingId || "pending";
     writeLine({
       type: "session_init",
@@ -361,8 +587,9 @@ export class SessionManager {
   }
 
   /**
-   * Handle user_message: write to claude stdin, read and map stream-json events to IPC.
-   * Uses mapStreamEvent() for event-to-IPC mapping per Table T01.
+   * Handle user_message: write to claude stdin, read and route top-level events,
+   * delegate stream_event payloads to mapStreamEvent().
+   * Two-tier routing per D03 (#d03-event-routing).
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
     if (!this.claudeProcess) {
@@ -393,7 +620,8 @@ export class SessionManager {
     stdin.write(userInput);
     stdin.flush();
 
-    // Read and process stream-json events until result event
+    // Read and process stream-json events until result event.
+    // Two-tier routing: routeTopLevelEvent() first, then mapStreamEvent() for stream_events.
     try {
       while (true) {
         const line = await this.readNextLine();
@@ -431,42 +659,41 @@ export class SessionManager {
           rev: this.currentRev,
         };
 
-        const result = mapStreamEvent(event, ctx, partialText);
+        // Tier 1: route the top-level message type.
+        const routeResult = routeTopLevelEvent(event, ctx);
 
-        // Persist session_id if captured for the first time
-        if (result.sessionId && !this.sessionIdPersisted) {
+        // Persist session_id if captured from system/init event per D04.
+        if (routeResult.sessionId && !this.sessionIdPersisted) {
           this.sessionIdPersisted = true;
-          this.persistSessionId(result.sessionId).catch((err: unknown) =>
+          this.persistSessionId(routeResult.sessionId).catch((err: unknown) =>
             console.error("Failed to persist session ID:", err)
           );
         }
 
-        // Emit all mapped IPC messages
-        for (const ipcMsg of result.messages) {
+        // Emit IPC messages from router.
+        for (const ipcMsg of routeResult.messages) {
           writeLine(ipcMsg);
         }
 
-        // Update state from mapping result
-        this.currentRev = result.newRev;
-        partialText = result.partialText;
-        gotResult = result.gotResult;
-
-        if (gotResult) {
-          break;
+        // Tier 2: if router returned a stream_event, delegate to mapStreamEvent().
+        if (routeResult.streamEvent) {
+          const streamResult = mapStreamEvent(routeResult.streamEvent, ctx, partialText);
+          for (const ipcMsg of streamResult.messages) {
+            writeLine(ipcMsg);
+          }
+          this.currentRev = streamResult.newRev;
+          partialText = streamResult.partialText;
+          // stream_events do not set gotResult; only top-level result events do.
         }
 
-        // Log unhandled event types (no messages produced and not a known internal type)
-        if (result.messages.length === 0) {
-          const eventType = event.type as string | undefined;
-          const knownInternalTypes = new Set([
-            "content_block_start", "content_block_stop",
-            "message_start", "message_delta", "message_stop",
-            // replay events from --replay-user-messages
-            "user",
-          ]);
-          if (eventType && !knownInternalTypes.has(eventType)) {
-            console.log(`Unhandled stream-json event type=${eventType} subtype=${(event.subtype as string | undefined) ?? "none"}`);
-          }
+        // Log pending control_request (full handling in Step 2).
+        if (routeResult.controlRequest) {
+          console.log(`Received control_request (handling deferred to Step 2): ${JSON.stringify(routeResult.controlRequest)}`);
+        }
+
+        gotResult = routeResult.gotResult;
+        if (gotResult) {
+          break;
         }
       }
     } catch (err) {

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { SessionManager, buildClaudeArgs } from "../session.ts";
+import { SessionManager, buildClaudeArgs, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 
 // ---------------------------------------------------------------------------
@@ -244,5 +244,280 @@ describe("stdin message format", () => {
     expect(parsed.message.content.length).toBe(1);
     expect(parsed.message.content[0].type).toBe("text");
     expect(parsed.message.content[0].text).toBe("hello world");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// routeTopLevelEvent tests (Step 1)
+// ---------------------------------------------------------------------------
+
+const baseCtx: EventMappingContext = { msgId: "msg-1", seq: 0, rev: 0 };
+
+describe("routeTopLevelEvent", () => {
+  test("system/init captures session_id and metadata", () => {
+    const event = {
+      type: "system",
+      subtype: "init",
+      session_id: "sess-123",
+      tools: ["Read", "Write"],
+      model: "claude-opus-4-6",
+      cwd: "/test",
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.sessionId).toBe("sess-123");
+    expect(result.systemMetadata).toBeDefined();
+    expect((result.systemMetadata as any).tools).toEqual(["Read", "Write"]);
+    expect((result.systemMetadata as any).model).toBe("claude-opus-4-6");
+    expect((result.systemMetadata as any).cwd).toBe("/test");
+    expect(result.gotResult).toBe(false);
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("system/compact_boundary emits marker", () => {
+    const event = { type: "system", subtype: "compact_boundary" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    expect((result.messages[0] as any).type).toBe("compact_boundary");
+    expect(result.gotResult).toBe(false);
+  });
+
+  test("assistant text content emits complete assistant_text", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "Hello world" }],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("assistant_text");
+    expect(msg.is_partial).toBe(false);
+    expect(msg.text).toBe("Hello world");
+    expect(msg.status).toBe("complete");
+    expect(result.gotResult).toBe(false);
+  });
+
+  test("assistant tool_use blocks emits tool_use", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "Read", id: "tu-1", input: { path: "/a.ts" } },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("tool_use");
+    expect(msg.tool_name).toBe("Read");
+    expect(msg.tool_use_id).toBe("tu-1");
+    expect(msg.input).toEqual({ path: "/a.ts" });
+  });
+
+  test("assistant thinking blocks emits thinking_text", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [{ type: "thinking", text: "Let me think..." }],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("thinking_text");
+    expect(msg.text).toBe("Let me think...");
+    expect(msg.is_partial).toBe(false);
+  });
+
+  test("result/success emits turn_complete with result: success", () => {
+    const event = { type: "result", subtype: "success", result: "" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.gotResult).toBe(true);
+    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("success");
+  });
+
+  test("result/error_during_execution emits error turn_complete", () => {
+    const event = { type: "result", subtype: "error_during_execution", result: "" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.gotResult).toBe(true);
+    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("error");
+  });
+
+  test("result/error_max_turns stores correct subtype in resultMetadata", () => {
+    const event = { type: "result", subtype: "error_max_turns", result: "" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.gotResult).toBe(true);
+    expect(result.resultMetadata).toBeDefined();
+    expect(result.resultMetadata!.subtype).toBe("error_max_turns");
+    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc.result).toBe("error");
+  });
+
+  test("result/error_max_budget_usd stores correct subtype in resultMetadata", () => {
+    const event = { type: "result", subtype: "error_max_budget_usd", result: "" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.resultMetadata!.subtype).toBe("error_max_budget_usd");
+    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc.result).toBe("error");
+  });
+
+  test("result/error_max_structured_output_retries stores correct subtype", () => {
+    const event = { type: "result", subtype: "error_max_structured_output_retries", result: "" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.resultMetadata!.subtype).toBe("error_max_structured_output_retries");
+    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc.result).toBe("error");
+  });
+
+  test("result/success with API Error text detects API error per PN-2", () => {
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "API Error: 400 {\"error\":{\"message\":\"Bad request\"}}",
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.gotResult).toBe(true);
+    expect(result.resultMetadata).toBeDefined();
+    expect(result.resultMetadata!.is_api_error).toBe(true);
+  });
+
+  test("stream_event returns unwrapped inner event", () => {
+    const innerEvent = { type: "content_block_delta", delta: { type: "text_delta", text: "hi" } };
+    const event = { type: "stream_event", event: innerEvent };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.streamEvent).toBeDefined();
+    expect(result.streamEvent).toEqual(innerEvent);
+    expect(result.messages).toHaveLength(0);
+    expect(result.gotResult).toBe(false);
+  });
+
+  test("user/tool_result emits tool_result per block", () => {
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "tu-1", content: "file text", is_error: false },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("tool_result");
+    expect(msg.tool_use_id).toBe("tu-1");
+    expect(msg.output).toBe("file text");
+    expect(msg.is_error).toBe(false);
+  });
+
+  test("control_request returns it for handling", () => {
+    const event = {
+      type: "control_request",
+      request_id: "req-1",
+      request: { subtype: "can_use_tool" },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.controlRequest).toBeDefined();
+    expect(result.controlRequest).toBe(event);
+    expect(result.messages).toHaveLength(0);
+    expect(result.gotResult).toBe(false);
+  });
+
+  test("keep_alive produces nothing", () => {
+    const event = { type: "keep_alive" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(0);
+    expect(result.gotResult).toBe(false);
+    expect(result.sessionId).toBeUndefined();
+    expect(result.streamEvent).toBeUndefined();
+    expect(result.controlRequest).toBeUndefined();
+  });
+
+  test("preserves parent_tool_use_id from all 5 message types", () => {
+    const parentId = "parent-123";
+
+    const systemEvent = { type: "system", subtype: "init", session_id: "s1", parent_tool_use_id: parentId };
+    const assistantEvent = { type: "assistant", message: { content: [] }, parent_tool_use_id: parentId };
+    const userEvent = { type: "user", message: { content: [] }, parent_tool_use_id: parentId };
+    const resultEvent = { type: "result", subtype: "success", result: "", parent_tool_use_id: parentId };
+    const streamEvent = { type: "stream_event", event: {}, parent_tool_use_id: parentId };
+
+    for (const event of [systemEvent, assistantEvent, userEvent, resultEvent, streamEvent]) {
+      const result = routeTopLevelEvent(event, baseCtx);
+      expect(result.parentToolUseId).toBe(parentId);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapStreamEvent (updated) tests (Step 1)
+// ---------------------------------------------------------------------------
+
+describe("mapStreamEvent (updated)", () => {
+  test("content_block_start/tool_use extracts tool name per PN-16", () => {
+    const event = {
+      type: "content_block_start",
+      content_block: { type: "tool_use", name: "Read", id: "tu-1" },
+    };
+    const result = mapStreamEvent(event, baseCtx, "");
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("tool_use");
+    expect(msg.tool_name).toBe("Read");
+    expect(msg.tool_use_id).toBe("tu-1");
+    expect(msg.input).toEqual({});
+  });
+
+  test("content_block_start with non-tool_use type produces no messages", () => {
+    const event = {
+      type: "content_block_start",
+      content_block: { type: "text", text: "" },
+    };
+    const result = mapStreamEvent(event, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("thinking_delta emits thinking_text with is_partial: true", () => {
+    const event = {
+      type: "content_block_delta",
+      delta: { type: "thinking_delta", text: "thinking..." },
+    };
+    const result = mapStreamEvent(event, baseCtx, "");
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("thinking_text");
+    expect(msg.text).toBe("thinking...");
+    expect(msg.is_partial).toBe(true);
+    expect(msg.status).toBe("partial");
+  });
+
+  test("content_block_delta/text_delta still works correctly", () => {
+    const event = {
+      type: "content_block_delta",
+      delta: { type: "text_delta", text: "hello" },
+    };
+    const result = mapStreamEvent(event, baseCtx, "prior ");
+    expect(result.messages).toHaveLength(1);
+    const msg = result.messages[0] as any;
+    expect(msg.type).toBe("assistant_text");
+    expect(msg.text).toBe("hello");
+    expect(msg.is_partial).toBe(true);
+    expect(result.partialText).toBe("prior hello");
+  });
+
+  test("mapStreamEvent result no longer has sessionId field", () => {
+    const event = {
+      type: "content_block_delta",
+      delta: { type: "text_delta", text: "x" },
+      session_id: "should-not-capture",
+    };
+    const result = mapStreamEvent(event, baseCtx, "");
+    // sessionId should not be present on EventMappingResult
+    expect("sessionId" in result).toBe(false);
   });
 });
