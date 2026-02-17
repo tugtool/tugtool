@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-15
+date: 2025-02-17T00:04:07Z
+bead: tugtool-3f1.18
+---
+
+## #step-15: Added auto-focus on conversation card mount, fixed TugCard interface compliance (onResize/destroy), added CSS for error banner, permission mode selector, and session divider. Added 4 new tests. 231 total tugdeck tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-frontend.md
+
+---
+
+---
 step: #step-14-summary
 date: 2025-02-16T23:55:20Z
 bead: tugtool-3f1.17

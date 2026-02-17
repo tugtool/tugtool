@@ -1092,3 +1092,55 @@
 .message-user .attachment-chips {
   margin-top: 8px;
 }
+
+/* Error banner styles */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  margin: 0 0 4px 0;
+}
+
+.error-banner-recoverable {
+  background: var(--warning);
+  color: var(--warning-foreground);
+}
+
+.error-banner-fatal {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.error-banner-reconnected {
+  background: var(--success);
+  color: var(--success-foreground);
+}
+
+.error-banner svg {
+  display: block;
+}
+
+/* Permission mode selector */
+.permission-mode-select {
+  position: absolute;
+  right: 28px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+/* Session divider */
+.session-divider {
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}

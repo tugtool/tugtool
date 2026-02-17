@@ -257,6 +257,9 @@ export class ConversationCard implements TugCard {
 
     // Load cached messages for instant rendering
     this.loadCachedMessages();
+
+    // Auto-focus the textarea on mount
+    this.textarea.focus();
   }
 
   private async loadCachedMessages(): Promise<void> {
@@ -816,7 +819,25 @@ export class ConversationCard implements TugCard {
     }
   }
 
-  resize(): void {
+  onResize(_width: number, _height: number): void {
     // No special resize handling needed
+  }
+
+  destroy(): void {
+    // Remove keyboard listener
+    if (this.keydownHandler) {
+      document.removeEventListener("keydown", this.keydownHandler);
+      this.keydownHandler = undefined;
+    }
+
+    // Close session cache
+    if (this.sessionCache) {
+      this.sessionCache.close();
+    }
+
+    // Clear tool cards and pending maps
+    this.toolCards.clear();
+    this.pendingApprovals.clear();
+    this.pendingQuestions.clear();
   }
 }

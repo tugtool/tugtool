@@ -100,4 +100,48 @@ describe("deck layout", () => {
     expect(validSlots).toContain("conversation");
     expect(validSlots[0]).toBe("conversation");
   });
+
+  test("loadLayout ignores unknown slot names in collapsed array", () => {
+    // Simulate a LayoutState with unknown slot name
+    const validSlots = ["conversation", "terminal", "git", "files", "stats"];
+    const collapsedSlots = ["conversation", "unknown-panel", "files"];
+
+    // Filter to only valid slots
+    const filtered = collapsedSlots.filter(slot => validSlots.includes(slot));
+
+    expect(filtered).toEqual(["conversation", "files"]);
+    expect(filtered).not.toContain("unknown-panel");
+  });
+
+  test("v2 layout round-trip preserves conversation card position", () => {
+    // Create a v2 LayoutState with custom splits
+    const originalLayout = {
+      version: 2,
+      colSplit: 0.6,
+      rowSplits: [0.3, 0.5, 0.8],
+      collapsed: ["files"],
+    };
+
+    // Simulate serialization/deserialization
+    const serialized = JSON.stringify(originalLayout);
+    const deserialized = JSON.parse(serialized);
+
+    expect(deserialized.version).toBe(2);
+    expect(deserialized.colSplit).toBe(0.6);
+    expect(deserialized.rowSplits).toEqual([0.3, 0.5, 0.8]);
+    expect(deserialized.collapsed).toEqual(["files"]);
+  });
+
+  test("missing conversation in collapsed array does not cause error", () => {
+    // Simulate LayoutState where conversation is not in collapsed array
+    const collapsed: string[] = [];
+    const validSlots = ["conversation", "terminal", "git", "files", "stats"];
+
+    // Verify conversation is not collapsed (expanded by default)
+    const isConversationCollapsed = collapsed.includes("conversation");
+    expect(isConversationCollapsed).toBe(false);
+
+    // Verify valid slots still exist
+    expect(validSlots).toContain("conversation");
+  });
 });

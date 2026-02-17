@@ -614,4 +614,13 @@ describe("conversation-card", () => {
       expect(select.value).toBe("acceptEdits");
     });
   });
+
+  describe("auto-focus", () => {
+    test("textarea receives focus on mount", () => {
+      const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+
+      // Verify textarea is the active element
+      expect(document.activeElement).toBe(textarea);
+    });
+  });
 });
