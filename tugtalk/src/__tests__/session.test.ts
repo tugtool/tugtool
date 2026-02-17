@@ -307,7 +307,7 @@ describe("routeTopLevelEvent", () => {
     expect(result.gotResult).toBe(false);
   });
 
-  test("assistant text content emits complete assistant_text", () => {
+  test("assistant text content no longer emits assistant_text (delivered via streaming)", () => {
     const event = {
       type: "assistant",
       message: {
@@ -315,12 +315,8 @@ describe("routeTopLevelEvent", () => {
       },
     };
     const result = routeTopLevelEvent(event, baseCtx);
-    expect(result.messages).toHaveLength(1);
-    const msg = result.messages[0] as any;
-    expect(msg.type).toBe("assistant_text");
-    expect(msg.is_partial).toBe(false);
-    expect(msg.text).toBe("Hello world");
-    expect(msg.status).toBe("complete");
+    // Text content was already delivered via stream_event; assistant case skips it.
+    expect(result.messages).toHaveLength(0);
     expect(result.gotResult).toBe(false);
   });
 
@@ -342,7 +338,7 @@ describe("routeTopLevelEvent", () => {
     expect(msg.input).toEqual({ path: "/a.ts" });
   });
 
-  test("assistant thinking blocks emits thinking_text", () => {
+  test("assistant thinking blocks no longer emits thinking_text (delivered via streaming)", () => {
     const event = {
       type: "assistant",
       message: {
@@ -350,32 +346,34 @@ describe("routeTopLevelEvent", () => {
       },
     };
     const result = routeTopLevelEvent(event, baseCtx);
-    expect(result.messages).toHaveLength(1);
-    const msg = result.messages[0] as any;
-    expect(msg.type).toBe("thinking_text");
-    expect(msg.text).toBe("Let me think...");
-    expect(msg.is_partial).toBe(false);
+    // Thinking content was already delivered via stream_event; assistant case skips it.
+    expect(result.messages).toHaveLength(0);
   });
 
-  test("result/success emits turn_complete with result: success", () => {
+  test("result/success emits cost_update only (turn_complete emitted by handleUserMessage)", () => {
     const event = { type: "result", subtype: "success", result: "" };
     const result = routeTopLevelEvent(event, baseCtx);
     expect(result.gotResult).toBe(true);
-    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
-    expect(tc).toBeDefined();
-    expect(tc.result).toBe("success");
-    // result events now also emit cost_update before turn_complete.
+    // turn_complete is no longer emitted by routeTopLevelEvent; handleUserMessage emits it.
+    const tc = result.messages.find((m: any) => m.type === "turn_complete");
+    expect(tc).toBeUndefined();
+    // cost_update is still emitted.
     const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
     expect(cu).toBeDefined();
+    // resultMetadata.resultValue carries the value for handleUserMessage.
+    expect(result.resultMetadata).toBeDefined();
+    expect(result.resultMetadata!.resultValue).toBe("success");
   });
 
-  test("result/error_during_execution emits error turn_complete", () => {
+  test("result/error_during_execution sets resultValue to error (no turn_complete)", () => {
     const event = { type: "result", subtype: "error_during_execution", result: "" };
     const result = routeTopLevelEvent(event, baseCtx);
     expect(result.gotResult).toBe(true);
-    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
-    expect(tc).toBeDefined();
-    expect(tc.result).toBe("error");
+    // turn_complete is no longer emitted by routeTopLevelEvent.
+    const tc = result.messages.find((m: any) => m.type === "turn_complete");
+    expect(tc).toBeUndefined();
+    expect(result.resultMetadata).toBeDefined();
+    expect(result.resultMetadata!.resultValue).toBe("error");
   });
 
   test("result/error_max_turns stores correct subtype in resultMetadata", () => {
@@ -384,24 +382,30 @@ describe("routeTopLevelEvent", () => {
     expect(result.gotResult).toBe(true);
     expect(result.resultMetadata).toBeDefined();
     expect(result.resultMetadata!.subtype).toBe("error_max_turns");
-    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
-    expect(tc.result).toBe("error");
+    // turn_complete is no longer emitted by routeTopLevelEvent.
+    const tc = result.messages.find((m: any) => m.type === "turn_complete");
+    expect(tc).toBeUndefined();
+    expect(result.resultMetadata!.resultValue).toBe("error");
   });
 
   test("result/error_max_budget_usd stores correct subtype in resultMetadata", () => {
     const event = { type: "result", subtype: "error_max_budget_usd", result: "" };
     const result = routeTopLevelEvent(event, baseCtx);
     expect(result.resultMetadata!.subtype).toBe("error_max_budget_usd");
-    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
-    expect(tc.result).toBe("error");
+    // turn_complete is no longer emitted by routeTopLevelEvent.
+    const tc = result.messages.find((m: any) => m.type === "turn_complete");
+    expect(tc).toBeUndefined();
+    expect(result.resultMetadata!.resultValue).toBe("error");
   });
 
   test("result/error_max_structured_output_retries stores correct subtype", () => {
     const event = { type: "result", subtype: "error_max_structured_output_retries", result: "" };
     const result = routeTopLevelEvent(event, baseCtx);
     expect(result.resultMetadata!.subtype).toBe("error_max_structured_output_retries");
-    const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
-    expect(tc.result).toBe("error");
+    // turn_complete is no longer emitted by routeTopLevelEvent.
+    const tc = result.messages.find((m: any) => m.type === "turn_complete");
+    expect(tc).toBeUndefined();
+    expect(result.resultMetadata!.resultValue).toBe("error");
   });
 
   test("result/success with API Error text detects API error per PN-2", () => {
@@ -540,16 +544,14 @@ describe("routeTopLevelEvent", () => {
       },
     };
     const result = routeTopLevelEvent(event, baseCtx);
-    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
-    expect(cu).toBeDefined();
+    // cost_update is the only message from result (turn_complete is emitted by handleUserMessage).
+    expect(result.messages).toHaveLength(1);
+    const cu = result.messages[0] as any;
+    expect(cu.type).toBe("cost_update");
     expect(cu.total_cost_usd).toBe(0.042);
     expect(cu.duration_api_ms).toBe(3200);
     expect(cu.num_turns).toBe(3);
     expect(cu.modelUsage["claude-opus-4-6"]).toBeDefined();
-    // CostUpdate arrives before turn_complete in the messages array.
-    const cuIdx = result.messages.findIndex((m: any) => m.type === "cost_update");
-    const tcIdx = result.messages.findIndex((m: any) => m.type === "turn_complete");
-    expect(cuIdx).toBeLessThan(tcIdx);
   });
 
   test("system/compact_boundary produces CompactBoundary IPC (explicit type check)", () => {
@@ -559,7 +561,7 @@ describe("routeTopLevelEvent", () => {
     expect((result.messages[0] as any).type).toBe("compact_boundary");
   });
 
-  test("assistant with mixed content (text + tool_use + thinking) emits all three types", () => {
+  test("assistant with mixed content (text + tool_use + thinking) emits only tool_use", () => {
     const event = {
       type: "assistant",
       message: {
@@ -571,11 +573,12 @@ describe("routeTopLevelEvent", () => {
       },
     };
     const result = routeTopLevelEvent(event, baseCtx);
-    expect(result.messages).toHaveLength(3);
+    // Text and thinking were already delivered via streaming; only tool_use is emitted.
+    expect(result.messages).toHaveLength(1);
     const types = result.messages.map((m: any) => m.type);
-    expect(types).toContain("assistant_text");
+    expect(types).not.toContain("assistant_text");
     expect(types).toContain("tool_use");
-    expect(types).toContain("thinking_text");
+    expect(types).not.toContain("thinking_text");
   });
 
   test("result with permission_denials stores them in resultMetadata", () => {
@@ -630,9 +633,10 @@ describe("mapStreamEvent (updated)", () => {
   });
 
   test("thinking_delta emits thinking_text with is_partial: true", () => {
+    // Per §14: thinking_delta has delta.thinking, not delta.text.
     const event = {
       type: "content_block_delta",
-      delta: { type: "thinking_delta", text: "thinking..." },
+      delta: { type: "thinking_delta", thinking: "thinking..." },
     };
     const result = mapStreamEvent(event, baseCtx, "");
     expect(result.messages).toHaveLength(1);
@@ -824,7 +828,7 @@ describe("control protocol (Step 2.2)", () => {
     expect(parsed.response.response.message).toBe("Not allowed");
   });
 
-  test("handleQuestionAnswer sends control_response with answers in updatedInput", () => {
+  test("handleQuestionAnswer sends control_response with answers nested under 'answers' key per §5b", () => {
     const manager = new SessionManager("/tmp/tugtalk-ctrl-qa-" + Date.now());
 
     const pendingCR = {
@@ -849,14 +853,17 @@ describe("control protocol (Step 2.2)", () => {
     manager.handleQuestionAnswer({
       type: "question_answer",
       request_id: "req-qa-1",
-      answers: { answer_0: "Red" },
+      answers: { "Pick a color?": "Red" },
     });
 
     expect(writtenData.length).toBeGreaterThan(0);
     const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
     expect(parsed.type).toBe("control_response");
     expect(parsed.response.response.behavior).toBe("allow");
-    expect(parsed.response.response.updatedInput.answer_0).toBe("Red");
+    // Per §5b: answers nested under "answers" key.
+    expect(parsed.response.response.updatedInput.answers["Pick a color?"]).toBe("Red");
+    // Original questions preserved.
+    expect(parsed.response.response.updatedInput.questions).toBeDefined();
     expect((manager as any).pendingControlRequests.has("req-qa-1")).toBe(false);
   });
 
@@ -1039,7 +1046,7 @@ describe("structured tool results and user message parsing (Step 2.3)", () => {
     expect(structured.structured_result.filePath).toBe("/new.ts");
   });
 
-  test("user message with isReplay + local-command-stdout extracts output", () => {
+  test("user message with isReplay + local-command-stdout extracts output (array content)", () => {
     const event = {
       type: "user",
       isReplay: true,
@@ -1062,7 +1069,7 @@ describe("structured tool results and user message parsing (Step 2.3)", () => {
     expect((replayText as any).text).toContain("hello world");
   });
 
-  test("user message with isReplay + local-command-stderr extracts error", () => {
+  test("user message with isReplay + local-command-stderr extracts error (array content)", () => {
     const event = {
       type: "user",
       isReplay: true,
@@ -1081,6 +1088,44 @@ describe("structured tool results and user message parsing (Step 2.3)", () => {
     const errors = result.messages.filter((m: any) => m.type === "error");
     expect(errors.length).toBeGreaterThan(0);
     expect((errors[0] as any).message).toContain("command not found: foo");
+  });
+
+  test("user message with isReplay + string content extracts local-command-stdout (slash command)", () => {
+    // Slash commands like /context return content as a plain string, not array.
+    // Per §13c: {"type":"user","isReplay":true,"message":{"role":"user",
+    //   "content":"<local-command-stdout>## Context Usage\n**Model:** ...</local-command-stdout>"}}
+    const event = {
+      type: "user",
+      isReplay: true,
+      message: {
+        role: "user",
+        content: "<local-command-stdout>## Context Usage\n**Model:** claude-opus-4-6</local-command-stdout>",
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const textMsgs = result.messages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(1);
+    expect((textMsgs[0] as any).text).toContain("## Context Usage");
+    expect((textMsgs[0] as any).text).toContain("claude-opus-4-6");
+    expect((textMsgs[0] as any).is_partial).toBe(false);
+    // No tool_result messages since content is a string, not array.
+    const toolResults = result.messages.filter((m: any) => m.type === "tool_result");
+    expect(toolResults.length).toBe(0);
+  });
+
+  test("user message with isReplay + string content extracts local-command-stderr", () => {
+    const event = {
+      type: "user",
+      isReplay: true,
+      message: {
+        role: "user",
+        content: "<local-command-stderr>Error: No messages to compact</local-command-stderr>",
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const errors = result.messages.filter((m: any) => m.type === "error");
+    expect(errors.length).toBe(1);
+    expect((errors[0] as any).message).toContain("No messages to compact");
   });
 
   test("user message with isReplay + regular text is not re-emitted", () => {
@@ -1532,7 +1577,7 @@ describe("handleUserMessage integration", () => {
     expect(tc.result).toBe("error");
   });
 
-  test("isReplay slash command stdout extracted from replayed user message", async () => {
+  test("isReplay slash command stdout extracted from replayed user message (array content)", async () => {
     const manager = new SessionManager("/tmp/tugtalk-replay-" + Date.now());
     const mockStdin = injectMockSubprocess(manager, [
       {
@@ -1559,6 +1604,42 @@ describe("handleUserMessage integration", () => {
     const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
     const slashOutput = textMsgs.find((m: any) => m.text.includes("slash output text"));
     expect(slashOutput).toBeDefined();
+  });
+
+  test("slash command with string content (/context flow) produces output and no empty assistant_text", async () => {
+    // Simulates the exact /context protocol flow: user isReplay with string content,
+    // then result with empty result text. No streaming events.
+    const manager = new SessionManager("/tmp/tugtalk-slash-str-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "user",
+        isReplay: true,
+        message: {
+          role: "user",
+          content: "<local-command-stdout>## Context Usage\n**Model:** claude-opus-4-6\n**Tokens:** 23.9k / 200k (12%)</local-command-stdout>",
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "/context", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    // Must have the command output as assistant_text.
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    const contextOutput = textMsgs.find((m: any) => m.text.includes("Context Usage"));
+    expect(contextOutput).toBeDefined();
+    expect((contextOutput as any).is_partial).toBe(false);
+
+    // Must NOT have an empty assistant_text (the partialText-based one should be skipped).
+    const emptyTexts = textMsgs.filter((m: any) => m.text === "");
+    expect(emptyTexts.length).toBe(0);
+
+    // Must have turn_complete.
+    const turnComplete = ipcMessages.find((m: any) => m.type === "turn_complete");
+    expect(turnComplete).toBeDefined();
+    expect((turnComplete as any).result).toBe("success");
   });
 });
 
@@ -1623,6 +1704,417 @@ describe("ControlRequestForward blocked_path and tool_use_id (Step 6)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// §13 Slash Commands — Comprehensive coverage for all 12 commands
+// ---------------------------------------------------------------------------
+
+describe("slash commands: all 12 from §13", () => {
+  // =========================================================================
+  // LOCAL COMMANDS: /compact, /cost, /context
+  // Protocol: user(isReplay, string content) → result(success, "")
+  // =========================================================================
+
+  test("/context success: string content with local-command-stdout", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-context-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "user",
+        isReplay: true,
+        message: {
+          role: "user",
+          content: "<local-command-stdout>## Context Usage\n**Model:** claude-opus-4-6\n**Tokens:** 23.9k / 200k (12%)\n\n| Category | Tokens |\n|----------|--------|\n| System prompt | 3,200 |</local-command-stdout>",
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/context", attachments: [] })
+    );
+
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(1);
+    expect((textMsgs[0] as any).text).toContain("Context Usage");
+    expect((textMsgs[0] as any).text).toContain("23.9k / 200k");
+    expect((textMsgs[0] as any).is_partial).toBe(false);
+    // No empty ghost message.
+    expect(textMsgs.filter((m: any) => m.text === "").length).toBe(0);
+    // turn_complete present.
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/cost success: string content with cost data", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-cost-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "user",
+        isReplay: true,
+        message: {
+          role: "user",
+          content: "<local-command-stdout>Total cost: $0.04\nDuration: 12.3s\nInput tokens: 5,000\nOutput tokens: 1,200</local-command-stdout>",
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/cost", attachments: [] })
+    );
+
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(1);
+    expect((textMsgs[0] as any).text).toContain("Total cost: $0.04");
+    expect((textMsgs[0] as any).is_partial).toBe(false);
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/compact success: no output (just result)", async () => {
+    // Per §13a: /compact has "No output if successful."
+    // The CLI may emit no user message at all, just the result.
+    const manager = new SessionManager("/tmp/tugtalk-slash-compact-ok-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/compact", attachments: [] })
+    );
+
+    // No assistant_text (no output to show, partialText empty).
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(0);
+    // turn_complete must still be emitted.
+    const tc = ipcMessages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("success");
+  });
+
+  test("/compact error: string content with local-command-stderr", async () => {
+    // Per §13c: even errors have result subtype "success".
+    const manager = new SessionManager("/tmp/tugtalk-slash-compact-err-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "user",
+        isReplay: true,
+        message: {
+          role: "user",
+          content: "<local-command-stderr>Error: No messages to compact</local-command-stderr>",
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/compact", attachments: [] })
+    );
+
+    // Error message extracted from stderr tags.
+    const errors = ipcMessages.filter((m: any) => m.type === "error");
+    expect(errors.length).toBe(1);
+    expect((errors[0] as any).message).toContain("No messages to compact");
+    expect((errors[0] as any).recoverable).toBe(true);
+    // No assistant_text (no stdout).
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(0);
+    // turn_complete present.
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  // =========================================================================
+  // AGENT COMMANDS: /init, /review, /security-review, /pr-comments,
+  //                 /release-notes, /insights
+  // Protocol: system(init) → stream_event(deltas) → assistant → result
+  // Same as a regular "hello" message — full model turn with streaming.
+  // =========================================================================
+
+  test("/init: agent command produces streaming text + turn_complete", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-init-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-init",
+        cwd: "/proj", tools: ["Read"], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "I'll analyze" } } },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: " the codebase." } } },
+      { type: "assistant", message: { content: [{ type: "text", text: "I'll analyze the codebase." }] } },
+      { type: "result", subtype: "success", result: "I'll analyze the codebase." },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/init", attachments: [] })
+    );
+
+    // Streaming partials.
+    const partials = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(partials.length).toBe(2);
+    // Complete message with accumulated text.
+    const complete = ipcMessages.filter((m: any) => m.type === "assistant_text" && !m.is_partial);
+    expect(complete.length).toBe(1);
+    expect((complete[0] as any).text).toBe("I'll analyze the codebase.");
+    // turn_complete.
+    const tc = ipcMessages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("success");
+  });
+
+  test("/review: agent command with tool use (Read) works correctly", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-review-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-review",
+        cwd: "/proj", tools: ["Read", "Bash"], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      // Claude streams some text, then uses a tool.
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Reviewing PR..." } } },
+      { type: "assistant", message: { content: [
+        { type: "text", text: "Reviewing PR..." },
+        { type: "tool_use", name: "Bash", id: "tu-gh", input: { command: "gh pr view" } },
+      ] } },
+      // Tool result.
+      { type: "user", message: { content: [
+        { type: "tool_result", tool_use_id: "tu-gh", content: "PR #42: Fix bug", is_error: false },
+      ] } },
+      // Claude responds.
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: " LGTM!" } } },
+      { type: "assistant", message: { content: [{ type: "text", text: " LGTM!" }] } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/review", attachments: [] })
+    );
+
+    // Tool use emitted from assistant event.
+    const toolUses = ipcMessages.filter((m: any) => m.type === "tool_use");
+    expect(toolUses.length).toBeGreaterThanOrEqual(1);
+    expect((toolUses[0] as any).tool_name).toBe("Bash");
+    // Tool result emitted.
+    const toolResults = ipcMessages.filter((m: any) => m.type === "tool_result");
+    expect(toolResults.length).toBe(1);
+    expect((toolResults[0] as any).output).toBe("PR #42: Fix bug");
+    // turn_complete.
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/security-review: agent command streams multi-phase response", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-secreview-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-sec",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "## Phase 1: Static Analysis\nNo issues found." } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/security-review", attachments: [] })
+    );
+
+    const partials = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(partials.length).toBe(1);
+    expect((partials[0] as any).text).toContain("Phase 1");
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/pr-comments: agent command works like other agent commands", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-prcomm-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-prc",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "No PR comments found." } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/pr-comments", attachments: [] })
+    );
+
+    const complete = ipcMessages.find((m: any) => m.type === "assistant_text" && !m.is_partial);
+    expect(complete).toBeDefined();
+    expect((complete as any).text).toBe("No PR comments found.");
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/release-notes: agent command works like other agent commands", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-relnotes-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-rn",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "## v1.0.0\n- Initial release" } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/release-notes", attachments: [] })
+    );
+
+    const complete = ipcMessages.find((m: any) => m.type === "assistant_text" && !m.is_partial);
+    expect(complete).toBeDefined();
+    expect((complete as any).text).toContain("v1.0.0");
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/insights: agent command works like other agent commands", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-insights-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-ins",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Codebase: 15 files, 2,400 lines" } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/insights", attachments: [] })
+    );
+
+    const complete = ipcMessages.find((m: any) => m.type === "assistant_text" && !m.is_partial);
+    expect(complete).toBeDefined();
+    expect((complete as any).text).toContain("15 files");
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  // =========================================================================
+  // SKILL COMMANDS: /commit-message, /keybindings-help, /debug
+  // /commit-message: full model turn (same as agent commands).
+  // /keybindings-help: returns empty in stream-json.
+  // /debug: TUI-oriented, returns empty or minimal in stream-json.
+  // =========================================================================
+
+  test("/commit-message: skill triggers full model turn", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-commitmsg-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-cm",
+        cwd: "/proj", tools: ["Bash"], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "fix: resolve null pointer in auth flow" } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/commit-message", attachments: [] })
+    );
+
+    const complete = ipcMessages.find((m: any) => m.type === "assistant_text" && !m.is_partial);
+    expect(complete).toBeDefined();
+    expect((complete as any).text).toContain("fix:");
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  test("/keybindings-help: skill returns empty in stream-json (just result)", async () => {
+    // Per §13a: "Outputs to TUI; returns empty in stream-json."
+    const manager = new SessionManager("/tmp/tugtalk-slash-keybind-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/keybindings-help", attachments: [] })
+    );
+
+    // No assistant_text (nothing to show).
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(0);
+    // turn_complete still emitted so frontend exits loading state.
+    const tc = ipcMessages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("success");
+  });
+
+  test("/debug: skill returns empty in stream-json (just result)", async () => {
+    // Per §13a: "TUI-oriented."
+    const manager = new SessionManager("/tmp/tugtalk-slash-debug-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "/debug", attachments: [] })
+    );
+
+    // No assistant_text.
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    expect(textMsgs.length).toBe(0);
+    // turn_complete present.
+    expect(ipcMessages.find((m: any) => m.type === "turn_complete")).toBeDefined();
+  });
+
+  // =========================================================================
+  // REGULAR MESSAGE: "hello" (baseline for comparison)
+  // Protocol: system(init) → stream_event(deltas) → assistant → result
+  // =========================================================================
+
+  test("hello: regular message produces streaming + complete + turn_complete", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-slash-hello-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-hello",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hi there!" } } },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: " How can I help?" } } },
+      { type: "assistant", message: { content: [{ type: "text", text: "Hi there! How can I help?" }] } },
+      { type: "result", subtype: "success", result: "Hi there! How can I help?", total_cost_usd: 0.001 },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "hello", attachments: [] })
+    );
+
+    // Two streaming partials.
+    const partials = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(partials.length).toBe(2);
+    expect((partials[0] as any).text).toBe("Hi there!");
+    expect((partials[1] as any).text).toBe(" How can I help?");
+    // One complete message with accumulated text.
+    const complete = ipcMessages.filter((m: any) => m.type === "assistant_text" && !m.is_partial);
+    expect(complete.length).toBe(1);
+    expect((complete[0] as any).text).toBe("Hi there! How can I help?");
+    // cost_update before turn_complete.
+    const cuIdx = ipcMessages.findIndex((m: any) => m.type === "cost_update");
+    const tcIdx = ipcMessages.findIndex((m: any) => m.type === "turn_complete");
+    expect(cuIdx).toBeLessThan(tcIdx);
+    expect((ipcMessages[tcIdx] as any).result).toBe("success");
+  });
+});
+
 describe("handlePermissionMode control_request (Step 6)", () => {
   test("handlePermissionMode sends set_permission_mode control_request to stdin", () => {
     const manager = new SessionManager("/tmp/tugtalk-perm-ctrl-" + Date.now());
@@ -1655,5 +2147,584 @@ describe("handlePermissionMode control_request (Step 6)", () => {
       manager.handlePermissionMode({ type: "permission_mode", mode: "plan" });
     }).not.toThrow();
     expect((manager as any).permissionManager.getMode()).toBe("plan");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Protocol audit: §1-§23 section-by-section verification
+// ---------------------------------------------------------------------------
+
+describe("protocol audit: §2e stop_task handler", () => {
+  test("handleStopTask sends stop_task control_request to stdin per §2e", () => {
+    const manager = new SessionManager("/tmp/tugtalk-stoptask-" + Date.now());
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleStopTask("task-abc-123");
+
+    expect(writtenData.length).toBe(1);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_request");
+    expect(parsed.request.subtype).toBe("stop_task");
+    expect(parsed.request.task_id).toBe("task-abc-123");
+    expect(parsed.request_id).toMatch(/^ctrl-/);
+  });
+
+  test("handleStopTask without active process does not throw", () => {
+    const manager = new SessionManager("/tmp/tugtalk-stoptask-noproc-" + Date.now());
+    expect(() => manager.handleStopTask("task-xyz")).not.toThrow();
+  });
+});
+
+describe("protocol audit: §3d result is_error field", () => {
+  test("result event is_error=false captured in resultMetadata", () => {
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "done",
+      is_error: false,
+      total_cost_usd: 0.01,
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.gotResult).toBe(true);
+    expect(result.resultMetadata!.is_error).toBe(false);
+  });
+
+  test("result event is_error=true captured in resultMetadata", () => {
+    const event = {
+      type: "result",
+      subtype: "error_during_execution",
+      result: "",
+      is_error: true,
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.gotResult).toBe(true);
+    expect(result.resultMetadata!.is_error).toBe(true);
+  });
+
+  test("result event without is_error defaults to false", () => {
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "ok",
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.resultMetadata!.is_error).toBe(false);
+  });
+});
+
+describe("protocol audit: §11 all result subtypes", () => {
+  const subtypes = [
+    "success",
+    "error_during_execution",
+    "error_max_turns",
+    "error_max_budget_usd",
+    "error_max_structured_output_retries",
+  ];
+
+  for (const subtype of subtypes) {
+    test(`result subtype "${subtype}" is captured`, () => {
+      const event = { type: "result", subtype, result: "" };
+      const result = routeTopLevelEvent(event, baseCtx);
+      expect(result.gotResult).toBe(true);
+      expect(result.resultMetadata!.subtype).toBe(subtype);
+    });
+  }
+});
+
+describe("protocol audit: §12 cost/usage fields in result", () => {
+  test("all cost fields from result event are captured in resultMetadata", () => {
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "",
+      total_cost_usd: 0.042,
+      num_turns: 3,
+      duration_ms: 5000,
+      duration_api_ms: 4800,
+      usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 15000 },
+      modelUsage: {
+        "claude-opus-4-6": {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadInputTokens: 15000,
+          costUSD: 0.042,
+          contextWindow: 200000,
+          maxOutputTokens: 64000,
+        },
+      },
+      permission_denials: [{ tool_name: "Bash", tool_use_id: "tu-1" }],
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const meta = result.resultMetadata!;
+    expect(meta.total_cost_usd).toBe(0.042);
+    expect(meta.num_turns).toBe(3);
+    expect(meta.duration_ms).toBe(5000);
+    expect(meta.duration_api_ms).toBe(4800);
+    expect((meta.usage as any).cache_read_input_tokens).toBe(15000);
+    expect((meta.modelUsage as any)["claude-opus-4-6"].costUSD).toBe(0.042);
+    expect(meta.permission_denials).toHaveLength(1);
+  });
+
+  test("cost_update IPC emitted with all fields", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-cost-fields-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "result",
+        subtype: "success",
+        result: "",
+        total_cost_usd: 0.05,
+        num_turns: 2,
+        duration_ms: 3000,
+        duration_api_ms: 2800,
+        usage: { input_tokens: 200, output_tokens: 80 },
+        modelUsage: { "claude-opus-4-6": { costUSD: 0.05 } },
+      },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+    );
+
+    const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
+    expect(cu.total_cost_usd).toBe(0.05);
+    expect(cu.num_turns).toBe(2);
+    expect(cu.duration_ms).toBe(3000);
+    expect(cu.duration_api_ms).toBe(2800);
+    expect(cu.usage.input_tokens).toBe(200);
+    expect(cu.modelUsage["claude-opus-4-6"].costUSD).toBe(0.05);
+  });
+});
+
+describe("protocol audit: §14 extended thinking", () => {
+  test("thinking_delta stream events produce thinking_text IPC messages", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-thinking-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-think",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Let me think about this..." } } },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Here's my answer." } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "think hard", attachments: [] })
+    );
+
+    // Thinking text emitted before regular text.
+    const thinkMsgs = ipcMessages.filter((m: any) => m.type === "thinking_text");
+    expect(thinkMsgs.length).toBe(1);
+    expect((thinkMsgs[0] as any).text).toBe("Let me think about this...");
+    expect((thinkMsgs[0] as any).is_partial).toBe(true);
+    // Regular text also emitted.
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(textMsgs.length).toBe(1);
+    // Thinking comes before text in the output stream.
+    const thinkIdx = ipcMessages.findIndex((m: any) => m.type === "thinking_text");
+    const textIdx = ipcMessages.findIndex((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(thinkIdx).toBeLessThan(textIdx);
+  });
+});
+
+describe("protocol audit: §15 parent_tool_use_id forwarding", () => {
+  test("subagent events have parent_tool_use_id stamped on IPC messages", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-subagent-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-sub",
+        parent_tool_use_id: "toolu_task_1",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      {
+        type: "stream_event",
+        parent_tool_use_id: "toolu_task_1",
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "Subagent working..." } },
+      },
+      {
+        type: "result", subtype: "success", result: "",
+        parent_tool_use_id: "toolu_task_1",
+      },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "spawn task", attachments: [] })
+    );
+
+    // system_metadata should have parent_tool_use_id.
+    const sysMeta = ipcMessages.find((m: any) => m.type === "system_metadata") as any;
+    expect(sysMeta).toBeDefined();
+    expect(sysMeta.parent_tool_use_id).toBe("toolu_task_1");
+
+    // Streaming text should have parent_tool_use_id.
+    const textMsg = ipcMessages.find((m: any) => m.type === "assistant_text" && m.is_partial) as any;
+    expect(textMsg).toBeDefined();
+    expect(textMsg.parent_tool_use_id).toBe("toolu_task_1");
+  });
+
+  test("top-level events have no parent_tool_use_id", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-toplevel-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-top",
+        parent_tool_use_id: null,
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "hi" } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+    );
+
+    // No parent_tool_use_id on top-level messages.
+    const sysMeta = ipcMessages.find((m: any) => m.type === "system_metadata") as any;
+    expect(sysMeta.parent_tool_use_id).toBeUndefined();
+    const textMsg = ipcMessages.find((m: any) => m.type === "assistant_text" && m.is_partial) as any;
+    expect(textMsg.parent_tool_use_id).toBeUndefined();
+  });
+});
+
+describe("protocol audit: §16 multiple parallel tool uses", () => {
+  test("multiple tool_use blocks in one assistant message all produce IPC", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-parallel-tools-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-par",
+        cwd: "/proj", tools: ["Glob", "Bash"], model: "claude-opus-4-6",
+        permissionMode: "acceptEdits", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "I'll do both..." },
+            { type: "tool_use", id: "tu-1", name: "Glob", input: { pattern: "*.ts" } },
+            { type: "tool_use", id: "tu-2", name: "Bash", input: { command: "echo hi" } },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", tool_use_id: "tu-1", content: "a.ts\nb.ts", is_error: false },
+            { type: "tool_result", tool_use_id: "tu-2", content: "hi", is_error: false },
+          ],
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "do both", attachments: [] })
+    );
+
+    // Both tool_use IPC messages.
+    const toolUses = ipcMessages.filter((m: any) => m.type === "tool_use");
+    expect(toolUses.length).toBe(2);
+    expect((toolUses[0] as any).tool_name).toBe("Glob");
+    expect((toolUses[1] as any).tool_name).toBe("Bash");
+
+    // Both tool_result IPC messages with matching IDs.
+    const toolResults = ipcMessages.filter((m: any) => m.type === "tool_result");
+    expect(toolResults.length).toBe(2);
+    expect((toolResults[0] as any).tool_use_id).toBe("tu-1");
+    expect((toolResults[1] as any).tool_use_id).toBe("tu-2");
+  });
+});
+
+describe("protocol audit: §17 context compaction", () => {
+  test("compact_boundary system event produces compact_boundary IPC", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-compact-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system", subtype: "init", session_id: "s-cmp",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "system", subtype: "compact_boundary" },
+      {
+        type: "system", subtype: "init", session_id: "s-cmp",
+        cwd: "/proj", tools: [], model: "claude-opus-4-6",
+        permissionMode: "default", slash_commands: [], plugins: [],
+        agents: [], skills: [], claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "After compact." } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "long conversation", attachments: [] })
+    );
+
+    // compact_boundary emitted.
+    const compacts = ipcMessages.filter((m: any) => m.type === "compact_boundary");
+    expect(compacts.length).toBe(1);
+    // Two system_metadata (one before compact, one after).
+    const sysMetas = ipcMessages.filter((m: any) => m.type === "system_metadata");
+    expect(sysMetas.length).toBe(2);
+    // Text still arrives after compaction.
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
+    expect(textMsgs.length).toBe(1);
+  });
+});
+
+describe("protocol audit: §3e stream_event types", () => {
+  test("content_block_start for tool_use emits no IPC (handled by assistant)", () => {
+    // The tool_use start event is informational; actual tool_use IPC comes from the assistant message.
+    const event = {
+      type: "stream_event",
+      event: {
+        type: "content_block_start",
+        index: 1,
+        content_block: { type: "tool_use", name: "Read" },
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    // streamEvent is forwarded for processing.
+    expect(result.streamEvent).toBeDefined();
+  });
+
+  test("message_start, message_delta, message_stop events pass through without IPC", () => {
+    for (const eventType of ["message_start", "message_delta", "message_stop"]) {
+      const event = {
+        type: "stream_event",
+        event: { type: eventType, delta: {}, usage: {} },
+      };
+      const result = routeTopLevelEvent(event, baseCtx);
+      expect(result.streamEvent).toBeDefined();
+      // These are lifecycle events — mapStreamEvent produces no IPC for them.
+    }
+  });
+});
+
+describe("protocol audit: §9b Edit tool structured result", () => {
+  test("Edit tool_use_result forwarded as tool_use_structured IPC", () => {
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-edit-1",
+            content: "The file /tmp/file.txt has been updated successfully.",
+            is_error: false,
+          },
+        ],
+      },
+      tool_use_result: {
+        toolName: "Edit",
+        filePath: "/tmp/file.txt",
+        oldString: "old text",
+        newString: "new text",
+        originalFile: "line 1\nold text\nline 3\n",
+        structuredPatch: [
+          { oldStart: 1, oldLines: 3, newStart: 1, newLines: 3, lines: [" line 1", "-old text", "+new text", " line 3"] },
+        ],
+        userModified: false,
+        replaceAll: false,
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    // tool_result for the text.
+    const tr = result.messages.find((m: any) => m.type === "tool_result") as any;
+    expect(tr).toBeDefined();
+    expect(tr.tool_use_id).toBe("tu-edit-1");
+    // tool_use_structured for the structured patch data.
+    const tus = result.messages.find((m: any) => m.type === "tool_use_structured") as any;
+    expect(tus).toBeDefined();
+    expect(tus.tool_name).toBe("Edit");
+    expect(tus.structured_result.filePath).toBe("/tmp/file.txt");
+    expect(tus.structured_result.structuredPatch).toHaveLength(1);
+    expect(tus.structured_result.structuredPatch[0].lines).toContain("-old text");
+    expect(tus.structured_result.structuredPatch[0].lines).toContain("+new text");
+  });
+});
+
+describe("protocol audit: §9c Write tool structured result", () => {
+  test("Write tool_use_result with type=create forwarded correctly", () => {
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-write-1",
+            content: "File created successfully at: /tmp/new.txt",
+            is_error: false,
+          },
+        ],
+      },
+      tool_use_result: {
+        toolName: "Write",
+        type: "create",
+        filePath: "/tmp/new.txt",
+        content: "Hello World\nLine 2",
+        structuredPatch: [],
+        originalFile: null,
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const tus = result.messages.find((m: any) => m.type === "tool_use_structured") as any;
+    expect(tus).toBeDefined();
+    expect(tus.tool_name).toBe("Write");
+    expect(tus.structured_result.type).toBe("create");
+    expect(tus.structured_result.originalFile).toBeNull();
+    expect(tus.structured_result.content).toBe("Hello World\nLine 2");
+  });
+});
+
+describe("protocol audit: §8 file and image attachments", () => {
+  test("user message with image attachment produces base64 content block", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-attach-" + Date.now());
+    const writtenData: string[] = [];
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (data: unknown) => writtenData.push(String(data));
+
+    await captureIpcOutput(() =>
+      manager.handleUserMessage({
+        type: "user_message",
+        text: "What is this?",
+        attachments: [
+          { filename: "screenshot.png", content: "iVBORw0KGgo=", media_type: "image/png" },
+        ],
+      })
+    );
+
+    // Parse what was written to stdin.
+    const userMsg = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(userMsg.type).toBe("user");
+    expect(userMsg.message.content).toHaveLength(2);
+    // First block is text.
+    expect(userMsg.message.content[0].type).toBe("text");
+    expect(userMsg.message.content[0].text).toBe("What is this?");
+    // Second block is image.
+    expect(userMsg.message.content[1].type).toBe("image");
+    expect(userMsg.message.content[1].source.type).toBe("base64");
+    expect(userMsg.message.content[1].source.media_type).toBe("image/png");
+    expect(userMsg.message.content[1].source.data).toBe("iVBORw0KGgo=");
+  });
+});
+
+describe("protocol audit: §11b tool errors", () => {
+  test("tool_result with is_error strips tool_use_error tags per PN-3", () => {
+    const event = {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu-err-1",
+            content: "<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>",
+            is_error: true,
+          },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const tr = result.messages.find((m: any) => m.type === "tool_result") as any;
+    expect(tr).toBeDefined();
+    expect(tr.is_error).toBe(true);
+    // Tags stripped.
+    expect(tr.output).not.toContain("<tool_use_error>");
+    expect(tr.output).toContain("File has not been read yet");
+  });
+});
+
+describe("protocol audit: §2f permission response format", () => {
+  test("allow response uses 'behavior' not 'decision' per §2f", () => {
+    const manager = new SessionManager("/tmp/tugtalk-perm-allow-" + Date.now());
+    const pendingCR = {
+      type: "control_request",
+      request_id: "req-perm-1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "echo hi" },
+      },
+    };
+    (manager as any).pendingControlRequests.set("req-perm-1", pendingCR);
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleToolApproval({
+      type: "tool_approval",
+      request_id: "req-perm-1",
+      decision: "allow",
+      updatedInput: { command: "echo hi" },
+    });
+
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("control_response");
+    // CRITICAL: must be "behavior" not "decision".
+    expect(parsed.response.response.behavior).toBe("allow");
+    expect(parsed.response.response.updatedInput).toEqual({ command: "echo hi" });
+    // Must NOT have "decision" key.
+    expect("decision" in parsed.response.response).toBe(false);
+  });
+
+  test("deny response uses 'behavior' not 'decision' per §2f", () => {
+    const manager = new SessionManager("/tmp/tugtalk-perm-deny-" + Date.now());
+    const pendingCR = {
+      type: "control_request",
+      request_id: "req-perm-2",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "rm -rf /" },
+      },
+    };
+    (manager as any).pendingControlRequests.set("req-perm-2", pendingCR);
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    manager.handleToolApproval({
+      type: "tool_approval",
+      request_id: "req-perm-2",
+      decision: "deny",
+      message: "Too dangerous",
+    });
+
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.response.response.behavior).toBe("deny");
+    expect(parsed.response.response.message).toBe("Too dangerous");
+    expect("decision" in parsed.response.response).toBe(false);
   });
 });

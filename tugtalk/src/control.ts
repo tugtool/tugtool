@@ -98,9 +98,10 @@ export function formatQuestionAnswer(
   originalInput: Record<string, unknown>,
   answers: Record<string, string>
 ): Record<string, unknown> {
-  // Merge answers into original input.
-  // The updatedInput is the original questions input with answers injected.
-  const updatedInput = { ...originalInput, ...answers };
+  // Per §5b: answers are nested under an "answers" key in updatedInput.
+  // The key is the question text, the value is the selected option label.
+  // For multiSelect: comma-separated labels with NO spaces per PN-5.
+  const updatedInput = { ...originalInput, answers };
   return {
     subtype: "success",
     request_id: requestId,

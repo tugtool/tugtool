@@ -9,6 +9,7 @@ import {
   isPermissionMode,
   isModelChange,
   isSessionCommand,
+  isStopTask,
 } from "../types.ts";
 import type {
   AssistantText,
@@ -31,6 +32,8 @@ describe("types.ts type guards", () => {
     // New message types added in Step 4
     expect(isInboundMessage({ type: "model_change", model: "claude-haiku-3-5" })).toBe(true);
     expect(isInboundMessage({ type: "session_command", command: "fork" })).toBe(true);
+    // stop_task per §2e
+    expect(isInboundMessage({ type: "stop_task", task_id: "task-1" })).toBe(true);
   });
 
   test("isProtocolInit discriminates protocol_init", () => {
@@ -84,6 +87,12 @@ describe("types.ts type guards", () => {
     expect(isSessionCommand(cont)).toBe(true);
     expect(isSessionCommand(newSess)).toBe(true);
     expect(isModelChange(fork)).toBe(false);
+  });
+
+  test("isStopTask discriminates stop_task per §2e", () => {
+    const msg = { type: "stop_task" as const, task_id: "task-abc" };
+    expect(isStopTask(msg)).toBe(true);
+    expect(isSessionCommand(msg)).toBe(false);
   });
 
   test("PermissionModeMessage accepts dontAsk mode", () => {

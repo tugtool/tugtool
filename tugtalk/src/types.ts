@@ -61,6 +61,11 @@ export interface SessionCommand {
   command: "fork" | "continue" | "new";
 }
 
+export interface StopTask {
+  type: "stop_task";
+  task_id: string;
+}
+
 export type InboundMessage =
   | ProtocolInit
   | UserMessage
@@ -69,7 +74,8 @@ export type InboundMessage =
   | Interrupt
   | PermissionModeMessage
   | ModelChange
-  | SessionCommand;
+  | SessionCommand
+  | StopTask;
 
 // Outbound message types (tugtalk stdout to tugcast) - Spec S02
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
@@ -282,7 +288,8 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "interrupt" ||
     typed.type === "permission_mode" ||
     typed.type === "model_change" ||
-    typed.type === "session_command"
+    typed.type === "session_command" ||
+    typed.type === "stop_task"
   );
 }
 
@@ -316,4 +323,8 @@ export function isModelChange(msg: InboundMessage): msg is ModelChange {
 
 export function isSessionCommand(msg: InboundMessage): msg is SessionCommand {
   return msg.type === "session_command";
+}
+
+export function isStopTask(msg: InboundMessage): msg is StopTask {
+  return msg.type === "stop_task";
 }

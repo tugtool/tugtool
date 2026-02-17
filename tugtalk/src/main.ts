@@ -11,6 +11,7 @@ import {
   isPermissionMode,
   isModelChange,
   isSessionCommand,
+  isStopTask,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 
@@ -121,6 +122,8 @@ async function main() {
       sessionManager?.handlePermissionMode(msg);
     } else if (isModelChange(msg)) {
       sessionManager?.handleModelChange(msg.model);
+    } else if (isStopTask(msg)) {
+      sessionManager?.handleStopTask(msg.task_id);
     } else if (isSessionCommand(msg)) {
       if (sessionManager) {
         sessionManager.handleSessionCommand(msg.command).catch((err) => {

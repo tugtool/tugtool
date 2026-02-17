@@ -64,30 +64,34 @@ describe("formatPermissionDeny", () => {
 // ---------------------------------------------------------------------------
 
 describe("formatQuestionAnswer", () => {
-  test("injects answers into updatedInput", () => {
-    const originalInput = { questions: [{ question: "Pick color", multiSelect: false }] };
-    const answers = { answer_0: "Red" };
+  test("nests answers under 'answers' key per §5b", () => {
+    const originalInput = { questions: [{ question: "What is your favorite color?", multiSelect: false }] };
+    const answers = { "What is your favorite color?": "Red" };
     const result = formatQuestionAnswer("req-3", originalInput, answers);
     expect(result.subtype).toBe("success");
     expect(result.request_id).toBe("req-3");
     const response = result.response as any;
     expect(response.behavior).toBe("allow");
-    expect(response.updatedInput.answer_0).toBe("Red");
-    // Original questions still present
+    // Per §5b: answers nested under "answers" key, not spread flat.
+    expect(response.updatedInput.answers).toBeDefined();
+    expect(response.updatedInput.answers["What is your favorite color?"]).toBe("Red");
+    // Original questions still present at top level.
     expect(response.updatedInput.questions).toEqual(originalInput.questions);
+    // Answers must NOT be spread at the top level.
+    expect(response.updatedInput["What is your favorite color?"]).toBeUndefined();
   });
 
-  test("multiSelect uses comma-separated labels with no spaces per PN-5", () => {
+  test("multiSelect uses comma-separated labels with no spaces per PN-5/§5b", () => {
     const originalInput = {
       questions: [{ question: "Pick colors", multiSelect: true }],
     };
-    // Caller formats multiSelect answers as comma-separated BEFORE passing answers in
-    const answers = { answer_0: "Red,Blue" };
+    // Per §5b: multiSelect answers are comma-separated labels.
+    const answers = { "Pick colors": "Red,Blue" };
     const result = formatQuestionAnswer("req-4", originalInput, answers);
     const response = result.response as any;
-    // Verify the comma-separated format is preserved (no spaces added)
-    expect(response.updatedInput.answer_0).toBe("Red,Blue");
-    expect(response.updatedInput.answer_0).not.toContain(", ");
+    // Verify format: nested under answers key, comma-separated, no spaces.
+    expect(response.updatedInput.answers["Pick colors"]).toBe("Red,Blue");
+    expect(response.updatedInput.answers["Pick colors"]).not.toContain(", ");
   });
 });
 

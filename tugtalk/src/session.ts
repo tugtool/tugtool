@@ -185,6 +185,7 @@ export interface EventMappingResult {
  */
 export interface ResultMetadata {
   subtype: string;
+  is_error?: boolean;
   total_cost_usd?: number;
   num_turns?: number;
   duration_ms?: number;
@@ -193,6 +194,7 @@ export interface ResultMetadata {
   modelUsage?: Record<string, unknown>;
   permission_denials?: unknown[];
   is_api_error?: boolean;
+  resultValue?: string;
 }
 
 /**
@@ -289,22 +291,16 @@ export function routeTopLevelEvent(
     }
 
     case "assistant": {
+      // The assistant top-level event is a complete snapshot of the message.
+      // Text content was already delivered via stream_event/content_block_delta
+      // as partial assistant_text messages. We skip re-emitting text here to
+      // avoid duplicate messages that confuse the frontend ordering buffer.
+      // Tool use blocks are still emitted since they may not arrive via streaming.
       const message = event.message as Record<string, unknown> | undefined;
       const content = (message?.content as Array<Record<string, unknown>>) || [];
 
       for (const block of content) {
-        if (block.type === "text") {
-          messages.push({
-            type: "assistant_text",
-            msg_id: ctx.msgId,
-            seq: ctx.seq,
-            rev: ctx.rev,
-            text: (block.text as string) || "",
-            is_partial: false,
-            status: "complete",
-            ipc_version: 2,
-          });
-        } else if (block.type === "tool_use") {
+        if (block.type === "tool_use") {
           messages.push({
             type: "tool_use",
             msg_id: ctx.msgId,
@@ -314,17 +310,6 @@ export function routeTopLevelEvent(
             input: (block.input as object) || {},
             ipc_version: 2,
           });
-        } else if (block.type === "thinking") {
-          const thinkingMsg: ThinkingText = {
-            type: "thinking_text",
-            msg_id: ctx.msgId,
-            seq: ctx.seq,
-            text: (block.text as string) || "",
-            is_partial: false,
-            status: "complete",
-            ipc_version: 2,
-          };
-          messages.push(thinkingMsg);
         }
       }
       break;
@@ -332,7 +317,38 @@ export function routeTopLevelEvent(
 
     case "user": {
       const message = event.message as Record<string, unknown> | undefined;
-      const content = (message?.content as Array<Record<string, unknown>>) || [];
+      const rawContent = message?.content;
+
+      // Slash commands return content as a plain string (not an array).
+      // Per §13c: {"type":"user","isReplay":true,"message":{"role":"user",
+      //   "content":"<local-command-stdout>...</local-command-stdout>"}}
+      if (event.isReplay === true && typeof rawContent === "string") {
+        const stdoutMatch = rawContent.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+        if (stdoutMatch) {
+          messages.push({
+            type: "assistant_text",
+            msg_id: ctx.msgId,
+            seq: ctx.seq,
+            rev: ctx.rev,
+            text: stdoutMatch[1],
+            is_partial: false,
+            status: "complete",
+            ipc_version: 2,
+          });
+        }
+        const stderrMatch = rawContent.match(/<local-command-stderr>([\s\S]*?)<\/local-command-stderr>/);
+        if (stderrMatch) {
+          messages.push({
+            type: "error",
+            message: stderrMatch[1],
+            recoverable: true,
+            ipc_version: 2,
+          });
+        }
+        break;
+      }
+
+      const content = (rawContent as Array<Record<string, unknown>>) || [];
 
       let firstToolUseId: string | undefined;
 
@@ -382,7 +398,7 @@ export function routeTopLevelEvent(
         });
       }
 
-      // Handle isReplay + slash command output per PN-13.
+      // Handle isReplay + slash command output in tool_result blocks (array content).
       if (event.isReplay === true) {
         for (const block of content) {
           if (block.type === "tool_result") {
@@ -429,6 +445,7 @@ export function routeTopLevelEvent(
 
       resultMetadata = {
         subtype,
+        is_error: event.is_error === true,
         total_cost_usd: event.total_cost_usd as number | undefined,
         num_turns: event.num_turns as number | undefined,
         duration_ms: event.duration_ms as number | undefined,
@@ -439,20 +456,9 @@ export function routeTopLevelEvent(
         is_api_error: isApiError || undefined,
       };
 
-      if (typeof resultText === "string" && resultText.length > 0) {
-        messages.push({
-          type: "assistant_text",
-          msg_id: ctx.msgId,
-          seq: ctx.seq,
-          rev: ctx.rev,
-          text: resultText,
-          is_partial: false,
-          status: "complete",
-          ipc_version: 2,
-        });
-      }
-
-      // Emit CostUpdate BEFORE turn_complete so cost data arrives first per PN-19.
+      // Emit CostUpdate from result event. The final assistant_text and
+      // turn_complete are emitted by handleUserMessage with fresh seq values
+      // so they pass through the frontend ordering buffer's dedup logic.
       const costMsg: CostUpdate = {
         type: "cost_update",
         total_cost_usd: (event.total_cost_usd as number) || 0,
@@ -465,14 +471,8 @@ export function routeTopLevelEvent(
       };
       messages.push(costMsg);
 
-      const resultValue = subtype === "success" ? "success" : "error";
-      messages.push({
-        type: "turn_complete",
-        msg_id: ctx.msgId,
-        seq: ctx.seq,
-        result: resultValue,
-        ipc_version: 2,
-      });
+      // Store result value for handleUserMessage to emit turn_complete.
+      resultMetadata.resultValue = subtype === "success" ? "success" : "error";
       break;
     }
 
@@ -574,12 +574,13 @@ export function mapStreamEvent(
         status: "partial",
         ipc_version: 2,
       });
-    } else if (delta?.type === "thinking_delta" && typeof delta.text === "string") {
+    } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+      // Per §14: thinking_delta has delta.thinking (NOT delta.text).
       const thinkingMsg: ThinkingText = {
         type: "thinking_text",
         msg_id: ctx.msgId,
         seq: ctx.seq,
-        text: delta.text,
+        text: delta.thinking,
         is_partial: true,
         status: "partial",
         ipc_version: 2,
@@ -850,8 +851,11 @@ export class SessionManager {
           );
         }
 
-        // Emit IPC messages from router.
+        // Emit IPC messages from router, stamping parent_tool_use_id per §15.
         for (const ipcMsg of routeResult.messages) {
+          if (routeResult.parentToolUseId) {
+            (ipcMsg as Record<string, unknown>).parent_tool_use_id = routeResult.parentToolUseId;
+          }
           writeLine(ipcMsg);
         }
 
@@ -859,6 +863,9 @@ export class SessionManager {
         if (routeResult.streamEvent) {
           const streamResult = mapStreamEvent(routeResult.streamEvent, ctx, partialText);
           for (const ipcMsg of streamResult.messages) {
+            if (routeResult.parentToolUseId) {
+              (ipcMsg as Record<string, unknown>).parent_tool_use_id = routeResult.parentToolUseId;
+            }
             writeLine(ipcMsg);
           }
           this.currentRev = streamResult.newRev;
@@ -903,6 +910,32 @@ export class SessionManager {
 
         gotResult = routeResult.gotResult;
         if (gotResult) {
+          // Emit final complete assistant_text only if there was streamed text.
+          // Slash commands (local commands) deliver output via the user/isReplay
+          // handler, not via streaming — partialText stays empty for those.
+          if (partialText.length > 0) {
+            const completeSeq = this.nextSeq();
+            writeLine({
+              type: "assistant_text",
+              msg_id: this.currentMsgId!,
+              seq: completeSeq,
+              rev: 0,
+              text: partialText,
+              is_partial: false,
+              status: "complete",
+              ipc_version: 2,
+            });
+          }
+
+          const turnSeq = this.nextSeq();
+          const resultValue = routeResult.resultMetadata?.resultValue as string || "success";
+          writeLine({
+            type: "turn_complete",
+            msg_id: this.currentMsgId!,
+            seq: turnSeq,
+            result: resultValue,
+            ipc_version: 2,
+          });
           break;
         }
       }
@@ -1004,6 +1037,18 @@ export class SessionManager {
         mode: msg.mode,
       });
     }
+  }
+
+  /**
+   * Handle stop_task: send stop_task control_request to claude stdin per §2e.
+   */
+  handleStopTask(taskId: string): void {
+    if (!this.claudeProcess) {
+      console.log("No active claude process for stop_task");
+      return;
+    }
+    const stdin = this.claudeProcess.stdin;
+    sendControlRequest(stdin, generateRequestId(), { subtype: "stop_task", task_id: taskId });
   }
 
   /**
