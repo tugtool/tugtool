@@ -33,37 +33,26 @@ import type { TugConnection } from "../../connection";
 
 // Mock TugConnection
 class MockConnection implements Partial<TugConnection> {
-  sentMessages: ArrayBuffer[] = [];
+  sentFrames: { feedId: number; payload: Uint8Array }[] = [];
 
-  send(data: ArrayBuffer): void {
-    this.sentMessages.push(data);
+  send(feedId: number, payload: Uint8Array): void {
+    this.sentFrames.push({ feedId, payload });
   }
 
   clear(): void {
-    this.sentMessages = [];
+    this.sentFrames = [];
   }
 
   getLastMessage(): any {
-    if (this.sentMessages.length === 0) return null;
-    const buffer = this.sentMessages[this.sentMessages.length - 1];
-
-    // Decode frame format: 1 byte feed ID + 4 bytes length + payload
-    const HEADER_SIZE = 5;
-    const payload = new Uint8Array(buffer, HEADER_SIZE);
-
-    const decoder = new TextDecoder();
-    const text = decoder.decode(payload);
-    return JSON.parse(text);
+    if (this.sentFrames.length === 0) return null;
+    const { payload } = this.sentFrames[this.sentFrames.length - 1];
+    return JSON.parse(new TextDecoder().decode(payload));
   }
 
   getAllMessages(): any[] {
-    return this.sentMessages.map((buffer) => {
-      const HEADER_SIZE = 5;
-      const payload = new Uint8Array(buffer, HEADER_SIZE);
-      const decoder = new TextDecoder();
-      const text = decoder.decode(payload);
-      return JSON.parse(text);
-    });
+    return this.sentFrames.map(({ payload }) =>
+      JSON.parse(new TextDecoder().decode(payload))
+    );
   }
 }
 

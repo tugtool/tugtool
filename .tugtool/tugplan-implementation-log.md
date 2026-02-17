@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-17T01:54:05Z
+bead: tugtool-0c5.2
+---
+
+## #step-1: Fixed send() API mismatch: all 6 call-sites in conversation-card.ts now use send(FeedId.CONVERSATION_INPUT, payload). Updated MockConnection in conversation-card.test.ts, e2e-integration.test.ts, and session-integration.test.ts. 254 tugdeck tests passing.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-wiring.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-17T01:48:16Z
 bead: tugtool-0c5.1
