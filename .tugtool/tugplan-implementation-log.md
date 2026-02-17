@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-17T20:07:39Z
+bead: tugtool-jdn.4
+---
+
+## #step-3: Created web-components.ts with 14 UI component interfaces, added SystemMetadata IPC emission from system/init, added CostUpdate IPC emission from result (before turn_complete per PN-19), updated existing tests and added 3 new tests, 59 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-17T20:00:26Z
 bead: tugtool-jdn.3

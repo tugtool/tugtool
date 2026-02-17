@@ -270,7 +270,9 @@ describe("routeTopLevelEvent", () => {
     expect((result.systemMetadata as any).model).toBe("claude-opus-4-6");
     expect((result.systemMetadata as any).cwd).toBe("/test");
     expect(result.gotResult).toBe(false);
-    expect(result.messages).toHaveLength(0);
+    // system/init now emits a SystemMetadata IPC message.
+    expect(result.messages).toHaveLength(1);
+    expect((result.messages[0] as any).type).toBe("system_metadata");
   });
 
   test("system/compact_boundary emits marker", () => {
@@ -338,6 +340,9 @@ describe("routeTopLevelEvent", () => {
     const tc = result.messages.find((m: any) => m.type === "turn_complete") as any;
     expect(tc).toBeDefined();
     expect(tc.result).toBe("success");
+    // result events now also emit cost_update before turn_complete.
+    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
   });
 
   test("result/error_during_execution emits error turn_complete", () => {
@@ -451,6 +456,74 @@ describe("routeTopLevelEvent", () => {
       const result = routeTopLevelEvent(event, baseCtx);
       expect(result.parentToolUseId).toBe(parentId);
     }
+  });
+
+  // Step 3 new tests
+  test("system/init produces SystemMetadata IPC with all section 3a fields", () => {
+    const event = {
+      type: "system",
+      subtype: "init",
+      session_id: "s1",
+      cwd: "/proj",
+      tools: ["Read"],
+      model: "claude-opus-4-6",
+      permissionMode: "acceptEdits",
+      slash_commands: [{ name: "/cost" }],
+      plugins: [],
+      agents: [],
+      skills: [],
+      claude_code_version: "2.1.38",
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const sysMsg = result.messages.find((m: any) => m.type === "system_metadata") as any;
+    expect(sysMsg).toBeDefined();
+    expect(sysMsg.session_id).toBe("s1");
+    expect(sysMsg.cwd).toBe("/proj");
+    expect(sysMsg.tools).toEqual(["Read"]);
+    expect(sysMsg.model).toBe("claude-opus-4-6");
+    expect(sysMsg.permissionMode).toBe("acceptEdits");
+    expect(sysMsg.slash_commands).toEqual([{ name: "/cost" }]);
+    expect(sysMsg.version).toBe("2.1.38");
+  });
+
+  test("result/success produces CostUpdate IPC with cost fields", () => {
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "",
+      total_cost_usd: 0.042,
+      num_turns: 3,
+      duration_ms: 5000,
+      duration_api_ms: 3200,
+      usage: { input_tokens: 100, output_tokens: 50 },
+      modelUsage: {
+        "claude-opus-4-6": {
+          inputTokens: 100,
+          outputTokens: 50,
+          costUSD: 0.042,
+          contextWindow: 200000,
+          maxOutputTokens: 64000,
+        },
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
+    expect(cu.total_cost_usd).toBe(0.042);
+    expect(cu.duration_api_ms).toBe(3200);
+    expect(cu.num_turns).toBe(3);
+    expect(cu.modelUsage["claude-opus-4-6"]).toBeDefined();
+    // CostUpdate arrives before turn_complete in the messages array.
+    const cuIdx = result.messages.findIndex((m: any) => m.type === "cost_update");
+    const tcIdx = result.messages.findIndex((m: any) => m.type === "turn_complete");
+    expect(cuIdx).toBeLessThan(tcIdx);
+  });
+
+  test("system/compact_boundary produces CompactBoundary IPC (explicit type check)", () => {
+    const event = { type: "system", subtype: "compact_boundary" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(1);
+    expect((result.messages[0] as any).type).toBe("compact_boundary");
   });
 });
 

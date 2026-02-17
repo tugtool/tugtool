@@ -20,6 +20,8 @@ import type {
   CompactBoundary,
   ControlRequestForward,
   ControlRequestCancel,
+  SystemMetadata,
+  CostUpdate,
 } from "./types.ts";
 import { mkdir, exists } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
@@ -195,6 +197,21 @@ export function routeTopLevelEvent(
           skills: event.skills,
           claude_code_version: event.claude_code_version,
         };
+        // Emit SystemMetadata IPC so the frontend can populate settings and help panels.
+        const sysMsg: SystemMetadata = {
+          type: "system_metadata",
+          session_id: sid || "",
+          cwd: (event.cwd as string) || "",
+          tools: (event.tools as unknown[]) || [],
+          model: (event.model as string) || "",
+          permissionMode: (event.permissionMode as string) || "",
+          slash_commands: (event.slash_commands as unknown[]) || [],
+          plugins: (event.plugins as unknown[]) || [],
+          agents: (event.agents as unknown[]) || [],
+          skills: (event.skills as unknown[]) || [],
+          version: (event.claude_code_version as string) || "",
+        };
+        messages.push(sysMsg);
       } else if (subtype === "compact_boundary") {
         const marker: CompactBoundary = { type: "compact_boundary" };
         messages.push(marker);
@@ -357,6 +374,18 @@ export function routeTopLevelEvent(
           status: "complete",
         });
       }
+
+      // Emit CostUpdate BEFORE turn_complete so cost data arrives first per PN-19.
+      const costMsg: CostUpdate = {
+        type: "cost_update",
+        total_cost_usd: (event.total_cost_usd as number) || 0,
+        num_turns: (event.num_turns as number) || 0,
+        duration_ms: (event.duration_ms as number) || 0,
+        duration_api_ms: (event.duration_api_ms as number) || 0,
+        usage: (event.usage as Record<string, unknown>) || {},
+        modelUsage: (event.modelUsage as Record<string, unknown>) || {},
+      };
+      messages.push(costMsg);
 
       const resultValue = subtype === "success" ? "success" : "error";
       messages.push({
