@@ -44,7 +44,7 @@ export interface Interrupt {
 
 export interface PermissionModeMessage {
   type: "permission_mode";
-  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan";
+  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "delegate";
 }
 
 export type InboundMessage =

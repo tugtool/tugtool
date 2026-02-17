@@ -29,6 +29,9 @@ export interface ClaudeSpawnConfig {
   model: string;
   permissionMode: string;
   sessionId: string | null;
+  continue?: boolean;
+  forkSession?: boolean;
+  sessionIdOverride?: string;
 }
 
 /**
@@ -37,10 +40,27 @@ export interface ClaudeSpawnConfig {
  * Per Spec S01 (#s01-spawn-args).
  */
 export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
+  // Validate session flag combinations per D10.
+  // Only one of sessionId, continue, or sessionIdOverride may be set.
+  const sessionFlagCount = [
+    !!config.sessionId,
+    !!config.continue,
+    !!config.sessionIdOverride,
+  ].filter(Boolean).length;
+  if (sessionFlagCount > 1) {
+    throw new Error("Only one of sessionId, continue, or sessionIdOverride may be set");
+  }
+
+  // forkSession requires a base session to fork from (sessionId or continue).
+  if (config.forkSession && !config.sessionId && !config.continue) {
+    throw new Error("forkSession requires either sessionId or continue to be set");
+  }
+
   const args: string[] = [
     "--output-format", "stream-json",
     "--input-format", "stream-json",
     "--verbose",
+    "--permission-prompt-tool", "stdio",
     "--include-partial-messages",
     "--replay-user-messages",
     "--plugin-dir", config.pluginDir,
@@ -50,6 +70,18 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
 
   if (config.sessionId) {
     args.push("--resume", config.sessionId);
+  }
+
+  if (config.continue) {
+    args.push("--continue");
+  }
+
+  if (config.forkSession) {
+    args.push("--fork-session");
+  }
+
+  if (config.sessionIdOverride) {
+    args.push("--session-id", config.sessionIdOverride);
   }
 
   return args;
@@ -346,8 +378,17 @@ export class SessionManager {
     let partialText = "";
     let gotResult = false;
 
-    // Write user message as stream-json input per Table T02
-    const userInput = JSON.stringify({ type: "user_message", text: msg.text }) + "\n";
+    // Write user message as stream-json input per Table T02 / D02 protocol reference.
+    // Format: {type: "user", session_id: "", message: {role: "user", content: [...]}, parent_tool_use_id: null}
+    const userInput = JSON.stringify({
+      type: "user",
+      session_id: "",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: msg.text }],
+      },
+      parent_tool_use_id: null,
+    }) + "\n";
     const stdin = this.claudeProcess.stdin;
     stdin.write(userInput);
     stdin.flush();

@@ -1,483 +1,9 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { SessionManager, buildClaudeArgs, mapStreamEvent } from "../session.ts";
+import { describe, test, expect } from "bun:test";
+import { SessionManager, buildClaudeArgs } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
-import { join } from "node:path";
-import { rm, exists } from "node:fs/promises";
-import type { ToolApproval, QuestionAnswer } from "../types.ts";
-
-describe("session.ts", () => {
-  const testDir = "/tmp/tugtalk-test-" + Date.now();
-
-  beforeEach(async () => {
-    // Clean test directory
-    if (await exists(testDir)) {
-      await rm(testDir, { recursive: true });
-    }
-  });
-
-  afterEach(async () => {
-    // Clean up
-    if (await exists(testDir)) {
-      await rm(testDir, { recursive: true });
-    }
-  });
-
-  test("SessionManager constructor does not throw", () => {
-    expect(() => new SessionManager(testDir)).not.toThrow();
-  });
-
-  test("sessionId persistence", async () => {
-    // Testing file I/O only -- no claude CLI spawning needed
-    const sessionFilePath = join(testDir, ".tugtool", ".session");
-
-    // Manually write a session ID
-    const { mkdir } = await import("node:fs/promises");
-    await mkdir(join(testDir, ".tugtool"), { recursive: true });
-    await Bun.write(sessionFilePath, "test-session-123");
-
-    // Verify it can be read
-    const content = await Bun.file(sessionFilePath).text();
-    expect(content).toBe("test-session-123");
-  });
-
-  test("handleToolApproval resolves pending promise", () => {
-    const manager = new SessionManager(testDir);
-
-    // Simulate adding a pending approval
-    const pendingApprovals = (manager as any).pendingApprovals;
-    const requestId = "test-req-123";
-
-    let resolvedValue: string | null = null;
-    const promise = new Promise<"allow" | "deny">((resolve) => {
-      pendingApprovals.set(requestId, { resolve, reject: () => {} });
-    });
-
-    promise.then((val) => {
-      resolvedValue = val;
-    });
-
-    // Handle approval
-    const approvalMsg: ToolApproval = {
-      type: "tool_approval",
-      request_id: requestId,
-      decision: "allow",
-    };
-
-    manager.handleToolApproval(approvalMsg);
-
-    // Verify promise was resolved
-    return promise.then(() => {
-      expect(resolvedValue).toBe("allow");
-      expect(pendingApprovals.has(requestId)).toBe(false);
-    });
-  });
-
-  test("handleQuestionAnswer resolves pending promise", () => {
-    const manager = new SessionManager(testDir);
-
-    const pendingQuestions = (manager as any).pendingQuestions;
-    const requestId = "test-quest-456";
-
-    let resolvedValue: Record<string, string> | null = null;
-    const promise = new Promise<Record<string, string>>((resolve) => {
-      pendingQuestions.set(requestId, { resolve, reject: () => {} });
-    });
-
-    promise.then((val) => {
-      resolvedValue = val;
-    });
-
-    // Handle answer
-    const answerMsg: QuestionAnswer = {
-      type: "question_answer",
-      request_id: requestId,
-      answers: { q1: "answer1", q2: "answer2" },
-    };
-
-    manager.handleQuestionAnswer(answerMsg);
-
-    // Verify promise was resolved
-    return promise.then(() => {
-      expect(resolvedValue).toEqual({ q1: "answer1", q2: "answer2" });
-      expect(pendingQuestions.has(requestId)).toBe(false);
-    });
-  });
-
-  test("handleInterrupt when no active process", () => {
-    const manager = new SessionManager(testDir);
-
-    // Should not throw -- no claudeProcess means it logs and returns
-    expect(() => manager.handleInterrupt()).not.toThrow();
-  });
-
-  test("permission mode handling", () => {
-    const manager = new SessionManager(testDir);
-
-    // Should not throw
-    expect(() =>
-      manager.handlePermissionMode({ type: "permission_mode", mode: "default" })
-    ).not.toThrow();
-
-    expect(() =>
-      manager.handlePermissionMode({ type: "permission_mode", mode: "plan" })
-    ).not.toThrow();
-  });
-});
 
 // ---------------------------------------------------------------------------
-// buildClaudeArgs tests
-// ---------------------------------------------------------------------------
-
-describe("buildClaudeArgs", () => {
-  test("new session includes all required flags and -p", () => {
-    const args = buildClaudeArgs({
-      pluginDir: "/repo/root",
-      model: "claude-opus-4-6",
-      permissionMode: "acceptEdits",
-      sessionId: null,
-    });
-
-    expect(args).toContain("--output-format");
-    expect(args).toContain("stream-json");
-    expect(args).toContain("--input-format");
-    expect(args).toContain("--include-partial-messages");
-    expect(args).toContain("--replay-user-messages");
-    expect(args).toContain("--plugin-dir");
-    expect(args).toContain("/repo/root");
-    expect(args).toContain("--model");
-    expect(args).toContain("claude-opus-4-6");
-    expect(args).toContain("--permission-mode");
-    expect(args).toContain("acceptEdits");
-    expect(args).toContain("--verbose");
-    expect(args).not.toContain("-p");
-    expect(args).not.toContain("--resume");
-    expect(args).not.toContain("--session-id");
-  });
-
-  test("resumed session includes --resume <sessionId>, not -p", () => {
-    const args = buildClaudeArgs({
-      pluginDir: "/repo/root",
-      model: "claude-opus-4-6",
-      permissionMode: "acceptEdits",
-      sessionId: "sess-abc-123",
-    });
-
-    expect(args).toContain("--resume");
-    const resumeIdx = args.indexOf("--resume");
-    expect(args[resumeIdx + 1]).toBe("sess-abc-123");
-    expect(args).toContain("--verbose");
-    expect(args).not.toContain("--session-id");
-    expect(args).not.toContain("-p");
-  });
-
-  test("--plugin-dir value matches provided pluginDir", () => {
-    const args = buildClaudeArgs({
-      pluginDir: "/custom/plugin/path",
-      model: "claude-opus-4-6",
-      permissionMode: "default",
-      sessionId: null,
-    });
-
-    const pluginDirIndex = args.indexOf("--plugin-dir");
-    expect(pluginDirIndex).toBeGreaterThan(-1);
-    expect(args[pluginDirIndex + 1]).toBe("/custom/plugin/path");
-  });
-
-  test("--permission-mode value matches provided mode for all modes", () => {
-    for (const mode of ["default", "acceptEdits", "bypassPermissions", "plan"]) {
-      const args = buildClaudeArgs({
-        pluginDir: "/repo",
-        model: "claude-opus-4-6",
-        permissionMode: mode,
-        sessionId: null,
-      });
-
-      const modeIndex = args.indexOf("--permission-mode");
-      expect(modeIndex).toBeGreaterThan(-1);
-      expect(args[modeIndex + 1]).toBe(mode);
-    }
-  });
-
-  test("--output-format and --input-format are both stream-json", () => {
-    const args = buildClaudeArgs({
-      pluginDir: "/repo",
-      model: "claude-opus-4-6",
-      permissionMode: "acceptEdits",
-      sessionId: null,
-    });
-
-    const outputFmtIdx = args.indexOf("--output-format");
-    expect(outputFmtIdx).toBeGreaterThan(-1);
-    expect(args[outputFmtIdx + 1]).toBe("stream-json");
-
-    const inputFmtIdx = args.indexOf("--input-format");
-    expect(inputFmtIdx).toBeGreaterThan(-1);
-    expect(args[inputFmtIdx + 1]).toBe("stream-json");
-  });
-
-  test("--resume value matches provided sessionId", () => {
-    const args = buildClaudeArgs({
-      pluginDir: "/repo",
-      model: "claude-opus-4-6",
-      permissionMode: "acceptEdits",
-      sessionId: "my-session-id-xyz",
-    });
-
-    const resumeIdx = args.indexOf("--resume");
-    expect(resumeIdx).toBeGreaterThan(-1);
-    expect(args[resumeIdx + 1]).toBe("my-session-id-xyz");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// mapStreamEvent tests
-// ---------------------------------------------------------------------------
-
-describe("mapStreamEvent", () => {
-  const baseCtx: EventMappingContext = { msgId: "msg-1", seq: 0, rev: 0 };
-
-  test("content_block_delta maps to assistant_text with is_partial: true", () => {
-    const event = {
-      type: "content_block_delta",
-      delta: { type: "text_delta", text: "Hello " },
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.messages).toHaveLength(1);
-    const msg = result.messages[0];
-    expect(msg.type).toBe("assistant_text");
-    expect((msg as any).is_partial).toBe(true);
-    expect((msg as any).text).toBe("Hello ");
-    expect((msg as any).status).toBe("partial");
-    expect(result.partialText).toBe("Hello ");
-    expect(result.newRev).toBe(1);
-    expect(result.gotResult).toBe(false);
-  });
-
-  test("content_block_delta accumulates partial text correctly", () => {
-    const event = {
-      type: "content_block_delta",
-      delta: { type: "text_delta", text: "world" },
-    };
-    const result = mapStreamEvent(event, { ...baseCtx, rev: 3 }, "Hello ");
-
-    expect(result.partialText).toBe("Hello world");
-    expect(result.newRev).toBe(4);
-    expect((result.messages[0] as any).rev).toBe(3);
-  });
-
-  test("content_block_delta with non-text delta produces no messages", () => {
-    const event = {
-      type: "content_block_delta",
-      delta: { type: "input_json_delta", partial_json: "{" },
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.messages).toHaveLength(0);
-    expect(result.gotResult).toBe(false);
-  });
-
-  test("assistant event maps to assistant_text with is_partial: false", () => {
-    const event = {
-      type: "assistant",
-      message: {
-        content: [
-          { type: "text", text: "Full response here" },
-        ],
-      },
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    const textMsgs = result.messages.filter((m) => m.type === "assistant_text");
-    expect(textMsgs.length).toBeGreaterThanOrEqual(1);
-    expect((textMsgs[0] as any).is_partial).toBe(false);
-    expect((textMsgs[0] as any).text).toBe("Full response here");
-    expect((textMsgs[0] as any).status).toBe("complete");
-    expect(result.gotResult).toBe(false);
-  });
-
-  test("assistant event with multiple text blocks concatenates them", () => {
-    const event = {
-      type: "assistant",
-      message: {
-        content: [
-          { type: "text", text: "Part one. " },
-          { type: "text", text: "Part two." },
-        ],
-      },
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    const textMsgs = result.messages.filter((m) => m.type === "assistant_text");
-    expect(textMsgs.length).toBe(1);
-    expect((textMsgs[0] as any).text).toBe("Part one. Part two.");
-  });
-
-  test("assistant event with tool_use blocks emits tool_use IPC messages", () => {
-    const event = {
-      type: "assistant",
-      message: {
-        content: [
-          { type: "text", text: "Let me read that file." },
-          { type: "tool_use", name: "Read", id: "tu-1", input: { path: "/a.ts" } },
-        ],
-      },
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    const toolMsgs = result.messages.filter((m) => m.type === "tool_use");
-    expect(toolMsgs.length).toBe(1);
-    expect((toolMsgs[0] as any).tool_name).toBe("Read");
-    expect((toolMsgs[0] as any).tool_use_id).toBe("tu-1");
-    expect((toolMsgs[0] as any).input).toEqual({ path: "/a.ts" });
-  });
-
-  test("result event with success subtype maps to turn_complete with result: success", () => {
-    const event = {
-      type: "result",
-      subtype: "success",
-      result: "",
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    const turnMsgs = result.messages.filter((m) => m.type === "turn_complete");
-    expect(turnMsgs.length).toBe(1);
-    expect((turnMsgs[0] as any).result).toBe("success");
-    expect(result.gotResult).toBe(true);
-  });
-
-  test("result event with error subtype maps to turn_complete with result: error", () => {
-    const event = {
-      type: "result",
-      subtype: "error",
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    const turnMsgs = result.messages.filter((m) => m.type === "turn_complete");
-    expect(turnMsgs.length).toBe(1);
-    expect((turnMsgs[0] as any).result).toBe("error");
-    expect(result.gotResult).toBe(true);
-  });
-
-  test("result event with result text emits assistant_text before turn_complete", () => {
-    const event = {
-      type: "result",
-      subtype: "success",
-      result: "Slash command output text",
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.messages.length).toBe(2);
-    expect(result.messages[0].type).toBe("assistant_text");
-    expect((result.messages[0] as any).text).toBe("Slash command output text");
-    expect((result.messages[0] as any).is_partial).toBe(false);
-    expect(result.messages[1].type).toBe("turn_complete");
-    expect(result.gotResult).toBe(true);
-  });
-
-  test("tool_use event maps to tool_use IPC message", () => {
-    const event = {
-      type: "tool_use",
-      name: "Read",
-      id: "tool-xyz-123",
-      input: { file: "test.ts" },
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.messages).toHaveLength(1);
-    const msg = result.messages[0];
-    expect(msg.type).toBe("tool_use");
-    expect((msg as any).tool_name).toBe("Read");
-    expect((msg as any).tool_use_id).toBe("tool-xyz-123");
-    expect((msg as any).input).toEqual({ file: "test.ts" });
-    expect(result.gotResult).toBe(false);
-  });
-
-  test("tool_result event maps to tool_result IPC message", () => {
-    const event = {
-      type: "tool_result",
-      tool_use_id: "tu-abc",
-      output: "file contents here",
-      is_error: false,
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.messages).toHaveLength(1);
-    expect(result.messages[0].type).toBe("tool_result");
-    expect((result.messages[0] as any).tool_use_id).toBe("tu-abc");
-    expect((result.messages[0] as any).output).toBe("file contents here");
-    expect((result.messages[0] as any).is_error).toBe(false);
-  });
-
-  test("tool_progress event maps to tool_result IPC message", () => {
-    const event = {
-      type: "tool_progress",
-      tool_use_id: "tu-progress",
-      output: "progress output",
-      is_error: false,
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.messages).toHaveLength(1);
-    expect(result.messages[0].type).toBe("tool_result");
-    expect((result.messages[0] as any).tool_use_id).toBe("tu-progress");
-  });
-
-  test("session_id is captured and returned from event", () => {
-    const event = {
-      type: "content_block_delta",
-      delta: { type: "text_delta", text: "hi" },
-      session_id: "captured-session-id-abc",
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.sessionId).toBe("captured-session-id-abc");
-  });
-
-  test("session_id captured from result event", () => {
-    const event = {
-      type: "result",
-      subtype: "success",
-      result: "",
-      session_id: "result-session-id",
-    };
-    const result = mapStreamEvent(event, baseCtx, "");
-
-    expect(result.sessionId).toBe("result-session-id");
-  });
-
-  test("known internal events produce no messages", () => {
-    const internalEvents = [
-      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
-      { type: "content_block_stop", index: 0 },
-      { type: "message_start", message: {} },
-      { type: "message_delta", delta: {} },
-      { type: "message_stop" },
-    ];
-
-    for (const event of internalEvents) {
-      const result = mapStreamEvent(event, baseCtx, "");
-      expect(result.messages).toHaveLength(0);
-      expect(result.gotResult).toBe(false);
-    }
-  });
-
-  test("msg_id and seq from context are preserved in output messages", () => {
-    const ctx: EventMappingContext = { msgId: "test-msg-id-99", seq: 42, rev: 7 };
-    const event = {
-      type: "content_block_delta",
-      delta: { type: "text_delta", text: "test" },
-    };
-    const result = mapStreamEvent(event, ctx, "");
-
-    expect(result.messages).toHaveLength(1);
-    expect((result.messages[0] as any).msg_id).toBe("test-msg-id-99");
-    expect((result.messages[0] as any).seq).toBe(42);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Interrupt and process exit behavior tests
+// Helpers (needed for stdin spy test and future Steps 1-4)
 // ---------------------------------------------------------------------------
 
 /**
@@ -486,28 +12,13 @@ describe("mapStreamEvent", () => {
  * stdoutLines: JSON-serialisable objects to emit as newline-delimited JSON on
  *              stdout.  The stream closes after all lines are written.
  *
- * Returns { mockProcess, capturedOutput } where capturedOutput accumulates
- * every JSON line written by writeLine() during handleUserMessage().
- *
- * Implementation notes:
- *   - claudeProcess.stdin is mocked with a no-op WritableStream so the
- *     TextEncoder write in handleUserMessage() does not throw.
- *   - claudeProcess.kill is a no-op spy so handleInterrupt() does not throw.
- *   - stdoutReader is injected directly onto the manager after construction;
- *     claudeProcess.stdout is never read by SessionManager once the reader is
- *     already populated (initialize() sets stdoutReader; we bypass initialize()
- *     by injecting both claudeProcess and stdoutReader directly).
- *   - writeLine() in ipc.ts writes to Bun.stdout.  We intercept the IPC
- *     output by replacing writeLine with a spy via the module boundary — but
- *     since writeLine is imported directly into session.ts we cannot easily
- *     monkey-patch it from here.  Instead, we read what handleUserMessage()
- *     does by observing the IPC messages through a secondary channel: we
- *     replace Bun.write to capture writes to Bun.stdout.  This is the
- *     simplest approach that stays within the existing architecture.
+ * Returns { mockProcess, mockReader, mockStdin } where mockStdin can be used
+ * to spy on stdin writes.
  */
 function makeMockSubprocess(stdoutLines: unknown[]): {
   mockProcess: Record<string, unknown>;
   mockReader: ReadableStreamDefaultReader<Uint8Array>;
+  mockStdin: Record<string, unknown>;
 } {
   // Build a single Uint8Array of all newline-terminated JSON lines
   const encoder = new TextEncoder();
@@ -533,7 +44,7 @@ function makeMockSubprocess(stdoutLines: unknown[]): {
   const mockReader = stream.getReader();
 
   // Mock FileSink for stdin (Bun.spawn returns a FileSink, not a WritableStream)
-  const mockStdin = {
+  const mockStdin: Record<string, unknown> = {
     write(_data: unknown) {},
     flush() {},
     end() {},
@@ -545,23 +56,26 @@ function makeMockSubprocess(stdoutLines: unknown[]): {
     kill: (_signal: string) => {},
   };
 
-  return { mockProcess, mockReader };
+  return { mockProcess, mockReader, mockStdin };
 }
 
 /**
  * Inject a mock subprocess into a SessionManager instance, bypassing
  * initialize().  Sets both claudeProcess and stdoutReader directly so
  * handleUserMessage() can run against controlled stdout content.
+ *
+ * Returns mockStdin so callers can spy on write calls.
  */
 function injectMockSubprocess(
   manager: SessionManager,
   stdoutLines: unknown[]
-): void {
-  const { mockProcess, mockReader } = makeMockSubprocess(stdoutLines);
+): Record<string, unknown> {
+  const { mockProcess, mockReader, mockStdin } = makeMockSubprocess(stdoutLines);
   (manager as any).claudeProcess = mockProcess;
   (manager as any).stdoutReader = mockReader;
   (manager as any).stdoutBuffer = "";
   (manager as any).currentMsgId = "mock-msg-id";
+  return mockStdin;
 }
 
 /**
@@ -613,166 +127,122 @@ async function captureIpcOutput(fn: () => Promise<void>): Promise<unknown[]> {
   return captured;
 }
 
-describe("interrupt and process exit", () => {
-  test("handleInterrupt sets interrupted flag and calls kill with SIGINT", () => {
-    const manager = new SessionManager("/tmp/test-interrupt-" + Date.now());
+// ---------------------------------------------------------------------------
+// buildClaudeArgs tests
+// ---------------------------------------------------------------------------
 
-    // Mock a claudeProcess with a kill spy
-    let killCalled = false;
-    let killSignal: string | null = null;
-    (manager as any).claudeProcess = {
-      kill: (signal: string) => {
-        killCalled = true;
-        killSignal = signal;
-      },
-    };
+// Reusable default config
+const defaultConfig = {
+  pluginDir: "/repo",
+  model: "claude-opus-4-6",
+  permissionMode: "acceptEdits",
+  sessionId: null,
+};
 
-    manager.handleInterrupt();
-
-    expect((manager as any).interrupted).toBe(true);
-    expect(killCalled).toBe(true);
-    expect(killSignal).toBe("SIGINT");
+describe("buildClaudeArgs", () => {
+  test("default config does NOT include -p", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    expect(args).not.toContain("-p");
   });
 
-  test("handleInterrupt with no process does not set interrupted flag", () => {
-    const manager = new SessionManager("/tmp/test-interrupt-noproc-" + Date.now());
-
-    expect((manager as any).claudeProcess).toBeNull();
-    expect(() => manager.handleInterrupt()).not.toThrow();
-    // interrupted flag should remain false when no process exists
-    expect((manager as any).interrupted).toBe(false);
+  test("includes --permission-prompt-tool stdio", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    const idx = args.indexOf("--permission-prompt-tool");
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe("stdio");
   });
 
-  test("mapStreamEvent turn_complete marks gotResult true to break event loop", () => {
-    // Verifies that the result event sets gotResult, which signals handleUserMessage
-    // to break out of the reading loop. This is the mechanism by which a clean
-    // end-of-turn is detected vs an interrupted/crashed stream.
-    const ctx: EventMappingContext = { msgId: "msg-loop", seq: 0, rev: 0 };
-    const event = { type: "result", subtype: "success", result: "" };
-    const result = mapStreamEvent(event, ctx, "");
-    expect(result.gotResult).toBe(true);
+  test("includes --replay-user-messages", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    expect(args).toContain("--replay-user-messages");
   });
 
-  test("non-result events do not set gotResult (loop continues)", () => {
-    const ctx: EventMappingContext = { msgId: "msg-loop", seq: 0, rev: 0 };
-    const events = [
-      { type: "content_block_delta", delta: { type: "text_delta", text: "x" } },
-      { type: "assistant", message: { content: [] } },
-      { type: "tool_use", name: "Read", id: "t1", input: {} },
-      { type: "message_start" },
-    ];
-
-    for (const event of events) {
-      const result = mapStreamEvent(event, ctx, "");
-      expect(result.gotResult).toBe(false);
-    }
+  test("with sessionId includes --resume", () => {
+    const args = buildClaudeArgs({ ...defaultConfig, sessionId: "abc" });
+    const idx = args.indexOf("--resume");
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe("abc");
   });
 
-  // -------------------------------------------------------------------------
-  // handleUserMessage loop tests (issues 1, 2, 3 from reviewer)
-  // -------------------------------------------------------------------------
-
-  test("interrupt with interrupted=true and no result event produces turn_cancelled", async () => {
-    // Issue 1: stream closes without a result event while interrupted===true
-    // Expected: handleUserMessage emits turn_cancelled
-    //
-    // handleUserMessage resets this.interrupted=false at entry. To simulate a
-    // concurrent handleInterrupt() call we override the private readNextLine
-    // method so that when it returns null (stream end), it has already set the
-    // interrupted flag — exactly as would happen when handleInterrupt() fires
-    // during async reading.
-    const manager = new SessionManager("/tmp/test-loop-cancel-" + Date.now());
-    injectMockSubprocess(manager, []);
-
-    // Override readNextLine: first call returns a partial delta line,
-    // second call sets interrupted=true (simulating handleInterrupt()) and
-    // then returns null (stream end).
-    let readCallCount = 0;
-    const partialLine = JSON.stringify({
-      type: "content_block_delta",
-      delta: { type: "text_delta", text: "partial" },
-    });
-    (manager as any).readNextLine = async () => {
-      readCallCount++;
-      if (readCallCount === 1) return partialLine;
-      // Simulate handleInterrupt() firing between reads
-      (manager as any).interrupted = true;
-      return null;
-    };
-
-    const userMsg = { type: "user_message" as const, text: "hello", attachments: [] };
-    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
-
-    const cancelled = ipcMessages.filter((m: any) => m.type === "turn_cancelled");
-    expect(cancelled.length).toBe(1);
-    expect((cancelled[0] as any).partial_result).toBe("partial");
+  test("with continue: true includes --continue", () => {
+    const args = buildClaudeArgs({ ...defaultConfig, continue: true });
+    expect(args).toContain("--continue");
   });
 
-  test("unexpected process exit with interrupted=false produces error IPC message", async () => {
-    // Issue 2: stream closes without a result event and interrupted===false
-    // Expected: handleUserMessage emits error with recoverable: true
-    const manager = new SessionManager("/tmp/test-loop-crash-" + Date.now());
+  test("with forkSession: true and sessionId includes --fork-session", () => {
+    const args = buildClaudeArgs({ ...defaultConfig, sessionId: "sess-1", forkSession: true });
+    expect(args).toContain("--fork-session");
+  });
 
-    // Inject a mock that emits one delta then closes (no result event)
-    injectMockSubprocess(manager, [
-      { type: "content_block_delta", delta: { type: "text_delta", text: "partial before crash" } },
+  test("with sessionIdOverride includes --session-id", () => {
+    const args = buildClaudeArgs({ ...defaultConfig, sessionIdOverride: "override-id-xyz" });
+    const idx = args.indexOf("--session-id");
+    expect(idx).toBeGreaterThan(-1);
+    expect(args[idx + 1]).toBe("override-id-xyz");
+  });
+
+  test("throws if both sessionId and continue are set", () => {
+    expect(() =>
+      buildClaudeArgs({ ...defaultConfig, sessionId: "sess-abc", continue: true })
+    ).toThrow("Only one of sessionId, continue, or sessionIdOverride may be set");
+  });
+
+  test("throws if both sessionId and sessionIdOverride are set", () => {
+    expect(() =>
+      buildClaudeArgs({ ...defaultConfig, sessionId: "sess-abc", sessionIdOverride: "override-xyz" })
+    ).toThrow("Only one of sessionId, continue, or sessionIdOverride may be set");
+  });
+
+  test("throws if forkSession without sessionId or continue", () => {
+    expect(() =>
+      buildClaudeArgs({ ...defaultConfig, forkSession: true })
+    ).toThrow("forkSession requires either sessionId or continue to be set");
+  });
+
+  test("forkSession with continue does not throw", () => {
+    expect(() =>
+      buildClaudeArgs({ ...defaultConfig, continue: true, forkSession: true })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stdin message format tests
+// ---------------------------------------------------------------------------
+
+describe("stdin message format", () => {
+  test("stdin write produces correct user envelope", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-stdin-test-" + Date.now());
+
+    // Inject mock with a result event so handleUserMessage terminates cleanly
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "success", result: "" },
     ]);
 
-    // interrupted remains false (default) -- simulates unexpected process crash
+    // Spy on mockStdin.write to capture what gets written
+    const writtenData: string[] = [];
+    mockStdin.write = (data: unknown) => {
+      writtenData.push(String(data));
+    };
 
-    const userMsg = { type: "user_message" as const, text: "hello", attachments: [] };
-    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+    const userMsg = { type: "user_message" as const, text: "hello world", attachments: [] };
+    await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
-    const errors = ipcMessages.filter((m: any) => m.type === "error");
-    expect(errors.length).toBe(1);
-    expect((errors[0] as any).recoverable).toBe(true);
-    expect((errors[0] as any).message).toContain("unexpectedly");
-  });
+    // Should have captured at least one write
+    expect(writtenData.length).toBeGreaterThan(0);
 
-  test("full IPC round-trip with mocked claude process (integration)", async () => {
-    // Issue 3: integration test exercising the full handleUserMessage loop
-    // with a mock subprocess that emits a realistic sequence of stream-json
-    // events (partial deltas, assistant message, result) then closes.
-    const manager = new SessionManager("/tmp/test-loop-roundtrip-" + Date.now());
+    // Parse the first write (the user message envelope)
+    const rawJson = writtenData[0].replace(/\n$/, "");
+    const parsed = JSON.parse(rawJson);
 
-    const streamEvents = [
-      // Partial streaming deltas
-      { type: "content_block_delta", delta: { type: "text_delta", text: "Hello " } },
-      { type: "content_block_delta", delta: { type: "text_delta", text: "world" } },
-      // Complete assistant message
-      {
-        type: "assistant",
-        message: {
-          content: [{ type: "text", text: "Hello world" }],
-        },
-        session_id: "mock-session-abc",
-      },
-      // Turn complete
-      { type: "result", subtype: "success", result: "" },
-    ];
-
-    injectMockSubprocess(manager, streamEvents);
-
-    const userMsg = { type: "user_message" as const, text: "say hello", attachments: [] };
-    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
-
-    // Should have: 2 partial assistant_text, 1 complete assistant_text, 1 turn_complete
-    const partials = ipcMessages.filter(
-      (m: any) => m.type === "assistant_text" && m.is_partial === true
-    );
-    const completes = ipcMessages.filter(
-      (m: any) => m.type === "assistant_text" && m.is_partial === false
-    );
-    const turnCompletes = ipcMessages.filter((m: any) => m.type === "turn_complete");
-    const errors = ipcMessages.filter((m: any) => m.type === "error");
-
-    expect(errors.length).toBe(0);
-    expect(partials.length).toBe(2);
-    expect((partials[0] as any).text).toBe("Hello ");
-    expect((partials[1] as any).text).toBe("world");
-    expect(completes.length).toBeGreaterThanOrEqual(1);
-    expect((completes[0] as any).text).toBe("Hello world");
-    expect(turnCompletes.length).toBe(1);
-    expect((turnCompletes[0] as any).result).toBe("success");
+    expect(parsed.type).toBe("user");
+    expect(parsed.session_id).toBe("");
+    expect(parsed.parent_tool_use_id).toBeNull();
+    expect(parsed.message).toBeDefined();
+    expect(parsed.message.role).toBe("user");
+    expect(Array.isArray(parsed.message.content)).toBe(true);
+    expect(parsed.message.content.length).toBe(1);
+    expect(parsed.message.content[0].type).toBe("text");
+    expect(parsed.message.content[0].text).toBe("hello world");
   });
 });

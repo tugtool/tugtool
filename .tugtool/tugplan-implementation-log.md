@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-17T19:34:55Z
+bead: tugtool-jdn.1
+---
+
+## #step-0: Fixed CLI spawn arguments (added --permission-prompt-tool stdio, session flags), corrected stdin message format to protocol envelope, added dontAsk/delegate to PermissionMode types, replaced tests with 12 Step 0 tests
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-17T15:06:21Z
 bead: tugtool-9cr.3
