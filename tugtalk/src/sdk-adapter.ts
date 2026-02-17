@@ -1,5 +1,5 @@
 // SDK adapter layer isolating the V2 unstable API
-// Package: @anthropic-ai/claude-agent-sdk@0.2.42
+// Package: @anthropic-ai/claude-agent-sdk@0.2.44
 
 import {
   unstable_v2_createSession,
@@ -39,7 +39,7 @@ export function createSDKAdapter() {
     async createSession(options: AdapterSessionOptions): Promise<AdapterSession> {
       const sdkOptions: any = {
         model: options.model,
-        env: options.cwd ? { PWD: options.cwd } : undefined,
+        env: options.cwd ? { ...process.env, PWD: options.cwd } : undefined,
       };
 
       // Map canUseTool callback if provided
@@ -72,7 +72,7 @@ export function createSDKAdapter() {
     ): Promise<AdapterSession> {
       const sdkOptions: any = {
         model: options.model,
-        env: options.cwd ? { PWD: options.cwd } : undefined,
+        env: options.cwd ? { ...process.env, PWD: options.cwd } : undefined,
       };
 
       // Map canUseTool callback if provided

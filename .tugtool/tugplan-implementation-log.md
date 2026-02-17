@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-17T02:39:41Z
+bead: tugtool-1tg.1
+---
+
+## #step-0: Fixed environment variable wipeout bug in sdk-adapter.ts by spreading process.env before PWD override in both createSession and resumeSession. Updated SDK version comment to 0.2.44. Added 2 regression tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-17T01:59:33Z
 bead: tugtool-0c5.3
