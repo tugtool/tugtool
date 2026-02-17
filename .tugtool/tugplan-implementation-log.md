@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-17T15:01:39Z
+bead: tugtool-9cr.2
+---
+
+## #step-1: Extract buildClaudeArgs() and mapStreamEvent() as exported pure functions. Add 29 tests: CLI arg construction (new/resumed sessions, all permission modes), stream-json event mapping (all event types), interrupt turn_cancelled, unexpected exit error, full IPC round-trip integration with mocked subprocess.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-stream-pivot.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-17T14:44:27Z
 bead: tugtool-9cr.1

@@ -7,6 +7,7 @@ import type {
   ToolApproval,
   QuestionAnswer,
   PermissionModeMessage,
+  OutboundMessage,
 } from "./types.ts";
 import { mkdir, exists } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
@@ -15,6 +16,187 @@ interface PendingRequest<T> {
   resolve: (value: T) => void;
   reject: (err: Error) => void;
 }
+
+// ---------------------------------------------------------------------------
+// Exported pure functions for testability
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for building claude CLI spawn arguments.
+ */
+export interface ClaudeSpawnConfig {
+  pluginDir: string;
+  model: string;
+  permissionMode: string;
+  sessionId: string | null;
+}
+
+/**
+ * Build the CLI argument array for spawning the claude process.
+ * Exported for unit testing per Step 1 strategy.
+ * Per Spec S01 (#s01-spawn-args).
+ */
+export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
+  const args: string[] = [
+    "--output-format", "stream-json",
+    "--input-format", "stream-json",
+    "--include-partial-messages",
+    "--replay-user-messages",
+    "--plugin-dir", config.pluginDir,
+    "--model", config.model,
+    "--permission-mode", config.permissionMode,
+  ];
+
+  if (config.sessionId) {
+    args.push("--resume", "--session-id", config.sessionId);
+  } else {
+    args.push("-p");
+  }
+
+  return args;
+}
+
+/**
+ * Context passed to mapStreamEvent for IPC message construction.
+ */
+export interface EventMappingContext {
+  msgId: string;
+  seq: number;
+  rev: number;
+}
+
+/**
+ * Result of mapping a single stream-json event to IPC outbound messages.
+ */
+export interface EventMappingResult {
+  messages: OutboundMessage[];
+  newRev: number;
+  partialText: string;
+  gotResult: boolean;
+  sessionId?: string;
+}
+
+/**
+ * Map a single stream-json event to zero or more IPC outbound messages.
+ * Exported for unit testing per Step 1 strategy.
+ * Per Table T01 (#t01-event-mapping).
+ */
+export function mapStreamEvent(
+  event: Record<string, unknown>,
+  ctx: EventMappingContext,
+  accumulatedPartialText: string
+): EventMappingResult {
+  const messages: OutboundMessage[] = [];
+  let newRev = ctx.rev;
+  let partialText = accumulatedPartialText;
+  let gotResult = false;
+  let sessionId: string | undefined;
+
+  const eventType = event.type as string | undefined;
+
+  // Capture session_id from any event that has it
+  const eventSessionId = event.session_id as string | undefined;
+  if (eventSessionId) {
+    sessionId = eventSessionId;
+  }
+
+  if (eventType === "content_block_delta") {
+    // Streaming text delta per Table T01
+    const delta = event.delta as Record<string, unknown> | undefined;
+    if (delta?.type === "text_delta" && typeof delta.text === "string") {
+      partialText += delta.text;
+      messages.push({
+        type: "assistant_text",
+        msg_id: ctx.msgId,
+        seq: ctx.seq,
+        rev: newRev++,
+        text: delta.text,
+        is_partial: true,
+        status: "partial",
+      });
+    }
+  } else if (eventType === "assistant") {
+    // Complete assistant message per Table T01
+    const message = event.message as Record<string, unknown> | undefined;
+    const content = (message?.content as Array<Record<string, unknown>>) || [];
+    const text = content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text as string)
+      .join("");
+
+    messages.push({
+      type: "assistant_text",
+      msg_id: ctx.msgId,
+      seq: ctx.seq,
+      rev: newRev,
+      text,
+      is_partial: false,
+      status: "complete",
+    });
+
+    // Extract tool uses from message content
+    const toolBlocks = content.filter((block) => block.type === "tool_use");
+    for (const tool of toolBlocks) {
+      messages.push({
+        type: "tool_use",
+        msg_id: ctx.msgId,
+        seq: ctx.seq,
+        tool_name: tool.name as string,
+        tool_use_id: tool.id as string,
+        input: tool.input as object,
+      });
+    }
+  } else if (eventType === "tool_use") {
+    // Direct tool_use event per Table T01
+    messages.push({
+      type: "tool_use",
+      msg_id: ctx.msgId,
+      seq: ctx.seq,
+      tool_name: event.name as string,
+      tool_use_id: event.id as string,
+      input: (event.input as object) || {},
+    });
+  } else if (eventType === "tool_result" || eventType === "tool_progress") {
+    // Tool result/progress per Table T01
+    messages.push({
+      type: "tool_result",
+      tool_use_id: (event.tool_use_id as string) || "",
+      output: (event.output as string) || "",
+      is_error: event.is_error === true,
+    });
+  } else if (eventType === "result") {
+    // Turn complete per Table T01
+    const resultText = event.result as string | undefined;
+    if (typeof resultText === "string" && resultText.length > 0) {
+      messages.push({
+        type: "assistant_text",
+        msg_id: ctx.msgId,
+        seq: ctx.seq,
+        rev: newRev++,
+        text: resultText,
+        is_partial: false,
+        status: "complete",
+      });
+    }
+
+    const result = event.subtype === "success" ? "success" : "error";
+    messages.push({
+      type: "turn_complete",
+      msg_id: ctx.msgId,
+      seq: ctx.seq,
+      result,
+    });
+    gotResult = true;
+  }
+  // Other event types (content_block_start, content_block_stop, message_start,
+  // message_delta, message_stop) are internal tracking events -- no IPC message emitted.
+
+  return { messages, newRev, partialText, gotResult, sessionId };
+}
+
+// ---------------------------------------------------------------------------
+// SessionManager
+// ---------------------------------------------------------------------------
 
 /**
  * Manages claude CLI process lifecycle, message identity, and streaming.
@@ -49,8 +231,7 @@ export class SessionManager {
 
   /**
    * Spawn the claude CLI process with stream-json flags per Spec S01.
-   * If sessionId is provided, uses --resume --session-id for session continuation.
-   * Otherwise uses -p for a new session.
+   * Uses buildClaudeArgs() for argument construction.
    */
   private spawnClaude(sessionId: string | null): ReturnType<typeof Bun.spawn> {
     const claudePath = Bun.which("claude");
@@ -58,21 +239,12 @@ export class SessionManager {
       throw new Error("claude CLI not found on PATH");
     }
 
-    const args: string[] = [
-      "--output-format", "stream-json",
-      "--input-format", "stream-json",
-      "--include-partial-messages",
-      "--replay-user-messages",
-      "--plugin-dir", this.getTugtoolRoot(),
-      "--model", "claude-opus-4-6",
-      "--permission-mode", this.permissionManager.getMode(),
-    ];
-
-    if (sessionId) {
-      args.push("--resume", "--session-id", sessionId);
-    } else {
-      args.push("-p");
-    }
+    const args = buildClaudeArgs({
+      pluginDir: this.getTugtoolRoot(),
+      model: "claude-opus-4-6",
+      permissionMode: this.permissionManager.getMode(),
+      sessionId,
+    });
 
     console.log(`Spawning claude with args: ${args.join(" ")}`);
 
@@ -159,7 +331,7 @@ export class SessionManager {
 
   /**
    * Handle user_message: write to claude stdin, read and map stream-json events to IPC.
-   * Per D01/D02 and Table T01.
+   * Uses mapStreamEvent() for event-to-IPC mapping per Table T01.
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
     if (!this.claudeProcess) {
@@ -217,108 +389,48 @@ export class SessionManager {
           continue;
         }
 
-        const eventType = event.type as string | undefined;
+        const ctx: EventMappingContext = {
+          msgId: this.currentMsgId!,
+          seq,
+          rev: this.currentRev,
+        };
 
-        // Capture session_id from any event that has it
-        const eventSessionId = event.session_id as string | undefined;
-        if (eventSessionId && !this.sessionIdPersisted) {
+        const result = mapStreamEvent(event, ctx, partialText);
+
+        // Persist session_id if captured for the first time
+        if (result.sessionId && !this.sessionIdPersisted) {
           this.sessionIdPersisted = true;
-          this.persistSessionId(eventSessionId).catch((err: unknown) =>
+          this.persistSessionId(result.sessionId).catch((err: unknown) =>
             console.error("Failed to persist session ID:", err)
           );
         }
 
-        if (eventType === "content_block_delta") {
-          // Streaming text delta per Table T01
-          const delta = event.delta as Record<string, unknown> | undefined;
-          if (delta?.type === "text_delta" && typeof delta.text === "string") {
-            partialText += delta.text;
-            writeLine({
-              type: "assistant_text",
-              msg_id: this.currentMsgId!,
-              seq,
-              rev: this.currentRev++,
-              text: delta.text,
-              is_partial: true,
-              status: "partial",
-            });
-          }
-        } else if (eventType === "assistant") {
-          // Complete assistant message per Table T01
-          const message = event.message as Record<string, unknown> | undefined;
-          const content = (message?.content as Array<Record<string, unknown>>) || [];
-          const text = content
-            .filter((block) => block.type === "text")
-            .map((block) => block.text as string)
-            .join("");
+        // Emit all mapped IPC messages
+        for (const ipcMsg of result.messages) {
+          writeLine(ipcMsg);
+        }
 
-          writeLine({
-            type: "assistant_text",
-            msg_id: this.currentMsgId!,
-            seq,
-            rev: this.currentRev,
-            text,
-            is_partial: false,
-            status: "complete",
-          });
+        // Update state from mapping result
+        this.currentRev = result.newRev;
+        partialText = result.partialText;
+        gotResult = result.gotResult;
 
-          // Extract tool uses from message content
-          const toolBlocks = content.filter((block) => block.type === "tool_use");
-          for (const tool of toolBlocks) {
-            writeLine({
-              type: "tool_use",
-              msg_id: this.currentMsgId!,
-              seq,
-              tool_name: tool.name as string,
-              tool_use_id: tool.id as string,
-              input: tool.input as object,
-            });
-          }
-        } else if (eventType === "tool_use") {
-          // Direct tool_use event per Table T01
-          writeLine({
-            type: "tool_use",
-            msg_id: this.currentMsgId!,
-            seq,
-            tool_name: event.name as string,
-            tool_use_id: event.id as string,
-            input: (event.input as object) || {},
-          });
-        } else if (eventType === "tool_result" || eventType === "tool_progress") {
-          // Tool result/progress per Table T01
-          writeLine({
-            type: "tool_result",
-            tool_use_id: (event.tool_use_id as string) || "",
-            output: (event.output as string) || "",
-            is_error: event.is_error === true,
-          });
-        } else if (eventType === "result") {
-          // Turn complete per Table T01
-          const resultText = event.result as string | undefined;
-          if (typeof resultText === "string" && resultText.length > 0) {
-            writeLine({
-              type: "assistant_text",
-              msg_id: this.currentMsgId!,
-              seq,
-              rev: this.currentRev++,
-              text: resultText,
-              is_partial: false,
-              status: "complete",
-            });
-          }
-
-          const result = event.subtype === "success" ? "success" : "error";
-          writeLine({
-            type: "turn_complete",
-            msg_id: this.currentMsgId!,
-            seq,
-            result,
-          });
-          gotResult = true;
+        if (gotResult) {
           break;
-        } else {
-          // Log unhandled event types
-          console.log(`Unhandled stream-json event type=${eventType} subtype=${event.subtype ?? "none"}`);
+        }
+
+        // Log unhandled event types (no messages produced and not a known internal type)
+        if (result.messages.length === 0) {
+          const eventType = event.type as string | undefined;
+          const knownInternalTypes = new Set([
+            "content_block_start", "content_block_stop",
+            "message_start", "message_delta", "message_stop",
+            // replay events from --replay-user-messages
+            "user",
+          ]);
+          if (eventType && !knownInternalTypes.has(eventType)) {
+            console.log(`Unhandled stream-json event type=${eventType} subtype=${(event.subtype as string | undefined) ?? "none"}`);
+          }
         }
       }
     } catch (err) {
