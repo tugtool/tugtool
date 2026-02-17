@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-17T20:20:50Z
+bead: tugtool-jdn.5
+---
+
+## #step-4: Added buildContentBlocks() for mixed text+image attachments (PN-12 validation), session management methods (fork/continue/new with killAndCleanup), ModelChange and SessionCommand inbound IPC types with main.ts routing, made ipc_version required on all 17 outbound interfaces with ipc_version:2 at all ~31 construction sites, SIGTERM handler, 92 tests passing
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-17T20:07:39Z
 bead: tugtool-jdn.4

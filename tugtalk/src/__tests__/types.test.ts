@@ -7,6 +7,8 @@ import {
   isQuestionAnswer,
   isInterrupt,
   isPermissionMode,
+  isModelChange,
+  isSessionCommand,
 } from "../types.ts";
 
 describe("types.ts type guards", () => {
@@ -17,6 +19,9 @@ describe("types.ts type guards", () => {
     expect(isInboundMessage(null)).toBe(false);
     expect(isInboundMessage(undefined)).toBe(false);
     expect(isInboundMessage("string")).toBe(false);
+    // New message types added in Step 4
+    expect(isInboundMessage({ type: "model_change", model: "claude-haiku-3-5" })).toBe(true);
+    expect(isInboundMessage({ type: "session_command", command: "fork" })).toBe(true);
   });
 
   test("isProtocolInit discriminates protocol_init", () => {
@@ -53,5 +58,22 @@ describe("types.ts type guards", () => {
     const msg = { type: "permission_mode" as const, mode: "default" as const };
     expect(isPermissionMode(msg)).toBe(true);
     expect(isInterrupt(msg)).toBe(false);
+  });
+
+  test("isModelChange discriminates model_change", () => {
+    const msg = { type: "model_change" as const, model: "claude-haiku-3-5" };
+    expect(isModelChange(msg)).toBe(true);
+    expect(isSessionCommand(msg)).toBe(false);
+    expect(isPermissionMode(msg)).toBe(false);
+  });
+
+  test("isSessionCommand discriminates session_command with all variants", () => {
+    const fork = { type: "session_command" as const, command: "fork" as const };
+    const cont = { type: "session_command" as const, command: "continue" as const };
+    const newSess = { type: "session_command" as const, command: "new" as const };
+    expect(isSessionCommand(fork)).toBe(true);
+    expect(isSessionCommand(cont)).toBe(true);
+    expect(isSessionCommand(newSess)).toBe(true);
+    expect(isModelChange(fork)).toBe(false);
   });
 });

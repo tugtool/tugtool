@@ -22,6 +22,7 @@ import type {
   ControlRequestCancel,
   SystemMetadata,
   CostUpdate,
+  Attachment,
 } from "./types.ts";
 import { mkdir, exists } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
@@ -32,8 +33,69 @@ interface PendingRequest<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Image attachment validation constants (per PN-12)
+// ---------------------------------------------------------------------------
+
+const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // ~5MB decoded
+
+// ---------------------------------------------------------------------------
 // Exported pure functions for testability
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the content blocks array for a user message.
+ * Converts text and attachments into the claude API content block format.
+ * Validates image types and sizes per PN-12 (#pn-image-limits).
+ * Exported for unit testing.
+ */
+export function buildContentBlocks(
+  text: string,
+  attachments: Array<Attachment>
+): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [];
+
+  // Text always comes first.
+  if (text.length > 0) {
+    blocks.push({ type: "text", text });
+  }
+
+  for (const att of attachments) {
+    if (att.media_type.startsWith("image/")) {
+      // Validate media_type per PN-12.
+      if (!ALLOWED_IMAGE_TYPES.has(att.media_type)) {
+        throw new Error(
+          `Unsupported image type: ${att.media_type}. Supported: image/png, image/jpeg, image/gif, image/webp`
+        );
+      }
+      // Validate decoded size (~5MB limit). Base64 encodes 3 bytes as 4 chars.
+      const sizeBytes = Math.ceil((att.content.length * 3) / 4);
+      if (sizeBytes > MAX_IMAGE_SIZE_BYTES) {
+        throw new Error(
+          `Image exceeds ~5MB limit: ${att.filename} (${Math.round(sizeBytes / 1024 / 1024)}MB)`
+        );
+      }
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: att.media_type,
+          data: att.content,
+        },
+      });
+    } else {
+      // Text attachment.
+      blocks.push({ type: "text", text: att.content });
+    }
+  }
+
+  // Ensure at least one block (fallback for empty text + no attachments).
+  if (blocks.length === 0) {
+    blocks.push({ type: "text", text: "" });
+  }
+
+  return blocks;
+}
 
 /**
  * Configuration for building claude CLI spawn arguments.
@@ -119,7 +181,7 @@ export interface EventMappingResult {
 }
 
 /**
- * Result metadata from a result event, stored for CostUpdate emission (Step 3).
+ * Result metadata from a result event, stored for CostUpdate emission.
  */
 export interface ResultMetadata {
   subtype: string;
@@ -143,8 +205,6 @@ export interface TopLevelRoutingResult {
   sessionId?: string;
   streamEvent?: Record<string, unknown>;
   controlRequest?: Record<string, unknown>;
-  // Set when a control_cancel_request is received; event loop uses this to
-  // remove the matching entry from pendingControlRequests.
   cancelledRequestId?: string;
   parentToolUseId?: string;
   resultMetadata?: ResultMetadata;
@@ -210,10 +270,11 @@ export function routeTopLevelEvent(
           agents: (event.agents as unknown[]) || [],
           skills: (event.skills as unknown[]) || [],
           version: (event.claude_code_version as string) || "",
+          ipc_version: 2,
         };
         messages.push(sysMsg);
       } else if (subtype === "compact_boundary") {
-        const marker: CompactBoundary = { type: "compact_boundary" };
+        const marker: CompactBoundary = { type: "compact_boundary", ipc_version: 2 };
         messages.push(marker);
       }
       break;
@@ -233,6 +294,7 @@ export function routeTopLevelEvent(
             text: (block.text as string) || "",
             is_partial: false,
             status: "complete",
+            ipc_version: 2,
           });
         } else if (block.type === "tool_use") {
           messages.push({
@@ -242,6 +304,7 @@ export function routeTopLevelEvent(
             tool_name: (block.name as string) || "",
             tool_use_id: (block.id as string) || "",
             input: (block.input as object) || {},
+            ipc_version: 2,
           });
         } else if (block.type === "thinking") {
           const thinkingMsg: ThinkingText = {
@@ -251,6 +314,7 @@ export function routeTopLevelEvent(
             text: (block.text as string) || "",
             is_partial: false,
             status: "complete",
+            ipc_version: 2,
           };
           messages.push(thinkingMsg);
         }
@@ -293,6 +357,7 @@ export function routeTopLevelEvent(
             tool_use_id: toolUseId,
             output,
             is_error: block.is_error === true,
+            ipc_version: 2,
           });
         }
       }
@@ -305,6 +370,7 @@ export function routeTopLevelEvent(
           tool_use_id: firstToolUseId,
           tool_name: (toolUseResult.toolName as string) || "",
           structured_result: toolUseResult,
+          ipc_version: 2,
         });
       }
 
@@ -324,6 +390,7 @@ export function routeTopLevelEvent(
                   text: stdoutMatch[1],
                   is_partial: false,
                   status: "complete",
+                  ipc_version: 2,
                 });
               }
               const stderrMatch = blockContent.match(/<local-command-stderr>([\s\S]*?)<\/local-command-stderr>/);
@@ -332,6 +399,7 @@ export function routeTopLevelEvent(
                   type: "error",
                   message: stderrMatch[1],
                   recoverable: true,
+                  ipc_version: 2,
                 });
               }
             }
@@ -372,6 +440,7 @@ export function routeTopLevelEvent(
           text: resultText,
           is_partial: false,
           status: "complete",
+          ipc_version: 2,
         });
       }
 
@@ -384,6 +453,7 @@ export function routeTopLevelEvent(
         duration_api_ms: (event.duration_api_ms as number) || 0,
         usage: (event.usage as Record<string, unknown>) || {},
         modelUsage: (event.modelUsage as Record<string, unknown>) || {},
+        ipc_version: 2,
       };
       messages.push(costMsg);
 
@@ -393,6 +463,7 @@ export function routeTopLevelEvent(
         msg_id: ctx.msgId,
         seq: ctx.seq,
         result: resultValue,
+        ipc_version: 2,
       });
       break;
     }
@@ -417,14 +488,13 @@ export function routeTopLevelEvent(
     }
 
     case "control_cancel_request": {
-      // Extract the request_id being cancelled so the event loop can clean up
-      // pendingControlRequests, and emit a cancel IPC so the UI dismisses the dialog.
       const cancelId = event.request_id as string | undefined;
       if (cancelId) {
         cancelledRequestId = cancelId;
         const cancelMsg: ControlRequestCancel = {
           type: "control_request_cancel",
           request_id: cancelId,
+          ipc_version: 2,
         };
         messages.push(cancelMsg);
       } else {
@@ -479,6 +549,7 @@ export function mapStreamEvent(
         tool_name: (contentBlock.name as string) || "",
         tool_use_id: (contentBlock.id as string) || "",
         input: {},
+        ipc_version: 2,
       });
     }
   } else if (eventType === "content_block_delta") {
@@ -493,6 +564,7 @@ export function mapStreamEvent(
         text: delta.text,
         is_partial: true,
         status: "partial",
+        ipc_version: 2,
       });
     } else if (delta?.type === "thinking_delta" && typeof delta.text === "string") {
       const thinkingMsg: ThinkingText = {
@@ -502,6 +574,7 @@ export function mapStreamEvent(
         text: delta.text,
         is_partial: true,
         status: "partial",
+        ipc_version: 2,
       };
       messages.push(thinkingMsg);
     }
@@ -513,6 +586,7 @@ export function mapStreamEvent(
       tool_name: event.name as string,
       tool_use_id: event.id as string,
       input: (event.input as object) || {},
+      ipc_version: 2,
     });
   } else if (eventType === "tool_result" || eventType === "tool_progress") {
     messages.push({
@@ -520,6 +594,7 @@ export function mapStreamEvent(
       tool_use_id: (event.tool_use_id as string) || "",
       output: (event.output as string) || "",
       is_error: event.is_error === true,
+      ipc_version: 2,
     });
   }
 
@@ -542,8 +617,7 @@ export class SessionManager {
   private interrupted: boolean = false;
   private permissionManager = new PermissionManager();
   private seq: number = 0;
-  // Legacy pending maps kept but no longer used for Promise-based resolution.
-  // Control flow is now via control_response writes to stdin per D05.
+  // Legacy pending maps kept for reference; control flow is now via control_response writes.
   private pendingApprovals = new Map<string, PendingRequest<"allow" | "deny">>();
   private pendingQuestions = new Map<string, PendingRequest<Record<string, string>>>();
   // Stores raw control_requests by request_id for correlation with IPC messages.
@@ -589,6 +663,35 @@ export class SessionManager {
       stderr: "inherit",
       cwd: this.projectDir,
     });
+  }
+
+  /**
+   * Kill and clean up the current claude process gracefully.
+   * Closes stdin (EOF) to signal the process to finish, waits up to 5s,
+   * then force-kills if still running.
+   */
+  private async killAndCleanup(): Promise<void> {
+    if (this.claudeProcess) {
+      try {
+        // Close stdin to signal EOF (graceful shutdown).
+        this.claudeProcess.stdin.end();
+        // Wait for process to exit or timeout after 5s.
+        await Promise.race([
+          this.claudeProcess.exited,
+          new Promise<void>((res) => setTimeout(res, 5000)),
+        ]);
+      } catch {
+        // Process may already be gone.
+      }
+      try {
+        this.claudeProcess.kill();
+      } catch {
+        // Ignore if already terminated.
+      }
+      this.claudeProcess = null;
+      this.stdoutReader = null;
+      this.stdoutBuffer = "";
+    }
   }
 
   /**
@@ -648,6 +751,7 @@ export class SessionManager {
     writeLine({
       type: "session_init",
       session_id: initId,
+      ipc_version: 2,
     });
 
     if (existingId) {
@@ -657,7 +761,8 @@ export class SessionManager {
   }
 
   /**
-   * Handle user_message: write to claude stdin, two-tier event routing.
+   * Handle user_message: convert attachments to content blocks, write to stdin,
+   * and process events with two-tier routing.
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
     if (!this.claudeProcess) {
@@ -672,12 +777,15 @@ export class SessionManager {
     let partialText = "";
     let gotResult = false;
 
+    // Build content blocks from text and attachments per PN-12.
+    const contentBlocks = buildContentBlocks(msg.text, msg.attachments || []);
+
     const userInput = JSON.stringify({
       type: "user",
       session_id: "",
       message: {
         role: "user",
-        content: [{ type: "text", text: msg.text }],
+        content: contentBlocks,
       },
       parent_tool_use_id: null,
     }) + "\n";
@@ -696,12 +804,14 @@ export class SessionManager {
               msg_id: this.currentMsgId!,
               seq,
               partial_result: partialText || "User interrupted",
+              ipc_version: 2,
             });
           } else if (!gotResult) {
             writeLine({
               type: "error",
               message: "Claude process stream ended unexpectedly",
               recoverable: true,
+              ipc_version: 2,
             });
           }
           break;
@@ -768,16 +878,15 @@ export class SessionManager {
               decision_reason: request.decision_reason as string | undefined,
               permission_suggestions: request.permission_suggestions as unknown[] | undefined,
               is_question: isQuestion,
+              ipc_version: 2,
             };
             writeLine(forward);
           } else {
             console.log(`Unhandled control_request subtype=${subtype ?? "unknown"}`);
           }
-          // DO NOT break -- the turn continues after control_response is sent.
         }
 
-        // Handle control_cancel_request: clean up pending entry and the IPC cancel
-        // message was already emitted by routeTopLevelEvent via messages[].
+        // Handle control_cancel_request: clean up pending entry.
         if (routeResult.cancelledRequestId) {
           this.pendingControlRequests.delete(routeResult.cancelledRequestId);
         }
@@ -792,6 +901,7 @@ export class SessionManager {
         type: "error",
         message: `Turn failed: ${err}`,
         recoverable: true,
+        ipc_version: 2,
       });
     }
   }
@@ -817,16 +927,10 @@ export class SessionManager {
     const originalInput = (pendingRequest?.input as Record<string, unknown>) || {};
 
     if (msg.decision === "allow") {
-      const response = formatPermissionAllow(
-        msg.request_id,
-        msg.updatedInput || originalInput
-      );
+      const response = formatPermissionAllow(msg.request_id, msg.updatedInput || originalInput);
       sendControlResponse(stdin, response);
     } else {
-      const response = formatPermissionDeny(
-        msg.request_id,
-        msg.message || "User denied"
-      );
+      const response = formatPermissionDeny(msg.request_id, msg.message || "User denied");
       sendControlResponse(stdin, response);
     }
 
@@ -860,7 +964,6 @@ export class SessionManager {
 
   /**
    * Handle interrupt: send interrupt control_request per D07.
-   * Uses control protocol instead of SIGINT for graceful interruption.
    */
   handleInterrupt(): void {
     if (!this.claudeProcess) {
@@ -892,6 +995,106 @@ export class SessionManager {
     }
     const stdin = this.claudeProcess.stdin;
     sendControlRequest(stdin, generateRequestId(), { subtype: "set_model", model });
+  }
+
+  /**
+   * Fork the current session: kill current process, respawn with --continue --fork-session.
+   * Per D10 (#d10-session-forking).
+   */
+  async handleSessionFork(): Promise<void> {
+    await this.killAndCleanup();
+
+    const claudePath = Bun.which("claude");
+    if (!claudePath) throw new Error("claude CLI not found on PATH");
+
+    const args = buildClaudeArgs({
+      pluginDir: this.getTugtoolRoot(),
+      model: "claude-opus-4-6",
+      permissionMode: this.permissionManager.getMode(),
+      sessionId: null,
+      continue: true,
+      forkSession: true,
+    });
+
+    this.claudeProcess = Bun.spawn([claudePath, ...args], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "inherit",
+      cwd: this.projectDir,
+    });
+    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
+    this.stdoutBuffer = "";
+    this.sessionIdPersisted = false;
+
+    writeLine({ type: "session_init", session_id: "pending-fork", ipc_version: 2 });
+  }
+
+  /**
+   * Continue in a new session picking up conversation history.
+   * Respawns with --continue per D10.
+   */
+  async handleSessionContinue(): Promise<void> {
+    await this.killAndCleanup();
+
+    const claudePath = Bun.which("claude");
+    if (!claudePath) throw new Error("claude CLI not found on PATH");
+
+    const args = buildClaudeArgs({
+      pluginDir: this.getTugtoolRoot(),
+      model: "claude-opus-4-6",
+      permissionMode: this.permissionManager.getMode(),
+      sessionId: null,
+      continue: true,
+    });
+
+    this.claudeProcess = Bun.spawn([claudePath, ...args], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "inherit",
+      cwd: this.projectDir,
+    });
+    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
+    this.stdoutBuffer = "";
+    this.sessionIdPersisted = false;
+
+    writeLine({ type: "session_init", session_id: "pending-continue", ipc_version: 2 });
+  }
+
+  /**
+   * Start a fresh session with no prior history.
+   * Kills current process and respawns without --resume.
+   */
+  async handleNewSession(): Promise<void> {
+    await this.killAndCleanup();
+
+    this.claudeProcess = this.spawnClaude(null);
+    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
+    this.stdoutBuffer = "";
+    this.sessionIdPersisted = false;
+
+    writeLine({ type: "session_init", session_id: "pending", ipc_version: 2 });
+  }
+
+  /**
+   * Dispatch a session command to the appropriate session management method.
+   */
+  async handleSessionCommand(command: "fork" | "continue" | "new"): Promise<void> {
+    switch (command) {
+      case "fork":
+        return this.handleSessionFork();
+      case "continue":
+        return this.handleSessionContinue();
+      case "new":
+        return this.handleNewSession();
+    }
+  }
+
+  /**
+   * Public shutdown: close stdin and kill the process gracefully.
+   * Called by main.ts SIGTERM handler.
+   */
+  async shutdown(): Promise<void> {
+    await this.killAndCleanup();
   }
 
   /**

@@ -51,28 +51,40 @@ export interface PermissionModeMessage {
   mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "delegate";
 }
 
+export interface ModelChange {
+  type: "model_change";
+  model: string;
+}
+
+export interface SessionCommand {
+  type: "session_command";
+  command: "fork" | "continue" | "new";
+}
+
 export type InboundMessage =
   | ProtocolInit
   | UserMessage
   | ToolApproval
   | QuestionAnswer
   | Interrupt
-  | PermissionModeMessage;
+  | PermissionModeMessage
+  | ModelChange
+  | SessionCommand;
 
 // Outbound message types (tugtalk stdout to tugcast) - Spec S02
-// ipc_version is optional here; made required in Step 4.
+// ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
 
 export interface ProtocolAck {
   type: "protocol_ack";
   version: number;
   session_id: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface SessionInit {
   type: "session_init";
   session_id: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface AssistantText {
@@ -83,7 +95,7 @@ export interface AssistantText {
   text: string;
   is_partial: boolean;
   status: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface ToolUse {
@@ -93,7 +105,7 @@ export interface ToolUse {
   tool_name: string;
   tool_use_id: string;
   input: object;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface ToolResult {
@@ -101,7 +113,7 @@ export interface ToolResult {
   tool_use_id: string;
   output: string;
   is_error: boolean;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface ToolApprovalRequest {
@@ -109,14 +121,14 @@ export interface ToolApprovalRequest {
   request_id: string;
   tool_name: string;
   input: object;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface Question {
   type: "question";
   request_id: string;
   questions: QuestionDef[];
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface TurnComplete {
@@ -124,7 +136,7 @@ export interface TurnComplete {
   msg_id: string;
   seq: number;
   result: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface TurnCancelled {
@@ -132,14 +144,14 @@ export interface TurnCancelled {
   msg_id: string;
   seq: number;
   partial_result: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export interface ErrorEvent {
   type: "error";
   message: string;
   recoverable: boolean;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,12 +168,11 @@ export interface ThinkingText {
   text: string;
   is_partial: boolean;
   status: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 /**
  * Forwarded control_request from claude stdout to tugcast frontend.
- * Enables the UI to show permission prompts and question dialogs.
  */
 export interface ControlRequestForward {
   type: "control_request_forward";
@@ -170,9 +181,8 @@ export interface ControlRequestForward {
   input: Record<string, unknown>;
   decision_reason?: string;
   permission_suggestions?: unknown[];
-  // True if this is an AskUserQuestion tool invocation (question dialog vs permission dialog).
   is_question: boolean;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 /**
@@ -190,7 +200,7 @@ export interface SystemMetadata {
   agents: unknown[];
   skills: unknown[];
   version: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 /**
@@ -204,15 +214,15 @@ export interface CostUpdate {
   duration_api_ms: number;
   usage: Record<string, unknown>;
   modelUsage: Record<string, unknown>;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 /**
- * Compact context boundary marker emitted by system/compact_boundary events.
+ * Compact context boundary marker.
  */
 export interface CompactBoundary {
   type: "compact_boundary";
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 /**
@@ -223,18 +233,16 @@ export interface ToolUseStructured {
   tool_use_id: string;
   tool_name: string;
   structured_result: Record<string, unknown>;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 /**
  * Cancellation notice for a pending permission or question dialog.
- * Emitted when claude sends control_cancel_request so the UI can dismiss
- * the dialog that was opened by the corresponding control_request_forward.
  */
 export interface ControlRequestCancel {
   type: "control_request_cancel";
   request_id: string;
-  ipc_version?: number;
+  ipc_version: number;
 }
 
 export type OutboundMessage =
@@ -266,7 +274,9 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "tool_approval" ||
     typed.type === "question_answer" ||
     typed.type === "interrupt" ||
-    typed.type === "permission_mode"
+    typed.type === "permission_mode" ||
+    typed.type === "model_change" ||
+    typed.type === "session_command"
   );
 }
 
@@ -292,4 +302,12 @@ export function isInterrupt(msg: InboundMessage): msg is Interrupt {
 
 export function isPermissionMode(msg: InboundMessage): msg is PermissionModeMessage {
   return msg.type === "permission_mode";
+}
+
+export function isModelChange(msg: InboundMessage): msg is ModelChange {
+  return msg.type === "model_change";
+}
+
+export function isSessionCommand(msg: InboundMessage): msg is SessionCommand {
+  return msg.type === "session_command";
 }
