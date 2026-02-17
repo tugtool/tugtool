@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, mock } from "bun:test";
 import { createSDKAdapter } from "../sdk-adapter.ts";
 
 describe("sdk-adapter.ts", () => {
@@ -22,7 +22,7 @@ describe("sdk-adapter.ts", () => {
 
     const adapter = createSDKAdapter();
     const session = await adapter.createSession({
-      model: "claude-opus-4-20250514",
+      model: "claude-opus-4-6",
       cwd: process.cwd(),
     });
 
@@ -44,5 +44,123 @@ describe("sdk-adapter.ts", () => {
     await expect(adapter.setPermissionMode("test-id", "default")).rejects.toThrow(
       "deprecated"
     );
+  });
+
+  describe("env merging regression tests", () => {
+    test("env merging includes process.env when cwd is set", async () => {
+      // Capture what gets passed to the SDK
+      let capturedOptions: any = null;
+
+      // Mock the SDK module to intercept calls
+      const fakeSession = {
+        sessionId: "fake-session-id",
+        send: async () => {},
+        stream: async function* () {},
+        close: () => {},
+      };
+
+      mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+        unstable_v2_createSession: (opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+        unstable_v2_resumeSession: (id: string, opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+      }));
+
+      // Dynamically import to get the mocked version
+      const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
+      const adapter = createMockedAdapter();
+
+      // Call createSession with cwd set
+      await adapter.createSession({
+        model: "claude-opus-4-6",
+        cwd: "/test/dir",
+      });
+
+      // Verify env was constructed correctly
+      expect(capturedOptions.env).toBeDefined();
+      expect(capturedOptions.env.PWD).toBe("/test/dir");
+      expect(capturedOptions.env.PATH).toBeDefined();
+      expect(capturedOptions.env.HOME).toBeDefined();
+    });
+
+    test("env is undefined when cwd is not set", async () => {
+      // Capture what gets passed to the SDK
+      let capturedOptions: any = null;
+
+      // Mock the SDK module
+      const fakeSession = {
+        sessionId: "fake-session-id",
+        send: async () => {},
+        stream: async function* () {},
+        close: () => {},
+      };
+
+      mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+        unstable_v2_createSession: (opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+        unstable_v2_resumeSession: (id: string, opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+      }));
+
+      // Dynamically import to get the mocked version
+      const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
+      const adapter = createMockedAdapter();
+
+      // Call createSession without cwd
+      await adapter.createSession({
+        model: "claude-opus-4-6",
+      });
+
+      // Verify env is undefined
+      expect(capturedOptions.env).toBeUndefined();
+    });
+
+    test("onStderr callback is passed through to SDK as stderr", async () => {
+      // Capture what gets passed to the SDK
+      let capturedOptions: any = null;
+
+      // Mock the SDK module
+      const fakeSession = {
+        sessionId: "fake-session-id",
+        send: async () => {},
+        stream: async function* () {},
+        close: () => {},
+      };
+
+      mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+        unstable_v2_createSession: (opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+        unstable_v2_resumeSession: (id: string, opts: any) => {
+          capturedOptions = opts;
+          return fakeSession;
+        },
+      }));
+
+      // Dynamically import to get the mocked version
+      const { createSDKAdapter: createMockedAdapter } = await import("../sdk-adapter.ts");
+      const adapter = createMockedAdapter();
+
+      // Create a callback to pass
+      const stderrCallback = (data: string) => {};
+
+      // Call createSession with onStderr
+      await adapter.createSession({
+        model: "claude-opus-4-6",
+        onStderr: stderrCallback,
+      });
+
+      // Verify onStderr was passed through as stderr
+      expect(capturedOptions.stderr).toBe(stderrCallback);
+    });
   });
 });

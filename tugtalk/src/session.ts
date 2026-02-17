@@ -54,10 +54,11 @@ export class SessionManager {
       if (existingId) {
         console.log(`Attempting to resume session: ${existingId}`);
         this.session = await this.adapter.resumeSession(existingId, {
-          model: "claude-opus-4-20250514",
+          model: "claude-opus-4-6",
           cwd: this.projectDir,
           permissionMode: this.permissionManager.getMode(),
           canUseTool: this.createCanUseToolCallback(),
+          onStderr: (data: string) => console.error("[sdk stderr]", data),
         });
         console.log(`Resumed session: ${this.session.sessionId}`);
       } else {
@@ -66,10 +67,11 @@ export class SessionManager {
     } catch (err) {
       console.log(`Resume failed, creating new session: ${err}`);
       this.session = await this.adapter.createSession({
-        model: "claude-opus-4-20250514",
+        model: "claude-opus-4-6",
         cwd: this.projectDir,
         permissionMode: this.permissionManager.getMode(),
         canUseTool: this.createCanUseToolCallback(),
+        onStderr: (data: string) => console.error("[sdk stderr]", data),
       });
       console.log(`Created new session: ${this.session.sessionId}`);
     }

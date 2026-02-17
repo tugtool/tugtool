@@ -9,6 +9,58 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-17T02:54:56Z
+bead: tugtool-1tg.4
+---
+
+## #step-3: Added onStderr callback to AdapterSessionOptions interface and wired it to SDK stderr field in both createSession and resumeSession. Session.ts provides callback logging to console.error with [sdk stderr] prefix. Added passthrough test.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-17T02:47:53Z
+bead: tugtool-1tg.3
+---
+
+## #step-2: Upgraded SDK to 0.2.44 in package.json and bun.lock. Updated model ID from claude-opus-4-20250514 to claude-opus-4-6 in session.ts (2 occurrences) and sdk-adapter.test.ts (1 occurrence). All 32 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-17T02:43:19Z
+bead: tugtool-1tg.2
+---
+
+## #step-1: Replaced fire-and-forget initialize().catch() in main.ts with awaited try/catch block. Protocol_ack ordering preserved. Eliminates race condition where messages could arrive during initialization.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-17T02:39:41Z
+bead: tugtool-1tg.1
+---
+
+## #step-0: Fixed environment variable wipeout bug in sdk-adapter.ts by spreading process.env before PWD override in both createSession and resumeSession. Updated SDK version comment to 0.2.44. Added 2 regression tests.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-17T01:59:33Z
 bead: tugtool-0c5.3
