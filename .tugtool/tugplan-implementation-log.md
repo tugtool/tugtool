@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-17T01:48:16Z
+bead: tugtool-0c5.1
+---
+
+## #step-0: Diagnostic verification: ConversationCard mounted in main.ts, send() API mismatch confirmed (6 call-sites use 1-arg instead of 2-arg), tugtalk exists and tests pass (30/30), tugcast builds clean, tugdeck builds clean. Dependencies installed in both tugdeck and tugtalk.
+
+**Files changed:**
+- .tugtool/tugplan-conversation-wiring.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-17T00:25:02Z
 ---
