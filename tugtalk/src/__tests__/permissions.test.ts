@@ -16,4 +16,25 @@ describe("permissions.ts", () => {
     pm.setMode("plan");
     expect(pm.getMode()).toBe("plan");
   });
+
+  test("setMode accepts dontAsk mode", () => {
+    const pm = new PermissionManager();
+    pm.setMode("dontAsk");
+    expect(pm.getMode()).toBe("dontAsk");
+  });
+
+  test("setMode accepts delegate mode", () => {
+    const pm = new PermissionManager();
+    pm.setMode("delegate");
+    expect(pm.getMode()).toBe("delegate");
+  });
+
+  test("setMode cycles through all valid modes", () => {
+    const pm = new PermissionManager();
+    const allModes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "delegate"] as const;
+    for (const mode of allModes) {
+      pm.setMode(mode);
+      expect(pm.getMode()).toBe(mode);
+    }
+  });
 });

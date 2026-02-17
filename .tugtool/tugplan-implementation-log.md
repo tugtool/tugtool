@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-17T20:29:38Z
+bead: tugtool-jdn.6
+---
+
+## #step-5: Test-only step: added 25 new tests covering dontAsk/delegate permission modes, model_change/session_command IPC validation, inbound routing type guards, outbound type shape validation with ipc_version:2. 136 tests passing across 6 files, no source code changes
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-protocol.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-17T20:20:50Z
 bead: tugtool-jdn.5

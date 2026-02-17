@@ -41,4 +41,34 @@ describe("ipc.ts", () => {
     const permissionMode = '{"type":"permission_mode","mode":"default"}';
     expect(validateMessage(permissionMode)).not.toBeNull();
   });
+
+  test("validateMessage accepts model_change", () => {
+    const result = validateMessage('{"type":"model_change","model":"claude-haiku-3-5"}');
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe("model_change");
+  });
+
+  test("validateMessage accepts session_command fork", () => {
+    const result = validateMessage('{"type":"session_command","command":"fork"}');
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe("session_command");
+  });
+
+  test("validateMessage accepts session_command continue", () => {
+    const result = validateMessage('{"type":"session_command","command":"continue"}');
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe("session_command");
+  });
+
+  test("validateMessage accepts session_command new", () => {
+    const result = validateMessage('{"type":"session_command","command":"new"}');
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe("session_command");
+  });
+
+  test("validateMessage rejects unknown types (regression)", () => {
+    // Different unknown type value to complement the existing "unknown_type" test
+    const result = validateMessage('{"type":"totally_unknown_message_type"}');
+    expect(result).toBeNull();
+  });
 });

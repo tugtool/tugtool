@@ -204,6 +204,30 @@ describe("buildClaudeArgs", () => {
       buildClaudeArgs({ ...defaultConfig, continue: true, forkSession: true })
     ).not.toThrow();
   });
+
+  test("all required base flags are present", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    expect(args).toContain("--output-format");
+    expect(args[args.indexOf("--output-format") + 1]).toBe("stream-json");
+    expect(args).toContain("--input-format");
+    expect(args[args.indexOf("--input-format") + 1]).toBe("stream-json");
+    expect(args).toContain("--verbose");
+    expect(args).toContain("--include-partial-messages");
+    expect(args).toContain("--replay-user-messages");
+  });
+
+  test("config values are correctly mapped to CLI flags", () => {
+    const config = {
+      pluginDir: "/my/plugin/dir",
+      model: "claude-haiku-3-5",
+      permissionMode: "bypassPermissions",
+      sessionId: null,
+    };
+    const args = buildClaudeArgs(config);
+    expect(args[args.indexOf("--plugin-dir") + 1]).toBe("/my/plugin/dir");
+    expect(args[args.indexOf("--model") + 1]).toBe("claude-haiku-3-5");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -525,6 +549,47 @@ describe("routeTopLevelEvent", () => {
     expect(result.messages).toHaveLength(1);
     expect((result.messages[0] as any).type).toBe("compact_boundary");
   });
+
+  test("assistant with mixed content (text + tool_use + thinking) emits all three types", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "text", text: "Here is my answer" },
+          { type: "tool_use", name: "Read", id: "tu-mixed", input: { path: "/f.ts" } },
+          { type: "thinking", text: "Let me reason..." },
+        ],
+      },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(3);
+    const types = result.messages.map((m: any) => m.type);
+    expect(types).toContain("assistant_text");
+    expect(types).toContain("tool_use");
+    expect(types).toContain("thinking_text");
+  });
+
+  test("result with permission_denials stores them in resultMetadata", () => {
+    const denials = [{ tool: "Write", reason: "blocked path" }];
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "",
+      permission_denials: denials,
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.resultMetadata).toBeDefined();
+    expect(result.resultMetadata!.permission_denials).toEqual(denials);
+  });
+
+  test("control_cancel_request at pure function level emits cancel IPC and sets cancelledRequestId", () => {
+    const event = { type: "control_cancel_request", request_id: "req-pure-cancel" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.cancelledRequestId).toBe("req-pure-cancel");
+    const cancelMsg = result.messages.find((m: any) => m.type === "control_request_cancel") as any;
+    expect(cancelMsg).toBeDefined();
+    expect(cancelMsg.request_id).toBe("req-pure-cancel");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -592,6 +657,35 @@ describe("mapStreamEvent (updated)", () => {
     const result = mapStreamEvent(event, baseCtx, "");
     // sessionId should not be present on EventMappingResult
     expect("sessionId" in result).toBe(false);
+  });
+
+  test("content_block_delta with input_json_delta produces no messages", () => {
+    const event = {
+      type: "content_block_delta",
+      delta: { type: "input_json_delta", partial_json: "{\"path\":" },
+    };
+    const result = mapStreamEvent(event, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("content_block_stop produces no messages", () => {
+    const result = mapStreamEvent({ type: "content_block_stop", index: 0 }, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("message_start produces no messages", () => {
+    const result = mapStreamEvent({ type: "message_start", message: {} }, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("message_delta produces no messages", () => {
+    const result = mapStreamEvent({ type: "message_delta", delta: { stop_reason: "end_turn" } }, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("message_stop produces no messages", () => {
+    const result = mapStreamEvent({ type: "message_stop" }, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
   });
 });
 
@@ -1260,5 +1354,201 @@ describe("session management", () => {
 
     // claudeProcess must be nulled out after shutdown.
     expect((manager as any).claudeProcess).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SessionManager behavioral tests (Step 5)
+// ---------------------------------------------------------------------------
+
+describe("SessionManager behavioral", () => {
+  test("constructor does not throw", () => {
+    expect(() => new SessionManager("/tmp/test-constructor")).not.toThrow();
+  });
+
+  test("session ID persistence round-trip", async () => {
+    const tmpDir = `/tmp/tugtalk-persist-${Date.now()}`;
+    const manager = new SessionManager(tmpDir);
+
+    // Write then read back the session ID via the private helpers.
+    await (manager as any).persistSessionId("round-trip-id");
+    const readBack = await (manager as any).readSessionId();
+    expect(readBack).toBe("round-trip-id");
+  });
+
+  test("handlePermissionMode updates permissionManager state", () => {
+    const manager = new SessionManager("/tmp/tugtalk-perm-mode-" + Date.now());
+    manager.handlePermissionMode({ type: "permission_mode", mode: "bypassPermissions" });
+    expect((manager as any).permissionManager.getMode()).toBe("bypassPermissions");
+  });
+
+  test("handlePermissionMode accepts all valid mode values", () => {
+    const manager = new SessionManager("/tmp/tugtalk-perm-all-" + Date.now());
+    const modes = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "delegate"] as const;
+    for (const mode of modes) {
+      manager.handlePermissionMode({ type: "permission_mode", mode });
+      expect((manager as any).permissionManager.getMode()).toBe(mode);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleUserMessage integration tests (Step 5)
+// ---------------------------------------------------------------------------
+
+describe("handleUserMessage integration", () => {
+  test("full round-trip: system init -> stream deltas -> result produces correct IPC sequence", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-roundtrip-" + Date.now());
+
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "integration-sess-1",
+        cwd: "/proj",
+        tools: ["Read"],
+        model: "claude-opus-4-6",
+        permissionMode: "acceptEdits",
+        slash_commands: [],
+        plugins: [],
+        agents: [],
+        skills: [],
+        claude_code_version: "2.1.38",
+      },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello" } } },
+      { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: " World" } } },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "hi", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    // System metadata must have been emitted.
+    const sysMeta = ipcMessages.find((m: any) => m.type === "system_metadata");
+    expect(sysMeta).toBeDefined();
+    expect((sysMeta as any).session_id).toBe("integration-sess-1");
+
+    // At least one assistant_text with "Hello" from stream deltas.
+    const assistantTexts = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    const helloMsg = assistantTexts.find((m: any) => m.text === "Hello");
+    expect(helloMsg).toBeDefined();
+
+    // CostUpdate before turn_complete.
+    const costUpdate = ipcMessages.find((m: any) => m.type === "cost_update");
+    expect(costUpdate).toBeDefined();
+    const turnComplete = ipcMessages.find((m: any) => m.type === "turn_complete");
+    expect(turnComplete).toBeDefined();
+    expect((turnComplete as any).result).toBe("success");
+    const cuIdx = ipcMessages.findIndex((m: any) => m.type === "cost_update");
+    const tcIdx = ipcMessages.findIndex((m: any) => m.type === "turn_complete");
+    expect(cuIdx).toBeLessThan(tcIdx);
+  });
+
+  test("session ID captured from system/init sets sessionIdPersisted flag", async () => {
+    const tmpDir = `/tmp/tugtalk-sessid-${Date.now()}`;
+    const manager = new SessionManager(tmpDir);
+
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "captured-sess-99",
+        cwd: tmpDir,
+        tools: [],
+        model: "claude-opus-4-6",
+        permissionMode: "acceptEdits",
+        slash_commands: [],
+        plugins: [],
+        agents: [],
+        skills: [],
+        claude_code_version: "2.0",
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "ping", attachments: [] };
+    await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    // After handling, sessionIdPersisted must be true.
+    expect((manager as any).sessionIdPersisted).toBe(true);
+  });
+
+  test("stdin receives correct user envelope with image attachment", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-img-envelope-" + Date.now());
+
+    const writtenData: string[] = [];
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (data: unknown) => writtenData.push(String(data));
+
+    const fakeBase64 = "aGVsbG8="; // "hello" in base64
+    const userMsg = {
+      type: "user_message" as const,
+      text: "look at this image",
+      attachments: [{ filename: "photo.png", content: fakeBase64, media_type: "image/png" }],
+    };
+    await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    expect(writtenData.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    expect(parsed.type).toBe("user");
+    expect(Array.isArray(parsed.message.content)).toBe(true);
+
+    const textBlock = parsed.message.content.find((b: any) => b.type === "text");
+    expect(textBlock).toBeDefined();
+    expect(textBlock.text).toBe("look at this image");
+
+    const imageBlock = parsed.message.content.find((b: any) => b.type === "image");
+    expect(imageBlock).toBeDefined();
+    expect(imageBlock.source.type).toBe("base64");
+    expect(imageBlock.source.media_type).toBe("image/png");
+    expect(imageBlock.source.data).toBe(fakeBase64);
+  });
+
+  test("error_during_execution result produces turn_complete with result: error", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-err-turn-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      { type: "result", subtype: "error_during_execution", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "go", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    const tc = ipcMessages.find((m: any) => m.type === "turn_complete") as any;
+    expect(tc).toBeDefined();
+    expect(tc.result).toBe("error");
+  });
+
+  test("isReplay slash command stdout extracted from replayed user message", async () => {
+    const manager = new SessionManager("/tmp/tugtalk-replay-" + Date.now());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "user",
+        isReplay: true,
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tu-slash",
+              content: "<local-command-stdout>slash output text</local-command-stdout>",
+              is_error: false,
+            },
+          ],
+        },
+      },
+      { type: "result", subtype: "success", result: "" },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const userMsg = { type: "user_message" as const, text: "run slash", attachments: [] };
+    const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
+
+    const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
+    const slashOutput = textMsgs.find((m: any) => m.text.includes("slash output text"));
+    expect(slashOutput).toBeDefined();
   });
 });
