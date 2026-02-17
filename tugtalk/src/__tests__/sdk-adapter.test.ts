@@ -22,7 +22,7 @@ describe("sdk-adapter.ts", () => {
 
     const adapter = createSDKAdapter();
     const session = await adapter.createSession({
-      model: "claude-opus-4-20250514",
+      model: "claude-opus-4-6",
       cwd: process.cwd(),
     });
 

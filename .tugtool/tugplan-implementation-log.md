@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-17T02:47:53Z
+bead: tugtool-1tg.3
+---
+
+## #step-2: Upgraded SDK to 0.2.44 in package.json and bun.lock. Updated model ID from claude-opus-4-20250514 to claude-opus-4-6 in session.ts (2 occurrences) and sdk-adapter.test.ts (1 occurrence). All 32 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-17T02:43:19Z
 bead: tugtool-1tg.2
