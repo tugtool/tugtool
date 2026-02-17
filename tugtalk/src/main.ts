@@ -56,7 +56,7 @@ async function main() {
         process.exit(1);
       }
 
-      // Create session manager and initialize SDK session
+      // Create session manager and initialize claude process
       sessionManager = new SessionManager(projectDir);
 
       // Send protocol_ack first (with placeholder session_id)

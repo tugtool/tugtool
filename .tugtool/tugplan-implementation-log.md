@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-17T14:44:27Z
+bead: tugtool-9cr.1
+---
+
+## #step-0: Replace SDK with direct CLI spawning via Bun.spawn. Delete sdk-adapter.ts, remove @anthropic-ai/claude-agent-sdk dependency, simplify permissions.ts, rewrite session.ts with stream-json flags.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-stream-pivot.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-17T02:54:56Z
 bead: tugtool-1tg.4

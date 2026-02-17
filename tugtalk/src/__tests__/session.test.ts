@@ -21,9 +21,12 @@ describe("session.ts", () => {
     }
   });
 
+  test("SessionManager constructor does not throw", () => {
+    expect(() => new SessionManager(testDir)).not.toThrow();
+  });
+
   test("sessionId persistence", async () => {
-    // Note: This test will fail without API key, so we skip actual SDK calls
-    // Testing file I/O only
+    // Testing file I/O only -- no claude CLI spawning needed
     const sessionFilePath = join(testDir, ".tugtool", ".session");
 
     // Manually write a session ID
@@ -99,10 +102,10 @@ describe("session.ts", () => {
     });
   });
 
-  test("handleInterrupt when no active turn", () => {
+  test("handleInterrupt when no active process", () => {
     const manager = new SessionManager(testDir);
 
-    // Should not throw
+    // Should not throw -- no claudeProcess means it logs and returns
     expect(() => manager.handleInterrupt()).not.toThrow();
   });
 

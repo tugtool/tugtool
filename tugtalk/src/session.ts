@@ -1,6 +1,5 @@
-// Session lifecycle management and SDK integration
+// Session lifecycle management via direct claude CLI spawning
 
-import { createSDKAdapter, type AdapterSession } from "./sdk-adapter.ts";
 import { PermissionManager } from "./permissions.ts";
 import { writeLine } from "./ipc.ts";
 import type {
@@ -18,20 +17,23 @@ interface PendingRequest<T> {
 }
 
 /**
- * Manages SDK session lifecycle, message identity, and streaming.
+ * Manages claude CLI process lifecycle, message identity, and streaming.
+ * Spawns claude with --output-format stream-json --input-format stream-json
+ * per D01/D02.
  */
 export class SessionManager {
-  private adapter = createSDKAdapter();
-  private session: AdapterSession | null = null;
+  private claudeProcess: ReturnType<typeof Bun.spawn> | null = null;
+  private stdoutReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private stdoutBuffer: string = "";
+  private interrupted: boolean = false;
   private permissionManager = new PermissionManager();
   private seq: number = 0;
   private pendingApprovals = new Map<string, PendingRequest<"allow" | "deny">>();
   private pendingQuestions = new Map<string, PendingRequest<Record<string, string>>>();
-  private abortController: AbortController | null = null;
-  private projectDir: string;
   private currentMsgId: string | null = null;
   private currentRev: number = 0;
   private sessionIdPersisted: boolean = false;
+  private projectDir: string;
 
   constructor(projectDir: string) {
     this.projectDir = projectDir;
@@ -46,91 +48,194 @@ export class SessionManager {
   }
 
   /**
-   * Initialize session: try to resume from persisted ID, fall back to create new.
+   * Spawn the claude CLI process with stream-json flags per Spec S01.
+   * If sessionId is provided, uses --resume --session-id for session continuation.
+   * Otherwise uses -p for a new session.
    */
-  async initialize(): Promise<void> {
-    const existingId = await this.readSessionId();
+  private spawnClaude(sessionId: string | null): ReturnType<typeof Bun.spawn> {
     const claudePath = Bun.which("claude");
     if (!claudePath) {
       throw new Error("claude CLI not found on PATH");
     }
-    console.log(`Using claude CLI at: ${claudePath}`);
-    const sessionOpts = {
-      model: "claude-opus-4-6",
-      cwd: this.projectDir,
-      permissionMode: this.permissionManager.getMode(),
-      canUseTool: this.createCanUseToolCallback(),
-      onStderr: (data: string) => console.error("[sdk stderr]", data),
-      pathToClaudeCodeExecutable: claudePath,
-      plugins: [{ type: "local" as const, path: this.getTugtoolRoot() }],
-    };
 
-    try {
-      if (existingId) {
-        console.log(`Attempting to resume session: ${existingId}`);
-        this.session = await this.adapter.resumeSession(existingId, sessionOpts);
-        console.log(`Resumed session: ${existingId}`);
-      } else {
-        throw new Error("No existing session");
-      }
-    } catch (err) {
-      console.log(`Resume failed, creating new session: ${err}`);
-      this.session = await this.adapter.createSession(sessionOpts);
-      console.log("Created new session (ID available after first message)");
+    const args: string[] = [
+      "--output-format", "stream-json",
+      "--input-format", "stream-json",
+      "--include-partial-messages",
+      "--replay-user-messages",
+      "--plugin-dir", this.getTugtoolRoot(),
+      "--model", "claude-opus-4-6",
+      "--permission-mode", this.permissionManager.getMode(),
+    ];
+
+    if (sessionId) {
+      args.push("--resume", "--session-id", sessionId);
+    } else {
+      args.push("-p");
     }
 
-    // Emit session_init — sessionId may be empty for new sessions until
-    // the first streamed message arrives (SDK populates it lazily).
-    // We'll persist the real ID once we see it in handleUserMessage.
-    const initId = this.session.sessionId || "pending";
-    writeLine({
-      type: "session_init",
-      session_id: initId,
+    console.log(`Spawning claude with args: ${args.join(" ")}`);
+
+    return Bun.spawn([claudePath, ...args], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "inherit",
+      cwd: this.projectDir,
     });
-    if (initId !== "pending") {
-      await this.persistSessionId(initId);
+  }
+
+  /**
+   * Read the next complete line from the claude process stdout.
+   * Returns null when stream ends.
+   */
+  private async readNextLine(): Promise<string | null> {
+    if (!this.stdoutReader) {
+      return null;
+    }
+
+    while (true) {
+      // Check if we have a complete line in the buffer
+      const lineEnd = this.stdoutBuffer.indexOf("\n");
+      if (lineEnd >= 0) {
+        const line = this.stdoutBuffer.slice(0, lineEnd).trim();
+        this.stdoutBuffer = this.stdoutBuffer.slice(lineEnd + 1);
+        if (line.length > 0) {
+          return line;
+        }
+        // Empty line, continue reading
+        continue;
+      }
+
+      // Read more data from the stream
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await this.stdoutReader.read();
+      } catch {
+        // Stream error - treat as end of stream
+        return null;
+      }
+
+      if (result.done) {
+        // Stream ended - return any remaining buffered content
+        const remaining = this.stdoutBuffer.trim();
+        this.stdoutBuffer = "";
+        return remaining.length > 0 ? remaining : null;
+      }
+
+      this.stdoutBuffer += new TextDecoder().decode(result.value, { stream: true });
     }
   }
 
   /**
-   * Handle user_message: send to SDK, stream responses.
+   * Initialize session: try to resume from persisted ID, fall back to create new.
+   * Per D01/D02/D05.
    */
-  async handleUserMessage(msg: UserMessage): Promise<void> {
-    if (!this.session) {
-      throw new Error("Session not initialized");
+  async initialize(): Promise<void> {
+    const existingId = await this.readSessionId();
+
+    if (existingId) {
+      console.log(`Attempting to resume session: ${existingId}`);
+    } else {
+      console.log("No existing session, creating new");
     }
 
-    // Create abort controller for this turn
-    this.abortController = new AbortController();
+    this.claudeProcess = this.spawnClaude(existingId);
+    this.stdoutReader = (this.claudeProcess.stdout as ReadableStream<Uint8Array>).getReader();
+    this.stdoutBuffer = "";
+
+    // Emit session_init with existing ID or "pending" for new sessions.
+    // The real session ID will be captured from stream events during first message.
+    const initId = existingId || "pending";
+    writeLine({
+      type: "session_init",
+      session_id: initId,
+    });
+
+    if (existingId) {
+      await this.persistSessionId(existingId);
+      this.sessionIdPersisted = true;
+    }
+  }
+
+  /**
+   * Handle user_message: write to claude stdin, read and map stream-json events to IPC.
+   * Per D01/D02 and Table T01.
+   */
+  async handleUserMessage(msg: UserMessage): Promise<void> {
+    if (!this.claudeProcess) {
+      throw new Error("Session not initialized");
+    }
 
     // Assign message ID and reset revision counter
     this.currentMsgId = this.newMsgId();
     this.currentRev = 0;
     const seq = this.nextSeq();
+    this.interrupted = false;
 
+    let partialText = "";
+    let gotResult = false;
+
+    // Write user message as stream-json input per Table T02
+    const userInput = JSON.stringify({ type: "user_message", text: msg.text }) + "\n";
+    const writer = this.claudeProcess.stdin as WritableStream<Uint8Array>;
+    const streamWriter = writer.getWriter();
     try {
-      // Send message to SDK
-      await this.session.send(msg.text);
+      await streamWriter.write(new TextEncoder().encode(userInput));
+    } finally {
+      streamWriter.releaseLock();
+    }
 
-      // Stream responses
-      for await (const event of this.session.stream()) {
-        const e = event as any;
+    // Read and process stream-json events until result event
+    try {
+      while (true) {
+        const line = await this.readNextLine();
 
-        // Capture session_id from any message (SDK populates lazily)
-        if (e?.session_id && !this.sessionIdPersisted) {
+        if (line === null) {
+          // Stream ended
+          if (this.interrupted) {
+            writeLine({
+              type: "turn_cancelled",
+              msg_id: this.currentMsgId!,
+              seq,
+              partial_result: partialText || "User interrupted",
+            });
+          } else if (!gotResult) {
+            writeLine({
+              type: "error",
+              message: "Claude process stream ended unexpectedly",
+              recoverable: true,
+            });
+          }
+          break;
+        }
+
+        let event: Record<string, unknown>;
+        try {
+          event = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          console.log(`Skipping non-JSON line: ${line}`);
+          continue;
+        }
+
+        const eventType = event.type as string | undefined;
+
+        // Capture session_id from any event that has it
+        const eventSessionId = event.session_id as string | undefined;
+        if (eventSessionId && !this.sessionIdPersisted) {
           this.sessionIdPersisted = true;
-          this.persistSessionId(e.session_id).catch((err: unknown) =>
+          this.persistSessionId(eventSessionId).catch((err: unknown) =>
             console.error("Failed to persist session ID:", err)
           );
         }
 
-        if (e?.type === "stream_event") {
-          // Streaming text delta (requires includePartialMessages: true)
-          const delta = e?.event?.delta;
-          if (delta?.type === "text_delta" && delta?.text) {
+        if (eventType === "content_block_delta") {
+          // Streaming text delta per Table T01
+          const delta = event.delta as Record<string, unknown> | undefined;
+          if (delta?.type === "text_delta" && typeof delta.text === "string") {
+            partialText += delta.text;
             writeLine({
               type: "assistant_text",
-              msg_id: this.currentMsgId,
+              msg_id: this.currentMsgId!,
               seq,
               rev: this.currentRev++,
               text: delta.text,
@@ -138,17 +243,18 @@ export class SessionManager {
               status: "partial",
             });
           }
-        } else if (e?.type === "assistant") {
-          // Complete assistant message — text is at e.message.content
-          const content = e?.message?.content || [];
+        } else if (eventType === "assistant") {
+          // Complete assistant message per Table T01
+          const message = event.message as Record<string, unknown> | undefined;
+          const content = (message?.content as Array<Record<string, unknown>>) || [];
           const text = content
-            .filter((block: any) => block.type === "text")
-            .map((block: any) => block.text)
+            .filter((block) => block.type === "text")
+            .map((block) => block.text as string)
             .join("");
 
           writeLine({
             type: "assistant_text",
-            msg_id: this.currentMsgId,
+            msg_id: this.currentMsgId!,
             seq,
             rev: this.currentRev,
             text,
@@ -156,32 +262,43 @@ export class SessionManager {
             status: "complete",
           });
 
-          // Extract tool uses from the same message content
-          const toolBlocks = content.filter((block: any) => block.type === "tool_use");
+          // Extract tool uses from message content
+          const toolBlocks = content.filter((block) => block.type === "tool_use");
           for (const tool of toolBlocks) {
             writeLine({
               type: "tool_use",
-              msg_id: this.currentMsgId,
+              msg_id: this.currentMsgId!,
               seq,
-              tool_name: tool.name,
-              tool_use_id: tool.id,
-              input: tool.input,
+              tool_name: tool.name as string,
+              tool_use_id: tool.id as string,
+              input: tool.input as object,
             });
           }
-        } else if (e?.type === "tool_progress") {
+        } else if (eventType === "tool_use") {
+          // Direct tool_use event per Table T01
+          writeLine({
+            type: "tool_use",
+            msg_id: this.currentMsgId!,
+            seq,
+            tool_name: event.name as string,
+            tool_use_id: event.id as string,
+            input: (event.input as object) || {},
+          });
+        } else if (eventType === "tool_result" || eventType === "tool_progress") {
+          // Tool result/progress per Table T01
           writeLine({
             type: "tool_result",
-            tool_use_id: e?.tool_use_id || "",
-            output: e?.output || "",
-            is_error: e?.is_error === true,
+            tool_use_id: (event.tool_use_id as string) || "",
+            output: (event.output as string) || "",
+            is_error: event.is_error === true,
           });
-        } else if (e?.type === "result") {
-          // Emit result text if present (e.g. slash command output)
-          const resultText = e?.result;
+        } else if (eventType === "result") {
+          // Turn complete per Table T01
+          const resultText = event.result as string | undefined;
           if (typeof resultText === "string" && resultText.length > 0) {
             writeLine({
               type: "assistant_text",
-              msg_id: this.currentMsgId,
+              msg_id: this.currentMsgId!,
               seq,
               rev: this.currentRev++,
               text: resultText,
@@ -190,37 +307,26 @@ export class SessionManager {
             });
           }
 
-          const result = e?.subtype === "success" ? "success" : "error";
+          const result = event.subtype === "success" ? "success" : "error";
           writeLine({
             type: "turn_complete",
-            msg_id: this.currentMsgId,
+            msg_id: this.currentMsgId!,
             seq,
             result,
           });
+          gotResult = true;
           break;
         } else {
-          console.log(`Unhandled event type=${e?.type} subtype=${e?.subtype ?? "none"}`);
+          // Log unhandled event types
+          console.log(`Unhandled stream-json event type=${eventType} subtype=${event.subtype ?? "none"}`);
         }
       }
     } catch (err) {
-      if (this.abortController?.signal.aborted) {
-        // Turn was cancelled
-        writeLine({
-          type: "turn_cancelled",
-          msg_id: this.currentMsgId!,
-          seq,
-          partial_result: "User interrupted",
-        });
-      } else {
-        // Actual error
-        writeLine({
-          type: "error",
-          message: `Turn failed: ${err}`,
-          recoverable: true,
-        });
-      }
-    } finally {
-      this.abortController = null;
+      writeLine({
+        type: "error",
+        message: `Turn failed: ${err}`,
+        recoverable: true,
+      });
     }
   }
 
@@ -251,14 +357,15 @@ export class SessionManager {
   }
 
   /**
-   * Handle interrupt: abort current turn.
+   * Handle interrupt: send SIGINT to claude process per D09.
    */
   handleInterrupt(): void {
-    if (this.abortController) {
-      console.log("Interrupting current turn");
-      this.abortController.abort();
+    if (this.claudeProcess) {
+      console.log("Interrupting current turn via SIGINT");
+      this.interrupted = true;
+      this.claudeProcess.kill("SIGINT");
     } else {
-      console.log("No active turn to interrupt");
+      console.log("No active claude process to interrupt");
     }
   }
 
@@ -268,29 +375,6 @@ export class SessionManager {
   handlePermissionMode(msg: PermissionModeMessage): void {
     console.log(`Setting permission mode: ${msg.mode}`);
     this.permissionManager.setMode(msg.mode);
-  }
-
-  /**
-   * Create canUseTool callback for SDK.
-   */
-  private createCanUseToolCallback() {
-    return this.permissionManager.createCanUseToolCallback(
-      (toolName: string, input: unknown) => {
-        const requestId = crypto.randomUUID();
-        writeLine({
-          type: "tool_approval_request",
-          request_id: requestId,
-          tool_name: toolName,
-          input: input as object,
-        });
-        return requestId;
-      },
-      (requestId: string) => {
-        return new Promise<"allow" | "deny">((resolve, reject) => {
-          this.pendingApprovals.set(requestId, { resolve, reject });
-        });
-      }
-    );
   }
 
   /**
@@ -320,8 +404,8 @@ export class SessionManager {
 
   /**
    * Resolve the tugtool repo root from the binary location.
-   * Compiled binary: <repo>/target/{profile}/tugtalk → repo is 3 levels up.
-   * Bun run: script is at <repo>/tugtalk/src/main.ts → repo is 3 levels up from script.
+   * Compiled binary: <repo>/target/{profile}/tugtalk -> repo is 3 levels up.
+   * Bun run: script is at <repo>/tugtalk/src/main.ts -> repo is 3 levels up from script.
    */
   private getTugtoolRoot(): string {
     const execPath = process.execPath;
@@ -331,7 +415,7 @@ export class SessionManager {
       console.log(`Tugtool root (from binary): ${root}`);
       return root;
     }
-    // Running via bun run — script path is in argv[1]: <repo>/tugtalk/src/main.ts
+    // Running via bun run -- script path is in argv[1]: <repo>/tugtalk/src/main.ts
     const scriptPath = process.argv[1];
     if (scriptPath) {
       const root = resolve(dirname(scriptPath), "../..");
@@ -342,5 +426,4 @@ export class SessionManager {
     console.log(`Tugtool root (fallback to projectDir): ${this.projectDir}`);
     return this.projectDir;
   }
-
 }
