@@ -66,8 +66,10 @@ async function main() {
         session_id: "pending", // Will be replaced by session_init
       });
 
-      // Initialize session (async - will emit session_init when ready)
-      sessionManager.initialize().catch((err) => {
+      // Initialize session (blocks loop until ready, emits session_init)
+      try {
+        await sessionManager.initialize();
+      } catch (err) {
         console.error("Session initialization failed:", err);
         writeLine({
           type: "error",
@@ -75,7 +77,7 @@ async function main() {
           recoverable: false,
         });
         process.exit(1);
-      });
+      }
     } else if (isUserMessage(msg)) {
       if (sessionManager) {
         sessionManager.handleUserMessage(msg).catch((err) => {

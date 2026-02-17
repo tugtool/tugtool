@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-17T02:43:19Z
+bead: tugtool-1tg.2
+---
+
+## #step-1: Replaced fire-and-forget initialize().catch() in main.ts with awaited try/catch block. Protocol_ack ordering preserved. Eliminates race condition where messages could arrive during initialization.
+
+**Files changed:**
+- .tugtool/tugplan-tugtalk-transport-fix.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-17T02:39:41Z
 bead: tugtool-1tg.1
