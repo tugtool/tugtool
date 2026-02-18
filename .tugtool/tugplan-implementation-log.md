@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-18T18:15:40Z
+bead: tugtool-srv.1
+---
+
+## #step-0: Created tugdeck/src/snap.ts with pure-function snap geometry, shared-edge detection, and set computation. Added 25 unit tests in snap.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-18T16:55:16Z
 bead: tugtool-7j2.5
