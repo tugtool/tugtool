@@ -596,3 +596,148 @@ describe("PanelManager – guide lines", () => {
     manager.destroy();
   });
 });
+
+// ---- Set computation integration tests ----
+
+describe("PanelManager – set computation", () => {
+  let connection: MockConnection;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+    connection = new MockConnection();
+  });
+
+  // Test a: two panels placed edge-to-edge are in the same set after move-end.
+  // Panel A at (0,100,200,200): right edge = 200.
+  // Panel B at (200,100,200,200): left edge = 200. Gap = 0, shared vertical edge.
+  // Drag A minimally (dx=4 > DRAG_THRESHOLD=3): onMoving fires, snap keeps A at x=0
+  // (A.right=204, B.left=200, dist=4 < 8, snaps A back to x=0).
+  // onMoveEnd fires → recomputeSets() → 1 set with panel-a and panel-b.
+  test("two panels placed edge-to-edge are in the same set after move-end", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // Initially no sets (applyLayout does not call recomputeSets)
+    expect(manager.getSets().length).toBe(0);
+
+    // Get panel A's header
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const panelAEl = floatingPanels[0];
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Minimal drag: dx=4 (above DRAG_THRESHOLD=3, within SNAP_THRESHOLD=8 of B.left)
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 104, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
+
+    // After move-end: recomputeSets fires. A.right=200, B.left=200 → shared edge.
+    const sets = manager.getSets();
+    expect(sets.length).toBe(1);
+    const setIds = sets[0].panelIds.sort();
+    expect(setIds).toContain("panel-a");
+    expect(setIds).toContain("panel-b");
+
+    manager.destroy();
+  });
+
+  // Test b: moving a panel away from its partner removes it from the set.
+  // Build on test a: panels start edge-to-edge. Drag B far right (dx=500).
+  // After moveEnd + recomputeSets: A.right=200, B far away. No shared edge. getSets=[].
+  test("moving a panel away removes it from the set", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // First: put both in a set via a minimal drag on A
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const panelAEl = floatingPanels[0];
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 104, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
+
+    expect(manager.getSets().length).toBe(1);
+
+    // Now drag B far right (dx=500). B ends up at ~x=700, far from A.right=200.
+    // Find panel B's floating element by its current left style = "200px".
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    let panelBEl: HTMLElement | undefined;
+    for (const el of allPanels) {
+      if (el.style.left === "200px") {
+        panelBEl = el;
+        break;
+      }
+    }
+    expect(panelBEl).toBeDefined();
+    const headerB = panelBEl!.querySelector<HTMLElement>(".panel-header")!;
+
+    // Drag B 500px to the right
+    headerB.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 150 }));
+    headerB.dispatchEvent(makePointerEvent("pointermove", { clientX: 800, clientY: 150 }));
+    headerB.dispatchEvent(makePointerEvent("pointerup", { clientX: 800, clientY: 150 }));
+
+    // After move-end: B is far away, no shared edges. getSets should be empty.
+    const sets = manager.getSets();
+    expect(sets.length).toBe(0);
+
+    manager.destroy();
+  });
+
+  // Test c: closing a panel recomputes sets correctly.
+  // 3 panels: A(0,100,200,200), B(200,100,200,200), C(400,100,200,200).
+  // A-B share edge, B-C share edge → 1 set with all 3 panels after minimal drag.
+  // Remove B → recomputeSets. A.right=200, C.left=400, gap=200 >> 8. getSets=[].
+  test("closing a panel recomputes sets correctly", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+        makePanelState("panel-c", 400, 100, 200, 200),
+      ],
+    });
+
+    // Trigger initial recompute via a minimal drag on A
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const headerA = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
+
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 104, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
+
+    // All 3 panels should now be in one set
+    expect(manager.getSets().length).toBe(1);
+    expect(manager.getSets()[0].panelIds.length).toBe(3);
+
+    // Register a mock card for panel-b so removeCard can find it in the registry
+    const panelBTabId = "panel-b-tab";
+    const mockCard = makeMockCard([FeedId.GIT], "git");
+    manager.getCardRegistry().set(panelBTabId, mockCard);
+
+    // Remove panel-b's card → removeCard calls recomputeSets
+    manager.removeCard(mockCard);
+
+    // After remove: only A and C remain, gap = 200px >> 8. No shared edges.
+    const sets = manager.getSets();
+    expect(sets.length).toBe(0);
+
+    manager.destroy();
+  });
+});

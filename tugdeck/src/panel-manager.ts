@@ -20,7 +20,7 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import { computeSnap, computeResizeSnap, panelToRect, type Rect, type GuidePosition } from "./snap";
+import { computeSnap, computeResizeSnap, panelToRect, findSharedEdges, computeSets, type Rect, type GuidePosition, type PanelSet } from "./snap";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -131,6 +131,9 @@ export class PanelManager implements IDragState {
 
   /** Pool of guide line elements: 2 vertical (.snap-guide-line-x) + 2 horizontal (.snap-guide-line-y) */
   private guideElements: HTMLElement[] = [];
+
+  /** Runtime set membership: groups of panels connected by shared edges (D05) */
+  private sets: PanelSet[] = [];
 
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
@@ -298,6 +301,7 @@ export class PanelManager implements IDragState {
 
     card.destroy();
     this.render();
+    this.recomputeSets();
     this.scheduleSave();
   }
 
@@ -344,6 +348,7 @@ export class PanelManager implements IDragState {
             this._isDragging = false;
             this.hideGuides();
             panel.position = { x, y };
+            this.recomputeSets();
             this.scheduleSave();
           },
           onResizeEnd: (x, y, width, height) => {
@@ -355,6 +360,7 @@ export class PanelManager implements IDragState {
             const activeTabId = panel.activeTabId;
             const card = this.cardRegistry.get(activeTabId);
             if (card) card.onResize(width, height - FLOATING_TITLE_BAR_HEIGHT);
+            this.recomputeSets();
             this.scheduleSave();
           },
           onFocus: () => {
@@ -745,6 +751,7 @@ export class PanelManager implements IDragState {
   resetLayout(): void {
     this.destroyAllCards();
     this.keyPanelId = null;
+    this.sets = [];
 
     const canvasW = this.container.clientWidth || 800;
     const canvasH = this.container.clientHeight || 600;
@@ -872,6 +879,11 @@ export class PanelManager implements IDragState {
     return this.container;
   }
 
+  /** Expose current panel sets for testing */
+  getSets(): PanelSet[] {
+    return this.sets;
+  }
+
   /**
    * Register a card factory for a componentId.
    * Used by TugMenu and resetLayout to create new card instances.
@@ -881,6 +893,22 @@ export class PanelManager implements IDragState {
   }
 
   // ---- Private helpers ----
+
+  /**
+   * Recompute panel sets from current panel positions.
+   * Called after move-end, resize-end, and panel close.
+   * D05: Sets are runtime-only, derived from panel positions.
+   * D07: Shared-edge detection algorithm.
+   */
+  private recomputeSets(): void {
+    const panelRects = this.canvasState.panels.map((p) => ({
+      id: p.id,
+      rect: panelToRect(p),
+    }));
+    const sharedEdges = findSharedEdges(panelRects);
+    const panelIds = this.canvasState.panels.map((p) => p.id);
+    this.sets = computeSets(panelIds, sharedEdges);
+  }
 
   /** Create the pool of 4 guide line elements appended to the canvas container. */
   private createGuideLines(): void {
