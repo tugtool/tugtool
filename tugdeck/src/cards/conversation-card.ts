@@ -25,7 +25,7 @@ import {
   type ProjectInfo,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
-import type { DeckManager } from "../deck";
+import type { IDragState } from "../drag-state";
 import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-renderer";
 import { ToolCard } from "./conversation/tool-card";
 import { ApprovalPrompt } from "./conversation/approval-prompt";
@@ -53,7 +53,7 @@ export class ConversationCard implements TugCard {
   private textarea!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   private orderingBuffer: MessageOrderingBuffer;
-  private deckManager?: DeckManager;
+  private dragState?: IDragState;
   private toolCards: Map<string, ToolCard> = new Map();
   private pendingApprovals: Map<string, ApprovalPrompt> = new Map();
   private pendingQuestions: Map<string, QuestionCard> = new Map();
@@ -89,8 +89,8 @@ export class ConversationCard implements TugCard {
     this.sessionCache = new SessionCache("default");
   }
 
-  setDeckManager(deckManager: DeckManager): void {
-    this.deckManager = deckManager;
+  setDragState(dragState: IDragState): void {
+    this.dragState = dragState;
   }
 
   mount(parent: HTMLElement): void {
@@ -908,7 +908,7 @@ export class ConversationCard implements TugCard {
   }
 
   private scrollToBottom(): void {
-    if (!this.deckManager?.isDragging) {
+    if (!this.dragState?.isDragging) {
       this.messageList.scrollTop = this.messageList.scrollHeight;
     }
   }

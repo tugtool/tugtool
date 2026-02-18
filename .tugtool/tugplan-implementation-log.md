@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-18T01:38:49Z
+bead: tugtool-ndt.2
+---
+
+## #step-1: Created PanelManager (flex tree rendering, sash resizing, fan-out dispatch, DOM reparenting, geometric minimums), drag-state.ts, sash.ts, panels.css. Migrated conversation-card and terminal-card to IDragState. Deleted deck-layout.test.ts. 15 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-18T01:23:54Z
 bead: tugtool-ndt.1

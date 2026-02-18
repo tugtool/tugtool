@@ -1,5 +1,5 @@
 import { TugConnection } from "./connection";
-import { DeckManager } from "./deck";
+import { PanelManager } from "./panel-manager";
 import { ConversationCard } from "./cards/conversation-card";
 import { TerminalCard } from "./cards/terminal-card";
 import { FilesCard } from "./cards/files-card";
@@ -18,17 +18,19 @@ if (!container) {
   throw new Error("deck-container element not found");
 }
 
-// Create deck manager
-const deck = new DeckManager(container, connection);
+// Create panel manager (replaces DeckManager)
+const deck = new PanelManager(container, connection);
 
-// Create and register cards in named slots
+// Create and register cards by componentId
+// PanelManager.addCard matches cards to layout tree TabItems by componentId
 const conversationCard = new ConversationCard(connection);
-conversationCard.setDeckManager(deck);
+conversationCard.setDragState(deck);
 deck.addCard(conversationCard, "conversation");
 
 const terminalCard = new TerminalCard(connection);
-terminalCard.setDeckManager(deck);
+terminalCard.setDragState(deck);
 deck.addCard(terminalCard, "terminal");
+
 deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");

@@ -12,7 +12,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { FeedId, FeedIdValue, resizeFrame } from "../protocol";
 import { TugConnection } from "../connection";
 import { TugCard } from "./card";
-import type { DeckManager } from "../deck";
+import type { IDragState } from "../drag-state";
 
 export class TerminalCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.TERMINAL_OUTPUT];
@@ -23,14 +23,14 @@ export class TerminalCard implements TugCard {
   private resizeObserver: ResizeObserver | null = null;
   private connection: TugConnection;
   private resizeDebounceId: number | null = null;
-  private deckManager: DeckManager | null = null;
+  private dragState: IDragState | null = null;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
   }
 
-  setDeckManager(dm: DeckManager): void {
-    this.deckManager = dm;
+  setDragState(ds: IDragState): void {
+    this.dragState = ds;
   }
 
   mount(container: HTMLElement): void {
@@ -75,7 +75,7 @@ export class TerminalCard implements TugCard {
     // Suppress fit during active drag to prevent flashing
     this.resizeObserver = new ResizeObserver(() => {
       // During active drag, suppress fit() entirely
-      if (this.deckManager?.isDragging) {
+      if (this.dragState?.isDragging) {
         return;
       }
       if (this.resizeDebounceId !== null) {
@@ -113,7 +113,7 @@ export class TerminalCard implements TugCard {
     // During active drag, suppress fit() entirely -- the single
     // handleResize() call on pointerup will trigger this method
     // with isDragging === false for the final fit.
-    if (this.deckManager?.isDragging) {
+    if (this.dragState?.isDragging) {
       return;
     }
     if (this.fitAddon && this.terminal) {
