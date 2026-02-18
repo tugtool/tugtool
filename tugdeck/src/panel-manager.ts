@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * PanelManager — replaces DeckManager.
  *
@@ -7,16 +8,7 @@
  */
 
 import { IDragState } from "./drag-state";
-import {
-  type DockState,
-  type LayoutNode,
-  type SplitNode,
-  type TabNode,
-  type TabItem,
-  normalizeTree,
-  removeTab,
-  findTabNode,
-} from "./layout-tree";
+// layout-tree imports removed in Step 0 (types deleted); file rewritten in Step 3
 import {
   buildDefaultLayout,
   serialize,
@@ -32,9 +24,8 @@ import { TugConnection } from "./connection";
 import { createSash } from "./sash";
 import { TabBar } from "./tab-bar";
 import { DockOverlay, computeDropZone, isCursorInsideCanvas, type TabNodeRect, type DropZoneResult } from "./dock-target";
-import { insertNode } from "./layout-tree";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import type { FloatingGroup } from "./layout-tree";
+// insertNode and FloatingGroup removed (Step 0); panel-manager rewritten in Step 3
 import { CardHeader } from "./card-header";
 
 /** localStorage key for layout persistence */

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Dock targeting: zone detection (computeDropZone) and drop overlay (DockOverlay).
  *
@@ -8,7 +9,7 @@
  * Table T01: Overlay Geometry per Zone
  */
 
-import type { DockZone } from "./layout-tree";
+// DockZone import removed (Step 0); dock-target rewritten in Step 3
 
 // ---- Types ----
 

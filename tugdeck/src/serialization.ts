@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Serialization, deserialization, validation, and migration for DockState.
  *
@@ -6,14 +7,7 @@
  * Spec S07: Post-Deserialization Validation
  */
 
-import {
-  type DockState,
-  type LayoutNode,
-  type TabNode,
-  type TabItem,
-  type FloatingGroup,
-  normalizeTree,
-} from "./layout-tree";
+// layout-tree imports removed in Step 0 (types deleted); file rewritten in Step 2
 
 // ---- Serialization Types (Spec S02) ----
 

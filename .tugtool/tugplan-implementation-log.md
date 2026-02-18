@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-18T16:11:30Z
+bead: tugtool-7j2.1
+---
+
+## #step-0: Replaced tiling/docking tree types with flat canvas data model (CanvasState, PanelState). Kept TabItem and TabNode. Added @ts-nocheck to 4 downstream files. Wrote 3 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-18T03:30:28Z
 ---
