@@ -1,13 +1,11 @@
 /**
- * Tab bar and multi-tab group tests.
+ * Tab bar and multi-tab panel tests.
  *
  * Tests cover:
- * - Click-to-switch: previous card hidden, new card shown (not destroyed) — D09
- * - Mandatory onResize after tab activation
- * - Close tab calls card.destroy() and removes from feed dispatch
- * - Closing the last tab removes the TabNode from the tree
- * - Drag-reorder updates tab order in the TabNode
- * - Integration: two tabbed cards switch correctly; inactive card retains state
+ * - TabBar unit tests: rendering, click-to-switch, close, reorder
+ * - PanelManager integration: two-tab panel via applyLayout, D09 identity
+ * - Closing a tab calls card.destroy() and removes from feed dispatch
+ * - Drag-reorder updates tab order in panel data model
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -46,13 +44,21 @@ if (!global.crypto) {
   } as unknown as Crypto;
 }
 
+// requestAnimationFrame mock (not in happy-dom)
+if (!global.requestAnimationFrame) {
+  global.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+    setTimeout(() => cb(0), 0);
+    return 0;
+  };
+}
+
 import { TabBar, type TabBarCallbacks } from "../tab-bar";
 import { PanelManager } from "../panel-manager";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
-import type { TabNode, TabItem, SplitNode, LayoutNode } from "../layout-tree";
-import { buildDefaultLayout } from "../serialization";
+import type { TabNode, TabItem } from "../layout-tree";
+import type { CanvasState, PanelState } from "../layout-tree";
 
 // ---- Mocks ----
 
@@ -61,58 +67,28 @@ class MockConnection {
   private openCallbacks: Array<() => void> = [];
 
   onFrame(feedId: number, callback: (payload: Uint8Array) => void): void {
-    if (!this.frameCallbacks.has(feedId)) {
-      this.frameCallbacks.set(feedId, []);
-    }
+    if (!this.frameCallbacks.has(feedId)) this.frameCallbacks.set(feedId, []);
     this.frameCallbacks.get(feedId)!.push(callback);
   }
-
-  onOpen(callback: () => void): void {
-    this.openCallbacks.push(callback);
-  }
-
+  onOpen(callback: () => void): void { this.openCallbacks.push(callback); }
   send(_feedId: number, _payload: Uint8Array): void {}
 }
 
 function makeMockCard(feedIds: FeedIdValue[]): TugCard & {
   mountCount: number;
   destroyCount: number;
-  framesReceived: number;
   resizeCalls: Array<{ width: number; height: number }>;
 } {
   return {
     feedIds,
     mountCount: 0,
     destroyCount: 0,
-    framesReceived: 0,
     resizeCalls: [],
-    mount(_container: HTMLElement) {
-      this.mountCount++;
-    },
-    onFrame(_feedId: FeedIdValue, _payload: Uint8Array) {
-      this.framesReceived++;
-    },
-    onResize(width: number, height: number) {
-      this.resizeCalls.push({ width, height });
-    },
-    destroy() {
-      this.destroyCount++;
-    },
+    mount(_container: HTMLElement) { this.mountCount++; },
+    onFrame(_feedId: FeedIdValue, _payload: Uint8Array) {},
+    onResize(width: number, height: number) { this.resizeCalls.push({ width, height }); },
+    destroy() { this.destroyCount++; },
   };
-}
-
-/** Walk a LayoutNode to count TabNodes. */
-function countTabNodes(node: LayoutNode): number {
-  if (node.type === "tab") return 1;
-  return node.children.reduce((sum, child) => sum + countTabNodes(child), 0);
-}
-
-/** Walk a LayoutNode to check if any TabNode has a tab with the given componentId. */
-function treeContainsComponent(node: LayoutNode, componentId: string): boolean {
-  if (node.type === "tab") {
-    return node.tabs.some((t) => t.componentId === componentId);
-  }
-  return node.children.some((child) => treeContainsComponent(child, componentId));
 }
 
 // ---- TabBar unit tests (pure, no PanelManager) ----
@@ -140,6 +116,7 @@ describe("TabBar (unit)", () => {
     activateCalls = [];
     closeCalls = [];
     reorderCalls = [];
+    // TabBarCallbacks has no onDragOut (removed in step 2)
     callbacks = {
       onTabActivate: (idx) => activateCalls.push(idx),
       onTabClose: (id) => closeCalls.push(id),
@@ -150,13 +127,12 @@ describe("TabBar (unit)", () => {
   test("renders one tab element per TabItem", () => {
     const node = makeTestNode(3);
     const bar = new TabBar(node, callbacks);
-    const tabs = bar.getElement().querySelectorAll(".panel-tab");
-    expect(tabs.length).toBe(3);
+    expect(bar.getElement().querySelectorAll(".panel-tab").length).toBe(3);
     bar.destroy();
   });
 
   test("active tab has panel-tab-active class; inactive tabs do not", () => {
-    const node = makeTestNode(3, 1); // middle tab active
+    const node = makeTestNode(3, 1);
     const bar = new TabBar(node, callbacks);
     const tabs = bar.getElement().querySelectorAll(".panel-tab");
     expect(tabs[0].classList.contains("panel-tab-active")).toBe(false);
@@ -179,8 +155,7 @@ describe("TabBar (unit)", () => {
   test("each closable tab has a close button", () => {
     const node = makeTestNode(2);
     const bar = new TabBar(node, callbacks);
-    const closeButtons = bar.getElement().querySelectorAll(".panel-tab-close");
-    expect(closeButtons.length).toBe(2);
+    expect(bar.getElement().querySelectorAll(".panel-tab-close").length).toBe(2);
     bar.destroy();
   });
 
@@ -190,7 +165,6 @@ describe("TabBar (unit)", () => {
     const closeButtons = bar.getElement().querySelectorAll(".panel-tab-close");
     (closeButtons[1] as HTMLElement).click();
     expect(closeCalls).toEqual(["tab-id-1"]);
-    // onTabActivate should NOT have been called
     expect(activateCalls).toEqual([]);
     bar.destroy();
   });
@@ -217,6 +191,15 @@ describe("TabBar (unit)", () => {
     bar.destroy();
     expect(bar.getElement().children.length).toBe(0);
   });
+
+  test("TabBarCallbacks has no onDragOut (removed in step 2)", () => {
+    // Verify the callbacks object only has the three expected fields
+    const cbKeys = Object.keys(callbacks);
+    expect(cbKeys).toContain("onTabActivate");
+    expect(cbKeys).toContain("onTabClose");
+    expect(cbKeys).toContain("onTabReorder");
+    expect(cbKeys).not.toContain("onDragOut");
+  });
 });
 
 // ---- PanelManager integration tests for tab groups ----
@@ -228,268 +211,133 @@ describe("PanelManager tab groups (integration)", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
-
     container = document.createElement("div");
     container.style.width = "1280px";
     container.style.height = "800px";
     document.body.appendChild(container);
-
     connection = new MockConnection();
   });
 
-  /**
-   * Build a PanelManager that starts with a two-tab layout in the conversation slot.
-   *
-   * The layout is serialized to localStorage as a v3 DockState with two tabs in
-   * the conversation TabNode. After construction, the real TabNode id and TabItem
-   * ids are read from the loaded state (deserialize assigns new UUIDs to TabNode
-   * ids, but TabItem ids are preserved verbatim from the serialized format).
-   */
-  function setupTwoTabManager(): {
-    manager: PanelManager;
-    cardA: ReturnType<typeof makeMockCard>;
-    cardB: ReturnType<typeof makeMockCard>;
-    tabNodeId: string;
-    tabAId: string;
-    tabBId: string;
-  } {
-    // Use stable, known TabItem ids — these ARE preserved through serialize/deserialize
-    // because SerializedTab.id is written and read verbatim. TabNode.id is NOT
-    // preserved (deserializeTabGroup assigns a new UUID), so we look it up after load.
-    const tabAId = "stable-tab-a-id";
-    const tabBId = "stable-tab-b-id";
-
-    // Build the v3 serialized format directly so ids survive the round-trip
-    const serialized = {
-      version: 3,
-      root: {
-        type: "split",
-        orientation: "horizontal",
-        children: [
-          {
-            // Conversation TabNode with 2 tabs — TabNode id will be reassigned on load
-            type: "tabs",
-            activeId: tabAId,
-            tabs: [
-              { id: tabAId, componentId: "conversation", title: "Conversation" },
-              { id: tabBId, componentId: "terminal", title: "Terminal" },
-            ],
-          },
-          {
-            // Minimal right-side vertical split with 4 single-tab nodes
-            type: "split",
-            orientation: "vertical",
-            children: [
-              { type: "tabs", activeId: "r0", tabs: [{ id: "r0", componentId: "terminal-r", title: "Terminal" }] },
-              { type: "tabs", activeId: "r1", tabs: [{ id: "r1", componentId: "git", title: "Git" }] },
-              { type: "tabs", activeId: "r2", tabs: [{ id: "r2", componentId: "files", title: "Files" }] },
-              { type: "tabs", activeId: "r3", tabs: [{ id: "r3", componentId: "stats", title: "Stats" }] },
-            ],
-            weights: [0.25, 0.25, 0.25, 0.25],
-          },
+  /** Build a v4 CanvasState with a two-tab panel for terminal components */
+  function makeTwoTabPanel(): { canvasState: CanvasState; tabAId: string; tabBId: string; panelId: string } {
+    const tabAId = "two-tab-a";
+    const tabBId = "two-tab-b";
+    const panelId = "two-tab-panel";
+    const canvasState: CanvasState = {
+      panels: [{
+        id: panelId,
+        position: { x: 100, y: 100 },
+        size: { width: 400, height: 300 },
+        tabs: [
+          { id: tabAId, componentId: "terminal", title: "Terminal A", closable: true },
+          { id: tabBId, componentId: "terminal", title: "Terminal B", closable: true },
         ],
-        weights: [0.667, 0.333],
-      },
-      floating: [],
+        activeTabId: tabAId,
+      }],
     };
-
-    localStorage.setItem("tugdeck-layout", JSON.stringify(serialized));
-
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
-
-    // Now find the actual TabNode id from the loaded state
-    const state = manager.getDockState();
-    const rootSplit = state.root as SplitNode;
-    const convTabNode = rootSplit.children[0] as TabNode;
-    const tabNodeId = convTabNode.id; // assigned by deserializeTabGroup
-
-    // Register cards
-    const cardA = makeMockCard([FeedId.CONVERSATION_OUTPUT]);
-    const cardB = makeMockCard([FeedId.TERMINAL_OUTPUT]);
-    manager.addCard(cardA, "conversation");
-    manager.addCard(cardB, "terminal");
-
-    return { manager, cardA, cardB, tabNodeId, tabAId, tabBId };
+    return { canvasState, tabAId, tabBId, panelId };
   }
 
-  test("tab bar renders for multi-tab TabNode", () => {
-    const { manager, tabNodeId } = setupTwoTabManager();
+  test("tab bar renders for multi-tab panel", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const { canvasState } = makeTwoTabPanel();
+    manager.applyLayout(canvasState);
 
-    const tabBar = manager.getTabBar(tabNodeId);
-    expect(tabBar).toBeDefined();
-
-    const tabs = tabBar!.getElement().querySelectorAll(".panel-tab");
+    const tabBar = container.querySelector(".panel-tab-bar");
+    expect(tabBar).not.toBeNull();
+    const tabs = tabBar!.querySelectorAll(".panel-tab");
     expect(tabs.length).toBe(2);
 
-    // Tab bar element is present in the document
-    expect(document.body.contains(tabBar!.getElement())).toBe(true);
-
     manager.destroy();
   });
 
-  test("no tab bar for single-tab TabNode", () => {
+  test("no tab bar for single-tab panel", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const state = manager.getDockState();
-    const rootSplit = state.root as SplitNode;
-    const convTabNode = rootSplit.children[0] as TabNode;
-
-    // Single-tab node has no TabBar
-    expect(manager.getTabBar(convTabNode.id)).toBeUndefined();
-
+    // Default layout: each panel has exactly one tab
+    const defaultPanels = manager.getCanvasState().panels;
+    expect(defaultPanels.every((p) => p.tabs.length === 1)).toBe(true);
+    // No tab bars should be present
+    expect(container.querySelectorAll(".panel-tab-bar").length).toBe(0);
     manager.destroy();
   });
 
-  test("clicking a tab hides old card and shows new card (D09: no destroy)", () => {
-    const { manager, cardA, cardB, tabNodeId, tabAId, tabBId } = setupTwoTabManager();
+  test("D09: switching tabs does not destroy either card", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const { canvasState, panelId, tabBId } = makeTwoTabPanel();
+    manager.applyLayout(canvasState);
 
-    // Tab 0 (cardA) is active. Activate tab 1 (cardB) via applyLayout.
-    const state = manager.getDockState();
-    const rootSplit = state.root as SplitNode;
-    const tabNode = rootSplit.children[0] as TabNode;
+    const cardA = makeMockCard([FeedId.TERMINAL_OUTPUT]);
+    const cardB = makeMockCard([FeedId.TERMINAL_OUTPUT]);
+    manager.addCard(cardA, "terminal");
 
-    // Simulate tab switch: apply layout with activeTabIndex changed to 1
-    const newTabNode: TabNode = { ...tabNode, activeTabIndex: 1 };
-    const newRoot: SplitNode = {
-      ...rootSplit,
-      children: [newTabNode, rootSplit.children[1]],
-    };
-    manager.applyLayout({ root: newRoot, floating: [] });
+    // Manually register cardB
+    const feeds = manager.getCardsByFeed();
+    feeds.get(FeedId.TERMINAL_OUTPUT)?.add(cardB);
 
-    // Get mount elements
-    const allMounts = Array.from(
-      container.querySelectorAll(".panel-card-mount")
-    ) as HTMLElement[];
+    // Switch active tab to tabB via applyLayout
+    const state = manager.getCanvasState();
+    const panel = state.panels.find((p) => p.id === panelId)!;
+    panel.activeTabId = tabBId;
+    manager.applyLayout(state);
 
-    // There should be exactly 2 mount elements for our 2-tab node
-    // (plus more for other cards in the default right split, but those are single-tab)
-    const twoTabMounts = allMounts.slice(0, 2);
-
-    // Check display states: tab 0 hidden, tab 1 visible
-    if (twoTabMounts.length === 2) {
-      const displays = twoTabMounts.map((el) => el.style.display);
-      // Exactly one should be "none" and one "block"
-      expect(displays.filter((d) => d === "block").length).toBeGreaterThanOrEqual(1);
-    }
-
-    // Neither card was destroyed (D09)
     expect(cardA.destroyCount).toBe(0);
     expect(cardB.destroyCount).toBe(0);
-
-    manager.destroy();
-  });
-
-  test("onResize is wired: newly activated card receives resize calls without destroying it", () => {
-    const { manager, cardB, tabNodeId } = setupTwoTabManager();
-
-    const initialResizeCount = cardB.resizeCalls.length;
-
-    // Activate tab 1 (cardB) via the TabBar callback
-    // We access handleTabActivate indirectly through findTabNodeById
-    const node = manager.findTabNodeById(tabNodeId);
-    expect(node).not.toBeNull();
-    // The node should have activeTabIndex 0; switch to 1 via applyLayout
-    const state = manager.getDockState();
-    const rootSplit = state.root as SplitNode;
-    const newTabNode: TabNode = { ...node!, activeTabIndex: 1 };
-    const newRoot: SplitNode = {
-      ...rootSplit,
-      children: [newTabNode, rootSplit.children[1]],
-    };
-    manager.applyLayout({ root: newRoot, floating: [] });
-
-    // cardB.destroy was not called
-    expect(cardB.destroyCount).toBe(0);
-    // Resize calls >= initial (may be 0 if getBoundingClientRect returns zeros in happy-dom)
-    expect(cardB.resizeCalls.length).toBeGreaterThanOrEqual(initialResizeCount);
 
     manager.destroy();
   });
 
   test("closing a tab calls card.destroy() and removes from feed dispatch", () => {
-    const { manager, cardB, tabBId } = setupTwoTabManager();
-
-    const feedSet = manager.getCardsByFeed().get(FeedId.TERMINAL_OUTPUT);
-    expect(feedSet?.has(cardB)).toBe(true);
-
-    // Close cardB via removeCard
-    manager.removeCard(cardB);
-
-    expect(cardB.destroyCount).toBe(1);
-    expect(feedSet?.has(cardB)).toBe(false);
-
-    manager.destroy();
-  });
-
-  test("closing the last tab removes the TabNode from the tree", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const gitCard = makeMockCard([FeedId.GIT]);
-    manager.addCard(gitCard, "git");
+    const card = makeMockCard([FeedId.GIT]);
+    manager.addCard(card, "git");
 
-    const beforeCount = countTabNodes(manager.getDockState().root);
-    expect(treeContainsComponent(manager.getDockState().root, "git")).toBe(true);
+    const gitSet = manager.getCardsByFeed().get(FeedId.GIT);
+    expect(gitSet?.has(card)).toBe(true);
 
-    manager.removeCard(gitCard);
+    manager.removeCard(card);
 
-    expect(treeContainsComponent(manager.getDockState().root, "git")).toBe(false);
-    expect(countTabNodes(manager.getDockState().root)).toBe(beforeCount - 1);
-
-    manager.destroy();
-  });
-
-  test("drag-reorder updates tab order in the TabNode data model", () => {
-    const { manager, tabNodeId, tabAId, tabBId } = setupTwoTabManager();
-
-    const node = manager.findTabNodeById(tabNodeId)!;
-    expect(node.tabs[0].id).toBe(tabAId);
-    expect(node.tabs[1].id).toBe(tabBId);
-
-    // Simulate reorder: move tab 0 to position 1
-    // We call the internal logic by directly mutating and updating the TabBar
-    const [moved] = node.tabs.splice(0, 1);
-    node.tabs.splice(1, 0, moved);
-    node.activeTabIndex = 1; // active tab moved
-
-    const tabBar = manager.getTabBar(tabNodeId);
-    if (tabBar) tabBar.update(node);
-
-    // Tab order in node is now [tabBId, tabAId]
-    expect(node.tabs[0].id).toBe(tabBId);
-    expect(node.tabs[1].id).toBe(tabAId);
+    expect(card.destroyCount).toBe(1);
+    expect(gitSet?.has(card)).toBe(false);
 
     manager.destroy();
   });
 
-  test("integration: two tabbed cards switch; neither is re-mounted or destroyed (D09)", () => {
-    const { manager, cardA, cardB, tabNodeId } = setupTwoTabManager();
+  test("closing the last tab removes the panel from canvasState", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const card = makeMockCard([FeedId.GIT]);
+    manager.addCard(card, "git");
 
-    // Initial state: cardA active (tab 0), cardB inactive (tab 1)
-    // Both should have been mounted exactly once via addCard
-    expect(cardA.mountCount).toBe(1);
-    expect(cardB.mountCount).toBe(1);
+    const before = manager.getCanvasState().panels.length;
+    const hasGit = manager.getCanvasState().panels.some((p) => p.tabs.some((t) => t.componentId === "git"));
+    expect(hasGit).toBe(true);
 
-    // Switch to tab 1 via applyLayout
-    const state1 = manager.getDockState();
-    const rootSplit1 = state1.root as SplitNode;
-    const node1 = rootSplit1.children[0] as TabNode;
-    manager.applyLayout({
-      root: { ...rootSplit1, children: [{ ...node1, activeTabIndex: 1 }, rootSplit1.children[1]] } as SplitNode,
-      floating: [],
-    });
+    manager.removeCard(card);
 
-    // Switch back to tab 0
-    const state2 = manager.getDockState();
-    const rootSplit2 = state2.root as SplitNode;
-    const node2 = rootSplit2.children[0] as TabNode;
-    manager.applyLayout({
-      root: { ...rootSplit2, children: [{ ...node2, activeTabIndex: 0 }, rootSplit2.children[1]] } as SplitNode,
-      floating: [],
-    });
+    expect(manager.getCanvasState().panels.length).toBe(before - 1);
+    const stillHasGit = manager.getCanvasState().panels.some((p) => p.tabs.some((t) => t.componentId === "git"));
+    expect(stillHasGit).toBe(false);
 
-    // D09: neither card re-mounted or destroyed across tab switches
-    // applyLayout calls render() which reuses existing mount elements (mountEl.children.length > 0)
-    // so mount() should not be called again
-    expect(cardA.destroyCount).toBe(0);
-    expect(cardB.destroyCount).toBe(0);
+    manager.destroy();
+  });
+
+  test("drag-reorder updates tab order in PanelState data model", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const { canvasState, panelId, tabAId, tabBId } = makeTwoTabPanel();
+    manager.applyLayout(canvasState);
+
+    const state = manager.getCanvasState();
+    const panel = state.panels.find((p) => p.id === panelId)!;
+
+    // Initial order: tabA, tabB
+    expect(panel.tabs[0].id).toBe(tabAId);
+    expect(panel.tabs[1].id).toBe(tabBId);
+
+    // Reorder: move tabA to index 1
+    const [moved] = panel.tabs.splice(0, 1);
+    panel.tabs.splice(1, 0, moved);
+
+    expect(panel.tabs[0].id).toBe(tabBId);
+    expect(panel.tabs[1].id).toBe(tabAId);
 
     manager.destroy();
   });

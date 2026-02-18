@@ -44,6 +44,14 @@ if (!(global as Record<string, unknown>)["KeyboardEvent"]) {
   (global as Record<string, unknown>)["KeyboardEvent"] = (window as unknown as Record<string, unknown>)["KeyboardEvent"];
 }
 
+// requestAnimationFrame mock (not in happy-dom)
+if (!global.requestAnimationFrame) {
+  global.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+    setTimeout(() => cb(0), 0);
+    return 0;
+  };
+}
+
 // Patch HTMLElement.prototype for setPointerCapture (not in happy-dom)
 const htmlElementProto = Object.getPrototypeOf(document.createElement("div")) as Record<string, unknown>;
 if (!htmlElementProto["setPointerCapture"]) {
@@ -75,7 +83,7 @@ import { StatsCard } from "../cards/stats-card";
 import { FloatingPanel } from "../floating-panel";
 import { PanelManager } from "../panel-manager";
 import type { TugConnection } from "../connection";
-import type { FloatingGroup, TabNode } from "../layout-tree";
+import type { PanelState } from "../layout-tree";
 import { FeedId } from "../protocol";
 
 // ---- MockTerminalCard: replaces the real TerminalCard import to prevent xterm.js
@@ -469,19 +477,19 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
     const canvas = document.createElement("div");
     document.body.appendChild(canvas);
 
-    const tabItem = { id: "fp-tab-1", componentId: "terminal", title: "Terminal", closable: true };
-    const node: TabNode = { type: "tab", id: "fp-node-1", tabs: [tabItem], activeTabIndex: 0 };
-    const fg: FloatingGroup = {
+    const tabId = "fp-tab-1";
+    const ps: PanelState = {
+      id: "fp-panel-1",
       position: { x: 100, y: 100 },
       size: { width: 400, height: 300 },
-      node,
+      tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: tabId,
     };
 
-    const fp = new FloatingPanel(fg, {
+    const fp = new FloatingPanel(ps, {
       onMoveEnd: () => {},
       onResizeEnd: () => {},
       onFocus: () => {},
-      onDragOut: () => {},
       onClose: () => {},
     }, canvas);
 
@@ -498,19 +506,19 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
 
   test("floating panel CardHeader has no collapse button (docked-only feature)", () => {
     const canvas = document.createElement("div");
-    const tabItem = { id: "fp-tab-2", componentId: "git", title: "Git", closable: true };
-    const node: TabNode = { type: "tab", id: "fp-node-2", tabs: [tabItem], activeTabIndex: 0 };
-    const fg: FloatingGroup = {
+    const tabId = "fp-tab-2";
+    const ps: PanelState = {
+      id: "fp-panel-2",
       position: { x: 50, y: 50 },
       size: { width: 400, height: 300 },
-      node,
+      tabs: [{ id: tabId, componentId: "git", title: "Git", closable: true }],
+      activeTabId: tabId,
     };
 
-    const fp = new FloatingPanel(fg, {
+    const fp = new FloatingPanel(ps, {
       onMoveEnd: () => {},
       onResizeEnd: () => {},
       onFocus: () => {},
-      onDragOut: () => {},
       onClose: () => {},
     }, canvas);
 
@@ -522,20 +530,20 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
 
   test("floating panel uses card meta when provided", () => {
     const canvas = document.createElement("div");
-    const tabItem = { id: "fp-tab-3", componentId: "git", title: "Git", closable: true };
-    const node: TabNode = { type: "tab", id: "fp-node-3", tabs: [tabItem], activeTabIndex: 0 };
-    const fg: FloatingGroup = {
+    const tabId = "fp-tab-3";
+    const ps: PanelState = {
+      id: "fp-panel-3",
       position: { x: 50, y: 50 },
       size: { width: 400, height: 300 },
-      node,
+      tabs: [{ id: tabId, componentId: "git", title: "Git", closable: true }],
+      activeTabId: tabId,
     };
     const meta: TugCardMeta = { title: "Git Branch", icon: "GitBranch", closable: true, menuItems: [] };
 
-    const fp = new FloatingPanel(fg, {
+    const fp = new FloatingPanel(ps, {
       onMoveEnd: () => {},
       onResizeEnd: () => {},
       onFocus: () => {},
-      onDragOut: () => {},
       onClose: () => {},
     }, canvas, meta);
 
@@ -647,9 +655,11 @@ describe("PanelManager – single-tab CardHeader integration", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
     const card = new GitCard();
     manager.addCard(card, "git");
-    const titleEl = container.querySelector(".panel-header-title");
-    expect(titleEl).not.toBeNull();
-    expect(titleEl!.textContent).toBe("Git");
+    // There are 5 default panels; find the one with the git title
+    const allTitles = Array.from(container.querySelectorAll(".panel-header-title"));
+    const gitTitle = allTitles.find((el) => el.textContent === "Git");
+    expect(gitTitle).not.toBeNull();
+    expect(gitTitle!.textContent).toBe("Git");
     manager.destroy();
   });
 });

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-18T16:55:16Z
+bead: tugtool-7j2.5
+---
+
+## #step-4: Rewrote all test files for canvas model. Deleted dock-target.test.ts. Updated 5 test files: replaced FloatingGroup/DockState/getDockState with PanelState/CanvasState/getCanvasState, removed preset/sash/tree tests, added rAF mock. 397/397 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-18T16:38:16Z
 bead: tugtool-7j2.4

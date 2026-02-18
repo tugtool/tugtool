@@ -2,13 +2,13 @@
  * PanelManager unit and integration tests.
  *
  * Tests cover:
- * - Default layout rendering (five card containers exist)
- * - Sash drag weight calculation
- * - Sash minimum size enforcement
+ * - Default layout renders 5 floating panels
  * - Manager-level fan-out frame dispatch (D10)
  * - IDragState.isDragging reflects drag state
  * - removeCard removes card from feed dispatch sets (no orphaned callbacks)
- * - Geometric layout pass weight adjustment logic
+ * - addNewCard adds a panel to canvasState
+ * - resetLayout rebuilds default 5 panels
+ * - getCanvasState reflects current state
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -36,7 +36,7 @@ const localStorageMock = (() => {
 })();
 global.localStorage = localStorageMock as unknown as Storage;
 
-// crypto.randomUUID mock (needed for layout tree node IDs)
+// crypto.randomUUID mock
 if (!global.crypto) {
   global.crypto = {
     randomUUID: () => {
@@ -49,11 +49,18 @@ if (!global.crypto) {
   } as unknown as Crypto;
 }
 
+// requestAnimationFrame mock (not in happy-dom)
+if (!global.requestAnimationFrame) {
+  global.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+    setTimeout(() => cb(0), 0);
+    return 0;
+  };
+}
+
 import { PanelManager } from "../panel-manager";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
-import type { SplitNode } from "../layout-tree";
 
 // ---- Mock TugConnection ----
 
@@ -62,36 +69,16 @@ class MockConnection {
   private openCallbacks: Array<() => void> = [];
 
   onFrame(feedId: number, callback: (payload: Uint8Array) => void): void {
-    if (!this.frameCallbacks.has(feedId)) {
-      this.frameCallbacks.set(feedId, []);
-    }
+    if (!this.frameCallbacks.has(feedId)) this.frameCallbacks.set(feedId, []);
     this.frameCallbacks.get(feedId)!.push(callback);
   }
-
-  onOpen(callback: () => void): void {
-    this.openCallbacks.push(callback);
-  }
-
-  // Test helper: deliver a frame to all registered callbacks for a feedId
+  onOpen(callback: () => void): void { this.openCallbacks.push(callback); }
   deliverFrame(feedId: number, payload: Uint8Array): void {
     const cbs = this.frameCallbacks.get(feedId) ?? [];
-    for (const cb of cbs) {
-      cb(payload);
-    }
+    for (const cb of cbs) cb(payload);
   }
-
-  // Test helper: trigger open callbacks
-  triggerOpen(): void {
-    for (const cb of this.openCallbacks) {
-      cb();
-    }
-  }
-
-  // Test helper: count registered callbacks for a feedId
-  callbackCount(feedId: number): number {
-    return this.frameCallbacks.get(feedId)?.length ?? 0;
-  }
-
+  triggerOpen(): void { for (const cb of this.openCallbacks) cb(); }
+  callbackCount(feedId: number): number { return this.frameCallbacks.get(feedId)?.length ?? 0; }
   send(_feedId: number, _payload: Uint8Array): void {}
 }
 
@@ -99,7 +86,7 @@ class MockConnection {
 
 function makeMockCard(
   feedIds: FeedIdValue[],
-  componentId: string
+  _componentId: string
 ): TugCard & {
   mountCount: number;
   destroyCount: number;
@@ -112,29 +99,21 @@ function makeMockCard(
     destroyCount: 0,
     framesReceived: [],
     resizeCalls: [],
-    mount(_container: HTMLElement) {
-      this.mountCount++;
-    },
-    onFrame(feedId: FeedIdValue, payload: Uint8Array) {
-      this.framesReceived.push({ feedId, payload });
-    },
-    onResize(width: number, height: number) {
-      this.resizeCalls.push({ width, height });
-    },
-    destroy() {
-      this.destroyCount++;
-    },
+    mount(_container: HTMLElement) { this.mountCount++; },
+    onFrame(feedId: FeedIdValue, payload: Uint8Array) { this.framesReceived.push({ feedId, payload }); },
+    onResize(width: number, height: number) { this.resizeCalls.push({ width, height }); },
+    destroy() { this.destroyCount++; },
   };
 }
 
-// ---- Tree traversal helper ----
+// ---- Helper: make container ----
 
-/** Returns true if any TabNode in the tree contains a tab with the given componentId. */
-function treeContainsComponent(node: import("../layout-tree").LayoutNode, componentId: string): boolean {
-  if (node.type === "tab") {
-    return node.tabs.some((t) => t.componentId === componentId);
-  }
-  return node.children.some((child) => treeContainsComponent(child, componentId));
+function makeContainer(): HTMLElement {
+  const el = document.createElement("div");
+  el.style.width = "1280px";
+  el.style.height = "800px";
+  document.body.appendChild(el);
+  return el;
 }
 
 // ---- Tests ----
@@ -146,357 +125,211 @@ describe("PanelManager", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorageMock.clear();
-
-    container = document.createElement("div");
-    container.style.width = "1280px";
-    container.style.height = "800px";
-    document.body.appendChild(container);
-
+    container = makeContainer();
     connection = new MockConnection();
   });
 
-  // ---- Integration test: default layout rendering ----
+  // ---- Default layout rendering ----
 
-  test("renders default layout with five card containers in the DOM", () => {
+  test("renders default layout with 5 .floating-panel elements", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-
-    // Add all five default cards
-    const conversation = makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation");
-    const terminal = makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal");
-    const git = makeMockCard([FeedId.GIT], "git");
-    const files = makeMockCard([FeedId.FILESYSTEM], "files");
-    const stats = makeMockCard([FeedId.STATS], "stats");
-
-    manager.addCard(conversation, "conversation");
-    manager.addCard(terminal, "terminal");
-    manager.addCard(git, "git");
-    manager.addCard(files, "files");
-    manager.addCard(stats, "stats");
-
-    // All five cards should be registered
-    const registry = manager.getCardRegistry();
-    expect(registry.size).toBe(5);
-
-    // Should have mounted each card
-    expect(conversation.mountCount).toBe(1);
-    expect(terminal.mountCount).toBe(1);
-    expect(git.mountCount).toBe(1);
-    expect(files.mountCount).toBe(1);
-    expect(stats.mountCount).toBe(1);
-
-    // Root element should be in the DOM
-    const rootEl = container.querySelector(".panel-root");
-    expect(rootEl).not.toBeNull();
-
-    // Should have panel-split elements (horizontal root split)
-    const splits = container.querySelectorAll(".panel-split");
-    expect(splits.length).toBeGreaterThan(0);
-
-    // Should have panel-card-container elements (one per TabNode)
-    const cardContainers = container.querySelectorAll(".panel-card-container");
-    expect(cardContainers.length).toBe(5); // default layout has 5 tab nodes
-
+    const panels = container.querySelectorAll(".floating-panel");
+    expect(panels.length).toBe(5);
     manager.destroy();
   });
 
-  // ---- Unit test: sash weight calculation ----
-
-  test("sash weight recalculation: shifting weight from right to left child", () => {
-    // Test the weight calculation logic in isolation.
-    // When cursor moves left by delta, left child shrinks, right child grows.
-    // Initial weights: [0.5, 0.5], container width 1000px
-    // Cursor moves right by 100px -> delta = +100px / 1000px = +0.1
-    // New weights: [0.5 + 0.1, 0.5 - 0.1] = [0.6, 0.4]
-
-    const initialWeights = [0.5, 0.5];
-    const totalSize = 1000;
-    const delta = 100; // cursor moved 100px to the right
-    const minWeight = 100 / totalSize; // MIN_SIZE_PX / totalSize = 0.1
-
-    const weightDelta = delta / totalSize; // 0.1
-    const newWeights = [...initialWeights];
-    newWeights[0] = initialWeights[0] + weightDelta; // 0.6
-    newWeights[1] = initialWeights[1] - weightDelta; // 0.4
-
-    // Neither is under the minimum
-    expect(newWeights[0]).toBeCloseTo(0.6, 5);
-    expect(newWeights[1]).toBeCloseTo(0.4, 5);
-    expect(newWeights[0] + newWeights[1]).toBeCloseTo(1.0, 5);
-    expect(newWeights[0]).toBeGreaterThanOrEqual(minWeight);
-    expect(newWeights[1]).toBeGreaterThanOrEqual(minWeight);
-  });
-
-  test("sash enforces 100px minimum: clamping when delta would make a child too small", () => {
-    // Initial weights: [0.15, 0.85], container width 1000px
-    // Left child is 150px. MIN_SIZE_PX = 100px -> minWeight = 0.1
-    // Delta = -100px (cursor moved left by 100px)
-    // newWeights[0] = 0.15 - 0.1 = 0.05 -- below minWeight!
-    // Should be clamped: newWeights[0] = 0.1, newWeights[1] adjusted accordingly
-
-    const initialWeights = [0.15, 0.85];
-    const totalSize = 1000;
-    const delta = -100; // cursor moved 100px to the left
-    const minWeight = 100 / totalSize; // 0.1
-
-    const weightDelta = delta / totalSize; // -0.1
-    let newWeights = [
-      initialWeights[0] + weightDelta, // 0.15 - 0.1 = 0.05
-      initialWeights[1] - weightDelta, // 0.85 + 0.1 = 0.95
-    ];
-
-    // Clamp left child to minimum
-    if (newWeights[0] < minWeight) {
-      const excess = minWeight - newWeights[0]; // 0.1 - 0.05 = 0.05
-      newWeights[0] = minWeight; // 0.1
-      newWeights[1] -= excess; // 0.95 - 0.05 = 0.9
-    }
-
-    expect(newWeights[0]).toBeCloseTo(0.1, 5); // clamped to minWeight
-    expect(newWeights[1]).toBeCloseTo(0.9, 5);
-    expect(newWeights[0] + newWeights[1]).toBeCloseTo(1.0, 5);
-    expect(newWeights[0]).toBeGreaterThanOrEqual(minWeight);
-    expect(newWeights[1]).toBeGreaterThanOrEqual(minWeight);
-  });
-
-  test("sash enforces 100px minimum for right child when dragging right", () => {
-    // Initial weights: [0.85, 0.15], container width 1000px
-    // Right child is 150px. Moving right by 100px would make it 50px.
-    const initialWeights = [0.85, 0.15];
-    const totalSize = 1000;
-    const delta = 100;
-    const minWeight = 100 / totalSize; // 0.1
-
-    const weightDelta = delta / totalSize; // 0.1
-    let newWeights = [
-      initialWeights[0] + weightDelta, // 0.95
-      initialWeights[1] - weightDelta, // 0.05
-    ];
-
-    // Clamp right child
-    if (newWeights[1] < minWeight) {
-      const excess = minWeight - newWeights[1];
-      newWeights[1] = minWeight;
-      newWeights[0] -= excess;
-    }
-
-    expect(newWeights[1]).toBeCloseTo(0.1, 5);
-    expect(newWeights[0]).toBeCloseTo(0.9, 5);
-    expect(newWeights[0] + newWeights[1]).toBeCloseTo(1.0, 5);
-  });
-
-  // ---- Integration test: frame dispatch fan-out (D10) ----
-
-  test("frame dispatch delivers frame to correct card via manager-level fan-out", () => {
+  test("getCanvasState returns 5 panels after construction", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const state = manager.getCanvasState();
+    expect(state.panels.length).toBe(5);
+    const componentIds = state.panels.map((p) => p.tabs[0].componentId);
+    expect(componentIds).toContain("conversation");
+    expect(componentIds).toContain("terminal");
+    expect(componentIds).toContain("git");
+    expect(componentIds).toContain("files");
+    expect(componentIds).toContain("stats");
+    manager.destroy();
+  });
 
-    const conversation = makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation");
-    const terminal = makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal");
+  test("panel-root element exists inside container", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    expect(container.querySelector(".panel-root")).not.toBeNull();
+    manager.destroy();
+  });
 
-    manager.addCard(conversation, "conversation");
-    manager.addCard(terminal, "terminal");
+  test("addCard registers the card and mounts it", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const card = makeMockCard([FeedId.GIT], "git");
+    manager.addCard(card, "git");
+    expect(manager.getCardRegistry().has !== undefined).toBe(true);
+    let found = false;
+    for (const [, c] of manager.getCardRegistry()) { if (c === card) { found = true; break; } }
+    expect(found).toBe(true);
+    manager.destroy();
+  });
+
+  // ---- D10: Fan-out frame dispatch ----
+
+  test("D10: each output feedId has exactly one registered connection callback", () => {
+    new PanelManager(container, connection as unknown as TugConnection);
+    // PanelManager registers exactly one callback per output feedId
+    expect(connection.callbackCount(FeedId.TERMINAL_OUTPUT)).toBe(1);
+    expect(connection.callbackCount(FeedId.FILESYSTEM)).toBe(1);
+    expect(connection.callbackCount(FeedId.GIT)).toBe(1);
+    expect(connection.callbackCount(FeedId.STATS)).toBe(1);
+    expect(connection.callbackCount(FeedId.CONVERSATION_OUTPUT)).toBe(1);
+  });
+
+  test("D10: frame delivered to all cards subscribed to that feedId", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const card1 = makeMockCard([FeedId.GIT], "git");
+    const card2 = makeMockCard([FeedId.GIT], "git");
+    manager.addCard(card1, "git");
+
+    // Manually register card2 to git feed (since git slot is taken, add via cardsByFeed)
+    const feeds = manager.getCardsByFeed();
+    feeds.get(FeedId.GIT)?.add(card2);
 
     const payload = new Uint8Array([1, 2, 3]);
+    connection.deliverFrame(FeedId.GIT, payload);
 
-    // Deliver a CONVERSATION_OUTPUT frame
-    connection.deliverFrame(FeedId.CONVERSATION_OUTPUT, payload);
-
-    // Only conversation card should receive it
-    expect(conversation.framesReceived.length).toBe(1);
-    expect(conversation.framesReceived[0].feedId).toBe(FeedId.CONVERSATION_OUTPUT);
-    expect(terminal.framesReceived.length).toBe(0);
-
+    expect(card1.framesReceived.length).toBe(1);
+    expect(card2.framesReceived.length).toBe(1);
     manager.destroy();
   });
 
-  test("frame dispatch: D10 fan-out delivers to multiple cards sharing same feedId", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+  // ---- IDragState ----
 
-    // Two cards sharing STATS feedId (simulating multi-instance)
-    const stats1 = makeMockCard([FeedId.STATS], "stats");
-    const stats2 = makeMockCard([FeedId.STATS], "stats");
-
-    manager.addCard(stats1, "stats");
-    // stats2 shares componentId "stats" -- add it to the feed set directly
-    const feedSet = manager.getCardsByFeed().get(FeedId.STATS);
-    if (feedSet) feedSet.add(stats2);
-
-    const payload = new Uint8Array([0xaa]);
-    connection.deliverFrame(FeedId.STATS, payload);
-
-    // Both should receive the frame
-    expect(stats1.framesReceived.length).toBe(1);
-    expect(stats2.framesReceived.length).toBe(1);
-
-    manager.destroy();
-  });
-
-  test("D10: exactly ONE connection.onFrame callback registered per output feedId", () => {
-    // PanelManager should register exactly one callback per output feedId, not per card
-    new PanelManager(container, connection as unknown as TugConnection);
-
-    // Each output feedId should have exactly 1 callback registered with the connection
-    const outputFeedIds = [
-      FeedId.TERMINAL_OUTPUT,
-      FeedId.FILESYSTEM,
-      FeedId.GIT,
-      FeedId.STATS,
-      FeedId.STATS_PROCESS_INFO,
-      FeedId.STATS_TOKEN_USAGE,
-      FeedId.STATS_BUILD_STATUS,
-      FeedId.CONVERSATION_OUTPUT,
-    ];
-
-    for (const feedId of outputFeedIds) {
-      expect(connection.callbackCount(feedId)).toBe(1); // exactly one
-    }
-  });
-
-  // ---- Unit test: IDragState.isDragging ----
-
-  test("IDragState.isDragging is false initially", () => {
+  test("isDragging is false initially", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
     expect(manager.isDragging).toBe(false);
     manager.destroy();
   });
 
-  test("IDragState.isDragging can be read as IDragState", () => {
+  // ---- removeCard ----
+
+  test("removeCard removes card from feed dispatch set", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    // PanelManager implements IDragState -- verify the interface is satisfied
-    const ds = manager as { isDragging: boolean };
-    expect(typeof ds.isDragging).toBe("boolean");
-    expect(ds.isDragging).toBe(false);
+    const card = makeMockCard([FeedId.GIT], "git");
+    manager.addCard(card, "git");
+
+    const gitSet = manager.getCardsByFeed().get(FeedId.GIT)!;
+    expect(gitSet.has(card)).toBe(true);
+
+    manager.removeCard(card);
+    expect(gitSet.has(card)).toBe(false);
+    expect(card.destroyCount).toBe(1);
     manager.destroy();
   });
 
-  // ---- Unit test: removeCard ----
-
-  test("removeCard removes card from feed dispatch sets (no orphaned callbacks)", () => {
+  test("removeCard removes panel from canvasState when it has only one tab", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const card = makeMockCard([FeedId.GIT], "git");
+    manager.addCard(card, "git");
 
-    const conversation = makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation");
-    manager.addCard(conversation, "conversation");
-
-    // Verify card is in the fan-out set
-    const feedSet = manager.getCardsByFeed().get(FeedId.CONVERSATION_OUTPUT);
-    expect(feedSet?.has(conversation)).toBe(true);
-
-    manager.removeCard(conversation);
-
-    // Card should be removed from fan-out set
-    expect(feedSet?.has(conversation)).toBe(false);
-
-    // Card.destroy() should have been called
-    expect(conversation.destroyCount).toBe(1);
-
-    // Delivering a frame should not reach the removed card
-    connection.deliverFrame(FeedId.CONVERSATION_OUTPUT, new Uint8Array([0xff]));
-    expect(conversation.framesReceived.length).toBe(0);
-
+    const beforeCount = manager.getCanvasState().panels.length;
+    manager.removeCard(card);
+    expect(manager.getCanvasState().panels.length).toBe(beforeCount - 1);
     manager.destroy();
   });
 
-  test("removeCard removes the TabNode from dockState.root (no empty panel containers)", () => {
+  test("after removeCard, frame is no longer delivered to removed card", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const card = makeMockCard([FeedId.GIT], "git");
+    manager.addCard(card, "git");
+    manager.removeCard(card);
 
-    const git = makeMockCard([FeedId.GIT], "git");
-    manager.addCard(git, "git");
-
-    // Before removal: the tree must contain a "git" component
-    const stateBefore = manager.getDockState();
-    expect(treeContainsComponent(stateBefore.root, "git")).toBe(true);
-
-    manager.removeCard(git);
-
-    // After removal: the "git" TabNode must be gone from the tree
-    const stateAfter = manager.getDockState();
-    expect(treeContainsComponent(stateAfter.root, "git")).toBe(false);
-
-    // The DOM should now have 4 panel-card-container elements (default layout - 1)
-    const allCardContainers = container.querySelectorAll(".panel-card-container");
-    expect(allCardContainers.length).toBe(4);
-
+    connection.deliverFrame(FeedId.GIT, new Uint8Array([42]));
+    expect(card.framesReceived.length).toBe(0);
     manager.destroy();
   });
 
-  test("removeCard with non-registered card does not throw", () => {
+  // ---- addNewCard ----
+
+  test("addNewCard increases panels count by 1", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const orphanCard = makeMockCard([FeedId.GIT], "git");
+    manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
-    // Should not throw even though the card was never added via addCard
-    expect(() => manager.removeCard(orphanCard)).not.toThrow();
-    // destroy() is still called on the card
-    expect(orphanCard.destroyCount).toBe(1);
-
+    const before = manager.getCanvasState().panels.length;
+    manager.addNewCard("terminal");
+    expect(manager.getCanvasState().panels.length).toBe(before + 1);
     manager.destroy();
   });
 
-  // ---- Unit test: geometric layout pass weight adjustment ----
-
-  test("geometric weight adjustment: logic correctly identifies and adjusts sub-minimum weights", () => {
-    // Test the core arithmetic of the geometric adjustment:
-    // Given a split with weights [0.02, 0.98] and totalSize=1000px,
-    // the left child is only 20px < MIN_SIZE_PX (100px).
-    // The adjustment should increase left weight to 0.1 (100/1000)
-    // and decrease the largest neighbor proportionally.
-
-    const weights = [0.02, 0.98];
-    const totalSize = 1000;
-    const minSize = 100;
-    const minWeight = minSize / totalSize; // 0.1
-
-    // Simulate what the geometric pass does
-    const newWeights = [...weights];
-    for (let i = 0; i < newWeights.length; i++) {
-      const pixelSize = newWeights[i] * totalSize;
-      if (pixelSize < minSize) {
-        const shortfall = (minSize - pixelSize) / totalSize;
-        // Find largest neighbor
-        let largestIdx = i === 0 ? 1 : 0;
-        for (let j = 0; j < newWeights.length; j++) {
-          if (j !== i && newWeights[j] > newWeights[largestIdx]) {
-            largestIdx = j;
-          }
-        }
-        newWeights[i] += shortfall;
-        newWeights[largestIdx] = Math.max(0, newWeights[largestIdx] - shortfall);
-      }
-    }
-
-    // Renormalize
-    const total = newWeights.reduce((s, w) => s + w, 0);
-    const renorm = newWeights.map((w) => w / total);
-
-    expect(renorm[0]).toBeCloseTo(minWeight, 5); // 0.1
-    expect(renorm[1]).toBeCloseTo(1 - minWeight, 5); // 0.9
-    expect(renorm[0] + renorm[1]).toBeCloseTo(1.0, 5);
-  });
-
-  // ---- Integration test: layout structure ----
-
-  test("getDockState returns the current dock state", () => {
+  test("addNewCard adds a .floating-panel element to the container", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
+    manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
 
-    const state = manager.getDockState();
-    expect(state).not.toBeNull();
-    expect(state.root).not.toBeNull();
-    expect(state.floating).toBeDefined();
-    expect(Array.isArray(state.floating)).toBe(true);
-
-    // Default layout: root is a horizontal split
-    expect(state.root.type).toBe("split");
-    expect((state.root as SplitNode).orientation).toBe("horizontal");
-    expect((state.root as SplitNode).children.length).toBe(2);
-
+    const before = container.querySelectorAll(".floating-panel").length;
+    manager.addNewCard("git");
+    expect(container.querySelectorAll(".floating-panel").length).toBe(before + 1);
     manager.destroy();
   });
 
-  test("addCard for unknown componentId logs warning and does not throw", () => {
+  test("addNewCard with unknown componentId logs warning and does not change state", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
-    const orphan = makeMockCard([FeedId.GIT], "unknown-component");
+    const before = manager.getCanvasState().panels.length;
+    manager.addNewCard("unknown-component");
+    expect(manager.getCanvasState().panels.length).toBe(before);
+    manager.destroy();
+  });
 
-    // Should not throw
-    expect(() => manager.addCard(orphan, "unknown-component")).not.toThrow();
+  // ---- resetLayout ----
 
+  test("resetLayout re-renders 5 floating panels", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
+    manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
+    manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
+    manager.registerCardFactory("files", () => makeMockCard([FeedId.FILESYSTEM], "files"));
+    manager.registerCardFactory("stats", () => makeMockCard([FeedId.STATS], "stats"));
+
+    // Add extra card then reset
+    manager.addNewCard("git");
+    manager.resetLayout();
+
+    expect(manager.getCanvasState().panels.length).toBe(5);
+    manager.destroy();
+  });
+
+  // ---- applyLayout ----
+
+  test("applyLayout replaces canvasState and re-renders", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const tabId = "al-tab-1";
+    manager.applyLayout({
+      panels: [{
+        id: "al-panel-1",
+        position: { x: 0, y: 0 },
+        size: { width: 400, height: 300 },
+        tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
+        activeTabId: tabId,
+      }],
+    });
+    expect(manager.getCanvasState().panels.length).toBe(1);
+    expect(container.querySelectorAll(".floating-panel").length).toBe(1);
+    manager.destroy();
+  });
+
+  // ---- Layout persistence ----
+
+  test("serialize/deserialize round-trip via applyLayout and getCanvasState", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const tabId = "persist-tab-1";
+    const testPanel = {
+      id: "persist-panel-1",
+      position: { x: 50, y: 75 },
+      size: { width: 350, height: 250 },
+      tabs: [{ id: tabId, componentId: "git", title: "Git", closable: true }],
+      activeTabId: tabId,
+    };
+    manager.applyLayout({ panels: [testPanel] });
+
+    const state = manager.getCanvasState();
+    expect(state.panels[0].position.x).toBe(50);
+    expect(state.panels[0].position.y).toBe(75);
+    expect(state.panels[0].size.width).toBe(350);
+    expect(state.panels[0].size.height).toBe(250);
     manager.destroy();
   });
 });
