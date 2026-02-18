@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-18T16:38:16Z
+bead: tugtool-7j2.4
+---
+
+## #step-3: Deleted sash.ts and dock-target.ts. Removed dead CSS rules (.panel-split*, .panel-sash*, .dock-overlay, .dock-drag-ghost). Zero residual references in non-test source files.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-18T16:28:57Z
 bead: tugtool-7j2.3
