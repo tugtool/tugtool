@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-18T03:01:59Z
+bead: tugtool-ndt.7
+---
+
+## #step-6: Populated menu items for all 5 cards per Table T02. Converted meta fields to get meta() getters for dynamic state. Terminal: font size/clear/WebGL. Git: refresh/untracked. Files: clear/max entries. Stats: timeframe/3 toggles. Conversation: new session/export. 32 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-18T02:49:44Z
 bead: tugtool-ndt.6

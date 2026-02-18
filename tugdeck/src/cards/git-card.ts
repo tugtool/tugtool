@@ -27,15 +27,38 @@ interface FileStatus {
 
 export class GitCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.GIT];
-  readonly meta: TugCardMeta = {
-    title: "Git",
-    icon: "GitBranch",
-    closable: true,
-    menuItems: [],
-  };
+
+  get meta(): TugCardMeta {
+    return {
+      title: "Git",
+      icon: "GitBranch",
+      closable: true,
+      menuItems: [
+        {
+          type: "action",
+          label: "Refresh Now",
+          action: () => {
+            // Soft refresh: re-render last received status.
+            if (this.lastStatus) this.render(this.lastStatus);
+          },
+        },
+        {
+          type: "toggle",
+          label: "Show Untracked",
+          checked: this.showUntracked,
+          action: (_checked: boolean) => {
+            this.showUntracked = !this.showUntracked;
+            if (this.lastStatus) this.render(this.lastStatus);
+          },
+        },
+      ],
+    };
+  }
 
   private container: HTMLElement | null = null;
   private content: HTMLElement | null = null;
+  private showUntracked = true;
+  private lastStatus: GitStatus | null = null;
 
   mount(container: HTMLElement): void {
     this.container = container;
@@ -60,6 +83,7 @@ export class GitCard implements TugCard {
       return;
     }
 
+    this.lastStatus = status;
     this.render(status);
   }
 
@@ -120,7 +144,7 @@ export class GitCard implements TugCard {
     if (status.unstaged.length > 0) {
       this.renderFileSection("Unstaged", "unstaged", status.unstaged);
     }
-    if (status.untracked.length > 0) {
+    if (this.showUntracked && status.untracked.length > 0) {
       this.renderUntrackedSection(status.untracked);
     }
 

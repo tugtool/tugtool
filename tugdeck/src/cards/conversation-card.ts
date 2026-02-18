@@ -93,6 +93,24 @@ export class ConversationCard implements TugCard {
             connection.send(FeedId.CONVERSATION_INPUT, payload);
           },
         },
+        {
+          type: "action",
+          label: "New Session",
+          action: () => {
+            // Clear local UI only — no IPC. The server's session continues;
+            // the next server message will appear in the fresh UI.
+            if (this.messageList) this.messageList.innerHTML = "";
+            this.currentSessionId = null;
+            this.clearHistory().catch((e) => console.error("Failed to clear history:", e));
+          },
+        },
+        {
+          type: "action",
+          label: "Export History",
+          action: () => {
+            this.exportHistory();
+          },
+        },
       ],
     };
   }
@@ -872,6 +890,36 @@ export class ConversationCard implements TugCard {
   async clearHistory(): Promise<void> {
     await this.sessionCache.clearHistory();
     this.messageList.innerHTML = "";
+  }
+
+  private exportHistory(): void {
+    if (!this.messageList) return;
+    const lines: string[] = [];
+    for (const child of Array.from(this.messageList.children)) {
+      const el = child as HTMLElement;
+      // Each message row contains an avatar and a message element
+      const msgEl = el.querySelector(".message") as HTMLElement | null;
+      if (!msgEl) continue;
+      const isUser = msgEl.classList.contains("message-user");
+      const role = isUser ? "User" : "Assistant";
+      const text = (msgEl.textContent ?? "").trim();
+      if (text) {
+        lines.push(`**${role}:** ${text}`);
+        lines.push("");
+      }
+    }
+    const content = lines.join("\n");
+    try {
+      const blob = new Blob([content], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "conversation-history.md";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Export history failed:", e);
+    }
   }
 
   private createAvatar(role: "user" | "assistant"): HTMLElement {

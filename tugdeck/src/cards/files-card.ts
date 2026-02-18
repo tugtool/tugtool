@@ -16,17 +16,42 @@ interface FsEvent {
   to?: string;
 }
 
-/** Maximum number of visible event entries */
-const MAX_VISIBLE_ENTRIES = 100;
-
 export class FilesCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.FILESYSTEM];
-  readonly meta: TugCardMeta = {
-    title: "Files",
-    icon: "FolderOpen",
-    closable: true,
-    menuItems: [],
-  };
+
+  get meta(): TugCardMeta {
+    return {
+      title: "Files",
+      icon: "FolderOpen",
+      closable: true,
+      menuItems: [
+        {
+          type: "action",
+          label: "Clear History",
+          action: () => {
+            if (this.eventList) this.eventList.innerHTML = "";
+          },
+        },
+        {
+          type: "select",
+          label: "Max Entries",
+          options: ["50", "100", "200"],
+          value: String(this.maxEntries),
+          action: (value: string) => {
+            this.maxEntries = parseInt(value, 10);
+            // Immediately trim excess entries if needed
+            if (this.eventList) {
+              while (this.eventList.children.length > this.maxEntries) {
+                this.eventList.removeChild(this.eventList.firstChild!);
+              }
+            }
+          },
+        },
+      ],
+    };
+  }
+
+  private maxEntries = 100;
 
   private container: HTMLElement | null = null;
   private eventList: HTMLElement | null = null;
@@ -77,7 +102,7 @@ export class FilesCard implements TugCard {
     }
 
     // Cap visible entries (remove oldest from top)
-    while (el.children.length > MAX_VISIBLE_ENTRIES) {
+    while (el.children.length > this.maxEntries) {
       el.removeChild(el.firstChild!);
     }
 
