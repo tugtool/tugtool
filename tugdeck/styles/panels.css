@@ -354,6 +354,33 @@
   transition: opacity 0.1s ease;
 }
 
+/* ---- Tug menu button ---- */
+
+.tug-menu-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 9980;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: color 0.15s ease, background 0.15s ease;
+  user-select: none;
+}
+
+.tug-menu-button:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
 /* ---- Drag ghost ---- */
 
 .dock-drag-ghost {

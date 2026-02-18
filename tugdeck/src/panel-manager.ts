@@ -22,6 +22,9 @@ import {
   serialize,
   deserialize,
   validateDockState,
+  savePreset as savePresetToStorage,
+  loadPreset as loadPresetFromStorage,
+  listPresets,
 } from "./serialization";
 import { TugCard } from "./cards/card";
 import { FeedId, FeedIdValue } from "./protocol";
@@ -153,6 +156,9 @@ export class PanelManager implements IDragState {
 
   /** Debounce timer for layout saves */
   private saveTimer: number | null = null;
+
+  /** Card factory functions keyed by componentId. Registered externally by main.ts. */
+  private cardFactories: Map<string, () => TugCard> = new Map();
 
   /** Root panel DOM element */
   private rootEl: HTMLElement;
@@ -1315,6 +1321,231 @@ export class PanelManager implements IDragState {
     return this.cardsByFeed;
   }
 
+  /** Expose the container element (for TugMenu button placement). */
+  getContainer(): HTMLElement {
+    return this.container;
+  }
+
+  /**
+   * Register a card factory for a componentId.
+   * Used by TugMenu and resetLayout to create new card instances.
+   */
+  registerCardFactory(componentId: string, factory: () => TugCard): void {
+    this.cardFactories.set(componentId, factory);
+  }
+
+  /**
+   * Add a new card instance of the given componentId as a floating panel
+   * at the center of the canvas. Called by TugMenu.
+   */
+  addNewCard(componentId: string): void {
+    const factory = this.cardFactories.get(componentId);
+    if (!factory) {
+      console.warn(`PanelManager.addNewCard: no factory registered for "${componentId}"`);
+      return;
+    }
+
+    // Create a new TabItem
+    const tabItem = {
+      id: crypto.randomUUID(),
+      componentId,
+      title: titleForComponent(componentId),
+      closable: true,
+    };
+
+    // Create a new TabNode
+    const tabNode: import("./layout-tree").TabNode = {
+      type: "tab",
+      id: crypto.randomUUID(),
+      tabs: [tabItem],
+      activeTabIndex: 0,
+    };
+
+    // Place at canvas center
+    const canvasW = this.container.clientWidth || 800;
+    const canvasH = this.container.clientHeight || 600;
+    const FLOAT_W = 400;
+    const FLOAT_H = 300;
+    const floatX = Math.max(0, (canvasW - FLOAT_W) / 2);
+    const floatY = Math.max(0, (canvasH - FLOAT_H) / 2);
+
+    const floatingGroup: import("./layout-tree").FloatingGroup = {
+      position: { x: floatX, y: floatY },
+      size: { width: FLOAT_W, height: FLOAT_H },
+      node: tabNode,
+    };
+
+    this.dockState = {
+      ...this.dockState,
+      floating: [...this.dockState.floating, floatingGroup],
+    };
+
+    // Create card instance and register it
+    const card = factory();
+    // Register in fan-out sets (D10)
+    for (const feedId of card.feedIds) {
+      const set = this.cardsByFeed.get(feedId as FeedIdValue);
+      if (set) {
+        set.add(card);
+      }
+    }
+    this.cardRegistry.set(tabItem.id, card);
+
+    // Re-render — renderFloatingPanels will mount the card
+    this.render();
+    this.scheduleSave();
+  }
+
+  /**
+   * Destroy all current cards, reset to the default layout, and recreate
+   * the default five cards using registered factories.
+   * This is the one case where card instances are intentionally destroyed (D09).
+   */
+  resetLayout(): void {
+    // Destroy all current cards
+    this.destroyAllCards();
+
+    // Reset to the default layout
+    this.dockState = buildDefaultLayout();
+
+    // Re-render the empty/default tree
+    this.render();
+
+    // Recreate the default five cards using factories
+    const defaults = ["conversation", "terminal", "git", "files", "stats"];
+    for (const componentId of defaults) {
+      const factory = this.cardFactories.get(componentId);
+      if (!factory) {
+        console.warn(`PanelManager.resetLayout: no factory for "${componentId}"`);
+        continue;
+      }
+      const card = factory();
+      this.addCard(card, componentId);
+    }
+
+    this.scheduleSave();
+  }
+
+  /**
+   * Save the current layout as a named preset in localStorage.
+   */
+  savePreset(name: string): void {
+    savePresetToStorage(name, this.dockState);
+  }
+
+  /**
+   * Load a named preset from localStorage, destroy current cards,
+   * and rebuild card instances from the loaded layout.
+   */
+  loadPreset(name: string): void {
+    const loaded = loadPresetFromStorage(
+      name,
+      this.container.clientWidth,
+      this.container.clientHeight
+    );
+    if (!loaded) {
+      console.warn(`PanelManager.loadPreset: preset "${name}" not found`);
+      return;
+    }
+
+    // Destroy all current cards
+    this.destroyAllCards();
+
+    // Apply the loaded layout
+    this.dockState = loaded;
+
+    // Re-render
+    this.render();
+
+    // Walk the loaded tree to find all TabItems and create card instances
+    this.recreateCardsFromTree(this.dockState.root);
+    // Also recreate cards in floating panels
+    for (const fg of this.dockState.floating) {
+      for (const tab of fg.node.tabs) {
+        const factory = this.cardFactories.get(tab.componentId);
+        if (!factory) continue;
+        if (!this.cardRegistry.has(tab.id)) {
+          const card = factory();
+          for (const feedId of card.feedIds) {
+            const set = this.cardsByFeed.get(feedId as FeedIdValue);
+            if (set) set.add(card);
+          }
+          this.cardRegistry.set(tab.id, card);
+          const mountEl = this.cardContainers.get(tab.id);
+          if (mountEl && mountEl.children.length === 0) {
+            card.mount(mountEl);
+            this.observeContainer(tab.id, mountEl, card);
+          }
+        }
+      }
+    }
+
+    this.scheduleSave();
+  }
+
+  /**
+   * Return sorted list of saved preset names.
+   */
+  getPresetNames(): string[] {
+    return listPresets();
+  }
+
+  /**
+   * Destroy all current cards and clear all tracking maps.
+   * Used internally by resetLayout and loadPreset.
+   */
+  private destroyAllCards(): void {
+    // Disconnect all ResizeObservers
+    for (const ro of this.resizeObservers.values()) {
+      ro.disconnect();
+    }
+    this.resizeObservers.clear();
+
+    // Destroy all cards
+    for (const card of this.cardRegistry.values()) {
+      card.destroy();
+    }
+    this.cardRegistry.clear();
+    this.cardContainers.clear();
+
+    // Clear fan-out sets
+    for (const set of this.cardsByFeed.values()) {
+      set.clear();
+    }
+
+    // Clear collapsed state
+    this.cardCollapsed.clear();
+  }
+
+  /**
+   * Walk the layout tree and create card instances for all TabItems
+   * using the registered factories.
+   */
+  private recreateCardsFromTree(node: import("./layout-tree").LayoutNode): void {
+    if (node.type === "tab") {
+      for (const tab of node.tabs) {
+        const factory = this.cardFactories.get(tab.componentId);
+        if (!factory) continue;
+        if (this.cardRegistry.has(tab.id)) continue;
+        const card = factory();
+        for (const feedId of card.feedIds) {
+          const set = this.cardsByFeed.get(feedId as FeedIdValue);
+          if (set) set.add(card);
+        }
+        this.cardRegistry.set(tab.id, card);
+        const mountEl = this.cardContainers.get(tab.id);
+        if (mountEl && mountEl.children.length === 0) {
+          card.mount(mountEl);
+          this.observeContainer(tab.id, mountEl, card);
+        }
+      }
+      return;
+    }
+    for (const child of node.children) {
+      this.recreateCardsFromTree(child);
+    }
+  }
+
   /**
    * Expose tab bar instances for step 3 dock targeting.
    * Returns the TabBar for a given TabNode.id, or undefined if none.
@@ -1360,6 +1591,21 @@ export class PanelManager implements IDragState {
 }
 
 // ---- Module-level helpers ----
+
+/**
+ * Map componentId to a display title for use in TabItems.
+ */
+function titleForComponent(componentId: string): string {
+  const titles: Record<string, string> = {
+    conversation: "Conversation",
+    terminal: "Terminal",
+    git: "Git",
+    files: "Files",
+    stats: "Stats",
+  };
+  return titles[componentId] ?? componentId;
+}
+
 
 /**
  * Replace the tabs array and activeTabIndex of a specific TabNode in the tree,

@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-18T03:13:47Z
+bead: tugtool-ndt.8
+---
+
+## #step-7: Created tug-menu.ts (TugMenu with logo button, add-card, reset, save/load presets, about). Added preset helpers to serialization.ts. Added card factory registration and addNewCard/resetLayout/savePreset/loadPreset to PanelManager. Updated main.ts with factories and TugMenu. 11 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-18T03:01:59Z
 bead: tugtool-ndt.7

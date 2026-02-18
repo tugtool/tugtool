@@ -5,6 +5,7 @@ import { TerminalCard } from "./cards/terminal-card";
 import { FilesCard } from "./cards/files-card";
 import { GitCard } from "./cards/git-card";
 import { StatsCard } from "./cards/stats-card";
+import { TugMenu } from "./tug-menu";
 
 // Determine WebSocket URL from current page location
 const wsUrl = `ws://${window.location.host}/ws`;
@@ -21,6 +22,23 @@ if (!container) {
 // Create panel manager (replaces DeckManager)
 const deck = new PanelManager(container, connection);
 
+// Register card factories for multi-instance and reset-layout support.
+// Factories capture connection in their closures; TugConnection is a single
+// instance that reconnects internally, so the reference stays valid.
+deck.registerCardFactory("conversation", () => {
+  const card = new ConversationCard(connection);
+  card.setDragState(deck);
+  return card;
+});
+deck.registerCardFactory("terminal", () => {
+  const card = new TerminalCard(connection);
+  card.setDragState(deck);
+  return card;
+});
+deck.registerCardFactory("git", () => new GitCard());
+deck.registerCardFactory("files", () => new FilesCard());
+deck.registerCardFactory("stats", () => new StatsCard());
+
 // Create and register cards by componentId
 // PanelManager.addCard matches cards to layout tree TabItems by componentId
 const conversationCard = new ConversationCard(connection);
@@ -34,6 +52,9 @@ deck.addCard(terminalCard, "terminal");
 deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");
+
+// Create Tug menu (fixed-position logo button in top-right corner)
+new TugMenu(deck);
 
 // Connect to the server
 connection.connect();

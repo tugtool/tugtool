@@ -361,6 +361,90 @@ export function migrateV2ToV3(v2State: V2LayoutState): DockState {
   return { root, floating: [] };
 }
 
+// ---- Preset Storage (named layout presets in localStorage) ----
+
+/** localStorage key for named layout presets */
+export const PRESETS_STORAGE_KEY = "tugdeck-layouts";
+
+/**
+ * Save the current dockState as a named preset in localStorage.
+ *
+ * Presets use the same v3 SerializedDockState format.
+ * If a preset with the given name already exists, it is overwritten.
+ */
+export function savePreset(name: string, dockState: DockState): void {
+  const serialized = serialize(dockState, name);
+  let presets: Record<string, SerializedDockState> = {};
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (raw) {
+      presets = JSON.parse(raw) as Record<string, SerializedDockState>;
+    }
+  } catch {
+    // Reset on parse error
+    presets = {};
+  }
+  presets[name] = serialized;
+  localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+}
+
+/**
+ * Load a named preset from localStorage.
+ *
+ * Returns null if the preset is not found.
+ * Deserializes via the v3 path and runs validateDockState.
+ */
+export function loadPreset(
+  name: string,
+  canvasWidth?: number,
+  canvasHeight?: number
+): DockState | null {
+  let presets: Record<string, SerializedDockState> = {};
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (raw) {
+      presets = JSON.parse(raw) as Record<string, SerializedDockState>;
+    }
+  } catch {
+    return null;
+  }
+  const entry = presets[name];
+  if (!entry) return null;
+
+  // Deserialize and validate
+  const dockState = deserializeV3(entry);
+  return validateDockState(dockState, canvasWidth, canvasHeight);
+}
+
+/**
+ * Return sorted list of saved preset names.
+ */
+export function listPresets(): string[] {
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (!raw) return [];
+    const presets = JSON.parse(raw) as Record<string, unknown>;
+    return Object.keys(presets).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Delete a named preset from localStorage.
+ */
+export function deletePreset(name: string): void {
+  try {
+    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (!raw) return;
+    const presets = JSON.parse(raw) as Record<string, SerializedDockState>;
+    delete presets[name];
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+  } catch {
+    // Ignore errors
+  }
+}
+
 // ---- Default Layout (Spec 8.0.1.5) ----
 
 /**
