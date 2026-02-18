@@ -368,3 +368,22 @@
   height: 8px;
   cursor: row-resize;
 }
+
+/* ---- Set flash feedback ---- */
+
+@keyframes set-flash-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.set-flash-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 3px solid var(--accent);
+  border-radius: inherit;
+  box-shadow: 0 0 5px rgba(100, 160, 255, 0.6), inset 0 0 16px rgba(100, 160, 255, 0.2);
+  animation: set-flash-fade 0.5s ease-out forwards;
+  z-index: 2;
+  box-sizing: border-box;
+}

@@ -281,9 +281,14 @@ export class FloatingPanel {
           newH = candidateH;
         }
 
-        // Clamp position to canvas bounds
-        newX = Math.max(0, Math.min(canvasRect.width - newW, newX));
-        newY = Math.max(0, Math.min(canvasRect.height - newH, newY));
+        // Clamp to canvas bounds: prevent extending past viewport edges
+        if (newX < 0) { newW += newX; newX = 0; }
+        if (newY < 0) { newH += newY; newY = 0; }
+        if (newX + newW > canvasRect.width) { newW = canvasRect.width - newX; }
+        if (newY + newH > canvasRect.height) { newH = canvasRect.height - newY; }
+        // Re-enforce minimum size after viewport clamping
+        newW = Math.max(MIN_SIZE_PX, newW);
+        newH = Math.max(MIN_SIZE_PX, newH);
 
         // Apply live callback if provided (snap override)
         if (this.callbacks.onResizing) {
