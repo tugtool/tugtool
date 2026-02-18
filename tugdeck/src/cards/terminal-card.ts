@@ -161,21 +161,27 @@ export class TerminalCard implements TugCard {
     }
   }
 
+  focus(): void {
+    this.terminal?.focus();
+  }
+
   onResize(_width: number, _height: number): void {
-    // During active drag, suppress fit() entirely -- the single
-    // handleResize() call on pointerup will trigger this method
-    // with isDragging === false for the final fit.
     if (this.dragState?.isDragging) {
       return;
     }
-    if (this.fitAddon && this.terminal) {
-      this.fitAddon.fit();
-      // Always send current size — fit may not trigger terminal.onResize
-      // if the terminal dimensions haven't changed, but the server needs
-      // to know the size (e.g. on WebSocket reconnect)
-      const frame = resizeFrame(this.terminal.cols, this.terminal.rows);
-      this.connection.send(frame.feedId, frame.payload);
+    // Debounce fit() to avoid flashing during continuous resize.
+    // Shares the same timer as the ResizeObserver callback.
+    if (this.resizeDebounceId !== null) {
+      cancelAnimationFrame(this.resizeDebounceId);
     }
+    this.resizeDebounceId = requestAnimationFrame(() => {
+      this.resizeDebounceId = null;
+      if (this.fitAddon && this.terminal) {
+        this.fitAddon.fit();
+        const frame = resizeFrame(this.terminal.cols, this.terminal.rows);
+        this.connection.send(frame.feedId, frame.payload);
+      }
+    });
   }
 
   private toggleWebGL(): void {

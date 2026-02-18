@@ -432,20 +432,78 @@ describe("PanelManager – canvas panel integration", () => {
     manager.destroy();
   });
 
-  test("last panel in array gets .floating-panel-focused class", () => {
+  test("key-capable panel (terminal) gets .panel-header-key on its header", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
     const tab1 = "f-tab-1"; const tab2 = "f-tab-2";
     manager.applyLayout({
       panels: [
         { id: "f-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
-          tabs: [{ id: tab1, componentId: "terminal", title: "T1", closable: true }], activeTabId: tab1 },
+          tabs: [{ id: tab1, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab1 },
         { id: "f-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
-          tabs: [{ id: tab2, componentId: "git", title: "G1", closable: true }], activeTabId: tab2 },
+          tabs: [{ id: tab2, componentId: "terminal", title: "Terminal", closable: true }], activeTabId: tab2 },
       ],
     });
-    const panels = Array.from(container.querySelectorAll<HTMLElement>(".floating-panel"));
-    expect(panels[0].classList.contains("floating-panel-focused")).toBe(false);
-    expect(panels[1].classList.contains("floating-panel-focused")).toBe(true);
+    const headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    // terminal panel header should have key class
+    expect(headers[1].classList.contains("panel-header-key")).toBe(true);
+    // stats panel header should not
+    expect(headers[0].classList.contains("panel-header-key")).toBe(false);
+    manager.destroy();
+  });
+
+  test("clicking non-key panel (stats) does not change key panel", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const tab1 = "k-tab-1"; const tab2 = "k-tab-2";
+    manager.applyLayout({
+      panels: [
+        { id: "k-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
+          tabs: [{ id: tab1, componentId: "conversation", title: "Conv", closable: true }], activeTabId: tab1 },
+        { id: "k-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
+          tabs: [{ id: tab2, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab2 },
+      ],
+    });
+    // conversation is initially key (last key-capable panel)
+    let headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    expect(headers[0].classList.contains("panel-header-key")).toBe(true);
+
+    // Focus the stats panel (bring to front)
+    manager.focusPanel("k-p2");
+
+    // conversation should still be key
+    headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    expect(headers[0].classList.contains("panel-header-key")).toBe(true);
+    expect(headers[1].classList.contains("panel-header-key")).toBe(false);
+    manager.destroy();
+  });
+
+  test("clicking key-capable panel (terminal) makes it key", () => {
+    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const tab1 = "m-tab-1"; const tab2 = "m-tab-2"; const tab3 = "m-tab-3";
+    manager.applyLayout({
+      panels: [
+        { id: "m-p1", position: { x: 0, y: 0 }, size: { width: 400, height: 300 },
+          tabs: [{ id: tab1, componentId: "conversation", title: "Conv", closable: true }], activeTabId: tab1 },
+        { id: "m-p2", position: { x: 50, y: 50 }, size: { width: 400, height: 300 },
+          tabs: [{ id: tab2, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab2 },
+        { id: "m-p3", position: { x: 100, y: 100 }, size: { width: 400, height: 300 },
+          tabs: [{ id: tab3, componentId: "terminal", title: "Terminal", closable: true }], activeTabId: tab3 },
+      ],
+    });
+    // terminal is initially key (last key-capable in array)
+    // DOM order matches creation order: conv(0), stats(1), terminal(2)
+    let headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    expect(headers[2].classList.contains("panel-header-key")).toBe(true);
+    expect(headers[0].classList.contains("panel-header-key")).toBe(false);
+
+    // Focus conversation (key-capable) — it becomes key
+    manager.focusPanel("m-p1");
+
+    // DOM order is unchanged (focusPanel only updates z-index, not DOM order)
+    headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
+    // conversation header (index 0) should now be key
+    expect(headers[0].classList.contains("panel-header-key")).toBe(true);
+    // terminal header (index 2) should no longer be key
+    expect(headers[2].classList.contains("panel-header-key")).toBe(false);
     manager.destroy();
   });
 

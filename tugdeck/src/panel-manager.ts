@@ -7,7 +7,7 @@
  * card coupling (D05).
  *
  * [D01] Flat array replaces tree
- * [D06] Focus model with CSS class (floating-panel-focused)
+ * [D06] Key panel focus model with title bar tint
  * [D09] Card instance identity preserved via container reparenting
  * [D10] Manager-level fan-out per feed ID
  */
@@ -20,7 +20,6 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import { CardHeader } from "./card-header";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -83,6 +82,9 @@ export class PanelManager implements IDragState {
   /** D10: one Set<TugCard> per output feedId */
   private cardsByFeed: Map<FeedIdValue, Set<TugCard>> = new Map();
 
+  /** Most recent payload per feed, replayed to newly added cards */
+  private lastPayload: Map<FeedIdValue, Uint8Array> = new Map();
+
   /**
    * Registry mapping TabItem.id -> TugCard instance.
    */
@@ -111,6 +113,9 @@ export class PanelManager implements IDragState {
    */
   private floatingPanels: Map<string, FloatingPanel> = new Map();
 
+  /** Key panel: only conversation/terminal panels get title bar tint */
+  private keyPanelId: string | null = null;
+
   /** D05: drag state flag */
   private _isDragging = false;
 
@@ -136,6 +141,7 @@ export class PanelManager implements IDragState {
     // These callbacks are registered once and never removed.
     for (const feedId of OUTPUT_FEED_IDS) {
       connection.onFrame(feedId, (payload: Uint8Array) => {
+        this.lastPayload.set(feedId, payload);
         const cards = this.cardsByFeed.get(feedId);
         if (cards) {
           for (const card of cards) {
@@ -227,6 +233,9 @@ export class PanelManager implements IDragState {
           }
         });
       });
+      // After mount, ensure the key panel has DOM focus.
+      // Cards must not self-focus on mount — the panel manager owns focus.
+      requestAnimationFrame(() => this.focusKeyPanelCard());
     }
   }
 
@@ -290,7 +299,7 @@ export class PanelManager implements IDragState {
   /**
    * Re-render the entire canvas: destroy existing FloatingPanel and TabBar
    * instances, then create one FloatingPanel per PanelState in array order
-   * (index = z-order). Last panel in array gets .floating-panel-focused.
+   * (index = z-order). Key-capable panels get title bar tint via setKey().
    *
    * Existing card mount containers are reparented rather than recreated (D09).
    */
@@ -313,7 +322,6 @@ export class PanelManager implements IDragState {
     const panels = this.canvasState.panels;
     for (let i = 0; i < panels.length; i++) {
       const panel = panels[i];
-      const isFocused = i === panels.length - 1;
 
       // Resolve card meta from the active tab's card (if registered)
       const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId)
@@ -355,11 +363,6 @@ export class PanelManager implements IDragState {
 
       // Assign z-index in array order (100, 101, 102, ...)
       fp.setZIndex(100 + i);
-
-      // Last panel in array is focused (D06)
-      if (isFocused) {
-        fp.getElement().classList.add("floating-panel-focused");
-      }
 
       this.container.appendChild(fp.getElement());
       this.floatingPanels.set(panel.id, fp);
@@ -415,32 +418,68 @@ export class PanelManager implements IDragState {
         // (FloatingPanel already created header from cardMeta if provided.)
       }
     }
+
+    // Apply key panel state: if no keyPanelId set (or it no longer exists),
+    // find the last acceptsKey panel and make it key.
+    if (!this.keyPanelId || !this.floatingPanels.has(this.keyPanelId)) {
+      this.keyPanelId = null;
+      for (let i = panels.length - 1; i >= 0; i--) {
+        if (this.acceptsKey(panels[i].id)) {
+          this.keyPanelId = panels[i].id;
+          break;
+        }
+      }
+    }
+    for (const [id, fp] of this.floatingPanels) {
+      fp.setKey(id === this.keyPanelId);
+    }
   }
 
   /**
    * Move the given panel to the end of the panels array (highest z-order),
-   * update z-index values, and toggle the focused CSS class (D06).
+   * update z-index values, and update key panel state.
+   *
+   * Key panel model: only conversation/terminal panels become key.
+   * Clicking a non-key panel brings it to front but does not change keyPanelId.
    */
   focusPanel(panelId: string): void {
     const idx = this.canvasState.panels.findIndex((p) => p.id === panelId);
-    if (idx === -1 || idx === this.canvasState.panels.length - 1) return;
+    if (idx === -1) return;
 
-    // Splice and push to end
-    const [panel] = this.canvasState.panels.splice(idx, 1);
-    this.canvasState.panels.push(panel);
+    // Bring to front if not already last
+    if (idx !== this.canvasState.panels.length - 1) {
+      const [panel] = this.canvasState.panels.splice(idx, 1);
+      this.canvasState.panels.push(panel);
 
-    // Remove focused class from all, add to the focused panel
-    for (const [id, fp] of this.floatingPanels) {
-      const isFocused = id === panelId;
-      fp.getElement().classList.toggle("floating-panel-focused", isFocused);
       // Update z-index to match new array order
-      const newIdx = this.canvasState.panels.findIndex((p) => p.id === id);
-      if (newIdx !== -1) {
-        fp.setZIndex(100 + newIdx);
+      for (const [id, fp] of this.floatingPanels) {
+        const newIdx = this.canvasState.panels.findIndex((p) => p.id === id);
+        if (newIdx !== -1) {
+          fp.setZIndex(100 + newIdx);
+        }
+      }
+
+      this.scheduleSave();
+    }
+
+    // Update key panel: only if the focused panel accepts key
+    if (this.acceptsKey(panelId)) {
+      const prevKeyFp = this.keyPanelId ? this.floatingPanels.get(this.keyPanelId) : null;
+      if (prevKeyFp && this.keyPanelId !== panelId) {
+        prevKeyFp.setKey(false);
+      }
+      this.keyPanelId = panelId;
+      const newKeyFp = this.floatingPanels.get(panelId);
+      if (newKeyFp) {
+        newKeyFp.setKey(true);
       }
     }
 
-    this.scheduleSave();
+    // Route keyboard focus to the key panel's active card.
+    // Deferred to next frame so it runs after the browser's default
+    // mousedown focus handling settles — otherwise the browser can
+    // move focus to the clicked element after our .focus() call.
+    requestAnimationFrame(() => this.focusKeyPanelCard());
   }
 
   // ---- Tab callbacks ----
@@ -574,6 +613,15 @@ export class PanelManager implements IDragState {
     this.cardRegistry.set(tabId, card);
 
     this.render();
+
+    // Replay last frame for each subscribed feed so the card isn't empty
+    for (const feedId of card.feedIds) {
+      const payload = this.lastPayload.get(feedId as FeedIdValue);
+      if (payload) {
+        card.onFrame(feedId, payload);
+      }
+    }
+
     this.scheduleSave();
   }
 
@@ -623,6 +671,15 @@ export class PanelManager implements IDragState {
     this.cardRegistry.set(tabId, card);
 
     this.render();
+
+    // Replay last frame for each subscribed feed so the card isn't empty
+    for (const feedId of card.feedIds) {
+      const payload = this.lastPayload.get(feedId as FeedIdValue);
+      if (payload) {
+        card.onFrame(feedId, payload);
+      }
+    }
+
     this.scheduleSave();
   }
 
@@ -632,6 +689,7 @@ export class PanelManager implements IDragState {
    */
   resetLayout(): void {
     this.destroyAllCards();
+    this.keyPanelId = null;
 
     const canvasW = this.container.clientWidth || 800;
     const canvasH = this.container.clientHeight || 600;
@@ -733,6 +791,7 @@ export class PanelManager implements IDragState {
    * Apply an external CanvasState, re-render, and schedule a save.
    */
   applyLayout(canvasState: CanvasState): void {
+    this.keyPanelId = null;
     this.canvasState = canvasState;
     this.render();
     this.scheduleSave();
@@ -767,6 +826,36 @@ export class PanelManager implements IDragState {
   }
 
   // ---- Private helpers ----
+
+  /**
+   * Route keyboard focus to the key panel's active card.
+   * Called after any focus change so the key panel always receives key events.
+   */
+  private focusKeyPanelCard(): void {
+    if (!this.keyPanelId) return;
+    const panel = this.canvasState.panels.find((p) => p.id === this.keyPanelId);
+    if (!panel) return;
+    const card = this.cardRegistry.get(panel.activeTabId);
+    if (card?.focus) {
+      card.focus();
+    }
+  }
+
+  /** Set of componentIds that accept key status. */
+  private static readonly KEY_CAPABLE = new Set([
+    "conversation", "terminal", "git", "files",
+  ]);
+
+  /**
+   * Whether a panel accepts key status (title bar tint + key events).
+   * Most panels are key-capable; stats is the exception (display-only).
+   */
+  private acceptsKey(panelId: string): boolean {
+    const panel = this.canvasState.panels.find((p) => p.id === panelId);
+    if (!panel) return false;
+    const componentId = panel.tabs[0]?.componentId;
+    return componentId !== undefined && PanelManager.KEY_CAPABLE.has(componentId);
+  }
 
   /**
    * Destroy all current cards and clear all tracking maps.

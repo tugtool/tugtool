@@ -625,11 +625,15 @@ describe("conversation-card", () => {
     });
   });
 
-  describe("auto-focus", () => {
-    test("textarea receives focus on mount", () => {
+  describe("focus", () => {
+    test("focus() moves DOM focus to textarea", () => {
       const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
 
-      // Verify textarea is the active element
+      // Textarea should not auto-focus on mount (panel manager owns focus)
+      expect(document.activeElement).not.toBe(textarea);
+
+      // Explicit focus() call routes keyboard input to textarea
+      card.focus();
       expect(document.activeElement).toBe(textarea);
     });
   });

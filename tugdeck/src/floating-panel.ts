@@ -11,7 +11,7 @@
  *
  * Spec S01: PanelState data model
  * [D03] FloatingPanel accepts PanelState directly
- * [D06] Focus model with CSS class
+ * [D06] Key panel focus model with title bar tint
  */
 
 import type { PanelState } from "./layout-tree";
@@ -130,6 +130,11 @@ export class FloatingPanel {
     this.panelState.size = { width, height };
     this.el.style.width = `${width}px`;
     this.el.style.height = `${height}px`;
+  }
+
+  /** Toggle the key-panel title bar tint on the header element. */
+  setKey(isKey: boolean): void {
+    this.cardHeader.getElement().classList.toggle("panel-header-key", isKey);
   }
 
   destroy(): void {

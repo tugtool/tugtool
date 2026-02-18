@@ -125,12 +125,6 @@
   box-sizing: border-box;
 }
 
-/* Focused floating panel: accent border and stronger shadow (D06) */
-.floating-panel-focused {
-  border-color: var(--accent);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent);
-}
-
 /* ---- Card header bar (panel-header) ---- */
 
 .panel-header {
@@ -144,6 +138,11 @@
   flex-shrink: 0;
   user-select: none;
   box-sizing: border-box;
+}
+
+/* Key panel title bar tint: subtle accent over muted background */
+.panel-header-key {
+  background: color-mix(in srgb, var(--accent) 12%, var(--muted));
 }
 
 .panel-header-icon {
@@ -244,6 +243,8 @@
 
 .floating-panel-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   position: relative;
   min-height: 0;
