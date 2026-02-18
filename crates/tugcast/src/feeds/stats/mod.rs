@@ -299,7 +299,16 @@ mod tests {
         // Verify it's a valid StatSnapshot
         let snapshot: StatSnapshot = serde_json::from_slice(&frame.payload).unwrap();
         assert!(!snapshot.timestamp.is_empty());
-        assert!(snapshot.collectors.contains_key("test1") || snapshot.collectors.is_empty());
+        // All keys in the snapshot must be from the registered set.
+        // Using a subset check rather than exact membership avoids flakiness when
+        // collectors fire at different times under CI load.
+        let expected_keys = ["test1", "test2"];
+        for key in snapshot.collectors.keys() {
+            assert!(
+                expected_keys.contains(&key.as_str()),
+                "Unexpected collector key in snapshot: {key}"
+            );
+        }
 
         cancel.cancel();
     }

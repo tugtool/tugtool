@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-18T19:31:38Z
+---
+
+## audit-fix: CI fix: replaced timing-sensitive assertion in test_stats_runner_integration with ordering-agnostic subset check
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-18T19:20:47Z
 bead: tugtool-srv.8
