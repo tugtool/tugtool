@@ -2,7 +2,7 @@
  * Conversation card - displays assistant/user messages and input area
  */
 
-import { createElement, ArrowUp, Square, Octagon, Paperclip, AlertTriangle } from "lucide";
+import { createElement, ArrowUp, Square, Octagon, Paperclip, AlertTriangle, User, Bot, Loader2 } from "lucide";
 import { TugCard } from "./card";
 import { TugConnection } from "../connection";
 import { FeedId } from "../protocol";
@@ -38,6 +38,13 @@ import {
 import { StreamingState } from "./conversation/streaming-state";
 import { SessionCache, type StoredMessage } from "./conversation/session-cache";
 
+const SPINNER_TEXTS = [
+  "Thinking", "Working", "Planning", "Analyzing", "Processing",
+  "Executing", "Resolving", "Building", "Validating",
+  "Calculating", "Synthesizing", "Refining", "Compiling", "Organizing",
+  "Drafting", "Evaluating", "Coordinating", "Inspecting", "Assembling",
+];
+
 export class ConversationCard implements TugCard {
   readonly feedIds = [FeedId.CONVERSATION_OUTPUT];
   private connection: TugConnection;
@@ -58,6 +65,10 @@ export class ConversationCard implements TugCard {
   private dragCounter = 0;
   private streamingState = new StreamingState();
   private sessionCache: SessionCache;
+  private commandHistory: string[] = [];
+  private historyIndex = -1;
+  private savedInputText = "";
+  private spinnerBadge!: HTMLElement;
   private projectDir: string | null = null;
   private projectHash: string | null = null;
   private currentSessionId: string | null = null;
@@ -147,11 +158,37 @@ export class ConversationCard implements TugCard {
       this.textarea.style.height = Math.min(this.textarea.scrollHeight, 200) + "px";
     });
 
-    // Enter to send, Shift+Enter for newline
+    // Enter to send, Shift+Enter for newline, Up/Down for command history
     this.textarea.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         this.handleSend();
+        return;
+      }
+
+      // Command history navigation (only when text has no newlines)
+      const hasNewlines = this.textarea.value.includes("\n");
+      if (!hasNewlines && e.key === "ArrowUp" && this.commandHistory.length > 0) {
+        e.preventDefault();
+        if (this.historyIndex === -1) {
+          this.savedInputText = this.textarea.value;
+        }
+        if (this.historyIndex < this.commandHistory.length - 1) {
+          this.historyIndex++;
+          this.textarea.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+        }
+        return;
+      }
+      if (!hasNewlines && e.key === "ArrowDown" && this.historyIndex >= 0) {
+        e.preventDefault();
+        if (this.historyIndex > 0) {
+          this.historyIndex--;
+          this.textarea.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+        } else {
+          this.historyIndex = -1;
+          this.textarea.value = this.savedInputText;
+        }
+        return;
       }
     });
 
@@ -198,6 +235,12 @@ export class ConversationCard implements TugCard {
       }
     });
 
+    // Spinner badge (floating above input, hidden by default)
+    this.spinnerBadge = document.createElement("div");
+    this.spinnerBadge.className = "turn-spinner-badge";
+    this.spinnerBadge.style.display = "none";
+
+    inputArea.appendChild(this.spinnerBadge);
     inputArea.appendChild(this.textarea);
     inputArea.appendChild(this.attachBtn);
     inputArea.appendChild(this.sendBtn);
@@ -275,24 +318,29 @@ export class ConversationCard implements TugCard {
 
   private renderCachedMessages(messages: StoredMessage[]): void {
     for (const msg of messages) {
+      const row = document.createElement("div");
+      row.className = "message-row";
+
       if (msg.role === "user") {
+        row.appendChild(this.createAvatar("user"));
         const msgEl = document.createElement("div");
         msgEl.className = "message message-user";
         msgEl.dataset.msgId = msg.msg_id;
         msgEl.textContent = msg.text;
-        this.messageList.appendChild(msgEl);
+        row.appendChild(msgEl);
       } else if (msg.role === "assistant") {
+        row.appendChild(this.createAvatar("assistant"));
         const msgEl = document.createElement("div");
         msgEl.className = "message message-assistant";
         msgEl.dataset.msgId = msg.msg_id;
         msgEl.innerHTML = msg.text; // Cached messages already have rendered HTML
-
         if (msg.status === "cancelled") {
           msgEl.classList.add("message-cancelled");
         }
-
-        this.messageList.appendChild(msgEl);
+        row.appendChild(msgEl);
       }
+
+      this.messageList.appendChild(row);
     }
 
     this.scrollToBottom();
@@ -447,6 +495,7 @@ export class ConversationCard implements TugCard {
     // Clear turn active state and reset button
     this.turnActive = false;
     this.updateButtonState();
+    this.hideSpinner();
 
     // Re-enable input
     this.setInputEnabled(true);
@@ -498,10 +547,15 @@ export class ConversationCard implements TugCard {
     const text = this.textarea.value.trim();
     if (!text) return;
 
+    // Push to command history
+    this.commandHistory.push(text);
+    this.historyIndex = -1;
+    this.savedInputText = "";
+
     // Get attachments
     const attachments = this.attachmentHandler.getAttachments();
 
-    // Render user bubble locally with attachments
+    // Render user message locally with attachments
     this.renderUserMessage(text, attachments);
 
     // Send via conversation input feed (0x41)
@@ -519,12 +573,19 @@ export class ConversationCard implements TugCard {
     this.textarea.focus();
     this.attachmentHandler.clear();
 
-    // Mark turn as active
+    // Mark turn as active and show spinner
     this.turnActive = true;
     this.updateButtonState();
+    this.showSpinner();
   }
 
   private renderUserMessage(text: string, attachments: any[] = []): void {
+    const row = document.createElement("div");
+    row.className = "message-row";
+
+    const avatar = this.createAvatar("user");
+    row.appendChild(avatar);
+
     const msg = document.createElement("div");
     msg.className = "message message-user";
     msg.textContent = text;
@@ -535,7 +596,8 @@ export class ConversationCard implements TugCard {
       msg.appendChild(chips);
     }
 
-    this.messageList.appendChild(msg);
+    row.appendChild(msg);
+    this.messageList.appendChild(row);
     this.scrollToBottom();
 
     // Write to cache after adding user message
@@ -561,10 +623,16 @@ export class ConversationCard implements TugCard {
     let msgEl = this.messageList.querySelector(`[data-msg-id="${event.msg_id}"]`) as HTMLElement;
 
     if (!msgEl) {
+      const row = document.createElement("div");
+      row.className = "message-row";
+      const avatar = this.createAvatar("assistant");
+      row.appendChild(avatar);
+
       msgEl = document.createElement("div");
       msgEl.className = "message message-assistant";
       msgEl.dataset.msgId = event.msg_id;
-      this.messageList.appendChild(msgEl);
+      row.appendChild(msgEl);
+      this.messageList.appendChild(row);
     }
 
     const renderedHtml = renderMarkdown(event.text);
@@ -758,6 +826,7 @@ export class ConversationCard implements TugCard {
   private handleTurnComplete(event: TurnComplete): void {
     this.turnActive = false;
     this.updateButtonState();
+    this.hideSpinner();
     // Stop any active streaming indicators
     this.streamingState.stopStreaming();
 
@@ -769,6 +838,7 @@ export class ConversationCard implements TugCard {
   private handleTurnCancelled(event: TurnCancelled): void {
     this.turnActive = false;
     this.updateButtonState();
+    this.hideSpinner();
 
     // Stop any active streaming indicators before adding cancelled styling
     this.streamingState.stopStreaming();
@@ -811,6 +881,30 @@ export class ConversationCard implements TugCard {
   async clearHistory(): Promise<void> {
     await this.sessionCache.clearHistory();
     this.messageList.innerHTML = "";
+  }
+
+  private createAvatar(role: "user" | "assistant"): HTMLElement {
+    const avatar = document.createElement("div");
+    avatar.className = "message-avatar";
+    const icon = role === "user"
+      ? createElement(User, { width: 12, height: 12 })
+      : createElement(Bot, { width: 12, height: 12 });
+    avatar.appendChild(icon);
+    return avatar;
+  }
+
+  private showSpinner(): void {
+    const text = SPINNER_TEXTS[Math.floor(Math.random() * SPINNER_TEXTS.length)];
+    this.spinnerBadge.innerHTML = "";
+    this.spinnerBadge.appendChild(createElement(Loader2, { width: 12, height: 12 }));
+    const label = document.createElement("span");
+    label.textContent = text;
+    this.spinnerBadge.appendChild(label);
+    this.spinnerBadge.style.display = "flex";
+  }
+
+  private hideSpinner(): void {
+    this.spinnerBadge.style.display = "none";
   }
 
   private scrollToBottom(): void {

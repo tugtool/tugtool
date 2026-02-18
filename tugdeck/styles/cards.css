@@ -280,26 +280,53 @@
   padding: 12px;
 }
 
+/* Message row: avatar + content */
+.conversation-card .message-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.conversation-card .message-avatar {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+/* Zero-width space establishes a text baseline for flex alignment */
+.conversation-card .message-avatar::before {
+  content: '\200b';
+}
+
+/* Icon sized to cap-height and vertically centered */
+.conversation-card .message-avatar svg {
+  display: inline-block;
+  width: 1.3cap;
+  height: 1.3cap;
+  vertical-align: middle;
+  padding-bottom: 0.2em;
+}
+
 .conversation-card .message {
   max-width: 100%;
+  min-width: 0;
   word-wrap: break-word;
+  flex: 1;
 }
 
 .conversation-card .message-user {
-  align-self: flex-end;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  border-radius: var(--radius-lg);
-  padding: 12px 16px;
-  max-width: 80%;
+  color: var(--foreground);
+  white-space: pre-wrap;
 }
 
 .conversation-card .message-assistant {
-  align-self: flex-start;
-  background: var(--background);
   color: var(--foreground);
-  width: 100%;
-  padding: 8px 0;
+}
+
+/* Indent tool cards, approval prompts, question cards to align with message content */
+.conversation-card .message-list > .tool-card,
+.conversation-card .message-list > .approval-prompt,
+.conversation-card .message-list > .question-card {
+  margin-left: calc(1cap + 8px);
 }
 
 /* Streaming cursor - thin accent bar at end of streaming text */
@@ -348,6 +375,39 @@
   padding: 12px;
   border-top: 1px solid var(--border);
   background: var(--card);
+  position: relative;
+}
+
+/* Turn spinner badge - floats above input area */
+.turn-spinner-badge {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  z-index: 10;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.turn-spinner-badge svg {
+  animation: turn-spinner-spin 1s linear infinite;
+  display: block;
+}
+
+@keyframes turn-spinner-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .conversation-card .conversation-input {
@@ -427,6 +487,10 @@
   font-size: 1em;
 }
 
+.conversation-prose > :first-child {
+  margin-top: 0;
+}
+
 .conversation-prose p {
   margin: 0.75em 0;
 }
@@ -480,6 +544,12 @@
   margin: 0;
   padding: 0;
   background: none;
+}
+
+/* No horizontal rules within message content */
+.conversation-prose hr,
+.message hr {
+  display: none;
 }
 
 .conversation-prose blockquote {
