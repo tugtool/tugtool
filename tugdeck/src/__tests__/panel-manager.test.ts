@@ -741,3 +741,176 @@ describe("PanelManager – set computation", () => {
     manager.destroy();
   });
 });
+
+// ---- Virtual sash integration tests ----
+
+/** Helper: trigger recomputeSets by doing a minimal drag (dx=4 > DRAG_THRESHOLD=3). */
+function triggerRecompute(headerEl: HTMLElement): void {
+  headerEl.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+  headerEl.dispatchEvent(makePointerEvent("pointermove", { clientX: 104, clientY: 150 }));
+  headerEl.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
+}
+
+describe("PanelManager – virtual sashes", () => {
+  let connection: MockConnection;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+    connection = new MockConnection();
+  });
+
+  // Test a: two edge-adjacent panels produce a virtual sash element in the DOM.
+  test("two edge-adjacent panels produce a virtual sash in the DOM", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    // Panel A at (0,100,200,200): right=200. Panel B at (200,100,200,200): left=200.
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // No sashes before recomputeSets
+    expect(snapContainer.querySelectorAll(".virtual-sash").length).toBe(0);
+
+    // Trigger recomputeSets via minimal drag on panel A
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+
+    // After recomputeSets: shared edge detected, sash created
+    const sashes = snapContainer.querySelectorAll<HTMLElement>(".virtual-sash");
+    expect(sashes.length).toBeGreaterThanOrEqual(1);
+
+    // The sash should be vertical (A.right ~ B.left)
+    const vertSash = Array.from(sashes).find((s) => s.classList.contains("virtual-sash-vertical"));
+    expect(vertSash).toBeDefined();
+
+    // The sash should be centered near x=200 (boundary), so left ≈ 196 (200 - 4)
+    expect(vertSash!.style.left).toBe("196px");
+
+    manager.destroy();
+  });
+
+  // Test b: dragging the sash resizes both panels (one grows, other shrinks).
+  // Start: A(0,100,200,200), B(200,100,200,200). Drag sash right by dx=50.
+  // After drag: A.width=250, B.x=250, B.width=150.
+  test("dragging the sash resizes both panels", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // Trigger recompute to create the sash
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+
+    const sash = snapContainer.querySelector<HTMLElement>(".virtual-sash-vertical")!;
+    expect(sash).not.toBeNull();
+
+    // Drag sash right by 50px
+    sash.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 200 }));
+    sash.dispatchEvent(makePointerEvent("pointermove", { clientX: 250, clientY: 200 }));
+    sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
+
+    // After drag: A grew by 50, B shrank by 50 and moved right
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+
+    expect(panelA.size.width).toBe(250);
+    expect(panelB.size.width).toBe(150);
+    expect(panelB.position.x).toBe(250);
+
+    // Total width unchanged: 250 + 150 = 400 = 200 + 200
+    expect(panelA.size.width + panelB.size.width).toBe(400);
+
+    manager.destroy();
+  });
+
+  // Test c: dragging the sash does not let either panel go below MIN_SIZE_PX (100).
+  // A(0,100,150,200), B(150,100,150,200). Drag sash right by dx=100.
+  // Would make B 50px wide — below MIN_SIZE. Should clamp B to 100, A to 200.
+  test("sash drag clamps both panels to MIN_SIZE_PX", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 150, 200),
+        makePanelState("panel-b", 150, 100, 150, 200),
+      ],
+    });
+
+    // Trigger recompute to create the sash
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+
+    const sash = snapContainer.querySelector<HTMLElement>(".virtual-sash-vertical")!;
+    expect(sash).not.toBeNull();
+
+    // Drag sash right by 100px — would make B.width = 50, below MIN_SIZE (100)
+    sash.dispatchEvent(makePointerEvent("pointerdown", { clientX: 150, clientY: 200 }));
+    sash.dispatchEvent(makePointerEvent("pointermove", { clientX: 250, clientY: 200 }));
+    sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
+
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+
+    // B should be clamped to MIN_SIZE=100; A gets 150 + (150-100) = 200
+    expect(panelB.size.width).toBe(100);
+    expect(panelA.size.width).toBe(200);
+    // Total unchanged: 200 + 100 = 300 = 150 + 150
+    expect(panelA.size.width + panelB.size.width).toBe(300);
+
+    manager.destroy();
+  });
+
+  // Test d: after sash drag, sets are recomputed and sash is recreated at new boundary.
+  // After test b scenario: boundary moved from 200 to 250. New sash should be at left=246.
+  test("sash is recreated at new boundary after drag and sets still contain both panels", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // Trigger initial recompute
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+
+    const sash = snapContainer.querySelector<HTMLElement>(".virtual-sash-vertical")!;
+    expect(sash).not.toBeNull();
+
+    // Drag sash right by 50px: A→250, B→150 at x=250. New boundary = 250.
+    sash.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 200 }));
+    sash.dispatchEvent(makePointerEvent("pointermove", { clientX: 250, clientY: 200 }));
+    sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
+
+    // After drag: recomputeSets fires, destroySashes + createSashes runs.
+    // New sash should exist at the new boundary position (250 - 4 = 246).
+    const newSashes = snapContainer.querySelectorAll<HTMLElement>(".virtual-sash-vertical");
+    expect(newSashes.length).toBeGreaterThanOrEqual(1);
+    // Find the sash at the new boundary
+    const newSash = Array.from(newSashes).find((s) => s.style.left === "246px");
+    expect(newSash).toBeDefined();
+
+    // Sets should still contain both panels (they are still adjacent after resize)
+    const sets = manager.getSets();
+    expect(sets.length).toBe(1);
+    expect(sets[0].panelIds).toContain("panel-a");
+    expect(sets[0].panelIds).toContain("panel-b");
+
+    manager.destroy();
+  });
+});

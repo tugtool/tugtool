@@ -20,7 +20,7 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import { computeSnap, computeResizeSnap, panelToRect, findSharedEdges, computeSets, type Rect, type GuidePosition, type PanelSet } from "./snap";
+import { computeSnap, computeResizeSnap, panelToRect, findSharedEdges, computeSets, type Rect, type GuidePosition, type PanelSet, type SharedEdge } from "./snap";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -134,6 +134,12 @@ export class PanelManager implements IDragState {
 
   /** Runtime set membership: groups of panels connected by shared edges (D05) */
   private sets: PanelSet[] = [];
+
+  /** Current shared edges between panels, computed alongside sets */
+  private sharedEdges: SharedEdge[] = [];
+
+  /** Virtual sash DOM elements for shared-edge resize (D04) */
+  private sashElements: HTMLElement[] = [];
 
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
@@ -752,6 +758,8 @@ export class PanelManager implements IDragState {
     this.destroyAllCards();
     this.keyPanelId = null;
     this.sets = [];
+    this.sharedEdges = [];
+    this.destroySashes();
 
     const canvasW = this.container.clientWidth || 800;
     const canvasH = this.container.clientHeight || 600;
@@ -908,6 +916,9 @@ export class PanelManager implements IDragState {
     const sharedEdges = findSharedEdges(panelRects);
     const panelIds = this.canvasState.panels.map((p) => p.id);
     this.sets = computeSets(panelIds, sharedEdges);
+    this.sharedEdges = sharedEdges;
+    this.destroySashes();
+    this.createSashes();
   }
 
   /** Create the pool of 4 guide line elements appended to the canvas container. */
@@ -959,6 +970,158 @@ export class PanelManager implements IDragState {
     for (const el of this.guideElements) {
       el.style.display = "none";
     }
+  }
+
+  /** Remove all virtual sash elements from the DOM. */
+  private destroySashes(): void {
+    for (const el of this.sashElements) {
+      el.remove();
+    }
+    this.sashElements = [];
+  }
+
+  /**
+   * Create virtual sash elements for each shared edge.
+   * Spec S05: Virtual sash interaction — drag resizes both adjacent panels.
+   */
+  private createSashes(): void {
+    for (const edge of this.sharedEdges) {
+      const sash = document.createElement("div");
+
+      if (edge.axis === "vertical") {
+        sash.className = "virtual-sash virtual-sash-vertical";
+        sash.style.left = `${edge.boundaryPosition - 4}px`; // center 8px sash on boundary
+        sash.style.top = `${edge.overlapStart}px`;
+        sash.style.height = `${edge.overlapEnd - edge.overlapStart}px`;
+      } else {
+        sash.className = "virtual-sash virtual-sash-horizontal";
+        sash.style.top = `${edge.boundaryPosition - 4}px`; // center 8px sash on boundary
+        sash.style.left = `${edge.overlapStart}px`;
+        sash.style.width = `${edge.overlapEnd - edge.overlapStart}px`;
+      }
+
+      this.attachSashDrag(sash, edge);
+      this.container.appendChild(sash);
+      this.sashElements.push(sash);
+    }
+  }
+
+  /**
+   * Attach pointer event handlers to a sash for dual-panel resize.
+   * Spec S05: On pointerdown, track delta; on pointermove, grow one panel
+   * and shrink the other; enforce MIN_SIZE_PX on both.
+   */
+  private attachSashDrag(sash: HTMLElement, edge: SharedEdge): void {
+    const MIN_SIZE = 100;
+
+    sash.addEventListener("pointerdown", (downEvent: PointerEvent) => {
+      downEvent.preventDefault();
+      downEvent.stopPropagation();
+      if (sash.setPointerCapture) {
+        sash.setPointerCapture(downEvent.pointerId);
+      }
+
+      this._isDragging = true;
+
+      // Find the two panels
+      const panelA = this.canvasState.panels.find((p) => p.id === edge.panelAId);
+      const panelB = this.canvasState.panels.find((p) => p.id === edge.panelBId);
+      if (!panelA || !panelB) return;
+
+      const fpA = this.floatingPanels.get(edge.panelAId);
+      const fpB = this.floatingPanels.get(edge.panelBId);
+      if (!fpA || !fpB) return;
+
+      // Snapshot starting geometry
+      const startAX = panelA.position.x;
+      const startAY = panelA.position.y;
+      const startAW = panelA.size.width;
+      const startAH = panelA.size.height;
+      const startBX = panelB.position.x;
+      const startBY = panelB.position.y;
+      const startBW = panelB.size.width;
+      const startBH = panelB.size.height;
+      const startClientX = downEvent.clientX;
+      const startClientY = downEvent.clientY;
+
+      const onMove = (e: PointerEvent) => {
+        if (edge.axis === "vertical") {
+          // Vertical sash: panelA is the left panel, panelB is the right panel.
+          // Dragging right: A grows, B shrinks and shifts right.
+          const dx = e.clientX - startClientX;
+          let newAW = startAW + dx;
+          let newBX = startBX + dx;
+          let newBW = startBW - dx;
+
+          // Clamp A to MIN_SIZE
+          if (newAW < MIN_SIZE) {
+            newAW = MIN_SIZE;
+            newBX = startAX + MIN_SIZE;
+            newBW = startBW + (startAW - MIN_SIZE);
+          }
+          // Clamp B to MIN_SIZE
+          if (newBW < MIN_SIZE) {
+            newBW = MIN_SIZE;
+            newAW = startAW + (startBW - MIN_SIZE);
+            newBX = startAX + newAW;
+          }
+
+          fpA.updateSize(newAW, startAH);
+          fpB.updatePosition(newBX, startBY);
+          fpB.updateSize(newBW, startBH);
+        } else {
+          // Horizontal sash: panelA is the top panel, panelB is the bottom panel.
+          // Dragging down: A grows, B shrinks and shifts down.
+          const dy = e.clientY - startClientY;
+          let newAH = startAH + dy;
+          let newBY = startBY + dy;
+          let newBH = startBH - dy;
+
+          // Clamp A to MIN_SIZE
+          if (newAH < MIN_SIZE) {
+            newAH = MIN_SIZE;
+            newBY = startAY + MIN_SIZE;
+            newBH = startBH + (startAH - MIN_SIZE);
+          }
+          // Clamp B to MIN_SIZE
+          if (newBH < MIN_SIZE) {
+            newBH = MIN_SIZE;
+            newAH = startAH + (startBH - MIN_SIZE);
+            newBY = startAY + newAH;
+          }
+
+          fpA.updateSize(startAW, newAH);
+          fpB.updatePosition(startBX, newBY);
+          fpB.updateSize(startBW, newBH);
+        }
+      };
+
+      const onUp = (_e: PointerEvent) => {
+        if (sash.releasePointerCapture) {
+          sash.releasePointerCapture(downEvent.pointerId);
+        }
+        sash.removeEventListener("pointermove", onMove);
+        sash.removeEventListener("pointerup", onUp);
+        sash.removeEventListener("pointercancel", onUp);
+
+        this._isDragging = false;
+
+        // Notify active cards of their new sizes
+        for (const p of [panelA, panelB]) {
+          const card = this.cardRegistry.get(p.activeTabId);
+          if (card) {
+            card.onResize(p.size.width, p.size.height - FLOATING_TITLE_BAR_HEIGHT);
+          }
+        }
+
+        this.recomputeSets();
+        this.scheduleSave();
+      };
+
+      sash.addEventListener("pointermove", onMove);
+      sash.addEventListener("pointerup", onUp);
+      sash.addEventListener("pointercancel", onUp);
+    });
   }
 
   /**
@@ -1038,6 +1201,8 @@ export class PanelManager implements IDragState {
       el.remove();
     }
     this.guideElements = [];
+    // Remove virtual sash elements
+    this.destroySashes();
     window.removeEventListener("resize", () => this.handleResize());
   }
 }

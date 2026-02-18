@@ -346,3 +346,25 @@
   left: 0;
   right: 0;
 }
+
+/* ---- Virtual sash (shared-edge resize) ---- */
+
+.virtual-sash {
+  position: absolute;
+  z-index: 9950;
+  background: transparent;
+}
+
+.virtual-sash:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.virtual-sash-vertical {
+  width: 8px;
+  cursor: col-resize;
+}
+
+.virtual-sash-horizontal {
+  height: 8px;
+  cursor: row-resize;
+}

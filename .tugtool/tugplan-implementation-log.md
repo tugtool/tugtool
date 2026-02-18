@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-18T19:00:33Z
+bead: tugtool-srv.6
+---
+
+## #step-5: Added virtual sash system for shared-edge resize. Sashes are 8px hit targets at shared boundaries. Dragging resizes both panels with MIN_SIZE=100 clamping. CSS for col-resize/row-resize cursors and hover highlight. 4 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-18T18:51:45Z
 bead: tugtool-srv.5
