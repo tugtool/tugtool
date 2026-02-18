@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-18T02:24:58Z
+bead: tugtool-ndt.5
+---
+
+## #step-4: Created floating-panel.ts (move, resize, z-order, title bar drag-out for re-dock). Added isCursorInsideCanvas to dock-target.ts. Updated PanelManager for floating lifecycle (undock, re-dock, removeCard floating cleanup). Added floating panel CSS. 41 new floating-panel tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-18T02:03:10Z
 bead: tugtool-ndt.4

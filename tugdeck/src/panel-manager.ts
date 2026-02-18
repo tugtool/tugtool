@@ -28,8 +28,10 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { createSash } from "./sash";
 import { TabBar } from "./tab-bar";
-import { DockOverlay, computeDropZone, type TabNodeRect, type DropZoneResult } from "./dock-target";
+import { DockOverlay, computeDropZone, isCursorInsideCanvas, type TabNodeRect, type DropZoneResult } from "./dock-target";
 import { insertNode } from "./layout-tree";
+import { FloatingPanel } from "./floating-panel";
+import type { FloatingGroup } from "./layout-tree";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -112,10 +114,18 @@ export class PanelManager implements IDragState {
     tabId: string;
     tabIndex: number;
     card: TugCard | null;
+    /** 'docked' for tab-bar drag-out; 'floating' for floating panel title-bar drag */
+    sourceType: "docked" | "floating";
     /** Cached rects at drag start for 60fps performance */
     canvasRect: DOMRect;
     tabNodeRects: TabNodeRect[];
   } | null = null;
+
+  /** FloatingPanel instances keyed by TabNode.id of their node */
+  private floatingPanels: Map<string, FloatingPanel> = new Map();
+
+  /** Next z-index value for floating panel focus management */
+  private nextZIndex = 100;
 
   /** Last computed drop zone during an active drag. */
   private currentDropZone: DropZoneResult | null = null;
@@ -158,6 +168,9 @@ export class PanelManager implements IDragState {
 
     // Preserve existing reconnect-resize behavior
     connection.onOpen(() => this.handleResize());
+
+    // Canvas container needs position:relative for absolutely-positioned children
+    container.style.position = "relative";
 
     // Create root container element
     this.rootEl = document.createElement("div");
@@ -259,11 +272,15 @@ export class PanelManager implements IDragState {
 
       this.cardContainers.delete(tabItemId);
 
-      // Remove the tab from the layout tree (L01.6: empty TabNode is removed
-      // and topology is re-normalized by removeTab -> normalizeTree)
+      // Remove the tab from the docked layout tree (L01.6: empty TabNode is removed
+      // and topology is re-normalized by removeTab -> normalizeTree).
+      // Also filter out any FloatingGroup whose node contains this tab, preventing
+      // phantom empty floating panels after card destruction.
       this.dockState = {
-        ...this.dockState,
         root: removeTab(this.dockState.root, tabItemId) ?? this.dockState.root,
+        floating: this.dockState.floating.filter(
+          (fg) => !fg.node.tabs.some((t) => t.id === tabItemId)
+        ),
       };
     }
 
@@ -298,6 +315,73 @@ export class PanelManager implements IDragState {
 
     // After render, run geometric minimum enforcement (L01.7)
     this.enforceGeometricMinimums();
+
+    // Render floating panels
+    this.renderFloatingPanels();
+  }
+
+  private renderFloatingPanels(): void {
+    // Destroy old FloatingPanel DOM instances
+    for (const fp of this.floatingPanels.values()) {
+      fp.destroy();
+    }
+    this.floatingPanels.clear();
+
+    for (const fg of this.dockState.floating) {
+      const nodeId = fg.node.id;
+      const fp = new FloatingPanel(fg, {
+        onMoveEnd: (x, y) => {
+          fg.position = { x, y };
+          this.scheduleSave();
+        },
+        onResizeEnd: (x, y, width, height) => {
+          fg.position = { x, y };
+          fg.size = { width, height };
+          // Notify the active card of its new size
+          const activeTab = fg.node.tabs[fg.node.activeTabIndex];
+          if (activeTab) {
+            const card = this.cardRegistry.get(activeTab.id);
+            if (card) card.onResize(width, height - 28); // subtract title bar
+          }
+          this.scheduleSave();
+        },
+        onFocus: () => {
+          fp.setZIndex(++this.nextZIndex);
+        },
+        onDragOut: (startEvent: PointerEvent) => {
+          // Re-dock drag: floating panel title bar dragged over dock zones
+          const activeTab = fg.node.tabs[fg.node.activeTabIndex];
+          if (!activeTab) return;
+          this.handleFloatingDragOut(nodeId, activeTab.id, 0, startEvent);
+        },
+      }, this.container);
+
+      fp.setZIndex(this.nextZIndex);
+      this.container.appendChild(fp.getElement());
+      this.floatingPanels.set(nodeId, fp);
+
+      // Mount the card into the floating panel's card area via D09 reparenting
+      for (const tab of fg.node.tabs) {
+        const isActive = fg.node.tabs.indexOf(tab) === fg.node.activeTabIndex;
+        let mountEl = this.cardContainers.get(tab.id);
+        if (!mountEl) {
+          mountEl = document.createElement("div");
+          mountEl.className = "panel-card-mount";
+          this.cardContainers.set(tab.id, mountEl);
+        }
+        mountEl.style.display = isActive ? "block" : "none";
+        mountEl.style.width = "100%";
+        mountEl.style.height = "100%";
+        mountEl.style.overflow = "hidden";
+        fp.getCardAreaElement().appendChild(mountEl);
+
+        const card = this.cardRegistry.get(tab.id);
+        if (card && mountEl.children.length === 0) {
+          card.mount(mountEl);
+          this.observeContainer(tab.id, mountEl, card);
+        }
+      }
+    }
   }
 
   /**
@@ -570,7 +654,7 @@ export class PanelManager implements IDragState {
     const canvasRect = this.container.getBoundingClientRect();
     const tabNodeRects = this.collectTabNodeRects();
 
-    this.dragSource = { tabNodeId, tabId, tabIndex, card, canvasRect, tabNodeRects };
+    this.dragSource = { tabNodeId, tabId, tabIndex, card, sourceType: "docked", canvasRect, tabNodeRects };
     this.currentDropZone = null;
 
     // Create drag ghost tracking the cursor
@@ -590,6 +674,108 @@ export class PanelManager implements IDragState {
     this.dragUpHandler = (e: PointerEvent) => this.onDragUp(e);
     document.addEventListener("pointermove", this.dragMoveHandler);
     document.addEventListener("pointerup", this.dragUpHandler);
+  }
+
+  /**
+   * Called by FloatingPanel.onDragOut when a floating panel's title bar is dragged.
+   * Sets up document-level pointer listeners to handle re-dock targeting.
+   */
+  private handleFloatingDragOut(
+    tabNodeId: string,
+    tabId: string,
+    tabIndex: number,
+    startEvent: PointerEvent
+  ): void {
+    this._isDragging = true;
+
+    const card = this.cardRegistry.get(tabId) ?? null;
+    const canvasRect = this.container.getBoundingClientRect();
+    const tabNodeRects = this.collectTabNodeRects();
+
+    this.dragSource = {
+      tabNodeId,
+      tabId,
+      tabIndex,
+      card,
+      sourceType: "floating",
+      canvasRect,
+      tabNodeRects,
+    };
+    this.currentDropZone = null;
+
+    this.dragGhost = this.createDragGhost(tabId, startEvent);
+
+    this.escapeHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") this.cancelDrag();
+    };
+    document.addEventListener("keydown", this.escapeHandler);
+
+    this.dragMoveHandler = (e: PointerEvent) => this.onDragMove(e);
+    this.dragUpHandler = (e: PointerEvent) => this.onDragUp(e);
+    document.addEventListener("pointermove", this.dragMoveHandler);
+    document.addEventListener("pointerup", this.dragUpHandler);
+  }
+
+  /**
+   * Undock a tab from the docked tree and create a floating panel at the cursor.
+   * Card instance is preserved via D09 reparenting.
+   */
+  private undockToFloating(
+    source: NonNullable<typeof this.dragSource>,
+    cursorX: number,
+    cursorY: number
+  ): void {
+    const sourceNode = findTabNode(this.dockState.root, source.tabNodeId);
+    if (!sourceNode) { this.render(); return; }
+
+    const sourceTabItem = sourceNode.tabs.find((t) => t.id === source.tabId);
+    if (!sourceTabItem) { this.render(); return; }
+
+    // Remove tab from source tree
+    let newRoot: import("./layout-tree").LayoutNode;
+    if (sourceNode.tabs.length > 1) {
+      const newTabs = sourceNode.tabs.filter((t) => t.id !== source.tabId);
+      newRoot = replaceTabNodeTabs(this.dockState.root, source.tabNodeId, newTabs,
+        Math.min(sourceNode.activeTabIndex, newTabs.length - 1));
+    } else {
+      newRoot = removeTab(this.dockState.root, source.tabId) ?? this.dockState.root;
+    }
+
+    const normalized = normalizeTree(newRoot);
+
+    // Place floating panel at cursor (offset so panel appears under cursor)
+    const canvasRect = this.container.getBoundingClientRect();
+    const FLOAT_W = 400;
+    const FLOAT_H = 300;
+    const floatX = Math.max(0, Math.min(canvasRect.width - FLOAT_W, cursorX - canvasRect.left - FLOAT_W / 2));
+    const floatY = Math.max(0, Math.min(canvasRect.height - FLOAT_H, cursorY - canvasRect.top - 14));
+
+    // Build FloatingGroup using the source TabItem
+    const floatingTabNode: import("./layout-tree").TabNode = {
+      type: "tab",
+      id: crypto.randomUUID(),
+      tabs: [sourceTabItem],
+      activeTabIndex: 0,
+    };
+    const newFloatingGroup: FloatingGroup = {
+      position: { x: floatX, y: floatY },
+      size: { width: FLOAT_W, height: FLOAT_H },
+      node: floatingTabNode,
+    };
+
+    this.dockState = {
+      root: normalized ?? newRoot,
+      floating: [...this.dockState.floating, newFloatingGroup],
+    };
+
+    this.render();
+
+    // Notify the card of its new size
+    if (source.card) {
+      source.card.onResize(FLOAT_W, FLOAT_H - 28);
+    }
+
+    this.scheduleSave();
   }
 
   private onDragMove(e: PointerEvent): void {
@@ -633,8 +819,13 @@ export class PanelManager implements IDragState {
     this.cleanupDrag();
 
     if (!finalZone) {
-      // Dropped outside all targets — cancel (tree unchanged, re-render restores)
-      this.render();
+      if (isCursorInsideCanvas(e.clientX, e.clientY, source.canvasRect)) {
+        // Dropped inside canvas but not on a dock zone -> undock to floating
+        this.undockToFloating(source, e.clientX, e.clientY);
+      } else {
+        // Dropped outside canvas -> cancel
+        this.render();
+      }
       return;
     }
 
@@ -656,51 +847,45 @@ export class PanelManager implements IDragState {
     source: NonNullable<typeof this.dragSource>,
     result: DropZoneResult
   ): void {
-    const sourceNode = findTabNode(this.dockState.root, source.tabNodeId);
-    if (!sourceNode) {
-      this.render();
-      return;
-    }
+    let sourceTabItem: import("./layout-tree").TabItem | undefined;
+    let newRoot: import("./layout-tree").LayoutNode = this.dockState.root;
+    let newFloating: FloatingGroup[] = this.dockState.floating;
 
-    // Get the source TabItem before removing it from the tree
-    const sourceTabItem = sourceNode.tabs.find((t) => t.id === source.tabId);
-    if (!sourceTabItem) {
-      this.render();
-      return;
-    }
+    if (source.sourceType === "floating") {
+      // Find the FloatingGroup containing this tab
+      const fgIndex = this.dockState.floating.findIndex(
+        (fg) => fg.node.id === source.tabNodeId
+      );
+      if (fgIndex === -1) { this.render(); return; }
+      const fg = this.dockState.floating[fgIndex];
+      sourceTabItem = fg.node.tabs.find((t) => t.id === source.tabId);
+      if (!sourceTabItem) { this.render(); return; }
 
-    // Remove the tab from the source TabNode (data model only; card instance preserved)
-    let newRoot: import("./layout-tree").LayoutNode;
-    if (sourceNode.tabs.length > 1) {
-      // Multi-tab: just remove this tab from the source node (not card.destroy())
-      const newTabs = sourceNode.tabs.filter((t) => t.id !== source.tabId);
-      const newActiveIndex = Math.min(
-        sourceNode.activeTabIndex,
-        newTabs.length - 1
-      );
-      // Build new tree with modified source node
-      newRoot = replaceTabNodeTabs(
-        this.dockState.root,
-        source.tabNodeId,
-        newTabs,
-        newActiveIndex
-      );
+      // Remove from floating array (whole group; floating panels are single-tab for now)
+      newFloating = this.dockState.floating.filter((_, i) => i !== fgIndex);
     } else {
-      // Single-tab: remove the whole TabNode from the tree
-      newRoot = removeTab(this.dockState.root, source.tabId) ?? this.dockState.root;
+      // Docked source
+      const sourceNode = findTabNode(this.dockState.root, source.tabNodeId);
+      if (!sourceNode) { this.render(); return; }
+
+      sourceTabItem = sourceNode.tabs.find((t) => t.id === source.tabId);
+      if (!sourceTabItem) { this.render(); return; }
+
+      if (sourceNode.tabs.length > 1) {
+        const newTabs = sourceNode.tabs.filter((t) => t.id !== source.tabId);
+        const newActiveIndex = Math.min(sourceNode.activeTabIndex, newTabs.length - 1);
+        newRoot = replaceTabNodeTabs(this.dockState.root, source.tabNodeId, newTabs, newActiveIndex);
+      } else {
+        newRoot = removeTab(this.dockState.root, source.tabId) ?? this.dockState.root;
+      }
     }
 
     // Insert the tab at the drop target
-    newRoot = insertNode(
-      newRoot,
-      result.targetTabNodeId,
-      result.zone,
-      sourceTabItem
-    );
+    newRoot = insertNode(newRoot, result.targetTabNodeId, result.zone, sourceTabItem);
 
     // Normalize the tree
     const normalized = normalizeTree(newRoot);
-    this.dockState = { ...this.dockState, root: normalized ?? newRoot };
+    this.dockState = { root: normalized ?? newRoot, floating: newFloating };
 
     // Re-render (D09: renderTabNode reuses existing mount element for sourceTabItem.id)
     this.render();

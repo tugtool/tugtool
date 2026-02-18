@@ -305,3 +305,20 @@ export class DockOverlay {
     this.el.remove();
   }
 }
+
+/**
+ * Returns true if the cursor is inside the canvas container rect.
+ * Used in onDragUp to decide between undock-to-floating and cancel.
+ */
+export function isCursorInsideCanvas(
+  cursorX: number,
+  cursorY: number,
+  canvasRect: DOMRect
+): boolean {
+  return (
+    cursorX >= canvasRect.left &&
+    cursorX <= canvasRect.right &&
+    cursorY >= canvasRect.top &&
+    cursorY <= canvasRect.bottom
+  );
+}
