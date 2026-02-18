@@ -2,8 +2,9 @@
  * FloatingPanel — absolutely-positioned panel with move, resize, and z-order.
  *
  * The panel contains:
- * - A temporary 28px title bar (drag to move/re-dock; Step 5 replaces with CardHeader)
- * - A card area below the title bar where the card DOM is mounted
+ * - A full CardHeader (replaces the temporary title bar from Step 4). The
+ *   CardHeader's onDragStart callback drives move and re-dock targeting.
+ * - A card area below the header where the card DOM is mounted
  * - Eight resize handles (4 edges + 4 corners)
  *
  * All mutations (move end, resize end, focus, drag-out) fire callbacks so
@@ -11,6 +12,8 @@
  */
 
 import type { FloatingGroup } from "./layout-tree";
+import type { TugCardMeta } from "./cards/card";
+import { CardHeader } from "./card-header";
 
 /** Minimum floating panel dimension in pixels (L01.7) */
 const MIN_SIZE_PX = 100;
@@ -18,7 +21,7 @@ const MIN_SIZE_PX = 100;
 /** Drag threshold before a pointerdown becomes a drag (not a focus click) */
 const DRAG_THRESHOLD_PX = 3;
 
-/** Height of the temporary title bar in pixels */
+/** Height of the header bar in pixels */
 export const FLOATING_TITLE_BAR_HEIGHT = 28;
 
 export interface FloatingPanelCallbacks {
@@ -29,15 +32,17 @@ export interface FloatingPanelCallbacks {
   /** Called when the panel receives focus (click anywhere). */
   onFocus: () => void;
   /**
-   * Called when the title bar is dragged beyond DRAG_THRESHOLD_PX.
-   * PanelManager takes over and initiates re-dock drag targeting.
+   * Called when the header is dragged beyond DRAG_THRESHOLD_PX and the cursor
+   * leaves the panel bounds. PanelManager takes over for re-dock targeting.
    */
   onDragOut: (startEvent: PointerEvent) => void;
+  /** Called when the close button in the header is clicked. */
+  onClose: () => void;
 }
 
 export class FloatingPanel {
   private el: HTMLElement;
-  private titleBarEl: HTMLElement;
+  private cardHeader: CardHeader;
   private cardAreaEl: HTMLElement;
   private floatingGroup: FloatingGroup;
   private callbacks: FloatingPanelCallbacks;
@@ -46,7 +51,8 @@ export class FloatingPanel {
   constructor(
     floatingGroup: FloatingGroup,
     callbacks: FloatingPanelCallbacks,
-    canvasEl: HTMLElement
+    canvasEl: HTMLElement,
+    meta?: TugCardMeta
   ) {
     this.floatingGroup = floatingGroup;
     this.callbacks = callbacks;
@@ -58,17 +64,34 @@ export class FloatingPanel {
 
     // Focus on click anywhere in the panel
     this.el.addEventListener("pointerdown", (e) => {
-      // Stop propagation so canvas doesn't also receive this pointerdown
       e.stopPropagation();
       callbacks.onFocus();
     });
 
-    // Title bar
-    this.titleBarEl = document.createElement("div");
-    this.titleBarEl.className = "floating-panel-title-bar";
-    this.titleBarEl.textContent = floatingGroup.node.tabs[floatingGroup.node.activeTabIndex]?.title ?? "Panel";
-    this.el.appendChild(this.titleBarEl);
-    this.attachTitleBarDrag();
+    // Build meta from FloatingGroup if not provided
+    const headerMeta: TugCardMeta = meta ?? {
+      title: floatingGroup.node.tabs[floatingGroup.node.activeTabIndex]?.title ?? "Panel",
+      icon: "Box",
+      closable: true,
+      menuItems: [],
+    };
+
+    // CardHeader replaces the temporary title bar.
+    // onDragStart handles both move-within-canvas and re-dock-out.
+    // Collapse is not shown for floating panels.
+    this.cardHeader = new CardHeader(headerMeta, {
+      onClose: () => {
+        callbacks.onClose();
+      },
+      onCollapse: () => {
+        // No-op: collapse does not apply to floating panels
+      },
+      onDragStart: (downEvent: PointerEvent) => {
+        this.handleHeaderDrag(downEvent);
+      },
+    }, { showCollapse: false });
+
+    this.el.appendChild(this.cardHeader.getElement());
 
     // Card area
     this.cardAreaEl = document.createElement("div");
@@ -95,8 +118,9 @@ export class FloatingPanel {
     this.el.style.zIndex = String(z);
   }
 
-  updateTitle(title: string): void {
-    this.titleBarEl.textContent = title;
+  /** Kept for API compatibility; CardHeader renders the title. */
+  updateTitle(_title: string): void {
+    // Title is rendered by CardHeader; recreate would be needed for live updates.
   }
 
   updatePosition(x: number, y: number): void {
@@ -112,6 +136,7 @@ export class FloatingPanel {
   }
 
   destroy(): void {
+    this.cardHeader.destroy();
     this.el.remove();
   }
 
@@ -127,85 +152,86 @@ export class FloatingPanel {
   }
 
   /**
-   * Title bar: pointerdown with DRAG_THRESHOLD_PX threshold.
-   * - Click (< threshold): fires onFocus (already handled by panel-level listener)
-   * - Drag within canvas: move the floating panel
-   * - Drag (fires onDragOut): hands control to PanelManager for re-dock targeting
+   * Handle header pointerdown for move and re-dock.
+   *
+   * - Drag within canvas bounds: moves the floating panel.
+   * - Cursor leaving panel rect: fires onDragOut for PanelManager re-dock targeting.
    */
-  private attachTitleBarDrag(): void {
-    this.titleBarEl.addEventListener("pointerdown", (downEvent: PointerEvent) => {
-      if (downEvent.button !== 0) return;
-      downEvent.preventDefault();
-      downEvent.stopPropagation();
-      this.titleBarEl.setPointerCapture(downEvent.pointerId);
+  private handleHeaderDrag(downEvent: PointerEvent): void {
+    downEvent.preventDefault();
 
-      const startX = downEvent.clientX;
-      const startY = downEvent.clientY;
-      const startPanelX = this.floatingGroup.position.x;
-      const startPanelY = this.floatingGroup.position.y;
-      let dragging = false;
-      let draggedOut = false;
+    const headerEl = this.cardHeader.getElement();
+    if (headerEl.setPointerCapture) {
+      headerEl.setPointerCapture(downEvent.pointerId);
+    }
 
-      const onMove = (e: PointerEvent) => {
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+    const startX = downEvent.clientX;
+    const startY = downEvent.clientY;
+    const startPanelX = this.floatingGroup.position.x;
+    const startPanelY = this.floatingGroup.position.y;
+    let dragging = false;
+    let draggedOut = false;
 
-        if (!dragging && dist > DRAG_THRESHOLD_PX) {
-          dragging = true;
-        }
-        if (!dragging) return;
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Detect when cursor leaves the floating panel's bounding rect — this
-        // transitions to re-dock targeting. Hand pointer control to PanelManager
-        // by releasing capture and removing local listeners before calling onDragOut.
-        if (!draggedOut) {
-          const panelRect = this.el.getBoundingClientRect();
-          const outsidePanel =
-            e.clientX < panelRect.left ||
-            e.clientX > panelRect.right ||
-            e.clientY < panelRect.top ||
-            e.clientY > panelRect.bottom;
+      if (!dragging && dist > DRAG_THRESHOLD_PX) {
+        dragging = true;
+      }
+      if (!dragging) return;
 
-          if (outsidePanel) {
-            draggedOut = true;
-            this.titleBarEl.releasePointerCapture(downEvent.pointerId);
-            this.titleBarEl.removeEventListener("pointermove", onMove);
-            this.titleBarEl.removeEventListener("pointerup", onUp);
-            this.titleBarEl.removeEventListener("pointercancel", onUp);
-            // Hand off to PanelManager for dock-zone targeting
-            this.callbacks.onDragOut(downEvent);
-            return;
+      // Detect cursor leaving the panel — transition to re-dock targeting
+      if (!draggedOut) {
+        const panelRect = this.el.getBoundingClientRect();
+        const outsidePanel =
+          e.clientX < panelRect.left ||
+          e.clientX > panelRect.right ||
+          e.clientY < panelRect.top ||
+          e.clientY > panelRect.bottom;
+
+        if (outsidePanel) {
+          draggedOut = true;
+          if (headerEl.releasePointerCapture) {
+            headerEl.releasePointerCapture(downEvent.pointerId);
           }
+          headerEl.removeEventListener("pointermove", onMove);
+          headerEl.removeEventListener("pointerup", onUp);
+          headerEl.removeEventListener("pointercancel", onUp);
+          this.callbacks.onDragOut(downEvent);
+          return;
         }
+      }
 
-        if (draggedOut) return;
+      if (draggedOut) return;
 
-        // Move the panel with the cursor
-        const canvasRect = this.canvasEl.getBoundingClientRect();
-        const newX = Math.max(0, Math.min(canvasRect.width - this.floatingGroup.size.width, startPanelX + dx));
-        const newY = Math.max(0, Math.min(canvasRect.height - this.floatingGroup.size.height, startPanelY + dy));
-        this.updatePosition(newX, newY);
-      };
+      // Move within canvas
+      const canvasRect = this.canvasEl.getBoundingClientRect();
+      const newX = Math.max(0, Math.min(canvasRect.width - this.floatingGroup.size.width, startPanelX + dx));
+      const newY = Math.max(0, Math.min(canvasRect.height - this.floatingGroup.size.height, startPanelY + dy));
+      this.updatePosition(newX, newY);
+    };
 
-      const onUp = (_e: PointerEvent) => {
-        this.titleBarEl.releasePointerCapture(downEvent.pointerId);
-        this.titleBarEl.removeEventListener("pointermove", onMove);
-        this.titleBarEl.removeEventListener("pointerup", onUp);
-        this.titleBarEl.removeEventListener("pointercancel", onUp);
+    const onUp = (_e: PointerEvent) => {
+      if (headerEl.releasePointerCapture) {
+        headerEl.releasePointerCapture(downEvent.pointerId);
+      }
+      headerEl.removeEventListener("pointermove", onMove);
+      headerEl.removeEventListener("pointerup", onUp);
+      headerEl.removeEventListener("pointercancel", onUp);
 
-        if (dragging && !draggedOut) {
-          this.callbacks.onMoveEnd(
-            this.floatingGroup.position.x,
-            this.floatingGroup.position.y
-          );
-        }
-      };
+      if (dragging && !draggedOut) {
+        this.callbacks.onMoveEnd(
+          this.floatingGroup.position.x,
+          this.floatingGroup.position.y
+        );
+      }
+    };
 
-      this.titleBarEl.addEventListener("pointermove", onMove);
-      this.titleBarEl.addEventListener("pointerup", onUp);
-      this.titleBarEl.addEventListener("pointercancel", onUp);
-    });
+    headerEl.addEventListener("pointermove", onMove);
+    headerEl.addEventListener("pointerup", onUp);
+    headerEl.addEventListener("pointercancel", onUp);
   }
 
   /**
@@ -228,7 +254,9 @@ export class FloatingPanel {
     handle.addEventListener("pointerdown", (downEvent: PointerEvent) => {
       downEvent.preventDefault();
       downEvent.stopPropagation();
-      handle.setPointerCapture(downEvent.pointerId);
+      if (handle.setPointerCapture) {
+        handle.setPointerCapture(downEvent.pointerId);
+      }
 
       const startX = downEvent.clientX;
       const startY = downEvent.clientY;
@@ -274,7 +302,9 @@ export class FloatingPanel {
       };
 
       const onUp = (_e: PointerEvent) => {
-        handle.releasePointerCapture(downEvent.pointerId);
+        if (handle.releasePointerCapture) {
+          handle.releasePointerCapture(downEvent.pointerId);
+        }
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
         handle.removeEventListener("pointercancel", onUp);

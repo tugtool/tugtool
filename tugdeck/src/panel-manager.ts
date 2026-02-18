@@ -30,8 +30,9 @@ import { createSash } from "./sash";
 import { TabBar } from "./tab-bar";
 import { DockOverlay, computeDropZone, isCursorInsideCanvas, type TabNodeRect, type DropZoneResult } from "./dock-target";
 import { insertNode } from "./layout-tree";
-import { FloatingPanel } from "./floating-panel";
+import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
 import type { FloatingGroup } from "./layout-tree";
+import { CardHeader } from "./card-header";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -123,6 +124,18 @@ export class PanelManager implements IDragState {
 
   /** FloatingPanel instances keyed by TabNode.id of their node */
   private floatingPanels: Map<string, FloatingPanel> = new Map();
+
+  /** CardHeader instances keyed by TabItem.id (single-tab docked nodes only). */
+  private cardHeaders: Map<string, CardHeader> = new Map();
+
+  /**
+   * Maps TabItem.id -> { containerEl, tabNodeId } for single-tab nodes.
+   * Used by addCard() to retroactively insert CardHeader after card registration.
+   */
+  private singleTabContainers: Map<string, { containerEl: HTMLElement; cardAreaEl: HTMLElement; tabNodeId: string }> = new Map();
+
+  /** Collapsed state for docked cards (TabItem.id -> collapsed boolean). Runtime-only. */
+  private cardCollapsed: Map<string, boolean> = new Map();
 
   /** Next z-index value for floating panel focus management */
   private nextZIndex = 100;
@@ -235,6 +248,35 @@ export class PanelManager implements IDragState {
       card.mount(mountEl);
       this.observeContainer(tabItem.id, mountEl, card);
     }
+
+    // If this card has meta and is in a single-tab node, create CardHeader now.
+    // The layout was pre-rendered before this card was registered, so we insert
+    // the header retroactively.
+    if (card.meta && !this.cardHeaders.has(tabItem.id)) {
+      const entry = this.singleTabContainers.get(tabItem.id);
+      if (entry) {
+        const { containerEl, cardAreaEl, tabNodeId } = entry;
+        const tabId = tabItem.id;
+        const header = new CardHeader(card.meta, {
+          onClose: () => {
+            this.handleTabClose(tabId);
+          },
+          onCollapse: () => {
+            const collapsed = !this.cardCollapsed.get(tabId);
+            this.cardCollapsed.set(tabId, collapsed);
+            const mountElement = this.cardContainers.get(tabId);
+            if (mountElement) {
+              mountElement.style.display = collapsed ? "none" : "block";
+            }
+          },
+          onDragStart: (e: PointerEvent) => {
+            this.handleDragOut(tabNodeId, tabId, 0, e);
+          },
+        }, { showCollapse: true });
+        containerEl.insertBefore(header.getElement(), cardAreaEl);
+        this.cardHeaders.set(tabId, header);
+      }
+    }
   }
 
   /**
@@ -308,6 +350,13 @@ export class PanelManager implements IDragState {
     }
     this.tabBars.clear();
 
+    // Destroy existing CardHeader instances
+    for (const ch of this.cardHeaders.values()) {
+      ch.destroy();
+    }
+    this.cardHeaders.clear();
+    this.singleTabContainers.clear();
+
     // Clear root element but preserve card mount containers in the map
     this.rootEl.innerHTML = "";
 
@@ -329,6 +378,8 @@ export class PanelManager implements IDragState {
 
     for (const fg of this.dockState.floating) {
       const nodeId = fg.node.id;
+      const activeTab = fg.node.tabs[fg.node.activeTabIndex];
+      const cardMeta = activeTab ? this.cardRegistry.get(activeTab.id)?.meta : undefined;
       const fp = new FloatingPanel(fg, {
         onMoveEnd: (x, y) => {
           fg.position = { x, y };
@@ -338,10 +389,10 @@ export class PanelManager implements IDragState {
           fg.position = { x, y };
           fg.size = { width, height };
           // Notify the active card of its new size
-          const activeTab = fg.node.tabs[fg.node.activeTabIndex];
-          if (activeTab) {
-            const card = this.cardRegistry.get(activeTab.id);
-            if (card) card.onResize(width, height - 28); // subtract title bar
+          const tab = fg.node.tabs[fg.node.activeTabIndex];
+          if (tab) {
+            const card = this.cardRegistry.get(tab.id);
+            if (card) card.onResize(width, height - FLOATING_TITLE_BAR_HEIGHT);
           }
           this.scheduleSave();
         },
@@ -349,12 +400,22 @@ export class PanelManager implements IDragState {
           fp.setZIndex(++this.nextZIndex);
         },
         onDragOut: (startEvent: PointerEvent) => {
-          // Re-dock drag: floating panel title bar dragged over dock zones
-          const activeTab = fg.node.tabs[fg.node.activeTabIndex];
-          if (!activeTab) return;
-          this.handleFloatingDragOut(nodeId, activeTab.id, 0, startEvent);
+          // Re-dock drag: floating panel header dragged over dock zones
+          const tab = fg.node.tabs[fg.node.activeTabIndex];
+          if (!tab) return;
+          this.handleFloatingDragOut(nodeId, tab.id, 0, startEvent);
         },
-      }, this.container);
+        onClose: () => {
+          // Remove the floating card from dockState.floating and destroy it
+          const tab = fg.node.tabs[fg.node.activeTabIndex];
+          if (tab) {
+            const card = this.cardRegistry.get(tab.id);
+            if (card) {
+              this.removeCard(card);
+            }
+          }
+        },
+      }, this.container, cardMeta);
 
       fp.setZIndex(this.nextZIndex);
       this.container.appendChild(fp.getElement());
@@ -479,7 +540,7 @@ export class PanelManager implements IDragState {
     cardAreaEl.className = "panel-card-area";
     containerEl.appendChild(cardAreaEl);
 
-    // Create TabBar for multi-tab nodes (single-tab nodes get no tab bar).
+    // Create TabBar for multi-tab nodes or CardHeader for single-tab nodes.
     if (node.tabs.length > 1) {
       const tabBar = new TabBar(node, {
         onTabActivate: (tabIndex: number) => {
@@ -498,6 +559,35 @@ export class PanelManager implements IDragState {
       // Tab bar is inserted BEFORE the card area in the flex column
       containerEl.insertBefore(tabBar.getElement(), cardAreaEl);
       this.tabBars.set(node.id, tabBar);
+    } else if (node.tabs.length === 1) {
+      // Single-tab node: CardHeader provides icon, title, menu, collapse, close, drag.
+      // Record the container so addCard() can insert the header retroactively.
+      const tab = node.tabs[0];
+      const tabId = tab.id;
+      const tabNodeId = node.id;
+      this.singleTabContainers.set(tabId, { containerEl, cardAreaEl, tabNodeId });
+
+      const card = this.cardRegistry.get(tabId);
+      if (card?.meta) {
+        const header = new CardHeader(card.meta, {
+          onClose: () => {
+            this.handleTabClose(tabId);
+          },
+          onCollapse: () => {
+            const collapsed = !this.cardCollapsed.get(tabId);
+            this.cardCollapsed.set(tabId, collapsed);
+            const mountEl = this.cardContainers.get(tabId);
+            if (mountEl) {
+              mountEl.style.display = collapsed ? "none" : "block";
+            }
+          },
+          onDragStart: (e: PointerEvent) => {
+            this.handleDragOut(tabNodeId, tabId, 0, e);
+          },
+        }, { showCollapse: true });
+        containerEl.insertBefore(header.getElement(), cardAreaEl);
+        this.cardHeaders.set(tabId, header);
+      }
     }
 
     // Render each tab's card mount inside the card area
@@ -1254,6 +1344,11 @@ export class PanelManager implements IDragState {
       tb.destroy();
     }
     this.tabBars.clear();
+    for (const ch of this.cardHeaders.values()) {
+      ch.destroy();
+    }
+    this.cardHeaders.clear();
+    this.singleTabContainers.clear();
     for (const card of this.cardRegistry.values()) {
       card.destroy();
     }

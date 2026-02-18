@@ -11,12 +11,18 @@ import { WebglAddon } from "@xterm/addon-webgl";
 
 import { FeedId, FeedIdValue, resizeFrame } from "../protocol";
 import { TugConnection } from "../connection";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 import type { IDragState } from "../drag-state";
 
 export class TerminalCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.TERMINAL_OUTPUT];
   readonly collapsible = false;
+  readonly meta: TugCardMeta = {
+    title: "Terminal",
+    icon: "Terminal",
+    closable: true,
+    menuItems: [],
+  };
 
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;

@@ -6,7 +6,7 @@
 
 import { createElement, Activity, Coins, Hammer } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 
 /**
  * Helper function to read CSS token values
@@ -182,6 +182,12 @@ export class StatsCard implements TugCard {
     FeedId.STATS_TOKEN_USAGE,
     FeedId.STATS_BUILD_STATUS,
   ];
+  readonly meta: TugCardMeta = {
+    title: "Stats",
+    icon: "Activity",
+    closable: true,
+    menuItems: [],
+  };
 
   private container: HTMLElement | null = null;
   private content: HTMLDivElement | null = null;
@@ -192,12 +198,6 @@ export class StatsCard implements TugCard {
   mount(container: HTMLElement): void {
     this.container = container;
     this.container.classList.add("stats-card");
-
-    // Create header
-    const header = document.createElement("div");
-    header.className = "card-header";
-    header.textContent = "Stats";
-    this.container.appendChild(header);
 
     // Create content container
     this.content = document.createElement("div");

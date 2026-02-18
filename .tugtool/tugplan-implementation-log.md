@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-18T02:49:44Z
+bead: tugtool-ndt.6
+---
+
+## #step-5: Created card-header.ts (CardHeader with Lucide icons, collapse, close, drag) and card-menu.ts (DropdownMenu). Added TugCardMeta to all 5 cards. Migrated ConversationCard permission mode from select to menu. Replaced FloatingPanel temp title bar with CardHeader. Removed obsolete .card-header CSS. 33 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-18T02:24:58Z
 bead: tugtool-ndt.5

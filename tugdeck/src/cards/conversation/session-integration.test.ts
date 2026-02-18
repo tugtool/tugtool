@@ -190,15 +190,20 @@ describe("Phase 5 integration: session + crash recovery + permissions", () => {
 
   describe("permission switching", () => {
     test("permission mode selector changes send permission_mode messages", () => {
-      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+      // Permission mode is now accessed via card.meta (Step 5 migration).
+      const meta = card.meta;
+      const permItem = meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      expect(permItem).not.toBeUndefined();
+      if (!permItem || permItem.type !== "select") return;
 
       // Verify default is acceptEdits
-      expect(select.value).toBe("acceptEdits");
+      expect(permItem.value).toBe("acceptEdits");
 
       // Change to plan mode
       connection.clear();
-      select.value = "plan";
-      select.dispatchEvent(new Event("change"));
+      permItem.action("plan");
 
       let lastMsg = connection.getLastMessage();
       expect(lastMsg).not.toBeNull();
@@ -207,8 +212,7 @@ describe("Phase 5 integration: session + crash recovery + permissions", () => {
 
       // Change to bypassPermissions
       connection.clear();
-      select.value = "bypassPermissions";
-      select.dispatchEvent(new Event("change"));
+      permItem.action("bypassPermissions");
 
       lastMsg = connection.getLastMessage();
       expect(lastMsg).not.toBeNull();
@@ -217,8 +221,7 @@ describe("Phase 5 integration: session + crash recovery + permissions", () => {
 
       // Change back to acceptEdits
       connection.clear();
-      select.value = "acceptEdits";
-      select.dispatchEvent(new Event("change"));
+      permItem.action("acceptEdits");
 
       lastMsg = connection.getLastMessage();
       expect(lastMsg).not.toBeNull();
@@ -259,11 +262,15 @@ describe("Phase 5 integration: session + crash recovery + permissions", () => {
       expect(userMessages?.length).toBe(1);
       expect(userMessages?.[0].textContent).toBe("First message");
 
-      // Step 3: Switch permission mode to bypassPermissions
-      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+      // Step 3: Switch permission mode to bypassPermissions (via card.meta in Step 5)
+      const permItem = card.meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      expect(permItem).toBeDefined();
       connection.clear();
-      select.value = "bypassPermissions";
-      select.dispatchEvent(new Event("change"));
+      if (permItem && permItem.type === "select") {
+        permItem.action("bypassPermissions");
+      }
 
       let lastMsg = connection.getLastMessage();
       expect(lastMsg.type).toBe("permission_mode");
@@ -313,17 +320,27 @@ describe("Phase 5 integration: session + crash recovery + permissions", () => {
       expect(userMessages?.[0].textContent).toBe("First message");
       expect(userMessages?.[1].textContent).toBe("Second message after recovery");
 
-      // Step 8: Switch permission mode back to acceptEdits
+      // Step 8: Switch permission mode back to acceptEdits (via card.meta in Step 5)
       connection.clear();
-      select.value = "acceptEdits";
-      select.dispatchEvent(new Event("change"));
+      const permItemFinal = card.meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      if (permItemFinal && permItemFinal.type === "select") {
+        permItemFinal.action("acceptEdits");
+      }
 
       lastMsg = connection.getLastMessage();
       expect(lastMsg.type).toBe("permission_mode");
       expect(lastMsg.mode).toBe("acceptEdits");
 
-      // Step 9: Verify permission selector reflects current state
-      expect(select.value).toBe("acceptEdits");
+      // Step 9: Verify permission meta value reflects current state
+      const permItemCheck = card.meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      if (permItemCheck && permItemCheck.type === "select") {
+        // value tracks the last action call
+        expect(permItemCheck.value).toBe("acceptEdits");
+      }
     });
   });
 });

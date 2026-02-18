@@ -120,20 +120,23 @@ function makeFloatingPanelCallbacks(): {
   resizeEndCalls: Array<{ x: number; y: number; width: number; height: number }>;
   focusCalls: number;
   dragOutCalls: PointerEvent[];
+  closeCalls: number;
 } {
   const moveEndCalls: Array<{ x: number; y: number }> = [];
   const resizeEndCalls: Array<{ x: number; y: number; width: number; height: number }> = [];
   let focusCalls = 0;
   const dragOutCalls: PointerEvent[] = [];
+  let closeCalls = 0;
 
   const callbacks: import("../floating-panel").FloatingPanelCallbacks = {
     onMoveEnd: (x, y) => moveEndCalls.push({ x, y }),
     onResizeEnd: (x, y, width, height) => resizeEndCalls.push({ x, y, width, height }),
     onFocus: () => { focusCalls++; },
     onDragOut: (e) => dragOutCalls.push(e),
+    onClose: () => { closeCalls++; },
   };
 
-  return { callbacks, moveEndCalls, resizeEndCalls, focusCalls: 0, dragOutCalls };
+  return { callbacks, moveEndCalls, resizeEndCalls, focusCalls: 0, dragOutCalls, closeCalls: 0 };
 }
 
 class MockConnection {
@@ -219,13 +222,15 @@ describe("FloatingPanel – DOM creation", () => {
     fp.destroy();
   });
 
-  test("creates a title bar with card title text", () => {
+  test("creates a panel-header (full CardHeader) with card title text", () => {
     const fg = makeFloatingGroup(100, 100, 400, 300, "My Terminal");
     const { callbacks } = makeFloatingPanelCallbacks();
     const fp = new FloatingPanel(fg, callbacks, canvas);
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar");
-    expect(titleBar).not.toBeNull();
-    expect(titleBar!.textContent).toBe("My Terminal");
+    const header = fp.getElement().querySelector(".panel-header");
+    expect(header).not.toBeNull();
+    const titleEl = fp.getElement().querySelector(".panel-header-title");
+    expect(titleEl).not.toBeNull();
+    expect(titleEl!.textContent).toBe("My Terminal");
     fp.destroy();
   });
 
@@ -275,13 +280,17 @@ describe("FloatingPanel – API", () => {
     fp.destroy();
   });
 
-  test("updateTitle changes title bar text", () => {
-    const fg = makeFloatingGroup(100, 100, 400, 300, "Old Title");
+  test("updateTitle is a no-op; title is set from FloatingGroup at construction", () => {
+    // After Step 5, updateTitle() is a no-op since CardHeader renders the title.
+    // The initial title comes from the FloatingGroup tab title at construction time.
+    const fg = makeFloatingGroup(100, 100, 400, 300, "My Title");
     const { callbacks } = makeFloatingPanelCallbacks();
     const fp = new FloatingPanel(fg, callbacks, canvas);
-    fp.updateTitle("New Title");
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar");
-    expect(titleBar!.textContent).toBe("New Title");
+    const titleEl = fp.getElement().querySelector(".panel-header-title");
+    expect(titleEl!.textContent).toBe("My Title");
+    // updateTitle is a no-op — just verify it doesn't throw
+    fp.updateTitle("Should be no-op");
+    expect(titleEl!.textContent).toBe("My Title");
     fp.destroy();
   });
 
@@ -910,7 +919,7 @@ describe("FloatingPanel – onDragOut triggered on cursor-leave (Fix 1)", () => 
       toJSON: () => ({}),
     } as DOMRect);
 
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar") as HTMLElement;
+    const titleBar = fp.getElement().querySelector(".panel-header") as HTMLElement;
 
     // Simulate pointerdown on the title bar (inside panel)
     const downEv = new (window as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent("pointerdown", {
@@ -941,7 +950,7 @@ describe("FloatingPanel – onDragOut triggered on cursor-leave (Fix 1)", () => 
       toJSON: () => ({}),
     } as DOMRect);
 
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar") as HTMLElement;
+    const titleBar = fp.getElement().querySelector(".panel-header") as HTMLElement;
 
     // Simulate pointerdown on the title bar
     const downEv = new (window as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent("pointerdown", {
@@ -977,7 +986,7 @@ describe("FloatingPanel – onDragOut triggered on cursor-leave (Fix 1)", () => 
       toJSON: () => ({}),
     } as DOMRect);
 
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar") as HTMLElement;
+    const titleBar = fp.getElement().querySelector(".panel-header") as HTMLElement;
 
     // Pointerdown
     titleBar.dispatchEvent(new (window as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent("pointerdown", {
@@ -1018,7 +1027,7 @@ describe("FloatingPanel – onDragOut triggered on cursor-leave (Fix 1)", () => 
       toJSON: () => ({}),
     } as DOMRect);
 
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar") as HTMLElement;
+    const titleBar = fp.getElement().querySelector(".panel-header") as HTMLElement;
 
     // Pointerdown and immediate pointerup (click, no move beyond threshold)
     titleBar.dispatchEvent(new (window as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent("pointerdown", {
@@ -1053,7 +1062,7 @@ describe("FloatingPanel – onDragOut triggered on cursor-leave (Fix 1)", () => 
       toJSON: () => ({}),
     } as DOMRect);
 
-    const titleBar = fp.getElement().querySelector(".floating-panel-title-bar") as HTMLElement;
+    const titleBar = fp.getElement().querySelector(".panel-header") as HTMLElement;
 
     titleBar.dispatchEvent(new (window as unknown as { PointerEvent: typeof PointerEvent }).PointerEvent("pointerdown", {
       button: 0, clientX: 200, clientY: 110, pointerId: 1,

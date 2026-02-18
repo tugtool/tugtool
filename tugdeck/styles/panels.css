@@ -176,24 +176,115 @@
   box-sizing: border-box;
 }
 
-.floating-panel-title-bar {
+/* ---- Card header bar (panel-header) ---- */
+
+.panel-header {
   height: 28px;
-  flex-shrink: 0;
-  cursor: grab;
-  background: var(--muted);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 8px;
-  line-height: 28px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.panel-header-icon {
+  display: flex;
+  align-items: center;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.panel-header-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--card-foreground);
+  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  user-select: none;
 }
 
-.floating-panel-title-bar:active {
-  cursor: grabbing;
+.panel-header-spacer {
+  flex: 1;
+}
+
+.panel-header-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.panel-header-btn:hover {
+  color: var(--foreground);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ---- Card dropdown menu ---- */
+
+.card-dropdown-menu {
+  position: fixed;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  padding: 4px 0;
+  z-index: 10000;
+  min-width: 160px;
+}
+
+.card-dropdown-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.card-dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.card-dropdown-select-group {
+  padding: 4px 0;
+}
+
+.card-dropdown-select-option {
+  padding: 4px 20px;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 2px;
+}
+
+.card-dropdown-select-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.card-dropdown-select-option.selected {
+  color: var(--accent-foreground);
+  font-weight: 600;
 }
 
 .floating-panel-content {
@@ -280,13 +371,3 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* ---- Temporary override: neutralize ConversationCard's negative-margin header hack ----
- *
- * ConversationCard's .card-header uses margin: -8px -8px 0 -8px to counteract
- * the 8px .card-slot padding from the old CSS Grid layout. Since panel containers
- * have zero padding, this hack causes the header to hang outside its container.
- * This override is removed in Step 5 when self-created headers are deleted.
- */
-.panel-card-container .card-header {
-  margin: 0;
-}

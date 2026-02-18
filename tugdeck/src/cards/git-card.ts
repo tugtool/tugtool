@@ -6,7 +6,7 @@
 
 import { createElement, GitBranch, CircleCheck, CircleDot, CircleDashed } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 
 /** GitStatus as serialized by tugcast-core (matches Spec S02) */
 interface GitStatus {
@@ -27,20 +27,19 @@ interface FileStatus {
 
 export class GitCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.GIT];
+  readonly meta: TugCardMeta = {
+    title: "Git",
+    icon: "GitBranch",
+    closable: true,
+    menuItems: [],
+  };
 
   private container: HTMLElement | null = null;
-  private header: HTMLElement | null = null;
   private content: HTMLElement | null = null;
 
   mount(container: HTMLElement): void {
     this.container = container;
     this.container.classList.add("git-card");
-
-    // Create header
-    this.header = document.createElement("div");
-    this.header.className = "card-header";
-    this.header.textContent = "Git";
-    this.container.appendChild(this.header);
 
     // Create scrollable content area
     this.content = document.createElement("div");
@@ -72,7 +71,6 @@ export class GitCard implements TugCard {
     if (this.container) {
       this.container.innerHTML = "";
       this.container = null;
-      this.header = null;
       this.content = null;
     }
   }

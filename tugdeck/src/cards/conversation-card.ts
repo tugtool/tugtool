@@ -3,7 +3,7 @@
  */
 
 import { createElement, ArrowUp, Square, Octagon, Paperclip, AlertTriangle, User, Bot, Loader2 } from "lucide";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 import { TugConnection } from "../connection";
 import { FeedId } from "../protocol";
 import {
@@ -74,7 +74,28 @@ export class ConversationCard implements TugCard {
   private currentSessionId: string | null = null;
   private errorState: "none" | "recoverable" | "fatal" = "none";
   private errorBanner!: HTMLElement;
-  private permissionModeSelect!: HTMLSelectElement;
+
+  get meta(): TugCardMeta {
+    const connection = this.connection;
+    return {
+      title: "Conversation",
+      icon: "MessageSquare",
+      closable: true,
+      menuItems: [
+        {
+          type: "select",
+          label: "Permission Mode",
+          options: ["default", "acceptEdits", "bypassPermissions", "plan"],
+          value: "acceptEdits",
+          action: (mode: string) => {
+            const msg: PermissionModeInput = { type: "permission_mode", mode };
+            const payload = new TextEncoder().encode(JSON.stringify(msg));
+            connection.send(FeedId.CONVERSATION_INPUT, payload);
+          },
+        },
+      ],
+    };
+  }
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -96,36 +117,6 @@ export class ConversationCard implements TugCard {
   mount(parent: HTMLElement): void {
     this.container = document.createElement("div");
     this.container.className = "conversation-card";
-
-    // Card header
-    const header = document.createElement("div");
-    header.className = "card-header";
-    const title = document.createElement("span");
-    title.className = "card-title";
-    title.textContent = "Conversation";
-    header.appendChild(title);
-
-    // Permission mode selector (right-aligned)
-    this.permissionModeSelect = document.createElement("select");
-    this.permissionModeSelect.className = "permission-mode-select";
-    this.permissionModeSelect.innerHTML = `
-      <option value="default">Default</option>
-      <option value="acceptEdits" selected>Accept Edits</option>
-      <option value="bypassPermissions">Bypass Permissions</option>
-      <option value="plan">Plan</option>
-    `;
-    this.permissionModeSelect.addEventListener("change", () => {
-      const mode = this.permissionModeSelect.value as "default" | "acceptEdits" | "bypassPermissions" | "plan";
-      const msg: PermissionModeInput = {
-        type: "permission_mode",
-        mode,
-      };
-      const payload = new TextEncoder().encode(JSON.stringify(msg));
-      this.connection.send(FeedId.CONVERSATION_INPUT, payload);
-    });
-    header.appendChild(this.permissionModeSelect);
-
-    this.container.appendChild(header);
 
     // Error banner (initially hidden)
     this.errorBanner = document.createElement("div");

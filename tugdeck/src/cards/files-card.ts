@@ -6,7 +6,7 @@
 
 import { createElement, FilePlus, FilePen, FileX, FileSymlink } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 
 /** FsEvent as serialized by tugcast-core (matches Spec S01) */
 interface FsEvent {
@@ -21,20 +21,19 @@ const MAX_VISIBLE_ENTRIES = 100;
 
 export class FilesCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.FILESYSTEM];
+  readonly meta: TugCardMeta = {
+    title: "Files",
+    icon: "FolderOpen",
+    closable: true,
+    menuItems: [],
+  };
 
   private container: HTMLElement | null = null;
-  private header: HTMLElement | null = null;
   private eventList: HTMLElement | null = null;
 
   mount(container: HTMLElement): void {
     this.container = container;
     this.container.classList.add("files-card");
-
-    // Create header
-    this.header = document.createElement("div");
-    this.header.className = "card-header";
-    this.header.textContent = "Files";
-    this.container.appendChild(this.header);
 
     // Create scrollable event list
     this.eventList = document.createElement("div");
@@ -96,7 +95,6 @@ export class FilesCard implements TugCard {
     if (this.container) {
       this.container.innerHTML = "";
       this.container = null;
-      this.header = null;
       this.eventList = null;
     }
   }
