@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-18T01:50:25Z
+bead: tugtool-ndt.3
+---
+
+## #step-2: Created tab-bar.ts (presentation-only TabBar with activate/close/reorder callbacks). Integrated into PanelManager renderTabNode with tabBars Map. Added tab bar CSS styles. 16 new tests covering all acceptance criteria.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-18T01:38:49Z
 bead: tugtool-ndt.2

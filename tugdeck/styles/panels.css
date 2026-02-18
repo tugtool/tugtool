@@ -41,7 +41,14 @@
 
 /* ---- Card containers ---- */
 
+/*
+ * panel-card-container uses flex-column so the optional tab bar sits above
+ * the card area. When there is no tab bar the single child (panel-card-area
+ * or panel-card-mount) expands to fill 100% via flex: 1.
+ */
 .panel-card-container {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -50,10 +57,80 @@
   min-height: 0;
 }
 
+/* Card area below the optional tab bar — takes all remaining space. */
+.panel-card-area {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+
 .panel-card-mount {
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+/* ---- Tab bar ---- */
+
+.panel-tab-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  height: 28px;
+  flex-shrink: 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.panel-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  color: var(--muted-foreground);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.panel-tab-active {
+  color: var(--foreground);
+  border-bottom-color: var(--accent);
+}
+
+.panel-tab:hover {
+  color: var(--foreground);
+}
+
+.panel-tab-close {
+  display: none;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px;
+  border-radius: 2px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.panel-tab:hover .panel-tab-close {
+  display: inline-flex;
+}
+
+.panel-tab-close:hover {
+  color: var(--destructive);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.panel-tab.dragging {
+  opacity: 0.5;
 }
 
 /* ---- Sash resize handles ---- */

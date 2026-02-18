@@ -15,6 +15,7 @@ import {
   type TabItem,
   normalizeTree,
   removeTab,
+  findTabNode,
 } from "./layout-tree";
 import {
   buildDefaultLayout,
@@ -26,6 +27,7 @@ import { TugCard } from "./cards/card";
 import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { createSash } from "./sash";
+import { TabBar } from "./tab-bar";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -89,6 +91,12 @@ export class PanelManager implements IDragState {
    * ResizeObserver per card container for accurate resize detection.
    */
   private resizeObservers: Map<string, ResizeObserver> = new Map();
+
+  /**
+   * TabBar instances keyed by TabNode.id.
+   * Destroyed and recreated on render; exposed for step 3 dock targeting.
+   */
+  private tabBars: Map<string, TabBar> = new Map();
 
   /** D05: drag state flag */
   private _isDragging = false;
@@ -247,6 +255,12 @@ export class PanelManager implements IDragState {
    * rather than recreated (D09 instance identity).
    */
   private render(): void {
+    // Destroy existing TabBar instances before clearing the DOM
+    for (const tb of this.tabBars.values()) {
+      tb.destroy();
+    }
+    this.tabBars.clear();
+
     // Clear root element but preserve card mount containers in the map
     this.rootEl.innerHTML = "";
 
@@ -335,15 +349,39 @@ export class PanelManager implements IDragState {
   /**
    * Render a TabNode as a card container.
    *
-   * For single-tab nodes: mount the card directly.
-   * For multi-tab nodes (future step): only the active tab is visible,
-   * inactive tabs are hidden with display:none but remain in DOM (D09).
+   * Single-tab: no tab bar; card fills the entire container.
+   * Multi-tab: TabBar at top (28px, flex-shrink:0), card area below (flex:1).
+   * Inactive tabs are hidden with display:none but remain in DOM (D09).
    */
   private renderTabNode(node: TabNode, parentEl: HTMLElement): void {
     const containerEl = document.createElement("div");
     containerEl.className = "panel-card-container";
     parentEl.appendChild(containerEl);
 
+    // Create the card area wrapper — all mount elements live inside this.
+    const cardAreaEl = document.createElement("div");
+    cardAreaEl.className = "panel-card-area";
+    containerEl.appendChild(cardAreaEl);
+
+    // Create TabBar for multi-tab nodes (single-tab nodes get no tab bar).
+    if (node.tabs.length > 1) {
+      const tabBar = new TabBar(node, {
+        onTabActivate: (tabIndex: number) => {
+          this.handleTabActivate(node, tabIndex);
+        },
+        onTabClose: (tabId: string) => {
+          this.handleTabClose(tabId);
+        },
+        onTabReorder: (fromIndex: number, toIndex: number) => {
+          this.handleTabReorder(node, fromIndex, toIndex);
+        },
+      });
+      // Tab bar is inserted BEFORE the card area in the flex column
+      containerEl.insertBefore(tabBar.getElement(), cardAreaEl);
+      this.tabBars.set(node.id, tabBar);
+    }
+
+    // Render each tab's card mount inside the card area
     for (let i = 0; i < node.tabs.length; i++) {
       const tab = node.tabs[i];
       const isActive = i === node.activeTabIndex;
@@ -356,8 +394,8 @@ export class PanelManager implements IDragState {
         this.cardContainers.set(tab.id, mountEl);
       }
 
-      // Reparent into the current container (D09: appendChild, not recreate)
-      containerEl.appendChild(mountEl);
+      // Reparent into the card area (D09: appendChild preserves card DOM)
+      cardAreaEl.appendChild(mountEl);
 
       // Show/hide based on active tab
       mountEl.style.display = isActive ? "block" : "none";
@@ -372,6 +410,108 @@ export class PanelManager implements IDragState {
         this.observeContainer(tab.id, mountEl, card);
       }
     }
+  }
+
+  // ---- Tab bar callbacks ----
+
+  /**
+   * Switch the active tab in a TabNode.
+   *
+   * Hides the previous active card (display:none), shows the new one
+   * (display:block), then fires a mandatory onResize so cards like
+   * xterm.js FitAddon can recover from the zero-size hidden state (D09).
+   */
+  private handleTabActivate(node: TabNode, newIndex: number): void {
+    if (newIndex === node.activeTabIndex) return;
+    if (newIndex < 0 || newIndex >= node.tabs.length) return;
+
+    // Hide current active tab's mount element
+    const prevTab = node.tabs[node.activeTabIndex];
+    const prevMountEl = this.cardContainers.get(prevTab.id);
+    if (prevMountEl) {
+      prevMountEl.style.display = "none";
+    }
+
+    // Update tree state
+    node.activeTabIndex = newIndex;
+
+    // Show newly active tab's mount element
+    const newTab = node.tabs[newIndex];
+    const newMountEl = this.cardContainers.get(newTab.id);
+    if (newMountEl) {
+      newMountEl.style.display = "block";
+
+      // Mandatory onResize after making element visible (D09 / xterm.js FitAddon)
+      const card = this.cardRegistry.get(newTab.id);
+      if (card) {
+        const rect = newMountEl.getBoundingClientRect();
+        const w = rect.width || newMountEl.clientWidth;
+        const h = rect.height || newMountEl.clientHeight;
+        if (w > 0 && h > 0) {
+          card.onResize(w, h);
+        }
+      }
+    }
+
+    // Refresh tab bar visuals
+    const tabBar = this.tabBars.get(node.id);
+    if (tabBar) {
+      tabBar.update(node);
+    }
+
+    this.scheduleSave();
+  }
+
+  /**
+   * Close a tab: remove the card instance, update the tree, re-render.
+   *
+   * removeCard() calls removeTab() (which normalizes the tree), then calls
+   * render() and scheduleSave(). No extra work needed here.
+   */
+  private handleTabClose(tabId: string): void {
+    const card = this.cardRegistry.get(tabId);
+    if (card) {
+      this.removeCard(card);
+    }
+  }
+
+  /**
+   * Reorder tabs within a TabNode.
+   *
+   * Moves tabs[fromIndex] to toIndex, adjusts activeTabIndex, refreshes
+   * the TabBar, and schedules a layout save. Does NOT do a full re-render.
+   */
+  private handleTabReorder(node: TabNode, fromIndex: number, toIndex: number): void {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= node.tabs.length ||
+      toIndex < 0 ||
+      toIndex >= node.tabs.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+
+    const [moved] = node.tabs.splice(fromIndex, 1);
+    node.tabs.splice(toIndex, 0, moved);
+
+    // Adjust activeTabIndex to follow the moved tab if it was active,
+    // or shift it to stay on the same logical tab.
+    if (node.activeTabIndex === fromIndex) {
+      node.activeTabIndex = toIndex;
+    } else if (fromIndex < node.activeTabIndex && toIndex >= node.activeTabIndex) {
+      node.activeTabIndex -= 1;
+    } else if (fromIndex > node.activeTabIndex && toIndex <= node.activeTabIndex) {
+      node.activeTabIndex += 1;
+    }
+
+    // Refresh tab bar visuals only (no full tree re-render needed)
+    const tabBar = this.tabBars.get(node.id);
+    if (tabBar) {
+      tabBar.update(node);
+    }
+
+    this.scheduleSave();
   }
 
   // ---- Geometric Minimum Enforcement (L01.7, geometric layer) ----
@@ -629,6 +769,22 @@ export class PanelManager implements IDragState {
     return this.cardsByFeed;
   }
 
+  /**
+   * Expose tab bar instances for step 3 dock targeting.
+   * Returns the TabBar for a given TabNode.id, or undefined if none.
+   */
+  getTabBar(tabNodeId: string): TabBar | undefined {
+    return this.tabBars.get(tabNodeId);
+  }
+
+  /**
+   * Find a TabNode in the current tree by id (thin wrapper around findTabNode).
+   * Useful for step 3 where dock-target.ts needs TabNode references.
+   */
+  findTabNodeById(tabNodeId: string): import("./layout-tree").TabNode | null {
+    return findTabNode(this.dockState.root, tabNodeId);
+  }
+
   destroy(): void {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
@@ -638,6 +794,10 @@ export class PanelManager implements IDragState {
       ro.disconnect();
     }
     this.resizeObservers.clear();
+    for (const tb of this.tabBars.values()) {
+      tb.destroy();
+    }
+    this.tabBars.clear();
     for (const card of this.cardRegistry.values()) {
       card.destroy();
     }
