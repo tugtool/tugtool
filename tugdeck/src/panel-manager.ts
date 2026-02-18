@@ -20,6 +20,7 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
+import { computeSnap, computeResizeSnap, panelToRect, type Rect } from "./snap";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -334,10 +335,12 @@ export class PanelManager implements IDragState {
         panel,
         {
           onMoveEnd: (x, y) => {
+            this._isDragging = false;
             panel.position = { x, y };
             this.scheduleSave();
           },
           onResizeEnd: (x, y, width, height) => {
+            this._isDragging = false;
             panel.position = { x, y };
             panel.size = { width, height };
             // Notify the active card of its new size
@@ -355,6 +358,48 @@ export class PanelManager implements IDragState {
             if (card) {
               this.removeCard(card);
             }
+          },
+          onMoving: (x, y) => {
+            this._isDragging = true;
+            // Collect Rects for all other panels (exclude the one being moved)
+            const others: Rect[] = this.canvasState.panels
+              .filter((p) => p.id !== panel.id)
+              .map((p) => panelToRect(p));
+            const snap = computeSnap(
+              { x, y, width: panel.size.width, height: panel.size.height },
+              others
+            );
+            return {
+              x: snap.x !== null ? snap.x : x,
+              y: snap.y !== null ? snap.y : y,
+            };
+          },
+          onResizing: (x, y, width, height) => {
+            this._isDragging = true;
+            // Collect Rects for all other panels (exclude the one being resized)
+            const others: Rect[] = this.canvasState.panels
+              .filter((p) => p.id !== panel.id)
+              .map((p) => panelToRect(p));
+            // Pass all four edges; computeResizeSnap only snaps edges within threshold
+            const resizingEdges = {
+              left: x,
+              right: x + width,
+              top: y,
+              bottom: y + height,
+            };
+            const snap = computeResizeSnap(resizingEdges, others);
+            // Reconstruct geometry from snapped edge values
+            let newX = snap.left !== undefined ? snap.left : x;
+            let newY = snap.top !== undefined ? snap.top : y;
+            const newRight = snap.right !== undefined ? snap.right : (x + width);
+            const newBottom = snap.bottom !== undefined ? snap.bottom : (y + height);
+            let newW = newRight - newX;
+            let newH = newBottom - newY;
+            // Enforce minimum size — if snapping would violate it, skip that snap
+            const MIN_SIZE = 100;
+            if (newW < MIN_SIZE) { newW = width; newX = x; }
+            if (newH < MIN_SIZE) { newH = height; newY = y; }
+            return { x: newX, y: newY, width: newW, height: newH };
           },
         },
         this.container,

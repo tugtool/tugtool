@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-18T18:36:26Z
+bead: tugtool-srv.3
+---
+
+## #step-2: Wired computeSnap and computeResizeSnap into PanelManager's onMoving/onResizing callbacks. Added _isDragging toggling in move/resize lifecycle. 3 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-18T18:29:21Z
 bead: tugtool-srv.2

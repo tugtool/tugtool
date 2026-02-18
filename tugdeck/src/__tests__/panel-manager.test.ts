@@ -24,6 +24,15 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
+// Patch HTMLElement.prototype for setPointerCapture (not in happy-dom)
+const htmlElementProto = Object.getPrototypeOf(document.createElement("div")) as Record<string, unknown>;
+if (!htmlElementProto["setPointerCapture"]) {
+  htmlElementProto["setPointerCapture"] = function () {};
+}
+if (!htmlElementProto["releasePointerCapture"]) {
+  htmlElementProto["releasePointerCapture"] = function () {};
+}
+
 // localStorage mock
 const localStorageMock = (() => {
   const store: Record<string, string> = {};
@@ -330,6 +339,182 @@ describe("PanelManager", () => {
     expect(state.panels[0].position.y).toBe(75);
     expect(state.panels[0].size.width).toBe(350);
     expect(state.panels[0].size.height).toBe(250);
+    manager.destroy();
+  });
+});
+
+// ---- Snap wiring integration tests ----
+
+/**
+ * Helper: create a PointerEvent using happy-dom's native PointerEvent constructor.
+ * happy-dom's Window provides PointerEvent; using it ensures e.target is set correctly
+ * when the event is dispatched on a happy-dom element.
+ */
+const HappyDomPointerEvent = (window as unknown as Record<string, unknown>)["PointerEvent"] as typeof PointerEvent;
+
+function makePointerEvent(
+  type: string,
+  opts: { clientX: number; clientY: number; pointerId?: number }
+): PointerEvent {
+  return new HappyDomPointerEvent(type, {
+    bubbles: true,
+    clientX: opts.clientX,
+    clientY: opts.clientY,
+    pointerId: opts.pointerId ?? 1,
+  } as PointerEventInit) as unknown as PointerEvent;
+}
+
+/** Build a minimal single-tab PanelState for layout setup. */
+function makePanelState(
+  id: string,
+  x: number, y: number,
+  width: number, height: number,
+  componentId = "terminal"
+) {
+  const tabId = `${id}-tab`;
+  return {
+    id,
+    position: { x, y },
+    size: { width, height },
+    tabs: [{ id: tabId, componentId, title: componentId, closable: true }],
+    activeTabId: tabId,
+  };
+}
+
+/** Build a container with getBoundingClientRect mocked to a known size. */
+function makeSnapContainer(width = 1280, height = 800): HTMLElement {
+  const el = document.createElement("div");
+  el.style.width = `${width}px`;
+  el.style.height = `${height}px`;
+  el.getBoundingClientRect = () => ({
+    left: 0, top: 0, right: width, bottom: height,
+    width, height, x: 0, y: 0,
+    toJSON: () => ({}),
+  } as DOMRect);
+  document.body.appendChild(el);
+  return el;
+}
+
+describe("PanelManager – snap wiring", () => {
+  let connection: MockConnection;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+    connection = new MockConnection();
+  });
+
+  // Test a: moving a panel near another panel's edge results in snapped final position.
+  // Panel A at (100, 100, 200, 200): right edge = 300.
+  // Panel B at (310, 100, 200, 200): left edge = 310.
+  // Gap = 10px (beyond threshold initially).
+  // Drag A rightward by dx=5: A.right moves to 305, gap to B.left = 5px (within 8px).
+  // onMoving fires with x=105, computeSnap snaps A so A.right aligns with B.left=310 → A.x=110.
+  test("moving a panel near another panel's edge snaps to alignment", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 100, 100, 200, 200),
+        makePanelState("panel-b", 310, 100, 200, 200),
+      ],
+    });
+
+    // Get panel A's floating panel header element
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    expect(floatingPanels.length).toBe(2);
+    const panelAEl = floatingPanels[0]; // Panel A is first (index 0)
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+    expect(headerA).not.toBeNull();
+
+    // Simulate drag: start at (200, 150), move right by 5px (so new x~=105)
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 150 }));
+    // Move 5px right — exceeds DRAG_THRESHOLD_PX (3) and is within SNAP_THRESHOLD_PX (8)
+    // from B.left when added to panel's right edge (300+5=305, B.left=310, dist=5)
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 205, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 205, clientY: 150 }));
+
+    // After snap: panel A's right edge (A.x + 200) should be snapped to B.left (310)
+    // So A.x = 310 - 200 = 110
+    // Note: onFocus fires on pointerdown and may reorder panels; find by id.
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    expect(panelA).toBeDefined();
+    expect(panelA.position.x).toBe(110);
+    expect(panelA.position.y).toBe(100); // y unchanged
+
+    manager.destroy();
+  });
+
+  // Test b: resizing a panel's right edge near another panel's left edge snaps to alignment.
+  // Panel A at (100, 100, 200, 200): right edge = 300.
+  // Panel B at (310, 100, 200, 200): left edge = 310.
+  // Resize A's east handle by dx=7: new A.right = 307, gap to B.left = 3px (within 8px).
+  // onResizing fires: snap.right = 310, so newW = 310 - 100 = 210.
+  test("resizing a panel's right edge near another panel's left edge snaps to alignment", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 100, 100, 200, 200),
+        makePanelState("panel-b", 310, 100, 200, 200),
+      ],
+    });
+
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const panelAEl = floatingPanels[0];
+    const eastHandle = panelAEl.querySelector<HTMLElement>(".floating-panel-resize-e")!;
+    expect(eastHandle).not.toBeNull();
+
+    // Panel A's right edge is at x=300. Resize east handle by dx=7 → new right=307.
+    // Distance to B.left (310) = 3px → within threshold → snap to 310.
+    // Starting clientX: any value; the dx is what matters
+    eastHandle.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 200 }));
+    eastHandle.dispatchEvent(makePointerEvent("pointermove", { clientX: 307, clientY: 200 }));
+    eastHandle.dispatchEvent(makePointerEvent("pointerup", { clientX: 307, clientY: 200 }));
+
+    // Width should have snapped so right edge = 310: width = 310 - 100 = 210
+    // Find by id in case panel order changed
+    const finalPanel = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    expect(finalPanel).toBeDefined();
+    expect(finalPanel.size.width).toBe(210);
+    expect(finalPanel.position.x).toBe(100); // x unchanged for east resize
+
+    manager.destroy();
+  });
+
+  // Test c: panels far apart do not snap — no position change beyond the raw drag delta.
+  // Panel A at (0, 0, 200, 200), Panel B at (500, 0, 200, 200). Gap = 300px.
+  // Drag A right by 50px: A.x becomes 50, A.right = 250. Gap to B.left = 250px >> 8px.
+  // No snap should occur; final position should be the unsnapped computed position.
+  test("panels far apart do not snap", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 0, 200, 200),
+        makePanelState("panel-b", 500, 0, 200, 200),
+      ],
+    });
+
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const panelAEl = floatingPanels[0];
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Start drag at (100, 20), move 50px right
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 20 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 150, clientY: 20 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 150, clientY: 20 }));
+
+    // With no snap, A.x should be 0 + 50 = 50
+    // Note: onFocus fires on pointerdown and may reorder panels; find by id.
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    expect(panelA).toBeDefined();
+    expect(panelA.position.x).toBe(50);
+    expect(panelA.position.y).toBe(0);
+
     manager.destroy();
   });
 });
