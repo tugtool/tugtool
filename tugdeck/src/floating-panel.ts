@@ -36,6 +36,10 @@ export interface FloatingPanelCallbacks {
   onFocus: () => void;
   /** Called when the close button in the header is clicked. */
   onClose: () => void;
+  /** Called on every pointermove during header drag. Return the (potentially snapped) position. */
+  onMoving?: (x: number, y: number) => { x: number; y: number };
+  /** Called on every pointermove during resize. Return the (potentially snapped) geometry. */
+  onResizing?: (x: number, y: number, width: number, height: number) => { x: number; y: number; width: number; height: number };
 }
 
 export class FloatingPanel {
@@ -184,8 +188,16 @@ export class FloatingPanel {
 
       // Move freely within canvas bounds
       const canvasRect = this.canvasEl.getBoundingClientRect();
-      const newX = Math.max(0, Math.min(canvasRect.width - this.panelState.size.width, startPanelX + dx));
-      const newY = Math.max(0, Math.min(canvasRect.height - this.panelState.size.height, startPanelY + dy));
+      let newX = Math.max(0, Math.min(canvasRect.width - this.panelState.size.width, startPanelX + dx));
+      let newY = Math.max(0, Math.min(canvasRect.height - this.panelState.size.height, startPanelY + dy));
+
+      // Apply live callback if provided (snap override)
+      if (this.callbacks.onMoving) {
+        const snapped = this.callbacks.onMoving(newX, newY);
+        newX = snapped.x;
+        newY = snapped.y;
+      }
+
       this.updatePosition(newX, newY);
     };
 
@@ -272,6 +284,15 @@ export class FloatingPanel {
         // Clamp position to canvas bounds
         newX = Math.max(0, Math.min(canvasRect.width - newW, newX));
         newY = Math.max(0, Math.min(canvasRect.height - newH, newY));
+
+        // Apply live callback if provided (snap override)
+        if (this.callbacks.onResizing) {
+          const snapped = this.callbacks.onResizing(newX, newY, newW, newH);
+          newX = snapped.x;
+          newY = snapped.y;
+          newW = snapped.width;
+          newH = snapped.height;
+        }
 
         this.updatePosition(newX, newY);
         this.updateSize(newW, newH);

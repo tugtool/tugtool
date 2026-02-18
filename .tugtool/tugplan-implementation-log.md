@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-18T18:29:21Z
+bead: tugtool-srv.2
+---
+
+## #step-1: Added onMoving and onResizing live callbacks to FloatingPanelCallbacks interface. Wired into handleHeaderDrag and attachResizeDrag handlers. 5 new tests in floating-panel.test.ts.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-18T18:15:40Z
 bead: tugtool-srv.1

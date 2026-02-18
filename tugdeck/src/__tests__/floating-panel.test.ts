@@ -542,3 +542,184 @@ describe("PanelManager – canvas panel integration", () => {
     manager.destroy();
   });
 });
+
+// ---- FloatingPanel – live callbacks (onMoving / onResizing) ----
+
+/**
+ * Helper: create a PointerEvent using happy-dom's native PointerEvent constructor.
+ * `PointerEvent` is not available globally in bun/node, but happy-dom's Window
+ * provides it. Using happy-dom's own constructor ensures that `e.target` is set
+ * correctly when the event is dispatched on a happy-dom element.
+ */
+const HappyDomPointerEvent = (window as unknown as Record<string, unknown>)["PointerEvent"] as typeof PointerEvent;
+
+function makePointerEvent(
+  type: string,
+  opts: { clientX: number; clientY: number; pointerId?: number }
+): PointerEvent {
+  return new HappyDomPointerEvent(type, {
+    bubbles: true,
+    clientX: opts.clientX,
+    clientY: opts.clientY,
+    pointerId: opts.pointerId ?? 1,
+  } as PointerEventInit) as unknown as PointerEvent;
+}
+
+describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
+  let canvas: HTMLElement;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    canvas = makeCanvasEl(1280, 800);
+    document.body.appendChild(canvas);
+  });
+
+  // Test a: onMoving is called on every pointermove during header drag.
+  test("calls onMoving on every pointermove during header drag", () => {
+    const ps = makePanelState(100, 100, 400, 300);
+    const movingCalls: Array<{ x: number; y: number }> = [];
+    const { callbacks, moveEndCalls } = makeCallbacks();
+    callbacks.onMoving = (x, y) => {
+      movingCalls.push({ x, y });
+      return { x, y }; // pass through unchanged
+    };
+
+    const fp = new FloatingPanel(ps, callbacks, canvas);
+    canvas.appendChild(fp.getElement());
+
+    const headerEl = fp.getElement().querySelector<HTMLElement>(".panel-header")!;
+    expect(headerEl).not.toBeNull();
+
+    // pointerdown to start drag capture
+    headerEl.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 100 }));
+
+    // pointermove with delta > DRAG_THRESHOLD_PX (3), so dragging = true
+    headerEl.dispatchEvent(makePointerEvent("pointermove", { clientX: 210, clientY: 110 }));
+    headerEl.dispatchEvent(makePointerEvent("pointermove", { clientX: 220, clientY: 120 }));
+
+    // pointerup to end drag
+    headerEl.dispatchEvent(makePointerEvent("pointerup", { clientX: 220, clientY: 120 }));
+
+    // onMoving should have been called once per move after threshold crossed
+    expect(movingCalls.length).toBeGreaterThanOrEqual(1);
+    // onMoveEnd should also have been called
+    expect(moveEndCalls.length).toBe(1);
+
+    fp.destroy();
+  });
+
+  // Test b: onMoving return value overrides the panel position (snap override).
+  test("uses returned position from onMoving (snap override)", () => {
+    const ps = makePanelState(100, 100, 400, 300);
+    const { callbacks, moveEndCalls } = makeCallbacks();
+    // Always snap to (500, 500)
+    callbacks.onMoving = (_x, _y) => ({ x: 500, y: 500 });
+
+    const fp = new FloatingPanel(ps, callbacks, canvas);
+    canvas.appendChild(fp.getElement());
+
+    const headerEl = fp.getElement().querySelector<HTMLElement>(".panel-header")!;
+
+    // Simulate drag: pointerdown, pointermove with delta > 3, pointerup
+    headerEl.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 100 }));
+    headerEl.dispatchEvent(makePointerEvent("pointermove", { clientX: 210, clientY: 110 }));
+    headerEl.dispatchEvent(makePointerEvent("pointerup", { clientX: 210, clientY: 110 }));
+
+    // Panel position should be the snapped position, not the computed drag position
+    expect(fp.getPanelState().position.x).toBe(500);
+    expect(fp.getPanelState().position.y).toBe(500);
+
+    // onMoveEnd should report the snapped position
+    expect(moveEndCalls.length).toBe(1);
+    expect(moveEndCalls[0].x).toBe(500);
+    expect(moveEndCalls[0].y).toBe(500);
+
+    fp.destroy();
+  });
+
+  // Test c: onResizing is called on every pointermove during resize drag.
+  test("calls onResizing on every pointermove during resize drag", () => {
+    const ps = makePanelState(100, 100, 400, 300);
+    const resizingCalls: Array<{ x: number; y: number; width: number; height: number }> = [];
+    const { callbacks } = makeCallbacks();
+    callbacks.onResizing = (x, y, width, height) => {
+      resizingCalls.push({ x, y, width, height });
+      return { x, y, width, height }; // pass through unchanged
+    };
+
+    const fp = new FloatingPanel(ps, callbacks, canvas);
+    canvas.appendChild(fp.getElement());
+
+    // East resize handle grows width
+    const eastHandle = fp.getElement().querySelector<HTMLElement>(".floating-panel-resize-e")!;
+    expect(eastHandle).not.toBeNull();
+
+    // pointerdown on the resize handle
+    eastHandle.dispatchEvent(makePointerEvent("pointerdown", { clientX: 500, clientY: 200 }));
+
+    // pointermove with dx = 50 (growing right edge by 50px)
+    eastHandle.dispatchEvent(makePointerEvent("pointermove", { clientX: 550, clientY: 200 }));
+
+    // pointerup to end resize
+    eastHandle.dispatchEvent(makePointerEvent("pointerup", { clientX: 550, clientY: 200 }));
+
+    // onResizing should have been called once per move
+    expect(resizingCalls.length).toBeGreaterThanOrEqual(1);
+    // The geometry passed should reflect the growing width
+    const call = resizingCalls[0];
+    expect(call.width).toBeGreaterThan(400); // grew from 400
+    expect(call.x).toBe(100); // east resize doesn't change x
+    expect(call.y).toBe(100); // y unchanged
+
+    fp.destroy();
+  });
+
+  // Test d: onMoveEnd and onResizeEnd still fire on pointerup with correct (snapped) values.
+  test("onMoveEnd fires with snapped position after onMoving override", () => {
+    const ps = makePanelState(100, 100, 400, 300);
+    const { callbacks, moveEndCalls } = makeCallbacks();
+    // Snap to a fixed position
+    callbacks.onMoving = (_x, _y) => ({ x: 300, y: 250 });
+
+    const fp = new FloatingPanel(ps, callbacks, canvas);
+    canvas.appendChild(fp.getElement());
+
+    const headerEl = fp.getElement().querySelector<HTMLElement>(".panel-header")!;
+
+    headerEl.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 100 }));
+    headerEl.dispatchEvent(makePointerEvent("pointermove", { clientX: 215, clientY: 115 }));
+    headerEl.dispatchEvent(makePointerEvent("pointerup", { clientX: 215, clientY: 115 }));
+
+    // onMoveEnd should be called with the snapped (300, 250) position
+    expect(moveEndCalls.length).toBe(1);
+    expect(moveEndCalls[0].x).toBe(300);
+    expect(moveEndCalls[0].y).toBe(250);
+
+    fp.destroy();
+  });
+
+  // Extra: onResizeEnd fires with snapped geometry when onResizing override is provided.
+  test("onResizeEnd fires with snapped geometry after onResizing override", () => {
+    const ps = makePanelState(100, 100, 400, 300);
+    const { callbacks, resizeEndCalls } = makeCallbacks();
+    // Snap width to exactly 500
+    callbacks.onResizing = (x, y, _width, height) => ({ x, y, width: 500, height });
+
+    const fp = new FloatingPanel(ps, callbacks, canvas);
+    canvas.appendChild(fp.getElement());
+
+    const eastHandle = fp.getElement().querySelector<HTMLElement>(".floating-panel-resize-e")!;
+
+    eastHandle.dispatchEvent(makePointerEvent("pointerdown", { clientX: 500, clientY: 200 }));
+    eastHandle.dispatchEvent(makePointerEvent("pointermove", { clientX: 530, clientY: 200 }));
+    eastHandle.dispatchEvent(makePointerEvent("pointerup", { clientX: 530, clientY: 200 }));
+
+    // onResizeEnd should report the snapped width (500), not computed (430)
+    expect(resizeEndCalls.length).toBe(1);
+    expect(resizeEndCalls[0].width).toBe(500);
+    expect(resizeEndCalls[0].x).toBe(100);
+    expect(resizeEndCalls[0].y).toBe(100);
+
+    fp.destroy();
+  });
+});
