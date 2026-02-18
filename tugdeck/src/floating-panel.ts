@@ -1,22 +1,24 @@
-// @ts-nocheck
 /**
  * FloatingPanel — absolutely-positioned panel with move, resize, and z-order.
  *
  * The panel contains:
- * - A full CardHeader (replaces the temporary title bar from Step 4). The
- *   CardHeader's onDragStart callback drives move and re-dock targeting.
- * - A card area below the header where the card DOM is mounted
- * - Eight resize handles (4 edges + 4 corners)
+ * - A CardHeader providing icon, title, close, and drag-to-move.
+ * - A card area below the header where card DOM is mounted.
+ * - Eight resize handles (4 edges + 4 corners).
  *
- * All mutations (move end, resize end, focus, drag-out) fire callbacks so
- * PanelManager owns the DockState mutations and serialization.
+ * All mutations (move end, resize end, focus, close) fire callbacks so
+ * PanelManager owns the CanvasState mutations and serialization.
+ *
+ * Spec S01: PanelState data model
+ * [D03] FloatingPanel accepts PanelState directly
+ * [D06] Focus model with CSS class
  */
 
-// FloatingGroup import removed (Step 0); floating-panel rewritten in Step 3
+import type { PanelState } from "./layout-tree";
 import type { TugCardMeta } from "./cards/card";
 import { CardHeader } from "./card-header";
 
-/** Minimum floating panel dimension in pixels (L01.7) */
+/** Minimum floating panel dimension in pixels */
 const MIN_SIZE_PX = 100;
 
 /** Drag threshold before a pointerdown becomes a drag (not a focus click) */
@@ -32,11 +34,6 @@ export interface FloatingPanelCallbacks {
   onResizeEnd: (x: number, y: number, width: number, height: number) => void;
   /** Called when the panel receives focus (click anywhere). */
   onFocus: () => void;
-  /**
-   * Called when the header is dragged beyond DRAG_THRESHOLD_PX and the cursor
-   * leaves the panel bounds. PanelManager takes over for re-dock targeting.
-   */
-  onDragOut: (startEvent: PointerEvent) => void;
   /** Called when the close button in the header is clicked. */
   onClose: () => void;
 }
@@ -45,17 +42,17 @@ export class FloatingPanel {
   private el: HTMLElement;
   private cardHeader: CardHeader;
   private cardAreaEl: HTMLElement;
-  private floatingGroup: FloatingGroup;
+  private panelState: PanelState;
   private callbacks: FloatingPanelCallbacks;
   private canvasEl: HTMLElement;
 
   constructor(
-    floatingGroup: FloatingGroup,
+    panelState: PanelState,
     callbacks: FloatingPanelCallbacks,
     canvasEl: HTMLElement,
     meta?: TugCardMeta
   ) {
-    this.floatingGroup = floatingGroup;
+    this.panelState = panelState;
     this.callbacks = callbacks;
     this.canvasEl = canvasEl;
 
@@ -69,17 +66,16 @@ export class FloatingPanel {
       callbacks.onFocus();
     });
 
-    // Build meta from FloatingGroup if not provided
+    // Build meta from PanelState active tab if not provided
+    const activeTab = panelState.tabs.find((t) => t.id === panelState.activeTabId)
+      ?? panelState.tabs[0];
     const headerMeta: TugCardMeta = meta ?? {
-      title: floatingGroup.node.tabs[floatingGroup.node.activeTabIndex]?.title ?? "Panel",
+      title: activeTab?.title ?? "Panel",
       icon: "Box",
       closable: true,
       menuItems: [],
     };
 
-    // CardHeader replaces the temporary title bar.
-    // onDragStart handles both move-within-canvas and re-dock-out.
-    // Collapse is not shown for floating panels.
     this.cardHeader = new CardHeader(headerMeta, {
       onClose: () => {
         callbacks.onClose();
@@ -111,8 +107,8 @@ export class FloatingPanel {
     return this.cardAreaEl;
   }
 
-  getFloatingGroup(): FloatingGroup {
-    return this.floatingGroup;
+  getPanelState(): PanelState {
+    return this.panelState;
   }
 
   setZIndex(z: number): void {
@@ -125,13 +121,13 @@ export class FloatingPanel {
   }
 
   updatePosition(x: number, y: number): void {
-    this.floatingGroup.position = { x, y };
+    this.panelState.position = { x, y };
     this.el.style.left = `${x}px`;
     this.el.style.top = `${y}px`;
   }
 
   updateSize(width: number, height: number): void {
-    this.floatingGroup.size = { width, height };
+    this.panelState.size = { width, height };
     this.el.style.width = `${width}px`;
     this.el.style.height = `${height}px`;
   }
@@ -144,8 +140,8 @@ export class FloatingPanel {
   // ---- Private ----
 
   private applyGeometry(): void {
-    const { x, y } = this.floatingGroup.position;
-    const { width, height } = this.floatingGroup.size;
+    const { x, y } = this.panelState.position;
+    const { width, height } = this.panelState.size;
     this.el.style.left = `${x}px`;
     this.el.style.top = `${y}px`;
     this.el.style.width = `${width}px`;
@@ -153,10 +149,9 @@ export class FloatingPanel {
   }
 
   /**
-   * Handle header pointerdown for move and re-dock.
+   * Handle header pointerdown for free-form canvas movement.
    *
-   * - Drag within canvas bounds: moves the floating panel.
-   * - Cursor leaving panel rect: fires onDragOut for PanelManager re-dock targeting.
+   * Panel moves freely within canvas bounds. No re-dock detection.
    */
   private handleHeaderDrag(downEvent: PointerEvent): void {
     downEvent.preventDefault();
@@ -168,10 +163,9 @@ export class FloatingPanel {
 
     const startX = downEvent.clientX;
     const startY = downEvent.clientY;
-    const startPanelX = this.floatingGroup.position.x;
-    const startPanelY = this.floatingGroup.position.y;
+    const startPanelX = this.panelState.position.x;
+    const startPanelY = this.panelState.position.y;
     let dragging = false;
-    let draggedOut = false;
 
     const onMove = (e: PointerEvent) => {
       const dx = e.clientX - startX;
@@ -183,34 +177,10 @@ export class FloatingPanel {
       }
       if (!dragging) return;
 
-      // Detect cursor leaving the panel — transition to re-dock targeting
-      if (!draggedOut) {
-        const panelRect = this.el.getBoundingClientRect();
-        const outsidePanel =
-          e.clientX < panelRect.left ||
-          e.clientX > panelRect.right ||
-          e.clientY < panelRect.top ||
-          e.clientY > panelRect.bottom;
-
-        if (outsidePanel) {
-          draggedOut = true;
-          if (headerEl.releasePointerCapture) {
-            headerEl.releasePointerCapture(downEvent.pointerId);
-          }
-          headerEl.removeEventListener("pointermove", onMove);
-          headerEl.removeEventListener("pointerup", onUp);
-          headerEl.removeEventListener("pointercancel", onUp);
-          this.callbacks.onDragOut(downEvent);
-          return;
-        }
-      }
-
-      if (draggedOut) return;
-
-      // Move within canvas
+      // Move freely within canvas bounds
       const canvasRect = this.canvasEl.getBoundingClientRect();
-      const newX = Math.max(0, Math.min(canvasRect.width - this.floatingGroup.size.width, startPanelX + dx));
-      const newY = Math.max(0, Math.min(canvasRect.height - this.floatingGroup.size.height, startPanelY + dy));
+      const newX = Math.max(0, Math.min(canvasRect.width - this.panelState.size.width, startPanelX + dx));
+      const newY = Math.max(0, Math.min(canvasRect.height - this.panelState.size.height, startPanelY + dy));
       this.updatePosition(newX, newY);
     };
 
@@ -222,10 +192,10 @@ export class FloatingPanel {
       headerEl.removeEventListener("pointerup", onUp);
       headerEl.removeEventListener("pointercancel", onUp);
 
-      if (dragging && !draggedOut) {
+      if (dragging) {
         this.callbacks.onMoveEnd(
-          this.floatingGroup.position.x,
-          this.floatingGroup.position.y
+          this.panelState.position.x,
+          this.panelState.position.y
         );
       }
     };
@@ -261,10 +231,10 @@ export class FloatingPanel {
 
       const startX = downEvent.clientX;
       const startY = downEvent.clientY;
-      const startW = this.floatingGroup.size.width;
-      const startH = this.floatingGroup.size.height;
-      const startPX = this.floatingGroup.position.x;
-      const startPY = this.floatingGroup.position.y;
+      const startW = this.panelState.size.width;
+      const startH = this.panelState.size.height;
+      const startPX = this.panelState.position.x;
+      const startPY = this.panelState.position.y;
 
       const onMove = (e: PointerEvent) => {
         const dx = e.clientX - startX;
@@ -311,10 +281,10 @@ export class FloatingPanel {
         handle.removeEventListener("pointercancel", onUp);
 
         this.callbacks.onResizeEnd(
-          this.floatingGroup.position.x,
-          this.floatingGroup.position.y,
-          this.floatingGroup.size.width,
-          this.floatingGroup.size.height
+          this.panelState.position.x,
+          this.panelState.position.y,
+          this.panelState.size.width,
+          this.panelState.size.height
         );
       };
 

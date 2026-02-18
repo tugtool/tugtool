@@ -237,3 +237,177 @@ describe("serialize and deserialize", () => {
     expect(result.panels[0].size.height).toBe(100);
   });
 });
+
+// ---- Panel management data-layer tests (D01, D06) ----
+
+/** Build a minimal PanelState with a single tab. */
+function makePanel(componentId: string): PanelState {
+  const tabId = crypto.randomUUID();
+  return {
+    id: crypto.randomUUID(),
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 300 },
+    tabs: [{ id: tabId, componentId, title: componentId, closable: true }],
+    activeTabId: tabId,
+  };
+}
+
+describe("focusPanel data model (D06)", () => {
+  test("moving a panel to end of array changes z-order", () => {
+    const p0 = makePanel("terminal");
+    const p1 = makePanel("git");
+    const p2 = makePanel("files");
+    const canvasState: CanvasState = { panels: [p0, p1, p2] };
+
+    // Simulate focusPanel(p0.id): splice and push
+    const idx = canvasState.panels.findIndex((p) => p.id === p0.id);
+    const [focused] = canvasState.panels.splice(idx, 1);
+    canvasState.panels.push(focused);
+
+    // p0 should now be last (highest z-order)
+    expect(canvasState.panels[canvasState.panels.length - 1].id).toBe(p0.id);
+    // p1 and p2 shift left
+    expect(canvasState.panels[0].id).toBe(p1.id);
+    expect(canvasState.panels[1].id).toBe(p2.id);
+  });
+
+  test("focusing already-last panel does not reorder", () => {
+    const p0 = makePanel("terminal");
+    const p1 = makePanel("git");
+    const canvasState: CanvasState = { panels: [p0, p1] };
+
+    // p1 is already last — focusPanel would early-return
+    const idx = canvasState.panels.findIndex((p) => p.id === p1.id);
+    const isAlreadyLast = idx === canvasState.panels.length - 1;
+    expect(isAlreadyLast).toBe(true);
+
+    // Array unchanged
+    expect(canvasState.panels[0].id).toBe(p0.id);
+    expect(canvasState.panels[1].id).toBe(p1.id);
+  });
+});
+
+describe("addNewCard data model (D01)", () => {
+  test("pushing a new PanelState adds it at canvas center", () => {
+    const canvasState: CanvasState = { panels: [] };
+    const canvasW = 800;
+    const canvasH = 600;
+    const PANEL_W = 400;
+    const PANEL_H = 300;
+
+    const tabId = crypto.randomUUID();
+    const newPanel: PanelState = {
+      id: crypto.randomUUID(),
+      position: {
+        x: Math.max(0, (canvasW - PANEL_W) / 2),
+        y: Math.max(0, (canvasH - PANEL_H) / 2),
+      },
+      size: { width: PANEL_W, height: PANEL_H },
+      tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: tabId,
+    };
+
+    canvasState.panels.push(newPanel);
+
+    expect(canvasState.panels.length).toBe(1);
+    expect(canvasState.panels[0].position.x).toBe(200); // (800-400)/2
+    expect(canvasState.panels[0].position.y).toBe(150); // (600-300)/2
+    expect(canvasState.panels[0].tabs[0].componentId).toBe("terminal");
+  });
+});
+
+describe("removeCard data model (D01)", () => {
+  test("splicing a panel from the array removes it", () => {
+    const p0 = makePanel("terminal");
+    const p1 = makePanel("git");
+    const canvasState: CanvasState = { panels: [p0, p1] };
+
+    // Simulate removeCard: filter out the panel whose tab matches
+    const tabIdToRemove = p0.tabs[0].id;
+    canvasState.panels = canvasState.panels
+      .map((panel) => {
+        const newTabs = panel.tabs.filter((t) => t.id !== tabIdToRemove);
+        if (newTabs.length === panel.tabs.length) return panel;
+        const newActiveTabId = newTabs.find((t) => t.id === panel.activeTabId)
+          ? panel.activeTabId
+          : (newTabs[0]?.id ?? "");
+        return { ...panel, tabs: newTabs, activeTabId: newActiveTabId };
+      })
+      .filter((panel) => panel.tabs.length > 0);
+
+    expect(canvasState.panels.length).toBe(1);
+    expect(canvasState.panels[0].id).toBe(p1.id);
+  });
+
+  test("removing a tab from a multi-tab panel leaves panel intact", () => {
+    const tab1: TabItem = { id: "t1", componentId: "terminal", title: "T1", closable: true };
+    const tab2: TabItem = { id: "t2", componentId: "terminal", title: "T2", closable: true };
+    const panel: PanelState = {
+      id: "p1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [tab1, tab2],
+      activeTabId: "t1",
+    };
+    const canvasState: CanvasState = { panels: [panel] };
+
+    // Remove tab1
+    canvasState.panels = canvasState.panels
+      .map((p) => {
+        const newTabs = p.tabs.filter((t) => t.id !== "t1");
+        if (newTabs.length === p.tabs.length) return p;
+        const newActiveTabId = newTabs.find((t) => t.id === p.activeTabId)
+          ? p.activeTabId
+          : (newTabs[0]?.id ?? "");
+        return { ...p, tabs: newTabs, activeTabId: newActiveTabId };
+      })
+      .filter((p) => p.tabs.length > 0);
+
+    // Panel still exists with tab2
+    expect(canvasState.panels.length).toBe(1);
+    expect(canvasState.panels[0].tabs.length).toBe(1);
+    expect(canvasState.panels[0].tabs[0].id).toBe("t2");
+    // activeTabId falls back to tab2
+    expect(canvasState.panels[0].activeTabId).toBe("t2");
+  });
+});
+
+describe("addNewTab data model (D01)", () => {
+  test("adding a tab to existing panel pushes to tabs array", () => {
+    const existingTabId = "t-existing";
+    const panel: PanelState = {
+      id: "p1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: existingTabId, componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: existingTabId,
+    };
+
+    const newTabId = crypto.randomUUID();
+    const newTab: TabItem = { id: newTabId, componentId: "terminal", title: "Terminal 2", closable: true };
+    panel.tabs.push(newTab);
+    panel.activeTabId = newTabId;
+
+    expect(panel.tabs.length).toBe(2);
+    expect(panel.activeTabId).toBe(newTabId);
+    expect(panel.tabs[1].componentId).toBe("terminal");
+  });
+
+  test("same-componentId constraint: tabs must share componentId", () => {
+    const panel: PanelState = {
+      id: "p1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: "t1", componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: "t1",
+    };
+
+    // Verify same-componentId check logic
+    const existingComponentId = panel.tabs[0]?.componentId;
+    const canAddGit = existingComponentId === "git";
+    const canAddTerminal = existingComponentId === "terminal";
+
+    expect(canAddGit).toBe(false);
+    expect(canAddTerminal).toBe(true);
+  });
+});

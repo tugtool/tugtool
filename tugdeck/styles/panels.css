@@ -178,6 +178,12 @@
   box-sizing: border-box;
 }
 
+/* Focused floating panel: accent border and stronger shadow (D06) */
+.floating-panel-focused {
+  border-color: var(--accent);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent);
+}
+
 /* ---- Card header bar (panel-header) ---- */
 
 .panel-header {

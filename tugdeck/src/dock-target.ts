@@ -1,6 +1,6 @@
-// @ts-nocheck
 /**
  * Dock targeting: zone detection (computeDropZone) and drop overlay (DockOverlay).
+ * NOTE: This file is scheduled for deletion in Step 3; it is no longer imported.
  *
  * computeDropZone is a PURE FUNCTION — no DOM access. All bounding rect data is
  * passed in as arguments, making the function trivially testable.
