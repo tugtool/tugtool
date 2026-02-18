@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-18T03:30:28Z
+---
+
+## audit-fix: Audit fix: Replaced real TerminalCard imports with mocks in card-header.test.ts and card-menus.test.ts to avoid xterm.js WebGL pollution. Fixed crypto.subtle preservation in 3 test files. Deleted dead code deck.ts. Full suite: 468 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-7
 date: 2025-02-18T03:13:47Z
 bead: tugtool-ndt.8

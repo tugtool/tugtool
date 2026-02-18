@@ -49,14 +49,17 @@ const localStorageMock = (() => {
 })();
 global.localStorage = localStorageMock as unknown as Storage;
 
-// crypto.randomUUID mock
+// crypto.randomUUID mock: patch only randomUUID to preserve crypto.subtle for
+// tests that need it (e.g. session-cache, e2e-integration). Unconditional
+// assignment would overwrite crypto.subtle and corrupt subsequent test files.
 let uuidCounter = 0;
-global.crypto = {
-  randomUUID: () => {
-    uuidCounter++;
-    return `test-uuid-${uuidCounter}-xxxx-xxxx-xxxx-xxxxxxxxxxxx` as `${string}-${string}-${string}-${string}-${string}`;
-  },
-} as unknown as Crypto;
+if (!global.crypto) {
+  global.crypto = {} as unknown as Crypto;
+}
+(global.crypto as unknown as Record<string, unknown>)["randomUUID"] = () => {
+  uuidCounter++;
+  return `test-uuid-${uuidCounter}-xxxx-xxxx-xxxx-xxxxxxxxxxxx` as `${string}-${string}-${string}-${string}-${string}`;
+};
 
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "../floating-panel";
 import { validateDockState, serialize, deserialize } from "../serialization";

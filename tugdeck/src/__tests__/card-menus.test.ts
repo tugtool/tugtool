@@ -34,13 +34,17 @@ const localStorageMock = (() => {
 })();
 global.localStorage = localStorageMock as unknown as Storage;
 
+// crypto mock: patch only randomUUID to preserve crypto.subtle for tests that
+// need it (e.g. session-cache, e2e-integration). Unconditional assignment would
+// overwrite crypto.subtle with undefined and corrupt subsequent test files.
 let uuidCounter = 0;
-global.crypto = {
-  randomUUID: () => {
-    uuidCounter++;
-    return `menus-uuid-${uuidCounter}` as `${string}-${string}-${string}-${string}-${string}`;
-  },
-} as unknown as Crypto;
+if (!global.crypto) {
+  global.crypto = {} as unknown as Crypto;
+}
+(global.crypto as unknown as Record<string, unknown>)["randomUUID"] = () => {
+  uuidCounter++;
+  return `menus-uuid-${uuidCounter}` as `${string}-${string}-${string}-${string}-${string}`;
+};
 
 // getComputedStyle mock — happy-dom may not expose it globally
 if (!global.getComputedStyle) {
@@ -76,11 +80,68 @@ if (!global.URL) {
 import { GitCard } from "../cards/git-card";
 import { FilesCard } from "../cards/files-card";
 import { StatsCard } from "../cards/stats-card";
-import { TerminalCard } from "../cards/terminal-card";
 import { ConversationCard } from "../cards/conversation-card";
 import type { TugConnection } from "../connection";
-import type { CardMenuAction, CardMenuToggle, CardMenuSelect } from "../cards/card";
+import type { CardMenuAction, CardMenuToggle, CardMenuSelect, TugCardMeta } from "../cards/card";
 import { FeedId } from "../protocol";
+
+// ---- MockTerminalCard: replaces the real TerminalCard import to prevent xterm.js
+// WebGL addon from loading in happy-dom (which corrupts crypto.subtle). ----
+//
+// The mock provides the correct stateful meta shape with all three menu items:
+// Font Size (select), Clear Scrollback (action), WebGL Renderer (toggle).
+class MockTerminalCard {
+  readonly feedIds = [FeedId.TERMINAL_OUTPUT];
+
+  // Accept optional connection argument to match TerminalCard constructor signature.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  constructor(_connection?: unknown) {}
+
+  private _fontSize = 14;
+  private _webglEnabled = true;
+
+  get meta(): TugCardMeta {
+    return {
+      title: "Terminal",
+      icon: "Terminal",
+      closable: true,
+      menuItems: [
+        {
+          type: "select",
+          label: "Font Size",
+          options: ["Small", "Medium", "Large"],
+          value: ({ 12: "Small", 14: "Medium", 16: "Large" } as Record<number, string>)[this._fontSize] ?? "Medium",
+          action: (label: string) => {
+            this._fontSize = ({ Small: 12, Medium: 14, Large: 16 } as Record<string, number>)[label] ?? 14;
+          },
+        },
+        {
+          type: "action",
+          label: "Clear Scrollback",
+          action: () => {},
+        },
+        {
+          type: "toggle",
+          label: "WebGL Renderer",
+          checked: this._webglEnabled,
+          action: (_checked: boolean) => {
+            this._webglEnabled = !this._webglEnabled;
+          },
+        },
+      ],
+    };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  mount(_container: HTMLElement): void {}
+  onFrame(_feedId: number, _payload: Uint8Array): void {}
+  onResize(_w: number, _h: number): void {}
+  setDragState(_ds: unknown): void {}
+  destroy(): void {}
+}
+
+// Alias so tests can use `TerminalCard` without importing the real one.
+const TerminalCard = MockTerminalCard;
 
 // ---- Mock connection ----
 
