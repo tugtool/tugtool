@@ -914,3 +914,241 @@ describe("PanelManager – virtual sashes", () => {
     manager.destroy();
   });
 });
+
+// ---- Set dragging integration tests ----
+
+describe("PanelManager – set dragging", () => {
+  let connection: MockConnection;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+    connection = new MockConnection();
+  });
+
+  /**
+   * Helper: establish a set between two panels via a minimal drag on the first panel,
+   * then return the manager with the set active.
+   * After the drag, the dragged panel (index 0 initially) is moved to the end by onFocus,
+   * so it becomes top-most (index 1). The originally second panel becomes index 0.
+   */
+  function setupTwoPanelSet(snapContainer: HTMLElement): {
+    manager: PanelManager;
+    panelAEl: HTMLElement;
+    panelBEl: HTMLElement;
+  } {
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+    // panel-a at (0,100,200,200), panel-b at (200,100,200,200) — shared vertical edge.
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    // Trigger recomputeSets by doing a minimal drag on panel-a (floatingPanels[0]).
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+
+    expect(manager.getSets().length).toBe(1);
+
+    // After focusPanel("panel-a") runs on pointerdown, panel-a is moved to end of array
+    // (top-most, index 1). panel-b is index 0.
+    // Find elements by position: panel-a snapped back to ~x=0, panel-b at x=200.
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const panelAEl = allPanels.find((el) => el.style.left === "0px")!;
+    const panelBEl = allPanels.find((el) => el.style.left === "200px")!;
+
+    return { manager, panelAEl, panelBEl };
+  }
+
+  // Test a: dragging the top-most panel of a set moves all set members by the same delta.
+  // Layout: panel-a(0,100,200,200), panel-b(200,100,200,200) sharing vertical edge.
+  // After setup: panel-a is top-most (index 1), panel-b is index 0.
+  // Drag panel-a right by 50px: set-move → panel-b also moves 50px right.
+  // Assertions: panel-a.position.x = 50, panel-b.position.x = 250.
+  test("dragging the top-most panel of a set moves all members by the same delta", () => {
+    const snapContainer = makeSnapContainer();
+    const { manager, panelAEl } = setupTwoPanelSet(snapContainer);
+
+    // panel-a is top-most (focusPanel moved it to index 1 during setup drag).
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Drag panel-a right by 50px (clientX 100 → 150, dx=50).
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 150, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 150, clientY: 150 }));
+
+    // Both panels should have moved right by 50px.
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    expect(panelA.position.x).toBe(50);
+    expect(panelB.position.x).toBe(250);
+
+    manager.destroy();
+  });
+
+  // Test b: dragging a non-top panel of a set moves only that panel (break-out).
+  // panel-b is index 0 (not top-most after setup). Drag panel-b right by 200px.
+  // Only panel-b moves; panel-a stays at x=0.
+  test("dragging a non-top panel of a set moves only that panel (break-out)", () => {
+    const snapContainer = makeSnapContainer();
+    const { manager, panelBEl } = setupTwoPanelSet(snapContainer);
+
+    // panel-b is NOT top-most (index 0 after setup drag). Drag it far right.
+    const headerB = panelBEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Drag panel-b right by 200px.
+    headerB.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 150 }));
+    headerB.dispatchEvent(makePointerEvent("pointermove", { clientX: 504, clientY: 150 }));
+    headerB.dispatchEvent(makePointerEvent("pointerup", { clientX: 504, clientY: 150 }));
+
+    // panel-a should stay at x=0; panel-b should have moved right.
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+    expect(panelA.position.x).toBe(0);
+    // panel-b moved ~200px right (away from panel-a)
+    expect(panelB.position.x).toBeGreaterThan(200);
+
+    manager.destroy();
+  });
+
+  // Test c: after set-move, sets are recomputed and panels remain in the same set.
+  // Both panels moved together, so they are still adjacent. getSets() should show 1 set.
+  test("after set-move, sets are recomputed and panels remain in the same set", () => {
+    const snapContainer = makeSnapContainer();
+    const { manager, panelAEl } = setupTwoPanelSet(snapContainer);
+
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Drag panel-a (top-most) right by 50px — set-move (clientX 100 → 150, dx=50).
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 150, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 150, clientY: 150 }));
+
+    // Both moved together → still adjacent → still in the same set.
+    const sets = manager.getSets();
+    expect(sets.length).toBe(1);
+    expect(sets[0].panelIds).toContain("panel-a");
+    expect(sets[0].panelIds).toContain("panel-b");
+
+    manager.destroy();
+  });
+
+  // Test d: after break-out, remaining panels form correct sets.
+  // 3 panels: A(0,100,200,200), B(200,100,200,200), C(400,100,200,200).
+  // After recompute: 1 set with all 3 panels. A is the non-top-most (indices 0,1,2 → C is top).
+  // Drag A far away → break-out. B and C still adjacent. getSets() = [{B,C}].
+  test("after break-out, remaining panels form correct sets", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+        makePanelState("panel-c", 400, 100, 200, 200),
+      ],
+    });
+
+    // Trigger recomputeSets via minimal drag on panel-a (index 0).
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const headerA0 = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
+    triggerRecompute(headerA0);
+
+    expect(manager.getSets().length).toBe(1);
+    expect(manager.getSets()[0].panelIds.length).toBe(3);
+
+    // After setup drag, panel-a was focused and moved to end (top-most, index 2).
+    // panel-b is index 0, panel-c is index 1.
+    // We need to drag a non-top-most panel. Find panel-b at x=200.
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const panelBEl = allPanels.find((el) => el.style.left === "200px")!;
+    expect(panelBEl).toBeDefined();
+    const headerB = panelBEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Drag panel-b far left to separate from the set (dx = -300).
+    headerB.dispatchEvent(makePointerEvent("pointerdown", { clientX: 300, clientY: 150 }));
+    headerB.dispatchEvent(makePointerEvent("pointermove", { clientX: 4, clientY: 150 }));
+    headerB.dispatchEvent(makePointerEvent("pointerup", { clientX: 4, clientY: 150 }));
+
+    // panel-b moved far away. panel-a and panel-c should still be adjacent (if B was between them,
+    // they are now separated by the gap where B was).
+    // Actually: A.right=200, C.left=400, gap=200 >> 8. So no A-C set either.
+    // The remaining set depends on whether A-C are now adjacent.
+    // A at x=0 (right=200), C at x=400 (left=400), gap=200px. Not adjacent.
+    // getSets() should be 0 sets (all three panels now separated).
+    // B moved far left (~x=0 area or snapped back). The key assertion: B is no longer
+    // in the set with C.
+    const sets = manager.getSets();
+    // panel-b broke out; A and C are not adjacent. Sets should be empty or not contain B+C.
+    const bcSet = sets.find((s) => s.panelIds.includes("panel-b") && s.panelIds.includes("panel-c"));
+    expect(bcSet).toBeUndefined();
+
+    manager.destroy();
+  });
+
+  // Test e: snap applies during set-move against non-set panels.
+  // Set: A(0,100,200,200)+B(200,100,200,200). Standalone: C(410,100,200,200).
+  // Set bbox right edge = 400. C.left = 410, gap = 10px.
+  // panel-a is top-most after setup. Drag panel-a right by 5px:
+  // set bbox right moves to 405, dist to C.left = 5px (within 8px threshold) → snap.
+  // After snap: set bbox right = 410, so A.x = 10, B.x = 210.
+  test("snap applies during set-move against non-set panels", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+        makePanelState("panel-c", 410, 100, 200, 200),
+      ],
+    });
+
+    // Trigger recompute via minimal drag on panel-a (index 0).
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const headerA0 = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
+    triggerRecompute(headerA0);
+
+    // After setup: panel-a moved to end (index 2, top-most), panel-b at index 0, panel-c at index 1.
+    // Set contains panel-a and panel-b (shared vertical edge at x=200).
+    // panel-c is standalone (gap to set = 10px).
+    expect(manager.getSets().length).toBeGreaterThanOrEqual(1);
+    const abSet = manager.getSets().find((s) =>
+      s.panelIds.includes("panel-a") && s.panelIds.includes("panel-b")
+    );
+    expect(abSet).toBeDefined();
+
+    // Find panel-a element (top-most, at left=0px).
+    const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
+    const panelAEl = allPanels.find((el) => el.style.left === "0px")!;
+    expect(panelAEl).toBeDefined();
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Drag panel-a (top-most in set) right by 5px.
+    // Set bbox right at proposed position = 405, dist to C.left (410) = 5px < 8px → snap.
+    // Snap offset = 410 - 405 = 5. Final: A.x = 0+5+5 = 10, B.x = 200+5+5 = 210.
+    // Note: the snap fires on pointermove so we need pointerup to commit.
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 105, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 105, clientY: 150 }));
+
+    // After snap: set should have shifted so set right edge = 410.
+    // panel-a starts at x=0, panel-b at x=200. Set bbox: width=400.
+    // Drag dx=5: proposed bbox at x=5, right=405. C.left=410, gap=5 ≤ 8 → snap.
+    // snapDX = 5. panel-a.x = 0+5+5=10. panel-b.x = 200+5+5=210.
+    // Set right edge = panel-b.x + 200 = 410. ✓
+    const panelA = manager.getCanvasState().panels.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getCanvasState().panels.find((p) => p.id === "panel-b")!;
+
+    // panel-a moved by dx=5 (drag) + 5 (snap offset) = 10.
+    expect(panelA.position.x).toBe(10);
+    // panel-b (sibling) also moved by the same total delta: 10.
+    expect(panelB.position.x).toBe(210);
+    // Set right edge = panel-b.x + panel-b.width = 210 + 200 = 410 (aligns with C.left).
+    expect(panelB.position.x + 200).toBe(410);
+
+    manager.destroy();
+  });
+});

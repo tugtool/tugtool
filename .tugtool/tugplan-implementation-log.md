@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-6
+date: 2025-02-18T19:13:32Z
+bead: tugtool-srv.7
+---
+
+## #step-6: Added set dragging to PanelManager. Top-most panel drags entire set with bounding-box snap against non-set panels. Non-top panels break out individually. Z-order captured in onFocus before focusPanel reorder. 5 new integration tests.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-5
 date: 2025-02-18T19:00:33Z
 bead: tugtool-srv.6

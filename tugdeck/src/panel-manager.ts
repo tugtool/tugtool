@@ -141,6 +141,18 @@ export class PanelManager implements IDragState {
   /** Virtual sash DOM elements for shared-edge resize (D04) */
   private sashElements: HTMLElement[] = [];
 
+  /**
+   * Transient context for the current set-move drag.
+   * Initialized on first onMoving call, cleared in onMoveEnd.
+   * D06: top-most panel drags the set; others break out.
+   */
+  private _setMoveContext: {
+    panelId: string;
+    isTopMost: boolean;
+    setMemberIds: string[];
+    startPositions: Map<string, { x: number; y: number }>;
+  } | null = null;
+
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
     this.connection = connection;
@@ -354,6 +366,10 @@ export class PanelManager implements IDragState {
             this._isDragging = false;
             this.hideGuides();
             panel.position = { x, y };
+            // Sibling PanelState positions are already updated because
+            // FloatingPanel.updatePosition() mutates the shared PanelState object
+            // reference in-place during set-move.
+            this._setMoveContext = null;
             this.recomputeSets();
             this.scheduleSave();
           },
@@ -370,6 +386,36 @@ export class PanelManager implements IDragState {
             this.scheduleSave();
           },
           onFocus: () => {
+            // Capture set-move context BEFORE focusPanel reorders the panels array.
+            // This preserves the pre-drag z-order for top-most determination (D06).
+            const mySet = this.sets.find((s) => s.panelIds.includes(panel.id));
+            if (mySet) {
+              let topMostId = panel.id;
+              let topMostIdx = -1;
+              for (const memberId of mySet.panelIds) {
+                const idx = this.canvasState.panels.findIndex((p) => p.id === memberId);
+                if (idx > topMostIdx) {
+                  topMostIdx = idx;
+                  topMostId = memberId;
+                }
+              }
+              const isTopMost = topMostId === panel.id;
+              const startPositions = new Map<string, { x: number; y: number }>();
+              for (const memberId of mySet.panelIds) {
+                const memberPanel = this.canvasState.panels.find((p) => p.id === memberId);
+                if (memberPanel) {
+                  startPositions.set(memberId, { ...memberPanel.position });
+                }
+              }
+              this._setMoveContext = {
+                panelId: panel.id,
+                isTopMost,
+                setMemberIds: mySet.panelIds,
+                startPositions,
+              };
+            } else {
+              this._setMoveContext = null;
+            }
             this.focusPanel(panel.id);
           },
           onClose: () => {
@@ -381,19 +427,99 @@ export class PanelManager implements IDragState {
           },
           onMoving: (x, y) => {
             this._isDragging = true;
-            // Collect Rects for all other panels (exclude the one being moved)
-            const others: Rect[] = this.canvasState.panels
-              .filter((p) => p.id !== panel.id)
-              .map((p) => panelToRect(p));
-            const snap = computeSnap(
-              { x, y, width: panel.size.width, height: panel.size.height },
-              others
-            );
-            this.showGuides(snap.guides);
-            return {
-              x: snap.x !== null ? snap.x : x,
-              y: snap.y !== null ? snap.y : y,
-            };
+
+            // Use the context captured in onFocus (before focusPanel reordered panels).
+            // If no context (panel not in a set), create a solo context now.
+            if (this._setMoveContext === null) {
+              const startPositions = new Map<string, { x: number; y: number }>();
+              startPositions.set(panel.id, { ...panel.position });
+              this._setMoveContext = {
+                panelId: panel.id,
+                isTopMost: false,
+                setMemberIds: [],
+                startPositions,
+              };
+            }
+
+            const ctx = this._setMoveContext;
+
+            if (ctx.isTopMost && ctx.setMemberIds.length > 1) {
+              // SET-MOVE: move all set members by the same delta (D06).
+              const myStart = ctx.startPositions.get(panel.id)!;
+              const deltaX = x - myStart.x;
+              const deltaY = y - myStart.y;
+
+              // Compute proposed positions for all siblings.
+              const proposedPositions = new Map<string, { x: number; y: number }>();
+              for (const memberId of ctx.setMemberIds) {
+                const memberStart = ctx.startPositions.get(memberId)!;
+                proposedPositions.set(memberId, {
+                  x: memberStart.x + deltaX,
+                  y: memberStart.y + deltaY,
+                });
+              }
+
+              // Compute set bounding box at proposed positions.
+              let bboxLeft = Infinity;
+              let bboxTop = Infinity;
+              let bboxRight = -Infinity;
+              let bboxBottom = -Infinity;
+              for (const memberId of ctx.setMemberIds) {
+                const proposed = proposedPositions.get(memberId)!;
+                const memberPanel = this.canvasState.panels.find((p) => p.id === memberId)!;
+                bboxLeft = Math.min(bboxLeft, proposed.x);
+                bboxTop = Math.min(bboxTop, proposed.y);
+                bboxRight = Math.max(bboxRight, proposed.x + memberPanel.size.width);
+                bboxBottom = Math.max(bboxBottom, proposed.y + memberPanel.size.height);
+              }
+
+              // Snap bounding box against non-set panels.
+              const nonSetRects: Rect[] = this.canvasState.panels
+                .filter((p) => !ctx.setMemberIds.includes(p.id))
+                .map((p) => panelToRect(p));
+
+              const setBBox: Rect = {
+                x: bboxLeft,
+                y: bboxTop,
+                width: bboxRight - bboxLeft,
+                height: bboxBottom - bboxTop,
+              };
+
+              const snap = computeSnap(setBBox, nonSetRects);
+              this.showGuides(snap.guides);
+
+              // Apply snap offset to all sibling positions.
+              const snapDX = snap.x !== null ? snap.x - setBBox.x : 0;
+              const snapDY = snap.y !== null ? snap.y - setBBox.y : 0;
+
+              for (const memberId of ctx.setMemberIds) {
+                if (memberId === panel.id) continue; // dragged panel handled by FloatingPanel
+                const proposed = proposedPositions.get(memberId)!;
+                const siblingFp = this.floatingPanels.get(memberId);
+                if (siblingFp) {
+                  siblingFp.updatePosition(proposed.x + snapDX, proposed.y + snapDY);
+                }
+              }
+
+              return {
+                x: x + snapDX,
+                y: y + snapDY,
+              };
+            } else {
+              // BREAK-OUT / SOLO: move only this panel; snap against all others.
+              const others: Rect[] = this.canvasState.panels
+                .filter((p) => p.id !== panel.id)
+                .map((p) => panelToRect(p));
+              const snap = computeSnap(
+                { x, y, width: panel.size.width, height: panel.size.height },
+                others
+              );
+              this.showGuides(snap.guides);
+              return {
+                x: snap.x !== null ? snap.x : x,
+                y: snap.y !== null ? snap.y : y,
+              };
+            }
           },
           onResizing: (x, y, width, height) => {
             this._isDragging = true;
@@ -760,6 +886,7 @@ export class PanelManager implements IDragState {
     this.sets = [];
     this.sharedEdges = [];
     this.destroySashes();
+    this._setMoveContext = null;
 
     const canvasW = this.container.clientWidth || 800;
     const canvasH = this.container.clientHeight || 600;
