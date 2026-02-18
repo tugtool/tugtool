@@ -132,6 +132,7 @@ export class CardHeader {
       this.el.addEventListener("pointerdown", (e: PointerEvent) => {
         // Ignore clicks originating from buttons
         if ((e.target as HTMLElement).closest("button")) return;
+        e.preventDefault(); // prevent browser text selection
         dragStart(e);
       });
       this.el.style.cursor = "grab";

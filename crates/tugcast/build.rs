@@ -81,6 +81,11 @@ fn main() {
         fs::copy(&tokens_css, tugdeck_out.join("tokens.css")).expect("failed to copy tokens.css");
     }
 
+    let panels_css = tugdeck_dir.join("styles/panels.css");
+    if panels_css.exists() {
+        fs::copy(&panels_css, tugdeck_out.join("panels.css")).expect("failed to copy panels.css");
+    }
+
     // --- Build tugtalk (conversation engine binary) ---
     let tugtalk_dir = repo_root.join("tugtalk");
 

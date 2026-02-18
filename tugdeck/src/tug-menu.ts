@@ -2,10 +2,9 @@
  * TugMenu — fixed-position logo button in the top-right corner of the canvas.
  *
  * Opens a DropdownMenu with actions for adding card instances, resetting
- * the layout, saving/loading presets, and showing version info.
+ * the layout, and showing version info.
  *
- * The dropdown is recreated on each button click so Load Layout submenu
- * always shows current preset names without needing dynamic menu updates.
+ * The dropdown is recreated on each button click.
  */
 
 import type { PanelManager } from "./panel-manager";
@@ -116,43 +115,12 @@ export class TugMenu {
       },
       {
         type: "action",
-        label: "Save Layout...",
+        label: "About tugdeck",
         action: () => {
-          const name = window.prompt("Preset name:");
-          if (name && name.trim()) {
-            pm.savePreset(name.trim());
-          }
+          window.alert("tugdeck v1.0\nCanvas panel system for tugtool.");
         },
       },
     ];
-
-    // Load Layout submenu: one action per saved preset
-    const presetNames = pm.getPresetNames();
-    if (presetNames.length > 0) {
-      for (const name of presetNames) {
-        items.push({
-          type: "action",
-          label: `Load: ${name}`,
-          action: () => pm.loadPreset(name),
-        });
-      }
-    } else {
-      items.push({
-        type: "action",
-        label: "No saved presets",
-        action: () => {
-          // no-op for disabled state
-        },
-      });
-    }
-
-    items.push({
-      type: "action",
-      label: "About tugdeck",
-      action: () => {
-        window.alert("tugdeck v1.0\nDockable panel system for tugtool.");
-      },
-    });
 
     return items;
   }

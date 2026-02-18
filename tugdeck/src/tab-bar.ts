@@ -1,8 +1,8 @@
 /**
- * TabBar — renders a tab strip for multi-tab TabNodes.
+ * TabBar — renders a tab strip for multi-tab panels.
  *
  * Presentation-only component: it fires callbacks for all state mutations
- * and lets PanelManager own all tree updates and card lifecycle operations.
+ * and lets PanelManager own all panel updates and card lifecycle operations.
  *
  * Supports:
  * - Click-to-switch (fires onTabActivate)
@@ -20,14 +20,6 @@ export interface TabBarCallbacks {
   onTabClose: (tabId: string) => void;
   /** Called when a drag-reorder finishes within this tab bar. */
   onTabReorder: (fromIndex: number, toIndex: number) => void;
-  /**
-   * Called when a tab is dragged outside the tab bar's vertical bounds.
-   * PanelManager takes over the drag lifecycle at this point.
-   * @param tabId - The id of the TabItem being dragged
-   * @param tabIndex - Its index in the TabNode
-   * @param startEvent - The originating pointerdown event (for ghost positioning)
-   */
-  onDragOut: (tabId: string, tabIndex: number, startEvent: PointerEvent) => void;
 }
 
 /** Pixel threshold before a pointerdown-move is treated as a drag, not a click. */
@@ -55,7 +47,7 @@ export class TabBar {
 
   /**
    * Re-render the tab strip from updated TabNode state.
-   * Called by PanelManager after any tree mutation (activate, reorder, close).
+   * Called by PanelManager after any panel mutation (activate, reorder, close).
    */
   update(node: TabNode): void {
     this.currentNode = node;
@@ -112,7 +104,7 @@ export class TabBar {
 
   /**
    * Attach pointer events to a tab element for both click-to-switch and
-   * drag-reorder.  A 5px movement threshold distinguishes the two.
+   * drag-reorder. A 5px movement threshold distinguishes the two.
    */
   private attachTabPointerEvents(tabEl: HTMLElement, tabIndex: number): void {
     tabEl.addEventListener("pointerdown", (downEvent: PointerEvent) => {
@@ -130,11 +122,7 @@ export class TabBar {
       const startX = downEvent.clientX;
       const startY = downEvent.clientY;
       let dragging = false;
-      let draggedOut = false;
       let fromIndex = tabIndex;
-
-      // Capture the tab's id from the dataset so onDragOut can reference it
-      const tabId = tabEl.dataset.tabId ?? "";
 
       const onMove = (moveEvent: PointerEvent) => {
         const dx = Math.abs(moveEvent.clientX - startX);
@@ -145,27 +133,6 @@ export class TabBar {
         }
 
         if (!dragging) return;
-
-        // Check if cursor has left the tab bar vertically
-        if (!draggedOut) {
-          const barRect = this.rootEl.getBoundingClientRect();
-          if (moveEvent.clientY < barRect.top || moveEvent.clientY > barRect.bottom) {
-            draggedOut = true;
-            tabEl.classList.remove("dragging");
-
-            // Register document listeners BEFORE releasing capture so no events are lost
-            this.callbacks.onDragOut(tabId, tabIndex, downEvent);
-
-            // Release pointer capture — PanelManager takes over at document level
-            tabEl.releasePointerCapture(downEvent.pointerId);
-            tabEl.removeEventListener("pointermove", onMove);
-            tabEl.removeEventListener("pointerup", onUp);
-            tabEl.removeEventListener("pointercancel", onUp);
-            return;
-          }
-        }
-
-        if (draggedOut) return;
 
         // Within-tab-bar reorder
         const toIndex = this.hitTestTabIndex(moveEvent.clientX);
@@ -184,7 +151,7 @@ export class TabBar {
 
         tabEl.classList.remove("dragging");
 
-        if (!dragging && !draggedOut) {
+        if (!dragging) {
           // It was a click, not a drag
           this.callbacks.onTabActivate(tabIndex);
         }

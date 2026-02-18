@@ -1,891 +1,413 @@
 import { describe, test, expect } from "bun:test";
 import {
-  normalizeTree,
-  insertNode,
-  removeTab,
-  findTabNode,
-  type SplitNode,
-  type TabNode,
+  type CanvasState,
+  type PanelState,
   type TabItem,
-  type LayoutNode,
 } from "../layout-tree";
-import {
-  serialize,
-  deserialize,
-  validateDockState,
-  migrateV2ToV3,
-  buildDefaultLayout,
-  type SerializedDockState,
-  type V2LayoutState,
-} from "../serialization";
+import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
-// ---- Helpers ----
+// ---- CanvasState / PanelState type tests ----
 
-function makeTab(componentId: string, title?: string): TabItem {
-  return {
-    id: crypto.randomUUID(),
-    componentId,
-    title: title ?? componentId,
-    closable: true,
-  };
-}
-
-function makeTabNode(componentId: string): TabNode {
-  return {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [makeTab(componentId)],
-    activeTabIndex: 0,
-  };
-}
-
-function makeHSplit(children: LayoutNode[], weights?: number[]): SplitNode {
-  const w = weights ?? children.map(() => 1 / children.length);
-  return { type: "split", orientation: "horizontal", children, weights: w };
-}
-
-function makeVSplit(children: LayoutNode[], weights?: number[]): SplitNode {
-  const w = weights ?? children.map(() => 1 / children.length);
-  return { type: "split", orientation: "vertical", children, weights: w };
-}
-
-// ---- normalizeTree tests ----
-
-describe("normalizeTree", () => {
-  test("preserves valid tree unchanged (structure)", () => {
-    // A valid tree: horizontal split with conversation left, vertical right
-    const left = makeTabNode("conversation");
-    const right = makeVSplit(
-      [makeTabNode("terminal"), makeTabNode("git"), makeTabNode("files"), makeTabNode("stats")],
-      [0.25, 0.25, 0.25, 0.25]
-    );
-    const root = makeHSplit([left, right], [0.667, 0.333]);
-
-    const result = normalizeTree(root);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    expect(split.children.length).toBe(2);
-    expect(split.children[0].type).toBe("tab");
-    expect(split.children[1].type).toBe("split");
-  });
-
-  test("flattens same-grain nested horizontal splits (L01.1)", () => {
-    // H(H(A, B), C) -> H(A, B, C)
-    const a = makeTabNode("terminal");
-    const b = makeTabNode("git");
-    const c = makeTabNode("files");
-    const inner = makeHSplit([a, b], [0.5, 0.5]);
-    const outer = makeHSplit([inner, c], [0.5, 0.5]);
-
-    const result = normalizeTree(outer);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    expect(split.children.length).toBe(3); // flattened: A, B, C
-    expect(split.children[0].type).toBe("tab");
-    expect(split.children[1].type).toBe("tab");
-    expect(split.children[2].type).toBe("tab");
-  });
-
-  test("flattens same-grain nested vertical splits (L01.1)", () => {
-    // V(A, V(B, C)) -> V(A, B, C)
-    const a = makeTabNode("terminal");
-    const b = makeTabNode("git");
-    const c = makeTabNode("files");
-    const inner = makeVSplit([b, c], [0.5, 0.5]);
-    const outer = makeVSplit([a, inner], [0.5, 0.5]);
-
-    const result = normalizeTree(outer);
-    expect(result).not.toBeNull();
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("vertical");
-    expect(split.children.length).toBe(3);
-  });
-
-  test("does NOT flatten cross-grain nesting (H inside V is not flattened)", () => {
-    // V(H(A, B), C) is valid (different orientation), should NOT be flattened
-    const a = makeTabNode("terminal");
-    const b = makeTabNode("git");
-    const c = makeTabNode("files");
-    const inner = makeHSplit([a, b], [0.5, 0.5]);
-    const outer = makeVSplit([inner, c], [0.5, 0.5]);
-
-    const result = normalizeTree(outer);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("vertical");
-    expect(split.children.length).toBe(2); // NOT flattened
-    expect(split.children[0].type).toBe("split"); // inner H split preserved
-    expect((split.children[0] as SplitNode).orientation).toBe("horizontal");
-  });
-
-  test("removes single-child splits (L01.2)", () => {
-    // A split that has only one child should be replaced by that child
-    const a = makeTabNode("terminal");
-    const singleChild = makeHSplit([a], [1.0]);
-
-    const result = normalizeTree(singleChild);
-    expect(result).not.toBeNull();
-    // The single-child split is replaced by the child itself
-    expect(result!.type).toBe("tab");
-  });
-
-  test("removes empty tab nodes and cleans up (L01.6)", () => {
-    // A split with one real tab node and one empty tab node
-    // After removing the empty one, if only one child remains, the split is also removed
-    const real = makeTabNode("terminal");
-    const empty: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [],
-      activeTabIndex: 0,
-    };
-    const split = makeHSplit([real, empty], [0.5, 0.5]);
-
-    const result = normalizeTree(split);
-    // Empty tab removed -> single child -> split replaced by the real tab node
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("tab");
-  });
-
-  test("renormalizes weights to sum to 1.0 (L01.5)", () => {
-    // Weights that don't sum to 1.0 should be renormalized
-    const a = makeTabNode("terminal");
-    const b = makeTabNode("git");
-    const c = makeTabNode("files");
-    const split = makeHSplit([a, b, c], [2.0, 3.0, 5.0]); // total 10.0
-
-    const result = normalizeTree(split) as SplitNode;
-    expect(result).not.toBeNull();
-    const total = result.weights.reduce((sum, w) => sum + w, 0);
-    expect(total).toBeCloseTo(1.0, 5);
-    expect(result.weights[0]).toBeCloseTo(0.2, 5);
-    expect(result.weights[1]).toBeCloseTo(0.3, 5);
-    expect(result.weights[2]).toBeCloseTo(0.5, 5);
-  });
-
-  test("normalizeTree is geometry-agnostic: does not take pixel dimensions", () => {
-    // Verify the function signature does not accept pixel parameters.
-    // normalizeTree(node: LayoutNode): LayoutNode | null -- no width/height params.
-    // This test verifies the API contract: passing a valid tree returns the same structure
-    // without requiring any pixel/size information.
-    const tree = makeHSplit(
-      [makeTabNode("conversation"), makeTabNode("terminal")],
-      [0.6, 0.4]
-    );
-
-    // Should work with ONLY the node argument -- no canvas dimensions needed
-    const result = normalizeTree(tree);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("split");
-    // Weights should remain proportionally correct without any pixel input
-    const split = result as SplitNode;
-    expect(split.weights[0]).toBeCloseTo(0.6, 5);
-    expect(split.weights[1]).toBeCloseTo(0.4, 5);
-  });
-
-  test("clamps activeTabIndex to valid range", () => {
-    const tabs = [makeTab("terminal"), makeTab("git")];
-    const node: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs,
-      activeTabIndex: 99, // out of range
-    };
-
-    const result = normalizeTree(node) as TabNode;
-    expect(result).not.toBeNull();
-    expect(result.activeTabIndex).toBe(1); // clamped to tabs.length - 1
+describe("CanvasState", () => {
+  test("CanvasState with empty panels array is valid", () => {
+    const state: CanvasState = { panels: [] };
+    expect(state.panels).toBeDefined();
+    expect(Array.isArray(state.panels)).toBe(true);
+    expect(state.panels.length).toBe(0);
   });
 });
 
-// ---- insertNode tests ----
-
-describe("insertNode", () => {
-  test("insertNode at widget-left creates a horizontal split", () => {
-    const existing = makeTabNode("terminal");
-    const root: LayoutNode = existing;
-    const newTab = makeTab("git");
-
-    const result = insertNode(root, existing.id, "widget-left", newTab);
-
-    expect(result.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    expect(split.children.length).toBe(2);
-    // New tab is on the left
-    expect(split.children[0].type).toBe("tab");
-    expect((split.children[0] as TabNode).tabs[0].componentId).toBe("git");
-    // Original is on the right
-    expect(split.children[1].type).toBe("tab");
-    expect((split.children[1] as TabNode).tabs[0].componentId).toBe("terminal");
-  });
-
-  test("insertNode at widget-right creates a horizontal split with new tab on right", () => {
-    const existing = makeTabNode("terminal");
-    const root: LayoutNode = existing;
-    const newTab = makeTab("git");
-
-    const result = insertNode(root, existing.id, "widget-right", newTab);
-
-    expect(result.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    expect(split.children[0].type).toBe("tab");
-    expect((split.children[0] as TabNode).tabs[0].componentId).toBe("terminal");
-    expect(split.children[1].type).toBe("tab");
-    expect((split.children[1] as TabNode).tabs[0].componentId).toBe("git");
-  });
-
-  test("insertNode at widget-top creates a vertical split with new tab on top", () => {
-    const existing = makeTabNode("terminal");
-    const root: LayoutNode = existing;
-    const newTab = makeTab("git");
-
-    const result = insertNode(root, existing.id, "widget-top", newTab);
-
-    expect(result.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("vertical");
-    expect((split.children[0] as TabNode).tabs[0].componentId).toBe("git");
-    expect((split.children[1] as TabNode).tabs[0].componentId).toBe("terminal");
-  });
-
-  test("insertNode at tab-bar adds tab to existing TabNode", () => {
-    const existing = makeTabNode("terminal");
-    const root: LayoutNode = existing;
-    const newTab = makeTab("git");
-
-    const result = insertNode(root, existing.id, "tab-bar", newTab);
-
-    // Same TabNode id doesn't survive through insert (new tab added to node)
-    // Result should still be a tab node with 2 tabs
-    expect(result.type).toBe("tab");
-    const tabNode = result as TabNode;
-    expect(tabNode.tabs.length).toBe(2);
-    expect(tabNode.tabs[0].componentId).toBe("terminal");
-    expect(tabNode.tabs[1].componentId).toBe("git");
-    // New tab should be active
-    expect(tabNode.activeTabIndex).toBe(1);
-  });
-
-  test("insertNode at root-left wraps entire root in horizontal split", () => {
-    const existing = makeTabNode("terminal");
-    const root: LayoutNode = existing;
-    const newTab = makeTab("git");
-
-    const result = insertNode(root, null, "root-left", newTab);
-
-    expect(result.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    expect(split.children.length).toBe(2);
-    // New node on left
-    expect((split.children[0] as TabNode).tabs[0].componentId).toBe("git");
-    // Original on right
-    expect((split.children[1] as TabNode).tabs[0].componentId).toBe("terminal");
-  });
-
-  test("insertNode at root-right wraps entire root in horizontal split", () => {
-    const existing = makeTabNode("terminal");
-    const newTab = makeTab("git");
-
-    const result = insertNode(existing, null, "root-right", newTab);
-    expect(result.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    expect((split.children[0] as TabNode).tabs[0].componentId).toBe("terminal");
-    expect((split.children[1] as TabNode).tabs[0].componentId).toBe("git");
-  });
-
-  test("insertNode normalizes result after insertion", () => {
-    // Insert into a horizontal split at widget-left of one of the children
-    // Should normalize but not flatten different-orientation nested splits
-    const term = makeTabNode("terminal");
-    const git = makeTabNode("git");
-    const root = makeHSplit([term, git], [0.5, 0.5]);
-    const newTab = makeTab("files");
-
-    const result = insertNode(root, term.id, "widget-left", newTab);
-    // Result: H(H(files_new, terminal), git) -> H flattens H -> H(files_new, terminal, git)
-    expect(result.type).toBe("split");
-    const split = result as SplitNode;
-    expect(split.orientation).toBe("horizontal");
-    // The inner H split (files_new, terminal) was flattened into the outer H split
-    expect(split.children.length).toBe(3);
-  });
-});
-
-// ---- removeTab tests ----
-
-describe("removeTab", () => {
-  test("removeTab from multi-tab node preserves remaining tabs", () => {
-    const tab1 = makeTab("terminal");
-    const tab2 = makeTab("git");
-    const node: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [tab1, tab2],
-      activeTabIndex: 0,
+describe("PanelState", () => {
+  test("PanelState with single tab constructs correctly", () => {
+    const tab: TabItem = {
+      id: "tab-1",
+      componentId: "terminal",
+      title: "Terminal",
+      closable: true,
+    };
+    const panel: PanelState = {
+      id: "panel-1",
+      position: { x: 0, y: 0 },
+      size: { width: 800, height: 600 },
+      tabs: [tab],
+      activeTabId: "tab-1",
     };
 
-    const result = removeTab(node, tab1.id);
-
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("tab");
-    const tabNode = result as TabNode;
-    expect(tabNode.tabs.length).toBe(1);
-    expect(tabNode.tabs[0].componentId).toBe("git");
-    expect(tabNode.activeTabIndex).toBe(0); // clamped from 0
+    expect(panel.id).toBe("panel-1");
+    expect(panel.position.x).toBe(0);
+    expect(panel.position.y).toBe(0);
+    expect(panel.size.width).toBe(800);
+    expect(panel.size.height).toBe(600);
+    expect(panel.tabs.length).toBe(1);
+    expect(panel.tabs[0].componentId).toBe("terminal");
+    expect(panel.activeTabId).toBe("tab-1");
   });
 
-  test("removeTab adjusts activeTabIndex when removing before active tab", () => {
-    const tab1 = makeTab("terminal");
-    const tab2 = makeTab("git");
-    const tab3 = makeTab("files");
-    const node: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
+  test("PanelState with multiple same-type tabs constructs correctly", () => {
+    const tab1: TabItem = {
+      id: "tab-a",
+      componentId: "terminal",
+      title: "Terminal 1",
+      closable: true,
+    };
+    const tab2: TabItem = {
+      id: "tab-b",
+      componentId: "terminal",
+      title: "Terminal 2",
+      closable: true,
+    };
+    const tab3: TabItem = {
+      id: "tab-c",
+      componentId: "terminal",
+      title: "Terminal 3",
+      closable: false,
+    };
+    const panel: PanelState = {
+      id: "panel-2",
+      position: { x: 100, y: 200 },
+      size: { width: 400, height: 300 },
       tabs: [tab1, tab2, tab3],
-      activeTabIndex: 2, // files is active
+      activeTabId: "tab-b",
     };
 
-    // Remove tab1 (index 0, before active)
-    const result = removeTab(node, tab1.id);
-    expect(result).not.toBeNull();
-    const tabNode = result as TabNode;
-    expect(tabNode.tabs.length).toBe(2);
-    expect(tabNode.activeTabIndex).toBe(1); // shifted down by 1
-  });
-
-  test("removeTab of last tab removes TabNode and returns null (or normalizes to null)", () => {
-    const tab = makeTab("terminal");
-    const node: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [tab],
-      activeTabIndex: 0,
-    };
-
-    const result = removeTab(node, tab.id);
-    // Empty tab node is removed (null)
-    expect(result).toBeNull();
-  });
-
-  test("removeTab of last tab in a split removes the TabNode and normalizes", () => {
-    const tab1 = makeTab("terminal");
-    const tab2 = makeTab("git");
-    const leftNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [tab1],
-      activeTabIndex: 0,
-    };
-    const rightNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [tab2],
-      activeTabIndex: 0,
-    };
-    const split = makeHSplit([leftNode, rightNode], [0.5, 0.5]);
-
-    // Remove the only tab from leftNode
-    const result = removeTab(split, tab1.id);
-
-    // leftNode is removed, split has only one child -> split is replaced by rightNode
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("tab");
-    const tabNode = result as TabNode;
-    expect(tabNode.tabs[0].componentId).toBe("git");
-  });
-
-  test("removeTab with non-existent tabId returns tree unchanged", () => {
-    const tab = makeTab("terminal");
-    const node: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [tab],
-      activeTabIndex: 0,
-    };
-
-    const result = removeTab(node, "nonexistent-id");
-    expect(result).not.toBeNull();
-    expect((result as TabNode).tabs.length).toBe(1);
-  });
-});
-
-// ---- findTabNode tests ----
-
-describe("findTabNode", () => {
-  test("finds TabNode by id in a simple tree", () => {
-    const left = makeTabNode("terminal");
-    const right = makeTabNode("git");
-    const root = makeHSplit([left, right], [0.5, 0.5]);
-
-    const found = findTabNode(root, left.id);
-    expect(found).not.toBeNull();
-    expect(found!.id).toBe(left.id);
-    expect(found!.tabs[0].componentId).toBe("terminal");
-  });
-
-  test("returns null when TabNode not found", () => {
-    const root = makeTabNode("terminal");
-    const found = findTabNode(root, "nonexistent-id");
-    expect(found).toBeNull();
-  });
-
-  test("finds TabNode deep in nested split tree", () => {
-    const deep = makeTabNode("stats");
-    const root = makeHSplit(
-      [makeTabNode("conversation"), makeVSplit([makeTabNode("terminal"), makeTabNode("git"), deep])],
-      [0.5, 0.5]
-    );
-
-    const found = findTabNode(root, deep.id);
-    expect(found).not.toBeNull();
-    expect(found!.tabs[0].componentId).toBe("stats");
-  });
-});
-
-// ---- serialize / deserialize tests ----
-
-describe("serialize and deserialize", () => {
-  test("round-trip produces identical DockState structure", () => {
-    const original = buildDefaultLayout();
-    const serialized = serialize(original);
-    const json = JSON.stringify(serialized);
-    const restored = deserialize(json);
-
-    // Check root structure
-    expect(restored.root.type).toBe("split");
-    expect((restored.root as SplitNode).orientation).toBe("horizontal");
-    expect((restored.root as SplitNode).children.length).toBe(2);
-
-    // Check floating
-    expect(restored.floating.length).toBe(0);
-  });
-
-  test("serialize produces version 3 format", () => {
-    const state = buildDefaultLayout();
-    const serialized = serialize(state);
-
-    expect(serialized.version).toBe(3);
-    expect(serialized.root).toBeDefined();
-    expect(serialized.floating).toBeDefined();
-  });
-
-  test("serialize uses 'tabs' type for TabGroups (not 'tab')", () => {
-    const state = buildDefaultLayout();
-    const serialized = serialize(state);
-
-    // The root is a split, so check its first child (a tabs group)
-    const rootSplit = serialized.root as { type: string; children: Array<{ type: string }> };
-    expect(rootSplit.type).toBe("split");
-    expect(rootSplit.children[0].type).toBe("tabs");
-  });
-
-  test("serialize includes presetName when provided", () => {
-    const state = buildDefaultLayout();
-    const serialized = serialize(state, "my-preset");
-    expect(serialized.presetName).toBe("my-preset");
-  });
-
-  test("serialize without presetName omits presetName field", () => {
-    const state = buildDefaultLayout();
-    const serialized = serialize(state);
-    expect(serialized.presetName).toBeUndefined();
-  });
-
-  test("deserialize handles v3 format correctly", () => {
-    const v3: SerializedDockState = {
-      version: 3,
-      root: {
-        type: "tabs",
-        activeId: "tab-1",
-        tabs: [{ id: "tab-1", componentId: "terminal", title: "Terminal" }],
-      },
-      floating: [],
-    };
-    const json = JSON.stringify(v3);
-    const result = deserialize(json);
-
-    expect(result.root.type).toBe("tab");
-    expect((result.root as TabNode).tabs[0].componentId).toBe("terminal");
-  });
-
-  test("deserialize calls validateDockState (normalization applied)", () => {
-    // A v3 state with a structurally invalid tree (single-child split)
-    // After deserialization, normalizeTree should simplify it
-    const v3: SerializedDockState = {
-      version: 3,
-      root: {
-        type: "split",
-        orientation: "horizontal",
-        children: [
-          {
-            type: "tabs",
-            activeId: "tab-1",
-            tabs: [{ id: "tab-1", componentId: "terminal", title: "Terminal" }],
-          },
-        ],
-        weights: [1.0],
-      },
-      floating: [],
-    };
-    const json = JSON.stringify(v3);
-    const result = deserialize(json);
-
-    // Single-child split should be normalized away
-    expect(result.root.type).toBe("tab");
-  });
-
-  test("round-trip preserves weights accurately", () => {
-    const original = buildDefaultLayout();
-    const json = JSON.stringify(serialize(original));
-    const restored = deserialize(json);
-
-    const rootSplit = restored.root as SplitNode;
-    expect(rootSplit.weights[0]).toBeCloseTo(0.667, 3);
-    expect(rootSplit.weights[1]).toBeCloseTo(0.333, 3);
-
-    const rightSplit = rootSplit.children[1] as SplitNode;
-    rightSplit.weights.forEach((w) => {
-      expect(w).toBeCloseTo(0.25, 5);
+    expect(panel.tabs.length).toBe(3);
+    expect(panel.tabs[0].id).toBe("tab-a");
+    expect(panel.tabs[1].id).toBe("tab-b");
+    expect(panel.tabs[2].id).toBe("tab-c");
+    expect(panel.tabs[2].closable).toBe(false);
+    expect(panel.activeTabId).toBe("tab-b");
+    // All tabs have the same componentId
+    panel.tabs.forEach((tab) => {
+      expect(tab.componentId).toBe("terminal");
     });
-  });
-});
-
-// ---- validateDockState tests ----
-
-describe("validateDockState", () => {
-  test("clamps floating panel with sub-100px width to 100px", () => {
-    const state = buildDefaultLayout();
-    const floatingNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    state.floating.push({
-      position: { x: 100, y: 100 },
-      size: { width: 50, height: 200 }, // width too small
-      node: floatingNode,
-    });
-
-    const validated = validateDockState(state, 1920, 1080);
-    expect(validated.floating[0].size.width).toBe(100);
-    expect(validated.floating[0].size.height).toBe(200); // unchanged
-  });
-
-  test("clamps floating panel with sub-100px height to 100px", () => {
-    const state = buildDefaultLayout();
-    const floatingNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    state.floating.push({
-      position: { x: 100, y: 100 },
-      size: { width: 300, height: 40 }, // height too small
-      node: floatingNode,
-    });
-
-    const validated = validateDockState(state, 1920, 1080);
-    expect(validated.floating[0].size.width).toBe(300); // unchanged
-    expect(validated.floating[0].size.height).toBe(100);
-  });
-
-  test("clamps floating panel position to canvas bounds (right edge)", () => {
-    const state = buildDefaultLayout();
-    const floatingNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    state.floating.push({
-      position: { x: 1500, y: 100 }, // x + 400 = 1900 < 1920, but x + 400 > canvas
-      size: { width: 400, height: 200 },
-      node: floatingNode,
-    });
-
-    // x(1500) + width(400) = 1900 <= canvasWidth(1920), still fits
-    const validated = validateDockState(state, 1920, 1080);
-    expect(validated.floating[0].position.x).toBe(1500); // no clamping needed
-
-    // Now with x that goes out of bounds
-    state.floating[0].position.x = 1600;
-    const validated2 = validateDockState(state, 1920, 1080);
-    expect(validated2.floating[0].position.x).toBe(1520); // 1920 - 400
-  });
-
-  test("clamps floating panel position to canvas bounds (bottom edge)", () => {
-    const state = buildDefaultLayout();
-    const floatingNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    state.floating.push({
-      position: { x: 100, y: 900 },
-      size: { width: 400, height: 300 }, // y(900) + height(300) = 1200 > canvasHeight(1080)
-      node: floatingNode,
-    });
-
-    const validated = validateDockState(state, 1920, 1080);
-    expect(validated.floating[0].position.y).toBe(780); // 1080 - 300
-  });
-
-  test("clamps floating panel position to minimum 0 when negative", () => {
-    const state = buildDefaultLayout();
-    const floatingNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    state.floating.push({
-      position: { x: -50, y: -100 },
-      size: { width: 400, height: 300 },
-      node: floatingNode,
-    });
-
-    const validated = validateDockState(state, 1920, 1080);
-    expect(validated.floating[0].position.x).toBe(0);
-    expect(validated.floating[0].position.y).toBe(0);
-  });
-
-  test("validateDockState without canvas dimensions skips position clamping", () => {
-    const state = buildDefaultLayout();
-    const floatingNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    state.floating.push({
-      position: { x: -999, y: -999 }, // would be clamped if canvas dims provided
-      size: { width: 400, height: 300 },
-      node: floatingNode,
-    });
-
-    // No canvas dimensions -> position not clamped, but size still clamped
-    const validated = validateDockState(state);
-    expect(validated.floating[0].position.x).toBe(-999); // unchanged
-    expect(validated.floating[0].position.y).toBe(-999); // unchanged
-  });
-
-  test("validateDockState runs normalizeTree on root", () => {
-    // Create a state with a tree that needs normalization (single-child split)
-    const tabNode: TabNode = {
-      type: "tab",
-      id: crypto.randomUUID(),
-      tabs: [makeTab("terminal")],
-      activeTabIndex: 0,
-    };
-    const singleChildSplit: SplitNode = {
-      type: "split",
-      orientation: "horizontal",
-      children: [tabNode],
-      weights: [1.0],
-    };
-    const state = { root: singleChildSplit, floating: [] };
-
-    const validated = validateDockState(state);
-    // Single-child split should be normalized away
-    expect(validated.root.type).toBe("tab");
-  });
-});
-
-// ---- migrateV2ToV3 golden tests ----
-
-describe("migrateV2ToV3", () => {
-  test("golden: default v2 state produces correct v3 structure (collapsed array ignored)", () => {
-    const v2: V2LayoutState = {
-      version: 2,
-      colSplit: 0.667,
-      rowSplits: [0.25, 0.5, 0.75],
-      collapsed: ["terminal", "git"], // should be ignored
-    };
-
-    const result = migrateV2ToV3(v2);
-
-    // Root should be a horizontal split
-    expect(result.root.type).toBe("split");
-    const rootSplit = result.root as SplitNode;
-    expect(rootSplit.orientation).toBe("horizontal");
-    expect(rootSplit.children.length).toBe(2);
-
-    // Left child: TabNode with Conversation
-    const leftChild = rootSplit.children[0] as TabNode;
-    expect(leftChild.type).toBe("tab");
-    expect(leftChild.tabs[0].componentId).toBe("conversation");
-    expect(rootSplit.weights[0]).toBeCloseTo(0.667, 3);
-
-    // Right child: vertical split with 4 cards
-    const rightChild = rootSplit.children[1] as SplitNode;
-    expect(rightChild.type).toBe("split");
-    expect(rightChild.orientation).toBe("vertical");
-    expect(rightChild.children.length).toBe(4);
-    expect((rightChild.children[0] as TabNode).tabs[0].componentId).toBe("terminal");
-    expect((rightChild.children[1] as TabNode).tabs[0].componentId).toBe("git");
-    expect((rightChild.children[2] as TabNode).tabs[0].componentId).toBe("files");
-    expect((rightChild.children[3] as TabNode).tabs[0].componentId).toBe("stats");
-    expect(rootSplit.weights[1]).toBeCloseTo(0.333, 3);
-
-    // All cards should be expanded (collapsed array ignored)
-    // In v3 there is no collapsed state in the data structure -- all tabs are present
-    const allTabs = [
-      leftChild,
-      rightChild.children[0] as TabNode,
-      rightChild.children[1] as TabNode,
-      rightChild.children[2] as TabNode,
-      rightChild.children[3] as TabNode,
-    ];
-    allTabs.forEach((tabNode) => {
-      expect(tabNode.tabs.length).toBeGreaterThan(0);
-    });
-
-    // No floating panels
-    expect(result.floating.length).toBe(0);
-  });
-
-  test("golden: custom colSplit/rowSplits produces correct weights", () => {
-    const v2: V2LayoutState = {
-      version: 2,
-      colSplit: 0.6,
-      rowSplits: [0.3, 0.5, 0.8],
-      collapsed: [],
-    };
-
-    const result = migrateV2ToV3(v2);
-    const rootSplit = result.root as SplitNode;
-
-    // Check horizontal weights
-    expect(rootSplit.weights[0]).toBeCloseTo(0.6, 5);
-    expect(rootSplit.weights[1]).toBeCloseTo(0.4, 5);
-
-    // Check vertical weights: [0.3, 0.5-0.3, 0.8-0.5, 1-0.8] = [0.3, 0.2, 0.3, 0.2]
-    const rightSplit = rootSplit.children[1] as SplitNode;
-    expect(rightSplit.weights[0]).toBeCloseTo(0.3, 5); // terminal
-    expect(rightSplit.weights[1]).toBeCloseTo(0.2, 5); // git
-    expect(rightSplit.weights[2]).toBeCloseTo(0.3, 5); // files
-    expect(rightSplit.weights[3]).toBeCloseTo(0.2, 5); // stats
-
-    // All weights sum to 1.0
-    const totalRowWeights = rightSplit.weights.reduce((sum, w) => sum + w, 0);
-    expect(totalRowWeights).toBeCloseTo(1.0, 5);
-  });
-
-  test("golden: collapsed cards in v2 produce all-expanded v3 tree", () => {
-    // All cards collapsed in v2 -- they should all appear expanded in v3
-    const v2: V2LayoutState = {
-      version: 2,
-      colSplit: 0.5,
-      rowSplits: [0.25, 0.5, 0.75],
-      collapsed: ["conversation", "terminal", "git", "files", "stats"],
-    };
-
-    const result = migrateV2ToV3(v2);
-
-    // All five cards should be present and not collapsed (v3 has no collapsed state)
-    const rootSplit = result.root as SplitNode;
-    const conversationNode = rootSplit.children[0] as TabNode;
-    const rightSplit = rootSplit.children[1] as SplitNode;
-
-    // Verify all 5 cards are present in the tree
-    expect(conversationNode.tabs[0].componentId).toBe("conversation");
-    expect((rightSplit.children[0] as TabNode).tabs[0].componentId).toBe("terminal");
-    expect((rightSplit.children[1] as TabNode).tabs[0].componentId).toBe("git");
-    expect((rightSplit.children[2] as TabNode).tabs[0].componentId).toBe("files");
-    expect((rightSplit.children[3] as TabNode).tabs[0].componentId).toBe("stats");
-
-    // In v3, collapsed state is NOT represented in the data model; all cards are present
-    // (runtime collapse is a UI-only toggle, not serialized)
-  });
-
-  test("migrateV2ToV3 handles missing colSplit with default value", () => {
-    const v2 = {
-      version: 2 as const,
-      rowSplits: [0.25, 0.5, 0.75],
-      collapsed: [],
-    } as unknown as V2LayoutState; // colSplit missing
-
-    const result = migrateV2ToV3(v2);
-    const rootSplit = result.root as SplitNode;
-    // Default colSplit is 0.667
-    expect(rootSplit.weights[0]).toBeCloseTo(0.667, 3);
-    expect(rootSplit.weights[1]).toBeCloseTo(0.333, 3);
   });
 });
 
 // ---- buildDefaultLayout tests ----
 
 describe("buildDefaultLayout", () => {
-  test("produces the correct five-card default structure", () => {
-    const layout = buildDefaultLayout();
+  test("buildDefaultLayout(1200, 800) returns 5 panels with correct positions and 12px gaps", () => {
+    const result = buildDefaultLayout(1200, 800);
 
-    // Root: horizontal split
-    expect(layout.root.type).toBe("split");
-    const rootSplit = layout.root as SplitNode;
-    expect(rootSplit.orientation).toBe("horizontal");
-    expect(rootSplit.children.length).toBe(2);
+    expect(result.panels.length).toBe(5);
 
-    // Left: Conversation tab node (weight 0.667)
-    const leftChild = rootSplit.children[0] as TabNode;
-    expect(leftChild.type).toBe("tab");
-    expect(leftChild.tabs.length).toBe(1);
-    expect(leftChild.tabs[0].componentId).toBe("conversation");
-    expect(rootSplit.weights[0]).toBeCloseTo(0.667, 3);
+    // Component IDs in order
+    const componentIds = result.panels.map((p) => p.tabs[0].componentId);
+    expect(componentIds).toEqual(["conversation", "terminal", "git", "files", "stats"]);
 
-    // Right: vertical split (weight 0.333)
-    const rightChild = rootSplit.children[1] as SplitNode;
-    expect(rightChild.type).toBe("split");
-    expect(rightChild.orientation).toBe("vertical");
-    expect(rightChild.children.length).toBe(4);
-    expect(rootSplit.weights[1]).toBeCloseTo(0.333, 3);
+    // Conversation panel geometry
+    const conv = result.panels[0];
+    expect(conv.position.x).toBe(12);
+    expect(conv.position.y).toBe(12);
+    // width = (1200 - 36) * 0.6 = 698.4
+    expect(conv.size.width).toBeCloseTo(698.4, 3);
+    // height = 800 - 24 = 776
+    expect(conv.size.height).toBe(776);
 
-    // Right children: Terminal, Git, Files, Stats each with weight 0.25
-    const expectedComponents = ["terminal", "git", "files", "stats"];
-    rightChild.children.forEach((child, i) => {
-      expect(child.type).toBe("tab");
-      expect((child as TabNode).tabs[0].componentId).toBe(expectedComponents[i]);
-      expect(rightChild.weights[i]).toBeCloseTo(0.25, 5);
+    // Right column panels: same x, same width
+    const rightPanels = result.panels.slice(1);
+    const firstRight = rightPanels[0];
+    rightPanels.forEach((p) => {
+      expect(p.position.x).toBeCloseTo(firstRight.position.x, 3);
+      expect(p.size.width).toBeCloseTo(firstRight.size.width, 3);
     });
 
-    // No floating panels
-    expect(layout.floating.length).toBe(0);
+    // 12px gaps between right panels
+    for (let i = 0; i < rightPanels.length - 1; i++) {
+      const gap = rightPanels[i + 1].position.y - rightPanels[i].position.y - rightPanels[i].size.height;
+      expect(gap).toBeCloseTo(12, 3);
+    }
   });
 
-  test("buildDefaultLayout produces unique node IDs", () => {
-    const layout = buildDefaultLayout();
-    const rootSplit = layout.root as SplitNode;
-    const leftId = (rootSplit.children[0] as TabNode).id;
-    const rightSplit = rootSplit.children[1] as SplitNode;
-    const rightIds = rightSplit.children.map((c) => (c as TabNode).id);
+  test("buildDefaultLayout panels have non-overlapping bounding boxes", () => {
+    const result = buildDefaultLayout(1200, 800);
+    const panels = result.panels;
 
-    const allIds = [leftId, ...rightIds];
-    const uniqueIds = new Set(allIds);
-    expect(uniqueIds.size).toBe(allIds.length); // all unique
+    for (let i = 0; i < panels.length; i++) {
+      for (let j = i + 1; j < panels.length; j++) {
+        const a = panels[i];
+        const b = panels[j];
+        const noOverlap =
+          a.position.x + a.size.width <= b.position.x ||
+          b.position.x + b.size.width <= a.position.x ||
+          a.position.y + a.size.height <= b.position.y ||
+          b.position.y + b.size.height <= a.position.y;
+        expect(noOverlap).toBe(true);
+      }
+    }
+  });
+});
+
+// ---- serialize / deserialize tests ----
+
+describe("serialize and deserialize", () => {
+  test("serialize -> deserialize round-trip preserves all panel data", () => {
+    const tab: TabItem = {
+      id: "tab-known-1",
+      componentId: "terminal",
+      title: "Terminal",
+      closable: true,
+    };
+    const panel: PanelState = {
+      id: "panel-known-1",
+      position: { x: 100, y: 200 },
+      size: { width: 400, height: 300 },
+      tabs: [tab],
+      activeTabId: "tab-known-1",
+    };
+    const canvasState: CanvasState = { panels: [panel] };
+
+    const serialized = serialize(canvasState);
+    const json = JSON.stringify(serialized);
+    const restored = deserialize(json, 1920, 1080);
+
+    expect(restored.panels.length).toBe(1);
+    const restoredPanel = restored.panels[0];
+    expect(restoredPanel.id).toBe("panel-known-1");
+    expect(restoredPanel.position.x).toBe(100);
+    expect(restoredPanel.position.y).toBe(200);
+    expect(restoredPanel.size.width).toBe(400);
+    expect(restoredPanel.size.height).toBe(300);
+    expect(restoredPanel.tabs.length).toBe(1);
+    expect(restoredPanel.tabs[0].id).toBe("tab-known-1");
+    expect(restoredPanel.tabs[0].componentId).toBe("terminal");
+    expect(restoredPanel.activeTabId).toBe("tab-known-1");
   });
 
-  test("buildDefaultLayout uses valid activeTabIndex", () => {
-    const layout = buildDefaultLayout();
-    const rootSplit = layout.root as SplitNode;
-    const allTabNodes: TabNode[] = [
-      rootSplit.children[0] as TabNode,
-      ...((rootSplit.children[1] as SplitNode).children as TabNode[]),
-    ];
+  test("deserialize with version:3 data falls back to buildDefaultLayout", () => {
+    const json = JSON.stringify({ version: 3, root: {}, floating: [] });
+    const result = deserialize(json, 1200, 800);
+    expect(result.panels.length).toBe(5);
+  });
 
-    allTabNodes.forEach((node) => {
-      expect(node.activeTabIndex).toBeGreaterThanOrEqual(0);
-      expect(node.activeTabIndex).toBeLessThan(node.tabs.length);
-    });
+  test("deserialize with corrupt JSON falls back to buildDefaultLayout", () => {
+    const result = deserialize("not-valid-json{{{", 1200, 800);
+    expect(result.panels.length).toBe(5);
+  });
+
+  test("deserialize clamps panel positions to canvas bounds", () => {
+    const tab: TabItem = {
+      id: "tab-clamp-1",
+      componentId: "terminal",
+      title: "Terminal",
+      closable: true,
+    };
+    const v4 = {
+      version: 4,
+      panels: [
+        {
+          id: "panel-clamp-1",
+          position: { x: 1800, y: 900 },
+          size: { width: 400, height: 300 },
+          tabs: [tab],
+          activeTabId: "tab-clamp-1",
+        },
+      ],
+    };
+    const result = deserialize(JSON.stringify(v4), 1920, 1080);
+    expect(result.panels.length).toBe(1);
+    // x + width(400) = 1800 + 400 = 2200 > 1920 -> x = 1920 - 400 = 1520
+    expect(result.panels[0].position.x).toBe(1520);
+    // y + height(300) = 900 + 300 = 1200 > 1080 -> y = 1080 - 300 = 780
+    expect(result.panels[0].position.y).toBe(780);
+  });
+
+  test("deserialize enforces 100px minimum sizes", () => {
+    const tab: TabItem = {
+      id: "tab-small-1",
+      componentId: "terminal",
+      title: "Terminal",
+      closable: true,
+    };
+    const v4 = {
+      version: 4,
+      panels: [
+        {
+          id: "panel-small-1",
+          position: { x: 0, y: 0 },
+          size: { width: 50, height: 30 },
+          tabs: [tab],
+          activeTabId: "tab-small-1",
+        },
+      ],
+    };
+    const result = deserialize(JSON.stringify(v4), 1920, 1080);
+    expect(result.panels.length).toBe(1);
+    expect(result.panels[0].size.width).toBe(100);
+    expect(result.panels[0].size.height).toBe(100);
+  });
+});
+
+// ---- Panel management data-layer tests (D01, D06) ----
+
+/** Build a minimal PanelState with a single tab. */
+function makePanel(componentId: string): PanelState {
+  const tabId = crypto.randomUUID();
+  return {
+    id: crypto.randomUUID(),
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 300 },
+    tabs: [{ id: tabId, componentId, title: componentId, closable: true }],
+    activeTabId: tabId,
+  };
+}
+
+describe("focusPanel data model (D06)", () => {
+  test("moving a panel to end of array changes z-order", () => {
+    const p0 = makePanel("terminal");
+    const p1 = makePanel("git");
+    const p2 = makePanel("files");
+    const canvasState: CanvasState = { panels: [p0, p1, p2] };
+
+    // Simulate focusPanel(p0.id): splice and push
+    const idx = canvasState.panels.findIndex((p) => p.id === p0.id);
+    const [focused] = canvasState.panels.splice(idx, 1);
+    canvasState.panels.push(focused);
+
+    // p0 should now be last (highest z-order)
+    expect(canvasState.panels[canvasState.panels.length - 1].id).toBe(p0.id);
+    // p1 and p2 shift left
+    expect(canvasState.panels[0].id).toBe(p1.id);
+    expect(canvasState.panels[1].id).toBe(p2.id);
+  });
+
+  test("focusing already-last panel does not reorder", () => {
+    const p0 = makePanel("terminal");
+    const p1 = makePanel("git");
+    const canvasState: CanvasState = { panels: [p0, p1] };
+
+    // p1 is already last — focusPanel would early-return
+    const idx = canvasState.panels.findIndex((p) => p.id === p1.id);
+    const isAlreadyLast = idx === canvasState.panels.length - 1;
+    expect(isAlreadyLast).toBe(true);
+
+    // Array unchanged
+    expect(canvasState.panels[0].id).toBe(p0.id);
+    expect(canvasState.panels[1].id).toBe(p1.id);
+  });
+});
+
+describe("addNewCard data model (D01)", () => {
+  test("pushing a new PanelState adds it at canvas center", () => {
+    const canvasState: CanvasState = { panels: [] };
+    const canvasW = 800;
+    const canvasH = 600;
+    const PANEL_W = 400;
+    const PANEL_H = 300;
+
+    const tabId = crypto.randomUUID();
+    const newPanel: PanelState = {
+      id: crypto.randomUUID(),
+      position: {
+        x: Math.max(0, (canvasW - PANEL_W) / 2),
+        y: Math.max(0, (canvasH - PANEL_H) / 2),
+      },
+      size: { width: PANEL_W, height: PANEL_H },
+      tabs: [{ id: tabId, componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: tabId,
+    };
+
+    canvasState.panels.push(newPanel);
+
+    expect(canvasState.panels.length).toBe(1);
+    expect(canvasState.panels[0].position.x).toBe(200); // (800-400)/2
+    expect(canvasState.panels[0].position.y).toBe(150); // (600-300)/2
+    expect(canvasState.panels[0].tabs[0].componentId).toBe("terminal");
+  });
+});
+
+describe("removeCard data model (D01)", () => {
+  test("splicing a panel from the array removes it", () => {
+    const p0 = makePanel("terminal");
+    const p1 = makePanel("git");
+    const canvasState: CanvasState = { panels: [p0, p1] };
+
+    // Simulate removeCard: filter out the panel whose tab matches
+    const tabIdToRemove = p0.tabs[0].id;
+    canvasState.panels = canvasState.panels
+      .map((panel) => {
+        const newTabs = panel.tabs.filter((t) => t.id !== tabIdToRemove);
+        if (newTabs.length === panel.tabs.length) return panel;
+        const newActiveTabId = newTabs.find((t) => t.id === panel.activeTabId)
+          ? panel.activeTabId
+          : (newTabs[0]?.id ?? "");
+        return { ...panel, tabs: newTabs, activeTabId: newActiveTabId };
+      })
+      .filter((panel) => panel.tabs.length > 0);
+
+    expect(canvasState.panels.length).toBe(1);
+    expect(canvasState.panels[0].id).toBe(p1.id);
+  });
+
+  test("removing a tab from a multi-tab panel leaves panel intact", () => {
+    const tab1: TabItem = { id: "t1", componentId: "terminal", title: "T1", closable: true };
+    const tab2: TabItem = { id: "t2", componentId: "terminal", title: "T2", closable: true };
+    const panel: PanelState = {
+      id: "p1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [tab1, tab2],
+      activeTabId: "t1",
+    };
+    const canvasState: CanvasState = { panels: [panel] };
+
+    // Remove tab1
+    canvasState.panels = canvasState.panels
+      .map((p) => {
+        const newTabs = p.tabs.filter((t) => t.id !== "t1");
+        if (newTabs.length === p.tabs.length) return p;
+        const newActiveTabId = newTabs.find((t) => t.id === p.activeTabId)
+          ? p.activeTabId
+          : (newTabs[0]?.id ?? "");
+        return { ...p, tabs: newTabs, activeTabId: newActiveTabId };
+      })
+      .filter((p) => p.tabs.length > 0);
+
+    // Panel still exists with tab2
+    expect(canvasState.panels.length).toBe(1);
+    expect(canvasState.panels[0].tabs.length).toBe(1);
+    expect(canvasState.panels[0].tabs[0].id).toBe("t2");
+    // activeTabId falls back to tab2
+    expect(canvasState.panels[0].activeTabId).toBe("t2");
+  });
+});
+
+describe("addNewTab data model (D01)", () => {
+  test("adding a tab to existing panel pushes to tabs array", () => {
+    const existingTabId = "t-existing";
+    const panel: PanelState = {
+      id: "p1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: existingTabId, componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: existingTabId,
+    };
+
+    const newTabId = crypto.randomUUID();
+    const newTab: TabItem = { id: newTabId, componentId: "terminal", title: "Terminal 2", closable: true };
+    panel.tabs.push(newTab);
+    panel.activeTabId = newTabId;
+
+    expect(panel.tabs.length).toBe(2);
+    expect(panel.activeTabId).toBe(newTabId);
+    expect(panel.tabs[1].componentId).toBe("terminal");
+  });
+
+  test("same-componentId constraint: tabs must share componentId", () => {
+    const panel: PanelState = {
+      id: "p1",
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 300 },
+      tabs: [{ id: "t1", componentId: "terminal", title: "Terminal", closable: true }],
+      activeTabId: "t1",
+    };
+
+    // Verify same-componentId check logic
+    const existingComponentId = panel.tabs[0]?.componentId;
+    const canAddGit = existingComponentId === "git";
+    const canAddTerminal = existingComponentId === "terminal";
+
+    expect(canAddGit).toBe(false);
+    expect(canAddTerminal).toBe(true);
   });
 });

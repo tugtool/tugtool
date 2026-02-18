@@ -1,544 +1,179 @@
 /**
- * Serialization, deserialization, validation, and migration for DockState.
+ * Serialization, deserialization, and default layout for CanvasState.
  *
- * Spec S02: Serialization Types
- * Spec S06: V2-to-V3 Migration Algorithm
- * Spec S07: Post-Deserialization Validation
+ * Spec S02: v4 serialization format (flat panel array)
+ * Spec S03: Default layout geometry (five panels, 12px gaps)
  */
 
-import {
-  type DockState,
-  type LayoutNode,
-  type TabNode,
-  type TabItem,
-  type FloatingGroup,
-  normalizeTree,
-} from "./layout-tree";
-
-// ---- Serialization Types (Spec S02) ----
-
-export interface SerializedDockState {
-  version: 3;
-  root: SerializedNode;
-  floating: SerializedFloatingGroup[];
-  presetName?: string;
-}
-
-export type SerializedNode = SerializedSplit | SerializedTabGroup;
-
-export interface SerializedSplit {
-  type: "split";
-  orientation: "horizontal" | "vertical";
-  children: SerializedNode[];
-  weights: number[];
-}
-
-export interface SerializedTabGroup {
-  type: "tabs";
-  activeId: string;
-  tabs: SerializedTab[];
-}
-
-export interface SerializedTab {
-  id: string;
-  componentId: string;
-  title: string;
-}
-
-export interface SerializedFloatingGroup {
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  group: SerializedTabGroup;
-}
-
-// ---- V2 Layout Type (for migration) ----
-
-/** Legacy v2 localStorage layout format. */
-export interface V2LayoutState {
-  version: 2;
-  colSplit: number;
-  rowSplits: number[];
-  collapsed: string[];
-}
+import { type CanvasState, type PanelState, type TabItem } from "./layout-tree";
 
 // ---- Serialize ----
 
 /**
- * Serialize a DockState to the v3 format for storage.
+ * Serialize a CanvasState to the v4 format for localStorage storage.
+ *
+ * Returns a plain object. Caller should JSON.stringify before writing.
  */
-export function serialize(
-  dockState: DockState,
-  presetName?: string
-): SerializedDockState {
+export function serialize(canvasState: CanvasState): object {
   return {
-    version: 3,
-    root: serializeNode(dockState.root),
-    floating: dockState.floating.map(serializeFloatingGroup),
-    ...(presetName !== undefined ? { presetName } : {}),
-  };
-}
-
-function serializeNode(node: LayoutNode): SerializedNode {
-  if (node.type === "split") {
-    return {
-      type: "split",
-      orientation: node.orientation,
-      children: node.children.map(serializeNode),
-      weights: node.weights,
-    };
-  }
-  // TabNode -> SerializedTabGroup (note: type is "tabs" not "tab")
-  return serializeTabNode(node);
-}
-
-function serializeTabNode(node: TabNode): SerializedTabGroup {
-  const activeTab = node.tabs[node.activeTabIndex] ?? node.tabs[0];
-  return {
-    type: "tabs",
-    activeId: activeTab?.id ?? "",
-    tabs: node.tabs.map((tab) => ({
-      id: tab.id,
-      componentId: tab.componentId,
-      title: tab.title,
-      // closable is a runtime-only property, not persisted
-    })),
-  };
-}
-
-function serializeFloatingGroup(fg: FloatingGroup): SerializedFloatingGroup {
-  return {
-    position: { ...fg.position },
-    size: { ...fg.size },
-    group: serializeTabNode(fg.node),
+    version: 4,
+    panels: canvasState.panels,
   };
 }
 
 // ---- Deserialize ----
 
 /**
- * Deserialize a JSON string to a DockState.
+ * Deserialize a JSON string to a CanvasState.
  *
- * Automatically detects v2 vs v3 format.
- * v2 layouts are migrated via migrateV2ToV3().
- * After parsing, validateDockState() is called for Spec S07 validation.
+ * Only accepts v4 format. Non-v4 data (including v2, v3) is discarded and
+ * falls back to buildDefaultLayout (per D02: no migration from V3).
+ *
+ * Enforces 100px minimum sizes and clamps panel positions to canvas bounds.
  *
  * @param json - JSON string from localStorage
- * @param canvasWidth - Optional canvas width for floating panel position clamping
- * @param canvasHeight - Optional canvas height for floating panel position clamping
+ * @param canvasWidth - Canvas width for position clamping
+ * @param canvasHeight - Canvas height for position clamping
  */
 export function deserialize(
   json: string,
-  canvasWidth?: number,
-  canvasHeight?: number
-): DockState {
-  const raw = JSON.parse(json) as Record<string, unknown>;
+  canvasWidth: number,
+  canvasHeight: number
+): CanvasState {
+  try {
+    const raw = JSON.parse(json) as Record<string, unknown>;
 
-  let dockState: DockState;
+    if (raw["version"] !== 4) {
+      return buildDefaultLayout(canvasWidth, canvasHeight);
+    }
 
-  if (raw["version"] === 2) {
-    dockState = migrateV2ToV3(raw as unknown as V2LayoutState);
-  } else if (raw["version"] === 3) {
-    dockState = deserializeV3(raw as unknown as SerializedDockState);
-  } else {
-    // Fallback: return default layout
-    dockState = buildDefaultLayout();
-  }
+    const rawPanels = raw["panels"];
+    if (!Array.isArray(rawPanels)) {
+      return buildDefaultLayout(canvasWidth, canvasHeight);
+    }
 
-  return validateDockState(dockState, canvasWidth, canvasHeight);
-}
+    const panels: PanelState[] = [];
+    for (const p of rawPanels) {
+      if (!p || typeof p !== "object") continue;
 
-function deserializeV3(serialized: SerializedDockState): DockState {
-  return {
-    root: deserializeNode(serialized.root),
-    floating: (serialized.floating ?? []).map(deserializeFloatingGroup),
-  };
-}
+      const panel = p as Record<string, unknown>;
+      const id = panel["id"] as string;
+      const pos = panel["position"] as { x: number; y: number } | undefined;
+      const sz = panel["size"] as { width: number; height: number } | undefined;
+      const tabs = panel["tabs"] as TabItem[] | undefined;
+      let activeTabId = panel["activeTabId"] as string | undefined;
 
-function deserializeNode(node: SerializedNode): LayoutNode {
-  if (node.type === "split") {
-    return {
-      type: "split",
-      orientation: node.orientation,
-      children: node.children.map(deserializeNode),
-      weights: node.weights,
-    };
-  }
-  // SerializedTabGroup -> TabNode
-  return deserializeTabGroup(node);
-}
-
-function deserializeTabGroup(group: SerializedTabGroup): TabNode {
-  const tabs: TabItem[] = group.tabs.map((t) => ({
-    id: t.id,
-    componentId: t.componentId,
-    title: t.title,
-    closable: true, // default: closable (runtime property, not stored)
-  }));
-  const activeTabIndex = Math.max(
-    0,
-    tabs.findIndex((t) => t.id === group.activeId)
-  );
-  return {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs,
-    activeTabIndex,
-  };
-}
-
-function deserializeFloatingGroup(fg: SerializedFloatingGroup): FloatingGroup {
-  return {
-    position: { ...fg.position },
-    size: { ...fg.size },
-    node: deserializeTabGroup(fg.group),
-  };
-}
-
-// ---- Validation (Spec S07) ----
-
-/**
- * Post-deserialization validation following Spec S07.
- *
- * Steps:
- * 1. Clamp floating panel sizes to 100px minimum (L01.7, floating panel layer)
- * 2. Clamp floating panel positions to canvas bounds (prevents off-screen panels)
- * 3. Run normalizeTree() on root (L01.1-6 structural invariants)
- *
- * canvasWidth/canvasHeight are optional; if omitted, position clamping is skipped.
- */
-export function validateDockState(
-  dockState: DockState,
-  canvasWidth?: number,
-  canvasHeight?: number
-): DockState {
-  const floating = dockState.floating.map((fg) => {
-    let { position, size, node } = fg;
-
-    // Step 1: clamp size to 100px minimum
-    size = {
-      width: Math.max(100, size.width),
-      height: Math.max(100, size.height),
-    };
-
-    // Step 2: clamp position to canvas bounds
-    if (canvasWidth !== undefined && canvasHeight !== undefined) {
-      let x = position.x;
-      let y = position.y;
-
-      // Ensure panel does not extend beyond the right/bottom edge
-      if (x + size.width > canvasWidth) {
-        x = canvasWidth - size.width;
+      if (!id || !pos || !sz || !Array.isArray(tabs) || tabs.length === 0) {
+        continue;
       }
-      if (y + size.height > canvasHeight) {
-        y = canvasHeight - size.height;
-      }
-      // Ensure panel is not off the left/top edge
+
+      // Enforce 100px minimum sizes
+      const width = Math.max(100, sz.width);
+      const height = Math.max(100, sz.height);
+
+      // Clamp position to canvas bounds
+      let x = pos.x;
+      let y = pos.y;
+      if (x + width > canvasWidth) x = canvasWidth - width;
+      if (y + height > canvasHeight) y = canvasHeight - height;
       if (x < 0) x = 0;
       if (y < 0) y = 0;
 
-      position = { x, y };
+      // Validate activeTabId references an existing tab
+      if (!activeTabId || !tabs.find((t) => t.id === activeTabId)) {
+        activeTabId = tabs[0].id;
+      }
+
+      panels.push({
+        id,
+        position: { x, y },
+        size: { width, height },
+        tabs,
+        activeTabId,
+      });
     }
 
-    return { position, size, node };
+    return { panels };
+  } catch {
+    return buildDefaultLayout(canvasWidth, canvasHeight);
+  }
+}
+
+// ---- Default Layout (Spec S03) ----
+
+const GAP = 12;
+const LEFT_FRACTION = 0.6;
+
+/**
+ * Helper to construct a PanelState with a single tab.
+ */
+function makePanelState(
+  componentId: string,
+  title: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): PanelState {
+  const tabId = crypto.randomUUID();
+  return {
+    id: crypto.randomUUID(),
+    position: { x, y },
+    size: { width, height },
+    tabs: [{ id: tabId, componentId, title, closable: true }],
+    activeTabId: tabId,
+  };
+}
+
+/**
+ * Build the default five-panel canvas layout.
+ *
+ * Layout (Spec S03):
+ *   Conversation panel: left column, 60% width
+ *   Terminal / Git / Files / Stats: right column, equal height, 12px gaps
+ *
+ * All panels use 12px margins from canvas edges and 12px gaps between panels.
+ */
+export function buildDefaultLayout(
+  canvasWidth: number,
+  canvasHeight: number
+): CanvasState {
+  const conversationWidth = (canvasWidth - 3 * GAP) * LEFT_FRACTION;
+  const conversationHeight = canvasHeight - 2 * GAP;
+
+  const rightX = GAP + conversationWidth + GAP;
+  const rightWidth = canvasWidth - rightX - GAP;
+  const panelHeight = (canvasHeight - 2 * GAP - 3 * GAP) / 4;
+
+  const conversation = makePanelState(
+    "conversation",
+    "Conversation",
+    GAP,
+    GAP,
+    conversationWidth,
+    conversationHeight
+  );
+
+  const rightPanels = (
+    ["terminal", "git", "files", "stats"] as const
+  ).map((componentId, i) => {
+    const titles: Record<string, string> = {
+      terminal: "Terminal",
+      git: "Git",
+      files: "Files",
+      stats: "Stats",
+    };
+    return makePanelState(
+      componentId,
+      titles[componentId],
+      rightX,
+      GAP + i * (panelHeight + GAP),
+      rightWidth,
+      panelHeight
+    );
   });
 
-  // Step 3: run structural normalization on root
-  const normalized = normalizeTree(dockState.root);
-  const root = normalized ?? dockState.root;
-
-  return { root, floating };
-}
-
-// ---- V2 to V3 Migration (Spec S06) ----
-
-/**
- * Migrate a v2 layout to v3 DockState.
- *
- * V2 format: { version: 2, colSplit, rowSplits, collapsed }
- * The v2 `collapsed` array is read but ignored; all cards start expanded in v3.
- *
- * Tree produced:
- *   Root: SplitNode(horizontal)
- *     Left: TabNode [Conversation], weight = colSplit
- *     Right: SplitNode(vertical), weight = 1 - colSplit
- *       [Terminal, Git, Files, Stats], weights from rowSplits deltas
- */
-export function migrateV2ToV3(v2State: V2LayoutState): DockState {
-  const colSplit = v2State.colSplit ?? 0.667;
-  const rowSplits = v2State.rowSplits ?? [0.25, 0.5, 0.75];
-  // v2State.collapsed is read but intentionally ignored
-
-  // Compute right-side row weights from rowSplits cumulative positions
-  const r0 = rowSplits[0] ?? 0.25;
-  const r1 = rowSplits[1] ?? 0.5;
-  const r2 = rowSplits[2] ?? 0.75;
-  const rowWeights = [r0, r1 - r0, r2 - r1, 1 - r2];
-
-  const conversationTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "conversation",
-        title: "Conversation",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
+  return {
+    panels: [conversation, ...rightPanels],
   };
-
-  const terminalTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "terminal",
-        title: "Terminal",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const gitTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "git",
-        title: "Git",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const filesTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "files",
-        title: "Files",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const statsTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "stats",
-        title: "Stats",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const rightSplit = {
-    type: "split" as const,
-    orientation: "vertical" as const,
-    children: [terminalTab, gitTab, filesTab, statsTab],
-    weights: rowWeights,
-  };
-
-  const root = {
-    type: "split" as const,
-    orientation: "horizontal" as const,
-    children: [conversationTab, rightSplit],
-    weights: [colSplit, 1 - colSplit],
-  };
-
-  return { root, floating: [] };
-}
-
-// ---- Preset Storage (named layout presets in localStorage) ----
-
-/** localStorage key for named layout presets */
-export const PRESETS_STORAGE_KEY = "tugdeck-layouts";
-
-/**
- * Save the current dockState as a named preset in localStorage.
- *
- * Presets use the same v3 SerializedDockState format.
- * If a preset with the given name already exists, it is overwritten.
- */
-export function savePreset(name: string, dockState: DockState): void {
-  const serialized = serialize(dockState, name);
-  let presets: Record<string, SerializedDockState> = {};
-  try {
-    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (raw) {
-      presets = JSON.parse(raw) as Record<string, SerializedDockState>;
-    }
-  } catch {
-    // Reset on parse error
-    presets = {};
-  }
-  presets[name] = serialized;
-  localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
-}
-
-/**
- * Load a named preset from localStorage.
- *
- * Returns null if the preset is not found.
- * Deserializes via the v3 path and runs validateDockState.
- */
-export function loadPreset(
-  name: string,
-  canvasWidth?: number,
-  canvasHeight?: number
-): DockState | null {
-  let presets: Record<string, SerializedDockState> = {};
-  try {
-    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (raw) {
-      presets = JSON.parse(raw) as Record<string, SerializedDockState>;
-    }
-  } catch {
-    return null;
-  }
-  const entry = presets[name];
-  if (!entry) return null;
-
-  // Deserialize and validate
-  const dockState = deserializeV3(entry);
-  return validateDockState(dockState, canvasWidth, canvasHeight);
-}
-
-/**
- * Return sorted list of saved preset names.
- */
-export function listPresets(): string[] {
-  try {
-    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (!raw) return [];
-    const presets = JSON.parse(raw) as Record<string, unknown>;
-    return Object.keys(presets).sort();
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Delete a named preset from localStorage.
- */
-export function deletePreset(name: string): void {
-  try {
-    const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (!raw) return;
-    const presets = JSON.parse(raw) as Record<string, SerializedDockState>;
-    delete presets[name];
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
-  } catch {
-    // Ignore errors
-  }
-}
-
-// ---- Default Layout (Spec 8.0.1.5) ----
-
-/**
- * Build the default five-card layout when no saved state exists.
- *
- * Root: SplitNode(horizontal)
- *   Left: TabNode [Conversation]          weight: 0.667
- *   Right: SplitNode(vertical)            weight: 0.333
- *     [Terminal, Git, Files, Stats]       weight: 0.25 each
- */
-export function buildDefaultLayout(): DockState {
-  const conversationTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "conversation",
-        title: "Conversation",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const terminalTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "terminal",
-        title: "Terminal",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const gitTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "git",
-        title: "Git",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const filesTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "files",
-        title: "Files",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const statsTab: TabNode = {
-    type: "tab",
-    id: crypto.randomUUID(),
-    tabs: [
-      {
-        id: crypto.randomUUID(),
-        componentId: "stats",
-        title: "Stats",
-        closable: true,
-      },
-    ],
-    activeTabIndex: 0,
-  };
-
-  const rightSplit = {
-    type: "split" as const,
-    orientation: "vertical" as const,
-    children: [terminalTab, gitTab, filesTab, statsTab],
-    weights: [0.25, 0.25, 0.25, 0.25],
-  };
-
-  const root = {
-    type: "split" as const,
-    orientation: "horizontal" as const,
-    children: [conversationTab, rightSplit],
-    weights: [0.667, 0.333],
-  };
-
-  return { root, floating: [] };
 }

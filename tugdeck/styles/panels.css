@@ -1,8 +1,8 @@
 /**
- * Panel system styles
+ * Canvas panel system styles
  *
- * Flex container layout for the dockable panel tree, sash resize elements,
- * and associated chrome. Loaded via <link> tag since Bun bundles only JS.
+ * Floating panel layout, tab bars, card headers, and associated chrome.
+ * Loaded via <link> tag since Bun bundles only JS.
  */
 
 /* ---- Root container ---- */
@@ -12,31 +12,6 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-}
-
-/* ---- Split containers ---- */
-
-.panel-split {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.panel-split-horizontal {
-  flex-direction: row;
-}
-
-.panel-split-vertical {
-  flex-direction: column;
-}
-
-/* Flex children of a split node */
-.panel-split-child {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
 }
 
 /* ---- Card containers ---- */
@@ -60,6 +35,8 @@
 /* Card area below the optional tab bar — takes all remaining space. */
 .panel-card-area {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   position: relative;
   min-height: 0;
@@ -67,8 +44,8 @@
 }
 
 .panel-card-mount {
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -133,34 +110,6 @@
   opacity: 0.5;
 }
 
-/* ---- Sash resize handles ---- */
-
-.panel-sash {
-  flex-shrink: 0;
-  background: transparent;
-  z-index: 10;
-  transition: background 0.15s ease;
-}
-
-.panel-sash-horizontal {
-  width: 4px;
-  cursor: col-resize;
-  height: 100%;
-  align-self: stretch;
-}
-
-.panel-sash-vertical {
-  height: 4px;
-  cursor: row-resize;
-  width: 100%;
-  align-self: stretch;
-}
-
-.panel-sash:hover,
-.panel-sash.active {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 /* ---- Floating panels ---- */
 
 .floating-panel {
@@ -176,6 +125,12 @@
   box-sizing: border-box;
 }
 
+/* Focused floating panel: accent border and stronger shadow (D06) */
+.floating-panel-focused {
+  border-color: var(--accent);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent);
+}
+
 /* ---- Card header bar (panel-header) ---- */
 
 .panel-header {
@@ -184,7 +139,7 @@
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  background: var(--card);
+  background: var(--muted);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   user-select: none;
@@ -341,19 +296,6 @@
   cursor: se-resize;
 }
 
-/* ---- Drag-and-drop overlay ---- */
-
-.dock-overlay {
-  position: absolute;
-  pointer-events: none;
-  background: var(--accent);
-  opacity: 0.2;
-  border: 2px solid var(--accent);
-  z-index: 9990;
-  box-sizing: border-box;
-  transition: opacity 0.1s ease;
-}
-
 /* ---- Tug menu button ---- */
 
 .tug-menu-button {
@@ -380,21 +322,3 @@
   color: var(--foreground);
   background: var(--accent);
 }
-
-/* ---- Drag ghost ---- */
-
-.dock-drag-ghost {
-  position: absolute;
-  pointer-events: none;
-  z-index: 9991;
-  padding: 4px 8px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 12px;
-  color: var(--foreground);
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-

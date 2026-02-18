@@ -9,6 +9,71 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-18T16:55:16Z
+bead: tugtool-7j2.5
+---
+
+## #step-4: Rewrote all test files for canvas model. Deleted dock-target.test.ts. Updated 5 test files: replaced FloatingGroup/DockState/getDockState with PanelState/CanvasState/getCanvasState, removed preset/sash/tree tests, added rAF mock. 397/397 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-18T16:38:16Z
+bead: tugtool-7j2.4
+---
+
+## #step-3: Deleted sash.ts and dock-target.ts. Removed dead CSS rules (.panel-split*, .panel-sash*, .dock-overlay, .dock-drag-ghost). Zero residual references in non-test source files.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-18T16:28:57Z
+bead: tugtool-7j2.3
+---
+
+## #step-2: Rewrote PanelManager, FloatingPanel, TabBar, TugMenu for canvas model. Removed tree rendering, drag-and-drop, presets. Added focus model (D06), constructTabNode adapter (D07). All @ts-nocheck removed. 17 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-18T16:17:15Z
+bead: tugtool-7j2.2
+---
+
+## #step-1: Rewrote serialization.ts: v4 format with serialize/deserialize/buildDefaultLayout. Removed V2/V3 types, migration, preset system. 5-panel default layout with 12px gaps per Spec S03. Added 7 tests (10 total).
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-18T16:11:30Z
+bead: tugtool-7j2.1
+---
+
+## #step-0: Replaced tiling/docking tree types with flat canvas data model (CanvasState, PanelState). Kept TabItem and TabNode. Added @ts-nocheck to 4 downstream files. Wrote 3 unit tests.
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-18T03:30:28Z
 ---
