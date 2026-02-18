@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-18T02:03:10Z
+bead: tugtool-ndt.4
+---
+
+## #step-3: Created dock-target.ts (computeDropZone with P1/P2/P3 precedence, DockOverlay with flicker delay). Added onDragOut to TabBar. Wired full drag lifecycle in PanelManager (ghost, overlay, executeDrop with D09 reparenting, cancel). 28 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-18T01:50:25Z
 bead: tugtool-ndt.3

@@ -28,6 +28,8 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { createSash } from "./sash";
 import { TabBar } from "./tab-bar";
+import { DockOverlay, computeDropZone, type TabNodeRect, type DropZoneResult } from "./dock-target";
+import { insertNode } from "./layout-tree";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -98,6 +100,31 @@ export class PanelManager implements IDragState {
    */
   private tabBars: Map<string, TabBar> = new Map();
 
+  /** Drop zone overlay (created once in constructor). */
+  private overlay!: DockOverlay;
+
+  /** Drag ghost element (created per drag session). */
+  private dragGhost: HTMLElement | null = null;
+
+  /** Active drag session info. */
+  private dragSource: {
+    tabNodeId: string;
+    tabId: string;
+    tabIndex: number;
+    card: TugCard | null;
+    /** Cached rects at drag start for 60fps performance */
+    canvasRect: DOMRect;
+    tabNodeRects: TabNodeRect[];
+  } | null = null;
+
+  /** Last computed drop zone during an active drag. */
+  private currentDropZone: DropZoneResult | null = null;
+
+  /** Document-level listeners registered during drag (cleaned up on end). */
+  private dragMoveHandler: ((e: PointerEvent) => void) | null = null;
+  private dragUpHandler: ((e: PointerEvent) => void) | null = null;
+  private escapeHandler: ((e: KeyboardEvent) => void) | null = null;
+
   /** D05: drag state flag */
   private _isDragging = false;
 
@@ -138,6 +165,9 @@ export class PanelManager implements IDragState {
     this.rootEl.style.width = "100%";
     this.rootEl.style.height = "100%";
     container.appendChild(this.rootEl);
+
+    // Create dock overlay (single instance, reused across drags)
+    this.overlay = new DockOverlay(container);
 
     // Load or build the initial layout
     this.dockState = this.loadLayout();
@@ -356,6 +386,8 @@ export class PanelManager implements IDragState {
   private renderTabNode(node: TabNode, parentEl: HTMLElement): void {
     const containerEl = document.createElement("div");
     containerEl.className = "panel-card-container";
+    // data-tab-node-id enables TabNodeRect collection during drag
+    containerEl.dataset.tabNodeId = node.id;
     parentEl.appendChild(containerEl);
 
     // Create the card area wrapper — all mount elements live inside this.
@@ -374,6 +406,9 @@ export class PanelManager implements IDragState {
         },
         onTabReorder: (fromIndex: number, toIndex: number) => {
           this.handleTabReorder(node, fromIndex, toIndex);
+        },
+        onDragOut: (tabId: string, tabIndex: number, startEvent: PointerEvent) => {
+          this.handleDragOut(node.id, tabId, tabIndex, startEvent);
         },
       });
       // Tab bar is inserted BEFORE the card area in the flex column
@@ -512,6 +547,242 @@ export class PanelManager implements IDragState {
     }
 
     this.scheduleSave();
+  }
+
+  // ---- Drag-and-drop lifecycle ----
+
+  /**
+   * Called by TabBar.onDragOut when a tab is dragged outside the tab bar.
+   * Transitions from within-bar reorder to dock targeting drag mode.
+   */
+  private handleDragOut(
+    tabNodeId: string,
+    tabId: string,
+    tabIndex: number,
+    startEvent: PointerEvent
+  ): void {
+    this._isDragging = true;
+
+    // Find the card registered for this tab item
+    const card = this.cardRegistry.get(tabId) ?? null;
+
+    // Collect TabNodeRects at drag start (cached for 60fps during drag)
+    const canvasRect = this.container.getBoundingClientRect();
+    const tabNodeRects = this.collectTabNodeRects();
+
+    this.dragSource = { tabNodeId, tabId, tabIndex, card, canvasRect, tabNodeRects };
+    this.currentDropZone = null;
+
+    // Create drag ghost tracking the cursor
+    this.dragGhost = this.createDragGhost(tabId, startEvent);
+
+    // Register Escape key handler
+    this.escapeHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        this.cancelDrag();
+      }
+    };
+    document.addEventListener("keydown", this.escapeHandler);
+
+    // Register document-level pointer handlers (BEFORE pointer capture is fully released
+    // by the tab element, so no events are lost)
+    this.dragMoveHandler = (e: PointerEvent) => this.onDragMove(e);
+    this.dragUpHandler = (e: PointerEvent) => this.onDragUp(e);
+    document.addEventListener("pointermove", this.dragMoveHandler);
+    document.addEventListener("pointerup", this.dragUpHandler);
+  }
+
+  private onDragMove(e: PointerEvent): void {
+    if (!this.dragSource) return;
+
+    // Update ghost position
+    if (this.dragGhost) {
+      this.dragGhost.style.left = `${e.clientX - this.dragSource.canvasRect.left + 10}px`;
+      this.dragGhost.style.top = `${e.clientY - this.dragSource.canvasRect.top + 10}px`;
+    }
+
+    // Compute drop zone using cached rects
+    const result = computeDropZone(
+      e.clientX,
+      e.clientY,
+      this.dragSource.canvasRect,
+      this.dragSource.tabNodeRects
+    );
+
+    this.currentDropZone = result;
+
+    if (result) {
+      this.overlay.show(result.overlayRect);
+    } else {
+      this.overlay.hide();
+    }
+  }
+
+  private onDragUp(e: PointerEvent): void {
+    if (!this.dragSource) return;
+
+    // Compute final drop zone at release position
+    const finalZone = computeDropZone(
+      e.clientX,
+      e.clientY,
+      this.dragSource.canvasRect,
+      this.dragSource.tabNodeRects
+    );
+
+    const source = this.dragSource;
+    this.cleanupDrag();
+
+    if (!finalZone) {
+      // Dropped outside all targets — cancel (tree unchanged, re-render restores)
+      this.render();
+      return;
+    }
+
+    this.executeDrop(source, finalZone);
+  }
+
+  private cancelDrag(): void {
+    this.cleanupDrag();
+    // Re-render to restore original card positions (tree was not mutated)
+    this.render();
+  }
+
+  /**
+   * Execute the drop: remove the tab from the source TabNode (if multi-tab),
+   * insert it at the drop target via insertNode, then re-render.
+   * Card instance is preserved throughout (D09).
+   */
+  private executeDrop(
+    source: NonNullable<typeof this.dragSource>,
+    result: DropZoneResult
+  ): void {
+    const sourceNode = findTabNode(this.dockState.root, source.tabNodeId);
+    if (!sourceNode) {
+      this.render();
+      return;
+    }
+
+    // Get the source TabItem before removing it from the tree
+    const sourceTabItem = sourceNode.tabs.find((t) => t.id === source.tabId);
+    if (!sourceTabItem) {
+      this.render();
+      return;
+    }
+
+    // Remove the tab from the source TabNode (data model only; card instance preserved)
+    let newRoot: import("./layout-tree").LayoutNode;
+    if (sourceNode.tabs.length > 1) {
+      // Multi-tab: just remove this tab from the source node (not card.destroy())
+      const newTabs = sourceNode.tabs.filter((t) => t.id !== source.tabId);
+      const newActiveIndex = Math.min(
+        sourceNode.activeTabIndex,
+        newTabs.length - 1
+      );
+      // Build new tree with modified source node
+      newRoot = replaceTabNodeTabs(
+        this.dockState.root,
+        source.tabNodeId,
+        newTabs,
+        newActiveIndex
+      );
+    } else {
+      // Single-tab: remove the whole TabNode from the tree
+      newRoot = removeTab(this.dockState.root, source.tabId) ?? this.dockState.root;
+    }
+
+    // Insert the tab at the drop target
+    newRoot = insertNode(
+      newRoot,
+      result.targetTabNodeId,
+      result.zone,
+      sourceTabItem
+    );
+
+    // Normalize the tree
+    const normalized = normalizeTree(newRoot);
+    this.dockState = { ...this.dockState, root: normalized ?? newRoot };
+
+    // Re-render (D09: renderTabNode reuses existing mount element for sourceTabItem.id)
+    this.render();
+    this.scheduleSave();
+  }
+
+  private cleanupDrag(): void {
+    this._isDragging = false;
+    this.dragSource = null;
+    this.currentDropZone = null;
+
+    if (this.dragGhost) {
+      this.dragGhost.remove();
+      this.dragGhost = null;
+    }
+
+    this.overlay.hideNow();
+
+    if (this.dragMoveHandler) {
+      document.removeEventListener("pointermove", this.dragMoveHandler);
+      this.dragMoveHandler = null;
+    }
+    if (this.dragUpHandler) {
+      document.removeEventListener("pointerup", this.dragUpHandler);
+      this.dragUpHandler = null;
+    }
+    if (this.escapeHandler) {
+      document.removeEventListener("keydown", this.escapeHandler);
+      this.escapeHandler = null;
+    }
+  }
+
+  /**
+   * Collect bounding rects for all docked TabNodes.
+   * Reads data-tab-node-id attributes stamped on panel-card-container elements.
+   */
+  private collectTabNodeRects(): TabNodeRect[] {
+    const containers = Array.from(
+      this.rootEl.querySelectorAll<HTMLElement>("[data-tab-node-id]")
+    );
+    return containers.map((el) => {
+      const tabNodeId = el.dataset.tabNodeId!;
+      const tabNode = findTabNode(this.dockState.root, tabNodeId);
+      const tabBarHeight = tabNode && tabNode.tabs.length > 1 ? 28 : 0;
+      return {
+        tabNodeId,
+        rect: el.getBoundingClientRect(),
+        tabBarHeight,
+      };
+    });
+  }
+
+  /**
+   * Create a lightweight drag ghost tracking the cursor.
+   * Shows the title of the dragged tab.
+   */
+  private createDragGhost(tabId: string, startEvent: PointerEvent): HTMLElement {
+    const ghost = document.createElement("div");
+    ghost.className = "dock-drag-ghost";
+
+    // Find the tab title
+    const tabItem = this.findTabItemById(this.dockState.root, tabId);
+    ghost.textContent = tabItem?.title ?? "Tab";
+
+    // Position at cursor
+    const canvasRect = this.container.getBoundingClientRect();
+    ghost.style.left = `${startEvent.clientX - canvasRect.left + 10}px`;
+    ghost.style.top = `${startEvent.clientY - canvasRect.top + 10}px`;
+
+    this.container.appendChild(ghost);
+    return ghost;
+  }
+
+  private findTabItemById(node: import("./layout-tree").LayoutNode, tabId: string): TabItem | null {
+    if (node.type === "tab") {
+      return node.tabs.find((t) => t.id === tabId) ?? null;
+    }
+    for (const child of node.children) {
+      const found = this.findTabItemById(child, tabId);
+      if (found) return found;
+    }
+    return null;
   }
 
   // ---- Geometric Minimum Enforcement (L01.7, geometric layer) ----
@@ -802,6 +1073,35 @@ export class PanelManager implements IDragState {
       card.destroy();
     }
     this.cardRegistry.clear();
+    this.cleanupDrag();
+    this.overlay.destroy();
     window.removeEventListener("resize", () => this.handleResize());
   }
+}
+
+// ---- Module-level helpers ----
+
+/**
+ * Replace the tabs array and activeTabIndex of a specific TabNode in the tree,
+ * returning a new root without modifying the original tree.
+ * Used during drop execution to remove a tab from its source node.
+ */
+function replaceTabNodeTabs(
+  node: import("./layout-tree").LayoutNode,
+  targetNodeId: string,
+  newTabs: import("./layout-tree").TabItem[],
+  newActiveIndex: number
+): import("./layout-tree").LayoutNode {
+  if (node.type === "tab") {
+    if (node.id === targetNodeId) {
+      return { ...node, tabs: newTabs, activeTabIndex: newActiveIndex };
+    }
+    return node;
+  }
+  return {
+    ...node,
+    children: node.children.map((child) =>
+      replaceTabNodeTabs(child, targetNodeId, newTabs, newActiveIndex)
+    ),
+  };
 }
