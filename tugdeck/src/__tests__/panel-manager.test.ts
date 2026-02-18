@@ -1152,3 +1152,186 @@ describe("PanelManager – set dragging", () => {
     manager.destroy();
   });
 });
+
+// ---- Close recompute and final polish tests ----
+
+describe("PanelManager – close recompute and final polish", () => {
+  let connection: MockConnection;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+    connection = new MockConnection();
+  });
+
+  // Test: closing a panel that connects two sub-groups splits the set into two.
+  // 5-panel horizontal chain: A(0,100,100,200), B(100,100,100,200), C(200,100,100,200),
+  //   D(300,100,100,200), E(400,100,100,200). One set {A,B,C,D,E}.
+  // Remove C (the bridge): A-B still adjacent, D-E still adjacent, but gap between B and D.
+  // After removeCard on C: getSets() = [{A,B}, {D,E}]. Two sets.
+  test("closing a panel that connects two sub-groups splits the set into two", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    // Each panel is exactly 100px wide, edge-to-edge.
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0,   100, 100, 200),
+        makePanelState("panel-b", 100, 100, 100, 200),
+        makePanelState("panel-c", 200, 100, 100, 200),
+        makePanelState("panel-d", 300, 100, 100, 200),
+        makePanelState("panel-e", 400, 100, 100, 200),
+      ],
+    });
+
+    // Trigger recomputeSets via a minimal drag on panel-a (index 0, dx=4).
+    // Snap pulls A back (A.right at 104, B.left=100, dist=4 ≤ 8 → snaps A back to x=0).
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const headerA = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 50, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 54, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 54, clientY: 150 }));
+
+    // All 5 panels in one set.
+    expect(manager.getSets().length).toBe(1);
+    expect(manager.getSets()[0].panelIds.length).toBe(5);
+
+    // Register a mock card for panel-c so we can close it via removeCard.
+    const panelCTabId = "panel-c-tab";
+    const mockCard = makeMockCard([FeedId.GIT], "git");
+    manager.getCardRegistry().set(panelCTabId, mockCard);
+
+    // Remove panel-c: this triggers recomputeSets internally.
+    manager.removeCard(mockCard);
+
+    // After removal: A-B adjacent (A.right=100, B.left=100), D-E adjacent (D.right=400, E.left=400).
+    // But B.right=200, D.left=300, gap=100>>8 → B and D not adjacent.
+    const sets = manager.getSets();
+
+    // Exactly 2 sets: one for {A,B} and one for {D,E}.
+    expect(sets.length).toBe(2);
+
+    const abSet = sets.find((s) => s.panelIds.includes("panel-a") && s.panelIds.includes("panel-b"));
+    const deSet = sets.find((s) => s.panelIds.includes("panel-d") && s.panelIds.includes("panel-e"));
+    expect(abSet).toBeDefined();
+    expect(deSet).toBeDefined();
+
+    // panel-a and panel-b not in the same set as panel-d/panel-e.
+    expect(abSet!.panelIds).not.toContain("panel-d");
+    expect(deSet!.panelIds).not.toContain("panel-a");
+
+    manager.destroy();
+  });
+
+  // Test: closing the last panel in a set dissolves the set.
+  // 2 panels: A(0,100,200,200), B(200,100,200,200). One set {A,B}.
+  // Remove panel-b: A is a singleton. getSets() = [].
+  test("closing the last panel in a set dissolves the set", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // Trigger recomputeSets.
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+    expect(manager.getSets().length).toBe(1);
+
+    // Register mock card for panel-b and close it.
+    const panelBTabId = "panel-b-tab";
+    const mockCard = makeMockCard([FeedId.GIT], "git");
+    manager.getCardRegistry().set(panelBTabId, mockCard);
+    manager.removeCard(mockCard);
+
+    // panel-b removed; only A remains (singleton). No set with 2+ members.
+    expect(manager.getSets().length).toBe(0);
+
+    // Virtual sashes should also be gone (recomputeSets destroys them).
+    expect(snapContainer.querySelectorAll(".virtual-sash").length).toBe(0);
+
+    manager.destroy();
+  });
+
+  // Test: after resetLayout, sets and sashes are empty.
+  test("after resetLayout, sets and sashes are cleared", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 0, 100, 200, 200),
+        makePanelState("panel-b", 200, 100, 200, 200),
+      ],
+    });
+
+    // Trigger recompute to create the set and sash.
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+    expect(manager.getSets().length).toBe(1);
+    expect(snapContainer.querySelectorAll(".virtual-sash").length).toBeGreaterThanOrEqual(1);
+
+    // Register card factories for all 5 defaults (resetLayout requires them).
+    manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
+    manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
+    manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
+    manager.registerCardFactory("files", () => makeMockCard([FeedId.FILESYSTEM], "files"));
+    manager.registerCardFactory("stats", () => makeMockCard([FeedId.STATS], "stats"));
+
+    // Reset to default layout.
+    manager.resetLayout();
+
+    // Sets and sashes must be cleared immediately after reset (before any drag).
+    expect(manager.getSets().length).toBe(0);
+    expect(snapContainer.querySelectorAll(".virtual-sash").length).toBe(0);
+
+    manager.destroy();
+  });
+
+  // Test: guide lines are hidden after pointercancel during drag.
+  // Panel A at (100,100,200,200), Panel B at (310,100,200,200). Gap=10px.
+  // Start drag on A, move right by 5px → snap guide appears.
+  // Dispatch pointercancel instead of pointerup → guides should be hidden.
+  test("guide lines are hidden after pointercancel during drag", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 100, 100, 200, 200),
+        makePanelState("panel-b", 310, 100, 200, 200),
+      ],
+    });
+
+    const guides = Array.from(snapContainer.querySelectorAll<HTMLElement>(".snap-guide-line"));
+    expect(guides.length).toBe(4);
+
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const panelAEl = floatingPanels[0];
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Start drag: pointerdown at (200, 150), then move 5px right.
+    // A.right at 305, B.left=310, gap=5 ≤ 8 → snap activates, guide appears.
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 150 }));
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 205, clientY: 150 }));
+
+    // Verify at least one guide is visible during drag.
+    const xGuides = guides.filter((g) => g.classList.contains("snap-guide-line-x"));
+    const visibleDuringDrag = xGuides.some((g) => g.style.display === "block");
+    expect(visibleDuringDrag).toBe(true);
+
+    // Cancel drag via pointercancel — this should hide all guides.
+    headerA.dispatchEvent(makePointerEvent("pointercancel", { clientX: 205, clientY: 150 }));
+
+    // All guides must be hidden after pointercancel.
+    for (const guide of guides) {
+      expect(guide.style.display).toBe("none");
+    }
+
+    manager.destroy();
+  });
+});

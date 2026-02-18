@@ -1330,6 +1330,8 @@ export class PanelManager implements IDragState {
     this.guideElements = [];
     // Remove virtual sash elements
     this.destroySashes();
+    // Clear transient drag context
+    this._setMoveContext = null;
     window.removeEventListener("resize", () => this.handleResize());
   }
 }

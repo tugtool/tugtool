@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-7
+date: 2025-02-18T19:20:47Z
+bead: tugtool-srv.8
+---
+
+## #step-7: Final polish: added _setMoveContext=null to destroy(). 4 new integration tests covering close-recompute set split, set dissolution, resetLayout cleanup, and pointercancel guide line hiding. All 450 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-18T19:13:32Z
 bead: tugtool-srv.7
