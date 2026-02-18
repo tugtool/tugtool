@@ -10,6 +10,122 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-18T03:30:28Z
+---
+
+## audit-fix: Audit fix: Replaced real TerminalCard imports with mocks in card-header.test.ts and card-menus.test.ts to avoid xterm.js WebGL pollution. Fixed crypto.subtle preservation in 3 test files. Deleted dead code deck.ts. Full suite: 468 pass, 0 fail.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-7
+date: 2025-02-18T03:13:47Z
+bead: tugtool-ndt.8
+---
+
+## #step-7: Created tug-menu.ts (TugMenu with logo button, add-card, reset, save/load presets, about). Added preset helpers to serialization.ts. Added card factory registration and addNewCard/resetLayout/savePreset/loadPreset to PanelManager. Updated main.ts with factories and TugMenu. 11 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-18T03:01:59Z
+bead: tugtool-ndt.7
+---
+
+## #step-6: Populated menu items for all 5 cards per Table T02. Converted meta fields to get meta() getters for dynamic state. Terminal: font size/clear/WebGL. Git: refresh/untracked. Files: clear/max entries. Stats: timeframe/3 toggles. Conversation: new session/export. 32 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-18T02:49:44Z
+bead: tugtool-ndt.6
+---
+
+## #step-5: Created card-header.ts (CardHeader with Lucide icons, collapse, close, drag) and card-menu.ts (DropdownMenu). Added TugCardMeta to all 5 cards. Migrated ConversationCard permission mode from select to menu. Replaced FloatingPanel temp title bar with CardHeader. Removed obsolete .card-header CSS. 33 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-18T02:24:58Z
+bead: tugtool-ndt.5
+---
+
+## #step-4: Created floating-panel.ts (move, resize, z-order, title bar drag-out for re-dock). Added isCursorInsideCanvas to dock-target.ts. Updated PanelManager for floating lifecycle (undock, re-dock, removeCard floating cleanup). Added floating panel CSS. 41 new floating-panel tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-18T02:03:10Z
+bead: tugtool-ndt.4
+---
+
+## #step-3: Created dock-target.ts (computeDropZone with P1/P2/P3 precedence, DockOverlay with flicker delay). Added onDragOut to TabBar. Wired full drag lifecycle in PanelManager (ghost, overlay, executeDrop with D09 reparenting, cancel). 28 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-18T01:50:25Z
+bead: tugtool-ndt.3
+---
+
+## #step-2: Created tab-bar.ts (presentation-only TabBar with activate/close/reorder callbacks). Integrated into PanelManager renderTabNode with tabBars Map. Added tab bar CSS styles. 16 new tests covering all acceptance criteria.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-18T01:38:49Z
+bead: tugtool-ndt.2
+---
+
+## #step-1: Created PanelManager (flex tree rendering, sash resizing, fan-out dispatch, DOM reparenting, geometric minimums), drag-state.ts, sash.ts, panels.css. Migrated conversation-card and terminal-card to IDragState. Deleted deck-layout.test.ts. 15 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-18T01:23:54Z
+bead: tugtool-ndt.1
+---
+
+## #step-0: Created layout-tree.ts (types, normalizeTree, insertNode, removeTab, findTabNode) and serialization.ts (serialize, deserialize, validateDockState, migrateV2ToV3, buildDefaultLayout) with 46 tests
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-17T20:42:39Z
 ---
 

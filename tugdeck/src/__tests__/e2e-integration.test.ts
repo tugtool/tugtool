@@ -507,22 +507,26 @@ describe("End-to-end integration tests", () => {
 
   describe("End-to-end: permission mode switching", () => {
     test("permission mode switch mid-conversation sends correct messages", () => {
-      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+      // Permission mode is now accessed via card.meta (Step 5 migration).
+      const meta = card.meta;
+      const permItem = meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      expect(permItem).not.toBeUndefined();
+      expect(permItem!.type).toBe("select");
+      if (permItem && permItem.type === "select") {
+        // Verify default
+        expect(permItem.value).toBe("acceptEdits");
 
-      // Verify default
-      expect(select.value).toBe("acceptEdits");
-
-      // Switch to each mode
-      const modes = ["default", "plan", "bypassPermissions", "acceptEdits"];
-
-      for (const mode of modes) {
-        connection.clear();
-        select.value = mode;
-        select.dispatchEvent(new Event("change"));
-
-        const msg = connection.getLastMessage();
-        expect(msg.type).toBe("permission_mode");
-        expect(msg.mode).toBe(mode);
+        // Switch to each mode
+        const modes = ["default", "plan", "bypassPermissions", "acceptEdits"];
+        for (const mode of modes) {
+          connection.clear();
+          permItem.action(mode);
+          const msg = connection.getLastMessage();
+          expect(msg.type).toBe("permission_mode");
+          expect(msg.mode).toBe(mode);
+        }
       }
 
       // Send a user message to verify messaging still works

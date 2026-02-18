@@ -3,7 +3,7 @@
  */
 
 import { createElement, ArrowUp, Square, Octagon, Paperclip, AlertTriangle, User, Bot, Loader2 } from "lucide";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 import { TugConnection } from "../connection";
 import { FeedId } from "../protocol";
 import {
@@ -25,7 +25,7 @@ import {
   type ProjectInfo,
 } from "./conversation/types";
 import { MessageOrderingBuffer } from "./conversation/ordering";
-import type { DeckManager } from "../deck";
+import type { IDragState } from "../drag-state";
 import { renderMarkdown, enhanceCodeBlocks } from "./conversation/message-renderer";
 import { ToolCard } from "./conversation/tool-card";
 import { ApprovalPrompt } from "./conversation/approval-prompt";
@@ -53,7 +53,7 @@ export class ConversationCard implements TugCard {
   private textarea!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   private orderingBuffer: MessageOrderingBuffer;
-  private deckManager?: DeckManager;
+  private dragState?: IDragState;
   private toolCards: Map<string, ToolCard> = new Map();
   private pendingApprovals: Map<string, ApprovalPrompt> = new Map();
   private pendingQuestions: Map<string, QuestionCard> = new Map();
@@ -74,7 +74,46 @@ export class ConversationCard implements TugCard {
   private currentSessionId: string | null = null;
   private errorState: "none" | "recoverable" | "fatal" = "none";
   private errorBanner!: HTMLElement;
-  private permissionModeSelect!: HTMLSelectElement;
+
+  get meta(): TugCardMeta {
+    const connection = this.connection;
+    return {
+      title: "Conversation",
+      icon: "MessageSquare",
+      closable: true,
+      menuItems: [
+        {
+          type: "select",
+          label: "Permission Mode",
+          options: ["default", "acceptEdits", "bypassPermissions", "plan"],
+          value: "acceptEdits",
+          action: (mode: string) => {
+            const msg: PermissionModeInput = { type: "permission_mode", mode };
+            const payload = new TextEncoder().encode(JSON.stringify(msg));
+            connection.send(FeedId.CONVERSATION_INPUT, payload);
+          },
+        },
+        {
+          type: "action",
+          label: "New Session",
+          action: () => {
+            // Clear local UI only — no IPC. The server's session continues;
+            // the next server message will appear in the fresh UI.
+            if (this.messageList) this.messageList.innerHTML = "";
+            this.currentSessionId = null;
+            this.clearHistory().catch((e) => console.error("Failed to clear history:", e));
+          },
+        },
+        {
+          type: "action",
+          label: "Export History",
+          action: () => {
+            this.exportHistory();
+          },
+        },
+      ],
+    };
+  }
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -89,43 +128,13 @@ export class ConversationCard implements TugCard {
     this.sessionCache = new SessionCache("default");
   }
 
-  setDeckManager(deckManager: DeckManager): void {
-    this.deckManager = deckManager;
+  setDragState(dragState: IDragState): void {
+    this.dragState = dragState;
   }
 
   mount(parent: HTMLElement): void {
     this.container = document.createElement("div");
     this.container.className = "conversation-card";
-
-    // Card header
-    const header = document.createElement("div");
-    header.className = "card-header";
-    const title = document.createElement("span");
-    title.className = "card-title";
-    title.textContent = "Conversation";
-    header.appendChild(title);
-
-    // Permission mode selector (right-aligned)
-    this.permissionModeSelect = document.createElement("select");
-    this.permissionModeSelect.className = "permission-mode-select";
-    this.permissionModeSelect.innerHTML = `
-      <option value="default">Default</option>
-      <option value="acceptEdits" selected>Accept Edits</option>
-      <option value="bypassPermissions">Bypass Permissions</option>
-      <option value="plan">Plan</option>
-    `;
-    this.permissionModeSelect.addEventListener("change", () => {
-      const mode = this.permissionModeSelect.value as "default" | "acceptEdits" | "bypassPermissions" | "plan";
-      const msg: PermissionModeInput = {
-        type: "permission_mode",
-        mode,
-      };
-      const payload = new TextEncoder().encode(JSON.stringify(msg));
-      this.connection.send(FeedId.CONVERSATION_INPUT, payload);
-    });
-    header.appendChild(this.permissionModeSelect);
-
-    this.container.appendChild(header);
 
     // Error banner (initially hidden)
     this.errorBanner = document.createElement("div");
@@ -883,6 +892,36 @@ export class ConversationCard implements TugCard {
     this.messageList.innerHTML = "";
   }
 
+  private exportHistory(): void {
+    if (!this.messageList) return;
+    const lines: string[] = [];
+    for (const child of Array.from(this.messageList.children)) {
+      const el = child as HTMLElement;
+      // Each message row contains an avatar and a message element
+      const msgEl = el.querySelector(".message") as HTMLElement | null;
+      if (!msgEl) continue;
+      const isUser = msgEl.classList.contains("message-user");
+      const role = isUser ? "User" : "Assistant";
+      const text = (msgEl.textContent ?? "").trim();
+      if (text) {
+        lines.push(`**${role}:** ${text}`);
+        lines.push("");
+      }
+    }
+    const content = lines.join("\n");
+    try {
+      const blob = new Blob([content], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "conversation-history.md";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Export history failed:", e);
+    }
+  }
+
   private createAvatar(role: "user" | "assistant"): HTMLElement {
     const avatar = document.createElement("div");
     avatar.className = "message-avatar";
@@ -908,7 +947,7 @@ export class ConversationCard implements TugCard {
   }
 
   private scrollToBottom(): void {
-    if (!this.deckManager?.isDragging) {
+    if (!this.dragState?.isDragging) {
       this.messageList.scrollTop = this.messageList.scrollHeight;
     }
   }

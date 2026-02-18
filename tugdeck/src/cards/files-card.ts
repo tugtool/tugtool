@@ -6,7 +6,7 @@
 
 import { createElement, FilePlus, FilePen, FileX, FileSymlink } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 
 /** FsEvent as serialized by tugcast-core (matches Spec S01) */
 interface FsEvent {
@@ -16,25 +16,49 @@ interface FsEvent {
   to?: string;
 }
 
-/** Maximum number of visible event entries */
-const MAX_VISIBLE_ENTRIES = 100;
-
 export class FilesCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.FILESYSTEM];
 
+  get meta(): TugCardMeta {
+    return {
+      title: "Files",
+      icon: "FolderOpen",
+      closable: true,
+      menuItems: [
+        {
+          type: "action",
+          label: "Clear History",
+          action: () => {
+            if (this.eventList) this.eventList.innerHTML = "";
+          },
+        },
+        {
+          type: "select",
+          label: "Max Entries",
+          options: ["50", "100", "200"],
+          value: String(this.maxEntries),
+          action: (value: string) => {
+            this.maxEntries = parseInt(value, 10);
+            // Immediately trim excess entries if needed
+            if (this.eventList) {
+              while (this.eventList.children.length > this.maxEntries) {
+                this.eventList.removeChild(this.eventList.firstChild!);
+              }
+            }
+          },
+        },
+      ],
+    };
+  }
+
+  private maxEntries = 100;
+
   private container: HTMLElement | null = null;
-  private header: HTMLElement | null = null;
   private eventList: HTMLElement | null = null;
 
   mount(container: HTMLElement): void {
     this.container = container;
     this.container.classList.add("files-card");
-
-    // Create header
-    this.header = document.createElement("div");
-    this.header.className = "card-header";
-    this.header.textContent = "Files";
-    this.container.appendChild(this.header);
 
     // Create scrollable event list
     this.eventList = document.createElement("div");
@@ -78,7 +102,7 @@ export class FilesCard implements TugCard {
     }
 
     // Cap visible entries (remove oldest from top)
-    while (el.children.length > MAX_VISIBLE_ENTRIES) {
+    while (el.children.length > this.maxEntries) {
       el.removeChild(el.firstChild!);
     }
 
@@ -96,7 +120,6 @@ export class FilesCard implements TugCard {
     if (this.container) {
       this.container.innerHTML = "";
       this.container = null;
-      this.header = null;
       this.eventList = null;
     }
   }

@@ -11,26 +11,73 @@ import { WebglAddon } from "@xterm/addon-webgl";
 
 import { FeedId, FeedIdValue, resizeFrame } from "../protocol";
 import { TugConnection } from "../connection";
-import { TugCard } from "./card";
-import type { DeckManager } from "../deck";
+import { TugCard, type TugCardMeta } from "./card";
+import type { IDragState } from "../drag-state";
+
+/** Map from UI label to pixel size */
+const FONT_SIZE_MAP: Record<string, number> = { Small: 12, Medium: 14, Large: 16 };
+/** Map from pixel size back to UI label */
+const FONT_SIZE_LABEL: Record<number, string> = { 12: "Small", 14: "Medium", 16: "Large" };
 
 export class TerminalCard implements TugCard {
   readonly feedIds: readonly FeedIdValue[] = [FeedId.TERMINAL_OUTPUT];
   readonly collapsible = false;
 
+  get meta(): TugCardMeta {
+    return {
+      title: "Terminal",
+      icon: "Terminal",
+      closable: true,
+      menuItems: [
+        {
+          type: "select",
+          label: "Font Size",
+          options: ["Small", "Medium", "Large"],
+          value: FONT_SIZE_LABEL[this.fontSize] ?? "Medium",
+          action: (label: string) => {
+            const size = FONT_SIZE_MAP[label] ?? 14;
+            this.fontSize = size;
+            if (this.terminal) {
+              this.terminal.options.fontSize = size;
+              if (this.fitAddon) this.fitAddon.fit();
+            }
+          },
+        },
+        {
+          type: "action",
+          label: "Clear Scrollback",
+          action: () => {
+            if (this.terminal) this.terminal.clear();
+          },
+        },
+        {
+          type: "toggle",
+          label: "WebGL Renderer",
+          checked: this.webglEnabled,
+          action: (_checked: boolean) => {
+            this.toggleWebGL();
+          },
+        },
+      ],
+    };
+  }
+
   private terminal: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
+  private webglAddon: WebglAddon | null = null;
+  private webglEnabled = true;
+  private fontSize = 14;
   private resizeObserver: ResizeObserver | null = null;
   private connection: TugConnection;
   private resizeDebounceId: number | null = null;
-  private deckManager: DeckManager | null = null;
+  private dragState: IDragState | null = null;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
   }
 
-  setDeckManager(dm: DeckManager): void {
-    this.deckManager = dm;
+  setDragState(ds: IDragState): void {
+    this.dragState = ds;
   }
 
   mount(container: HTMLElement): void {
@@ -62,11 +109,16 @@ export class TerminalCard implements TugCard {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
         webglAddon.dispose();
+        this.webglAddon = null;
+        this.webglEnabled = false;
         console.log("tugdeck: WebGL context lost, falling back to canvas");
       });
       this.terminal.loadAddon(webglAddon);
+      this.webglAddon = webglAddon;
+      this.webglEnabled = true;
       console.log("tugdeck: WebGL renderer activated");
     } catch {
+      this.webglEnabled = false;
       console.log("tugdeck: WebGL not available, using canvas renderer");
     }
 
@@ -75,7 +127,7 @@ export class TerminalCard implements TugCard {
     // Suppress fit during active drag to prevent flashing
     this.resizeObserver = new ResizeObserver(() => {
       // During active drag, suppress fit() entirely
-      if (this.deckManager?.isDragging) {
+      if (this.dragState?.isDragging) {
         return;
       }
       if (this.resizeDebounceId !== null) {
@@ -113,7 +165,7 @@ export class TerminalCard implements TugCard {
     // During active drag, suppress fit() entirely -- the single
     // handleResize() call on pointerup will trigger this method
     // with isDragging === false for the final fit.
-    if (this.deckManager?.isDragging) {
+    if (this.dragState?.isDragging) {
       return;
     }
     if (this.fitAddon && this.terminal) {
@@ -123,6 +175,37 @@ export class TerminalCard implements TugCard {
       // to know the size (e.g. on WebSocket reconnect)
       const frame = resizeFrame(this.terminal.cols, this.terminal.rows);
       this.connection.send(frame.feedId, frame.payload);
+    }
+  }
+
+  private toggleWebGL(): void {
+    if (!this.terminal) return;
+
+    if (this.webglEnabled && this.webglAddon) {
+      // Turn off: dispose WebGL addon, fall back to canvas renderer
+      try {
+        this.webglAddon.dispose();
+      } catch {
+        // Dispose may throw if context is already lost
+      }
+      this.webglAddon = null;
+      this.webglEnabled = false;
+    } else {
+      // Turn on: create and load a new WebglAddon instance
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose();
+          this.webglAddon = null;
+          this.webglEnabled = false;
+        });
+        this.terminal.loadAddon(webglAddon);
+        this.webglAddon = webglAddon;
+        this.webglEnabled = true;
+      } catch {
+        this.webglEnabled = false;
+        console.log("tugdeck: WebGL re-enable failed");
+      }
     }
   }
 

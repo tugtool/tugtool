@@ -6,7 +6,7 @@
 
 import { createElement, Activity, Coins, Hammer } from "lucide";
 import { FeedId, FeedIdValue } from "../protocol";
-import { TugCard } from "./card";
+import { TugCard, type TugCardMeta } from "./card";
 
 /**
  * Helper function to read CSS token values
@@ -183,36 +183,111 @@ export class StatsCard implements TugCard {
     FeedId.STATS_BUILD_STATUS,
   ];
 
+  get meta(): TugCardMeta {
+    return {
+      title: "Stats",
+      icon: "Activity",
+      closable: true,
+      menuItems: [
+        {
+          type: "select",
+          label: "Sparkline Timeframe",
+          options: ["30s", "60s", "120s"],
+          value: `${this.sparklineTimeframe}s`,
+          action: (value: string) => {
+            const seconds = parseInt(value, 10);
+            this.sparklineTimeframe = seconds;
+            // Recreate sub-cards with new buffer size (data is lost; sparklines are transient)
+            this.recreateSubCards();
+          },
+        },
+        {
+          type: "toggle",
+          label: "Show CPU / Memory",
+          checked: this.showProcessInfo,
+          action: (_checked: boolean) => {
+            this.showProcessInfo = !this.showProcessInfo;
+            if (this.processInfo) {
+              this.processInfo.getElement().style.display = this.showProcessInfo ? "" : "none";
+            }
+          },
+        },
+        {
+          type: "toggle",
+          label: "Show Token Usage",
+          checked: this.showTokenUsage,
+          action: (_checked: boolean) => {
+            this.showTokenUsage = !this.showTokenUsage;
+            if (this.tokenUsage) {
+              this.tokenUsage.getElement().style.display = this.showTokenUsage ? "" : "none";
+            }
+          },
+        },
+        {
+          type: "toggle",
+          label: "Show Build Status",
+          checked: this.showBuildStatus,
+          action: (_checked: boolean) => {
+            this.showBuildStatus = !this.showBuildStatus;
+            if (this.buildStatus) {
+              this.buildStatus.getElement().style.display = this.showBuildStatus ? "" : "none";
+            }
+          },
+        },
+      ],
+    };
+  }
+
   private container: HTMLElement | null = null;
   private content: HTMLDivElement | null = null;
   private processInfo: SubCard | null = null;
   private tokenUsage: SubCard | null = null;
   private buildStatus: SubCard | null = null;
+  private sparklineTimeframe = 60;
+  private showProcessInfo = true;
+  private showTokenUsage = true;
+  private showBuildStatus = true;
 
   mount(container: HTMLElement): void {
     this.container = container;
     this.container.classList.add("stats-card");
-
-    // Create header
-    const header = document.createElement("div");
-    header.className = "card-header";
-    header.textContent = "Stats";
-    this.container.appendChild(header);
 
     // Create content container
     this.content = document.createElement("div");
     this.content.className = "stats-content";
     this.container.appendChild(this.content);
 
-    // Create sub-cards
-    this.processInfo = new SubCard("CPU / Memory", getCSSToken("--chart-1"), 60, Activity);
+    this.createSubCards();
+  }
+
+  private createSubCards(): void {
+    if (!this.content) return;
+
+    this.processInfo = new SubCard("CPU / Memory", getCSSToken("--chart-1"), this.sparklineTimeframe, Activity);
     this.processInfo.mount(this.content);
 
-    this.tokenUsage = new SubCard("Token Usage", getCSSToken("--chart-2"), 60, Coins);
+    this.tokenUsage = new SubCard("Token Usage", getCSSToken("--chart-2"), this.sparklineTimeframe, Coins);
     this.tokenUsage.mount(this.content);
 
-    this.buildStatus = new SubCard("Build Status", getCSSToken("--chart-3"), 60, Hammer);
+    this.buildStatus = new SubCard("Build Status", getCSSToken("--chart-3"), this.sparklineTimeframe, Hammer);
     this.buildStatus.mount(this.content);
+  }
+
+  private recreateSubCards(): void {
+    if (!this.content) return;
+    // Remove existing sub-card DOM nodes
+    if (this.processInfo) this.processInfo.getElement().remove();
+    if (this.tokenUsage) this.tokenUsage.getElement().remove();
+    if (this.buildStatus) this.buildStatus.getElement().remove();
+    this.processInfo = null;
+    this.tokenUsage = null;
+    this.buildStatus = null;
+    // Recreate with new buffer size
+    this.createSubCards();
+    // Re-apply current visibility state
+    if (this.processInfo) this.processInfo.getElement().style.display = this.showProcessInfo ? "" : "none";
+    if (this.tokenUsage) this.tokenUsage.getElement().style.display = this.showTokenUsage ? "" : "none";
+    if (this.buildStatus) this.buildStatus.getElement().style.display = this.showBuildStatus ? "" : "none";
   }
 
   onFrame(feedId: FeedIdValue, payload: Uint8Array): void {

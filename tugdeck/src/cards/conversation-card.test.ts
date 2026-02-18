@@ -583,18 +583,29 @@ describe("conversation-card", () => {
   });
 
   describe("permission mode selector", () => {
-    test("permission mode selector exists in header", () => {
-      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
-      expect(select).not.toBeNull();
-      expect(select.tagName).toBe("SELECT");
+    // Permission mode is now exposed via card.meta (CardMenuItem select) rather
+    // than a <select> DOM element. These tests verify the meta-based API.
+
+    test("permission mode menu item exists in card.meta", () => {
+      const meta = card.meta;
+      expect(meta).toBeDefined();
+      const permItem = meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      expect(permItem).not.toBeUndefined();
     });
 
-    test("changing selector sends permission_mode message", () => {
-      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
+    test("calling permission mode action sends permission_mode message", () => {
+      const meta = card.meta;
+      const permItem = meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      expect(permItem).toBeDefined();
       connection.clear();
 
-      select.value = "bypassPermissions";
-      select.dispatchEvent(new Event("change"));
+      if (permItem && permItem.type === "select") {
+        permItem.action("bypassPermissions");
+      }
 
       const lastMsg = connection.getLastMessage();
       expect(lastMsg).not.toBeNull();
@@ -602,9 +613,15 @@ describe("conversation-card", () => {
       expect(lastMsg.mode).toBe("bypassPermissions");
     });
 
-    test("selector default is acceptEdits", () => {
-      const select = container.querySelector(".permission-mode-select") as HTMLSelectElement;
-      expect(select.value).toBe("acceptEdits");
+    test("permission mode default value is acceptEdits", () => {
+      const meta = card.meta;
+      const permItem = meta.menuItems.find(
+        (m) => m.type === "select" && m.label === "Permission Mode"
+      );
+      expect(permItem).toBeDefined();
+      if (permItem && permItem.type === "select") {
+        expect(permItem.value).toBe("acceptEdits");
+      }
     });
   });
 
