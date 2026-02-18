@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-18T16:17:15Z
+bead: tugtool-7j2.2
+---
+
+## #step-1: Rewrote serialization.ts: v4 format with serialize/deserialize/buildDefaultLayout. Removed V2/V3 types, migration, preset system. 5-panel default layout with 12px gaps per Spec S03. Added 7 tests (10 total).
+
+**Files changed:**
+- .tugtool/tugplan-canvas-panel-system.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-18T16:11:30Z
 bead: tugtool-7j2.1

@@ -13,10 +13,7 @@ import {
   buildDefaultLayout,
   serialize,
   deserialize,
-  validateDockState,
-  savePreset as savePresetToStorage,
-  loadPreset as loadPresetFromStorage,
-  listPresets,
+  // validateDockState, savePreset, loadPreset, listPresets removed (Step 1); panel-manager rewritten in Step 3
 } from "./serialization";
 import { TugCard } from "./cards/card";
 import { FeedId, FeedIdValue } from "./protocol";
