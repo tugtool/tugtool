@@ -20,7 +20,7 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import { computeSnap, computeResizeSnap, panelToRect, type Rect } from "./snap";
+import { computeSnap, computeResizeSnap, panelToRect, type Rect, type GuidePosition } from "./snap";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -129,6 +129,9 @@ export class PanelManager implements IDragState {
   /** Root panel DOM element */
   private rootEl: HTMLElement;
 
+  /** Pool of guide line elements: 2 vertical (.snap-guide-line-x) + 2 horizontal (.snap-guide-line-y) */
+  private guideElements: HTMLElement[] = [];
+
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
     this.connection = connection;
@@ -164,6 +167,9 @@ export class PanelManager implements IDragState {
     this.rootEl.style.width = "100%";
     this.rootEl.style.height = "100%";
     container.appendChild(this.rootEl);
+
+    // Create guide line element pool (D03: absolutely-positioned divs in canvas container)
+    this.createGuideLines();
 
     // Load or build the initial canvas state
     this.canvasState = this.loadLayout();
@@ -336,11 +342,13 @@ export class PanelManager implements IDragState {
         {
           onMoveEnd: (x, y) => {
             this._isDragging = false;
+            this.hideGuides();
             panel.position = { x, y };
             this.scheduleSave();
           },
           onResizeEnd: (x, y, width, height) => {
             this._isDragging = false;
+            this.hideGuides();
             panel.position = { x, y };
             panel.size = { width, height };
             // Notify the active card of its new size
@@ -369,6 +377,7 @@ export class PanelManager implements IDragState {
               { x, y, width: panel.size.width, height: panel.size.height },
               others
             );
+            this.showGuides(snap.guides);
             return {
               x: snap.x !== null ? snap.x : x,
               y: snap.y !== null ? snap.y : y,
@@ -388,6 +397,7 @@ export class PanelManager implements IDragState {
               bottom: y + height,
             };
             const snap = computeResizeSnap(resizingEdges, others);
+            this.showGuides(snap.guides);
             // Reconstruct geometry from snapped edge values
             let newX = snap.left !== undefined ? snap.left : x;
             let newY = snap.top !== undefined ? snap.top : y;
@@ -872,6 +882,57 @@ export class PanelManager implements IDragState {
 
   // ---- Private helpers ----
 
+  /** Create the pool of 4 guide line elements appended to the canvas container. */
+  private createGuideLines(): void {
+    const classes = [
+      "snap-guide-line snap-guide-line-x",
+      "snap-guide-line snap-guide-line-x",
+      "snap-guide-line snap-guide-line-y",
+      "snap-guide-line snap-guide-line-y",
+    ];
+    for (const cls of classes) {
+      const el = document.createElement("div");
+      el.className = cls;
+      this.container.appendChild(el);
+      this.guideElements.push(el);
+    }
+  }
+
+  /**
+   * Show guide lines at the specified positions. Hides any unused guide elements.
+   * Spec S06: Guide lines shown when snap target detected.
+   */
+  private showGuides(guides: GuidePosition[]): void {
+    const xGuides = guides.filter((g) => g.axis === "x");
+    const yGuides = guides.filter((g) => g.axis === "y");
+    // guideElements[0..1] are vertical (x-axis), [2..3] are horizontal (y-axis)
+    for (let i = 0; i < 2; i++) {
+      const el = this.guideElements[i];
+      if (i < xGuides.length) {
+        el.style.left = `${xGuides[i].position}px`;
+        el.style.display = "block";
+      } else {
+        el.style.display = "none";
+      }
+    }
+    for (let i = 0; i < 2; i++) {
+      const el = this.guideElements[i + 2];
+      if (i < yGuides.length) {
+        el.style.top = `${yGuides[i].position}px`;
+        el.style.display = "block";
+      } else {
+        el.style.display = "none";
+      }
+    }
+  }
+
+  /** Hide all guide line elements. Called on drag end. */
+  private hideGuides(): void {
+    for (const el of this.guideElements) {
+      el.style.display = "none";
+    }
+  }
+
   /**
    * Route keyboard focus to the key panel's active card.
    * Called after any focus change so the key panel always receives key events.
@@ -944,6 +1005,11 @@ export class PanelManager implements IDragState {
       card.destroy();
     }
     this.cardRegistry.clear();
+    // Remove guide line elements
+    for (const el of this.guideElements) {
+      el.remove();
+    }
+    this.guideElements = [];
     window.removeEventListener("resize", () => this.handleResize());
   }
 }

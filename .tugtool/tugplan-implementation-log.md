@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-3
+date: 2025-02-18T18:43:49Z
+bead: tugtool-srv.4
+---
+
+## #step-3: Added snap guide line visual feedback: 4 pooled div elements, showGuides/hideGuides in PanelManager, dashed-line CSS, wired into onMoving/onResizing callbacks. 2 new tests.
+
+**Files changed:**
+- .tugtool/tugplan-snap-sets-shared-resize.md
+
+---
+
+---
 step: #step-2
 date: 2025-02-18T18:36:26Z
 bead: tugtool-srv.3

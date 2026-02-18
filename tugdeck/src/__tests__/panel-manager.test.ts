@@ -518,3 +518,81 @@ describe("PanelManager – snap wiring", () => {
     manager.destroy();
   });
 });
+
+// ---- Guide line tests ----
+
+describe("PanelManager – guide lines", () => {
+  let connection: MockConnection;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    localStorageMock.clear();
+    connection = new MockConnection();
+  });
+
+  // Test a: 4 .snap-guide-line elements are created in the container; all initially hidden.
+  test("creates 4 guide line elements in the container, all initially hidden", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    const guides = snapContainer.querySelectorAll<HTMLElement>(".snap-guide-line");
+    expect(guides.length).toBe(4);
+
+    // All should be hidden initially. showGuides/hideGuides set inline style.display.
+    // Before any drag the inline style is not yet set, so display should not be "block".
+    for (const guide of Array.from(guides)) {
+      expect(guide.style.display).not.toBe("block");
+    }
+
+    manager.destroy();
+  });
+
+  // Test b: during a snap-triggering drag, at least one guide becomes visible.
+  // Test c: after drag end, all guides are hidden again.
+  // Combined into a single end-to-end integration test.
+  test("guide lines appear during snap drag and hide on drag end", () => {
+    const snapContainer = makeSnapContainer();
+    const manager = new PanelManager(snapContainer, connection as unknown as TugConnection);
+
+    // Panel A at (100, 100, 200, 200): right edge = 300.
+    // Panel B at (310, 100, 200, 200): left edge = 310. Gap = 10px.
+    // Drag A right by 5px → right edge = 305, gap to B.left = 5px (within 8px threshold).
+    // computeSnap returns guides: [{ axis: "x", position: 310 }].
+    // showGuides positions guideElements[0] at left:310px and sets display:block.
+    manager.applyLayout({
+      panels: [
+        makePanelState("panel-a", 100, 100, 200, 200),
+        makePanelState("panel-b", 310, 100, 200, 200),
+      ],
+    });
+
+    const guides = Array.from(snapContainer.querySelectorAll<HTMLElement>(".snap-guide-line"));
+    expect(guides.length).toBe(4);
+
+    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
+    const panelAEl = floatingPanels[0];
+    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
+
+    // Start drag
+    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 200, clientY: 150 }));
+
+    // Move 5px right — triggers snap (dist=5 < threshold=8), calls showGuides
+    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 205, clientY: 150 }));
+
+    // During drag: the x-axis guide should be visible at position 310
+    const xGuides = guides.filter((g) => g.classList.contains("snap-guide-line-x"));
+    const visibleXGuide = xGuides.find((g) => g.style.display === "block");
+    expect(visibleXGuide).toBeDefined();
+    expect(visibleXGuide!.style.left).toBe("310px");
+
+    // Drag end — triggers hideGuides
+    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 205, clientY: 150 }));
+
+    // After drag: all guides should be hidden
+    for (const guide of guides) {
+      expect(guide.style.display).toBe("none");
+    }
+
+    manager.destroy();
+  });
+});

@@ -323,3 +323,26 @@
   color: var(--foreground);
   background: var(--accent);
 }
+
+/* ---- Snap guide lines ---- */
+
+.snap-guide-line {
+  position: absolute;
+  pointer-events: none;
+  z-index: 9990;
+  display: none;
+}
+
+.snap-guide-line-x {
+  border-left: 1px dashed var(--accent);
+  width: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.snap-guide-line-y {
+  border-top: 1px dashed var(--accent);
+  height: 0;
+  left: 0;
+  right: 0;
+}
