@@ -125,12 +125,6 @@
   box-sizing: border-box;
 }
 
-/* Focused floating panel: accent border and stronger shadow (D06) */
-.floating-panel-focused {
-  border-color: var(--accent);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent);
-}
-
 /* ---- Card header bar (panel-header) ---- */
 
 .panel-header {
@@ -144,6 +138,11 @@
   flex-shrink: 0;
   user-select: none;
   box-sizing: border-box;
+}
+
+/* Key panel title bar tint: subtle accent over muted background */
+.panel-header-key {
+  background: color-mix(in srgb, var(--accent) 12%, var(--muted));
 }
 
 .panel-header-icon {
@@ -244,6 +243,8 @@
 
 .floating-panel-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   position: relative;
   min-height: 0;
@@ -321,4 +322,49 @@
 .tug-menu-button:hover {
   color: var(--foreground);
   background: var(--accent);
+}
+
+/* ---- Snap guide lines ---- */
+
+.snap-guide-line {
+  position: absolute;
+  pointer-events: none;
+  z-index: 9990;
+  display: none;
+}
+
+.snap-guide-line-x {
+  border-left: 1px dashed var(--accent);
+  width: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.snap-guide-line-y {
+  border-top: 1px dashed var(--accent);
+  height: 0;
+  left: 0;
+  right: 0;
+}
+
+/* ---- Virtual sash (shared-edge resize) ---- */
+
+.virtual-sash {
+  position: absolute;
+  z-index: 9950;
+  background: transparent;
+}
+
+.virtual-sash:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.virtual-sash-vertical {
+  width: 8px;
+  cursor: col-resize;
+}
+
+.virtual-sash-horizontal {
+  height: 8px;
+  cursor: row-resize;
 }

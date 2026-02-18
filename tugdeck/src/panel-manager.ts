@@ -7,7 +7,7 @@
  * card coupling (D05).
  *
  * [D01] Flat array replaces tree
- * [D06] Focus model with CSS class (floating-panel-focused)
+ * [D06] Key panel focus model with title bar tint
  * [D09] Card instance identity preserved via container reparenting
  * [D10] Manager-level fan-out per feed ID
  */
@@ -20,7 +20,7 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import { CardHeader } from "./card-header";
+import { computeSnap, computeResizeSnap, panelToRect, findSharedEdges, computeSets, type Rect, type GuidePosition, type PanelSet, type SharedEdge } from "./snap";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -83,6 +83,9 @@ export class PanelManager implements IDragState {
   /** D10: one Set<TugCard> per output feedId */
   private cardsByFeed: Map<FeedIdValue, Set<TugCard>> = new Map();
 
+  /** Most recent payload per feed, replayed to newly added cards */
+  private lastPayload: Map<FeedIdValue, Uint8Array> = new Map();
+
   /**
    * Registry mapping TabItem.id -> TugCard instance.
    */
@@ -111,6 +114,9 @@ export class PanelManager implements IDragState {
    */
   private floatingPanels: Map<string, FloatingPanel> = new Map();
 
+  /** Key panel: only conversation/terminal panels get title bar tint */
+  private keyPanelId: string | null = null;
+
   /** D05: drag state flag */
   private _isDragging = false;
 
@@ -122,6 +128,30 @@ export class PanelManager implements IDragState {
 
   /** Root panel DOM element */
   private rootEl: HTMLElement;
+
+  /** Pool of guide line elements: 2 vertical (.snap-guide-line-x) + 2 horizontal (.snap-guide-line-y) */
+  private guideElements: HTMLElement[] = [];
+
+  /** Runtime set membership: groups of panels connected by shared edges (D05) */
+  private sets: PanelSet[] = [];
+
+  /** Current shared edges between panels, computed alongside sets */
+  private sharedEdges: SharedEdge[] = [];
+
+  /** Virtual sash DOM elements for shared-edge resize (D04) */
+  private sashElements: HTMLElement[] = [];
+
+  /**
+   * Transient context for the current set-move drag.
+   * Initialized on first onMoving call, cleared in onMoveEnd.
+   * D06: top-most panel drags the set; others break out.
+   */
+  private _setMoveContext: {
+    panelId: string;
+    isTopMost: boolean;
+    setMemberIds: string[];
+    startPositions: Map<string, { x: number; y: number }>;
+  } | null = null;
 
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
@@ -136,6 +166,7 @@ export class PanelManager implements IDragState {
     // These callbacks are registered once and never removed.
     for (const feedId of OUTPUT_FEED_IDS) {
       connection.onFrame(feedId, (payload: Uint8Array) => {
+        this.lastPayload.set(feedId, payload);
         const cards = this.cardsByFeed.get(feedId);
         if (cards) {
           for (const card of cards) {
@@ -157,6 +188,9 @@ export class PanelManager implements IDragState {
     this.rootEl.style.width = "100%";
     this.rootEl.style.height = "100%";
     container.appendChild(this.rootEl);
+
+    // Create guide line element pool (D03: absolutely-positioned divs in canvas container)
+    this.createGuideLines();
 
     // Load or build the initial canvas state
     this.canvasState = this.loadLayout();
@@ -227,6 +261,9 @@ export class PanelManager implements IDragState {
           }
         });
       });
+      // After mount, ensure the key panel has DOM focus.
+      // Cards must not self-focus on mount — the panel manager owns focus.
+      requestAnimationFrame(() => this.focusKeyPanelCard());
     }
   }
 
@@ -282,6 +319,7 @@ export class PanelManager implements IDragState {
 
     card.destroy();
     this.render();
+    this.recomputeSets();
     this.scheduleSave();
   }
 
@@ -290,7 +328,7 @@ export class PanelManager implements IDragState {
   /**
    * Re-render the entire canvas: destroy existing FloatingPanel and TabBar
    * instances, then create one FloatingPanel per PanelState in array order
-   * (index = z-order). Last panel in array gets .floating-panel-focused.
+   * (index = z-order). Key-capable panels get title bar tint via setKey().
    *
    * Existing card mount containers are reparented rather than recreated (D09).
    */
@@ -313,7 +351,6 @@ export class PanelManager implements IDragState {
     const panels = this.canvasState.panels;
     for (let i = 0; i < panels.length; i++) {
       const panel = panels[i];
-      const isFocused = i === panels.length - 1;
 
       // Resolve card meta from the active tab's card (if registered)
       const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId)
@@ -326,19 +363,59 @@ export class PanelManager implements IDragState {
         panel,
         {
           onMoveEnd: (x, y) => {
+            this._isDragging = false;
+            this.hideGuides();
             panel.position = { x, y };
+            // Sibling PanelState positions are already updated because
+            // FloatingPanel.updatePosition() mutates the shared PanelState object
+            // reference in-place during set-move.
+            this._setMoveContext = null;
+            this.recomputeSets();
             this.scheduleSave();
           },
           onResizeEnd: (x, y, width, height) => {
+            this._isDragging = false;
+            this.hideGuides();
             panel.position = { x, y };
             panel.size = { width, height };
             // Notify the active card of its new size
             const activeTabId = panel.activeTabId;
             const card = this.cardRegistry.get(activeTabId);
             if (card) card.onResize(width, height - FLOATING_TITLE_BAR_HEIGHT);
+            this.recomputeSets();
             this.scheduleSave();
           },
           onFocus: () => {
+            // Capture set-move context BEFORE focusPanel reorders the panels array.
+            // This preserves the pre-drag z-order for top-most determination (D06).
+            const mySet = this.sets.find((s) => s.panelIds.includes(panel.id));
+            if (mySet) {
+              let topMostId = panel.id;
+              let topMostIdx = -1;
+              for (const memberId of mySet.panelIds) {
+                const idx = this.canvasState.panels.findIndex((p) => p.id === memberId);
+                if (idx > topMostIdx) {
+                  topMostIdx = idx;
+                  topMostId = memberId;
+                }
+              }
+              const isTopMost = topMostId === panel.id;
+              const startPositions = new Map<string, { x: number; y: number }>();
+              for (const memberId of mySet.panelIds) {
+                const memberPanel = this.canvasState.panels.find((p) => p.id === memberId);
+                if (memberPanel) {
+                  startPositions.set(memberId, { ...memberPanel.position });
+                }
+              }
+              this._setMoveContext = {
+                panelId: panel.id,
+                isTopMost,
+                setMemberIds: mySet.panelIds,
+                startPositions,
+              };
+            } else {
+              this._setMoveContext = null;
+            }
             this.focusPanel(panel.id);
           },
           onClose: () => {
@@ -348,6 +425,130 @@ export class PanelManager implements IDragState {
               this.removeCard(card);
             }
           },
+          onMoving: (x, y) => {
+            this._isDragging = true;
+
+            // Use the context captured in onFocus (before focusPanel reordered panels).
+            // If no context (panel not in a set), create a solo context now.
+            if (this._setMoveContext === null) {
+              const startPositions = new Map<string, { x: number; y: number }>();
+              startPositions.set(panel.id, { ...panel.position });
+              this._setMoveContext = {
+                panelId: panel.id,
+                isTopMost: false,
+                setMemberIds: [],
+                startPositions,
+              };
+            }
+
+            const ctx = this._setMoveContext;
+
+            if (ctx.isTopMost && ctx.setMemberIds.length > 1) {
+              // SET-MOVE: move all set members by the same delta (D06).
+              const myStart = ctx.startPositions.get(panel.id)!;
+              const deltaX = x - myStart.x;
+              const deltaY = y - myStart.y;
+
+              // Compute proposed positions for all siblings.
+              const proposedPositions = new Map<string, { x: number; y: number }>();
+              for (const memberId of ctx.setMemberIds) {
+                const memberStart = ctx.startPositions.get(memberId)!;
+                proposedPositions.set(memberId, {
+                  x: memberStart.x + deltaX,
+                  y: memberStart.y + deltaY,
+                });
+              }
+
+              // Compute set bounding box at proposed positions.
+              let bboxLeft = Infinity;
+              let bboxTop = Infinity;
+              let bboxRight = -Infinity;
+              let bboxBottom = -Infinity;
+              for (const memberId of ctx.setMemberIds) {
+                const proposed = proposedPositions.get(memberId)!;
+                const memberPanel = this.canvasState.panels.find((p) => p.id === memberId)!;
+                bboxLeft = Math.min(bboxLeft, proposed.x);
+                bboxTop = Math.min(bboxTop, proposed.y);
+                bboxRight = Math.max(bboxRight, proposed.x + memberPanel.size.width);
+                bboxBottom = Math.max(bboxBottom, proposed.y + memberPanel.size.height);
+              }
+
+              // Snap bounding box against non-set panels.
+              const nonSetRects: Rect[] = this.canvasState.panels
+                .filter((p) => !ctx.setMemberIds.includes(p.id))
+                .map((p) => panelToRect(p));
+
+              const setBBox: Rect = {
+                x: bboxLeft,
+                y: bboxTop,
+                width: bboxRight - bboxLeft,
+                height: bboxBottom - bboxTop,
+              };
+
+              const snap = computeSnap(setBBox, nonSetRects);
+              this.showGuides(snap.guides);
+
+              // Apply snap offset to all sibling positions.
+              const snapDX = snap.x !== null ? snap.x - setBBox.x : 0;
+              const snapDY = snap.y !== null ? snap.y - setBBox.y : 0;
+
+              for (const memberId of ctx.setMemberIds) {
+                if (memberId === panel.id) continue; // dragged panel handled by FloatingPanel
+                const proposed = proposedPositions.get(memberId)!;
+                const siblingFp = this.floatingPanels.get(memberId);
+                if (siblingFp) {
+                  siblingFp.updatePosition(proposed.x + snapDX, proposed.y + snapDY);
+                }
+              }
+
+              return {
+                x: x + snapDX,
+                y: y + snapDY,
+              };
+            } else {
+              // BREAK-OUT / SOLO: move only this panel; snap against all others.
+              const others: Rect[] = this.canvasState.panels
+                .filter((p) => p.id !== panel.id)
+                .map((p) => panelToRect(p));
+              const snap = computeSnap(
+                { x, y, width: panel.size.width, height: panel.size.height },
+                others
+              );
+              this.showGuides(snap.guides);
+              return {
+                x: snap.x !== null ? snap.x : x,
+                y: snap.y !== null ? snap.y : y,
+              };
+            }
+          },
+          onResizing: (x, y, width, height) => {
+            this._isDragging = true;
+            // Collect Rects for all other panels (exclude the one being resized)
+            const others: Rect[] = this.canvasState.panels
+              .filter((p) => p.id !== panel.id)
+              .map((p) => panelToRect(p));
+            // Pass all four edges; computeResizeSnap only snaps edges within threshold
+            const resizingEdges = {
+              left: x,
+              right: x + width,
+              top: y,
+              bottom: y + height,
+            };
+            const snap = computeResizeSnap(resizingEdges, others);
+            this.showGuides(snap.guides);
+            // Reconstruct geometry from snapped edge values
+            let newX = snap.left !== undefined ? snap.left : x;
+            let newY = snap.top !== undefined ? snap.top : y;
+            const newRight = snap.right !== undefined ? snap.right : (x + width);
+            const newBottom = snap.bottom !== undefined ? snap.bottom : (y + height);
+            let newW = newRight - newX;
+            let newH = newBottom - newY;
+            // Enforce minimum size — if snapping would violate it, skip that snap
+            const MIN_SIZE = 100;
+            if (newW < MIN_SIZE) { newW = width; newX = x; }
+            if (newH < MIN_SIZE) { newH = height; newY = y; }
+            return { x: newX, y: newY, width: newW, height: newH };
+          },
         },
         this.container,
         cardMeta
@@ -355,11 +556,6 @@ export class PanelManager implements IDragState {
 
       // Assign z-index in array order (100, 101, 102, ...)
       fp.setZIndex(100 + i);
-
-      // Last panel in array is focused (D06)
-      if (isFocused) {
-        fp.getElement().classList.add("floating-panel-focused");
-      }
 
       this.container.appendChild(fp.getElement());
       this.floatingPanels.set(panel.id, fp);
@@ -415,32 +611,68 @@ export class PanelManager implements IDragState {
         // (FloatingPanel already created header from cardMeta if provided.)
       }
     }
+
+    // Apply key panel state: if no keyPanelId set (or it no longer exists),
+    // find the last acceptsKey panel and make it key.
+    if (!this.keyPanelId || !this.floatingPanels.has(this.keyPanelId)) {
+      this.keyPanelId = null;
+      for (let i = panels.length - 1; i >= 0; i--) {
+        if (this.acceptsKey(panels[i].id)) {
+          this.keyPanelId = panels[i].id;
+          break;
+        }
+      }
+    }
+    for (const [id, fp] of this.floatingPanels) {
+      fp.setKey(id === this.keyPanelId);
+    }
   }
 
   /**
    * Move the given panel to the end of the panels array (highest z-order),
-   * update z-index values, and toggle the focused CSS class (D06).
+   * update z-index values, and update key panel state.
+   *
+   * Key panel model: only conversation/terminal panels become key.
+   * Clicking a non-key panel brings it to front but does not change keyPanelId.
    */
   focusPanel(panelId: string): void {
     const idx = this.canvasState.panels.findIndex((p) => p.id === panelId);
-    if (idx === -1 || idx === this.canvasState.panels.length - 1) return;
+    if (idx === -1) return;
 
-    // Splice and push to end
-    const [panel] = this.canvasState.panels.splice(idx, 1);
-    this.canvasState.panels.push(panel);
+    // Bring to front if not already last
+    if (idx !== this.canvasState.panels.length - 1) {
+      const [panel] = this.canvasState.panels.splice(idx, 1);
+      this.canvasState.panels.push(panel);
 
-    // Remove focused class from all, add to the focused panel
-    for (const [id, fp] of this.floatingPanels) {
-      const isFocused = id === panelId;
-      fp.getElement().classList.toggle("floating-panel-focused", isFocused);
       // Update z-index to match new array order
-      const newIdx = this.canvasState.panels.findIndex((p) => p.id === id);
-      if (newIdx !== -1) {
-        fp.setZIndex(100 + newIdx);
+      for (const [id, fp] of this.floatingPanels) {
+        const newIdx = this.canvasState.panels.findIndex((p) => p.id === id);
+        if (newIdx !== -1) {
+          fp.setZIndex(100 + newIdx);
+        }
+      }
+
+      this.scheduleSave();
+    }
+
+    // Update key panel: only if the focused panel accepts key
+    if (this.acceptsKey(panelId)) {
+      const prevKeyFp = this.keyPanelId ? this.floatingPanels.get(this.keyPanelId) : null;
+      if (prevKeyFp && this.keyPanelId !== panelId) {
+        prevKeyFp.setKey(false);
+      }
+      this.keyPanelId = panelId;
+      const newKeyFp = this.floatingPanels.get(panelId);
+      if (newKeyFp) {
+        newKeyFp.setKey(true);
       }
     }
 
-    this.scheduleSave();
+    // Route keyboard focus to the key panel's active card.
+    // Deferred to next frame so it runs after the browser's default
+    // mousedown focus handling settles — otherwise the browser can
+    // move focus to the clicked element after our .focus() call.
+    requestAnimationFrame(() => this.focusKeyPanelCard());
   }
 
   // ---- Tab callbacks ----
@@ -574,6 +806,15 @@ export class PanelManager implements IDragState {
     this.cardRegistry.set(tabId, card);
 
     this.render();
+
+    // Replay last frame for each subscribed feed so the card isn't empty
+    for (const feedId of card.feedIds) {
+      const payload = this.lastPayload.get(feedId as FeedIdValue);
+      if (payload) {
+        card.onFrame(feedId, payload);
+      }
+    }
+
     this.scheduleSave();
   }
 
@@ -623,6 +864,15 @@ export class PanelManager implements IDragState {
     this.cardRegistry.set(tabId, card);
 
     this.render();
+
+    // Replay last frame for each subscribed feed so the card isn't empty
+    for (const feedId of card.feedIds) {
+      const payload = this.lastPayload.get(feedId as FeedIdValue);
+      if (payload) {
+        card.onFrame(feedId, payload);
+      }
+    }
+
     this.scheduleSave();
   }
 
@@ -632,6 +882,11 @@ export class PanelManager implements IDragState {
    */
   resetLayout(): void {
     this.destroyAllCards();
+    this.keyPanelId = null;
+    this.sets = [];
+    this.sharedEdges = [];
+    this.destroySashes();
+    this._setMoveContext = null;
 
     const canvasW = this.container.clientWidth || 800;
     const canvasH = this.container.clientHeight || 600;
@@ -733,6 +988,7 @@ export class PanelManager implements IDragState {
    * Apply an external CanvasState, re-render, and schedule a save.
    */
   applyLayout(canvasState: CanvasState): void {
+    this.keyPanelId = null;
     this.canvasState = canvasState;
     this.render();
     this.scheduleSave();
@@ -758,6 +1014,11 @@ export class PanelManager implements IDragState {
     return this.container;
   }
 
+  /** Expose current panel sets for testing */
+  getSets(): PanelSet[] {
+    return this.sets;
+  }
+
   /**
    * Register a card factory for a componentId.
    * Used by TugMenu and resetLayout to create new card instances.
@@ -767,6 +1028,258 @@ export class PanelManager implements IDragState {
   }
 
   // ---- Private helpers ----
+
+  /**
+   * Recompute panel sets from current panel positions.
+   * Called after move-end, resize-end, and panel close.
+   * D05: Sets are runtime-only, derived from panel positions.
+   * D07: Shared-edge detection algorithm.
+   */
+  private recomputeSets(): void {
+    const panelRects = this.canvasState.panels.map((p) => ({
+      id: p.id,
+      rect: panelToRect(p),
+    }));
+    const sharedEdges = findSharedEdges(panelRects);
+    const panelIds = this.canvasState.panels.map((p) => p.id);
+    this.sets = computeSets(panelIds, sharedEdges);
+    this.sharedEdges = sharedEdges;
+    this.destroySashes();
+    this.createSashes();
+  }
+
+  /** Create the pool of 4 guide line elements appended to the canvas container. */
+  private createGuideLines(): void {
+    const classes = [
+      "snap-guide-line snap-guide-line-x",
+      "snap-guide-line snap-guide-line-x",
+      "snap-guide-line snap-guide-line-y",
+      "snap-guide-line snap-guide-line-y",
+    ];
+    for (const cls of classes) {
+      const el = document.createElement("div");
+      el.className = cls;
+      this.container.appendChild(el);
+      this.guideElements.push(el);
+    }
+  }
+
+  /**
+   * Show guide lines at the specified positions. Hides any unused guide elements.
+   * Spec S06: Guide lines shown when snap target detected.
+   */
+  private showGuides(guides: GuidePosition[]): void {
+    const xGuides = guides.filter((g) => g.axis === "x");
+    const yGuides = guides.filter((g) => g.axis === "y");
+    // guideElements[0..1] are vertical (x-axis), [2..3] are horizontal (y-axis)
+    for (let i = 0; i < 2; i++) {
+      const el = this.guideElements[i];
+      if (i < xGuides.length) {
+        el.style.left = `${xGuides[i].position}px`;
+        el.style.display = "block";
+      } else {
+        el.style.display = "none";
+      }
+    }
+    for (let i = 0; i < 2; i++) {
+      const el = this.guideElements[i + 2];
+      if (i < yGuides.length) {
+        el.style.top = `${yGuides[i].position}px`;
+        el.style.display = "block";
+      } else {
+        el.style.display = "none";
+      }
+    }
+  }
+
+  /** Hide all guide line elements. Called on drag end. */
+  private hideGuides(): void {
+    for (const el of this.guideElements) {
+      el.style.display = "none";
+    }
+  }
+
+  /** Remove all virtual sash elements from the DOM. */
+  private destroySashes(): void {
+    for (const el of this.sashElements) {
+      el.remove();
+    }
+    this.sashElements = [];
+  }
+
+  /**
+   * Create virtual sash elements for each shared edge.
+   * Spec S05: Virtual sash interaction — drag resizes both adjacent panels.
+   */
+  private createSashes(): void {
+    for (const edge of this.sharedEdges) {
+      const sash = document.createElement("div");
+
+      if (edge.axis === "vertical") {
+        sash.className = "virtual-sash virtual-sash-vertical";
+        sash.style.left = `${edge.boundaryPosition - 4}px`; // center 8px sash on boundary
+        sash.style.top = `${edge.overlapStart}px`;
+        sash.style.height = `${edge.overlapEnd - edge.overlapStart}px`;
+      } else {
+        sash.className = "virtual-sash virtual-sash-horizontal";
+        sash.style.top = `${edge.boundaryPosition - 4}px`; // center 8px sash on boundary
+        sash.style.left = `${edge.overlapStart}px`;
+        sash.style.width = `${edge.overlapEnd - edge.overlapStart}px`;
+      }
+
+      this.attachSashDrag(sash, edge);
+      this.container.appendChild(sash);
+      this.sashElements.push(sash);
+    }
+  }
+
+  /**
+   * Attach pointer event handlers to a sash for dual-panel resize.
+   * Spec S05: On pointerdown, track delta; on pointermove, grow one panel
+   * and shrink the other; enforce MIN_SIZE_PX on both.
+   */
+  private attachSashDrag(sash: HTMLElement, edge: SharedEdge): void {
+    const MIN_SIZE = 100;
+
+    sash.addEventListener("pointerdown", (downEvent: PointerEvent) => {
+      downEvent.preventDefault();
+      downEvent.stopPropagation();
+      if (sash.setPointerCapture) {
+        sash.setPointerCapture(downEvent.pointerId);
+      }
+
+      this._isDragging = true;
+
+      // Find the two panels
+      const panelA = this.canvasState.panels.find((p) => p.id === edge.panelAId);
+      const panelB = this.canvasState.panels.find((p) => p.id === edge.panelBId);
+      if (!panelA || !panelB) return;
+
+      const fpA = this.floatingPanels.get(edge.panelAId);
+      const fpB = this.floatingPanels.get(edge.panelBId);
+      if (!fpA || !fpB) return;
+
+      // Snapshot starting geometry
+      const startAX = panelA.position.x;
+      const startAY = panelA.position.y;
+      const startAW = panelA.size.width;
+      const startAH = panelA.size.height;
+      const startBX = panelB.position.x;
+      const startBY = panelB.position.y;
+      const startBW = panelB.size.width;
+      const startBH = panelB.size.height;
+      const startClientX = downEvent.clientX;
+      const startClientY = downEvent.clientY;
+
+      const onMove = (e: PointerEvent) => {
+        if (edge.axis === "vertical") {
+          // Vertical sash: panelA is the left panel, panelB is the right panel.
+          // Dragging right: A grows, B shrinks and shifts right.
+          const dx = e.clientX - startClientX;
+          let newAW = startAW + dx;
+          let newBX = startBX + dx;
+          let newBW = startBW - dx;
+
+          // Clamp A to MIN_SIZE
+          if (newAW < MIN_SIZE) {
+            newAW = MIN_SIZE;
+            newBX = startAX + MIN_SIZE;
+            newBW = startBW + (startAW - MIN_SIZE);
+          }
+          // Clamp B to MIN_SIZE
+          if (newBW < MIN_SIZE) {
+            newBW = MIN_SIZE;
+            newAW = startAW + (startBW - MIN_SIZE);
+            newBX = startAX + newAW;
+          }
+
+          fpA.updateSize(newAW, startAH);
+          fpB.updatePosition(newBX, startBY);
+          fpB.updateSize(newBW, startBH);
+        } else {
+          // Horizontal sash: panelA is the top panel, panelB is the bottom panel.
+          // Dragging down: A grows, B shrinks and shifts down.
+          const dy = e.clientY - startClientY;
+          let newAH = startAH + dy;
+          let newBY = startBY + dy;
+          let newBH = startBH - dy;
+
+          // Clamp A to MIN_SIZE
+          if (newAH < MIN_SIZE) {
+            newAH = MIN_SIZE;
+            newBY = startAY + MIN_SIZE;
+            newBH = startBH + (startAH - MIN_SIZE);
+          }
+          // Clamp B to MIN_SIZE
+          if (newBH < MIN_SIZE) {
+            newBH = MIN_SIZE;
+            newAH = startAH + (startBH - MIN_SIZE);
+            newBY = startAY + newAH;
+          }
+
+          fpA.updateSize(startAW, newAH);
+          fpB.updatePosition(startBX, newBY);
+          fpB.updateSize(startBW, newBH);
+        }
+      };
+
+      const onUp = (_e: PointerEvent) => {
+        if (sash.releasePointerCapture) {
+          sash.releasePointerCapture(downEvent.pointerId);
+        }
+        sash.removeEventListener("pointermove", onMove);
+        sash.removeEventListener("pointerup", onUp);
+        sash.removeEventListener("pointercancel", onUp);
+
+        this._isDragging = false;
+
+        // Notify active cards of their new sizes
+        for (const p of [panelA, panelB]) {
+          const card = this.cardRegistry.get(p.activeTabId);
+          if (card) {
+            card.onResize(p.size.width, p.size.height - FLOATING_TITLE_BAR_HEIGHT);
+          }
+        }
+
+        this.recomputeSets();
+        this.scheduleSave();
+      };
+
+      sash.addEventListener("pointermove", onMove);
+      sash.addEventListener("pointerup", onUp);
+      sash.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  /**
+   * Route keyboard focus to the key panel's active card.
+   * Called after any focus change so the key panel always receives key events.
+   */
+  private focusKeyPanelCard(): void {
+    if (!this.keyPanelId) return;
+    const panel = this.canvasState.panels.find((p) => p.id === this.keyPanelId);
+    if (!panel) return;
+    const card = this.cardRegistry.get(panel.activeTabId);
+    if (card?.focus) {
+      card.focus();
+    }
+  }
+
+  /** Set of componentIds that accept key status. */
+  private static readonly KEY_CAPABLE = new Set([
+    "conversation", "terminal", "git", "files",
+  ]);
+
+  /**
+   * Whether a panel accepts key status (title bar tint + key events).
+   * Most panels are key-capable; stats is the exception (display-only).
+   */
+  private acceptsKey(panelId: string): boolean {
+    const panel = this.canvasState.panels.find((p) => p.id === panelId);
+    if (!panel) return false;
+    const componentId = panel.tabs[0]?.componentId;
+    return componentId !== undefined && PanelManager.KEY_CAPABLE.has(componentId);
+  }
 
   /**
    * Destroy all current cards and clear all tracking maps.
@@ -810,6 +1323,15 @@ export class PanelManager implements IDragState {
       card.destroy();
     }
     this.cardRegistry.clear();
+    // Remove guide line elements
+    for (const el of this.guideElements) {
+      el.remove();
+    }
+    this.guideElements = [];
+    // Remove virtual sash elements
+    this.destroySashes();
+    // Clear transient drag context
+    this._setMoveContext = null;
     window.removeEventListener("resize", () => this.handleResize());
   }
 }

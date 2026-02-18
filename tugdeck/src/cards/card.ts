@@ -69,6 +69,9 @@ export interface TugCard {
   /** Handle container resize */
   onResize(width: number, height: number): void;
 
+  /** Claim keyboard focus (e.g. focus textarea or terminal). Optional. */
+  focus?(): void;
+
   /** Destroy the card and clean up resources */
   destroy(): void;
 }

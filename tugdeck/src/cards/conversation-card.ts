@@ -309,9 +309,6 @@ export class ConversationCard implements TugCard {
 
     // Load cached messages for instant rendering
     this.loadCachedMessages();
-
-    // Auto-focus the textarea on mount
-    this.textarea.focus();
   }
 
   private async loadCachedMessages(): Promise<void> {
@@ -954,6 +951,10 @@ export class ConversationCard implements TugCard {
 
   onResize(_width: number, _height: number): void {
     // No special resize handling needed
+  }
+
+  focus(): void {
+    this.textarea?.focus();
   }
 
   destroy(): void {
