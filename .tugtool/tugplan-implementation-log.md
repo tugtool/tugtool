@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-18T01:23:54Z
+bead: tugtool-ndt.1
+---
+
+## #step-0: Created layout-tree.ts (types, normalizeTree, insertNode, removeTab, findTabNode) and serialization.ts (serialize, deserialize, validateDockState, migrateV2ToV3, buildDefaultLayout) with 46 tests
+
+**Files changed:**
+- .tugtool/tugplan-panel-system.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-17T20:42:39Z
 ---
