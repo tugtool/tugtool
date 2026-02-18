@@ -54,6 +54,8 @@ export function createSash(
     e.preventDefault();
     sash.setPointerCapture(e.pointerId);
     sash.classList.add("active");
+    // Suppress text selection during drag
+    document.body.style.userSelect = "none";
     onDragStart();
 
     const startPos = orientation === "horizontal" ? e.clientX : e.clientY;
@@ -103,7 +105,7 @@ export function createSash(
 
       // Apply flex values immediately for visual feedback
       for (let i = 0; i < siblings.length; i++) {
-        siblings[i].style.flex = `${newWeights[i]} 1 0`;
+        siblings[i].style.flex = `${newWeights[i]} 1 0%`;
       }
 
       onWeightChange(newWeights);
@@ -112,6 +114,8 @@ export function createSash(
     const onUp = (ev: PointerEvent) => {
       sash.releasePointerCapture(ev.pointerId);
       sash.classList.remove("active");
+      // Restore text selection
+      document.body.style.userSelect = "";
       sash.removeEventListener("pointermove", onMove);
       sash.removeEventListener("pointerup", onUp);
 

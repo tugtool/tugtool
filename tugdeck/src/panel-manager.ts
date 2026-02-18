@@ -253,6 +253,16 @@ export class PanelManager implements IDragState {
     if (mountEl) {
       card.mount(mountEl);
       this.observeContainer(tabItem.id, mountEl, card);
+      // Deferred resize: double-rAF ensures both style recalculation and
+      // layout pass complete before measuring. Critical for xterm.js FitAddon.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const { clientWidth, clientHeight } = mountEl;
+          if (clientWidth > 0 && clientHeight > 0) {
+            card.onResize(clientWidth, clientHeight);
+          }
+        });
+      });
     }
 
     // If this card has meta and is in a single-tab node, create CardHeader now.
@@ -436,10 +446,7 @@ export class PanelManager implements IDragState {
           mountEl.className = "panel-card-mount";
           this.cardContainers.set(tab.id, mountEl);
         }
-        mountEl.style.display = isActive ? "block" : "none";
-        mountEl.style.width = "100%";
-        mountEl.style.height = "100%";
-        mountEl.style.overflow = "hidden";
+        mountEl.style.display = isActive ? "" : "none";
         fp.getCardAreaElement().appendChild(mountEl);
 
         const card = this.cardRegistry.get(tab.id);
@@ -481,7 +488,7 @@ export class PanelManager implements IDragState {
       const weight = node.weights[i] ?? 1 / node.children.length;
       const childWrapper = document.createElement("div");
       childWrapper.className = "panel-split-child";
-      childWrapper.style.flex = `${weight} 1 0`;
+      childWrapper.style.flex = `${weight} 1 0%`;
       // Prevent flex children from overflowing
       childWrapper.style.overflow = "hidden";
       childWrapper.style.minWidth = "0";
@@ -612,11 +619,8 @@ export class PanelManager implements IDragState {
       // Reparent into the card area (D09: appendChild preserves card DOM)
       cardAreaEl.appendChild(mountEl);
 
-      // Show/hide based on active tab
-      mountEl.style.display = isActive ? "block" : "none";
-      mountEl.style.width = "100%";
-      mountEl.style.height = "100%";
-      mountEl.style.overflow = "hidden";
+      // Show/hide based on active tab (position:absolute from CSS handles sizing)
+      mountEl.style.display = isActive ? "" : "none";
 
       // Mount the card if registered and not yet mounted
       const card = this.cardRegistry.get(tab.id);
@@ -742,6 +746,7 @@ export class PanelManager implements IDragState {
     startEvent: PointerEvent
   ): void {
     this._isDragging = true;
+    document.body.style.userSelect = "none";
 
     // Find the card registered for this tab item
     const card = this.cardRegistry.get(tabId) ?? null;
@@ -783,6 +788,7 @@ export class PanelManager implements IDragState {
     startEvent: PointerEvent
   ): void {
     this._isDragging = true;
+    document.body.style.userSelect = "none";
 
     const card = this.cardRegistry.get(tabId) ?? null;
     const canvasRect = this.container.getBoundingClientRect();
@@ -990,6 +996,7 @@ export class PanelManager implements IDragState {
 
   private cleanupDrag(): void {
     this._isDragging = false;
+    document.body.style.userSelect = "";
     this.dragSource = null;
     this.currentDropZone = null;
 
@@ -1186,7 +1193,7 @@ export class PanelManager implements IDragState {
 
   private applyLiveWeights(wrappers: HTMLElement[], weights: number[]): void {
     for (let i = 0; i < wrappers.length; i++) {
-      wrappers[i].style.flex = `${weights[i]} 1 0`;
+      wrappers[i].style.flex = `${weights[i]} 1 0%`;
     }
   }
 

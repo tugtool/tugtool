@@ -668,6 +668,25 @@ root: SplitNode(horizontal)
 
 **Commit after all checkpoints pass.**
 
+**Verification Tests (Manual):**
+
+These tests confirm the data layer is solid before any rendering work begins.
+
+- [ ] **V0.1: Unit tests pass.** Run `cd tugdeck && bun test src/__tests__/layout-tree.test.ts` and confirm all tests pass with zero failures.
+- [ ] **V0.2: buildDefaultLayout structure.** Open browser console on the tugdeck page and run:
+  ```js
+  // Check the layout tree stored in localStorage
+  const raw = localStorage.getItem('tugdeck-layout');
+  const parsed = JSON.parse(raw);
+  console.log('version:', parsed.version);
+  console.log('root type:', parsed.root.type);
+  console.log('root children:', parsed.root.children?.length);
+  console.log('left child type:', parsed.root.children?.[0]?.type);
+  console.log('right child type:', parsed.root.children?.[1]?.type);
+  ```
+  Expected: version 3, root type "split", 2 children, left child type "tabs", right child type "split".
+- [ ] **V0.3: Clear stale layout.** In browser console, run `localStorage.removeItem('tugdeck-layout')` then reload the page. This ensures any stale v2 or corrupt layout data is cleared before we verify rendering in Step 1.
+
 ---
 
 #### Step 1: Tree Renderer, IDragState Migration, and Manager Fan-Out {#step-1}
@@ -733,6 +752,35 @@ root: SplitNode(horizontal)
 **Rollback:** Revert commit; restore DeckManager import in `main.ts` and card files; remove `drag-state.ts`.
 
 **Commit after all checkpoints pass.**
+
+**Verification Tests (Manual — Browser):**
+
+Reload the page (hard refresh: Cmd+Shift+R) after each fix. Run these in order — each builds on the previous.
+
+- [ ] **V1.1: No JS errors on load.** Open browser DevTools Console tab. Reload the page. Check for red error messages. Report any errors you see — they indicate fundamental initialization failures.
+- [ ] **V1.2: Five panels visible.** You should see 5 distinct card areas: Conversation taking ~67% of the left side, and Terminal/Git/Files/Stats stacked vertically on the right ~33%. If you see a blank page or cards stacked wrong, report what you see.
+- [ ] **V1.3: Cards have content.** Each card area should show its actual content (terminal prompt, git status, file events, stats metrics, conversation input). If cards are empty boxes or show nothing, report which ones.
+- [ ] **V1.4: Sash dividers visible.** You should see thin (2px) divider lines between the left column and right column (vertical sash), and between each of the 4 right-side cards (horizontal sashes). They should highlight blue on hover.
+- [ ] **V1.5: Horizontal sash resize.** Hover over the vertical divider between Conversation and the right column. Cursor should change to col-resize (↔). Click and drag left/right — the columns should resize proportionally. Release — layout should hold.
+- [ ] **V1.6: Vertical sash resize.** Hover over a horizontal divider between any two right-side cards (e.g., Terminal/Git). Cursor should change to row-resize (↕). Click and drag up/down — the cards should resize. Release — layout should hold.
+- [ ] **V1.7: Layout persists.** After resizing, reload the page. The resized layout should be restored (not reset to default). Verify by checking that the column widths match what you set before reload.
+- [ ] **V1.8: DOM structure check.** In DevTools Elements tab, inspect `#deck-container`. You should see:
+  ```
+  #deck-container
+    div.panel-root
+      div.panel-split.panel-split-horizontal
+        div.panel-split-child [style="flex: 0.667 1 0%"]
+          div.panel-card-container
+            ...card content...
+        div.panel-sash.panel-sash-horizontal
+        div.panel-split-child [style="flex: 0.333 1 0%"]
+          div.panel-split.panel-split-vertical
+            div.panel-split-child [style="flex: 0.25 1 0%"]
+              div.panel-card-container
+                ...
+            div.panel-sash.panel-sash-vertical
+            ...3 more split-children with sashes...
+  ```
 
 ---
 
