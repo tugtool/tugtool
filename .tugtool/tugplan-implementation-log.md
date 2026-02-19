@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-1
+date: 2025-02-19T20:11:11Z
+bead: tugtool-bwn.2
+---
+
+## #step-1: Added --dev and --source-tree CLI flags to tugtool, source tree auto-detection, bun dev spawning with node_modules auto-install, supervisor loop handling exit codes 42 (restart) and 43 (reset), dual child process shutdown, Table T01 error handling. Created tugdeck/scripts/watch-assets.ts and dev.ts for dev asset assembly. All 15 tests pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-0
 date: 2025-02-19T20:01:26Z
 bead: tugtool-bwn.1

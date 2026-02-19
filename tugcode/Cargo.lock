@@ -1826,6 +1826,7 @@ dependencies = [
  "clap",
  "libc",
  "regex",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

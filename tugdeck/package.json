@@ -5,7 +5,8 @@
   "description": "Browser frontend for tugcast terminal bridge",
   "scripts": {
     "build": "bun build src/main.ts --outfile=dist/app.js --minify",
-    "dev": "bun build src/main.ts --outfile=dist/app.js --watch",
+    "dev": "bun run scripts/dev.ts",
+    "dev:assets": "bun run scripts/watch-assets.ts",
     "test": "bun test"
   },
   "dependencies": {
