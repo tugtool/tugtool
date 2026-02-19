@@ -45,27 +45,28 @@ jobs:
       - name: Build binary
         run: |
           cargo build --release --target ${{ matrix.target }}
-          strip target/${{ matrix.target }}/release/tugtool
+          strip target/${{ matrix.target }}/release/tugcode
+        working-directory: tugcode
 
       - name: Create release directory structure
         run: |
           # Create directory structure at root level (no wrapper directory)
           mkdir -p release/bin
-          mkdir -p release/share/tugtool/skills/plan
-          mkdir -p release/share/tugtool/skills/implement
-          mkdir -p release/share/tugtool/skills/merge
-          mkdir -p release/share/tugtool/agents
+          mkdir -p release/share/tugplug/skills/plan
+          mkdir -p release/share/tugplug/skills/implement
+          mkdir -p release/share/tugplug/skills/merge
+          mkdir -p release/share/tugplug/agents
 
           # Copy binary
-          cp target/${{ matrix.target }}/release/tugtool release/bin/
+          cp tugcode/target/${{ matrix.target }}/release/tugcode release/bin/
 
           # Copy skills (orchestrators)
-          cp skills/plan/SKILL.md release/share/tugtool/skills/plan/
-          cp skills/implement/SKILL.md release/share/tugtool/skills/implement/
-          cp skills/merge/SKILL.md release/share/tugtool/skills/merge/
+          cp tugplug/skills/plan/SKILL.md release/share/tugplug/skills/plan/
+          cp tugplug/skills/implement/SKILL.md release/share/tugplug/skills/implement/
+          cp tugplug/skills/merge/SKILL.md release/share/tugplug/skills/merge/
 
           # Copy agents
-          cp agents/*.md release/share/tugtool/agents/
+          cp tugplug/agents/*.md release/share/tugplug/agents/
 
       - name: Create tarball
         run: |
@@ -165,13 +166,13 @@ jobs:
           git reset --hard origin/main
 
           # Update the formula
-          ./scripts/update-homebrew-formula.sh \
+          ./tugcode/scripts/update-homebrew-formula.sh \
             "${{ github.ref_name }}" \
             "${{ steps.checksums.outputs.arm64_sha }}" \
             "${{ steps.checksums.outputs.x86_64_sha }}"
 
           # Commit only if there are changes
-          git add Formula/tugtool.rb
+          git add tugcode/Formula/tugtool.rb
           if ! git diff --cached --quiet; then
             VERSION=${GITHUB_REF#refs/tags/v}
             git commit -m "Update formula to $VERSION"

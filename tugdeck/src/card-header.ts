@@ -59,30 +59,30 @@ export class CardHeader {
 
     // Root element
     this.el = document.createElement("div");
-    this.el.className = "panel-header";
+    this.el.className = "card-header";
 
     // ---- Icon ----
     const iconEl = document.createElement("div");
-    iconEl.className = "panel-header-icon";
+    iconEl.className = "card-header-icon";
     const iconDef = ICON_MAP[meta.icon] ?? Box;
     iconEl.appendChild(createElement(iconDef, { width: 14, height: 14 }));
     this.el.appendChild(iconEl);
 
     // ---- Title ----
     const titleEl = document.createElement("div");
-    titleEl.className = "panel-header-title";
+    titleEl.className = "card-header-title";
     titleEl.textContent = meta.title;
     this.el.appendChild(titleEl);
 
     // ---- Spacer ----
     const spacer = document.createElement("div");
-    spacer.className = "panel-header-spacer";
+    spacer.className = "card-header-spacer";
     this.el.appendChild(spacer);
 
     // ---- Menu button (hidden if no menuItems) ----
     if (meta.menuItems.length > 0) {
       const menuBtn = document.createElement("button");
-      menuBtn.className = "panel-header-btn";
+      menuBtn.className = "card-header-btn";
       menuBtn.setAttribute("aria-label", "Card menu");
       menuBtn.appendChild(createElement(EllipsisVertical, { width: 14, height: 14 }));
       menuBtn.addEventListener("click", (e) => {
@@ -103,7 +103,7 @@ export class CardHeader {
     const showCollapse = options.showCollapse !== false;
     if (showCollapse) {
       this.collapseBtn = document.createElement("button");
-      this.collapseBtn.className = "panel-header-btn";
+      this.collapseBtn.className = "card-header-btn";
       this.collapseBtn.setAttribute("aria-label", "Collapse card");
       this.collapseBtn.appendChild(createElement(Minus, { width: 14, height: 14 }));
       this.collapseBtn.addEventListener("click", (e) => {
@@ -116,7 +116,7 @@ export class CardHeader {
     // ---- Close button ----
     if (meta.closable) {
       const closeBtn = document.createElement("button");
-      closeBtn.className = "panel-header-btn";
+      closeBtn.className = "card-header-btn";
       closeBtn.setAttribute("aria-label", "Close card");
       closeBtn.appendChild(createElement(X, { width: 14, height: 14 }));
       closeBtn.addEventListener("click", (e) => {

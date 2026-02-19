@@ -48,6 +48,12 @@ Single stream within tugcast.
 
 ⸻
 
+📰 tugplug — the Claude Code plugin
+
+Runs the plan, implement, and merge skill-based orchestrated agent flows.
+
+⸻
+
 🧠 Why this system is strong
 
 You accidentally landed on a very coherent pattern:

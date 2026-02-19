@@ -4,7 +4,7 @@ import {
   type SnapResult,
   type GuidePosition,
   type SharedEdge,
-  type PanelSet,
+  type CardSet,
   type EdgeValidator,
   SNAP_THRESHOLD_PX,
   SNAP_VISIBILITY_THRESHOLD,
@@ -13,22 +13,22 @@ import {
   computeEdgeVisibility,
   findSharedEdges,
   computeSets,
-  panelToRect,
+  cardToRect,
 } from "../snap";
-import type { PanelState } from "../layout-tree";
+import type { CardState } from "../layout-tree";
 
-// ---- panelToRect ----
+// ---- cardToRect ----
 
-describe("panelToRect", () => {
+describe("cardToRect", () => {
   test("converts PanelState to Rect correctly", () => {
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "p1",
       position: { x: 10, y: 20 },
       size: { width: 200, height: 300 },
       tabs: [],
       activeTabId: "",
     };
-    const rect = panelToRect(panel);
+    const rect = cardToRect(panel);
     expect(rect.x).toBe(10);
     expect(rect.y).toBe(20);
     expect(rect.width).toBe(200);
@@ -203,7 +203,7 @@ describe("findSharedEdges", () => {
 
     // Should find at least one vertical edge between A and B
     const vertEdge = edges.find(
-      (e) => e.axis === "vertical" && e.panelAId === "a" && e.panelBId === "b"
+      (e) => e.axis === "vertical" && e.cardAId === "a" && e.cardBId === "b"
     );
     expect(vertEdge).toBeDefined();
     expect(vertEdge!.overlapStart).toBe(50);
@@ -222,7 +222,7 @@ describe("findSharedEdges", () => {
     const edges = findSharedEdges(panels);
 
     const horizEdge = edges.find(
-      (e) => e.axis === "horizontal" && e.panelAId === "a" && e.panelBId === "b"
+      (e) => e.axis === "horizontal" && e.cardAId === "a" && e.cardBId === "b"
     );
     expect(horizEdge).toBeDefined();
     expect(horizEdge!.overlapStart).toBe(50);
@@ -258,7 +258,7 @@ describe("findSharedEdges", () => {
     const edges = findSharedEdges(panels);
 
     const vertEdge = edges.find(
-      (e) => e.axis === "vertical" && e.panelAId === "a" && e.panelBId === "b"
+      (e) => e.axis === "vertical" && e.cardAId === "a" && e.cardBId === "b"
     );
     expect(vertEdge).toBeDefined();
     expect(vertEdge!.overlapStart).toBe(50);
@@ -293,37 +293,37 @@ describe("findSharedEdges", () => {
 describe("computeSets", () => {
   // Acceptance criterion (i): two panels sharing an edge → one set with both IDs.
   test("groups two panels sharing an edge into one set", () => {
-    const panelIds = ["a", "b"];
+    const cardIds = ["a", "b"];
     const sharedEdge: SharedEdge = {
-      panelAId: "a",
-      panelBId: "b",
+      cardAId: "a",
+      cardBId: "b",
       axis: "vertical",
       overlapStart: 0,
       overlapEnd: 100,
       boundaryPosition: 200,
     };
 
-    const sets = computeSets(panelIds, [sharedEdge]);
+    const sets = computeSets(cardIds, [sharedEdge]);
 
     expect(sets.length).toBe(1);
-    expect(sets[0].panelIds.sort()).toEqual(["a", "b"]);
+    expect(sets[0].cardIds.sort()).toEqual(["a", "b"]);
   });
 
   // Acceptance criterion (j): two groups of 2 panels, not connected → two separate sets.
   test("returns separate sets for disconnected groups", () => {
-    const panelIds = ["a", "b", "c", "d"];
+    const cardIds = ["a", "b", "c", "d"];
     const sharedEdges: SharedEdge[] = [
       {
-        panelAId: "a",
-        panelBId: "b",
+        cardAId: "a",
+        cardBId: "b",
         axis: "vertical",
         overlapStart: 0,
         overlapEnd: 100,
         boundaryPosition: 200,
       },
       {
-        panelAId: "c",
-        panelBId: "d",
+        cardAId: "c",
+        cardBId: "d",
         axis: "horizontal",
         overlapStart: 0,
         overlapEnd: 100,
@@ -331,34 +331,34 @@ describe("computeSets", () => {
       },
     ];
 
-    const sets = computeSets(panelIds, sharedEdges);
+    const sets = computeSets(cardIds, sharedEdges);
 
     expect(sets.length).toBe(2);
-    const allIds = sets.flatMap((s) => s.panelIds).sort();
+    const allIds = sets.flatMap((s) => s.cardIds).sort();
     expect(allIds).toEqual(["a", "b", "c", "d"]);
   });
 
   // Acceptance criterion (k): no shared edges → empty array.
   test("returns empty array for panels with no shared edges", () => {
-    const panelIds = ["a", "b", "c"];
-    const sets = computeSets(panelIds, []);
+    const cardIds = ["a", "b", "c"];
+    const sets = computeSets(cardIds, []);
     expect(sets).toEqual([]);
   });
 
   test("handles three panels all connected in a chain", () => {
-    const panelIds = ["a", "b", "c"];
+    const cardIds = ["a", "b", "c"];
     const sharedEdges: SharedEdge[] = [
       {
-        panelAId: "a",
-        panelBId: "b",
+        cardAId: "a",
+        cardBId: "b",
         axis: "vertical",
         overlapStart: 0,
         overlapEnd: 100,
         boundaryPosition: 200,
       },
       {
-        panelAId: "b",
-        panelBId: "c",
+        cardAId: "b",
+        cardBId: "c",
         axis: "vertical",
         overlapStart: 0,
         overlapEnd: 100,
@@ -366,19 +366,19 @@ describe("computeSets", () => {
       },
     ];
 
-    const sets = computeSets(panelIds, sharedEdges);
+    const sets = computeSets(cardIds, sharedEdges);
 
     expect(sets.length).toBe(1);
-    expect(sets[0].panelIds.sort()).toEqual(["a", "b", "c"]);
+    expect(sets[0].cardIds.sort()).toEqual(["a", "b", "c"]);
   });
 
   test("singletons do not appear in output", () => {
     // "c" has no shared edges
-    const panelIds = ["a", "b", "c"];
+    const cardIds = ["a", "b", "c"];
     const sharedEdges: SharedEdge[] = [
       {
-        panelAId: "a",
-        panelBId: "b",
+        cardAId: "a",
+        cardBId: "b",
         axis: "vertical",
         overlapStart: 0,
         overlapEnd: 100,
@@ -386,16 +386,16 @@ describe("computeSets", () => {
       },
     ];
 
-    const sets = computeSets(panelIds, sharedEdges);
+    const sets = computeSets(cardIds, sharedEdges);
 
     expect(sets.length).toBe(1);
-    expect(sets[0].panelIds.sort()).toEqual(["a", "b"]);
+    expect(sets[0].cardIds.sort()).toEqual(["a", "b"]);
     // "c" is not in any set
-    const allIds = sets.flatMap((s) => s.panelIds);
+    const allIds = sets.flatMap((s) => s.cardIds);
     expect(allIds.includes("c")).toBe(false);
   });
 
-  test("handles empty panelIds", () => {
+  test("handles empty cardIds", () => {
     const sets = computeSets([], []);
     expect(sets).toEqual([]);
   });

@@ -1,5 +1,5 @@
 import { TugConnection } from "./connection";
-import { PanelManager } from "./panel-manager";
+import { DeckManager } from "./deck-manager";
 import { ConversationCard } from "./cards/conversation-card";
 import { TerminalCard } from "./cards/terminal-card";
 import { FilesCard } from "./cards/files-card";
@@ -19,8 +19,8 @@ if (!container) {
   throw new Error("deck-container element not found");
 }
 
-// Create panel manager (replaces DeckManager)
-const deck = new PanelManager(container, connection);
+// Create deck manager
+const deck = new DeckManager(container, connection);
 
 // Register card factories for multi-instance and reset-layout support.
 // Factories capture connection in their closures; TugConnection is a single
@@ -52,6 +52,9 @@ deck.addCard(terminalCard, "terminal");
 deck.addCard(new GitCard(), "git");
 deck.addCard(new FilesCard(), "files");
 deck.addCard(new StatsCard(), "stats");
+
+// Re-render so FloatingPanel headers pick up card meta (menu buttons)
+deck.refresh();
 
 // Create Dock (48px vertical rail on right viewport edge)
 new Dock(deck);

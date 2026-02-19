@@ -5,7 +5,7 @@
  * with theme selection, and runtime theme change dispatch via MutationObserver.
  */
 
-import type { PanelManager } from "./panel-manager";
+import type { DeckManager } from "./deck-manager";
 import { DropdownMenu } from "./card-menu";
 import type { CardMenuItem } from "./cards/card";
 import { createElement, MessageSquare, Terminal, GitBranch, FolderOpen, Activity, Settings } from "lucide";
@@ -17,13 +17,13 @@ const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none
 </svg>`;
 
 export class Dock {
-  private panelManager: PanelManager;
+  private panelManager: DeckManager;
   private dockEl: HTMLElement;
   private currentMenu: DropdownMenu | null = null;
   private observer: MutationObserver | null = null;
   private settingsBtnEl: HTMLElement | null = null;
 
-  constructor(panelManager: PanelManager) {
+  constructor(panelManager: DeckManager) {
     this.panelManager = panelManager;
 
     // Read theme from localStorage and apply on construction
@@ -179,7 +179,7 @@ export class Dock {
         type: "action",
         label: "About tugdeck",
         action: () => {
-          window.alert("tugdeck v1.0\nCanvas panel system for tugtool.");
+          window.alert("tugdeck v1.0\nCanvas card system for tugtool.");
         },
       },
     ];
@@ -203,13 +203,13 @@ export class Dock {
 
   private applyThemeClass(theme: string): void {
     // Remove all theme classes
-    document.body.classList.remove("td-theme-bluenote", "td-theme-Harmony");
+    document.body.classList.remove("td-theme-bluenote", "td-theme-harmony");
 
     // Apply theme class (no class for Brio)
     if (theme === "bluenote") {
       document.body.classList.add("td-theme-bluenote");
-    } else if (theme === "harmony" || theme === "Harmony") {
-      document.body.classList.add("td-theme-Harmony");
+    } else if (theme === "harmony") {
+      document.body.classList.add("td-theme-harmony");
     }
     // Brio: no class (default)
   }

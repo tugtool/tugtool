@@ -1,35 +1,35 @@
 /**
- * Serialization, deserialization, and default layout for CanvasState.
+ * Serialization, deserialization, and default layout for DeckState.
  *
- * Spec S02: v4 serialization format (flat panel array)
- * Spec S03: Default layout geometry (five panels, 12px gaps)
+ * Spec S02: v5 serialization format (flat card array)
+ * Spec S03: Default layout geometry (five cards, 12px gaps)
  */
 
-import { type CanvasState, type PanelState, type TabItem } from "./layout-tree";
+import { type DeckState, type CardState, type TabItem } from "./layout-tree";
 
 // ---- Serialize ----
 
 /**
- * Serialize a CanvasState to the v4 format for localStorage storage.
+ * Serialize a DeckState to the v5 format for localStorage storage.
  *
  * Returns a plain object. Caller should JSON.stringify before writing.
  */
-export function serialize(canvasState: CanvasState): object {
+export function serialize(deckState: DeckState): object {
   return {
-    version: 4,
-    panels: canvasState.panels,
+    version: 5,
+    cards: deckState.cards,
   };
 }
 
 // ---- Deserialize ----
 
 /**
- * Deserialize a JSON string to a CanvasState.
+ * Deserialize a JSON string to a DeckState.
  *
- * Only accepts v4 format. Non-v4 data (including v2, v3) is discarded and
- * falls back to buildDefaultLayout (per D02: no migration from V3).
+ * Only accepts v5 format. Non-v5 data (including v2, v3, v4) is discarded and
+ * falls back to buildDefaultLayout (per D02: no migration from V4).
  *
- * Enforces 100px minimum sizes and clamps panel positions to canvas bounds.
+ * Enforces 100px minimum sizes and clamps card positions to canvas bounds.
  *
  * @param json - JSON string from localStorage
  * @param canvasWidth - Canvas width for position clamping
@@ -39,29 +39,29 @@ export function deserialize(
   json: string,
   canvasWidth: number,
   canvasHeight: number
-): CanvasState {
+): DeckState {
   try {
     const raw = JSON.parse(json) as Record<string, unknown>;
 
-    if (raw["version"] !== 4) {
+    if (raw["version"] !== 5) {
       return buildDefaultLayout(canvasWidth, canvasHeight);
     }
 
-    const rawPanels = raw["panels"];
-    if (!Array.isArray(rawPanels)) {
+    const rawCards = raw["cards"];
+    if (!Array.isArray(rawCards)) {
       return buildDefaultLayout(canvasWidth, canvasHeight);
     }
 
-    const panels: PanelState[] = [];
-    for (const p of rawPanels) {
-      if (!p || typeof p !== "object") continue;
+    const cards: CardState[] = [];
+    for (const c of rawCards) {
+      if (!c || typeof c !== "object") continue;
 
-      const panel = p as Record<string, unknown>;
-      const id = panel["id"] as string;
-      const pos = panel["position"] as { x: number; y: number } | undefined;
-      const sz = panel["size"] as { width: number; height: number } | undefined;
-      const tabs = panel["tabs"] as TabItem[] | undefined;
-      let activeTabId = panel["activeTabId"] as string | undefined;
+      const card = c as Record<string, unknown>;
+      const id = card["id"] as string;
+      const pos = card["position"] as { x: number; y: number } | undefined;
+      const sz = card["size"] as { width: number; height: number } | undefined;
+      const tabs = card["tabs"] as TabItem[] | undefined;
+      let activeTabId = card["activeTabId"] as string | undefined;
 
       if (!id || !pos || !sz || !Array.isArray(tabs) || tabs.length === 0) {
         continue;
@@ -84,7 +84,7 @@ export function deserialize(
         activeTabId = tabs[0].id;
       }
 
-      panels.push({
+      cards.push({
         id,
         position: { x, y },
         size: { width, height },
@@ -93,7 +93,7 @@ export function deserialize(
       });
     }
 
-    return { panels };
+    return { cards };
   } catch {
     return buildDefaultLayout(canvasWidth, canvasHeight);
   }
@@ -105,16 +105,16 @@ const GAP = 12;
 const LEFT_FRACTION = 0.6;
 
 /**
- * Helper to construct a PanelState with a single tab.
+ * Helper to construct a CardState with a single tab.
  */
-function makePanelState(
+function makeCardState(
   componentId: string,
   title: string,
   x: number,
   y: number,
   width: number,
   height: number
-): PanelState {
+): CardState {
   const tabId = crypto.randomUUID();
   return {
     id: crypto.randomUUID(),
@@ -126,26 +126,26 @@ function makePanelState(
 }
 
 /**
- * Build the default five-panel canvas layout.
+ * Build the default five-card canvas layout.
  *
  * Layout (Spec S03):
- *   Conversation panel: left column, 60% width
+ *   Conversation card: left column, 60% width
  *   Terminal / Git / Files / Stats: right column, equal height, 12px gaps
  *
- * All panels use 12px margins from canvas edges and 12px gaps between panels.
+ * All cards use 12px margins from canvas edges and 12px gaps between cards.
  */
 export function buildDefaultLayout(
   canvasWidth: number,
   canvasHeight: number
-): CanvasState {
+): DeckState {
   const conversationWidth = (canvasWidth - 3 * GAP) * LEFT_FRACTION;
   const conversationHeight = canvasHeight - 2 * GAP;
 
   const rightX = GAP + conversationWidth + GAP;
   const rightWidth = canvasWidth - rightX - GAP;
-  const panelHeight = (canvasHeight - 2 * GAP - 3 * GAP) / 4;
+  const cardHeight = (canvasHeight - 2 * GAP - 3 * GAP) / 4;
 
-  const conversation = makePanelState(
+  const conversation = makeCardState(
     "conversation",
     "Conversation",
     GAP,
@@ -154,7 +154,7 @@ export function buildDefaultLayout(
     conversationHeight
   );
 
-  const rightPanels = (
+  const rightCards = (
     ["terminal", "git", "files", "stats"] as const
   ).map((componentId, i) => {
     const titles: Record<string, string> = {
@@ -163,17 +163,17 @@ export function buildDefaultLayout(
       files: "Files",
       stats: "Stats",
     };
-    return makePanelState(
+    return makeCardState(
       componentId,
       titles[componentId],
       rightX,
-      GAP + i * (panelHeight + GAP),
+      GAP + i * (cardHeight + GAP),
       rightWidth,
-      panelHeight
+      cardHeight
     );
   });
 
   return {
-    panels: [conversation, ...rightPanels],
+    cards: [conversation, ...rightCards],
   };
 }

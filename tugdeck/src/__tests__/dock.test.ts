@@ -82,7 +82,7 @@ window.getComputedStyle = (el: Element) => {
   });
 };
 
-import { PanelManager } from "../panel-manager";
+import { DeckManager } from "../deck-manager";
 import { Dock } from "../dock";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
@@ -153,34 +153,34 @@ describe("PanelManager – addNewCard", () => {
   });
 
   test("addNewCard with registered factory adds a panel to canvasState", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
-    const before = manager.getCanvasState().panels.length;
+    const before = manager.getDeckState().cards.length;
     manager.addNewCard("terminal");
-    expect(manager.getCanvasState().panels.length).toBe(before + 1);
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
     manager.destroy();
   });
 
   test("addNewCard creates panel with correct componentId", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
 
     manager.addNewCard("git");
 
-    const panels = manager.getCanvasState().panels;
+    const panels = manager.getDeckState().cards;
     const newPanel = panels[panels.length - 1];
     expect(newPanel.tabs[0].componentId).toBe("git");
     manager.destroy();
   });
 
   test("addNewCard positions panel at canvas center (400x300)", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("stats", () => makeMockCard([FeedId.STATS], "stats"));
 
     manager.addNewCard("stats");
 
-    const panels = manager.getCanvasState().panels;
+    const panels = manager.getDeckState().cards;
     const newPanel = panels[panels.length - 1];
     expect(newPanel.size.width).toBe(400);
     expect(newPanel.size.height).toBe(300);
@@ -188,7 +188,7 @@ describe("PanelManager – addNewCard", () => {
   });
 
   test("addNewCard adds the card to the correct feed dispatch set", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card = makeMockCard([FeedId.FILESYSTEM], "files");
     manager.registerCardFactory("files", () => card);
 
@@ -212,7 +212,7 @@ describe("PanelManager – fan-out frame dispatch", () => {
   });
 
   test("two terminal cards simultaneously receive terminal feed frames", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const card1 = makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal");
     const card2 = makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal");
 
@@ -231,7 +231,7 @@ describe("PanelManager – fan-out frame dispatch", () => {
   });
 
   test("frame for feedId not subscribed to by a card is not delivered", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const gitCard = makeMockCard([FeedId.GIT], "git");
     manager.addCard(gitCard, "git");
 
@@ -254,7 +254,7 @@ describe("PanelManager – resetLayout", () => {
   });
 
   test("resetLayout produces exactly 5 panels", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION_OUTPUT], "conversation"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
@@ -267,12 +267,12 @@ describe("PanelManager – resetLayout", () => {
 
     manager.resetLayout();
 
-    expect(manager.getCanvasState().panels.length).toBe(5);
+    expect(manager.getDeckState().cards.length).toBe(5);
     manager.destroy();
   });
 
   test("resetLayout destroys old cards", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const oldCard = makeMockCard([FeedId.GIT], "git");
     manager.addCard(oldCard, "git");
 
@@ -289,7 +289,7 @@ describe("PanelManager – resetLayout", () => {
   });
 
   test("resetLayout clears feed dispatch sets of old cards", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const oldCard = makeMockCard([FeedId.GIT], "git");
     manager.addCard(oldCard, "git");
 
@@ -320,10 +320,10 @@ describe("PanelManager – v4 layout persistence", () => {
   });
 
   test("layout is saved to localStorage as v4 format", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tabId = "persist-tab";
     manager.applyLayout({
-      panels: [{
+      cards: [{
         id: "persist-panel",
         position: { x: 50, y: 75 },
         size: { width: 350, height: 250 },
@@ -333,16 +333,16 @@ describe("PanelManager – v4 layout persistence", () => {
     });
 
     // scheduleSave uses debounce; verify the state is maintained
-    const state = manager.getCanvasState();
-    expect(state.panels[0].position.x).toBe(50);
-    expect(state.panels[0].size.width).toBe(350);
+    const state = manager.getDeckState();
+    expect(state.cards[0].position.x).toBe(50);
+    expect(state.cards[0].size.width).toBe(350);
     manager.destroy();
   });
 
   test("serialize produces version:4 format", () => {
     const tabId = "ser-tab";
     const canvasState = {
-      panels: [{
+      cards: [{
         id: "ser-panel",
         position: { x: 10, y: 20 },
         size: { width: 300, height: 200 },
@@ -351,8 +351,8 @@ describe("PanelManager – v4 layout persistence", () => {
       }],
     };
     const serialized = serialize(canvasState) as Record<string, unknown>;
-    expect(serialized["version"]).toBe(4);
-    expect(Array.isArray(serialized["panels"])).toBe(true);
+    expect(serialized["version"]).toBe(5);
+    expect(Array.isArray(serialized["cards"])).toBe(true);
   });
 
   test("v3 layout in localStorage falls back to buildDefaultLayout", () => {
@@ -360,9 +360,9 @@ describe("PanelManager – v4 layout persistence", () => {
     const v3 = { version: 3, root: { type: "tab", id: "x", tabs: [], activeTabIndex: 0 }, floating: [] };
     localStorageMock.setItem("tugdeck-layout", JSON.stringify(v3));
 
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     // Should fall back to 5-panel default layout (v3 is discarded per D02)
-    expect(manager.getCanvasState().panels.length).toBe(5);
+    expect(manager.getDeckState().cards.length).toBe(5);
     manager.destroy();
   });
 });
@@ -379,7 +379,7 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Dock element is appended to document.body", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
     expect(document.body.querySelector(".dock")).not.toBeNull();
     dock.destroy();
@@ -387,7 +387,7 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Dock settings menu does not include Save Layout or preset items", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION], "conversation"));
     const dock = new Dock(manager);
 
@@ -407,7 +407,7 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Dock settings menu includes all expected items", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     // Click settings gear
@@ -431,7 +431,7 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Dock renders with 5 card-type icon buttons + settings gear + logo", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     const dockEl = document.body.querySelector(".dock");
@@ -446,24 +446,24 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Clicking card icon calls PanelManager.addNewCard with correct type", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
     const dock = new Dock(manager);
-    const before = manager.getCanvasState().panels.length;
+    const before = manager.getDeckState().cards.length;
 
     // Click terminal icon (second button)
     const terminalBtn = document.body.querySelectorAll(".dock-icon-btn")[1] as HTMLElement;
     terminalBtn?.click();
 
-    expect(manager.getCanvasState().panels.length).toBe(before + 1);
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
 
     dock.destroy();
     manager.destroy();
   });
 
   test("Theme select Bluenote adds body.td-theme-bluenote", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     // Simulate theme selection to Bluenote
@@ -474,27 +474,27 @@ describe("Dock – component and theme switching", () => {
     manager.destroy();
   });
 
-  test("Theme select Harmony adds body.td-theme-Harmony", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+  test("Theme select Harmony adds body.td-theme-harmony", () => {
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
-    document.body.classList.add("td-theme-Harmony");
-    expect(document.body.classList.contains("td-theme-Harmony")).toBe(true);
+    document.body.classList.add("td-theme-harmony");
+    expect(document.body.classList.contains("td-theme-harmony")).toBe(true);
 
     dock.destroy();
     manager.destroy();
   });
 
   test("Theme select Brio removes all td-theme-* classes", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     document.body.classList.add("td-theme-bluenote");
 
     const dock = new Dock(manager);
     // Simulate switching to Brio (remove all theme classes)
-    document.body.classList.remove("td-theme-bluenote", "td-theme-Harmony");
+    document.body.classList.remove("td-theme-bluenote", "td-theme-harmony");
 
     expect(document.body.classList.contains("td-theme-bluenote")).toBe(false);
-    expect(document.body.classList.contains("td-theme-Harmony")).toBe(false);
+    expect(document.body.classList.contains("td-theme-harmony")).toBe(false);
 
     dock.destroy();
     manager.destroy();
@@ -502,7 +502,7 @@ describe("Dock – component and theme switching", () => {
 
   test("Dock reads theme from localStorage on construction and applies body class", () => {
     localStorageMock.setItem("td-theme", "bluenote");
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     expect(document.body.classList.contains("td-theme-bluenote")).toBe(true);
@@ -512,7 +512,7 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Dock.destroy() removes dock element and cleans up", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     expect(document.body.querySelector(".dock")).not.toBeNull();
@@ -523,7 +523,7 @@ describe("Dock – component and theme switching", () => {
   });
 
   test("Clicking each of the 5 card type icons creates correct panel type", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("conversation", () => makeMockCard([FeedId.CONVERSATION], "conversation"));
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
     manager.registerCardFactory("git", () => makeMockCard([FeedId.GIT], "git"));
@@ -534,39 +534,39 @@ describe("Dock – component and theme switching", () => {
     const iconBtns = document.body.querySelectorAll(".dock-icon-btn");
 
     // Click each of the 5 card type icons (0-4, icon 5 is settings gear)
-    const before = manager.getCanvasState().panels.length;
+    const before = manager.getDeckState().cards.length;
 
     // Icon 0: conversation
     (iconBtns[0] as HTMLElement)?.click();
-    expect(manager.getCanvasState().panels.length).toBe(before + 1);
-    expect(manager.getCanvasState().panels[before].tabs[0].componentId).toBe("conversation");
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
+    expect(manager.getDeckState().cards[before].tabs[0].componentId).toBe("conversation");
 
     // Icon 1: terminal
     (iconBtns[1] as HTMLElement)?.click();
-    expect(manager.getCanvasState().panels.length).toBe(before + 2);
-    expect(manager.getCanvasState().panels[before + 1].tabs[0].componentId).toBe("terminal");
+    expect(manager.getDeckState().cards.length).toBe(before + 2);
+    expect(manager.getDeckState().cards[before + 1].tabs[0].componentId).toBe("terminal");
 
     // Icon 2: git
     (iconBtns[2] as HTMLElement)?.click();
-    expect(manager.getCanvasState().panels.length).toBe(before + 3);
-    expect(manager.getCanvasState().panels[before + 2].tabs[0].componentId).toBe("git");
+    expect(manager.getDeckState().cards.length).toBe(before + 3);
+    expect(manager.getDeckState().cards[before + 2].tabs[0].componentId).toBe("git");
 
     // Icon 3: files
     (iconBtns[3] as HTMLElement)?.click();
-    expect(manager.getCanvasState().panels.length).toBe(before + 4);
-    expect(manager.getCanvasState().panels[before + 3].tabs[0].componentId).toBe("files");
+    expect(manager.getDeckState().cards.length).toBe(before + 4);
+    expect(manager.getDeckState().cards[before + 3].tabs[0].componentId).toBe("files");
 
     // Icon 4: stats
     (iconBtns[4] as HTMLElement)?.click();
-    expect(manager.getCanvasState().panels.length).toBe(before + 5);
-    expect(manager.getCanvasState().panels[before + 4].tabs[0].componentId).toBe("stats");
+    expect(manager.getDeckState().cards.length).toBe(before + 5);
+    expect(manager.getDeckState().cards[before + 4].tabs[0].componentId).toBe("stats");
 
     dock.destroy();
     manager.destroy();
   });
 
   test("Theme selection persists to localStorage td-theme key", () => {
-    const manager = new PanelManager(container, connection as unknown as TugConnection);
+    const manager = new DeckManager(container, connection as unknown as TugConnection);
     const dock = new Dock(manager);
 
     // Simulate selecting Bluenote theme (this would normally happen via settings menu)
@@ -576,12 +576,12 @@ describe("Dock – component and theme switching", () => {
 
     // Simulate selecting Harmony theme
     document.body.classList.remove("td-theme-bluenote");
-    document.body.classList.add("td-theme-Harmony");
+    document.body.classList.add("td-theme-harmony");
     localStorage.setItem("td-theme", "harmony");
     expect(localStorage.getItem("td-theme")).toBe("harmony");
 
     // Simulate selecting Brio theme (remove all classes)
-    document.body.classList.remove("td-theme-Harmony");
+    document.body.classList.remove("td-theme-harmony");
     localStorage.setItem("td-theme", "brio");
     expect(localStorage.getItem("td-theme")).toBe("brio");
 

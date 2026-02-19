@@ -25,7 +25,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            tugcode/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install Bun
@@ -45,9 +45,11 @@ jobs:
 
       - name: Build
         run: cargo build --all-targets
+        working-directory: tugcode
 
       - name: Run tests
         run: cargo test --all-targets
+        working-directory: tugcode
 
   format:
     runs-on: ubuntu-latest
@@ -61,6 +63,7 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+        working-directory: tugcode
 
   clippy:
     runs-on: ubuntu-latest
@@ -89,3 +92,4 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings
+        working-directory: tugcode

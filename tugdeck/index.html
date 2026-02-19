@@ -8,10 +8,17 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="cards.css">
-  <link rel="stylesheet" href="panels.css">
+  <link rel="stylesheet" href="cards-chrome.css">
   <link rel="stylesheet" href="dock.css">
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: var(--td-bg); }
+    html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
+    body {
+      background-color: var(--td-canvas);
+      background-image:
+        linear-gradient(var(--td-grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--td-grid-color) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
     #deck-container { width: calc(100% - 48px); height: 100%; }
   </style>
 </head>

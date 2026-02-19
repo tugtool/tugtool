@@ -439,7 +439,7 @@ export class ConversationCard implements TugCard {
       this.markAllStale();
     } else {
       this.errorState = "fatal";
-      this.showErrorBanner("Conversation engine failed repeatedly. Please restart tugcode.", "fatal");
+      this.showErrorBanner("Conversation engine failed repeatedly. Please restart tugtool.", "fatal");
     }
   }
 

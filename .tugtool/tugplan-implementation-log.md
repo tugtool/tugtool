@@ -10,6 +10,121 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-19T18:05:06Z
+---
+
+## audit-fix: Audit fix round 2: git rm -r --cached target/ to remove 22k build artifacts from tracking, fixed 4 broken type imports (PanelState→CardState in 3 test files, PanelManager→DeckManager in deck-manager.test.ts)
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: audit-fix
+date: 2025-02-19T17:57:45Z
+---
+
+## audit-fix: Audit fix: cargo fmt on build.rs, removed root target/ from git tracking, added /target/ to .gitignore, completed 159 missed panel→card TS symbol renames across 6 files
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-6
+date: 2025-02-19T17:42:12Z
+bead: tugtool-ovp.7
+---
+
+## #step-6: Moved Rust workspace into tugcode/ subdirectory. Fixed build.rs path depths, updated CI workflows with working-directory: tugcode, updated .gitignore, release scripts, CLAUDE.md, and README.md. Final mono-repo layout: tugcode/ (Rust), tugdeck/ (UI), tugplug/ (plugin)
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-19T17:26:21Z
+bead: tugtool-ovp.6
+---
+
+## #step-5: Renamed launcher binary tug-launch to tugtool (final step of D01 three-step swap). Binary names now final: tugtool=launcher, tugcode=CLI
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-19T17:18:18Z
+bead: tugtool-ovp.5
+---
+
+## #step-4: Renamed CLI binary tugtool to tugcode (step 2 of D01 three-step swap), claiming the freed tugcode name. Updated ~27 cli.rs occurrences, all agent/skill/hook files, both CLAUDE.md files, Formula, release.yml, and Justfile
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-19T17:05:51Z
+bead: tugtool-ovp.4
+---
+
+## #step-3: Renamed launcher binary tugcode to tug-launch (step 1 of D01 three-step swap), freeing the tugcode name for the CLI binary
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-19T16:58:00Z
+bead: tugtool-ovp.3
+---
+
+## #step-2: Moved plugin infrastructure to tugplug/ directory, renamed namespace tugtool: to tugplug:, split CLAUDE.md into root (project conventions) and tugplug/CLAUDE.md (plugin operations), updated release.yml and Formula share paths
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-19T16:47:14Z
+bead: tugtool-ovp.2
+---
+
+## #step-1: Renamed panel/floating-panel to card/card-frame: 5 file renames, 676+ TS symbol updates, 36 CSS class renames, serialization v4→v5 with panels→cards key, build.rs and index.html updated
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-19T15:56:41Z
+bead: tugtool-ovp.1
+---
+
+## #step-0: Renamed all retronow/--rn-* references to tuglook/--tl-* in tokens.css, panels.css, cards.css, dock.css, and roadmap file
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-19T02:55:27Z
 ---
 
