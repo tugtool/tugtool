@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-4
+date: 2025-02-19T02:40:55Z
+bead: tugtool-j72.5
+---
+
+## #step-4: Deleted deck.css, updated build.rs to copy dock.css and fonts, updated index.html with dock.css link and --td-bg body background
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
 step: #step-3
 date: 2025-02-19T02:34:15Z
 bead: tugtool-j72.4
