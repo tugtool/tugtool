@@ -7,10 +7,10 @@
  * - Eight resize handles (4 edges + 4 corners).
  *
  * All mutations (move end, resize end, focus, close) fire callbacks so
- * PanelManager owns the CanvasState mutations and serialization.
+ * PanelManager owns the DeckState mutations and serialization.
  *
- * Spec S01: PanelState data model
- * [D03] FloatingPanel accepts PanelState directly
+ * Spec S01: CardState data model
+ * [D03] FloatingPanel accepts CardState directly
  * [D06] Key panel focus model with title bar tint
  */
 
@@ -30,7 +30,7 @@ export const CARD_TITLE_BAR_HEIGHT = 28;
 /** Inset from canvas edges — panels can't be positioned flush against the viewport */
 const CANVAS_INSET_PX = 2;
 
-export interface FloatingPanelCallbacks {
+export interface CardFrameCallbacks {
   /** Called when the user finishes dragging the panel to a new position. */
   onMoveEnd: (x: number, y: number) => void;
   /** Called when the user finishes resizing the panel. */
@@ -49,17 +49,17 @@ export class CardFrame {
   private el: HTMLElement;
   private cardHeader: CardHeader;
   private cardAreaEl: HTMLElement;
-  private panelState: PanelState;
-  private callbacks: FloatingPanelCallbacks;
+  private panelState: CardState;
+  private callbacks: CardFrameCallbacks;
   private canvasEl: HTMLElement;
 
   constructor(
-    panelState: PanelState,
-    callbacks: FloatingPanelCallbacks,
+    panelState: CardState,
+    callbacks: CardFrameCallbacks,
     canvasEl: HTMLElement,
     meta?: TugCardMeta
   ) {
-    this.panelState = panelState;
+    this.cardState = panelState;
     this.callbacks = callbacks;
     this.canvasEl = canvasEl;
 
@@ -74,7 +74,7 @@ export class CardFrame {
       callbacks.onFocus({ suppressZOrder: e.metaKey });
     });
 
-    // Build meta from PanelState active tab if not provided
+    // Build meta from CardState active tab if not provided
     const activeTab = panelState.tabs.find((t) => t.id === panelState.activeTabId)
       ?? panelState.tabs[0];
     const headerMeta: TugCardMeta = meta ?? {
@@ -115,8 +115,8 @@ export class CardFrame {
     return this.cardAreaEl;
   }
 
-  getPanelState(): PanelState {
-    return this.panelState;
+  getCardState(): CardState {
+    return this.cardState;
   }
 
   setZIndex(z: number): void {
@@ -129,13 +129,13 @@ export class CardFrame {
   }
 
   updatePosition(x: number, y: number): void {
-    this.panelState.position = { x, y };
+    this.cardState.position = { x, y };
     this.el.style.left = `${x}px`;
     this.el.style.top = `${y}px`;
   }
 
   updateSize(width: number, height: number): void {
-    this.panelState.size = { width, height };
+    this.cardState.size = { width, height };
     this.el.style.width = `${width}px`;
     this.el.style.height = `${height}px`;
   }
@@ -153,8 +153,8 @@ export class CardFrame {
   // ---- Private ----
 
   private applyGeometry(): void {
-    const { x, y } = this.panelState.position;
-    const { width, height } = this.panelState.size;
+    const { x, y } = this.cardState.position;
+    const { width, height } = this.cardState.size;
     this.el.style.left = `${x}px`;
     this.el.style.top = `${y}px`;
     this.el.style.width = `${width}px`;
@@ -176,8 +176,8 @@ export class CardFrame {
 
     const startX = downEvent.clientX;
     const startY = downEvent.clientY;
-    const startPanelX = this.panelState.position.x;
-    const startPanelY = this.panelState.position.y;
+    const startPanelX = this.cardState.position.x;
+    const startPanelY = this.cardState.position.y;
     let dragging = false;
 
     const onMove = (e: PointerEvent) => {
@@ -192,8 +192,8 @@ export class CardFrame {
 
       // Move freely within canvas bounds (with inset)
       const canvasRect = this.canvasEl.getBoundingClientRect();
-      let newX = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.width - this.panelState.size.width - CANVAS_INSET_PX, startPanelX + dx));
-      let newY = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.height - this.panelState.size.height - CANVAS_INSET_PX, startPanelY + dy));
+      let newX = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.width - this.cardState.size.width - CANVAS_INSET_PX, startPanelX + dx));
+      let newY = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.height - this.cardState.size.height - CANVAS_INSET_PX, startPanelY + dy));
 
       // Apply live callback if provided (snap override)
       if (this.callbacks.onMoving) {
@@ -215,8 +215,8 @@ export class CardFrame {
 
       if (dragging) {
         this.callbacks.onMoveEnd(
-          this.panelState.position.x,
-          this.panelState.position.y
+          this.cardState.position.x,
+          this.cardState.position.y
         );
       }
     };
@@ -252,10 +252,10 @@ export class CardFrame {
 
       const startX = downEvent.clientX;
       const startY = downEvent.clientY;
-      const startW = this.panelState.size.width;
-      const startH = this.panelState.size.height;
-      const startPX = this.panelState.position.x;
-      const startPY = this.panelState.position.y;
+      const startW = this.cardState.size.width;
+      const startH = this.cardState.size.height;
+      const startPX = this.cardState.position.x;
+      const startPY = this.cardState.position.y;
 
       const onMove = (e: PointerEvent) => {
         const dx = e.clientX - startX;
@@ -316,10 +316,10 @@ export class CardFrame {
         handle.removeEventListener("pointercancel", onUp);
 
         this.callbacks.onResizeEnd(
-          this.panelState.position.x,
-          this.panelState.position.y,
-          this.panelState.size.width,
-          this.panelState.size.height
+          this.cardState.position.x,
+          this.cardState.position.y,
+          this.cardState.size.width,
+          this.cardState.size.height
         );
       };
 

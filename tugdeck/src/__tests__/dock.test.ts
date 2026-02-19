@@ -156,9 +156,9 @@ describe("PanelManager – addNewCard", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
-    const before = manager.getCanvasState().cards.length;
+    const before = manager.getDeckState().cards.length;
     manager.addNewCard("terminal");
-    expect(manager.getCanvasState().cards.length).toBe(before + 1);
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
     manager.destroy();
   });
 
@@ -168,7 +168,7 @@ describe("PanelManager – addNewCard", () => {
 
     manager.addNewCard("git");
 
-    const panels = manager.getCanvasState().cards;
+    const panels = manager.getDeckState().cards;
     const newPanel = panels[panels.length - 1];
     expect(newPanel.tabs[0].componentId).toBe("git");
     manager.destroy();
@@ -180,7 +180,7 @@ describe("PanelManager – addNewCard", () => {
 
     manager.addNewCard("stats");
 
-    const panels = manager.getCanvasState().cards;
+    const panels = manager.getDeckState().cards;
     const newPanel = panels[panels.length - 1];
     expect(newPanel.size.width).toBe(400);
     expect(newPanel.size.height).toBe(300);
@@ -267,7 +267,7 @@ describe("PanelManager – resetLayout", () => {
 
     manager.resetLayout();
 
-    expect(manager.getCanvasState().cards.length).toBe(5);
+    expect(manager.getDeckState().cards.length).toBe(5);
     manager.destroy();
   });
 
@@ -333,7 +333,7 @@ describe("PanelManager – v4 layout persistence", () => {
     });
 
     // scheduleSave uses debounce; verify the state is maintained
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     expect(state.cards[0].position.x).toBe(50);
     expect(state.cards[0].size.width).toBe(350);
     manager.destroy();
@@ -362,7 +362,7 @@ describe("PanelManager – v4 layout persistence", () => {
 
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     // Should fall back to 5-panel default layout (v3 is discarded per D02)
-    expect(manager.getCanvasState().cards.length).toBe(5);
+    expect(manager.getDeckState().cards.length).toBe(5);
     manager.destroy();
   });
 });
@@ -450,13 +450,13 @@ describe("Dock – component and theme switching", () => {
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
     const dock = new Dock(manager);
-    const before = manager.getCanvasState().cards.length;
+    const before = manager.getDeckState().cards.length;
 
     // Click terminal icon (second button)
     const terminalBtn = document.body.querySelectorAll(".dock-icon-btn")[1] as HTMLElement;
     terminalBtn?.click();
 
-    expect(manager.getCanvasState().cards.length).toBe(before + 1);
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
 
     dock.destroy();
     manager.destroy();
@@ -534,32 +534,32 @@ describe("Dock – component and theme switching", () => {
     const iconBtns = document.body.querySelectorAll(".dock-icon-btn");
 
     // Click each of the 5 card type icons (0-4, icon 5 is settings gear)
-    const before = manager.getCanvasState().cards.length;
+    const before = manager.getDeckState().cards.length;
 
     // Icon 0: conversation
     (iconBtns[0] as HTMLElement)?.click();
-    expect(manager.getCanvasState().cards.length).toBe(before + 1);
-    expect(manager.getCanvasState().cards[before].tabs[0].componentId).toBe("conversation");
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
+    expect(manager.getDeckState().cards[before].tabs[0].componentId).toBe("conversation");
 
     // Icon 1: terminal
     (iconBtns[1] as HTMLElement)?.click();
-    expect(manager.getCanvasState().cards.length).toBe(before + 2);
-    expect(manager.getCanvasState().cards[before + 1].tabs[0].componentId).toBe("terminal");
+    expect(manager.getDeckState().cards.length).toBe(before + 2);
+    expect(manager.getDeckState().cards[before + 1].tabs[0].componentId).toBe("terminal");
 
     // Icon 2: git
     (iconBtns[2] as HTMLElement)?.click();
-    expect(manager.getCanvasState().cards.length).toBe(before + 3);
-    expect(manager.getCanvasState().cards[before + 2].tabs[0].componentId).toBe("git");
+    expect(manager.getDeckState().cards.length).toBe(before + 3);
+    expect(manager.getDeckState().cards[before + 2].tabs[0].componentId).toBe("git");
 
     // Icon 3: files
     (iconBtns[3] as HTMLElement)?.click();
-    expect(manager.getCanvasState().cards.length).toBe(before + 4);
-    expect(manager.getCanvasState().cards[before + 3].tabs[0].componentId).toBe("files");
+    expect(manager.getDeckState().cards.length).toBe(before + 4);
+    expect(manager.getDeckState().cards[before + 3].tabs[0].componentId).toBe("files");
 
     // Icon 4: stats
     (iconBtns[4] as HTMLElement)?.click();
-    expect(manager.getCanvasState().cards.length).toBe(before + 5);
-    expect(manager.getCanvasState().cards[before + 4].tabs[0].componentId).toBe("stats");
+    expect(manager.getDeckState().cards.length).toBe(before + 5);
+    expect(manager.getDeckState().cards[before + 4].tabs[0].componentId).toBe("stats");
 
     dock.destroy();
     manager.destroy();

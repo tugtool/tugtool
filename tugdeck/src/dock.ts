@@ -17,13 +17,13 @@ const TUG_LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none
 </svg>`;
 
 export class Dock {
-  private panelManager: PanelManager;
+  private panelManager: DeckManager;
   private dockEl: HTMLElement;
   private currentMenu: DropdownMenu | null = null;
   private observer: MutationObserver | null = null;
   private settingsBtnEl: HTMLElement | null = null;
 
-  constructor(panelManager: PanelManager) {
+  constructor(panelManager: DeckManager) {
     this.panelManager = panelManager;
 
     // Read theme from localStorage and apply on construction

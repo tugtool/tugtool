@@ -43,16 +43,16 @@ export interface SnapResult {
  * boundaryPosition: the coordinate of the shared boundary line.
  */
 export interface SharedEdge {
-  panelAId: string;
-  panelBId: string;
+  cardAId: string;
+  cardBId: string;
   axis: "vertical" | "horizontal";
   overlapStart: number;
   overlapEnd: number;
   boundaryPosition: number;
 }
 
-export interface PanelSet {
-  panelIds: string[];
+export interface CardSet {
+  cardIds: string[];
 }
 
 // ---- Constants ----
@@ -84,12 +84,12 @@ export type EdgeValidator = (
   otherIndex: number
 ) => boolean;
 
-// ---- Helper: convert PanelState to Rect ----
+// ---- Helper: convert CardState to Rect ----
 
 /**
- * Convert a PanelState to a Rect for use in snap computations.
+ * Convert a CardState to a Rect for use in snap computations.
  */
-export function panelToRect(panel: PanelState): Rect {
+export function cardToRect(panel: CardState): Rect {
   return {
     x: panel.position.x,
     y: panel.position.y,
@@ -326,8 +326,8 @@ export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdg
         const overlapEnd = Math.min(aBottom, bBottom);
         if (overlapStart < overlapEnd) {
           edges.push({
-            panelAId: a.id,
-            panelBId: b.id,
+            cardAId: a.id,
+            cardBId: b.id,
             axis: "vertical",
             overlapStart,
             overlapEnd,
@@ -342,8 +342,8 @@ export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdg
         const overlapEnd = Math.min(aBottom, bBottom);
         if (overlapStart < overlapEnd) {
           edges.push({
-            panelAId: b.id,
-            panelBId: a.id,
+            cardAId: b.id,
+            cardBId: a.id,
             axis: "vertical",
             overlapStart,
             overlapEnd,
@@ -358,8 +358,8 @@ export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdg
         const overlapEnd = Math.min(aRight, bRight);
         if (overlapStart < overlapEnd) {
           edges.push({
-            panelAId: a.id,
-            panelBId: b.id,
+            cardAId: a.id,
+            cardBId: b.id,
             axis: "horizontal",
             overlapStart,
             overlapEnd,
@@ -374,8 +374,8 @@ export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdg
         const overlapEnd = Math.min(aRight, bRight);
         if (overlapStart < overlapEnd) {
           edges.push({
-            panelAId: b.id,
-            panelBId: a.id,
+            cardAId: b.id,
+            cardBId: a.id,
             axis: "horizontal",
             overlapStart,
             overlapEnd,
@@ -397,11 +397,11 @@ export function findSharedEdges(panels: { id: string; rect: Rect }[]): SharedEdg
  * Uses union-find with path compression.
  * Returns only sets with 2+ panels — singletons are not included.
  */
-export function computeSets(panelIds: string[], sharedEdges: SharedEdge[]): PanelSet[] {
+export function computeSets(cardIds: string[], sharedEdges: SharedEdge[]): CardSet[] {
   // Union-find parent map
   const parent = new Map<string, string>();
 
-  for (const id of panelIds) {
+  for (const id of cardIds) {
     parent.set(id, id);
   }
 
@@ -422,15 +422,15 @@ export function computeSets(panelIds: string[], sharedEdges: SharedEdge[]): Pane
   }
 
   for (const edge of sharedEdges) {
-    // Only union panels that are in our panelIds list
-    if (parent.has(edge.panelAId) && parent.has(edge.panelBId)) {
-      union(edge.panelAId, edge.panelBId);
+    // Only union panels that are in our cardIds list
+    if (parent.has(edge.cardAId) && parent.has(edge.cardBId)) {
+      union(edge.cardAId, edge.cardBId);
     }
   }
 
   // Group by root
   const groups = new Map<string, string[]>();
-  for (const id of panelIds) {
+  for (const id of cardIds) {
     const root = find(id);
     const group = groups.get(root);
     if (group !== undefined) {
@@ -441,10 +441,10 @@ export function computeSets(panelIds: string[], sharedEdges: SharedEdge[]): Pane
   }
 
   // Return only groups with 2+ members
-  const sets: PanelSet[] = [];
+  const sets: CardSet[] = [];
   for (const group of groups.values()) {
     if (group.length > 1) {
-      sets.push({ panelIds: group });
+      sets.push({ cardIds: group });
     }
   }
 

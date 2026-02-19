@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-19T17:57:45Z
+---
+
+## audit-fix: Audit fix: cargo fmt on build.rs, removed root target/ from git tracking, added /target/ to .gitignore, completed 159 missed panel→card TS symbol renames across 6 files
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-19T17:42:12Z
 bead: tugtool-ovp.7

@@ -58,7 +58,7 @@ import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
 import type { TabNode, TabItem } from "../layout-tree";
-import type { CanvasState, PanelState } from "../layout-tree";
+import type { DeckState, PanelState } from "../layout-tree";
 
 // ---- Mocks ----
 
@@ -218,12 +218,12 @@ describe("PanelManager tab groups (integration)", () => {
     connection = new MockConnection();
   });
 
-  /** Build a v4 CanvasState with a two-tab panel for terminal components */
-  function makeTwoTabPanel(): { canvasState: CanvasState; tabAId: string; tabBId: string; panelId: string } {
+  /** Build a v4 DeckState with a two-tab panel for terminal components */
+  function makeTwoTabPanel(): { canvasState: DeckState; tabAId: string; tabBId: string; panelId: string } {
     const tabAId = "two-tab-a";
     const tabBId = "two-tab-b";
     const panelId = "two-tab-panel";
-    const canvasState: CanvasState = {
+    const canvasState: DeckState = {
       cards: [{
         id: panelId,
         position: { x: 100, y: 100 },
@@ -254,7 +254,7 @@ describe("PanelManager tab groups (integration)", () => {
   test("no tab bar for single-tab panel", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     // Default layout: each panel has exactly one tab
-    const defaultPanels = manager.getCanvasState().cards;
+    const defaultPanels = manager.getDeckState().cards;
     expect(defaultPanels.every((p) => p.tabs.length === 1)).toBe(true);
     // No tab bars should be present
     expect(container.querySelectorAll(".card-tab-bar").length).toBe(0);
@@ -275,7 +275,7 @@ describe("PanelManager tab groups (integration)", () => {
     feeds.get(FeedId.TERMINAL_OUTPUT)?.add(cardB);
 
     // Switch active tab to tabB via applyLayout
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     const panel = state.cards.find((p) => p.id === panelId)!;
     panel.activeTabId = tabBId;
     manager.applyLayout(state);
@@ -307,14 +307,14 @@ describe("PanelManager tab groups (integration)", () => {
     const card = makeMockCard([FeedId.GIT]);
     manager.addCard(card, "git");
 
-    const before = manager.getCanvasState().cards.length;
-    const hasGit = manager.getCanvasState().cards.some((p) => p.tabs.some((t) => t.componentId === "git"));
+    const before = manager.getDeckState().cards.length;
+    const hasGit = manager.getDeckState().cards.some((p) => p.tabs.some((t) => t.componentId === "git"));
     expect(hasGit).toBe(true);
 
     manager.removeCard(card);
 
-    expect(manager.getCanvasState().cards.length).toBe(before - 1);
-    const stillHasGit = manager.getCanvasState().cards.some((p) => p.tabs.some((t) => t.componentId === "git"));
+    expect(manager.getDeckState().cards.length).toBe(before - 1);
+    const stillHasGit = manager.getDeckState().cards.some((p) => p.tabs.some((t) => t.componentId === "git"));
     expect(stillHasGit).toBe(false);
 
     manager.destroy();
@@ -325,7 +325,7 @@ describe("PanelManager tab groups (integration)", () => {
     const { canvasState, panelId, tabAId, tabBId } = makeTwoTabPanel();
     manager.applyLayout(canvasState);
 
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     const panel = state.cards.find((p) => p.id === panelId)!;
 
     // Initial order: tabA, tabB

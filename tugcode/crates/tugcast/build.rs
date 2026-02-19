@@ -10,7 +10,13 @@ fn main() {
 
     // Find the tugdeck directory (three levels up from crate root)
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let repo_root = manifest_dir.parent().unwrap().parent().unwrap().parent().unwrap();
+    let repo_root = manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
     let tugdeck_dir = repo_root.join("tugdeck");
 
     // Check that Bun is installed
@@ -78,7 +84,8 @@ fn main() {
 
     let cards_chrome_css = tugdeck_dir.join("styles/cards-chrome.css");
     if cards_chrome_css.exists() {
-        fs::copy(&cards_chrome_css, tugdeck_out.join("cards-chrome.css")).expect("failed to copy cards-chrome.css");
+        fs::copy(&cards_chrome_css, tugdeck_out.join("cards-chrome.css"))
+            .expect("failed to copy cards-chrome.css");
     }
 
     let dock_css = tugdeck_dir.join("styles/dock.css");

@@ -244,7 +244,7 @@ describe("FloatingPanel – API", () => {
     const ps = makeCardState();
     const { callbacks } = makeCallbacks();
     const fp = new CardFrame(ps, callbacks, canvas);
-    expect(fp.getPanelState()).toBe(ps);
+    expect(fp.getCardState()).toBe(ps);
     fp.destroy();
   });
 
@@ -255,8 +255,8 @@ describe("FloatingPanel – API", () => {
     fp.updatePosition(250, 180);
     expect(fp.getElement().style.left).toBe("250px");
     expect(fp.getElement().style.top).toBe("180px");
-    expect(fp.getPanelState().position.x).toBe(250);
-    expect(fp.getPanelState().position.y).toBe(180);
+    expect(fp.getCardState().position.x).toBe(250);
+    expect(fp.getCardState().position.y).toBe(180);
     fp.destroy();
   });
 
@@ -267,8 +267,8 @@ describe("FloatingPanel – API", () => {
     fp.updateSize(600, 450);
     expect(fp.getElement().style.width).toBe("600px");
     expect(fp.getElement().style.height).toBe("450px");
-    expect(fp.getPanelState().size.width).toBe(600);
-    expect(fp.getPanelState().size.height).toBe(450);
+    expect(fp.getCardState().size.width).toBe(600);
+    expect(fp.getCardState().size.height).toBe(450);
     fp.destroy();
   });
 
@@ -384,7 +384,7 @@ describe("PanelManager – canvas panel integration", () => {
 
   test("initial canvasState has 5 panels from buildDefaultLayout", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     expect(state.cards).toBeDefined();
     expect(Array.isArray(state.cards)).toBe(true);
     expect(state.cards.length).toBe(5);
@@ -518,7 +518,7 @@ describe("PanelManager – canvas panel integration", () => {
     expect(found).toBe(card);
 
     // Re-apply layout — card should remain the same instance
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     manager.applyLayout(state);
 
     found = null;
@@ -534,9 +534,9 @@ describe("PanelManager – canvas panel integration", () => {
     const card = makeMockCard([FeedId.GIT]);
     manager.addCard(card, "git");
 
-    const beforeCount = manager.getCanvasState().cards.length;
+    const beforeCount = manager.getDeckState().cards.length;
     manager.removeCard(card);
-    const afterCount = manager.getCanvasState().cards.length;
+    const afterCount = manager.getDeckState().cards.length;
     expect(afterCount).toBe(beforeCount - 1);
     expect(card.destroyCount).toBe(1);
     manager.destroy();
@@ -626,8 +626,8 @@ describe("FloatingPanel – live callbacks (onMoving / onResizing)", () => {
     headerEl.dispatchEvent(makePointerEvent("pointerup", { clientX: 210, clientY: 110 }));
 
     // Panel position should be the snapped position, not the computed drag position
-    expect(fp.getPanelState().position.x).toBe(500);
-    expect(fp.getPanelState().position.y).toBe(500);
+    expect(fp.getCardState().position.x).toBe(500);
+    expect(fp.getCardState().position.y).toBe(500);
 
     // onMoveEnd should report the snapped position
     expect(moveEndCalls.length).toBe(1);

@@ -8,7 +8,7 @@
  * - removeCard removes card from feed dispatch sets (no orphaned callbacks)
  * - addNewCard adds a panel to canvasState
  * - resetLayout rebuilds default 5 panels
- * - getCanvasState reflects current state
+ * - getDeckState reflects current state
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -147,9 +147,9 @@ describe("PanelManager", () => {
     manager.destroy();
   });
 
-  test("getCanvasState returns 5 panels after construction", () => {
+  test("getDeckState returns 5 panels after construction", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     expect(state.cards.length).toBe(5);
     const componentIds = state.cards.map((p) => p.tabs[0].componentId);
     expect(componentIds).toContain("conversation");
@@ -236,9 +236,9 @@ describe("PanelManager", () => {
     const card = makeMockCard([FeedId.GIT], "git");
     manager.addCard(card, "git");
 
-    const beforeCount = manager.getCanvasState().cards.length;
+    const beforeCount = manager.getDeckState().cards.length;
     manager.removeCard(card);
-    expect(manager.getCanvasState().cards.length).toBe(beforeCount - 1);
+    expect(manager.getDeckState().cards.length).toBe(beforeCount - 1);
     manager.destroy();
   });
 
@@ -259,9 +259,9 @@ describe("PanelManager", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     manager.registerCardFactory("terminal", () => makeMockCard([FeedId.TERMINAL_OUTPUT], "terminal"));
 
-    const before = manager.getCanvasState().cards.length;
+    const before = manager.getDeckState().cards.length;
     manager.addNewCard("terminal");
-    expect(manager.getCanvasState().cards.length).toBe(before + 1);
+    expect(manager.getDeckState().cards.length).toBe(before + 1);
     manager.destroy();
   });
 
@@ -277,9 +277,9 @@ describe("PanelManager", () => {
 
   test("addNewCard with unknown componentId logs warning and does not change state", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
-    const before = manager.getCanvasState().cards.length;
+    const before = manager.getDeckState().cards.length;
     manager.addNewCard("unknown-component");
-    expect(manager.getCanvasState().cards.length).toBe(before);
+    expect(manager.getDeckState().cards.length).toBe(before);
     manager.destroy();
   });
 
@@ -297,7 +297,7 @@ describe("PanelManager", () => {
     manager.addNewCard("git");
     manager.resetLayout();
 
-    expect(manager.getCanvasState().cards.length).toBe(5);
+    expect(manager.getDeckState().cards.length).toBe(5);
     manager.destroy();
   });
 
@@ -315,14 +315,14 @@ describe("PanelManager", () => {
         activeTabId: tabId,
       }],
     });
-    expect(manager.getCanvasState().cards.length).toBe(1);
+    expect(manager.getDeckState().cards.length).toBe(1);
     expect(container.querySelectorAll(".card-frame").length).toBe(1);
     manager.destroy();
   });
 
   // ---- Layout persistence ----
 
-  test("serialize/deserialize round-trip via applyLayout and getCanvasState", () => {
+  test("serialize/deserialize round-trip via applyLayout and getDeckState", () => {
     const manager = new DeckManager(container, connection as unknown as TugConnection);
     const tabId = "persist-tab-1";
     const testPanel = {
@@ -334,7 +334,7 @@ describe("PanelManager", () => {
     };
     manager.applyLayout({ cards: [testPanel] });
 
-    const state = manager.getCanvasState();
+    const state = manager.getDeckState();
     expect(state.cards[0].position.x).toBe(50);
     expect(state.cards[0].position.y).toBe(75);
     expect(state.cards[0].size.width).toBe(350);
@@ -365,7 +365,7 @@ function makePointerEvent(
 }
 
 /** Build a minimal single-tab PanelState for layout setup. */
-function makePanelState(
+function makeCardState(
   id: string,
   x: number, y: number,
   width: number, height: number,
@@ -416,8 +416,8 @@ describe("PanelManager – snap wiring", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 100, 100, 200, 200),
-        makePanelState("panel-b", 310, 100, 200, 200),
+        makeCardState("panel-a", 100, 100, 200, 200),
+        makeCardState("panel-b", 310, 100, 200, 200),
       ],
     });
 
@@ -438,7 +438,7 @@ describe("PanelManager – snap wiring", () => {
     // After snap: panel A's right edge (A.x + 200) should be snapped to B.left (310)
     // So A.x = 310 - 200 = 110
     // Note: onFocus fires on pointerdown and may reorder panels; find by id.
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
     expect(panelA).toBeDefined();
     expect(panelA.position.x).toBe(110);
     expect(panelA.position.y).toBe(100); // y unchanged
@@ -457,8 +457,8 @@ describe("PanelManager – snap wiring", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 100, 100, 200, 200),
-        makePanelState("panel-b", 310, 100, 200, 200),
+        makeCardState("panel-a", 100, 100, 200, 200),
+        makeCardState("panel-b", 310, 100, 200, 200),
       ],
     });
 
@@ -476,7 +476,7 @@ describe("PanelManager – snap wiring", () => {
 
     // Width should have snapped so right edge = 310: width = 310 - 100 = 210
     // Find by id in case panel order changed
-    const finalPanel = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const finalPanel = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
     expect(finalPanel).toBeDefined();
     expect(finalPanel.size.width).toBe(210);
     expect(finalPanel.position.x).toBe(100); // x unchanged for east resize
@@ -494,8 +494,8 @@ describe("PanelManager – snap wiring", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 0, 200, 200),
-        makePanelState("panel-b", 500, 0, 200, 200),
+        makeCardState("panel-a", 0, 0, 200, 200),
+        makeCardState("panel-b", 500, 0, 200, 200),
       ],
     });
 
@@ -510,7 +510,7 @@ describe("PanelManager – snap wiring", () => {
 
     // With no snap, A.x should be 0 + 50 = 50
     // Note: onFocus fires on pointerdown and may reorder panels; find by id.
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
     expect(panelA).toBeDefined();
     expect(panelA.position.x).toBe(50);
     expect(panelA.position.y).toBe(0);
@@ -561,8 +561,8 @@ describe("PanelManager – guide lines", () => {
     // showGuides positions guideElements[0] at left:310px and sets display:block.
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 100, 100, 200, 200),
-        makePanelState("panel-b", 310, 100, 200, 200),
+        makeCardState("panel-a", 100, 100, 200, 200),
+        makeCardState("panel-b", 310, 100, 200, 200),
       ],
     });
 
@@ -620,8 +620,8 @@ describe("PanelManager – set computation", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -641,7 +641,7 @@ describe("PanelManager – set computation", () => {
     // After move-end: recomputeSets fires. A.right=200, B.left=200 → shared edge.
     const sets = manager.getSets();
     expect(sets.length).toBe(1);
-    const setIds = sets[0].panelIds.sort();
+    const setIds = sets[0].cardIds.sort();
     expect(setIds).toContain("panel-a");
     expect(setIds).toContain("panel-b");
 
@@ -657,8 +657,8 @@ describe("PanelManager – set computation", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -700,15 +700,15 @@ describe("PanelManager – set computation", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
-        makePanelState("panel-c", 400, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-c", 400, 100, 200, 200),
       ],
     });
 
     // Sets computed in render — all 3 panels form a chain.
     expect(manager.getSets().length).toBe(1);
-    expect(manager.getSets()[0].panelIds.length).toBe(3);
+    expect(manager.getSets()[0].cardIds.length).toBe(3);
 
     // Register a mock card for panel-b so removeCard can find it in the registry
     const panelBTabId = "panel-b-tab";
@@ -752,8 +752,8 @@ describe("PanelManager – virtual sashes", () => {
     // Panel A at (0,100,200,200): right=200. Panel B at (200,100,200,200): left=200.
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -780,8 +780,8 @@ describe("PanelManager – virtual sashes", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -795,8 +795,8 @@ describe("PanelManager – virtual sashes", () => {
     sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
 
     // After drag: A grew by 50, B shrank by 50 and moved right
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getDeckState().cards.find((p) => p.id === "panel-b")!;
 
     expect(panelA.size.width).toBe(250);
     expect(panelB.size.width).toBe(150);
@@ -817,8 +817,8 @@ describe("PanelManager – virtual sashes", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 150, 200),
-        makePanelState("panel-b", 150, 100, 150, 200),
+        makeCardState("panel-a", 0, 100, 150, 200),
+        makeCardState("panel-b", 150, 100, 150, 200),
       ],
     });
 
@@ -831,8 +831,8 @@ describe("PanelManager – virtual sashes", () => {
     sash.dispatchEvent(makePointerEvent("pointermove", { clientX: 250, clientY: 200 }));
     sash.dispatchEvent(makePointerEvent("pointerup", { clientX: 250, clientY: 200 }));
 
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getDeckState().cards.find((p) => p.id === "panel-b")!;
 
     // B should be clamped to MIN_SIZE=100; A gets 150 + (150-100) = 200
     expect(panelB.size.width).toBe(100);
@@ -851,8 +851,8 @@ describe("PanelManager – virtual sashes", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -876,8 +876,8 @@ describe("PanelManager – virtual sashes", () => {
     // Sets should still contain both panels (they are still adjacent after resize)
     const sets = manager.getSets();
     expect(sets.length).toBe(1);
-    expect(sets[0].panelIds).toContain("panel-a");
-    expect(sets[0].panelIds).toContain("panel-b");
+    expect(sets[0].cardIds).toContain("panel-a");
+    expect(sets[0].cardIds).toContain("panel-b");
 
     manager.destroy();
   });
@@ -900,7 +900,7 @@ describe("PanelManager – set dragging", () => {
    * After the drag, the dragged panel (index 0 initially) is moved to the end by onFocus,
    * so it becomes top-most (index 1). The originally second panel becomes index 0.
    */
-  function setupTwoPanelSet(snapContainer: HTMLElement): {
+  function setupTwoCardSet(snapContainer: HTMLElement): {
     manager: PanelManager;
     panelAEl: HTMLElement;
     panelBEl: HTMLElement;
@@ -909,8 +909,8 @@ describe("PanelManager – set dragging", () => {
     // panel-a at (0,100,200,200), panel-b at (200,100,200,200) — shared vertical edge.
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -932,7 +932,7 @@ describe("PanelManager – set dragging", () => {
   // Assertions: panel-a.position.x = 50, panel-b.position.x = 250.
   test("dragging the top-most panel of a set moves all members by the same delta", () => {
     const snapContainer = makeSnapContainer();
-    const { manager, panelAEl } = setupTwoPanelSet(snapContainer);
+    const { manager, panelAEl } = setupTwoCardSet(snapContainer);
 
     // panel-a is top-most (focusPanel moved it to index 1 during setup drag).
     const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
@@ -943,8 +943,8 @@ describe("PanelManager – set dragging", () => {
     headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 150, clientY: 150 }));
 
     // Both panels should have moved right by 50px.
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getDeckState().cards.find((p) => p.id === "panel-b")!;
     expect(panelA.position.x).toBe(50);
     expect(panelB.position.x).toBe(250);
 
@@ -956,7 +956,7 @@ describe("PanelManager – set dragging", () => {
   // Only panel-b moves; panel-a stays at x=0.
   test("dragging a non-top panel of a set moves only that panel (break-out)", () => {
     const snapContainer = makeSnapContainer();
-    const { manager, panelBEl } = setupTwoPanelSet(snapContainer);
+    const { manager, panelBEl } = setupTwoCardSet(snapContainer);
 
     // panel-b is NOT top-most (index 0 after setup drag). Drag it far right.
     const headerB = panelBEl.querySelector<HTMLElement>(".card-header")!;
@@ -967,8 +967,8 @@ describe("PanelManager – set dragging", () => {
     headerB.dispatchEvent(makePointerEvent("pointerup", { clientX: 504, clientY: 150 }));
 
     // panel-a should stay at x=0; panel-b should have moved right.
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getDeckState().cards.find((p) => p.id === "panel-b")!;
     expect(panelA.position.x).toBe(0);
     // panel-b moved ~200px right (away from panel-a)
     expect(panelB.position.x).toBeGreaterThan(200);
@@ -980,7 +980,7 @@ describe("PanelManager – set dragging", () => {
   // Both panels moved together, so they are still adjacent. getSets() should show 1 set.
   test("after set-move, sets are recomputed and panels remain in the same set", () => {
     const snapContainer = makeSnapContainer();
-    const { manager, panelAEl } = setupTwoPanelSet(snapContainer);
+    const { manager, panelAEl } = setupTwoCardSet(snapContainer);
 
     const headerA = panelAEl.querySelector<HTMLElement>(".card-header")!;
 
@@ -992,8 +992,8 @@ describe("PanelManager – set dragging", () => {
     // Both moved together → still adjacent → still in the same set.
     const sets = manager.getSets();
     expect(sets.length).toBe(1);
-    expect(sets[0].panelIds).toContain("panel-a");
-    expect(sets[0].panelIds).toContain("panel-b");
+    expect(sets[0].cardIds).toContain("panel-a");
+    expect(sets[0].cardIds).toContain("panel-b");
 
     manager.destroy();
   });
@@ -1008,15 +1008,15 @@ describe("PanelManager – set dragging", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
-        makePanelState("panel-c", 400, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-c", 400, 100, 200, 200),
       ],
     });
 
     // Sets computed in render — all three panels form a chain.
     expect(manager.getSets().length).toBe(1);
-    expect(manager.getSets()[0].panelIds.length).toBe(3);
+    expect(manager.getSets()[0].cardIds.length).toBe(3);
 
     // Find panel-b (non-leader) at x=200.
     const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".card-frame"));
@@ -1039,7 +1039,7 @@ describe("PanelManager – set dragging", () => {
     // in the set with C.
     const sets = manager.getSets();
     // panel-b broke out; A and C are not adjacent. Sets should be empty or not contain B+C.
-    const bcSet = sets.find((s) => s.panelIds.includes("panel-b") && s.panelIds.includes("panel-c"));
+    const bcSet = sets.find((s) => s.cardIds.includes("panel-b") && s.cardIds.includes("panel-c"));
     expect(bcSet).toBeUndefined();
 
     manager.destroy();
@@ -1057,9 +1057,9 @@ describe("PanelManager – set dragging", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
-        makePanelState("panel-c", 410, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-c", 410, 100, 200, 200),
       ],
     });
 
@@ -1067,7 +1067,7 @@ describe("PanelManager – set dragging", () => {
     // panel-c is standalone (gap to set = 10px).
     expect(manager.getSets().length).toBeGreaterThanOrEqual(1);
     const abSet = manager.getSets().find((s) =>
-      s.panelIds.includes("panel-a") && s.panelIds.includes("panel-b")
+      s.cardIds.includes("panel-a") && s.cardIds.includes("panel-b")
     );
     expect(abSet).toBeDefined();
 
@@ -1090,8 +1090,8 @@ describe("PanelManager – set dragging", () => {
     // Drag dx=5: proposed bbox at x=5, right=405. C.left=410, gap=5 ≤ 8 → snap.
     // snapDX = 5. panel-a.x = 0+5+5=10. panel-b.x = 200+5+5=210.
     // Set right edge = panel-b.x + 200 = 410. ✓
-    const panelA = manager.getCanvasState().cards.find((p) => p.id === "panel-a")!;
-    const panelB = manager.getCanvasState().cards.find((p) => p.id === "panel-b")!;
+    const panelA = manager.getDeckState().cards.find((p) => p.id === "panel-a")!;
+    const panelB = manager.getDeckState().cards.find((p) => p.id === "panel-b")!;
 
     // panel-a moved by dx=5 (drag) + 5 (snap offset) = 10.
     expect(panelA.position.x).toBe(10);
@@ -1127,17 +1127,17 @@ describe("PanelManager – close recompute and final polish", () => {
     // Each panel is exactly 100px wide, edge-to-edge.
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0,   100, 100, 200),
-        makePanelState("panel-b", 100, 100, 100, 200),
-        makePanelState("panel-c", 200, 100, 100, 200),
-        makePanelState("panel-d", 300, 100, 100, 200),
-        makePanelState("panel-e", 400, 100, 100, 200),
+        makeCardState("panel-a", 0,   100, 100, 200),
+        makeCardState("panel-b", 100, 100, 100, 200),
+        makeCardState("panel-c", 200, 100, 100, 200),
+        makeCardState("panel-d", 300, 100, 100, 200),
+        makeCardState("panel-e", 400, 100, 100, 200),
       ],
     });
 
     // Sets computed in render — all 5 panels form a chain.
     expect(manager.getSets().length).toBe(1);
-    expect(manager.getSets()[0].panelIds.length).toBe(5);
+    expect(manager.getSets()[0].cardIds.length).toBe(5);
 
     // Register a mock card for panel-c so we can close it via removeCard.
     const panelCTabId = "panel-c-tab";
@@ -1154,14 +1154,14 @@ describe("PanelManager – close recompute and final polish", () => {
     // Exactly 2 sets: one for {A,B} and one for {D,E}.
     expect(sets.length).toBe(2);
 
-    const abSet = sets.find((s) => s.panelIds.includes("panel-a") && s.panelIds.includes("panel-b"));
-    const deSet = sets.find((s) => s.panelIds.includes("panel-d") && s.panelIds.includes("panel-e"));
+    const abSet = sets.find((s) => s.cardIds.includes("panel-a") && s.cardIds.includes("panel-b"));
+    const deSet = sets.find((s) => s.cardIds.includes("panel-d") && s.cardIds.includes("panel-e"));
     expect(abSet).toBeDefined();
     expect(deSet).toBeDefined();
 
     // panel-a and panel-b not in the same set as panel-d/panel-e.
-    expect(abSet!.panelIds).not.toContain("panel-d");
-    expect(deSet!.panelIds).not.toContain("panel-a");
+    expect(abSet!.cardIds).not.toContain("panel-d");
+    expect(deSet!.cardIds).not.toContain("panel-a");
 
     manager.destroy();
   });
@@ -1175,8 +1175,8 @@ describe("PanelManager – close recompute and final polish", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -1205,8 +1205,8 @@ describe("PanelManager – close recompute and final polish", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 0, 100, 200, 200),
-        makePanelState("panel-b", 200, 100, 200, 200),
+        makeCardState("panel-a", 0, 100, 200, 200),
+        makeCardState("panel-b", 200, 100, 200, 200),
       ],
     });
 
@@ -1241,8 +1241,8 @@ describe("PanelManager – close recompute and final polish", () => {
 
     manager.applyLayout({
       cards: [
-        makePanelState("panel-a", 100, 100, 200, 200),
-        makePanelState("panel-b", 310, 100, 200, 200),
+        makeCardState("panel-a", 100, 100, 200, 200),
+        makeCardState("panel-b", 310, 100, 200, 200),
       ],
     });
 

@@ -6,10 +6,10 @@ import {
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
 
-// ---- CanvasState / PanelState type tests ----
+// ---- DeckState / PanelState type tests ----
 
-describe("CanvasState", () => {
-  test("CanvasState with empty panels array is valid", () => {
+describe("DeckState", () => {
+  test("DeckState with empty panels array is valid", () => {
     const state: DeckState = { cards: [] };
     expect(state.cards).toBeDefined();
     expect(Array.isArray(state.cards)).toBe(true);
