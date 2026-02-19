@@ -3,8 +3,8 @@
 //! Implements the axum server with routes for auth, WebSocket upgrade,
 //! and static asset serving using rust-embed.
 
-use axum::extract::Extension;
 use axum::Router;
+use axum::extract::Extension;
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -83,8 +83,7 @@ pub(crate) fn build_app(
     let app = if let (Some(path), Some(tx)) = (dev_path, reload_tx) {
         let reload_sender = crate::dev::ReloadSender(tx);
         let dev_path_ext = crate::dev::DevPath(path.clone());
-        base
-            .route("/", get(crate::dev::serve_dev_index))
+        base.route("/", get(crate::dev::serve_dev_index))
             .route("/dev/reload", get(crate::dev::dev_reload_handler))
             .route("/dev/reload.js", get(crate::dev::serve_dev_reload_js))
             .layer(Extension(reload_sender))

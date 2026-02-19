@@ -452,7 +452,11 @@ async fn test_build_app_dev_mode() {
     // Create broadcast channel for reload
     let (reload_tx, _) = broadcast::channel::<()>(16);
 
-    let app = build_app(feed_router, Some(temp_dir.path().to_path_buf()), Some(reload_tx));
+    let app = build_app(
+        feed_router,
+        Some(temp_dir.path().to_path_buf()),
+        Some(reload_tx),
+    );
 
     // Make request to /
     let response = app
@@ -513,11 +517,20 @@ async fn test_dev_reload_sse_endpoint() {
     );
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
-    let app = build_app(feed_router, Some(temp_dir.path().to_path_buf()), Some(reload_tx));
+    let app = build_app(
+        feed_router,
+        Some(temp_dir.path().to_path_buf()),
+        Some(reload_tx),
+    );
 
     // Make request to /dev/reload
     let response = app
-        .oneshot(Request::builder().uri("/dev/reload").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/dev/reload")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 

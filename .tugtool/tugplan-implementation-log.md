@@ -9,6 +9,18 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: audit-fix
+date: 2025-02-19T21:09:03Z
+---
+
+## audit-fix: Audit fix: removed redundant serde_json import in router.rs, changed map_or to is_some_and in dev.rs, added clippy::too_many_arguments allow on FeedRouter::new, ran cargo fmt. All clippy/fmt/test checks pass.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-6
 date: 2025-02-19T21:03:15Z
 bead: tugtool-bwn.7

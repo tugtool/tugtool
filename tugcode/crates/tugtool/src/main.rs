@@ -61,9 +61,9 @@ fn resolve_tugcast_path() -> PathBuf {
 
 /// Detect the mono-repo root by walking up from the current directory looking for tugdeck/
 fn detect_source_tree() -> Result<PathBuf, String> {
-    detect_source_tree_from(&std::env::current_dir().map_err(|e| {
-        format!("failed to get current directory: {}", e)
-    })?)
+    detect_source_tree_from(
+        &std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?,
+    )
 }
 
 /// Detect the mono-repo root by walking up from a starting directory looking for tugdeck/
@@ -152,9 +152,7 @@ fn spawn_tugcast(
         cmd.arg("--dev").arg(path.to_string_lossy().as_ref());
     }
 
-    cmd.stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
+    cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()
 }
 
 /// Extract auth URL from tugcast's stdout by reading lines and checking against regex
@@ -257,12 +255,8 @@ async fn supervisor_loop(
 
     loop {
         // Spawn tugcast
-        let mut tugcast = match spawn_tugcast(
-            &cli.session,
-            cli.port,
-            &cli.dir,
-            dev_path.as_deref(),
-        ) {
+        let mut tugcast = match spawn_tugcast(&cli.session, cli.port, &cli.dir, dev_path.as_deref())
+        {
             Ok(child) => child,
             Err(e) => {
                 eprintln!("tugtool: failed to start tugcast: {}", e);

@@ -1,8 +1,11 @@
 //! Dev mode: SSE reload endpoint, file watcher, and index.html injection
 
 use axum::extract::Extension;
-use axum::http::{header, StatusCode};
-use axum::response::{IntoResponse, Response, sse::{Event, KeepAlive, Sse}};
+use axum::http::{StatusCode, header};
+use axum::response::{
+    IntoResponse, Response,
+    sse::{Event, KeepAlive, Sse},
+};
 use futures::Stream;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::Infallible;
@@ -37,7 +40,10 @@ fn inject_reload_script(html: &str) -> String {
 /// Serve the reload client JS file
 pub(crate) async fn serve_dev_reload_js() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         r#"new EventSource("/dev/reload").onmessage = () => location.reload();"#,
     )
 }
@@ -62,9 +68,7 @@ pub(crate) async fn dev_reload_handler(
 }
 
 /// Serve index.html with injected reload script
-pub(crate) async fn serve_dev_index(
-    Extension(dev_path): Extension<DevPath>,
-) -> Response {
+pub(crate) async fn serve_dev_index(Extension(dev_path): Extension<DevPath>) -> Response {
     let index_path = dev_path.0.join("index.html");
     match std::fs::read_to_string(&index_path) {
         Ok(html) => {
@@ -73,7 +77,8 @@ pub(crate) async fn serve_dev_index(
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
                 modified,
-            ).into_response()
+            )
+                .into_response()
         }
         Err(_) => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
     }
@@ -89,10 +94,11 @@ pub(crate) fn dev_file_watcher(
     // Use std::sync::mpsc for the notify callback
     let (event_tx, event_rx) = std::sync::mpsc::channel();
 
-    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-        let _ = event_tx.send(res);
-    })
-    .map_err(|e| format!("failed to create dev file watcher: {}", e))?;
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            let _ = event_tx.send(res);
+        })
+        .map_err(|e| format!("failed to create dev file watcher: {}", e))?;
 
     watcher
         .watch(dev_path, RecursiveMode::Recursive)
@@ -106,9 +112,8 @@ pub(crate) fn dev_file_watcher(
                 Ok(Ok(event)) => {
                     // Extension filter: only .html, .css, .js
                     let should_reload = event.paths.iter().any(|p| {
-                        p.extension().map_or(false, |ext| {
-                            ext == "html" || ext == "css" || ext == "js"
-                        })
+                        p.extension()
+                            .is_some_and(|ext| ext == "html" || ext == "css" || ext == "js")
                     });
                     if should_reload {
                         // Debounce: wait 300ms
@@ -143,7 +148,9 @@ mod tests {
         assert!(result.contains(r#"<script src="/dev/reload.js"></script>"#));
         assert!(result.contains("</body>"));
         // Script should be before </body>
-        let script_pos = result.find(r#"<script src="/dev/reload.js"></script>"#).unwrap();
+        let script_pos = result
+            .find(r#"<script src="/dev/reload.js"></script>"#)
+            .unwrap();
         let body_pos = result.find("</body>").unwrap();
         assert!(script_pos < body_pos);
     }

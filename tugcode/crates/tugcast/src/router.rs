@@ -10,7 +10,6 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde_json;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -54,6 +53,10 @@ pub struct FeedRouter {
 
 impl FeedRouter {
     /// Create a new feed router
+    // Allow many arguments: this constructor wires together all shared state channels
+    // (terminal, conversation, snapshot, shutdown, reload) plus session and auth.
+    // Grouping into a config struct would add indirection without improving clarity.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         terminal_tx: broadcast::Sender<Frame>,
         input_tx: mpsc::Sender<Frame>,
