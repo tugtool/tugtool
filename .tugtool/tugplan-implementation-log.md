@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-0
+date: 2025-02-19T02:04:55Z
+bead: tugtool-j72.1
+---
+
+## #step-0: Rewrote tokens.css with three-tier token architecture, installed IBM Plex Sans and Hack fonts locally, defined Brio/Bluenote/Harmony themes with body-class selectors
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
 step: audit-fix
 date: 2025-02-18T19:31:38Z
 ---

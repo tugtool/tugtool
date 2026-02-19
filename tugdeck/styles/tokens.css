@@ -1,93 +1,377 @@
 /**
- * Design Token System
+ * Tugdeck Design Token System (Retronow Design Language)
  *
- * Two-tier architecture:
- * - Tier 1: Palette tokens (raw color values)
- * - Tier 2: Semantic tokens (purpose-driven references to palette)
+ * Three-tier architecture:
+ * - Tier 1: Palette tokens (--rn-* retronow palette values)
+ * - Tier 2: Semantic tokens (--td-* purpose-driven mappings)
+ * - Tier 3: Component tokens (--td-panel-*, --td-tab-*, etc. in component CSS)
  *
- * Components should ONLY use semantic tokens, never palette tokens directly.
+ * Theme system:
+ * - Brio (deep graphite): Default theme in :root, no body class required
+ * - Bluenote (cool dark): Activated via body.td-theme-bluenote
+ * - Harmony (light): Activated via body.td-theme-Harmony
+ *
+ * Components MUST use only --td-* semantic tokens, never --rn-* or raw values.
  */
 
+/* ============================================================================
+   Font Declarations
+   ========================================================================= */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/IBMPlexSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Hack";
+  src: url("fonts/hack-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================================
+   :root - Brio Theme (Default)
+   ========================================================================= */
+
 :root {
-  /* Tier 1: Palette Tokens */
-  --palette-gray-1: #1e1e1e;
-  --palette-gray-2: #252526;
-  --palette-gray-3: #2d2d2d;
-  --palette-gray-4: #3c3c3c;
-  --palette-gray-5: #808080;
-  --palette-gray-6: #cccccc;
-  --palette-gray-7: #d4d4d4;
-  --palette-gray-8: #ffffff;
-  --palette-blue-1: #0e639c;
-  --palette-blue-2: #569cd6;
-  --palette-blue-3: #9cdcfe;
-  --palette-green: #4ec9b0;
-  --palette-yellow: #dcdcaa;
-  --palette-red: #f44747;
-  --palette-orange: #ce9178;
-  --palette-purple: #c586c0;
+  /* Tier 1: Palette (Brio values from retronow body.rn-theme-brio) */
+  --rn-bg: #1c1e22;
+  --rn-bg-soft: #272a30;
+  --rn-bg-line: rgba(255, 255, 255, 0.03);
+  --rn-panel: #2b2e35;
+  --rn-panel-soft: #23262d;
+  --rn-panel-ink: #e3e7ec;
+  --rn-surface-1: #282b32;
+  --rn-surface-2: #23262d;
+  --rn-surface-3: #1f2228;
+  --rn-surface-4: #191c22;
+  --rn-surface-screen: #353a42;
+  --rn-surface-screen-ink: #eff3f6;
+  --rn-text: #e6eaee;
+  --rn-text-soft: #bcc3cb;
+  --rn-text-inverse: #f2f7fb;
+  --rn-accent: #ff8a38;
+  --rn-accent-strong: #f17627;
+  --rn-accent-cool: #35bcff;
+  --rn-accent-1: #ff8a38;
+  --rn-accent-2: #35bcff;
+  --rn-accent-3: #b08aff;
+  --rn-accent-4: #ff5a72;
+  --rn-accent-5: #72ce8f;
+  --rn-accent-6: #ffe86b;
+  --rn-accent-7: #f07fd0;
+  --rn-accent-8: #ffa37a;
+  --rn-border: #5e656e;
+  --rn-border-soft: #7b828c;
+  --rn-shadow-hard: #1f2b33;
+  --rn-shadow-mid: #0b1117;
+  --rn-shadow-soft: rgba(0, 0, 0, 0.5);
+  --rn-glow: rgba(142, 183, 190, 0.24);
+  --rn-line-ui: 1px;
 
-  /* Tier 2: Semantic Tokens */
-  --background: var(--palette-gray-1);
-  --foreground: var(--palette-gray-7);
-  --card: var(--palette-gray-2);
-  --card-foreground: var(--palette-gray-6);
-  --muted: var(--palette-gray-3);
-  --muted-foreground: var(--palette-gray-5);
-  --popover: var(--palette-gray-3);
-  --popover-foreground: var(--palette-gray-7);
-  --border: var(--palette-gray-4);
-  --border-muted: var(--palette-gray-3);
-  --input: var(--palette-gray-4);
-  --ring: var(--palette-blue-2);
-  --primary: var(--palette-blue-1);
-  --primary-foreground: var(--palette-gray-8);
-  --secondary: var(--palette-gray-3);
-  --secondary-foreground: var(--palette-gray-7);
-  --accent: var(--palette-blue-2);
-  --accent-foreground: var(--palette-gray-1);
-  --success: var(--palette-green);
-  --success-foreground: var(--palette-gray-1);
-  --warning: var(--palette-yellow);
-  --warning-foreground: var(--palette-gray-1);
-  --destructive: var(--palette-red);
-  --destructive-foreground: var(--palette-gray-8);
-  --info: var(--palette-blue-3);
-  --info-foreground: var(--palette-gray-1);
-  --radius: 6px;
-  --radius-sm: 4px;
-  --radius-lg: 8px;
-  --chart-1: var(--palette-green);
-  --chart-2: var(--palette-blue-2);
-  --chart-3: var(--palette-yellow);
-  --chart-4: var(--palette-red);
-  --chart-5: var(--palette-purple);
+  /* Shared tokens (same across all themes, from retronow :root) */
+  --rn-success: #68bf78;
+  --rn-warning: #ffe15a;
+  --rn-danger: #ff4458;
 
-  /* Syntax highlighting tokens */
-  --syntax-keyword: var(--palette-blue-2);
-  --syntax-string: var(--palette-orange);
-  --syntax-number: var(--palette-green);
-  --syntax-function: var(--palette-yellow);
-  --syntax-type: var(--palette-green);
-  --syntax-variable: var(--palette-blue-3);
-  --syntax-comment: var(--palette-gray-5);
-  --syntax-operator: var(--foreground);
-  --syntax-punctuation: var(--foreground);
-  --syntax-constant: var(--palette-blue-3);
-  --syntax-decorator: var(--palette-purple);
-  --syntax-tag: var(--palette-blue-2);
-  --syntax-attribute: var(--palette-blue-3);
+  --rn-radius-xs: 2px;
+  --rn-radius-sm: 4px;
+  --rn-radius-md: 6px;
+  --rn-radius-lg: 8px;
 
-  /* Shiki CSS variables theme bridge */
-  --syntax-foreground: var(--foreground);
-  --syntax-background: var(--muted);
-  --syntax-token-keyword: var(--syntax-keyword);
-  --syntax-token-string: var(--syntax-string);
-  --syntax-token-comment: var(--syntax-comment);
-  --syntax-token-function: var(--syntax-function);
-  --syntax-token-constant: var(--syntax-constant);
-  --syntax-token-punctuation: var(--syntax-punctuation);
-  --syntax-token-parameter: var(--syntax-variable);
-  --syntax-token-string-expression: var(--syntax-string);
-  --syntax-token-link: var(--syntax-keyword);
+  --rn-space-1: 2px;
+  --rn-space-2: 4px;
+  --rn-space-3: 6px;
+  --rn-space-4: 8px;
+  --rn-space-5: 12px;
+  --rn-space-6: 16px;
+
+  --rn-font-sans: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --rn-font-mono: "Hack", "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  --rn-line-tight: 1.2;
+  --rn-line-normal: 1.45;
+
+  --rn-depth-raise:
+    0 1px 0 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px -1px var(--rn-shadow-soft);
+  --rn-depth-inset:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(34, 48, 57, 0.22);
+  --rn-depth-screen:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(34, 48, 57, 0.64),
+    0 1px 2px -1px var(--rn-shadow-soft);
+
+  --rn-track-bg: repeating-linear-gradient(
+    to bottom,
+    #6f757c 0px,
+    #6f757c 1px,
+    #878e96 2px,
+    #878e96 4px
+  );
+
+  /* Tier 2: Semantic Tokens (--td-* mapped to --rn-*) */
+  /* Surface tokens (Table T01) */
+  --td-bg: var(--rn-bg);
+  --td-bg-soft: var(--rn-bg-soft);
+  --td-panel: var(--rn-panel);
+  --td-panel-soft: var(--rn-panel-soft);
+  --td-surface: var(--rn-surface-1);
+  --td-surface-tab: var(--rn-surface-2);
+  --td-surface-control: var(--rn-surface-3);
+  --td-surface-content: var(--rn-surface-4);
+
+  /* Text tokens (Table T02) */
+  --td-text: var(--rn-text);
+  --td-text-soft: var(--rn-text-soft);
+  --td-text-inverse: var(--rn-text-inverse);
+
+  /* Accent and status tokens (Table T03) */
+  --td-accent: var(--rn-accent);
+  --td-accent-cool: var(--rn-accent-cool);
+  --td-accent-1: var(--rn-accent-1);
+  --td-accent-2: var(--rn-accent-2);
+  --td-accent-3: var(--rn-accent-3);
+  --td-accent-4: var(--rn-accent-4);
+  --td-accent-5: var(--rn-accent-5);
+  --td-accent-6: var(--rn-accent-6);
+  --td-accent-7: var(--rn-accent-7);
+  --td-accent-8: var(--rn-accent-8);
+  --td-success: var(--rn-accent-5);
+  --td-warning: var(--rn-accent-6);
+  --td-danger: var(--rn-accent-4);
+  --td-info: var(--rn-accent-2);
+
+  /* Chart tokens (runtime contract for stats-card.ts) */
+  --td-chart-1: var(--td-accent-5);  /* CPU/Memory - green */
+  --td-chart-2: var(--td-accent-2);  /* Token Usage - cyan */
+  --td-chart-3: var(--td-accent-6);  /* Build Status - yellow */
+  --td-chart-4: var(--td-accent-4);  /* reserved - red */
+  --td-chart-5: var(--td-accent-3);  /* reserved - purple */
+
+  /* Border, depth, utility tokens (Table T04) */
+  --td-border: var(--rn-border);
+  --td-border-soft: var(--rn-border-soft);
+  --td-shadow-soft: var(--rn-shadow-soft);
+  --td-depth-raise: var(--rn-depth-raise);
+
+  /* Spacing and radius tokens */
+  --td-space-1: var(--rn-space-1);
+  --td-space-2: var(--rn-space-2);
+  --td-space-3: var(--rn-space-3);
+  --td-space-4: var(--rn-space-4);
+  --td-space-5: var(--rn-space-5);
+  --td-space-6: var(--rn-space-6);
+  --td-radius-xs: var(--rn-radius-xs);
+  --td-radius-sm: var(--rn-radius-sm);
+  --td-radius-md: var(--rn-radius-md);
+  --td-radius-lg: var(--rn-radius-lg);
+
+  /* Typography tokens */
+  --td-font-sans: var(--rn-font-sans);
+  --td-font-mono: var(--rn-font-mono);
+  --td-line-tight: var(--rn-line-tight);
+  --td-line-normal: var(--rn-line-normal);
+
+  /* Syntax highlighting tokens (Table T05) */
+  --td-syntax-keyword: var(--rn-accent-2);      /* cyan */
+  --td-syntax-string: var(--rn-accent-8);       /* coral */
+  --td-syntax-number: var(--rn-accent-5);       /* green */
+  --td-syntax-function: var(--rn-accent-6);     /* yellow */
+  --td-syntax-type: var(--rn-accent-5);         /* green */
+  --td-syntax-variable: var(--rn-accent-2);     /* cyan */
+  --td-syntax-comment: var(--rn-text-soft);     /* muted */
+  --td-syntax-operator: var(--td-text);         /* text */
+  --td-syntax-punctuation: var(--td-text);      /* text */
+  --td-syntax-constant: var(--rn-accent-2);     /* cyan */
+  --td-syntax-decorator: var(--rn-accent-3);    /* purple */
+  --td-syntax-tag: var(--rn-accent-2);          /* cyan */
+  --td-syntax-attribute: var(--rn-accent-2);    /* cyan */
+
+  /* Shiki CSS variable bridge tokens (forward compatibility) */
+  --syntax-foreground: var(--td-text);
+  --syntax-background: var(--td-surface-control);
+  --syntax-token-keyword: var(--td-syntax-keyword);
+  --syntax-token-string: var(--td-syntax-string);
+  --syntax-token-comment: var(--td-syntax-comment);
+  --syntax-token-function: var(--td-syntax-function);
+  --syntax-token-constant: var(--td-syntax-constant);
+  --syntax-token-punctuation: var(--td-syntax-punctuation);
+  --syntax-token-parameter: var(--td-syntax-variable);
+  --syntax-token-string-expression: var(--td-syntax-string);
+  --syntax-token-link: var(--td-syntax-keyword);
+
+  /* Legacy aliases (runtime contracts - Table T06) */
+  --background: var(--td-bg);
+  --foreground: var(--td-text);
+  --card: var(--td-panel);
+  --card-foreground: var(--td-text);
+  --muted: var(--td-surface-control);
+  --muted-foreground: var(--td-text-soft);
+  --popover: var(--td-surface-control);
+  --popover-foreground: var(--td-text);
+  --border: var(--td-border);
+  --border-muted: var(--td-border-soft);
+  --input: var(--td-border);
+  --ring: var(--td-accent-cool);
+  --primary: var(--td-accent);
+  --primary-foreground: var(--td-text-inverse);
+  --secondary: var(--td-surface-control);
+  --secondary-foreground: var(--td-text);
+  --accent: var(--td-accent-cool);
+  --accent-foreground: var(--td-bg);
+  --success: var(--td-success);
+  --success-foreground: var(--td-bg);
+  --warning: var(--td-warning);
+  --warning-foreground: var(--td-bg);
+  --destructive: var(--td-danger);
+  --destructive-foreground: var(--td-text-inverse);
+  --info: var(--td-info);
+  --info-foreground: var(--td-bg);
+  --radius: var(--td-radius-md);
+  --radius-sm: var(--td-radius-sm);
+  --radius-lg: var(--td-radius-lg);
+
+  /* Legacy chart aliases (stats-card.ts getCSSToken contract) */
+  --chart-1: var(--td-chart-1);
+  --chart-2: var(--td-chart-2);
+  --chart-3: var(--td-chart-3);
+  --chart-4: var(--td-chart-4);
+  --chart-5: var(--td-chart-5);
+
+  /* Legacy syntax aliases */
+  --syntax-keyword: var(--td-syntax-keyword);
+  --syntax-string: var(--td-syntax-string);
+  --syntax-number: var(--td-syntax-number);
+  --syntax-function: var(--td-syntax-function);
+  --syntax-type: var(--td-syntax-type);
+  --syntax-variable: var(--td-syntax-variable);
+  --syntax-comment: var(--td-syntax-comment);
+  --syntax-operator: var(--td-syntax-operator);
+  --syntax-punctuation: var(--td-syntax-punctuation);
+  --syntax-constant: var(--td-syntax-constant);
+  --syntax-decorator: var(--td-syntax-decorator);
+  --syntax-tag: var(--td-syntax-tag);
+  --syntax-attribute: var(--td-syntax-attribute);
+}
+
+/* ============================================================================
+   Bluenote Theme (Cool Dark)
+   ========================================================================= */
+
+body.td-theme-bluenote {
+  /* Palette overrides (from retronow body.rn-theme-bluenote) */
+  --rn-bg: #2a3136;
+  --rn-bg-soft: #363e43;
+  --rn-bg-line: rgba(255, 255, 255, 0.018);
+  --rn-panel: #3a454c;
+  --rn-panel-soft: #313b43;
+  --rn-panel-ink: #d9e0e4;
+  --rn-surface-1: #3b4348;
+  --rn-surface-2: #343c41;
+  --rn-surface-3: #30373c;
+  --rn-surface-4: #2a3237;
+  --rn-surface-screen: #5c6871;
+  --rn-surface-screen-ink: #edf2f5;
+  --rn-text: #dde4e8;
+  --rn-text-soft: #a8b6bf;
+  --rn-text-inverse: #edf1f3;
+  --rn-accent: #ff8434;
+  --rn-accent-strong: #f27024;
+  --rn-accent-cool: #4bbde8;
+  --rn-accent-1: #ff8434;
+  --rn-accent-2: #4bbde8;
+  --rn-accent-3: #ab7ee4;
+  --rn-accent-4: #ff5162;
+  --rn-accent-5: #73c382;
+  --rn-accent-6: #ffe465;
+  --rn-accent-7: #ec76c9;
+  --rn-accent-8: #ff9a72;
+  --rn-border: #5b6871;
+  --rn-border-soft: #79858d;
+  --rn-shadow-mid: #11191f;
+  --rn-shadow-soft: rgba(0, 0, 0, 0.44);
+  --rn-track-bg: repeating-linear-gradient(
+    to bottom,
+    #6c7b85 0px,
+    #6c7b85 1px,
+    #84939c 2px,
+    #84939c 4px
+  );
+}
+
+/* ============================================================================
+   Harmony Theme (Light)
+   ========================================================================= */
+
+body.td-theme-Harmony {
+  /* Palette overrides (from retronow :root) */
+  --rn-bg: #3f474c;
+  --rn-bg-soft: #4c555a;
+  --rn-bg-line: rgba(255, 255, 255, 0.02);
+  --rn-panel: #dad6cc;
+  --rn-panel-soft: #c6c2b8;
+  --rn-panel-ink: #29343c;
+  --rn-surface-1: #f4f1ea;
+  --rn-surface-2: #ece7dc;
+  --rn-surface-3: #e4ded1;
+  --rn-surface-4: #fcf9f2;
+  --rn-surface-screen: #d1dbe0;
+  --rn-surface-screen-ink: #23333b;
+  --rn-text: #26333b;
+  --rn-text-soft: #41525c;
+  --rn-text-inverse: #f4f7f8;
+  --rn-accent: #ff7f2a;
+  --rn-accent-strong: #f26d1f;
+  --rn-accent-cool: #42b8e6;
+  --rn-accent-1: #ff7f2a;
+  --rn-accent-2: #42b8e6;
+  --rn-accent-3: #a77ae0;
+  --rn-accent-4: #ff4458;
+  --rn-accent-5: #68bf78;
+  --rn-accent-6: #ffe15a;
+  --rn-accent-7: #e56ac0;
+  --rn-accent-8: #ff8f66;
+  --rn-border: #7f796a;
+  --rn-border-soft: #a29b8a;
+  --rn-shadow-hard: #1f2b33;
+  --rn-shadow-mid: #2a3841;
+  --rn-shadow-soft: rgba(0, 0, 0, 0.24);
+  --rn-glow: rgba(142, 183, 190, 0.24);
+  --rn-track-bg: repeating-linear-gradient(
+    to bottom,
+    #bdc3c8 0px,
+    #bdc3c8 1px,
+    #d8dde0 2px,
+    #d8dde0 4px
+  );
 }
