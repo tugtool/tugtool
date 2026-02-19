@@ -56,9 +56,6 @@ ignore = "0.4"
 # Random generation
 rand = "0.10"
 
-# HTTP utilities
-tower-http = { version = "0.6", features = ["fs"] }
-
 # Asset embedding
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 
