@@ -20,7 +20,7 @@ import { FeedId, FeedIdValue } from "./protocol";
 import { TugConnection } from "./connection";
 import { TabBar } from "./tab-bar";
 import { FloatingPanel, FLOATING_TITLE_BAR_HEIGHT } from "./floating-panel";
-import { computeSnap, computeResizeSnap, panelToRect, findSharedEdges, computeSets, type Rect, type GuidePosition, type PanelSet, type SharedEdge } from "./snap";
+import { computeSnap, computeResizeSnap, computeEdgeVisibility, panelToRect, findSharedEdges, computeSets, SNAP_VISIBILITY_THRESHOLD, type Rect, type GuidePosition, type PanelSet, type SharedEdge, type EdgeValidator } from "./snap";
 
 /** localStorage key for layout persistence */
 const LAYOUT_STORAGE_KEY = "tugdeck-layout";
@@ -144,7 +144,7 @@ export class PanelManager implements IDragState {
   /**
    * Transient context for the current set-move drag.
    * Initialized on first onMoving call, cleared in onMoveEnd.
-   * D06: top-most panel drags the set; others break out.
+   * D06: topmost-in-Y panel drags the set; others break out.
    */
   private _setMoveContext: {
     panelId: string;
@@ -152,6 +152,15 @@ export class PanelManager implements IDragState {
     setMemberIds: string[];
     startPositions: Map<string, { x: number; y: number }>;
   } | null = null;
+
+  /** Set key at drag start (confirmed membership from this.sets). null = not in a set. */
+  private _dragInitialSetKey: string | null = null;
+
+  /** Whether break-out flash has already fired during this drag. At most once per drag. */
+  private _dragBreakOutFired = false;
+
+  /** Bound keydown handler for panel cycling shortcut */
+  private keydownHandler: (e: KeyboardEvent) => void;
 
   constructor(container: HTMLElement, connection: TugConnection) {
     this.container = container;
@@ -200,6 +209,10 @@ export class PanelManager implements IDragState {
 
     // Listen for window resize
     window.addEventListener("resize", () => this.handleResize());
+
+    // Keyboard shortcut: Control+` / Control+~ cycles panel focus
+    this.keydownHandler = (e: KeyboardEvent) => this.handleKeyDown(e);
+    document.addEventListener("keydown", this.keydownHandler);
   }
 
   // ---- IDragState ----
@@ -319,7 +332,6 @@ export class PanelManager implements IDragState {
 
     card.destroy();
     this.render();
-    this.recomputeSets();
     this.scheduleSave();
   }
 
@@ -366,11 +378,21 @@ export class PanelManager implements IDragState {
             this._isDragging = false;
             this.hideGuides();
             panel.position = { x, y };
-            // Sibling PanelState positions are already updated because
-            // FloatingPanel.updatePosition() mutates the shared PanelState object
-            // reference in-place during set-move.
+            const initialSetKey = this._dragInitialSetKey;
+            const breakOutFired = this._dragBreakOutFired;
             this._setMoveContext = null;
+            this._dragInitialSetKey = null;
+            this._dragBreakOutFired = false;
             this.recomputeSets();
+            this.ensureSetAdjacency();
+            // Flash on set creation/growth, or when re-joining after a break-out
+            const finalSet = this.sets.find((s) => s.panelIds.includes(panel.id));
+            if (finalSet) {
+              const finalSetKey = [...finalSet.panelIds].sort().join(",");
+              if (finalSetKey !== initialSetKey || breakOutFired) {
+                this.flashPanels(finalSet.panelIds);
+              }
+            }
             this.scheduleSave();
           },
           onResizeEnd: (x, y, width, height) => {
@@ -383,23 +405,29 @@ export class PanelManager implements IDragState {
             const card = this.cardRegistry.get(activeTabId);
             if (card) card.onResize(width, height - FLOATING_TITLE_BAR_HEIGHT);
             this.recomputeSets();
+            this.ensureSetAdjacency();
             this.scheduleSave();
           },
-          onFocus: () => {
+          onFocus: (opts) => {
             // Capture set-move context BEFORE focusPanel reorders the panels array.
-            // This preserves the pre-drag z-order for top-most determination (D06).
+            // Topmost = smallest Y coordinate (visually highest on screen).
+            // Tiebreaker: smallest X (leftmost). Exactly one panel per set.
             const mySet = this.sets.find((s) => s.panelIds.includes(panel.id));
             if (mySet) {
-              let topMostId = panel.id;
-              let topMostIdx = -1;
+              let leaderId: string | null = null;
+              let leaderY = Infinity;
+              let leaderX = Infinity;
               for (const memberId of mySet.panelIds) {
-                const idx = this.canvasState.panels.findIndex((p) => p.id === memberId);
-                if (idx > topMostIdx) {
-                  topMostIdx = idx;
-                  topMostId = memberId;
+                const memberPanel = this.canvasState.panels.find((p) => p.id === memberId);
+                if (!memberPanel) continue;
+                if (memberPanel.position.y < leaderY ||
+                    (memberPanel.position.y === leaderY && memberPanel.position.x < leaderX)) {
+                  leaderY = memberPanel.position.y;
+                  leaderX = memberPanel.position.x;
+                  leaderId = memberId;
                 }
               }
-              const isTopMost = topMostId === panel.id;
+              const isTopMost = leaderId === panel.id;
               const startPositions = new Map<string, { x: number; y: number }>();
               for (const memberId of mySet.panelIds) {
                 const memberPanel = this.canvasState.panels.find((p) => p.id === memberId);
@@ -413,10 +441,16 @@ export class PanelManager implements IDragState {
                 setMemberIds: mySet.panelIds,
                 startPositions,
               };
+              this._dragInitialSetKey = [...mySet.panelIds].sort().join(",");
             } else {
               this._setMoveContext = null;
+              this._dragInitialSetKey = null;
             }
-            this.focusPanel(panel.id);
+            this._dragBreakOutFired = false;
+            // Command+click: move without raising (suppress z-order change)
+            if (!opts?.suppressZOrder) {
+              this.focusPanel(panel.id);
+            }
           },
           onClose: () => {
             const activeTabId = panel.activeTabId;
@@ -473,10 +507,10 @@ export class PanelManager implements IDragState {
                 bboxBottom = Math.max(bboxBottom, proposed.y + memberPanel.size.height);
               }
 
-              // Snap bounding box against non-set panels.
-              const nonSetRects: Rect[] = this.canvasState.panels
-                .filter((p) => !ctx.setMemberIds.includes(p.id))
-                .map((p) => panelToRect(p));
+              // Snap bounding box against non-set panels with occlusion checking.
+              const nonSetPanels = this.canvasState.panels
+                .filter((p) => !ctx.setMemberIds.includes(p.id));
+              const nonSetRects: Rect[] = nonSetPanels.map((p) => panelToRect(p));
 
               const setBBox: Rect = {
                 x: bboxLeft,
@@ -485,7 +519,19 @@ export class PanelManager implements IDragState {
                 height: bboxBottom - bboxTop,
               };
 
-              const snap = computeSnap(setBBox, nonSetRects);
+              // Build occlusion validator: set members (high z-index) can occlude non-set panel edges.
+              // No single panel excluded — set members remain as valid occluders.
+              const setMoveZMap = new Map<string, number>();
+              this.canvasState.panels.forEach((p, i) => { setMoveZMap.set(p.id, 100 + i); });
+
+              const setMoveTargetZ = nonSetPanels.map(p => setMoveZMap.get(p.id) ?? 0);
+              const setMoveExcludeIds = nonSetPanels.map(p => new Set([p.id]));
+
+              const setMoveValidator = this.buildSnapValidator(
+                setBBox, setMoveTargetZ, setMoveExcludeIds, ""
+              );
+
+              const snap = computeSnap(setBBox, nonSetRects, setMoveValidator);
               this.showGuides(snap.guides);
 
               // Apply snap offset to all sibling positions.
@@ -501,24 +547,55 @@ export class PanelManager implements IDragState {
                 }
               }
 
-              return {
-                x: x + snapDX,
-                y: y + snapDY,
-              };
+              const finalX = x + snapDX;
+              const finalY = y + snapDY;
+              return { x: finalX, y: finalY };
             } else {
-              // BREAK-OUT / SOLO: move only this panel; snap against all others.
-              const others: Rect[] = this.canvasState.panels
-                .filter((p) => p.id !== panel.id)
-                .map((p) => panelToRect(p));
-              const snap = computeSnap(
-                { x, y, width: panel.size.width, height: panel.size.height },
-                others
+              // BREAK-OUT / SOLO: move only this panel; snap against external edges only.
+              // Replace set members with set bounding boxes so internal edges are invisible.
+              // Exclude the dragged panel from set bboxes to prevent phantom snap targets.
+              const others: Rect[] = [];
+              const processedSetKeys = new Set<string>();
+              const soloTargetZ: number[] = [];
+              const soloExcludeIds: Set<string>[] = [];
+
+              // Z-index map: panelId -> z-index (100 + array position)
+              const soloZMap = new Map<string, number>();
+              this.canvasState.panels.forEach((p, i) => { soloZMap.set(p.id, 100 + i); });
+
+              for (const p of this.canvasState.panels) {
+                if (p.id === panel.id) continue;
+                const pSet = this.sets.find((s) => s.panelIds.includes(p.id));
+                if (pSet) {
+                  const setKey = [...pSet.panelIds].sort().join(",");
+                  if (!processedSetKeys.has(setKey)) {
+                    processedSetKeys.add(setKey);
+                    // Exclude the dragged panel from the set bbox computation
+                    const filteredIds = pSet.panelIds.filter(id => id !== panel.id);
+                    if (filteredIds.length > 0) {
+                      others.push(this.computeSetBBox({ panelIds: filteredIds }));
+                      soloTargetZ.push(Math.max(...filteredIds.map(id => soloZMap.get(id) ?? 0)));
+                      soloExcludeIds.push(new Set(filteredIds));
+                    }
+                  }
+                } else {
+                  others.push(panelToRect(p));
+                  soloTargetZ.push(soloZMap.get(p.id) ?? 0);
+                  soloExcludeIds.push(new Set([p.id]));
+                }
+              }
+
+              const movingRect: Rect = { x, y, width: panel.size.width, height: panel.size.height };
+              const soloValidator = this.buildSnapValidator(
+                movingRect, soloTargetZ, soloExcludeIds, panel.id
               );
+
+              const snap = computeSnap(movingRect, others, soloValidator);
               this.showGuides(snap.guides);
-              return {
-                x: snap.x !== null ? snap.x : x,
-                y: snap.y !== null ? snap.y : y,
-              };
+              const finalX = snap.x !== null ? snap.x : x;
+              const finalY = snap.y !== null ? snap.y : y;
+              this.detectDragSetChange(panel.id, finalX, finalY, panel.size.width, panel.size.height);
+              return { x: finalX, y: finalY };
             }
           },
           onResizing: (x, y, width, height) => {
@@ -626,6 +703,9 @@ export class PanelManager implements IDragState {
     for (const [id, fp] of this.floatingPanels) {
       fp.setKey(id === this.keyPanelId);
     }
+
+    // Always recompute sets after render so this.sets is never stale.
+    this.recomputeSets();
   }
 
   /**
@@ -639,21 +719,53 @@ export class PanelManager implements IDragState {
     const idx = this.canvasState.panels.findIndex((p) => p.id === panelId);
     if (idx === -1) return;
 
-    // Bring to front if not already last
-    if (idx !== this.canvasState.panels.length - 1) {
-      const [panel] = this.canvasState.panels.splice(idx, 1);
-      this.canvasState.panels.push(panel);
+    // Check if this panel is in a set
+    const mySet = this.sets.find((s) => s.panelIds.includes(panelId));
 
-      // Update z-index to match new array order
-      for (const [id, fp] of this.floatingPanels) {
-        const newIdx = this.canvasState.panels.findIndex((p) => p.id === id);
-        if (newIdx !== -1) {
-          fp.setZIndex(100 + newIdx);
+    if (mySet) {
+      // Bring entire set to front. Leader = topmost in Y (smallest Y, then X).
+      let leaderId = panelId;
+      let leaderY = Infinity;
+      let leaderX = Infinity;
+      for (const id of mySet.panelIds) {
+        const p = this.canvasState.panels.find((pp) => pp.id === id);
+        if (p && (p.position.y < leaderY || (p.position.y === leaderY && p.position.x < leaderX))) {
+          leaderY = p.position.y;
+          leaderX = p.position.x;
+          leaderId = id;
         }
       }
-
-      this.scheduleSave();
+      const setMemberIds = new Set(mySet.panelIds);
+      const setMembers: PanelState[] = [];
+      const nonSetMembers: PanelState[] = [];
+      for (const p of this.canvasState.panels) {
+        if (setMemberIds.has(p.id)) {
+          setMembers.push(p);
+        } else {
+          nonSetMembers.push(p);
+        }
+      }
+      // Leader goes last among set members
+      const leaderPanel = setMembers.find((p) => p.id === leaderId)!;
+      const otherSetMembers = setMembers.filter((p) => p.id !== leaderId);
+      this.canvasState.panels = [...nonSetMembers, ...otherSetMembers, leaderPanel];
+    } else {
+      // Solo panel: bring to front
+      if (idx !== this.canvasState.panels.length - 1) {
+        const [panel] = this.canvasState.panels.splice(idx, 1);
+        this.canvasState.panels.push(panel);
+      }
     }
+
+    // Update z-index to match new array order
+    for (const [id, fp] of this.floatingPanels) {
+      const newIdx = this.canvasState.panels.findIndex((p) => p.id === id);
+      if (newIdx !== -1) {
+        fp.setZIndex(100 + newIdx);
+      }
+    }
+
+    this.scheduleSave();
 
     // Update key panel: only if the focused panel accepts key
     if (this.acceptsKey(panelId)) {
@@ -765,7 +877,7 @@ export class PanelManager implements IDragState {
 
   /**
    * Add a new card instance of the given componentId as a floating panel
-   * at the center of the canvas. Called by TugMenu.
+   * at the center of the canvas. Called by Dock.
    */
   addNewCard(componentId: string): void {
     const factory = this.cardFactories.get(componentId);
@@ -887,6 +999,8 @@ export class PanelManager implements IDragState {
     this.sharedEdges = [];
     this.destroySashes();
     this._setMoveContext = null;
+    this._dragInitialSetKey = null;
+    this._dragBreakOutFired = false;
 
     const canvasW = this.container.clientWidth || 800;
     const canvasH = this.container.clientHeight || 600;
@@ -1009,7 +1123,7 @@ export class PanelManager implements IDragState {
     return this.cardsByFeed;
   }
 
-  /** Expose the container element (for TugMenu button placement). */
+  /** Expose the container element (for Dock and other chrome). */
   getContainer(): HTMLElement {
     return this.container;
   }
@@ -1021,7 +1135,7 @@ export class PanelManager implements IDragState {
 
   /**
    * Register a card factory for a componentId.
-   * Used by TugMenu and resetLayout to create new card instances.
+   * Used by Dock and resetLayout to create new card instances.
    */
   registerCardFactory(componentId: string, factory: () => TugCard): void {
     this.cardFactories.set(componentId, factory);
@@ -1099,6 +1213,230 @@ export class PanelManager implements IDragState {
     }
   }
 
+  /**
+   * Build an EdgeValidator for occlusion-aware snapping.
+   *
+   * For each target rect, checks whether the snap edge is visible (not covered
+   * by higher-z panels) along the perpendicular intersection with the moving rect.
+   *
+   * @param movingRect - The rect being moved (used for perpendicular range)
+   * @param targetZIndices - z-index per entry in the targets array
+   * @param targetExcludeIds - panel IDs to skip as occluders for each target
+   * @param excludePanelId - panel ID to exclude from all occluder lists (the moving panel)
+   */
+  private buildSnapValidator(
+    movingRect: Rect,
+    targetZIndices: number[],
+    targetExcludeIds: Set<string>[],
+    excludePanelId: string
+  ): EdgeValidator {
+    // Build z-index map for all panels
+    const zMap = new Map<string, number>();
+    this.canvasState.panels.forEach((p, i) => { zMap.set(p.id, 100 + i); });
+
+    // All panels except the moving one, with z-index info
+    const allOccluders: { rect: Rect; zIndex: number; id: string }[] = [];
+    for (const p of this.canvasState.panels) {
+      if (p.id === excludePanelId) continue;
+      allOccluders.push({ rect: panelToRect(p), zIndex: zMap.get(p.id) ?? 0, id: p.id });
+    }
+
+    // Precompute per-target occluder rects
+    const targetOccluders: Rect[][] = targetZIndices.map((tZ, idx) => {
+      const excludeIds = targetExcludeIds[idx];
+      return allOccluders
+        .filter(op => op.zIndex > tZ && !excludeIds.has(op.id))
+        .map(op => op.rect);
+    });
+
+    return (axis: "x" | "y", edgePosition: number, targetRect: Rect, targetIndex: number): boolean => {
+      const occluders = targetOccluders[targetIndex];
+      if (!occluders || occluders.length === 0) return true;
+
+      const isVertical = axis === "x";
+      let rangeStart: number, rangeEnd: number;
+      if (isVertical) {
+        rangeStart = Math.max(movingRect.y, targetRect.y);
+        rangeEnd = Math.min(movingRect.y + movingRect.height, targetRect.y + targetRect.height);
+      } else {
+        rangeStart = Math.max(movingRect.x, targetRect.x);
+        rangeEnd = Math.min(movingRect.x + movingRect.width, targetRect.x + targetRect.width);
+      }
+      if (rangeStart >= rangeEnd) return false;
+
+      return computeEdgeVisibility(
+        edgePosition, rangeStart, rangeEnd, isVertical, occluders
+      ) >= SNAP_VISIBILITY_THRESHOLD;
+    };
+  }
+
+  /** Compute the bounding box of all panels in a set. */
+  private computeSetBBox(set: PanelSet): Rect {
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const id of set.panelIds) {
+      const p = this.canvasState.panels.find((panel) => panel.id === id);
+      if (!p) continue;
+      left = Math.min(left, p.position.x);
+      top = Math.min(top, p.position.y);
+      right = Math.max(right, p.position.x + p.size.width);
+      bottom = Math.max(bottom, p.position.y + p.size.height);
+    }
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }
+
+  /**
+   * Ensure all members of each set occupy contiguous positions in the panels array.
+   * The leader (topmost in Y, i.e. smallest Y) gets the highest z-index in the group
+   * so its title bar is always accessible.
+   */
+  private ensureSetAdjacency(): void {
+    if (this.sets.length === 0) return;
+
+    // Map each panel id to its set (if any)
+    const panelToSet = new Map<string, PanelSet>();
+    for (const set of this.sets) {
+      for (const id of set.panelIds) {
+        panelToSet.set(id, set);
+      }
+    }
+
+    // For each set, find the leader (smallest Y, then X) and its current array position.
+    // The group will be placed at the max index of any set member (so the set
+    // stays at the "front" of the z-order stack).
+    const setLeaderId = new Map<PanelSet, string>();
+    const setMaxIdx = new Map<PanelSet, number>();
+    for (const set of this.sets) {
+      let bestId = set.panelIds[0];
+      let bestY = Infinity;
+      let bestX = Infinity;
+      let maxIdx = -1;
+      for (const id of set.panelIds) {
+        const p = this.canvasState.panels.find((pp) => pp.id === id);
+        if (!p) continue;
+        if (p.position.y < bestY || (p.position.y === bestY && p.position.x < bestX)) {
+          bestY = p.position.y;
+          bestX = p.position.x;
+          bestId = id;
+        }
+        const idx = this.canvasState.panels.indexOf(p);
+        if (idx > maxIdx) maxIdx = idx;
+      }
+      setLeaderId.set(set, bestId);
+      setMaxIdx.set(set, maxIdx);
+    }
+
+    // Build new array: when we reach the highest-index set member, insert the
+    // entire group with leader last (highest z). Non-leader members encountered
+    // earlier are skipped.
+    const result: PanelState[] = [];
+    const placedSets = new Set<PanelSet>();
+
+    for (const panel of this.canvasState.panels) {
+      const set = panelToSet.get(panel.id);
+      if (!set) {
+        result.push(panel);
+      } else if (!placedSets.has(set)) {
+        const maxI = setMaxIdx.get(set)!;
+        const myIdx = this.canvasState.panels.indexOf(panel);
+        if (myIdx === maxI) {
+          placedSets.add(set);
+          const leadId = setLeaderId.get(set)!;
+          const setMembers = this.canvasState.panels.filter((p) => set.panelIds.includes(p.id));
+          const leader = setMembers.find((p) => p.id === leadId)!;
+          const others = setMembers.filter((p) => p.id !== leadId);
+          result.push(...others, leader);
+        }
+        // else: skip non-leader member (placed when we reach maxIdx)
+      }
+      // else: set already placed, skip
+    }
+
+    this.canvasState.panels = result;
+
+    // Update z-indices
+    for (const [id, fp] of this.floatingPanels) {
+      const idx = this.canvasState.panels.findIndex((p) => p.id === id);
+      if (idx >= 0) fp.setZIndex(100 + idx);
+    }
+  }
+
+  /**
+   * Detect break-out from a confirmed set during drag.
+   * Compares against _dragInitialSetKey (confirmed at drag start), NOT live
+   * prospective state. Fires at most once per drag via _dragBreakOutFired.
+   */
+  private detectDragSetChange(
+    panelId: string, snappedX: number, snappedY: number, panelW: number, panelH: number
+  ): void {
+    // Only check if panel started in a confirmed set and hasn't already flashed
+    if (!this._dragInitialSetKey || this._dragBreakOutFired) return;
+
+    const snappedRect: Rect = { x: snappedX, y: snappedY, width: panelW, height: panelH };
+    const allPanelRects = this.canvasState.panels.map((p) => ({
+      id: p.id,
+      rect: p.id === panelId ? snappedRect : panelToRect(p),
+    }));
+
+    const edges = findSharedEdges(allPanelRects);
+    const ids = allPanelRects.map((r) => r.id);
+    const prospectiveSets = computeSets(ids, edges);
+    const mySet = prospectiveSets.find((s) => s.panelIds.includes(panelId));
+    const currentSetKey = mySet ? [...mySet.panelIds].sort().join(",") : null;
+
+    if (currentSetKey !== this._dragInitialSetKey) {
+      // Panel is no longer in its original confirmed set — flash once
+      this.flashPanels([panelId]);
+      this._dragBreakOutFired = true;
+    }
+  }
+
+  /** Flash overlay on one or more panels. Overlays are children of the panel element so they move with it. */
+  private flashPanels(panelIds: string[]): void {
+    const panelSet = new Set(panelIds);
+
+    for (const id of panelIds) {
+      const fp = this.floatingPanels.get(id);
+      if (!fp) continue;
+
+      // Determine which edges are internal (shared with another panel in this group)
+      let topInternal = false;
+      let bottomInternal = false;
+      let leftInternal = false;
+      let rightInternal = false;
+
+      if (panelIds.length > 1) {
+        for (const edge of this.sharedEdges) {
+          if (!panelSet.has(edge.panelAId) || !panelSet.has(edge.panelBId)) continue;
+          if (edge.axis === "vertical") {
+            // A.right ~ B.left
+            if (edge.panelAId === id) rightInternal = true;
+            if (edge.panelBId === id) leftInternal = true;
+          } else {
+            // A.bottom ~ B.top
+            if (edge.panelAId === id) bottomInternal = true;
+            if (edge.panelBId === id) topInternal = true;
+          }
+        }
+      }
+
+      const el = document.createElement("div");
+      el.className = "set-flash-overlay";
+
+      // Hide borders on internal edges so only the set perimeter flashes.
+      // Individual border properties avoid the corner gaps that clipPath creates.
+      if (topInternal) el.style.borderTop = "none";
+      if (bottomInternal) el.style.borderBottom = "none";
+      if (leftInternal) el.style.borderLeft = "none";
+      if (rightInternal) el.style.borderRight = "none";
+
+      fp.getElement().appendChild(el);
+      el.addEventListener("animationend", () => el.remove());
+    }
+  }
+
   /** Remove all virtual sash elements from the DOM. */
   private destroySashes(): void {
     for (const el of this.sashElements) {
@@ -1108,37 +1446,66 @@ export class PanelManager implements IDragState {
   }
 
   /**
-   * Create virtual sash elements for each shared edge.
-   * Spec S05: Virtual sash interaction — drag resizes both adjacent panels.
+   * Create virtual sash elements for shared edges.
+   * Groups edges at the same boundary into a single sash that resizes
+   * ALL panels on both sides of the boundary.
    */
   private createSashes(): void {
-    for (const edge of this.sharedEdges) {
-      const sash = document.createElement("div");
+    // Group shared edges by axis + boundary position
+    type SashGroup = { axis: "vertical" | "horizontal"; boundary: number; edges: SharedEdge[] };
+    const groups: SashGroup[] = [];
 
-      if (edge.axis === "vertical") {
-        sash.className = "virtual-sash virtual-sash-vertical";
-        sash.style.left = `${edge.boundaryPosition - 4}px`; // center 8px sash on boundary
-        sash.style.top = `${edge.overlapStart}px`;
-        sash.style.height = `${edge.overlapEnd - edge.overlapStart}px`;
-      } else {
-        sash.className = "virtual-sash virtual-sash-horizontal";
-        sash.style.top = `${edge.boundaryPosition - 4}px`; // center 8px sash on boundary
-        sash.style.left = `${edge.overlapStart}px`;
-        sash.style.width = `${edge.overlapEnd - edge.overlapStart}px`;
+    for (const edge of this.sharedEdges) {
+      let added = false;
+      for (const group of groups) {
+        if (group.axis === edge.axis && Math.abs(group.boundary - edge.boundaryPosition) <= 2) {
+          group.edges.push(edge);
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        groups.push({ axis: edge.axis, boundary: edge.boundaryPosition, edges: [edge] });
+      }
+    }
+
+    for (const group of groups) {
+      // Compute sash geometry from union of all edge overlaps
+      let overlapStart = Infinity;
+      let overlapEnd = -Infinity;
+      for (const edge of group.edges) {
+        overlapStart = Math.min(overlapStart, edge.overlapStart);
+        overlapEnd = Math.max(overlapEnd, edge.overlapEnd);
       }
 
-      this.attachSashDrag(sash, edge);
+      const sash = document.createElement("div");
+      if (group.axis === "vertical") {
+        sash.className = "virtual-sash virtual-sash-vertical";
+        sash.style.left = `${group.boundary - 4}px`;
+        sash.style.top = `${overlapStart}px`;
+        sash.style.height = `${overlapEnd - overlapStart}px`;
+      } else {
+        sash.className = "virtual-sash virtual-sash-horizontal";
+        sash.style.top = `${group.boundary - 4}px`;
+        sash.style.left = `${overlapStart}px`;
+        sash.style.width = `${overlapEnd - overlapStart}px`;
+      }
+
+      this.attachSashDrag(sash, group);
       this.container.appendChild(sash);
       this.sashElements.push(sash);
     }
   }
 
   /**
-   * Attach pointer event handlers to a sash for dual-panel resize.
-   * Spec S05: On pointerdown, track delta; on pointermove, grow one panel
-   * and shrink the other; enforce MIN_SIZE_PX on both.
+   * Attach pointer event handlers to a grouped sash for multi-panel resize.
+   * All panels on both sides of the boundary resize together.
+   * Does NOT set _isDragging so cards can live-resize via ResizeObserver.
    */
-  private attachSashDrag(sash: HTMLElement, edge: SharedEdge): void {
+  private attachSashDrag(
+    sash: HTMLElement,
+    group: { axis: "vertical" | "horizontal"; boundary: number; edges: SharedEdge[] }
+  ): void {
     const MIN_SIZE = 100;
 
     sash.addEventListener("pointerdown", (downEvent: PointerEvent) => {
@@ -1148,78 +1515,105 @@ export class PanelManager implements IDragState {
         sash.setPointerCapture(downEvent.pointerId);
       }
 
-      this._isDragging = true;
+      // Collect all panels on each side of the boundary
+      const aSideIds = new Set<string>();
+      const bSideIds = new Set<string>();
+      for (const edge of group.edges) {
+        aSideIds.add(edge.panelAId);
+        bSideIds.add(edge.panelBId);
+      }
 
-      // Find the two panels
-      const panelA = this.canvasState.panels.find((p) => p.id === edge.panelAId);
-      const panelB = this.canvasState.panels.find((p) => p.id === edge.panelBId);
-      if (!panelA || !panelB) return;
+      type PanelSnap = {
+        panel: PanelState;
+        fp: FloatingPanel;
+        startX: number; startY: number;
+        startW: number; startH: number;
+      };
+      const aPanels: PanelSnap[] = [];
+      const bPanels: PanelSnap[] = [];
 
-      const fpA = this.floatingPanels.get(edge.panelAId);
-      const fpB = this.floatingPanels.get(edge.panelBId);
-      if (!fpA || !fpB) return;
+      for (const id of aSideIds) {
+        const panel = this.canvasState.panels.find((p) => p.id === id);
+        const fp = this.floatingPanels.get(id);
+        if (panel && fp) {
+          aPanels.push({
+            panel, fp,
+            startX: panel.position.x, startY: panel.position.y,
+            startW: panel.size.width, startH: panel.size.height,
+          });
+        }
+      }
+      for (const id of bSideIds) {
+        const panel = this.canvasState.panels.find((p) => p.id === id);
+        const fp = this.floatingPanels.get(id);
+        if (panel && fp) {
+          bPanels.push({
+            panel, fp,
+            startX: panel.position.x, startY: panel.position.y,
+            startW: panel.size.width, startH: panel.size.height,
+          });
+        }
+      }
 
-      // Snapshot starting geometry
-      const startAX = panelA.position.x;
-      const startAY = panelA.position.y;
-      const startAW = panelA.size.width;
-      const startAH = panelA.size.height;
-      const startBX = panelB.position.x;
-      const startBY = panelB.position.y;
-      const startBW = panelB.size.width;
-      const startBH = panelB.size.height;
+      if (aPanels.length === 0 || bPanels.length === 0) return;
+
       const startClientX = downEvent.clientX;
       const startClientY = downEvent.clientY;
 
       const onMove = (e: PointerEvent) => {
-        if (edge.axis === "vertical") {
-          // Vertical sash: panelA is the left panel, panelB is the right panel.
-          // Dragging right: A grows, B shrinks and shifts right.
-          const dx = e.clientX - startClientX;
-          let newAW = startAW + dx;
-          let newBX = startBX + dx;
-          let newBW = startBW - dx;
-
-          // Clamp A to MIN_SIZE
-          if (newAW < MIN_SIZE) {
-            newAW = MIN_SIZE;
-            newBX = startAX + MIN_SIZE;
-            newBW = startBW + (startAW - MIN_SIZE);
+        if (group.axis === "vertical") {
+          let dx = e.clientX - startClientX;
+          // Clamp: all A-side panels must stay >= MIN_SIZE width
+          for (const s of aPanels) {
+            dx = Math.max(dx, -(s.startW - MIN_SIZE));
           }
-          // Clamp B to MIN_SIZE
-          if (newBW < MIN_SIZE) {
-            newBW = MIN_SIZE;
-            newAW = startAW + (startBW - MIN_SIZE);
-            newBX = startAX + newAW;
+          // Clamp: all B-side panels must stay >= MIN_SIZE width
+          for (const s of bPanels) {
+            dx = Math.min(dx, s.startW - MIN_SIZE);
           }
 
-          fpA.updateSize(newAW, startAH);
-          fpB.updatePosition(newBX, startBY);
-          fpB.updateSize(newBW, startBH);
+          for (const s of aPanels) {
+            s.fp.updateSize(s.startW + dx, s.startH);
+          }
+          for (const s of bPanels) {
+            s.fp.updatePosition(s.startX + dx, s.startY);
+            s.fp.updateSize(s.startW - dx, s.startH);
+          }
         } else {
-          // Horizontal sash: panelA is the top panel, panelB is the bottom panel.
-          // Dragging down: A grows, B shrinks and shifts down.
+          let dy = e.clientY - startClientY;
+          // Clamp: all A-side panels must stay >= MIN_SIZE height
+          for (const s of aPanels) {
+            dy = Math.max(dy, -(s.startH - MIN_SIZE));
+          }
+          // Clamp: all B-side panels must stay >= MIN_SIZE height
+          for (const s of bPanels) {
+            dy = Math.min(dy, s.startH - MIN_SIZE);
+          }
+
+          for (const s of aPanels) {
+            s.fp.updateSize(s.startW, s.startH + dy);
+          }
+          for (const s of bPanels) {
+            s.fp.updatePosition(s.startX, s.startY + dy);
+            s.fp.updateSize(s.startW, s.startH - dy);
+          }
+        }
+
+        // Move the sash element to track the boundary
+        if (group.axis === "vertical") {
+          const dx = e.clientX - startClientX;
+          sash.style.left = `${group.boundary - 4 + dx}px`;
+        } else {
           const dy = e.clientY - startClientY;
-          let newAH = startAH + dy;
-          let newBY = startBY + dy;
-          let newBH = startBH - dy;
+          sash.style.top = `${group.boundary - 4 + dy}px`;
+        }
 
-          // Clamp A to MIN_SIZE
-          if (newAH < MIN_SIZE) {
-            newAH = MIN_SIZE;
-            newBY = startAY + MIN_SIZE;
-            newBH = startBH + (startAH - MIN_SIZE);
+        // Notify all affected cards so both sides live-resize
+        for (const s of [...aPanels, ...bPanels]) {
+          const card = this.cardRegistry.get(s.panel.activeTabId);
+          if (card) {
+            card.onResize(s.panel.size.width, s.panel.size.height - FLOATING_TITLE_BAR_HEIGHT);
           }
-          // Clamp B to MIN_SIZE
-          if (newBH < MIN_SIZE) {
-            newBH = MIN_SIZE;
-            newAH = startAH + (startBH - MIN_SIZE);
-            newBY = startAY + newAH;
-          }
-
-          fpA.updateSize(startAW, newAH);
-          fpB.updatePosition(startBX, newBY);
-          fpB.updateSize(startBW, newBH);
         }
       };
 
@@ -1231,17 +1625,16 @@ export class PanelManager implements IDragState {
         sash.removeEventListener("pointerup", onUp);
         sash.removeEventListener("pointercancel", onUp);
 
-        this._isDragging = false;
-
-        // Notify active cards of their new sizes
-        for (const p of [panelA, panelB]) {
-          const card = this.cardRegistry.get(p.activeTabId);
+        // Notify all affected cards of final sizes
+        for (const s of [...aPanels, ...bPanels]) {
+          const card = this.cardRegistry.get(s.panel.activeTabId);
           if (card) {
-            card.onResize(p.size.width, p.size.height - FLOATING_TITLE_BAR_HEIGHT);
+            card.onResize(s.panel.size.width, s.panel.size.height - FLOATING_TITLE_BAR_HEIGHT);
           }
         }
 
         this.recomputeSets();
+        this.ensureSetAdjacency();
         this.scheduleSave();
       };
 
@@ -1265,9 +1658,48 @@ export class PanelManager implements IDragState {
     }
   }
 
+  /** Handle keyboard shortcuts at document level. */
+  private handleKeyDown(e: KeyboardEvent): void {
+    // Control+` or Control+~ for panel focus cycling
+    if (e.ctrlKey && (e.key === "`" || e.key === "~")) {
+      e.preventDefault();
+      this.cyclePanelFocus();
+    }
+  }
+
+  /**
+   * Cycle panel focus: bring the backmost panel to front.
+   * Repeated presses rotate through all panels in z-order.
+   * When the target panel is in a set, focus the set leader (topmost Y)
+   * so the key tint highlights the most prominent title bar.
+   */
+  private cyclePanelFocus(): void {
+    const panels = this.canvasState.panels;
+    if (panels.length === 0) return;
+
+    let targetId = panels[0].id;
+
+    // If the target is in a set, focus the leader (smallest Y, then X)
+    const targetSet = this.sets.find((s) => s.panelIds.includes(targetId));
+    if (targetSet) {
+      let leaderY = Infinity;
+      let leaderX = Infinity;
+      for (const id of targetSet.panelIds) {
+        const p = panels.find((pp) => pp.id === id);
+        if (p && (p.position.y < leaderY || (p.position.y === leaderY && p.position.x < leaderX))) {
+          leaderY = p.position.y;
+          leaderX = p.position.x;
+          targetId = id;
+        }
+      }
+    }
+
+    this.focusPanel(targetId);
+  }
+
   /** Set of componentIds that accept key status. */
   private static readonly KEY_CAPABLE = new Set([
-    "conversation", "terminal", "git", "files",
+    "conversation", "terminal", "git", "files", "stats",
   ]);
 
   /**
@@ -1332,6 +1764,9 @@ export class PanelManager implements IDragState {
     this.destroySashes();
     // Clear transient drag context
     this._setMoveContext = null;
+    this._dragInitialSetKey = null;
+    this._dragBreakOutFired = false;
+    document.removeEventListener("keydown", this.keydownHandler);
     window.removeEventListener("resize", () => this.handleResize());
   }
 }

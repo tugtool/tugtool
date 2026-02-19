@@ -27,13 +27,16 @@ const DRAG_THRESHOLD_PX = 3;
 /** Height of the header bar in pixels */
 export const FLOATING_TITLE_BAR_HEIGHT = 28;
 
+/** Inset from canvas edges — panels can't be positioned flush against the viewport */
+const CANVAS_INSET_PX = 2;
+
 export interface FloatingPanelCallbacks {
   /** Called when the user finishes dragging the panel to a new position. */
   onMoveEnd: (x: number, y: number) => void;
   /** Called when the user finishes resizing the panel. */
   onResizeEnd: (x: number, y: number, width: number, height: number) => void;
   /** Called when the panel receives focus (click anywhere). */
-  onFocus: () => void;
+  onFocus: (opts?: { suppressZOrder?: boolean }) => void;
   /** Called when the close button in the header is clicked. */
   onClose: () => void;
   /** Called on every pointermove during header drag. Return the (potentially snapped) position. */
@@ -64,10 +67,11 @@ export class FloatingPanel {
     this.el.className = "floating-panel";
     this.applyGeometry();
 
-    // Focus on click anywhere in the panel
+    // Focus on click anywhere in the panel.
+    // Command+click suppresses z-order change (move without raising).
     this.el.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
-      callbacks.onFocus();
+      callbacks.onFocus({ suppressZOrder: e.metaKey });
     });
 
     // Build meta from PanelState active tab if not provided
@@ -186,10 +190,10 @@ export class FloatingPanel {
       }
       if (!dragging) return;
 
-      // Move freely within canvas bounds
+      // Move freely within canvas bounds (with inset)
       const canvasRect = this.canvasEl.getBoundingClientRect();
-      let newX = Math.max(0, Math.min(canvasRect.width - this.panelState.size.width, startPanelX + dx));
-      let newY = Math.max(0, Math.min(canvasRect.height - this.panelState.size.height, startPanelY + dy));
+      let newX = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.width - this.panelState.size.width - CANVAS_INSET_PX, startPanelX + dx));
+      let newY = Math.max(CANVAS_INSET_PX, Math.min(canvasRect.height - this.panelState.size.height - CANVAS_INSET_PX, startPanelY + dy));
 
       // Apply live callback if provided (snap override)
       if (this.callbacks.onMoving) {
@@ -281,9 +285,14 @@ export class FloatingPanel {
           newH = candidateH;
         }
 
-        // Clamp position to canvas bounds
-        newX = Math.max(0, Math.min(canvasRect.width - newW, newX));
-        newY = Math.max(0, Math.min(canvasRect.height - newH, newY));
+        // Clamp to canvas bounds (with inset)
+        if (newX < CANVAS_INSET_PX) { newW += newX - CANVAS_INSET_PX; newX = CANVAS_INSET_PX; }
+        if (newY < CANVAS_INSET_PX) { newH += newY - CANVAS_INSET_PX; newY = CANVAS_INSET_PX; }
+        if (newX + newW > canvasRect.width - CANVAS_INSET_PX) { newW = canvasRect.width - CANVAS_INSET_PX - newX; }
+        if (newY + newH > canvasRect.height - CANVAS_INSET_PX) { newH = canvasRect.height - CANVAS_INSET_PX - newY; }
+        // Re-enforce minimum size after viewport clamping
+        newW = Math.max(MIN_SIZE_PX, newW);
+        newH = Math.max(MIN_SIZE_PX, newH);
 
         // Apply live callback if provided (snap override)
         if (this.callbacks.onResizing) {

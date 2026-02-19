@@ -65,12 +65,7 @@ fn main() {
             .expect("failed to write placeholder app.css");
     }
 
-    // Copy deck.css and cards.css to output
-    let deck_css = tugdeck_dir.join("styles/deck.css");
-    if deck_css.exists() {
-        fs::copy(&deck_css, tugdeck_out.join("deck.css")).expect("failed to copy deck.css");
-    }
-
+    // Copy CSS files to output
     let cards_css = tugdeck_dir.join("styles/cards.css");
     if cards_css.exists() {
         fs::copy(&cards_css, tugdeck_out.join("cards.css")).expect("failed to copy cards.css");
@@ -84,6 +79,26 @@ fn main() {
     let panels_css = tugdeck_dir.join("styles/panels.css");
     if panels_css.exists() {
         fs::copy(&panels_css, tugdeck_out.join("panels.css")).expect("failed to copy panels.css");
+    }
+
+    let dock_css = tugdeck_dir.join("styles/dock.css");
+    if dock_css.exists() {
+        fs::copy(&dock_css, tugdeck_out.join("dock.css")).expect("failed to copy dock.css");
+    }
+
+    // Copy font files to output
+    let fonts_dir = tugdeck_dir.join("styles/fonts");
+    if fonts_dir.exists() {
+        let fonts_out = tugdeck_out.join("fonts");
+        fs::create_dir_all(&fonts_out).expect("failed to create fonts output dir");
+        for entry in fs::read_dir(&fonts_dir).expect("failed to read fonts dir") {
+            let entry = entry.expect("failed to read fonts dir entry");
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "woff2") {
+                let dest = fonts_out.join(path.file_name().unwrap());
+                fs::copy(&path, &dest).expect("failed to copy font file");
+            }
+        }
     }
 
     // --- Build tugtalk (conversation engine binary) ---

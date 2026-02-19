@@ -451,7 +451,7 @@ describe("PanelManager – canvas panel integration", () => {
     manager.destroy();
   });
 
-  test("clicking non-key panel (stats) does not change key panel", () => {
+  test("clicking stats panel makes it key (all standard panels accept key)", () => {
     const manager = new PanelManager(container, connection as unknown as TugConnection);
     const tab1 = "k-tab-1"; const tab2 = "k-tab-2";
     manager.applyLayout({
@@ -462,14 +462,14 @@ describe("PanelManager – canvas panel integration", () => {
           tabs: [{ id: tab2, componentId: "stats", title: "Stats", closable: true }], activeTabId: tab2 },
       ],
     });
-    // conversation is initially key (last key-capable panel)
+    // stats is initially key (last key-capable panel in array)
     let headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
-    expect(headers[0].classList.contains("panel-header-key")).toBe(true);
+    expect(headers[1].classList.contains("panel-header-key")).toBe(true);
+    expect(headers[0].classList.contains("panel-header-key")).toBe(false);
 
-    // Focus the stats panel (bring to front)
-    manager.focusPanel("k-p2");
+    // Focus the conversation panel — it becomes key
+    manager.focusPanel("k-p1");
 
-    // conversation should still be key
     headers = Array.from(container.querySelectorAll<HTMLElement>(".panel-header"));
     expect(headers[0].classList.contains("panel-header-key")).toBe(true);
     expect(headers[1].classList.contains("panel-header-key")).toBe(false);

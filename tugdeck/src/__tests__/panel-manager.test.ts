@@ -625,8 +625,8 @@ describe("PanelManager – set computation", () => {
       ],
     });
 
-    // Initially no sets (applyLayout does not call recomputeSets)
-    expect(manager.getSets().length).toBe(0);
+    // Sets are computed in render — panels are already edge-to-edge.
+    expect(manager.getSets().length).toBe(1);
 
     // Get panel A's header
     const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
@@ -662,18 +662,10 @@ describe("PanelManager – set computation", () => {
       ],
     });
 
-    // First: put both in a set via a minimal drag on A
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    const panelAEl = floatingPanels[0];
-    const headerA = panelAEl.querySelector<HTMLElement>(".panel-header")!;
-
-    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
-    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 104, clientY: 150 }));
-    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
-
+    // Sets computed in render — both panels already edge-to-edge.
     expect(manager.getSets().length).toBe(1);
 
-    // Now drag B far right (dx=500). B ends up at ~x=700, far from A.right=200.
+    // Drag B far right (dx=500). B ends up at ~x=700, far from A.right=200.
     // Find panel B's floating element by its current left style = "200px".
     const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
     let panelBEl: HTMLElement | undefined;
@@ -714,15 +706,7 @@ describe("PanelManager – set computation", () => {
       ],
     });
 
-    // Trigger initial recompute via a minimal drag on A
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    const headerA = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
-
-    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 100, clientY: 150 }));
-    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 104, clientY: 150 }));
-    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 104, clientY: 150 }));
-
-    // All 3 panels should now be in one set
+    // Sets computed in render — all 3 panels form a chain.
     expect(manager.getSets().length).toBe(1);
     expect(manager.getSets()[0].panelIds.length).toBe(3);
 
@@ -773,14 +757,7 @@ describe("PanelManager – virtual sashes", () => {
       ],
     });
 
-    // No sashes before recomputeSets
-    expect(snapContainer.querySelectorAll(".virtual-sash").length).toBe(0);
-
-    // Trigger recomputeSets via minimal drag on panel A
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
-
-    // After recomputeSets: shared edge detected, sash created
+    // Sets and sashes computed in render — shared edge detected immediately
     const sashes = snapContainer.querySelectorAll<HTMLElement>(".virtual-sash");
     expect(sashes.length).toBeGreaterThanOrEqual(1);
 
@@ -808,10 +785,7 @@ describe("PanelManager – virtual sashes", () => {
       ],
     });
 
-    // Trigger recompute to create the sash
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
-
+    // Sash created in render (sets computed automatically)
     const sash = snapContainer.querySelector<HTMLElement>(".virtual-sash-vertical")!;
     expect(sash).not.toBeNull();
 
@@ -848,10 +822,7 @@ describe("PanelManager – virtual sashes", () => {
       ],
     });
 
-    // Trigger recompute to create the sash
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
-
+    // Sash created in render (sets computed automatically)
     const sash = snapContainer.querySelector<HTMLElement>(".virtual-sash-vertical")!;
     expect(sash).not.toBeNull();
 
@@ -885,10 +856,7 @@ describe("PanelManager – virtual sashes", () => {
       ],
     });
 
-    // Trigger initial recompute
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
-
+    // Sash created in render (sets computed automatically)
     const sash = snapContainer.querySelector<HTMLElement>(".virtual-sash-vertical")!;
     expect(sash).not.toBeNull();
 
@@ -946,15 +914,10 @@ describe("PanelManager – set dragging", () => {
       ],
     });
 
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    // Trigger recomputeSets by doing a minimal drag on panel-a (floatingPanels[0]).
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
-
+    // Sets computed in render — panels already edge-to-edge.
     expect(manager.getSets().length).toBe(1);
 
-    // After focusPanel("panel-a") runs on pointerdown, panel-a is moved to end of array
-    // (top-most, index 1). panel-b is index 0.
-    // Find elements by position: panel-a snapped back to ~x=0, panel-b at x=200.
+    // Find elements by position: panel-a at x=0, panel-b at x=200.
     const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
     const panelAEl = allPanels.find((el) => el.style.left === "0px")!;
     const panelBEl = allPanels.find((el) => el.style.left === "200px")!;
@@ -1051,17 +1014,11 @@ describe("PanelManager – set dragging", () => {
       ],
     });
 
-    // Trigger recomputeSets via minimal drag on panel-a (index 0).
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    const headerA0 = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
-    triggerRecompute(headerA0);
-
+    // Sets computed in render — all three panels form a chain.
     expect(manager.getSets().length).toBe(1);
     expect(manager.getSets()[0].panelIds.length).toBe(3);
 
-    // After setup drag, panel-a was focused and moved to end (top-most, index 2).
-    // panel-b is index 0, panel-c is index 1.
-    // We need to drag a non-top-most panel. Find panel-b at x=200.
+    // Find panel-b (non-leader) at x=200.
     const allPanels = Array.from(snapContainer.querySelectorAll<HTMLElement>(".floating-panel"));
     const panelBEl = allPanels.find((el) => el.style.left === "200px")!;
     expect(panelBEl).toBeDefined();
@@ -1106,13 +1063,7 @@ describe("PanelManager – set dragging", () => {
       ],
     });
 
-    // Trigger recompute via minimal drag on panel-a (index 0).
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    const headerA0 = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
-    triggerRecompute(headerA0);
-
-    // After setup: panel-a moved to end (index 2, top-most), panel-b at index 0, panel-c at index 1.
-    // Set contains panel-a and panel-b (shared vertical edge at x=200).
+    // Sets computed in render. panel-a and panel-b share edge at x=200.
     // panel-c is standalone (gap to set = 10px).
     expect(manager.getSets().length).toBeGreaterThanOrEqual(1);
     const abSet = manager.getSets().find((s) =>
@@ -1184,15 +1135,7 @@ describe("PanelManager – close recompute and final polish", () => {
       ],
     });
 
-    // Trigger recomputeSets via a minimal drag on panel-a (index 0, dx=4).
-    // Snap pulls A back (A.right at 104, B.left=100, dist=4 ≤ 8 → snaps A back to x=0).
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    const headerA = floatingPanels[0].querySelector<HTMLElement>(".panel-header")!;
-    headerA.dispatchEvent(makePointerEvent("pointerdown", { clientX: 50, clientY: 150 }));
-    headerA.dispatchEvent(makePointerEvent("pointermove", { clientX: 54, clientY: 150 }));
-    headerA.dispatchEvent(makePointerEvent("pointerup", { clientX: 54, clientY: 150 }));
-
-    // All 5 panels in one set.
+    // Sets computed in render — all 5 panels form a chain.
     expect(manager.getSets().length).toBe(1);
     expect(manager.getSets()[0].panelIds.length).toBe(5);
 
@@ -1237,9 +1180,7 @@ describe("PanelManager – close recompute and final polish", () => {
       ],
     });
 
-    // Trigger recomputeSets.
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+    // Sets computed in render — panels already edge-to-edge.
     expect(manager.getSets().length).toBe(1);
 
     // Register mock card for panel-b and close it.
@@ -1269,9 +1210,7 @@ describe("PanelManager – close recompute and final polish", () => {
       ],
     });
 
-    // Trigger recompute to create the set and sash.
-    const floatingPanels = snapContainer.querySelectorAll<HTMLElement>(".floating-panel");
-    triggerRecompute(floatingPanels[0].querySelector<HTMLElement>(".panel-header")!);
+    // Sets and sashes computed in render — panels already edge-to-edge.
     expect(manager.getSets().length).toBe(1);
     expect(snapContainer.querySelectorAll(".virtual-sash").length).toBeGreaterThanOrEqual(1);
 

@@ -71,6 +71,7 @@ export class TerminalCard implements TugCard {
   private connection: TugConnection;
   private resizeDebounceId: number | null = null;
   private dragState: IDragState | null = null;
+  private themeChangeHandler: (() => void) | null = null;
 
   constructor(connection: TugConnection) {
     this.connection = connection;
@@ -82,13 +83,14 @@ export class TerminalCard implements TugCard {
 
   mount(container: HTMLElement): void {
     // Read CSS tokens for terminal theme
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
-    const fg = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim();
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--td-bg").trim();
+    const fg = getComputedStyle(document.documentElement).getPropertyValue("--td-text").trim();
+    const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--td-font-mono").trim();
 
     // Create terminal with theme matching the dark background
     this.terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+      fontFamily: fontFamily || "'Hack', 'JetBrains Mono', 'SFMono-Regular', 'Menlo', monospace",
       fontSize: 14,
       theme: {
         background: bg,
@@ -153,6 +155,17 @@ export class TerminalCard implements TugCard {
       const frame = resizeFrame(cols, rows);
       this.connection.send(frame.feedId, frame.payload);
     });
+
+    // Listen for theme changes and update terminal colors
+    this.themeChangeHandler = () => {
+      if (!this.terminal) return;
+      const newBg = getComputedStyle(document.documentElement).getPropertyValue("--td-bg").trim();
+      const newFg = getComputedStyle(document.documentElement).getPropertyValue("--td-text").trim();
+      const newFont = getComputedStyle(document.documentElement).getPropertyValue("--td-font-mono").trim();
+      this.terminal.options.theme = { background: newBg, foreground: newFg };
+      if (newFont) this.terminal.options.fontFamily = newFont;
+    };
+    document.addEventListener("td-theme-change", this.themeChangeHandler);
   }
 
   onFrame(feedId: FeedIdValue, payload: Uint8Array): void {
@@ -216,6 +229,10 @@ export class TerminalCard implements TugCard {
   }
 
   destroy(): void {
+    if (this.themeChangeHandler) {
+      document.removeEventListener("td-theme-change", this.themeChangeHandler);
+      this.themeChangeHandler = null;
+    }
     if (this.resizeDebounceId !== null) {
       cancelAnimationFrame(this.resizeDebounceId);
       this.resizeDebounceId = null;

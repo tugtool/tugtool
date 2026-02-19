@@ -141,6 +141,10 @@ export class DropdownMenu {
         this.el.appendChild(el);
       } else if (item.type === "select") {
         this.buildSelectItem(item);
+      } else if (item.type === "separator") {
+        const el = document.createElement("div");
+        el.className = "card-dropdown-separator";
+        this.el.appendChild(el);
       }
     }
   }

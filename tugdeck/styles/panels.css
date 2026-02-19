@@ -1,7 +1,8 @@
 /**
- * Canvas panel system styles
+ * Canvas panel system styles (Retronow design language)
  *
  * Floating panel layout, tab bars, card headers, and associated chrome.
+ * Uses only --td-* semantic tokens from tokens.css.
  * Loaded via <link> tag since Bun bundles only JS.
  */
 
@@ -57,8 +58,8 @@
   align-items: stretch;
   height: 28px;
   flex-shrink: 0;
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
+  background: var(--td-surface-tab);
+  border-bottom: 1px solid var(--td-border);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -68,23 +69,26 @@
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 12px;
+  font-family: var(--td-font-mono);
+  font-size: 0.67rem;
+  text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  color: var(--muted-foreground);
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  color: var(--td-text-soft);
+  border: var(--rn-line-ui) solid var(--td-border-soft);
+  border-bottom: 0;
+  border-radius: var(--td-radius-sm) var(--td-radius-sm) 0 0;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .panel-tab-active {
-  color: var(--foreground);
-  border-bottom-color: var(--accent);
+  color: var(--td-text);
+  background: var(--td-surface);
 }
 
 .panel-tab:hover {
-  color: var(--foreground);
+  color: var(--td-text);
 }
 
 .panel-tab-close {
@@ -93,7 +97,7 @@
   line-height: 1;
   padding: 2px;
   border-radius: 2px;
-  color: var(--muted-foreground);
+  color: var(--td-text-soft);
   cursor: pointer;
 }
 
@@ -102,8 +106,8 @@
 }
 
 .panel-tab-close:hover {
-  color: var(--destructive);
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--td-danger);
+  background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
 .panel-tab.dragging {
@@ -116,9 +120,9 @@
   position: absolute;
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: var(--td-panel);
+  border: 1px solid var(--td-border);
+  box-shadow: var(--td-depth-raise);
   overflow: visible; /* resize handles extend outside */
   min-width: 100px;
   min-height: 100px;
@@ -133,8 +137,8 @@
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  background: var(--muted);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--td-surface) 0%, var(--td-surface-tab) 100%);
+  border-bottom: 1px solid var(--td-border);
   flex-shrink: 0;
   user-select: none;
   box-sizing: border-box;
@@ -142,22 +146,23 @@
 
 /* Key panel title bar tint: subtle accent over muted background */
 .panel-header-key {
-  background: color-mix(in srgb, var(--accent) 12%, var(--muted));
+  background: color-mix(in srgb, var(--td-accent) 12%, var(--td-surface-control));
 }
 
 .panel-header-icon {
   display: flex;
   align-items: center;
-  color: var(--muted-foreground);
+  color: var(--td-text-soft);
   flex-shrink: 0;
 }
 
 .panel-header-title {
+  font-family: var(--td-font-mono);
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--card-foreground);
+  letter-spacing: 0.08em;
+  color: var(--td-text);
   flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -176,7 +181,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--muted-foreground);
+  color: var(--td-text-soft);
   cursor: pointer;
   border-radius: 2px;
   padding: 0;
@@ -184,40 +189,42 @@
 }
 
 .panel-header-btn:hover {
-  color: var(--foreground);
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--td-text);
+  background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
 /* ---- Card dropdown menu ---- */
 
 .card-dropdown-menu {
   position: fixed;
-  background: var(--popover);
-  color: var(--popover-foreground);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--td-surface);
+  color: var(--td-text);
+  border: 1px solid var(--td-border-soft);
+  box-shadow: var(--td-depth-raise);
   border-radius: 4px;
   padding: 4px 0;
   z-index: 10000;
   min-width: 160px;
+  font-family: var(--td-font-mono);
+  text-transform: uppercase;
+  font-size: 0.62rem;
 }
 
 .card-dropdown-item {
   padding: 6px 12px;
   cursor: pointer;
-  font-size: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .card-dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
 .card-dropdown-separator {
   height: 1px;
-  background: var(--border);
+  background: var(--td-border);
   margin: 4px 0;
 }
 
@@ -228,16 +235,15 @@
 .card-dropdown-select-option {
   padding: 4px 20px;
   cursor: pointer;
-  font-size: 12px;
   border-radius: 2px;
 }
 
 .card-dropdown-select-option:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
 .card-dropdown-select-option.selected {
-  color: var(--accent-foreground);
+  color: var(--td-accent);
   font-weight: 600;
 }
 
@@ -259,69 +265,42 @@
 
 .floating-panel-resize-n {
   top: -4px; left: 8px; right: 8px; height: 8px;
-  cursor: n-resize;
+  cursor: ns-resize;
 }
 
 .floating-panel-resize-s {
   bottom: -4px; left: 8px; right: 8px; height: 8px;
-  cursor: s-resize;
+  cursor: ns-resize;
 }
 
 .floating-panel-resize-e {
   right: -4px; top: 8px; bottom: 8px; width: 8px;
-  cursor: e-resize;
+  cursor: ew-resize;
 }
 
 .floating-panel-resize-w {
   left: -4px; top: 8px; bottom: 8px; width: 8px;
-  cursor: w-resize;
+  cursor: ew-resize;
 }
 
 .floating-panel-resize-nw {
   top: -4px; left: -4px; width: 12px; height: 12px;
-  cursor: nw-resize;
+  cursor: nwse-resize;
 }
 
 .floating-panel-resize-ne {
   top: -4px; right: -4px; width: 12px; height: 12px;
-  cursor: ne-resize;
+  cursor: nesw-resize;
 }
 
 .floating-panel-resize-sw {
   bottom: -4px; left: -4px; width: 12px; height: 12px;
-  cursor: sw-resize;
+  cursor: nesw-resize;
 }
 
 .floating-panel-resize-se {
   bottom: -4px; right: -4px; width: 12px; height: 12px;
-  cursor: se-resize;
-}
-
-/* ---- Tug menu button ---- */
-
-.tug-menu-button {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 9980;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  color: var(--muted-foreground);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  transition: color 0.15s ease, background 0.15s ease;
-  user-select: none;
-}
-
-.tug-menu-button:hover {
-  color: var(--foreground);
-  background: var(--accent);
+  cursor: nwse-resize;
 }
 
 /* ---- Snap guide lines ---- */
@@ -334,14 +313,14 @@
 }
 
 .snap-guide-line-x {
-  border-left: 1px dashed var(--accent);
+  border-left: 1px dashed var(--td-accent-cool);
   width: 0;
   top: 0;
   bottom: 0;
 }
 
 .snap-guide-line-y {
-  border-top: 1px dashed var(--accent);
+  border-top: 1px dashed var(--td-accent-cool);
   height: 0;
   left: 0;
   right: 0;
@@ -356,7 +335,7 @@
 }
 
 .virtual-sash:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--td-text) 8%, transparent);
 }
 
 .virtual-sash-vertical {
@@ -367,4 +346,39 @@
 .virtual-sash-horizontal {
   height: 8px;
   cursor: row-resize;
+}
+
+/* ---- Disconnect banner ---- */
+
+.disconnect-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: color-mix(in srgb, var(--td-bg) 85%, transparent);
+  color: var(--td-text-inverse);
+  padding: var(--td-space-4) var(--td-space-6);
+  font-family: var(--td-font-sans);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ---- Set flash feedback ---- */
+
+@keyframes set-flash-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.set-flash-overlay {
+  position: absolute;
+  inset: -1px; /* extend over panel's 1px border so adjacent overlays share edges */
+  pointer-events: none;
+  border: 3px solid var(--td-accent);
+  border-radius: inherit;
+  box-shadow: 0 0 5px color-mix(in srgb, var(--td-accent) 60%, transparent), inset 0 0 16px color-mix(in srgb, var(--td-accent) 20%, transparent);
+  animation: set-flash-fade 0.5s ease-out forwards;
+  z-index: 2;
+  box-sizing: border-box;
 }

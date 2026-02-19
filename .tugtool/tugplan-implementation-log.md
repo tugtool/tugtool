@@ -10,6 +10,96 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-19T02:55:27Z
+---
+
+## audit-fix: Audit fix: clippy is_some_and in build.rs, added 2 dock tests (all 5 icon types, localStorage persistence) to meet L01 24-scenario requirement
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: #step-5
+date: 2025-02-19T02:50:05Z
+bead: tugtool-j72.6
+---
+
+## #step-5: Final integration verification: all automated checkpoints passing, updated stale TugMenu JSDoc references to Dock in panel-manager.ts
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: #step-4
+date: 2025-02-19T02:40:55Z
+bead: tugtool-j72.5
+---
+
+## #step-4: Deleted deck.css, updated build.rs to copy dock.css and fonts, updated index.html with dock.css link and --td-bg body background
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: #step-3
+date: 2025-02-19T02:34:15Z
+bead: tugtool-j72.4
+---
+
+## #step-3: Created Dock component replacing TugMenu: 48px vertical rail with icon buttons, settings dropdown with theme select (Brio/Bluenote/Harmony), terminal theme reactivity via td-theme-change events
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: #step-2
+date: 2025-02-19T02:21:11Z
+bead: tugtool-j72.3
+---
+
+## #step-2: Migrated cards.css to --td-* tokens and retronow aesthetic: rn-chip branch badge, rn-button gradient for send/approval, rn-field conversation input, rn-screen tool card
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: #step-1
+date: 2025-02-19T02:12:51Z
+bead: tugtool-j72.2
+---
+
+## #step-1: Migrated panels.css to --td-* tokens and retronow aesthetic: titlebar gradient, rounded tabs, mono dropdowns, orange set-flash, disconnect banner moved from deck.css
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: #step-0
+date: 2025-02-19T02:04:55Z
+bead: tugtool-j72.1
+---
+
+## #step-0: Rewrote tokens.css with three-tier token architecture, installed IBM Plex Sans and Hack fonts locally, defined Brio/Bluenote/Harmony themes with body-class selectors
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-18T19:31:38Z
 ---
 
