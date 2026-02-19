@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-5
+date: 2025-02-19T20:52:07Z
+bead: tugtool-bwn.6
+---
+
+## #step-5: Created complete tugapp/ Mac app shell: Tug.xcodeproj with shared scheme, AppDelegate.swift (app lifecycle, Developer menu with dev mode toggle, Reload/Restart/Reset items), MainWindow.swift (WKWebView for 127.0.0.1:7890), ProcessManager.swift (tugcast process supervision with exit code contract 42=restart 43=reset), Info.plist with ATS exceptions for localhost/127.0.0.1, Tug.entitlements, Assets.xcassets. xcodebuild build succeeds.
+
+**Files changed:**
+- .tugtool/tugplan-dev-app-mode.md
+
+---
+
+---
 step: #step-4
 date: 2025-02-19T20:39:41Z
 bead: tugtool-bwn.5

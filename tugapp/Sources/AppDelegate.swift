@@ -1,0 +1,207 @@
+import Cocoa
+
+@main
+class AppDelegate: NSObject, NSApplicationDelegate {
+    private var window: MainWindow!
+    private var processManager = ProcessManager()
+    private var devModeEnabled = false
+    private var sourceTreePath: String?
+    private var developerMenu: NSMenuItem!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Check tmux availability
+        if !ProcessManager.checkTmux() {
+            let alert = NSAlert()
+            alert.messageText = "tmux Required"
+            alert.informativeText = "tmux is required but was not found in PATH.\nInstall it with: brew install tmux"
+            alert.alertStyle = .critical
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
+
+        // Load preferences
+        loadPreferences()
+
+        // Create main window
+        let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
+        window = MainWindow(
+            contentRect: contentRect,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+
+        // Build menu bar
+        buildMenuBar()
+
+        // Setup process manager
+        processManager.onAuthURL = { [weak self] url in
+            self?.window.loadURL(url)
+        }
+
+        // Start tugcast
+        processManager.start(devMode: devModeEnabled, sourceTree: sourceTreePath)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        processManager.stop()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
+    // MARK: - Preferences
+
+    private func loadPreferences() {
+        devModeEnabled = UserDefaults.standard.bool(forKey: "DevModeEnabled")
+        sourceTreePath = UserDefaults.standard.string(forKey: "SourceTreePath")
+    }
+
+    private func savePreferences() {
+        UserDefaults.standard.set(devModeEnabled, forKey: "DevModeEnabled")
+        if let path = sourceTreePath {
+            UserDefaults.standard.set(path, forKey: "SourceTreePath")
+        }
+    }
+
+    // MARK: - Menu Bar
+
+    private func buildMenuBar() {
+        let mainMenu = NSMenu()
+
+        // App Menu
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenuItem.submenu = appMenu
+        appMenu.addItem(NSMenuItem(title: "Quit Tug", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+
+        // Edit Menu
+        let editMenuItem = NSMenuItem()
+        mainMenu.addItem(editMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenuItem.submenu = editMenu
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+
+        // Developer Menu
+        developerMenu = NSMenuItem()
+        mainMenu.addItem(developerMenu)
+        let devMenu = NSMenu(title: "Developer")
+        developerMenu.submenu = devMenu
+        developerMenu.isHidden = !devModeEnabled
+
+        let enableDevMode = NSMenuItem(title: "Enable Dev Mode", action: #selector(toggleDevMode(_:)), keyEquivalent: "")
+        enableDevMode.state = devModeEnabled ? .on : .off
+        devMenu.addItem(enableDevMode)
+
+        devMenu.addItem(NSMenuItem.separator())
+
+        devMenu.addItem(NSMenuItem(title: "Reload Frontend", action: #selector(reloadFrontend(_:)), keyEquivalent: "r"))
+        devMenu.addItem(NSMenuItem(title: "Restart Server", action: #selector(restartServer(_:)), keyEquivalent: "r", modifierMask: [.command, .shift]))
+        devMenu.addItem(NSMenuItem(title: "Reset Everything", action: #selector(resetEverything(_:)), keyEquivalent: "r", modifierMask: [.command, .option]))
+
+        devMenu.addItem(NSMenuItem.separator())
+
+        devMenu.addItem(NSMenuItem(title: "Open Web Inspector", action: #selector(openWebInspector(_:)), keyEquivalent: ""))
+
+        devMenu.addItem(NSMenuItem.separator())
+
+        if let path = sourceTreePath {
+            let sourceTreeItem = NSMenuItem(title: "Source Tree: \(path)", action: nil, keyEquivalent: "")
+            sourceTreeItem.isEnabled = false
+            devMenu.addItem(sourceTreeItem)
+        }
+        devMenu.addItem(NSMenuItem(title: "Choose Source Tree...", action: #selector(chooseSourceTree(_:)), keyEquivalent: ""))
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: - Actions
+
+    @objc private func toggleDevMode(_ sender: NSMenuItem) {
+        devModeEnabled = !devModeEnabled
+        sender.state = devModeEnabled ? .on : .off
+
+        if devModeEnabled && sourceTreePath == nil {
+            chooseSourceTree(sender)
+        }
+
+        developerMenu.isHidden = !devModeEnabled
+        savePreferences()
+
+        // Restart tugcast with new mode
+        processManager.stop()
+        processManager.start(devMode: devModeEnabled, sourceTree: sourceTreePath)
+    }
+
+    @objc private func reloadFrontend(_ sender: Any) {
+        window.reload()
+    }
+
+    @objc private func restartServer(_ sender: Any) {
+        processManager.restart()
+    }
+
+    @objc private func resetEverything(_ sender: Any) {
+        // Clear web storage and restart
+        processManager.restart()
+        window.reload()
+    }
+
+    @objc private func openWebInspector(_ sender: Any) {
+        window.openWebInspector()
+    }
+
+    @objc private func chooseSourceTree(_ sender: Any) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the tugtool mono-repo root directory"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            let path = url.path
+
+            // Validate source tree
+            let mainTSPath = url.appendingPathComponent("tugdeck/src/main.ts").path
+            let packageJSONPath = url.appendingPathComponent("tugdeck/package.json").path
+
+            if !FileManager.default.fileExists(atPath: mainTSPath) ||
+               !FileManager.default.fileExists(atPath: packageJSONPath) {
+                let alert = NSAlert()
+                alert.messageText = "Invalid Source Tree"
+                alert.informativeText = "The selected directory does not contain tugdeck/src/main.ts and tugdeck/package.json"
+                alert.alertStyle = .warning
+                alert.runModal()
+                return
+            }
+
+            sourceTreePath = path
+            savePreferences()
+
+            // Rebuild menu to show new path
+            buildMenuBar()
+
+            // Restart if dev mode is enabled
+            if devModeEnabled {
+                processManager.stop()
+                processManager.start(devMode: true, sourceTree: path)
+            }
+        }
+    }
+}
+
+// Helper extension for menu items with modifier masks
+extension NSMenuItem {
+    convenience init(title: String, action: Selector?, keyEquivalent: String, modifierMask: NSEvent.ModifierFlags) {
+        self.init(title: title, action: action, keyEquivalent: keyEquivalent)
+        self.keyEquivalentModifierMask = modifierMask
+    }
+}
