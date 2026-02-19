@@ -9,6 +9,19 @@ Entries are sorted newest-first.
 ---
 
 ---
+step: #step-2
+date: 2025-02-19T02:21:11Z
+bead: tugtool-j72.3
+---
+
+## #step-2: Migrated cards.css to --td-* tokens and retronow aesthetic: rn-chip branch badge, rn-button gradient for send/approval, rn-field conversation input, rn-screen tool card
+
+**Files changed:**
+- .tugtool/tugplan-retronow-style-system.md
+
+---
+
+---
 step: #step-1
 date: 2025-02-19T02:12:51Z
 bead: tugtool-j72.2
