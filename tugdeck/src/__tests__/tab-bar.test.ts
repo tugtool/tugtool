@@ -58,7 +58,7 @@ import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugCard } from "../cards/card";
 import type { TugConnection } from "../connection";
 import type { TabNode, TabItem } from "../layout-tree";
-import type { DeckState, PanelState } from "../layout-tree";
+import type { DeckState, CardState } from "../layout-tree";
 
 // ---- Mocks ----
 

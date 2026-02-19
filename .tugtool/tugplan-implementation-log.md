@@ -10,6 +10,18 @@ Entries are sorted newest-first.
 
 ---
 step: audit-fix
+date: 2025-02-19T18:05:06Z
+---
+
+## audit-fix: Audit fix round 2: git rm -r --cached target/ to remove 22k build artifacts from tracking, fixed 4 broken type imports (PanelState→CardState in 3 test files, PanelManager→DeckManager in deck-manager.test.ts)
+
+**Files changed:**
+- .tugtool/tugplan-rename-reorganize.md
+
+---
+
+---
+step: audit-fix
 date: 2025-02-19T17:57:45Z
 ---
 

@@ -901,7 +901,7 @@ describe("PanelManager – set dragging", () => {
    * so it becomes top-most (index 1). The originally second panel becomes index 0.
    */
   function setupTwoCardSet(snapContainer: HTMLElement): {
-    manager: PanelManager;
+    manager: DeckManager;
     panelAEl: HTMLElement;
     panelBEl: HTMLElement;
   } {

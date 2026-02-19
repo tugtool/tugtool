@@ -15,13 +15,13 @@ import {
   computeSets,
   cardToRect,
 } from "../snap";
-import type { PanelState } from "../layout-tree";
+import type { CardState } from "../layout-tree";
 
 // ---- cardToRect ----
 
 describe("cardToRect", () => {
   test("converts PanelState to Rect correctly", () => {
-    const panel: PanelState = {
+    const panel: CardState = {
       id: "p1",
       position: { x: 10, y: 20 },
       size: { width: 200, height: 300 },

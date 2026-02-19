@@ -1,1 +1,0 @@
-cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/Users/kocienda/Mounts/u/src/tugtool/.tugtree/tugtool__rename-reorganize-20250219-154819/target/debug/build/mime_guess-825f052c8a090b26/out/mime_types_generated.rs

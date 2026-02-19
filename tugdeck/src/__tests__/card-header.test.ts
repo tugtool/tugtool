@@ -83,7 +83,7 @@ import { StatsCard } from "../cards/stats-card";
 import { CardFrame } from "../card-frame";
 import { DeckManager } from "../deck-manager";
 import type { TugConnection } from "../connection";
-import type { PanelState } from "../layout-tree";
+import type { CardState } from "../layout-tree";
 import { FeedId } from "../protocol";
 
 // ---- MockTerminalCard: replaces the real TerminalCard import to prevent xterm.js
@@ -478,7 +478,7 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
     document.body.appendChild(canvas);
 
     const tabId = "fp-tab-1";
-    const ps: PanelState = {
+    const ps: CardState = {
       id: "fp-panel-1",
       position: { x: 100, y: 100 },
       size: { width: 400, height: 300 },
@@ -507,7 +507,7 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
   test("floating panel CardHeader has no collapse button (docked-only feature)", () => {
     const canvas = document.createElement("div");
     const tabId = "fp-tab-2";
-    const ps: PanelState = {
+    const ps: CardState = {
       id: "fp-panel-2",
       position: { x: 50, y: 50 },
       size: { width: 400, height: 300 },
@@ -531,7 +531,7 @@ describe("FloatingPanel – uses full CardHeader (Step 5)", () => {
   test("floating panel uses card meta when provided", () => {
     const canvas = document.createElement("div");
     const tabId = "fp-tab-3";
-    const ps: PanelState = {
+    const ps: CardState = {
       id: "fp-panel-3",
       position: { x: 50, y: 50 },
       size: { width: 400, height: 300 },

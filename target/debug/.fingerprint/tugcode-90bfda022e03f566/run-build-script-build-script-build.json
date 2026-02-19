@@ -1,1 +1,0 @@
-{"rustc":2833068300835136146,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[8706527614584625994,"build_script_build",false,8188635712735619345]],"local":[{"RerunIfChanged":{"output":"debug/build/tugcode-90bfda022e03f566/output","paths":[".git/HEAD",".git/index"]}}],"rustflags":["-D","warnings","-D","warnings"],"config":0,"compile_kind":0}
